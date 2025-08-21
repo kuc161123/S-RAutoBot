@@ -61,6 +61,12 @@ class TradingBot:
         # Add callback query handler for inline keyboards
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
         
+        # Add message handler for keyboard buttons
+        self.application.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND, 
+            self.handle_keyboard_button
+        ))
+        
         logger.info("Telegram bot initialized")
     
     async def check_authorization(self, update: Update) -> bool:
@@ -80,6 +86,99 @@ class TradingBot:
         )
         logger.warning(f"Unauthorized access attempt from chat_id: {chat_id}")
         return False
+    
+    async def handle_keyboard_button(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle keyboard button presses"""
+        if not await self.check_authorization(update):
+            return
+        
+        text = update.message.text
+        
+        # Map button text to commands
+        if text == "📊 Status":
+            await self.cmd_status(update, context)
+        elif text == "💹 Positions":
+            await self.cmd_positions(update, context)
+        elif text == "🎯 Enable":
+            await self.cmd_enable(update, context)
+        elif text == "🛑 Disable":
+            await self.cmd_disable(update, context)
+        elif text == "⚙️ Settings":
+            await self.show_settings_menu(update, context)
+        elif text == "📈 Backtest":
+            await self.show_backtest_help(update, context)
+        else:
+            await update.message.reply_text(
+                "Unknown command. Use /help to see available commands."
+            )
+    
+    async def show_settings_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show settings menu"""
+        settings_text = (
+            "⚙️ *Settings Menu*\n\n"
+            "Choose what to configure:\n\n"
+            "/risk - Risk management settings\n"
+            "/symbols - Symbol selection\n"
+            "/strategy - Strategy parameters\n"
+            "/leverage - Leverage settings\n"
+            "/margin - Margin mode\n\n"
+            f"*Current Settings:*\n"
+            f"Risk per trade: {settings.default_risk_percent}%\n"
+            f"Max positions: {settings.max_concurrent_positions}\n"
+            f"Leverage: {settings.default_leverage}x\n"
+            f"Margin mode: {settings.default_margin_mode.value}"
+        )
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("💰 Risk", callback_data="settings_risk"),
+                InlineKeyboardButton("📊 Symbols", callback_data="settings_symbols")
+            ],
+            [
+                InlineKeyboardButton("🎯 Strategy", callback_data="settings_strategy"),
+                InlineKeyboardButton("⚖️ Leverage", callback_data="settings_leverage")
+            ],
+            [
+                InlineKeyboardButton("🔒 Margin Mode", callback_data="settings_margin")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            settings_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
+    
+    async def show_backtest_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show backtest help and quick options"""
+        backtest_text = (
+            "📈 *Backtest Module*\n\n"
+            "Run historical simulations to test the strategy.\n\n"
+            "*Usage:* `/backtest <symbol> <timeframe> <days>`\n\n"
+            "*Examples:*\n"
+            "• `/backtest BTCUSDT 15 30` - BTC 15min last 30 days\n"
+            "• `/backtest ETHUSDT 1h 7` - ETH 1hour last 7 days\n\n"
+            "*Quick Backtests:*"
+        )
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("BTC 15m 30d", callback_data="bt_BTCUSDT_15_30"),
+                InlineKeyboardButton("ETH 15m 30d", callback_data="bt_ETHUSDT_15_30")
+            ],
+            [
+                InlineKeyboardButton("BTC 1h 7d", callback_data="bt_BTCUSDT_60_7"),
+                InlineKeyboardButton("SOL 15m 14d", callback_data="bt_SOLUSDT_15_14")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            backtest_text,
+            parse_mode='Markdown',
+            reply_markup=reply_markup
+        )
     
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
@@ -510,6 +609,126 @@ class TradingBot:
             
         elif data.startswith("symbols_"):
             await self.handle_symbol_selection(query, data)
+            
+        elif data.startswith("settings_"):
+            await self.handle_settings_callback(query, data)
+            
+        elif data.startswith("bt_"):
+            # Quick backtest buttons
+            parts = data.split("_")
+            if len(parts) == 4:
+                symbol = parts[1]
+                timeframe = parts[2]
+                days = parts[3]
+                
+                await query.edit_message_text(
+                    f"🔄 Running backtest for {symbol} on {timeframe}M timeframe for {days} days...\n"
+                    "This may take a few minutes."
+                )
+                
+                try:
+                    from ..backtesting.backtest_engine import BacktestEngine
+                    engine = BacktestEngine(self.bybit_client, self.strategy)
+                    result = await engine.run_backtest(symbol, timeframe, int(days))
+                    
+                    from .formatters import format_backtest_result
+                    result_text = format_backtest_result(result)
+                    await query.message.reply_text(result_text, parse_mode='Markdown')
+                    
+                    if result.get('chart_path'):
+                        with open(result['chart_path'], 'rb') as f:
+                            await query.message.reply_photo(
+                                photo=f,
+                                caption="📊 Equity Curve"
+                            )
+                            
+                except Exception as e:
+                    logger.error(f"Backtest error: {e}")
+                    await query.message.reply_text(f"❌ Backtest failed: {str(e)}")
+    
+    async def handle_settings_callback(self, query, data):
+        """Handle settings callbacks"""
+        if data == "settings_risk":
+            # Show risk settings directly
+            text = (
+                "💰 *Risk Management Settings*\n\n"
+                f"Risk per trade: {settings.default_risk_percent}%\n"
+                f"Max concurrent: {settings.max_concurrent_positions}\n"
+                f"Max daily loss: {settings.max_daily_loss_percent}%\n"
+                f"Trailing stop: {'Enabled' if settings.use_trailing_stop else 'Disabled'}\n\n"
+                "Select option to modify:"
+            )
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("0.5%", callback_data="risk_0.5"),
+                    InlineKeyboardButton("1%", callback_data="risk_1"),
+                    InlineKeyboardButton("2%", callback_data="risk_2")
+                ],
+                [
+                    InlineKeyboardButton("Max Pos: 3", callback_data="maxpos_3"),
+                    InlineKeyboardButton("Max Pos: 5", callback_data="maxpos_5"),
+                    InlineKeyboardButton("Max Pos: 10", callback_data="maxpos_10")
+                ],
+                [
+                    InlineKeyboardButton("Trailing ON", callback_data="trailing_on"),
+                    InlineKeyboardButton("Trailing OFF", callback_data="trailing_off")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+            
+        elif data == "settings_symbols":
+            # Show symbol settings directly
+            text = (
+                "📊 *Symbol Selection*\n\n"
+                f"Currently monitoring: {len(self.monitored_symbols)} symbols\n\n"
+                "Choose preset or manage individually:"
+            )
+            
+            keyboard = [
+                [
+                    InlineKeyboardButton("Top 20 Volume", callback_data="symbols_top20"),
+                    InlineKeyboardButton("Major Pairs", callback_data="symbols_major")
+                ],
+                [
+                    InlineKeyboardButton("View Current", callback_data="symbols_view")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+            
+        elif data == "settings_strategy":
+            # Show strategy settings directly
+            text = (
+                "🎯 *Strategy Settings*\n\n"
+                f"Min zone score: {settings.sd_min_zone_score}\n"
+                f"Zone max age: {settings.sd_zone_max_age_hours}h\n"
+                f"Max zone touches: {settings.sd_max_zone_touches}\n"
+                f"TP1 ratio: {settings.tp1_risk_ratio}:1\n"
+                f"TP2 ratio: {settings.tp2_risk_ratio}:1\n"
+                f"Partial at TP1: {settings.partial_tp1_percent}%\n\n"
+                "_Use /strategy command to modify_"
+            )
+            await query.edit_message_text(text, parse_mode='Markdown')
+        elif data == "settings_leverage":
+            text = (
+                "⚖️ *Leverage Settings*\n\n"
+                f"Current default: {settings.default_leverage}x\n\n"
+                "To change leverage for a symbol:\n"
+                "`/leverage <symbol> <value>`\n\n"
+                "Example: `/leverage BTCUSDT 5`"
+            )
+            await query.edit_message_text(text, parse_mode='Markdown')
+        elif data == "settings_margin":
+            text = (
+                "🔒 *Margin Mode Settings*\n\n"
+                f"Current default: {settings.default_margin_mode.value}\n\n"
+                "To change margin mode:\n"
+                "`/margin <symbol> <cross|isolated>`\n\n"
+                "Example: `/margin BTCUSDT isolated`"
+            )
+            await query.edit_message_text(text, parse_mode='Markdown')
     
     async def handle_symbol_selection(self, query, data):
         """Handle symbol selection callbacks"""

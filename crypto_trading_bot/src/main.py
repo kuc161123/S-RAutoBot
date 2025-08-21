@@ -400,10 +400,13 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", settings.server_port))
+    
     uvicorn.run(
         "src.main:app",
-        host=settings.server_host,
-        port=settings.server_port,
+        host="0.0.0.0",  # Railway requires 0.0.0.0
+        port=port,
         reload=settings.environment == "development",
         log_level=settings.log_level.lower()
     )

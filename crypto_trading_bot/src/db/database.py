@@ -32,14 +32,33 @@ async def init_db():
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
         
-        # Initialize async pool
-        global async_pool
-        async_pool = await asyncpg.create_pool(
-            settings.database_url.replace('postgresql://', 'postgresql+asyncpg://'),
-            min_size=5,
-            max_size=20
-        )
-        logger.info("Async database pool created")
+        # Initialize async pool (optional - only if we need async operations)
+        try:
+            global async_pool
+            # asyncpg expects postgresql:// or postgres://, not postgresql+asyncpg://
+            # Just use the original database URL
+            db_url = settings.database_url
+            # Handle Railway's postgres:// URLs
+            if db_url.startswith('postgres://'):
+                # asyncpg can handle postgres:// directly
+                asyncpg_url = db_url
+            elif db_url.startswith('postgresql://'):
+                # asyncpg can handle postgresql:// directly
+                asyncpg_url = db_url
+            else:
+                # Fallback
+                asyncpg_url = db_url
+                
+            async_pool = await asyncpg.create_pool(
+                asyncpg_url,
+                min_size=5,
+                max_size=20
+            )
+            logger.info("Async database pool created")
+        except Exception as async_error:
+            # Log but don't fail - we can work without async pool
+            logger.warning(f"Could not create async pool (non-critical): {async_error}")
+            async_pool = None
         
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
@@ -67,9 +86,13 @@ def get_db() -> Session:
 
 async def get_async_db() -> AsyncGenerator:
     """Get async database connection"""
-    async with async_pool.acquire() as connection:
-        async with connection.transaction():
-            yield connection
+    if async_pool:
+        async with async_pool.acquire() as connection:
+            async with connection.transaction():
+                yield connection
+    else:
+        # If no async pool, return None (caller should handle)
+        yield None
 
 # Database helper functions
 class DatabaseManager:

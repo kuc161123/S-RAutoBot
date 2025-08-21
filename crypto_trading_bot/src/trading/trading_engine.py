@@ -10,6 +10,14 @@ from ..telegram.bot import TradingBot
 from ..config import settings
 from ..db.database import DatabaseManager
 from ..utils.logging import trading_logger
+from ..utils.reliability import (
+    rate_limiter,
+    connection_monitor,
+    data_validator,
+    retry_with_backoff,
+    safe_executor,
+    error_recovery
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -38,23 +46,64 @@ class TradingEngine:
         self.default_symbols = settings.default_symbols
         
     async def run(self):
-        """Main trading loop"""
-        logger.info("Trading engine starting...")
+        """Main trading loop with enhanced reliability"""
+        logger.info("Trading engine starting with reliability features...")
+        
+        # Register connections for monitoring
+        await connection_monitor.register_connection(
+            "bybit_api",
+            self._check_bybit_connection
+        )
+        
+        # Start connection monitor
+        asyncio.create_task(connection_monitor.monitor_loop())
+        
+        # Register error recovery strategies
+        error_recovery.register_recovery_strategy(
+            "ConnectionError",
+            self._recover_from_connection_error
+        )
         
         # Load monitored symbols
         await self.load_monitored_symbols()
         
-        # Main loop
+        consecutive_errors = 0
+        max_consecutive_errors = 5
+        
+        # Main loop with error tracking
         while True:
             try:
                 if self.is_running:
-                    await self._trading_cycle()
+                    # Execute trading cycle with safety wrapper
+                    await safe_executor.safe_execute(
+                        self._trading_cycle,
+                        "trading_cycle",
+                        critical=False
+                    )
+                
+                # Reset error counter on success
+                consecutive_errors = 0
                 
                 await asyncio.sleep(settings.symbol_scan_interval_seconds)
                 
             except Exception as e:
-                logger.error(f"Error in trading loop: {e}")
-                await asyncio.sleep(10)
+                consecutive_errors += 1
+                logger.error(f"Error in trading loop (attempt {consecutive_errors}): {e}")
+                
+                # Handle with error recovery
+                recovered = await error_recovery.handle_error(e, {
+                    "engine": self,
+                    "attempt": consecutive_errors
+                })
+                
+                if consecutive_errors >= max_consecutive_errors:
+                    logger.critical("Max consecutive errors reached, stopping engine")
+                    await self.stop()
+                    break
+                
+                # Exponential backoff
+                wait_time = min(10 * (2 ** consecutive_errors), 300)  # Max 5 minutes
+                await asyncio.sleep(wait_time)
     
     async def start(self):
         """Start trading"""
@@ -141,8 +190,9 @@ class TradingEngine:
         self.scan_tasks.clear()
         logger.info("Stopped all symbol scanners")
     
+    @retry_with_backoff(max_attempts=3, initial_delay=1.0)
     async def _symbol_scanner(self, symbol: str):
-        """Scanner for a specific symbol"""
+        """Scanner for a specific symbol with retry logic"""
         logger.info(f"Scanner started for {symbol}")
         
         # Subscribe to WebSocket for this symbol
@@ -203,15 +253,30 @@ class TradingEngine:
             logger.error(f"Error handling kline update: {e}")
     
     async def _check_entry_signals(self, symbol: str, current_price: float):
-        """Check for entry signals"""
+        """Check for entry signals with validation"""
         try:
+            # Apply rate limiting
+            await rate_limiter.acquire()
+            
             # Skip if already have position
             if symbol in self.order_manager.active_positions:
                 return
             
-            # Get account info
-            account_info = await self.client.get_account_info()
+            # Validate price
+            if not data_validator.validate_price(current_price, symbol):
+                logger.warning(f"Invalid price for {symbol}: {current_price}")
+                return
+            
+            # Get account info with retry
+            account_info = await retry_with_backoff()(
+                self.client.get_account_info
+            )()
             balance = float(account_info.get('totalWalletBalance', 0))
+            
+            # Validate balance
+            if balance <= 0:
+                logger.error("Invalid account balance")
+                return
             
             # Get instrument info
             instrument = self.client.get_instrument(symbol)
@@ -226,10 +291,17 @@ class TradingEngine:
             )
             
             if signal:
-                logger.info(f"Entry signal detected for {symbol}")
+                # Validate signal before execution
+                if not data_validator.validate_signal(signal):
+                    logger.error(f"Invalid signal for {symbol}")
+                    return
                 
-                # Execute the signal
-                order_id = await self.order_manager.execute_signal(signal, balance)
+                logger.info(f"Valid entry signal detected for {symbol}")
+                
+                # Execute the signal with retry
+                order_id = await retry_with_backoff(max_attempts=2)(
+                    self.order_manager.execute_signal
+                )(signal, balance)
                 
                 if order_id:
                     # Log trade
@@ -327,6 +399,39 @@ class TradingEngine:
             
         except Exception as e:
             logger.error(f"Error in trading cycle: {e}")
+    
+    async def _check_bybit_connection(self) -> bool:
+        """Check if Bybit connection is healthy"""
+        try:
+            # Try to get server time
+            account_info = await self.client.get_account_info()
+            return account_info is not None
+        except Exception as e:
+            logger.error(f"Bybit connection check failed: {e}")
+            return False
+    
+    async def _recover_from_connection_error(self, error: Exception, context: Dict):
+        """Recover from connection errors"""
+        logger.info("Attempting to recover from connection error")
+        
+        try:
+            # Re-initialize client
+            await self.client.initialize()
+            
+            # Re-subscribe to WebSocket streams
+            for symbol in self.monitored_symbols:
+                if symbol in self.scan_tasks:
+                    # Cancel old task
+                    self.scan_tasks[symbol].cancel()
+                    # Start new scanner
+                    task = asyncio.create_task(self._symbol_scanner(symbol))
+                    self.scan_tasks[symbol] = task
+            
+            logger.info("Successfully recovered from connection error")
+            
+        except Exception as e:
+            logger.error(f"Failed to recover from connection error: {e}")
+            raise
     
     def get_status(self) -> Dict:
         """Get current engine status"""

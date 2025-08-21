@@ -332,19 +332,27 @@ class TradingBot:
         if not await self.check_authorization(update):
             return
         
-        # Show symbol selection menu
+        # Show symbol selection menu with top 50 option
         keyboard = [
-            [InlineKeyboardButton("📊 Top Volume (20)", callback_data="symbols_top20")],
-            [InlineKeyboardButton("💎 Major Pairs", callback_data="symbols_major")],
-            [InlineKeyboardButton("🎯 Custom Selection", callback_data="symbols_custom")],
-            [InlineKeyboardButton("📋 View Current", callback_data="symbols_view")]
+            [
+                InlineKeyboardButton("🔥 Top 50 Coins", callback_data="symbols_top50"),
+                InlineKeyboardButton("🏆 Top 20 Coins", callback_data="symbols_top20")
+            ],
+            [
+                InlineKeyboardButton("💎 Top 10 Major", callback_data="symbols_major"),
+                InlineKeyboardButton("📋 View Current", callback_data="symbols_view")
+            ],
+            [
+                InlineKeyboardButton("🔄 Reset to Default (50)", callback_data="symbols_default")
+            ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         text = (
             "📊 *Symbol Management*\n\n"
             f"Currently monitoring: {len(self.monitored_symbols)} symbols\n\n"
-            "Select an option:"
+            "The bot can monitor up to 50 cryptocurrencies simultaneously.\n\n"
+            "Select a preset configuration:"
         )
         
         await update.message.reply_text(
@@ -688,11 +696,15 @@ class TradingBot:
             
             keyboard = [
                 [
-                    InlineKeyboardButton("Top 20 Volume", callback_data="symbols_top20"),
-                    InlineKeyboardButton("Major Pairs", callback_data="symbols_major")
+                    InlineKeyboardButton("🔥 Top 50 Coins", callback_data="symbols_top50"),
+                    InlineKeyboardButton("🏆 Top 20 Coins", callback_data="symbols_top20")
                 ],
                 [
-                    InlineKeyboardButton("View Current", callback_data="symbols_view")
+                    InlineKeyboardButton("💎 Top 10 Major", callback_data="symbols_major"),
+                    InlineKeyboardButton("📋 View Current", callback_data="symbols_view")
+                ],
+                [
+                    InlineKeyboardButton("🔄 Reset to Default", callback_data="symbols_default")
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -732,30 +744,57 @@ class TradingBot:
     
     async def handle_symbol_selection(self, query, data):
         """Handle symbol selection callbacks"""
-        if data == "symbols_top20":
-            # Get top 20 volume symbols
-            # This would fetch from market data
-            symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "SOLUSDT",
-                      "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "SHIBUSDT", "DOTUSDT"]
-            self.monitored_symbols = set(symbols[:20])
+        if data == "symbols_top50":
+            # Use the configured top 50 symbols from settings
+            self.monitored_symbols = set(settings.default_symbols)
             await query.edit_message_text(
-                f"✅ Monitoring top 20 volume symbols\n"
-                f"Symbols: {', '.join(list(self.monitored_symbols)[:5])}..."
+                f"✅ *Monitoring Top 50 Cryptocurrencies*\n\n"
+                f"Total symbols: {len(self.monitored_symbols)}\n\n"
+                f"Including: {', '.join(sorted(self.monitored_symbols)[:10])}...\n\n"
+                "_All major cryptocurrencies are now being monitored_",
+                parse_mode='Markdown'
+            )
+            
+        elif data == "symbols_top20":
+            # Get top 20 from the default symbols
+            self.monitored_symbols = set(settings.default_symbols[:20])
+            await query.edit_message_text(
+                f"✅ *Monitoring Top 20 Cryptocurrencies*\n\n"
+                f"Symbols: {', '.join(sorted(self.monitored_symbols)[:10])}...\n\n"
+                f"Total: {len(self.monitored_symbols)} symbols",
+                parse_mode='Markdown'
             )
             
         elif data == "symbols_major":
-            # Major pairs
-            symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"]
-            self.monitored_symbols = set(symbols)
+            # Top 10 major pairs
+            self.monitored_symbols = set(settings.default_symbols[:10])
             await query.edit_message_text(
-                f"✅ Monitoring major pairs\n"
-                f"Symbols: {', '.join(self.monitored_symbols)}"
+                f"✅ *Monitoring Top 10 Major Pairs*\n\n"
+                f"Symbols: {', '.join(sorted(self.monitored_symbols))}",
+                parse_mode='Markdown'
+            )
+            
+        elif data == "symbols_default":
+            # Reset to default configuration
+            self.monitored_symbols = set(settings.default_symbols)
+            await query.edit_message_text(
+                f"🔄 *Reset to Default Configuration*\n\n"
+                f"Monitoring all {len(self.monitored_symbols)} default symbols\n\n"
+                "_Trading strategy will monitor top 50 cryptocurrencies_",
+                parse_mode='Markdown'
             )
             
         elif data == "symbols_view":
             if self.monitored_symbols:
-                text = f"📊 *Monitored Symbols ({len(self.monitored_symbols)}):*\n\n"
-                text += ", ".join(sorted(self.monitored_symbols))
+                sorted_symbols = sorted(self.monitored_symbols)
+                text = f"📊 *Currently Monitored Symbols ({len(self.monitored_symbols)}):*\n\n"
+                
+                # Show in groups of 10 for better readability
+                for i in range(0, len(sorted_symbols), 10):
+                    group = sorted_symbols[i:i+10]
+                    text += f"• {', '.join(group)}\n"
+                    
+                text += f"\n_Total: {len(self.monitored_symbols)} symbols_"
             else:
                 text = "📊 No symbols currently monitored"
             await query.edit_message_text(text, parse_mode='Markdown')

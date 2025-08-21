@@ -30,7 +30,10 @@ class Settings(BaseSettings):
     telegram_allowed_chat_ids: List[int] = Field([], description="Allowed chat IDs")
     
     # Database
-    database_url: str = Field(..., description="PostgreSQL connection URL")
+    database_url: str = Field(
+        "postgresql://user:password@localhost:5432/crypto_bot",
+        description="PostgreSQL connection URL"
+    )
     redis_url: str = Field("redis://localhost:6379/0", description="Redis URL")
     
     # Trading Parameters
@@ -77,8 +80,21 @@ class Settings(BaseSettings):
     @validator("telegram_allowed_chat_ids", pre=True)
     def parse_chat_ids(cls, v):
         if isinstance(v, str):
+            # Handle comma-separated string
             return [int(x.strip()) for x in v.split(",") if x.strip()]
-        return v
+        elif isinstance(v, int):
+            # Handle single integer
+            return [v]
+        elif isinstance(v, list):
+            # Handle list of integers or strings
+            result = []
+            for item in v:
+                if isinstance(item, str):
+                    result.append(int(item.strip()))
+                else:
+                    result.append(int(item))
+            return result
+        return v if v else []
     
     class Config:
         env_file = ".env"

@@ -216,6 +216,20 @@ async def monitoring_dashboard():
                 font-size: 2.5em;
                 text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
             }
+            .control-panel {
+                background: rgba(255, 255, 255, 0.15);
+                backdrop-filter: blur(10px);
+                border-radius: 15px;
+                padding: 20px;
+                margin-bottom: 30px;
+                text-align: center;
+            }
+            .control-buttons {
+                display: flex;
+                justify-content: center;
+                gap: 15px;
+                flex-wrap: wrap;
+            }
             .status-grid {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -262,7 +276,7 @@ async def monitoring_dashboard():
             .metric:last-child { border-bottom: none; }
             .metric-label { opacity: 0.8; }
             .metric-value { font-weight: bold; }
-            .refresh-btn {
+            .btn {
                 background: rgba(255, 255, 255, 0.2);
                 border: 1px solid rgba(255, 255, 255, 0.3);
                 color: white;
@@ -271,41 +285,291 @@ async def monitoring_dashboard():
                 cursor: pointer;
                 font-size: 1em;
                 transition: all 0.3s;
+                font-weight: 500;
             }
-            .refresh-btn:hover {
+            .btn:hover {
                 background: rgba(255, 255, 255, 0.3);
+                transform: translateY(-2px);
             }
-            .header-actions {
-                text-align: center;
-                margin-bottom: 20px;
+            .btn:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
             }
+            .btn-success { background: rgba(16, 185, 129, 0.3); border-color: #10b981; }
+            .btn-success:hover { background: rgba(16, 185, 129, 0.5); }
+            .btn-danger { background: rgba(239, 68, 68, 0.3); border-color: #ef4444; }
+            .btn-danger:hover { background: rgba(239, 68, 68, 0.5); }
+            .btn-warning { background: rgba(245, 158, 11, 0.3); border-color: #f59e0b; }
+            .btn-warning:hover { background: rgba(245, 158, 11, 0.5); }
             #lastUpdate {
                 text-align: center;
                 opacity: 0.8;
                 margin-top: 20px;
             }
+            .notification {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 20px;
+                border-radius: 8px;
+                background: rgba(16, 185, 129, 0.9);
+                color: white;
+                display: none;
+                animation: slideIn 0.3s;
+            }
+            @keyframes slideIn {
+                from { transform: translateX(100%); }
+                to { transform: translateX(0); }
+            }
+            .notification.error { background: rgba(239, 68, 68, 0.9); }
+            .notification.warning { background: rgba(245, 158, 11, 0.9); }
+            .positions-table {
+                width: 100%;
+                margin-top: 15px;
+            }
+            .positions-table th,
+            .positions-table td {
+                padding: 8px;
+                text-align: left;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            .positions-table th { opacity: 0.8; }
+            .modal {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.5);
+                justify-content: center;
+                align-items: center;
+            }
+            .modal-content {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                padding: 30px;
+                border-radius: 15px;
+                max-width: 500px;
+                width: 90%;
+            }
+            .modal h3 { margin-bottom: 20px; }
+            .form-group {
+                margin-bottom: 15px;
+            }
+            .form-group label {
+                display: block;
+                margin-bottom: 5px;
+                opacity: 0.9;
+            }
+            .form-group input, .form-group select {
+                width: 100%;
+                padding: 8px;
+                border-radius: 5px;
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                background: rgba(255, 255, 255, 0.1);
+                color: white;
+            }
+            .form-group input::placeholder {
+                color: rgba(255, 255, 255, 0.5);
+            }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>🤖 Crypto Trading Bot Monitor</h1>
-            <div class="header-actions">
-                <button class="refresh-btn" onclick="fetchHealth()">🔄 Refresh</button>
+            <h1>🤖 Crypto Trading Bot Control Center</h1>
+            
+            <!-- Control Panel -->
+            <div class="control-panel">
+                <h2>Bot Controls</h2>
+                <div class="control-buttons">
+                    <button class="btn btn-success" onclick="enableBot()">✅ Enable Trading</button>
+                    <button class="btn btn-warning" onclick="disableBot()">⏸️ Disable Trading</button>
+                    <button class="btn btn-danger" onclick="emergencyStop()">🛑 Emergency Stop</button>
+                    <button class="btn" onclick="fetchHealth()">🔄 Refresh Status</button>
+                    <button class="btn" onclick="showPositions()">📊 View Positions</button>
+                    <button class="btn" onclick="showBacktestModal()">📈 Run Backtest</button>
+                    <button class="btn" onclick="testConnection()">🔌 Test Connections</button>
+                </div>
             </div>
+            
             <div id="dashboard" class="status-grid">
                 <div class="card">Loading...</div>
             </div>
             <div id="lastUpdate"></div>
         </div>
         
+        <!-- Notification -->
+        <div id="notification" class="notification"></div>
+        
+        <!-- Backtest Modal -->
+        <div id="backtestModal" class="modal">
+            <div class="modal-content">
+                <h3>Run Backtest</h3>
+                <div class="form-group">
+                    <label>Symbol:</label>
+                    <input type="text" id="btSymbol" placeholder="e.g., BTCUSDT" value="BTCUSDT">
+                </div>
+                <div class="form-group">
+                    <label>Timeframe:</label>
+                    <select id="btTimeframe">
+                        <option value="1">1M</option>
+                        <option value="5">5M</option>
+                        <option value="15" selected>15M</option>
+                        <option value="30">30M</option>
+                        <option value="60">1H</option>
+                        <option value="240">4H</option>
+                        <option value="D">1D</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Days:</label>
+                    <input type="number" id="btDays" value="30" min="1" max="365">
+                </div>
+                <div class="control-buttons" style="margin-top: 20px;">
+                    <button class="btn btn-success" onclick="runBacktest()">Run Backtest</button>
+                    <button class="btn" onclick="closeModal('backtestModal')">Cancel</button>
+                </div>
+            </div>
+        </div>
+        
         <script>
+            let currentStatus = {};
+            
             async function fetchHealth() {
                 try {
                     const response = await fetch('/health');
                     const data = await response.json();
+                    currentStatus = data;
                     updateDashboard(data);
                 } catch (error) {
                     console.error('Error fetching health:', error);
+                    showNotification('Failed to fetch status', 'error');
+                }
+            }
+            
+            async function enableBot() {
+                try {
+                    const response = await fetch('/api/enable', { method: 'POST' });
+                    const data = await response.json();
+                    showNotification(data.message || 'Bot enabled successfully', 'success');
+                    setTimeout(fetchHealth, 1000);
+                } catch (error) {
+                    showNotification('Failed to enable bot', 'error');
+                }
+            }
+            
+            async function disableBot() {
+                try {
+                    const response = await fetch('/api/disable', { method: 'POST' });
+                    const data = await response.json();
+                    showNotification(data.message || 'Bot disabled', 'warning');
+                    setTimeout(fetchHealth, 1000);
+                } catch (error) {
+                    showNotification('Failed to disable bot', 'error');
+                }
+            }
+            
+            async function emergencyStop() {
+                if (!confirm('Are you sure? This will close all positions and stop the bot!')) {
+                    return;
+                }
+                try {
+                    const response = await fetch('/api/emergency_stop', { method: 'POST' });
+                    const data = await response.json();
+                    showNotification('Emergency stop executed!', 'error');
+                    setTimeout(fetchHealth, 1000);
+                } catch (error) {
+                    showNotification('Failed to execute emergency stop', 'error');
+                }
+            }
+            
+            async function showPositions() {
+                try {
+                    const response = await fetch('/api/positions');
+                    const data = await response.json();
+                    
+                    if (data.positions && data.positions.length > 0) {
+                        let html = '<h3>Open Positions</h3><table class="positions-table">';
+                        html += '<tr><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>PnL</th></tr>';
+                        data.positions.forEach(pos => {
+                            const pnlColor = pos.unrealisedPnl >= 0 ? '#10b981' : '#ef4444';
+                            html += `<tr>
+                                <td>${pos.symbol}</td>
+                                <td>${pos.side}</td>
+                                <td>${pos.size}</td>
+                                <td>${pos.avgPrice}</td>
+                                <td style="color: ${pnlColor}">${pos.unrealisedPnl}</td>
+                            </tr>`;
+                        });
+                        html += '</table>';
+                        showNotification(html, 'info', 10000);
+                    } else {
+                        showNotification('No open positions', 'info');
+                    }
+                } catch (error) {
+                    showNotification('Failed to fetch positions', 'error');
+                }
+            }
+            
+            async function testConnection() {
+                showNotification('Testing connections...', 'info');
+                try {
+                    const response = await fetch('/health');
+                    const data = await response.json();
+                    
+                    let message = 'Connection Test Results:\n';
+                    if (data.components) {
+                        Object.entries(data.components).forEach(([name, comp]) => {
+                            const status = comp.status === 'healthy' ? '✅' : '❌';
+                            message += `${status} ${name}: ${comp.status}\n`;
+                        });
+                    }
+                    showNotification(message, 'info', 5000);
+                } catch (error) {
+                    showNotification('Connection test failed', 'error');
+                }
+            }
+            
+            function showBacktestModal() {
+                document.getElementById('backtestModal').style.display = 'flex';
+            }
+            
+            function closeModal(modalId) {
+                document.getElementById(modalId).style.display = 'none';
+            }
+            
+            async function runBacktest() {
+                const symbol = document.getElementById('btSymbol').value;
+                const timeframe = document.getElementById('btTimeframe').value;
+                const days = document.getElementById('btDays').value;
+                
+                if (!symbol) {
+                    showNotification('Please enter a symbol', 'error');
+                    return;
+                }
+                
+                closeModal('backtestModal');
+                showNotification(`Running backtest for ${symbol}...`, 'info');
+                
+                // Since we can't directly call the telegram bot command,
+                // we'll show instructions
+                showNotification(
+                    `To run backtest, use Telegram:\n/backtest ${symbol} ${timeframe} ${days}`,
+                    'info',
+                    8000
+                );
+            }
+            
+            function showNotification(message, type = 'success', duration = 3000) {
+                const notification = document.getElementById('notification');
+                notification.textContent = message;
+                notification.className = `notification ${type}`;
+                notification.style.display = 'block';
+                
+                if (duration > 0) {
+                    setTimeout(() => {
+                        notification.style.display = 'none';
+                    }, duration);
                 }
             }
             
@@ -315,16 +579,35 @@ async def monitoring_dashboard():
                 
                 let html = '';
                 
+                // Trading Status Card
+                const tradingEnabled = data.trading_enabled !== undefined ? data.trading_enabled : false;
+                html += `
+                    <div class="card">
+                        <h2>
+                            <span class="status-indicator status-${tradingEnabled ? 'healthy' : 'unhealthy'}"></span>
+                            Trading Status
+                        </h2>
+                        <div class="metric">
+                            <span class="metric-label">Trading</span>
+                            <span class="metric-value">${tradingEnabled ? 'ENABLED' : 'DISABLED'}</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Mode</span>
+                            <span class="metric-value">${data.test_mode ? 'TEST' : 'LIVE'}</span>
+                        </div>
+                    </div>
+                `;
+                
                 // Overall Status Card
                 html += `
                     <div class="card">
                         <h2>
                             <span class="status-indicator status-${data.status}"></span>
-                            System Status
+                            System Health
                         </h2>
                         <div class="metric">
                             <span class="metric-label">Status</span>
-                            <span class="metric-value">${data.status.toUpperCase()}</span>
+                            <span class="metric-value">${data.status ? data.status.toUpperCase() : 'UNKNOWN'}</span>
                         </div>
                         <div class="metric">
                             <span class="metric-label">Uptime</span>

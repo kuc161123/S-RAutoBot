@@ -44,6 +44,26 @@ class Settings(BaseSettings):
     default_margin_mode: MarginMode = Field(MarginMode.ISOLATED)
     default_position_mode: PositionMode = Field(PositionMode.ONE_WAY)
     
+    # Trading settings - Top crypto futures on Bybit
+    default_symbols: List[str] = Field(default=[
+        # Top 10 by market cap
+        "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+        "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT",
+        # 11-20
+        "LINKUSDT", "LTCUSDT", "BCHUSDT", "NEARUSDT", "ATOMUSDT",
+        "XLMUSDT", "ICPUSDT", "FILUSDT", "ETCUSDT", "APTUSDT",
+        # 21-30  
+        "ARBUSDT", "OPUSDT", "VETUSDT", "ALGOUSDT", "XTZUSDT",
+        "EOSUSDT", "AAVEUSDT", "SANDUSDT", "MANAUSDT", "THETAUSDT",
+        # 31-40
+        "FTMUSDT", "AXSUSDT", "FLOWUSDT", "HBARUSDT", "EGLDUSDT",
+        "GRTUSDT", "SNXUSDT", "UNIUSDT", "RUNEUSDT", "INJUSDT",
+        # 41-50
+        "RNDRUSDT", "IMXUSDT", "GALAUSDT", "CHZUSDT", "SUSHIUSDT",
+        "COMPUSDT", "ENJUSDT", "KSMUSDT", "ZECUSDT", "BATUSDT"
+    ])
+    default_timeframe: str = Field("15", description="Default timeframe in minutes")
+    
     # Supply & Demand Strategy
     sd_min_base_candles: int = Field(3, description="Min candles for base")
     sd_max_base_candles: int = Field(10, description="Max candles for base")

@@ -34,11 +34,8 @@ class TradingEngine:
         self.scan_tasks: Dict[str, asyncio.Task] = {}
         self.market_data: Dict[str, Dict] = {}
         
-        # Default symbols to monitor
-        self.default_symbols = [
-            "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "SOLUSDT",
-            "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "MATICUSDT", "DOTUSDT"
-        ]
+        # Use configured default symbols (top 50 coins)
+        self.default_symbols = settings.default_symbols
         
     async def run(self):
         """Main trading loop"""
@@ -85,10 +82,10 @@ class TradingEngine:
     
     async def load_monitored_symbols(self):
         """Load symbols to monitor"""
-        # For now, use default symbols
-        # In production, load from database or user preferences
+        # Use configured default symbols (top 50 coins)
         self.monitored_symbols = set(self.default_symbols)
-        logger.info(f"Loaded {len(self.monitored_symbols)} symbols")
+        logger.info(f"Loaded {len(self.monitored_symbols)} symbols to monitor")
+        logger.info(f"Monitoring: {', '.join(sorted(self.monitored_symbols)[:10])}... and {len(self.monitored_symbols)-10} more")
     
     async def add_symbol(self, symbol: str):
         """Add symbol to monitoring"""

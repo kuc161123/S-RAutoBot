@@ -115,13 +115,14 @@ class BacktestEngine:
     ) -> pd.DataFrame:
         """Fetch historical kline data"""
         
-        # Convert timeframe to minutes
+        # Convert timeframe to minutes - handle both formats (15 and 15m)
+        timeframe_clean = timeframe.rstrip('mM')  # Remove 'm' or 'M' suffix
         timeframe_map = {
             '1': 1, '3': 3, '5': 5, '15': 15, '30': 30,
             '60': 60, '120': 120, '240': 240, 'D': 1440, 'W': 10080
         }
         
-        interval_minutes = timeframe_map.get(timeframe, 15)
+        interval_minutes = timeframe_map.get(timeframe_clean, 15)
         
         # Calculate number of candles needed
         candles_per_day = 1440 / interval_minutes
@@ -132,7 +133,8 @@ class BacktestEngine:
         limit = min(200, total_candles)
         
         for i in range(0, total_candles, limit):
-            chunk = await self.client.get_klines(symbol, timeframe, limit)
+            # Use the clean timeframe without 'm' suffix for API call
+            chunk = await self.client.get_klines(symbol, timeframe_clean, limit)
             if not chunk.empty:
                 all_data.append(chunk)
             

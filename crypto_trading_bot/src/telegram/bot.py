@@ -402,11 +402,14 @@ class TradingBot:
             return
         
         symbol = context.args[0].upper()
+        # Handle timeframe - support both '15' and '15m' formats
         timeframe = context.args[1] if len(context.args) > 1 else "15"
+        # Clean up timeframe for display but keep original for processing
+        timeframe_display = timeframe.upper() if 'm' in timeframe.lower() else f"{timeframe}M"
         days = int(context.args[2]) if len(context.args) > 2 else 30
         
         await update.message.reply_text(
-            f"🔄 Running backtest for {symbol} on {timeframe} timeframe "
+            f"🔄 Running backtest for {symbol} on {timeframe_display} timeframe "
             f"for last {days} days...\n"
             "This may take a few minutes."
         )

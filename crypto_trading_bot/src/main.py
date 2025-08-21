@@ -3,13 +3,14 @@ import signal
 import sys
 from fastapi import FastAPI, Request, Response, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from contextlib import asynccontextmanager
 import uvicorn
 from telegram import Update
 import structlog
 from datetime import datetime, timedelta
 import json
+import os
 
 from .config import settings
 from .api.bybit_client import BybitClient
@@ -19,6 +20,8 @@ from .trading.order_manager import OrderManager
 from .db.database import init_db, close_db, DatabaseManager
 from .utils.logging import logger, trading_logger, get_prometheus_metrics
 from .trading.trading_engine import TradingEngine
+from .utils.validation import validate_startup
+from .utils.health_check import health_monitor
 
 # Initialize logger
 logger = structlog.get_logger(__name__)
@@ -38,6 +41,15 @@ async def lifespan(app: FastAPI):
     
     try:
         logger.info("Starting Crypto Trading Bot...")
+        
+        # Run startup validation
+        logger.info("Running startup validation...")
+        validation_passed = await validate_startup()
+        
+        if not validation_passed:
+            logger.error("Startup validation failed - check configuration")
+            # Continue anyway but in limited mode
+            logger.warning("Starting in LIMITED MODE - some features may not work")
         
         # Initialize database
         await init_db()
@@ -71,6 +83,9 @@ async def lifespan(app: FastAPI):
         
         # Subscribe to WebSocket streams
         setup_websocket_subscriptions()
+        
+        # Start health monitoring
+        await health_monitor.start_monitoring()
         
         # Start Telegram bot polling if not using webhook
         if not settings.telegram_webhook_url:
@@ -136,25 +151,16 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    global trading_engine
+    """Health check endpoint with comprehensive monitoring"""
+    report = health_monitor.get_health_report()
     
-    status = {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "components": {
-            "database": "healthy",
-            "bybit_api": "healthy" if bybit_client else "unhealthy",
-            "trading_engine": "running" if trading_engine and trading_engine.is_running else "stopped",
-            "telegram_bot": "healthy" if telegram_bot else "unhealthy"
-        }
-    }
-    
-    # Check if any component is unhealthy
-    if any(v == "unhealthy" for v in status["components"].values()):
-        status["status"] = "degraded"
-    
-    return status
+    # Return appropriate HTTP status code
+    if report["status"] == "unhealthy":
+        return JSONResponse(content=report, status_code=503)
+    elif report["status"] == "degraded":
+        return JSONResponse(content=report, status_code=200)
+    else:
+        return JSONResponse(content=report, status_code=200)
 
 @app.post("/telegram", dependencies=[Depends(verify_telegram_secret)])
 async def telegram_webhook(request: Request):
@@ -183,6 +189,224 @@ async def metrics():
     """Prometheus metrics endpoint"""
     metrics_text = get_prometheus_metrics()
     return Response(content=metrics_text, media_type="text/plain")
+
+@app.get("/dashboard")
+async def monitoring_dashboard():
+    """Interactive monitoring dashboard"""
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Crypto Trading Bot - Monitoring Dashboard</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: #fff;
+                min-height: 100vh;
+                padding: 20px;
+            }
+            .container { max-width: 1400px; margin: 0 auto; }
+            h1 { 
+                text-align: center; 
+                margin-bottom: 30px;
+                font-size: 2.5em;
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            }
+            .status-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 20px;
+                margin-bottom: 30px;
+            }
+            .card {
+                background: rgba(255, 255, 255, 0.1);
+                backdrop-filter: blur(10px);
+                border-radius: 15px;
+                padding: 20px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                transition: transform 0.3s;
+            }
+            .card:hover { transform: translateY(-5px); }
+            .card h2 { 
+                margin-bottom: 15px;
+                font-size: 1.3em;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .status-indicator {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                display: inline-block;
+                animation: pulse 2s infinite;
+            }
+            .status-healthy { background: #10b981; }
+            .status-degraded { background: #f59e0b; }
+            .status-unhealthy { background: #ef4444; }
+            @keyframes pulse {
+                0% { opacity: 1; }
+                50% { opacity: 0.5; }
+                100% { opacity: 1; }
+            }
+            .metric {
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 0;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            .metric:last-child { border-bottom: none; }
+            .metric-label { opacity: 0.8; }
+            .metric-value { font-weight: bold; }
+            .refresh-btn {
+                background: rgba(255, 255, 255, 0.2);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+                color: white;
+                padding: 10px 20px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 1em;
+                transition: all 0.3s;
+            }
+            .refresh-btn:hover {
+                background: rgba(255, 255, 255, 0.3);
+            }
+            .header-actions {
+                text-align: center;
+                margin-bottom: 20px;
+            }
+            #lastUpdate {
+                text-align: center;
+                opacity: 0.8;
+                margin-top: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🤖 Crypto Trading Bot Monitor</h1>
+            <div class="header-actions">
+                <button class="refresh-btn" onclick="fetchHealth()">🔄 Refresh</button>
+            </div>
+            <div id="dashboard" class="status-grid">
+                <div class="card">Loading...</div>
+            </div>
+            <div id="lastUpdate"></div>
+        </div>
+        
+        <script>
+            async function fetchHealth() {
+                try {
+                    const response = await fetch('/health');
+                    const data = await response.json();
+                    updateDashboard(data);
+                } catch (error) {
+                    console.error('Error fetching health:', error);
+                }
+            }
+            
+            function updateDashboard(data) {
+                const dashboard = document.getElementById('dashboard');
+                const lastUpdate = document.getElementById('lastUpdate');
+                
+                let html = '';
+                
+                // Overall Status Card
+                html += `
+                    <div class="card">
+                        <h2>
+                            <span class="status-indicator status-${data.status}"></span>
+                            System Status
+                        </h2>
+                        <div class="metric">
+                            <span class="metric-label">Status</span>
+                            <span class="metric-value">${data.status.toUpperCase()}</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-label">Uptime</span>
+                            <span class="metric-value">${data.uptime_human || 'N/A'}</span>
+                        </div>
+                    </div>
+                `;
+                
+                // Component Cards
+                if (data.components) {
+                    for (const [name, comp] of Object.entries(data.components)) {
+                        const status = comp.status || 'unknown';
+                        const displayName = name.replace(/_/g, ' ').toUpperCase();
+                        
+                        html += `
+                            <div class="card">
+                                <h2>
+                                    <span class="status-indicator status-${status}"></span>
+                                    ${displayName}
+                                </h2>
+                        `;
+                        
+                        if (comp.metadata) {
+                            for (const [key, value] of Object.entries(comp.metadata)) {
+                                const label = key.replace(/_/g, ' ');
+                                html += `
+                                    <div class="metric">
+                                        <span class="metric-label">${label}</span>
+                                        <span class="metric-value">${value}</span>
+                                    </div>
+                                `;
+                            }
+                        }
+                        
+                        if (comp.error) {
+                            html += `
+                                <div class="metric">
+                                    <span class="metric-label">Error</span>
+                                    <span class="metric-value" style="color: #ef4444;">${comp.error}</span>
+                                </div>
+                            `;
+                        }
+                        
+                        html += '</div>';
+                    }
+                }
+                
+                // System Resources Card
+                if (data.system_resources) {
+                    html += `
+                        <div class="card">
+                            <h2>📊 System Resources</h2>
+                            <div class="metric">
+                                <span class="metric-label">CPU Usage</span>
+                                <span class="metric-value">${data.system_resources.cpu_percent?.toFixed(1) || 'N/A'}%</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Memory Usage</span>
+                                <span class="metric-value">${data.system_resources.memory_percent?.toFixed(1) || 'N/A'}%</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Disk Usage</span>
+                                <span class="metric-value">${data.system_resources.disk_percent?.toFixed(1) || 'N/A'}%</span>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                dashboard.innerHTML = html;
+                lastUpdate.innerHTML = `Last updated: ${new Date().toLocaleString()}`;
+            }
+            
+            // Initial load
+            fetchHealth();
+            
+            // Auto-refresh every 10 seconds
+            setInterval(fetchHealth, 10000);
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
 @app.get("/api/status")
 async def get_status():

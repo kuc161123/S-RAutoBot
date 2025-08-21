@@ -44,24 +44,86 @@ class Settings(BaseSettings):
     default_margin_mode: MarginMode = Field(MarginMode.ISOLATED)
     default_position_mode: PositionMode = Field(PositionMode.ONE_WAY)
     
-    # Trading settings - Top crypto futures on Bybit
+    # Trading settings - Top 300 crypto futures on Bybit
     default_symbols: List[str] = Field(default=[
-        # Top 10 by market cap
+        # Top 50 by market cap
         "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
         "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT",
-        # 11-20
         "LINKUSDT", "LTCUSDT", "BCHUSDT", "NEARUSDT", "ATOMUSDT",
         "XLMUSDT", "ICPUSDT", "FILUSDT", "ETCUSDT", "APTUSDT",
-        # 21-30  
         "ARBUSDT", "OPUSDT", "VETUSDT", "ALGOUSDT", "XTZUSDT",
         "EOSUSDT", "AAVEUSDT", "SANDUSDT", "MANAUSDT", "THETAUSDT",
-        # 31-40
         "FTMUSDT", "AXSUSDT", "FLOWUSDT", "HBARUSDT", "EGLDUSDT",
         "GRTUSDT", "SNXUSDT", "UNIUSDT", "RUNEUSDT", "INJUSDT",
-        # 41-50
         "RNDRUSDT", "IMXUSDT", "GALAUSDT", "CHZUSDT", "SUSHIUSDT",
-        "COMPUSDT", "ENJUSDT", "KSMUSDT", "ZECUSDT", "BATUSDT"
+        "COMPUSDT", "ENJUSDT", "KSMUSDT", "ZECUSDT", "BATUSDT",
+        
+        # 51-100
+        "MKRUSDT", "LDOUSDT", "QNTUSDT", "CFXUSDT", "BLURUSDT",
+        "ARUSDT", "WLDUSDT", "AGIXUSDT", "FETUSDT", "OCEANUSDT",
+        "MASKUSDT", "GMTUSDT", "APEUSDT", "SSVUSDT", "FLRUSDT",
+        "FXSUSDT", "HOOKUSDT", "MAGICUSDT", "TUSDT", "ROSEUSDT",
+        "HIGHUSDT", "MINAUSDT", "ASTRUSDT", "AGLDUSDT", "PHBUSDT",
+        "GMXUSDT", "CFXUSDT", "STXUSDT", "ACHUSDT", "SXPUSDT",
+        "WOOUSDT", "SKLUSDT", "SPELLUSDT", "1000PEPEUSDT", "CVXUSDT",
+        "STGUSDT", "PEOPLEUSDT", "CKBUSDT", "ENSUSDT", "PERPUSDT",
+        "TRUUSDT", "LQTYUSDT", "USDCUSDT", "IDUSDT", "ARBUSDT",
+        "JOEUSDT", "TLMUSDT", "AMBUSDT", "LEVERUSDT", "RDNTUSDT",
+        
+        # 101-150
+        "HFTUSDT", "XVSUSDT", "EDUUSDT", "IDEXUSDT", "SUIUSDT",
+        "1000SHIBUSDT", "1000LUNCUSDT", "ETHWUSDT", "BNXUSDT", "RPLUSDT",
+        "ALICEUSDT", "ANKRUSDT", "BIGTIMEUSDT", "BLZUSDT", "BNBUSDT",
+        "BONDUSDT", "CAKEUSDT", "CELUSDT", "CELRUSDT", "CITYUSDT",
+        "COMBOUSDT", "COTIUSDT", "CRVUSDT", "CTSIUSDT", "CVCUSDT",
+        "CYBERUSDT", "DARUSDT", "DASHUSDT", "DENTUSDT", "DODOXUSDT",
+        "DUSKUSDT", "DYDXUSDT", "ILVUSDT", "IOSTUSDT", "IOTAUSDT",
+        "JASMYUSDT", "KAVAUSDT", "KLAYUSDT", "KNCUSDT", "LINAUSDT",
+        "LPTUSDT", "LRCUSDT", "LUNA2USDT", "MAVUSDT", "MDTUSDT",
+        "MTLUSDT", "NKNUSDT", "NMRUSDT", "NTRNUSDT", "OGUSDT",
+        
+        # 151-200
+        "OMGUSDT", "ONEUSDT", "ONTUSDT", "ORDIUSDT", "OXTUSDT",
+        "PENDLEUSDT", "POLYXUSDT", "POWRUSDT", "QTUMUSDT", "RADUSDT",
+        "RAYUSDT", "REEFUSDT", "RENUSDT", "REQUSDT", "RLCUSDT",
+        "RNDRUSDT", "RSRUSDT", "RVNUSDT", "SFPUSDT", "SLPUSDT",
+        "SNTUSDT", "STEEMUSDT", "STORJUSDT", "STPTUSDT", "STRAXUSDT",
+        "STRKUSDT", "SUNUSDT", "SWEATUSDT", "SYSUSDT", "TOKENUSDT",
+        "TOMIUSDT", "TONUSDT", "TRBUSDT", "TRXUSDT", "TWTUSDT",
+        "UMAUSDT", "UNFIUSDT", "UNIUSDT", "USDPUSDT", "USTCUSDT",
+        "VGXUSDT", "VIDTUSDT", "VITEUSDT", "VOXELUSDT", "VRAUSDT",
+        "WAVESUSDT", "WAXPUSDT", "WINUSDT", "WLDUSDT", "XECUSDT",
+        
+        # 201-250
+        "XEMUSDT", "XMRUSDT", "XNOUSDT", "XRPUSDT", "XTZUSDT",
+        "XVGUSDT", "XVSUSDT", "YFIUSDT", "YGGUSDT", "ZECUSDT",
+        "ZENUSDT", "ZILUSDT", "ZRXUSDT", "1000BONKUSDT", "1000BTTUSDT",
+        "1000FLOKIUSDT", "1000XECUSDT", "AAVEUSDT", "ACHUSDT", "ADAUSDT",
+        "ADXUSDT", "AERGOUSDT", "AGIUSDT", "AIOZUSDT", "AKROUSDT",
+        "ALCXUSDT", "ALGOUSDT", "ALPHAUSDT", "AMPUSDT", "ANCUSDT",
+        "ANTUSDT", "APEUSDT", "API3USDT", "APTUSDT", "AQUAUSDT",
+        "ARBUSDT", "ARDRUSDT", "ARKMUSDT", "ARPAUSDT", "ARUSDT",
+        "ASRUSDT", "ASTUSDT", "ATAUSDT", "ATOMUSDT", "ATPUSDT",
+        "AUDIOUSDT", "AURYUSDT", "AVAUSDT", "AVAXUSDT", "AXLUSDT",
+        
+        # 251-300
+        "AXSUSDT", "BADGERUSDT", "BAKEUSDT", "BALUSDT", "BANDUSDT",
+        "BARUSDT", "BATUSDT", "BCHUSDT", "BEAMUSDT", "BELUSDT",
+        "BETAUSDT", "BICOUSDT", "BIGTIMEUSDT", "BITUSDT", "BKXUSDT",
+        "BLUEBIRDUSDT", "BLURUSDT", "BLZUSDT", "BNBUSDT", "BNTUSDT",
+        "BNXUSDT", "BOBAUSDT", "BOMEUSDT", "BONDUSDT", "BSVUSDT",
+        "BSWUSDT", "BTCUSDT", "BTGUSDT", "BTRSTUSDT", "BTTUSDT",
+        "BURGERUSDT", "BUSDUSDT", "C98USDT", "CAKEUSDT", "CEEKUSDT",
+        "CELOUSDT", "CELRUSDT", "CFXUSDT", "CHESSUSDT", "CHRUSDT",
+        "CHZUSDT", "CITYUSDT", "CKBUSDT", "CLVUSDT", "COCOSUSDT",
+        "COMBOUSDT", "COMPUSDT", "COQUSDT", "COSUSDT", "COTIUSDT"
     ])
+    
+    # Multi-timeframe monitoring
+    monitored_timeframes: List[str] = Field(
+        default=["5", "15", "60", "240"],
+        description="Timeframes to monitor (in minutes)"
+    )
     default_timeframe: str = Field("15", description="Default timeframe in minutes")
     
     # Supply & Demand Strategy

@@ -1,14 +1,8 @@
-# Nixpacks configuration for Railway deployment
-
-[phases.setup]
-nixPkgs = ["python311", "python311Packages.pip", "gcc", "postgresql"]
-
-[phases.install]
-cmds = [
-    "python -m ensurepip",
-    "python -m pip install --upgrade pip",
-    "python -m pip install -r requirements.txt"
-]
+# Let Nixpacks auto-detect Python and handle the build
+# Railway's Nixpacks will automatically:
+# 1. Detect Python from requirements.txt
+# 2. Set up the virtual environment
+# 3. Install dependencies
 
 [start]
-cmd = "python -m uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+cmd = "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"

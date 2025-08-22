@@ -501,7 +501,10 @@ class FixedIntegratedEngine:
                 # Update stats
                 self.stats['trades_today'] += 1
                 
-                logger.info(f"Position opened for {symbol}: {position_type}, size={final_size}")
+                logger.info(f"✅ Position opened for {symbol}: {position_type}, size={final_size}, R:R=1:{risk_reward_ratio:.1f}")
+                
+                # Monitor trade outcome for ML learning
+                asyncio.create_task(self._monitor_trade_outcome(symbol, signal, order_id))
                 
         except Exception as e:
             logger.error(f"Error executing signal for {symbol}: {e}")
@@ -743,3 +746,222 @@ Confidence: {parameters.confidence_score:.1%}
             'ml_samples': len(ml_predictor.training_data),
             'health': health_monitor.check_system_health()
         }
+    
+    def _calculate_risk_reward(self, signal: Dict) -> float:
+        """Calculate risk-reward ratio from signal"""
+        try:
+            entry_price = float(signal.get('entry_price', 0))
+            stop_loss = float(signal.get('stop_loss', 0))
+            take_profit = float(signal.get('take_profit', signal.get('take_profit_1', 0)))
+            
+            if entry_price == 0 or stop_loss == 0 or take_profit == 0:
+                return 0
+            
+            # Calculate risk and reward
+            if signal['type'] == 'BUY':
+                risk = entry_price - stop_loss
+                reward = take_profit - entry_price
+            else:  # SELL
+                risk = stop_loss - entry_price
+                reward = entry_price - take_profit
+            
+            if risk <= 0:
+                return 0
+            
+            return reward / risk
+            
+        except Exception as e:
+            logger.error(f"Error calculating risk-reward: {e}")
+            return 0
+    
+    async def _track_trade_for_ml(self, symbol: str, signal: Dict):
+        """Track trade data for ML model learning and continuous improvement"""
+        try:
+            # Prepare comprehensive trade data for ML tracking
+            trade_data = {
+                'timestamp': datetime.now().isoformat(),
+                'symbol': symbol,
+                'signal_type': signal['type'],
+                'entry_price': signal.get('entry_price'),
+                'stop_loss': signal.get('stop_loss'),
+                'take_profit': signal.get('take_profit', signal.get('take_profit_1')),
+                'risk_reward_ratio': signal.get('risk_reward_ratio', 0),
+                'zone_score': signal.get('score', 0),
+                'confluence_score': signal.get('confluence_score', 0),
+                'market_structure': signal.get('market_structure'),
+                'order_flow': signal.get('order_flow'),
+                'volume_analysis': signal.get('volume_analysis'),
+                'timeframes': signal.get('confirming_timeframes', []),
+                'ml_prediction': signal.get('ml_prediction'),
+                'ml_confidence': signal.get('ml_confidence', 0),
+                'zone_type': signal.get('zone_type'),
+                'departure_strength': signal.get('departure_strength', 0),
+                'base_candles': signal.get('base_candles', 0)
+            }
+            
+            # Add to ML training data for continuous learning
+            ml_predictor.training_data.append(trade_data)
+            
+            # Store in Redis for persistence and later analysis
+            if self.redis_client:
+                key = f"ml_trade_data:{symbol}:{datetime.now().timestamp()}"
+                await self.redis_client.setex(
+                    key,
+                    86400 * 30,  # Keep for 30 days
+                    json.dumps(trade_data)
+                )
+                
+                # Also add to learning queue
+                await self.redis_client.lpush(
+                    "ml_learning_queue",
+                    json.dumps({'symbol': symbol, 'trade_data': trade_data})
+                )
+            
+            logger.info(f"✅ Trade tracked for ML learning: {symbol} R:R=1:{trade_data['risk_reward_ratio']:.1f}")
+            
+        except Exception as e:
+            logger.error(f"Error tracking trade for ML: {e}")
+    
+    async def _monitor_trade_outcome(self, symbol: str, signal: Dict, order_id: str):
+        """Monitor trade outcome for ML model improvement"""
+        try:
+            # Initial wait for trade to develop
+            await asyncio.sleep(60)  # Wait 1 minute
+            
+            max_monitoring_time = 3600 * 4  # Monitor for up to 4 hours
+            check_interval = 60  # Check every minute
+            monitoring_start = datetime.now()
+            
+            while (datetime.now() - monitoring_start).total_seconds() < max_monitoring_time:
+                try:
+                    # Check position status
+                    positions = await self.client.get_positions(symbol)
+                    
+                    position_found = False
+                    for position in positions:
+                        if float(position.get('size', 0)) > 0:
+                            position_found = True
+                            
+                            # Calculate current performance
+                            pnl = float(position.get('unrealisedPnl', 0))
+                            pnl_percent = float(position.get('unrealisedPnlPcnt', 0)) * 100
+                            current_price = float(position.get('markPrice', 0))
+                            entry_price = float(signal.get('entry_price', 0))
+                            
+                            # Check if target or stop hit
+                            take_profit = float(signal.get('take_profit', signal.get('take_profit_1', 0)))
+                            stop_loss = float(signal.get('stop_loss', 0))
+                            
+                            trade_closed = False
+                            outcome = 'ongoing'
+                            
+                            if signal['type'] == 'BUY':
+                                if current_price >= take_profit:
+                                    outcome = 'target_hit'
+                                    trade_closed = True
+                                elif current_price <= stop_loss:
+                                    outcome = 'stop_hit'
+                                    trade_closed = True
+                            else:  # SELL
+                                if current_price <= take_profit:
+                                    outcome = 'target_hit'
+                                    trade_closed = True
+                                elif current_price >= stop_loss:
+                                    outcome = 'stop_hit'
+                                    trade_closed = True
+                            
+                            # Store outcome data for ML learning
+                            outcome_data = {
+                                'symbol': symbol,
+                                'order_id': order_id,
+                                'timestamp': datetime.now().isoformat(),
+                                'outcome': outcome,
+                                'pnl': pnl,
+                                'pnl_percent': pnl_percent,
+                                'current_price': current_price,
+                                'entry_price': entry_price,
+                                'risk_reward_achieved': abs(pnl_percent / 100) if pnl > 0 else 0,
+                                'trade_duration': (datetime.now() - monitoring_start).total_seconds(),
+                                'successful': pnl > 0,
+                                'signal_data': signal
+                            }
+                            
+                            # Store in Redis for ML training
+                            if self.redis_client:
+                                key = f"ml_trade_outcome:{symbol}:{order_id}"
+                                await self.redis_client.setex(
+                                    key,
+                                    86400 * 30,  # Keep for 30 days
+                                    json.dumps(outcome_data, default=str)
+                                )
+                            
+                            # Update ML training data with outcome
+                            if trade_closed or pnl_percent > 100 or pnl_percent < -50:
+                                # Significant move or trade closed
+                                ml_predictor.training_data.append(outcome_data)
+                                
+                                # Trigger ML model update if enough new data
+                                if len(ml_predictor.training_data) % 10 == 0:
+                                    asyncio.create_task(self._retrain_ml_models())
+                                
+                                logger.info(
+                                    f"📊 Trade outcome recorded: {symbol} "
+                                    f"Outcome={outcome}, PnL={pnl:.2f} ({pnl_percent:.2f}%), "
+                                    f"R:R achieved={outcome_data['risk_reward_achieved']:.2f}"
+                                )
+                                
+                                if trade_closed:
+                                    return  # Stop monitoring
+                    
+                    if not position_found:
+                        # Position closed externally
+                        logger.info(f"Position for {symbol} no longer exists")
+                        return
+                    
+                except Exception as e:
+                    logger.error(f"Error checking position for {symbol}: {e}")
+                
+                await asyncio.sleep(check_interval)
+            
+            logger.info(f"Stopped monitoring {symbol} after {max_monitoring_time/3600:.1f} hours")
+            
+        except Exception as e:
+            logger.error(f"Error monitoring trade outcome: {e}")
+    
+    async def _retrain_ml_models(self):
+        """Retrain ML models with new outcome data"""
+        try:
+            # Only retrain if we have enough quality data
+            quality_trades = [
+                t for t in ml_predictor.training_data 
+                if isinstance(t, dict) and t.get('risk_reward_ratio', 0) >= 2.0
+            ]
+            
+            if len(quality_trades) >= 20:
+                logger.info(f"Retraining ML models with {len(quality_trades)} quality trades...")
+                
+                # Validate and train
+                if ml_validator.validate_training_data(quality_trades):
+                    ml_predictor.train_models(quality_trades)
+                    
+                    # Save updated models
+                    ml_predictor.save_models("/tmp/ml_models")
+                    
+                    logger.info(f"✅ ML models retrained and saved successfully")
+                    
+                    # Send notification about improved accuracy
+                    if self.telegram_bot and ml_predictor.get_accuracy() > 0:
+                        message = (
+                            f"🤖 ML Model Updated\n"
+                            f"Training samples: {len(quality_trades)}\n"
+                            f"Model accuracy: {ml_predictor.get_accuracy():.2%}\n"
+                            f"The bot is learning and improving!"
+                        )
+                        for chat_id in settings.telegram_allowed_chat_ids:
+                            try:
+                                await self.telegram_bot.send_notification(chat_id, message)
+                            except:
+                                pass
+                                
+        except Exception as e:
+            logger.error(f"Error retraining ML models: {e}")

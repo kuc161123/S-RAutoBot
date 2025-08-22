@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI):
     
     try:
         logger.info("Starting Crypto Trading Bot...")
+        startup_start = datetime.now()
         
         # Run startup validation
         logger.info("Running startup validation...")
@@ -52,45 +53,133 @@ async def lifespan(app: FastAPI):
             # Continue anyway but in limited mode
             logger.warning("Starting in LIMITED MODE - some features may not work")
         
-        # Initialize database
-        await init_db()
+        # Initialize database with timeout
+        logger.info("[1/8] Initializing database...")
+        try:
+            await asyncio.wait_for(init_db(), timeout=30)
+            logger.info("✅ Database initialized successfully")
+        except asyncio.TimeoutError:
+            logger.error("Database initialization timed out after 30s")
+            raise
+        except Exception as e:
+            logger.error(f"Database initialization failed: {e}")
+            raise
         
-        # Initialize Enhanced Bybit client
-        bybit_client = EnhancedBybitClient()
-        await bybit_client.initialize()
+        # Initialize Enhanced Bybit client with timeout
+        logger.info("[2/8] Initializing Bybit client...")
+        try:
+            bybit_client = EnhancedBybitClient()
+            await asyncio.wait_for(bybit_client.initialize(), timeout=30)
+            logger.info("✅ Bybit client initialized successfully")
+        except asyncio.TimeoutError:
+            logger.error("Bybit client initialization timed out after 30s")
+            raise
+        except Exception as e:
+            logger.error(f"Bybit client initialization failed: {e}")
+            raise
         
         # Initialize advanced strategy
-        strategy = AdvancedSupplyDemandStrategy()
+        logger.info("[3/8] Initializing trading strategy...")
+        try:
+            strategy = AdvancedSupplyDemandStrategy()
+            logger.info("✅ Strategy initialized successfully")
+        except Exception as e:
+            logger.error(f"Strategy initialization failed: {e}")
+            raise
         
         # Initialize order manager
-        order_manager = OrderManager(bybit_client)
+        logger.info("[4/8] Initializing order manager...")
+        try:
+            order_manager = OrderManager(bybit_client)
+            logger.info("✅ Order manager initialized successfully")
+        except Exception as e:
+            logger.error(f"Order manager initialization failed: {e}")
+            raise
         
-        # Initialize Telegram bot
-        telegram_bot = TradingBot(bybit_client, strategy)
-        await telegram_bot.initialize()
+        # Initialize Telegram bot with timeout
+        logger.info("[5/8] Initializing Telegram bot...")
+        try:
+            telegram_bot = TradingBot(bybit_client, strategy)
+            await asyncio.wait_for(telegram_bot.initialize(), timeout=30)
+            logger.info("✅ Telegram bot initialized successfully")
+        except asyncio.TimeoutError:
+            logger.error("Telegram bot initialization timed out after 30s")
+            # Continue without Telegram in degraded mode
+            telegram_bot = None
+            logger.warning("Continuing without Telegram bot (degraded mode)")
+        except Exception as e:
+            logger.error(f"Telegram bot initialization failed: {e}")
+            telegram_bot = None
+            logger.warning("Continuing without Telegram bot (degraded mode)")
         
-        # Initialize Fixed Integrated Engine
-        trading_engine = FixedIntegratedEngine(
-            bybit_client=bybit_client,
-            telegram_bot=telegram_bot
-        )
-        await trading_engine.initialize()
+        # Initialize Fixed Integrated Engine with timeout
+        logger.info("[6/8] Initializing trading engine (this may take a few minutes)...")
+        try:
+            trading_engine = FixedIntegratedEngine(
+                bybit_client=bybit_client,
+                telegram_bot=telegram_bot
+            )
+            # Give more time for engine initialization (300 symbols)
+            await asyncio.wait_for(trading_engine.initialize(), timeout=300)
+            logger.info("✅ Trading engine initialized successfully")
+        except asyncio.TimeoutError:
+            logger.error("Trading engine initialization timed out after 5 minutes")
+            raise
+        except Exception as e:
+            logger.error(f"Trading engine initialization failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
         
         # Start the fixed trading engine
-        await trading_engine.start()
+        logger.info("[7/8] Starting trading engine...")
+        try:
+            await asyncio.wait_for(trading_engine.start(), timeout=60)
+            logger.info("✅ Trading engine started successfully")
+        except asyncio.TimeoutError:
+            logger.error("Trading engine start timed out after 60s")
+            raise
+        except Exception as e:
+            logger.error(f"Trading engine start failed: {e}")
+            raise
         
         # Start periodic tasks
-        asyncio.create_task(instrument_refresh_task())
-        asyncio.create_task(daily_reset_task())
+        logger.info("[8/8] Starting background tasks...")
+        try:
+            asyncio.create_task(instrument_refresh_task())
+            asyncio.create_task(daily_reset_task())
+            logger.info("✅ Background tasks started")
+        except Exception as e:
+            logger.error(f"Failed to start background tasks: {e}")
+            # Continue anyway
         
         # Start health monitoring
-        await health_monitor.start_monitoring()
+        try:
+            await health_monitor.start_monitoring()
+            logger.info("✅ Health monitoring started")
+        except Exception as e:
+            logger.error(f"Failed to start health monitoring: {e}")
+            # Continue anyway
         
         # Start Telegram bot polling if not using webhook
-        if not settings.telegram_webhook_url:
-            asyncio.create_task(telegram_bot.run_polling())
+        if telegram_bot and not settings.telegram_webhook_url:
+            try:
+                asyncio.create_task(telegram_bot.run_polling())
+                logger.info("✅ Telegram polling started")
+            except Exception as e:
+                logger.error(f"Failed to start Telegram polling: {e}")
+                # Continue anyway
         
-        logger.info("Bot initialization complete")
+        # Calculate startup time
+        startup_time = (datetime.now() - startup_start).total_seconds()
+        logger.info(f"")
+        logger.info(f"========================================")
+        logger.info(f"✅ BOT INITIALIZATION COMPLETE")
+        logger.info(f"Total startup time: {startup_time:.2f} seconds")
+        logger.info(f"Mode: {'FULL' if telegram_bot else 'DEGRADED (No Telegram)'}")
+        logger.info(f"Monitoring {len(trading_engine.monitored_symbols)} symbols")
+        logger.info(f"========================================")
+        logger.info(f"")
         
         yield
         

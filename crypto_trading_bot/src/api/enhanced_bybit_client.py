@@ -575,3 +575,126 @@ class EnhancedBybitClient:
     def get_instrument(self, symbol: str) -> Optional[Dict]:
         """Get instrument info"""
         return self.instruments.get(symbol)
+    
+    async def get_active_symbols(self) -> List[str]:
+        """Get all active trading symbols"""
+        try:
+            # Return all symbols from instruments that are actively trading
+            active_symbols = []
+            for symbol, info in self.instruments.items():
+                if info.get('status') == 'Trading' and symbol.endswith('USDT'):
+                    active_symbols.append(symbol)
+            
+            # Sort by symbol name for consistency
+            active_symbols.sort()
+            return active_symbols
+            
+        except Exception as e:
+            logger.error(f"Error getting active symbols: {e}")
+            # Return default symbols as fallback
+            from ..config import settings
+            return settings.default_symbols[:30]
+    
+    async def get_symbol_info(self, symbol: str) -> Optional[Dict]:
+        """Get detailed symbol information including 24h stats"""
+        try:
+            # Get ticker info for volume and price data
+            response = self.http_client.get_tickers(
+                category="linear",
+                symbol=symbol
+            )
+            
+            if response['retCode'] == 0 and response['result']['list']:
+                ticker = response['result']['list'][0]
+                
+                # Combine with instrument info
+                instrument = self.instruments.get(symbol, {})
+                
+                return {
+                    'symbol': symbol,
+                    'status': instrument.get('status', 'Trading'),
+                    'min_qty': instrument.get('min_qty', 0),
+                    'max_qty': instrument.get('max_qty', 0),
+                    'qty_step': instrument.get('qty_step', 0),
+                    'tick_size': instrument.get('tick_size', 0),
+                    'turnover24h': float(ticker.get('turnover24h', 0)),  # 24h volume in USDT
+                    'volume24h': float(ticker.get('volume24h', 0)),  # 24h volume in contracts
+                    'price24hPcnt': float(ticker.get('price24hPcnt', 0)),  # 24h price change %
+                    'lastPrice': float(ticker.get('lastPrice', 0)),
+                    'bid1Price': float(ticker.get('bid1Price', 0)),
+                    'ask1Price': float(ticker.get('ask1Price', 0)),
+                    'highPrice24h': float(ticker.get('highPrice24h', 0)),
+                    'lowPrice24h': float(ticker.get('lowPrice24h', 0))
+                }
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting symbol info for {symbol}: {e}")
+            return None
+    
+    # WebSocket subscription methods
+    async def subscribe_orderbook(self, symbol: str, callback: Any):
+        """Subscribe to orderbook updates"""
+        try:
+            if self.private_ws:
+                self.private_ws.orderbook_stream(
+                    depth=25,
+                    symbol=symbol,
+                    callback=callback
+                )
+                logger.debug(f"Subscribed to orderbook for {symbol}")
+        except Exception as e:
+            logger.error(f"Error subscribing to orderbook for {symbol}: {e}")
+    
+    async def subscribe_trades(self, symbol: str, callback: Any):
+        """Subscribe to trade updates"""
+        try:
+            if self.public_ws:
+                self.public_ws.trade_stream(
+                    symbol=symbol,
+                    callback=callback
+                )
+                logger.debug(f"Subscribed to trades for {symbol}")
+        except Exception as e:
+            logger.error(f"Error subscribing to trades for {symbol}: {e}")
+    
+    async def subscribe_klines(self, symbol: str, interval: str, callback: Any):
+        """Subscribe to kline updates"""
+        try:
+            if self.public_ws:
+                self.public_ws.kline_stream(
+                    interval=interval,
+                    symbol=symbol,
+                    callback=callback
+                )
+                logger.debug(f"Subscribed to {interval}m klines for {symbol}")
+        except Exception as e:
+            logger.error(f"Error subscribing to klines for {symbol}: {e}")
+    
+    async def subscribe_positions(self, callback: Any):
+        """Subscribe to position updates"""
+        try:
+            if self.private_ws:
+                self.private_ws.position_stream(callback=callback)
+                logger.debug("Subscribed to position updates")
+        except Exception as e:
+            logger.error(f"Error subscribing to positions: {e}")
+    
+    async def subscribe_orders(self, callback: Any):
+        """Subscribe to order updates"""
+        try:
+            if self.private_ws:
+                self.private_ws.order_stream(callback=callback)
+                logger.debug("Subscribed to order updates")
+        except Exception as e:
+            logger.error(f"Error subscribing to orders: {e}")
+    
+    async def subscribe_executions(self, callback: Any):
+        """Subscribe to execution updates"""
+        try:
+            if self.private_ws:
+                self.private_ws.execution_stream(callback=callback)
+                logger.debug("Subscribed to execution updates")
+        except Exception as e:
+            logger.error(f"Error subscribing to executions: {e}")

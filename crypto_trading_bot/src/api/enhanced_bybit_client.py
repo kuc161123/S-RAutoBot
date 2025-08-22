@@ -725,68 +725,29 @@ class EnhancedBybitClient:
             logger.error(f"Error getting symbol info for {symbol}: {e}")
             return None
     
-    # WebSocket subscription methods
+    # WebSocket subscription methods (placeholder - pybit v5 WebSocket API is different)
     async def subscribe_orderbook(self, symbol: str, callback: Any):
-        """Subscribe to orderbook updates"""
-        try:
-            if self.public_ws:
-                self.public_ws.orderbook_stream(
-                    depth=25,
-                    symbol=symbol,
-                    callback=callback
-                )
-                logger.debug(f"Subscribed to orderbook for {symbol}")
-        except Exception as e:
-            logger.error(f"Error subscribing to orderbook for {symbol}: {e}")
+        """Subscribe to orderbook updates - currently disabled"""
+        # Note: pybit v5 WebSocket subscription works differently
+        # Would need to reimplement with proper WebSocket V5 API
+        logger.debug(f"Orderbook subscription for {symbol} skipped (not implemented for v5)")
     
     async def subscribe_trades(self, symbol: str, callback: Any):
-        """Subscribe to trade updates"""
-        try:
-            if self.public_ws:
-                self.public_ws.trade_stream(
-                    symbol=symbol,
-                    callback=callback
-                )
-                logger.debug(f"Subscribed to trades for {symbol}")
-        except Exception as e:
-            logger.error(f"Error subscribing to trades for {symbol}: {e}")
+        """Subscribe to trade updates - currently disabled"""
+        logger.debug(f"Trade subscription for {symbol} skipped (not implemented for v5)")
     
     async def subscribe_klines(self, symbol: str, interval: str, callback: Any):
-        """Subscribe to kline updates"""
-        try:
-            if self.public_ws:
-                self.public_ws.kline_stream(
-                    interval=interval,
-                    symbol=symbol,
-                    callback=callback
-                )
-                logger.debug(f"Subscribed to {interval}m klines for {symbol}")
-        except Exception as e:
-            logger.error(f"Error subscribing to klines for {symbol}: {e}")
+        """Subscribe to kline updates - currently disabled"""
+        logger.debug(f"Kline subscription for {symbol} skipped (not implemented for v5)")
     
     async def subscribe_positions(self, callback: Any):
-        """Subscribe to position updates"""
-        try:
-            if self.private_ws:
-                self.private_ws.position_stream(callback=callback)
-                logger.debug("Subscribed to position updates")
-        except Exception as e:
-            logger.error(f"Error subscribing to positions: {e}")
+        """Subscribe to position updates - currently disabled"""
+        logger.debug("Position subscription skipped (not implemented for v5)")
     
     async def subscribe_orders(self, callback: Any):
-        """Subscribe to order updates"""
-        try:
-            if self.private_ws:
-                self.private_ws.order_stream(callback=callback)
-                logger.debug("Subscribed to order updates")
-        except Exception as e:
-            logger.error(f"Error subscribing to orders: {e}")
+        """Subscribe to order updates - currently disabled"""
+        logger.debug("Order subscription skipped (not implemented for v5)")
     
     async def subscribe_executions(self, callback: Any):
-        """Subscribe to execution updates"""
-        try:
-            if self.private_ws:
-                self.private_ws.execution_stream(callback=callback)
-                logger.debug("Subscribed to execution updates")
-        except Exception as e:
-            logger.error(f"Error subscribing to executions: {e}")
+        """Subscribe to execution updates - currently disabled"""
+        logger.debug("Execution subscription skipped (not implemented for v5)")

@@ -612,7 +612,13 @@ class UltraIntelligentEngine:
             
             for position in positions:
                 symbol = position.get('symbol')
-                size = float(position.get('size', 0))
+                size_str = position.get('size', '0')
+                
+                # Handle empty strings and convert safely
+                try:
+                    size = float(size_str) if size_str else 0
+                except (ValueError, TypeError):
+                    size = 0
                 
                 if size > 0:
                     exchange_positions.add(symbol)
@@ -620,10 +626,18 @@ class UltraIntelligentEngine:
                     # If position exists on exchange but not in our tracking, add it
                     if symbol not in self.active_positions:
                         logger.warning(f"Found untracked position for {symbol}, syncing...")
+                        
+                        # Safe conversion for avgPrice
+                        avg_price_str = position.get('avgPrice', '0')
+                        try:
+                            avg_price = float(avg_price_str) if avg_price_str else 0
+                        except (ValueError, TypeError):
+                            avg_price = 0
+                            
                         position_safety.register_position(symbol, {
                             'side': position.get('side'),
                             'size': size,
-                            'entry_price': float(position.get('avgPrice', 0))
+                            'entry_price': avg_price
                         })
             
             # Check for positions in our tracking that no longer exist on exchange
@@ -643,30 +657,47 @@ class UltraIntelligentEngine:
             
             for position in positions:
                 symbol = position.get('symbol')
-                size = float(position.get('size', 0))
+                
+                # Safe conversion for size
+                size_str = position.get('size', '0')
+                try:
+                    size = float(size_str) if size_str else 0
+                except (ValueError, TypeError):
+                    size = 0
                 
                 if size > 0:
+                    # Safe conversions for all numeric fields
+                    def safe_float(value, default=0):
+                        try:
+                            return float(value) if value else default
+                        except (ValueError, TypeError):
+                            return default
+                    
+                    avg_price = safe_float(position.get('avgPrice', 0))
+                    mark_price = safe_float(position.get('markPrice', avg_price), avg_price)
+                    stop_loss = safe_float(position.get('stopLoss', 0))
+                    take_profit = safe_float(position.get('takeProfit', 0))
+                    
                     # Register position with position safety manager
                     position_safety.register_position(symbol, {
                         'side': position.get('side'),
                         'size': size,
-                        'entry_price': float(position.get('avgPrice', 0))
+                        'entry_price': avg_price
                     })
                     
                     # Create position tracking
                     side = position.get('side')
-                    entry_price = float(position.get('avgPrice', 0))
                     
                     pos = ActivePosition(
                         symbol=symbol,
                         side=side,
-                        entry_price=entry_price,
-                        current_price=float(position.get('markPrice', entry_price)),
+                        entry_price=avg_price,
+                        current_price=mark_price,
                         position_size=size,
-                        stop_loss=float(position.get('stopLoss', 0)),
-                        take_profit_1=float(position.get('takeProfit', 0)),
-                        take_profit_2=float(position.get('takeProfit', 0)),
-                        position_value=size * entry_price
+                        stop_loss=stop_loss,
+                        take_profit_1=take_profit,
+                        take_profit_2=take_profit,
+                        position_value=size * avg_price
                     )
                     
                     self.active_positions[symbol] = pos

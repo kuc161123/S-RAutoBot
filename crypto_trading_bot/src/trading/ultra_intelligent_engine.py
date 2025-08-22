@@ -165,8 +165,8 @@ class UltraIntelligentEngine:
     def __init__(self, bybit_client: EnhancedBybitClient, telegram_bot: Optional[TradingBot] = None):
         self.client = bybit_client
         self.telegram_bot = telegram_bot
-        self.db_manager = DatabaseManager()
-        self.performance_tracker = get_performance_tracker(self.db_manager)
+        # DatabaseManager is static, no need to instantiate
+        self.performance_tracker = get_performance_tracker(DatabaseManager)
         
         # Strategy components
         self.strategy = AdvancedSupplyDemandStrategy()
@@ -1007,20 +1007,25 @@ class UltraIntelligentEngine:
                 # Track for ML
                 await self._track_trade_for_ml(signal)
                 
-                # Log to database
-                await self.db_manager.log_trade_async({
-                    'symbol': symbol,
-                    'side': position.side,
-                    'entry_price': signal.entry_price,
-                    'stop_loss': signal.stop_loss,
-                    'take_profit_1': signal.take_profit_1,
-                    'take_profit_2': signal.take_profit_2,
-                    'position_size': signal.position_size,
-                    'zone_type': signal.zone_type,
-                    'zone_score': signal.zone_score,
-                    'ml_confidence': signal.ml_confidence,
-                    'ml_success_probability': signal.ml_success_probability
-                })
+                # Log to database  
+                try:
+                    # DatabaseManager methods are static, call on class not instance
+                    from src.db.database import DatabaseManager
+                    await DatabaseManager.log_trade_async({
+                        'symbol': symbol,
+                        'side': position.side,
+                        'entry_price': signal.entry_price,
+                        'stop_loss': signal.stop_loss,
+                        'take_profit_1': signal.take_profit_1,
+                        'take_profit_2': signal.take_profit_2,
+                        'position_size': signal.position_size,
+                        'zone_type': signal.zone_type,
+                        'zone_score': signal.zone_score,
+                        'ml_confidence': signal.ml_confidence,
+                        'ml_success_probability': signal.ml_success_probability
+                    })
+                except Exception as e:
+                    logger.error(f"Failed to log trade to database: {e}", exc_info=True)
                 
                 # Send notification
                 if self.telegram_bot:
@@ -1057,7 +1062,7 @@ class UltraIntelligentEngine:
                 return True
                 
         except Exception as e:
-            logger.error(f"Error executing signal for {signal.symbol}: {e}")
+            logger.error(f"Error executing signal for {signal.symbol}: {e}", exc_info=True)
             self.metrics['errors'] += 1
             return False
     

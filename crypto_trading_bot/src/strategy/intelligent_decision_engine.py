@@ -420,6 +420,11 @@ class IntelligentDecisionEngine:
         max_position = account_balance * 0.1 / stop_distance  # Max 10% risk
         position_size = min(position_size, max_position)
         
+        # Further limit based on available balance (use max 30% per position)
+        max_position_value = account_balance * 0.3
+        max_position_by_value = max_position_value / entry_price if entry_price > 0 else 0
+        position_size = min(position_size, max_position_by_value)
+        
         # Ensure minimum notional value (5 USDT minimum for Bybit)
         min_notional = 5.5  # 5 USDT + 10% buffer
         

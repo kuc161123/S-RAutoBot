@@ -382,6 +382,28 @@ class EnhancedBybitClient:
                 
                 if original_qty != rounded_qty:
                     logger.info(f"Adjusted quantity from {original_qty} to {rounded_qty} (step: {qty_step}, min notional: ${min_notional})")
+                    
+                # Check if we have sufficient balance for this order
+                if price > 0:
+                    required_margin = (rounded_qty * price) / float(settings.default_leverage)
+                    
+                    # Get available balance
+                    account_info = await self.get_account_info()
+                    available_balance = float(account_info.get('availableBalance', 0))
+                    
+                    if available_balance < required_margin:
+                        logger.error(f"Insufficient balance for {symbol}: Required ${required_margin:.2f}, Available ${available_balance:.2f}")
+                        # Try to reduce quantity to fit available balance
+                        max_affordable_qty = (available_balance * float(settings.default_leverage) * 0.95) / price  # Use 95% of available
+                        max_affordable_qty = round_to_qty_step(max_affordable_qty, qty_step)
+                        
+                        # Check if reduced quantity still meets minimum
+                        if max_affordable_qty * price >= min_notional:
+                            logger.warning(f"Reducing quantity from {rounded_qty} to {max_affordable_qty} due to insufficient balance")
+                            kwargs['qty'] = str(max_affordable_qty)
+                        else:
+                            logger.error(f"Cannot place order: Even minimum size ${min_notional} exceeds available balance")
+                            return None
             
             # Safety check - one position per symbol
             if not await position_safety.can_open_position(symbol, side):

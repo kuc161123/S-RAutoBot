@@ -718,6 +718,11 @@ class UltraIntelligentEngine:
                             account_info = await self.client.get_account_info()
                             balance = float(account_info.get('totalAvailableBalance', 10000))
                             
+                            # Check if we have enough balance to open new positions
+                            if balance < 10:  # Less than $10 available
+                                logger.warning(f"Insufficient balance (${balance:.2f}) to open new positions")
+                                continue
+                            
                             # Make intelligent decision
                             intelligent_signal = decision_engine.make_intelligent_decision(
                                 symbol=symbol,

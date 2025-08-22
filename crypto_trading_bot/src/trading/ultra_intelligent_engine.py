@@ -232,6 +232,7 @@ class UltraIntelligentEngine:
         # Running status
         self.is_running = False
         self.initialization_complete = False
+        self.scan_counter = 0
         
     async def initialize(self):
         """Complete initialization with all features"""
@@ -739,6 +740,9 @@ class UltraIntelligentEngine:
         """Generate trading signals continuously"""
         while self.is_running:
             try:
+                # Increment scan counter
+                self.scan_counter += 1
+                
                 if not self.trading_enabled:
                     await asyncio.sleep(10)
                     continue

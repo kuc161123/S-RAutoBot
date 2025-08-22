@@ -129,6 +129,17 @@ class AdvancedSupplyDemandStrategy:
             'confidence': 0
         }
         
+        # Validate input dataframe
+        if df is None or df.empty:
+            logger.warning(f"Empty or invalid dataframe for {symbol}")
+            return analysis
+            
+        # Ensure dataframe has required columns
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        if not all(col in df.columns for col in required_columns):
+            logger.error(f"Missing required columns for {symbol}. Got: {df.columns.tolist() if hasattr(df, 'columns') else 'invalid data'}")
+            return analysis
+        
         try:
             # 1. Identify market structure
             market_structure = self._identify_market_structure(df)
@@ -177,7 +188,9 @@ class AdvancedSupplyDemandStrategy:
             self.volume_profiles[symbol] = volume_profile
             
         except Exception as e:
-            logger.error(f"Error in market analysis: {e}")
+            import traceback
+            logger.error(f"Error in market analysis for {symbol}: {e}")
+            logger.debug(f"Traceback: {traceback.format_exc()}")
         
         return analysis
     

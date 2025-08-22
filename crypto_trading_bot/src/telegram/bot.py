@@ -40,8 +40,15 @@ class TradingBot:
         
     async def initialize(self):
         """Initialize the bot"""
-        # Build application
-        self.application = Application.builder().token(settings.telegram_bot_token).build()
+        # Build application with timeout settings
+        self.application = (
+            Application.builder()
+            .token(settings.telegram_bot_token)
+            .connect_timeout(30.0)  # 30 seconds connect timeout
+            .read_timeout(30.0)     # 30 seconds read timeout
+            .write_timeout(30.0)    # 30 seconds write timeout
+            .build()
+        )
         
         # Add command handlers
         self.application.add_handler(CommandHandler("start", self.cmd_start))
@@ -825,7 +832,24 @@ class TradingBot:
     
     async def run_polling(self):
         """Run bot with long polling"""
-        await self.application.initialize()
-        await self.application.start()
-        await self.application.updater.start_polling()
-        logger.info("Bot running with polling")
+        max_retries = 3
+        retry_delay = 5
+        
+        for attempt in range(max_retries):
+            try:
+                await self.application.initialize()
+                await self.application.start()
+                await self.application.updater.start_polling(
+                    drop_pending_updates=True,
+                    allowed_updates=["message", "callback_query"]
+                )
+                logger.info("Bot running with polling")
+                return  # Success, exit the retry loop
+            except Exception as e:
+                logger.error(f"Failed to start bot polling (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                else:
+                    logger.error("Failed to start bot after all retries")
+                    raise

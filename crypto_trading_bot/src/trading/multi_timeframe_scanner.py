@@ -117,12 +117,14 @@ class MultiTimeframeScanner:
                     # Fetch fresh data
                     df = await self.client.get_klines(symbol, timeframe, limit=200)
                     
-                    if not df.empty:
+                    if df is not None and not df.empty:
                         # Store in memory
                         self.timeframe_data[symbol][timeframe] = df
                         
                         # Cache in Redis
                         await self._cache_data(symbol, timeframe, df)
+                    else:
+                        logger.warning(f"No data returned for {symbol} {timeframe}")
                 
             except Exception as e:
                 logger.error(f"Error updating {symbol} {timeframe}: {e}")
@@ -145,6 +147,11 @@ class MultiTimeframeScanner:
                 continue
             
             df = self.timeframe_data[symbol][timeframe]
+            
+            # Skip if dataframe is invalid
+            if df is None or df.empty:
+                logger.debug(f"Skipping {symbol} {timeframe} - no data")
+                continue
             
             # Run advanced supply/demand analysis
             analysis = self.strategy.analyze_market(

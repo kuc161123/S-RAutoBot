@@ -464,7 +464,11 @@ class EnhancedBybitClient:
             return True
             
         except Exception as e:
-            logger.error(f"Error setting leverage: {e}")
+            # Check if it's a "leverage not modified" error in the exception message
+            if "110043" in str(e) or "leverage not modified" in str(e).lower():
+                logger.debug(f"Leverage already set to {leverage}x for {symbol}")
+                return True
+            logger.error(f"Error setting leverage for {symbol}: {e}")
             return False
             
     async def set_margin_mode(self, symbol: str, mode: str) -> bool:
@@ -510,7 +514,13 @@ class EnhancedBybitClient:
             return True
             
         except Exception as e:
-            logger.error(f"Error setting margin mode: {e}")
+            # Check if it's a unified account error in the exception message
+            if "100028" in str(e) or "unified account" in str(e).lower():
+                if self.is_unified_account is None:
+                    self.is_unified_account = True
+                logger.debug(f"Unified account - margin mode is always cross for {symbol}")
+                return True
+            logger.error(f"Error setting margin mode for {symbol}: {e}")
             return False
             
     async def _check_account_type(self):

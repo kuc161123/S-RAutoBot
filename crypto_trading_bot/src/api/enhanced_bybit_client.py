@@ -177,9 +177,8 @@ class EnhancedBybitClient:
                 api_secret=self.api_secret
             )
             
-            # Set up handlers
-            self.public_ws.order_stream = self._handle_public_ws_message
-            self.private_ws.order_stream = self._handle_private_ws_message
+            # Note: Handlers should be set via callbacks in subscription methods
+            # not by overriding stream methods
             
             # Start auto-reconnect monitors
             asyncio.create_task(ws_manager.maintain_connection(self.public_ws, "public"))
@@ -683,8 +682,8 @@ class EnhancedBybitClient:
     async def subscribe_orderbook(self, symbol: str, callback: Any):
         """Subscribe to orderbook updates"""
         try:
-            if self.private_ws:
-                self.private_ws.orderbook_stream(
+            if self.public_ws:
+                self.public_ws.orderbook_stream(
                     depth=25,
                     symbol=symbol,
                     callback=callback

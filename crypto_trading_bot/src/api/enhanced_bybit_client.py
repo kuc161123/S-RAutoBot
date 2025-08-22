@@ -61,6 +61,9 @@ class EnhancedBybitClient:
         self.request_count = 0
         self.error_count = 0
         
+        # Account type cache
+        self.is_unified_account = None
+        
     async def initialize(self):
         """Initialize with proper error handling"""
         try:
@@ -468,6 +471,15 @@ class EnhancedBybitClient:
         """Set margin mode (cross/isolated)"""
         
         try:
+            # Check if we're using a unified account
+            if self.is_unified_account is None:
+                await self._check_account_type()
+            
+            # Unified accounts don't support margin mode switching (always cross)
+            if self.is_unified_account:
+                logger.debug(f"Unified account detected - margin mode is always cross for {symbol}")
+                return True
+            
             # Convert mode
             trade_mode = 0 if mode.lower() == "cross" else 1
             
@@ -483,6 +495,11 @@ class EnhancedBybitClient:
             )
             
             if response["retCode"] != 0:
+                # Error code 100028 means unified account (can't switch margin mode)
+                if response["retCode"] == 100028:
+                    self.is_unified_account = True
+                    logger.debug(f"Unified account confirmed - margin mode is always cross for {symbol}")
+                    return True
                 # Already in this mode is OK
                 if "not modified" in response.get("retMsg", "").lower():
                     return True
@@ -496,6 +513,26 @@ class EnhancedBybitClient:
             logger.error(f"Error setting margin mode: {e}")
             return False
             
+    async def _check_account_type(self):
+        """Check if this is a unified account"""
+        try:
+            # Try to get unified account info
+            response = self.http_client.get_wallet_balance(
+                accountType="UNIFIED"
+            )
+            
+            if response["retCode"] == 0:
+                self.is_unified_account = True
+                logger.info("Unified account detected - margin mode is always cross")
+            else:
+                self.is_unified_account = False
+                logger.info("Standard account detected - margin mode switching supported")
+                
+        except Exception as e:
+            # Default to assuming unified account to avoid errors
+            self.is_unified_account = True
+            logger.warning(f"Could not determine account type, assuming unified: {e}")
+    
     async def get_account_info(self) -> Dict:
         """Get account info with caching"""
         

@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     default_risk_percent: float = Field(1.0, ge=0.1, le=5.0)
     max_concurrent_positions: int = Field(5, ge=1, le=20)
     max_daily_loss_percent: float = Field(5.0, ge=1.0, le=10.0)
-    default_leverage: int = Field(3, ge=1, le=125)
+    default_leverage: int = Field(10, ge=1, le=125)
     default_margin_mode: MarginMode = Field(MarginMode.ISOLATED)
     default_position_mode: PositionMode = Field(PositionMode.ONE_WAY)
     

@@ -57,9 +57,9 @@ class FixedIntegratedEngine:
         self.positions_per_symbol = {}  # Enforces one position per symbol
         self.symbol_locks = {}  # Prevent concurrent operations per symbol
         
-        # Configuration - reduced for testing and stability
-        self.monitored_symbols = settings.default_symbols[:20]  # Start with 20 symbols
-        self.batch_size = 5  # Smaller batches to avoid rate limits
+        # Configuration - minimal for testing
+        self.monitored_symbols = settings.default_symbols[:5]  # Start with only 5 symbols for quick testing
+        self.batch_size = 2  # Very small batches to avoid rate limits
         
         # Performance tracking
         self.stats = {
@@ -128,6 +128,11 @@ class FixedIntegratedEngine:
     async def _init_symbol_settings_batch(self):
         """Initialize leverage and margin for all symbols in batches"""
         
+        # Skip if disabled in settings
+        if getattr(settings, 'skip_leverage_init', False):
+            logger.info("Skipping leverage/margin initialization (disabled in settings)")
+            return
+        
         logger.info(f"Initializing settings for {len(self.monitored_symbols)} symbols...")
         
         leverage = settings.default_leverage
@@ -136,21 +141,32 @@ class FixedIntegratedEngine:
         # Process in batches to avoid overwhelming the API
         successful = 0
         failed = 0
+        max_init_time = 60  # Maximum 60 seconds for initialization
+        start_time = datetime.now()
         
         for i in range(0, len(self.monitored_symbols), self.batch_size):
+            # Check timeout
+            if (datetime.now() - start_time).total_seconds() > max_init_time:
+                logger.warning(f"Symbol initialization timeout after {max_init_time}s")
+                break
+                
             batch = self.monitored_symbols[i:i + self.batch_size]
             
-            # Set leverage for batch
+            # Set leverage for batch with timeout
             tasks = []
             for symbol in batch:
-                task = self.client.set_leverage(symbol, leverage)
+                task = asyncio.wait_for(
+                    self.client.set_leverage(symbol, leverage),
+                    timeout=5  # 5 second timeout per symbol
+                )
                 tasks.append(task)
                 
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
             for symbol, result in zip(batch, results):
-                if isinstance(result, Exception):
-                    logger.warning(f"Failed to set leverage for {symbol}: {result}")
+                if isinstance(result, (Exception, asyncio.TimeoutError)):
+                    if "110043" not in str(result):  # Don't log "not modified" errors
+                        logger.debug(f"Failed to set leverage for {symbol}: {result}")
                     failed += 1
                 elif result:
                     successful += 1
@@ -158,36 +174,12 @@ class FixedIntegratedEngine:
                     failed += 1
                     
             # Small delay between batches
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)  # Increased delay
             
         logger.info(f"Leverage set: {successful} successful, {failed} failed")
         
-        # Set margin mode in batches
-        successful = 0
-        failed = 0
-        
-        for i in range(0, len(self.monitored_symbols), self.batch_size):
-            batch = self.monitored_symbols[i:i + self.batch_size]
-            
-            tasks = []
-            for symbol in batch:
-                task = self.client.set_margin_mode(symbol, margin_mode)
-                tasks.append(task)
-                
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            for symbol, result in zip(batch, results):
-                if isinstance(result, Exception):
-                    logger.warning(f"Failed to set margin mode for {symbol}: {result}")
-                    failed += 1
-                elif result:
-                    successful += 1
-                else:
-                    failed += 1
-                    
-            await asyncio.sleep(1)
-            
-        logger.info(f"Margin mode set: {successful} successful, {failed} failed")
+        # Skip margin mode for unified accounts (they only support cross)
+        logger.info("Skipping margin mode initialization (unified accounts use cross margin only)")
         
     async def _init_ml_models(self):
         """Initialize ML models with validation"""

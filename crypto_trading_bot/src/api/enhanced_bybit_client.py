@@ -579,14 +579,28 @@ class EnhancedBybitClient:
     async def get_active_symbols(self) -> List[str]:
         """Get all active trading symbols"""
         try:
+            # Check if instruments are loaded
+            if not self.instruments:
+                logger.warning("Instruments not loaded, returning default symbols")
+                from ..config import settings
+                return settings.default_symbols[:30]
+            
             # Return all symbols from instruments that are actively trading
             active_symbols = []
             for symbol, info in self.instruments.items():
-                if info.get('status') == 'Trading' and symbol.endswith('USDT'):
+                # Check if it's a USDT perpetual and actively trading
+                status = info.get('status') or info.get('trading_status') or 'Trading'
+                if status == 'Trading' and symbol.endswith('USDT'):
                     active_symbols.append(symbol)
+            
+            if not active_symbols:
+                logger.warning("No active symbols found in instruments, using defaults")
+                from ..config import settings
+                return settings.default_symbols[:30]
             
             # Sort by symbol name for consistency
             active_symbols.sort()
+            logger.info(f"Found {len(active_symbols)} active USDT perpetual symbols")
             return active_symbols
             
         except Exception as e:

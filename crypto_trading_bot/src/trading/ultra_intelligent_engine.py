@@ -357,31 +357,48 @@ class UltraIntelligentEngine:
             # Get all active symbols
             all_symbols = await self.client.get_active_symbols()
             
+            if not all_symbols:
+                logger.warning("No active symbols found, using defaults")
+                self.monitored_symbols = settings.default_symbols[:30]
+                return
+            
+            logger.info(f"Found {len(all_symbols)} active symbols")
+            
             # Filter by criteria
             candidates = []
-            for symbol in all_symbols[:100]:  # Check top 100 by volume
-                info = await self.client.get_symbol_info(symbol)
-                if info:
-                    volume_24h = float(info.get('turnover24h', 0))
-                    if volume_24h > 10000000:  # Min $10M daily volume
-                        candidates.append({
-                            'symbol': symbol,
-                            'volume': volume_24h,
-                            'volatility': float(info.get('price24hPcnt', 0))
-                        })
+            symbols_to_check = min(len(all_symbols), 100)  # Check up to 100 symbols
             
-            # Sort by volume and volatility
-            candidates.sort(key=lambda x: x['volume'] * abs(x['volatility']), reverse=True)
+            for symbol in all_symbols[:symbols_to_check]:
+                try:
+                    info = await self.client.get_symbol_info(symbol)
+                    if info:
+                        volume_24h = float(info.get('turnover24h', 0))
+                        if volume_24h > 10000000:  # Min $10M daily volume
+                            candidates.append({
+                                'symbol': symbol,
+                                'volume': volume_24h,
+                                'volatility': float(info.get('price24hPcnt', 0))
+                            })
+                except Exception as e:
+                    logger.debug(f"Error getting info for {symbol}: {e}")
+                    continue
             
-            # Select top symbols
-            self.monitored_symbols = [c['symbol'] for c in candidates[:30]]
-            
-            logger.info(f"Selected {len(self.monitored_symbols)} symbols for trading")
+            if candidates:
+                # Sort by volume and volatility
+                candidates.sort(key=lambda x: x['volume'] * abs(x['volatility']), reverse=True)
+                
+                # Select top symbols
+                self.monitored_symbols = [c['symbol'] for c in candidates[:30]]
+                logger.info(f"Selected {len(self.monitored_symbols)} high-volume symbols for trading")
+            else:
+                logger.warning("No symbols met criteria, using defaults")
+                self.monitored_symbols = settings.default_symbols[:30]
             
         except Exception as e:
-            logger.error(f"Error selecting symbols: {e}")
+            logger.error(f"Error selecting symbols: {e}", exc_info=True)
             # Fallback to default symbols
-            self.monitored_symbols = settings.default_symbols[:20]
+            self.monitored_symbols = settings.default_symbols[:30]
+            logger.info(f"Using {len(self.monitored_symbols)} default symbols")
     
     async def _setup_websocket_subscriptions(self):
         """Setup all WebSocket subscriptions"""

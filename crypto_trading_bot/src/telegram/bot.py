@@ -307,21 +307,63 @@ class TradingBot:
         logger.info("Trading disabled by user")
     
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /status command"""
+        """Handle /status command with comprehensive error handling"""
         if not await self.check_authorization(update):
             return
         
         try:
-            # Get account info
-            account_info = await self.bybit_client.get_account_info()
+            import traceback
+            logger.info(f"Status command requested by user {update.effective_user.id}")
             
-            # Get positions
-            positions = await self.bybit_client.get_positions()
-            open_positions = [p for p in positions if float(p['size']) > 0]
+            # Get account info with error handling
+            try:
+                account_info = await self.bybit_client.get_account_info()
+                logger.debug(f"Account info fetched: Balance={account_info.get('totalWalletBalance', 'N/A')}")
+            except Exception as e:
+                logger.error(f"Error fetching account info: {e}")
+                account_info = {'totalWalletBalance': '0', 'totalAvailableBalance': '0'}
             
-            # Get active zones count
-            total_zones = sum(len(self.strategy.get_active_zones(s)) 
-                            for s in self.monitored_symbols)
+            # Get positions with error handling
+            try:
+                positions = await self.bybit_client.get_positions()
+                open_positions = []
+                if positions:
+                    for p in positions:
+                        try:
+                            size = float(p.get('size', p.get('qty', 0)))
+                            if size > 0:
+                                open_positions.append(p)
+                        except (TypeError, ValueError):
+                            continue
+                logger.debug(f"Found {len(open_positions)} open positions")
+            except Exception as e:
+                logger.error(f"Error fetching positions: {e}")
+                open_positions = []
+            
+            # Get active zones count with error handling
+            total_zones = 0
+            try:
+                if hasattr(self.strategy, 'zones'):
+                    # If strategy has zones dictionary
+                    for symbol in self.monitored_symbols:
+                        if symbol in self.strategy.zones:
+                            total_zones += len(self.strategy.zones[symbol])
+                elif hasattr(self.strategy, 'get_active_zones'):
+                    # If strategy has get_active_zones method
+                    for symbol in self.monitored_symbols:
+                        try:
+                            zones = self.strategy.get_active_zones(symbol)
+                            if zones:
+                                total_zones += len(zones)
+                        except:
+                            continue
+                logger.debug(f"Total active zones: {total_zones}")
+            except Exception as e:
+                logger.warning(f"Error counting zones: {e}")
+                total_zones = 0
+            
+            # Import formatter
+            from .formatters import format_status
             
             # Format status message
             status_text = format_status(
@@ -333,10 +375,11 @@ class TradingBot:
             )
             
             await update.message.reply_text(status_text, parse_mode='Markdown')
+            logger.info("Status command completed successfully")
             
         except Exception as e:
-            logger.error(f"Error getting status: {e}")
-            await update.message.reply_text("❌ Error fetching status")
+            logger.error(f"Error getting status: {e}\n{traceback.format_exc()}")
+            await update.message.reply_text(f"❌ Error fetching status: {str(e)[:100]}")
     
     async def cmd_symbols(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /symbols command"""

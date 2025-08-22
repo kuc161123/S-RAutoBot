@@ -347,6 +347,18 @@ class EnhancedBybitClient:
         side = kwargs.get('side')
         
         try:
+            # Round quantity to valid step before validation
+            if 'qty' in kwargs and symbol in self.instruments:
+                from ..utils.rounding import round_to_qty_step
+                instrument = self.instruments[symbol]
+                qty_step = float(instrument.get('qty_step', 0.001))
+                original_qty = float(kwargs['qty'])
+                rounded_qty = round_to_qty_step(original_qty, qty_step)
+                kwargs['qty'] = str(rounded_qty)  # Bybit API expects string
+                
+                if original_qty != rounded_qty:
+                    logger.info(f"Rounded quantity from {original_qty} to {rounded_qty} (step: {qty_step})")
+            
             # Safety check - one position per symbol
             if not await position_safety.can_open_position(symbol, side):
                 logger.warning(f"Cannot open position for {symbol} - position already exists")

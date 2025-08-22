@@ -331,8 +331,19 @@ class OrderValidation:
             return False, "Quantity must be positive"
             
         # Check if quantity is valid step
-        if qty % qty_step != 0:
-            return False, f"Quantity must be multiple of {qty_step}"
+        # Use decimal precision to avoid floating point errors
+        from decimal import Decimal
+        qty_decimal = Decimal(str(qty))
+        step_decimal = Decimal(str(qty_step))
+        
+        # Calculate how close we are to a valid step
+        remainder = qty_decimal % step_decimal
+        
+        # Allow small rounding errors (up to 0.0001)
+        if remainder > Decimal('0.0001') and (step_decimal - remainder) > Decimal('0.0001'):
+            # Round to nearest valid step for suggestion
+            rounded_qty = round(qty_decimal / step_decimal) * step_decimal
+            return False, f"Quantity {qty} must be multiple of {qty_step} (suggested: {float(rounded_qty)})"
             
         # Check minimum notional
         price = float(order.get('price', 0))

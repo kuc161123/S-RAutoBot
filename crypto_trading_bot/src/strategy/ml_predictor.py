@@ -261,15 +261,33 @@ class MLPredictor:
     
     def load_models(self, path: str):
         """Load trained models from disk"""
+        import os
+        
+        # Create directory if it doesn't exist
+        os.makedirs(path, exist_ok=True)
+        
         try:
-            self.success_classifier = joblib.load(f"{path}/success_classifier.pkl")
-            self.profit_regressor = joblib.load(f"{path}/profit_regressor.pkl")
-            self.scaler = joblib.load(f"{path}/scaler.pkl")
-            self.training_data = joblib.load(f"{path}/training_data.pkl")
-            self.model_trained = True
-            logger.info(f"Models loaded from {path}")
+            # Check if model files exist
+            model_files = [
+                f"{path}/success_classifier.pkl",
+                f"{path}/profit_regressor.pkl",
+                f"{path}/scaler.pkl",
+                f"{path}/training_data.pkl"
+            ]
+            
+            if all(os.path.exists(f) for f in model_files):
+                self.success_classifier = joblib.load(model_files[0])
+                self.profit_regressor = joblib.load(model_files[1])
+                self.scaler = joblib.load(model_files[2])
+                self.training_data = joblib.load(model_files[3])
+                self.model_trained = True
+                logger.info(f"Models loaded successfully from {path}")
+            else:
+                logger.info("No existing models found. Will train new models when sufficient data is collected")
+                self.model_trained = False
         except Exception as e:
-            logger.error(f"Failed to load models: {e}")
+            logger.warning(f"Could not load models (will train new ones): {e}")
+            self.model_trained = False
     
     def get_confidence_adjusted_signal(
         self,

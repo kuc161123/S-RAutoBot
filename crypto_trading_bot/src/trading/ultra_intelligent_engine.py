@@ -604,6 +604,38 @@ class UltraIntelligentEngine:
         except Exception as e:
             logger.error(f"Error calculating correlations: {e}")
     
+    async def _sync_positions_with_exchange(self):
+        """Sync positions with exchange to catch any changes"""
+        try:
+            positions = await self.client.get_positions()
+            exchange_positions = set()
+            
+            for position in positions:
+                symbol = position.get('symbol')
+                size = float(position.get('size', 0))
+                
+                if size > 0:
+                    exchange_positions.add(symbol)
+                    
+                    # If position exists on exchange but not in our tracking, add it
+                    if symbol not in self.active_positions:
+                        logger.warning(f"Found untracked position for {symbol}, syncing...")
+                        position_safety.register_position(symbol, {
+                            'side': position.get('side'),
+                            'size': size,
+                            'entry_price': float(position.get('avgPrice', 0))
+                        })
+            
+            # Check for positions in our tracking that no longer exist on exchange
+            for symbol in list(self.active_positions.keys()):
+                if symbol not in exchange_positions:
+                    logger.warning(f"Position for {symbol} no longer exists on exchange, removing...")
+                    del self.active_positions[symbol]
+                    position_safety.remove_position(symbol)
+                    
+        except Exception as e:
+            logger.error(f"Error syncing positions: {e}")
+    
     async def _sync_existing_positions(self):
         """Sync existing positions on startup"""
         try:
@@ -614,6 +646,13 @@ class UltraIntelligentEngine:
                 size = float(position.get('size', 0))
                 
                 if size > 0:
+                    # Register position with position safety manager
+                    position_safety.register_position(symbol, {
+                        'side': position.get('side'),
+                        'size': size,
+                        'entry_price': float(position.get('avgPrice', 0))
+                    })
+                    
                     # Create position tracking
                     side = position.get('side')
                     entry_price = float(position.get('avgPrice', 0))
@@ -773,6 +812,10 @@ class UltraIntelligentEngine:
                                     f"ML Prob={intelligent_signal.ml_success_probability:.1%}, "
                                     f"Confidence={intelligent_signal.ml_confidence:.1%}"
                                 )
+                
+                # Sync positions every 5 iterations (2.5 minutes)
+                if self.scan_counter % 5 == 0:
+                    await self._sync_positions_with_exchange()
                 
                 await asyncio.sleep(30)  # Check every 30 seconds
                 
@@ -1185,6 +1228,7 @@ class UltraIntelligentEngine:
             
             # Clean up
             del self.active_positions[symbol]
+            position_safety.remove_position(symbol)
             self.portfolio_heat -= position.risk_amount / 10000
             
             logger.info(f"❌ Stop loss hit for {symbol}: PnL={position.unrealized_pnl + position.realized_pnl:.2f}")
@@ -1217,6 +1261,7 @@ class UltraIntelligentEngine:
             
             # Clean up
             del self.active_positions[symbol]
+            position_safety.remove_position(symbol)
             self.portfolio_heat -= position.risk_amount / 10000
             
             logger.info(f"✅ Take profit hit for {symbol}: PnL={position.unrealized_pnl + position.realized_pnl:.2f}")
@@ -1273,6 +1318,7 @@ class UltraIntelligentEngine:
             
             # Clean up
             del self.active_positions[symbol]
+            position_safety.remove_position(symbol)
             self.portfolio_heat = max(0, self.portfolio_heat - position.risk_amount / 10000)
             
             logger.info(

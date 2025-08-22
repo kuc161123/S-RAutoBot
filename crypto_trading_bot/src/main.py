@@ -112,16 +112,25 @@ async def lifespan(app: FastAPI):
             telegram_bot = None
             logger.warning("Continuing without Telegram bot (degraded mode)")
         
-        # Initialize Fixed Integrated Engine with timeout
-        logger.info("[6/8] Initializing trading engine (this may take a few minutes)...")
+        # Initialize Ultra Intelligent Engine with timeout
+        logger.info("[6/8] Initializing Ultra Intelligent Trading Engine...")
         try:
-            trading_engine = FixedIntegratedEngine(
+            # Import the ultra intelligent engine
+            from .trading.ultra_intelligent_engine import UltraIntelligentEngine
+            
+            trading_engine = UltraIntelligentEngine(
                 bybit_client=bybit_client,
                 telegram_bot=telegram_bot
             )
-            # Give more time for engine initialization (300 symbols)
+            # Give more time for engine initialization
             await asyncio.wait_for(trading_engine.initialize(), timeout=300)
-            logger.info("✅ Trading engine initialized successfully")
+            logger.info("✅ Ultra Intelligent Engine initialized successfully")
+            
+            # Setup WebSocket subscriptions AFTER engine initialization
+            logger.info("Setting up WebSocket subscriptions...")
+            setup_websocket_subscriptions()
+            logger.info("✅ WebSocket subscriptions configured")
+            
         except asyncio.TimeoutError:
             logger.error("Trading engine initialization timed out after 5 minutes")
             raise
@@ -131,11 +140,11 @@ async def lifespan(app: FastAPI):
             logger.error(traceback.format_exc())
             raise
         
-        # Start the fixed trading engine
-        logger.info("[7/8] Starting trading engine...")
+        # Start the ultra intelligent trading engine
+        logger.info("[7/8] Starting Ultra Intelligent Engine...")
         try:
             await asyncio.wait_for(trading_engine.start(), timeout=60)
-            logger.info("✅ Trading engine started successfully")
+            logger.info("✅ Ultra Intelligent Engine started successfully")
         except asyncio.TimeoutError:
             logger.error("Trading engine start timed out after 60s")
             raise

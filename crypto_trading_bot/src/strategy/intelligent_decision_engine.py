@@ -12,7 +12,7 @@ import structlog
 from enum import Enum
 
 from .ml_predictor import ml_predictor, ZoneFeatures
-from .advanced_supply_demand import EnhancedZone, MarketStructure, OrderFlowImbalance
+from .advanced_supply_demand import EnhancedZone, MarketStructure, OrderFlowImbalance, VolumeProfile
 
 logger = structlog.get_logger(__name__)
 
@@ -102,7 +102,7 @@ class IntelligentDecisionEngine:
     def make_intelligent_decision(
         self,
         symbol: str,
-        zone: EnhancedZone,
+        zone: Any,  # Can be EnhancedZone or dict
         market_data: Dict,
         account_balance: float,
         existing_positions: List[str]
@@ -111,6 +111,17 @@ class IntelligentDecisionEngine:
         Make an intelligent trading decision using all available data
         """
         try:
+            # Ensure zone is an EnhancedZone object
+            if not isinstance(zone, EnhancedZone):
+                # If zone is a dict or other type, create EnhancedZone
+                if isinstance(zone, dict):
+                    zone = self._create_zone_from_dict(symbol, zone)
+                elif isinstance(zone, str):
+                    logger.error(f"Zone is a string for {symbol}: {zone}")
+                    return None
+                else:
+                    logger.error(f"Unknown zone type for {symbol}: {type(zone)}")
+                    return None
             # 1. Detect market regime
             regime = self.regime_detector.detect_regime(market_data)
             self.current_regime[symbol] = regime
@@ -581,6 +592,63 @@ class IntelligentDecisionEngine:
             total += score * weight
         
         return min(100, max(0, total))
+    
+    def _create_zone_from_dict(self, symbol: str, zone_data: Dict) -> EnhancedZone:
+        """Create EnhancedZone from dictionary data"""
+        try:
+            # Create a basic zone with available data
+            zone = EnhancedZone(
+                zone_type=zone_data.get('zone_type', zone_data.get('type', 'demand')),
+                upper_bound=float(zone_data.get('upper_bound', zone_data.get('upper', 0))),
+                lower_bound=float(zone_data.get('lower_bound', zone_data.get('lower', 0))),
+                midpoint=float(zone_data.get('midpoint', 0)),
+                strength_score=float(zone_data.get('strength_score', zone_data.get('score', 60))),
+                formation_time=zone_data.get('formation_time', datetime.now()),
+                timeframe=zone_data.get('timeframe', '15'),
+                symbol=symbol
+            )
+            
+            # Set additional attributes if available
+            zone.composite_score = float(zone_data.get('composite_score', zone_data.get('score', 60)))
+            zone.test_count = int(zone_data.get('test_count', zone_data.get('touches', 0)))
+            zone.rejection_strength = float(zone_data.get('rejection_strength', zone_data.get('departure_strength', 2.0)))
+            zone.institutional_interest = float(zone_data.get('institutional_interest', 50))
+            zone.liquidity_pool = float(zone_data.get('liquidity_pool', 1000000))
+            zone.is_fresh = zone_data.get('is_fresh', zone.test_count == 0)
+            zone.zone_age_hours = float(zone_data.get('zone_age_hours', zone_data.get('age_hours', 0)))
+            
+            # Set volume profile if not present
+            if not hasattr(zone, 'volume_profile') or zone.volume_profile is None:
+                zone.volume_profile = VolumeProfile(
+                    price_levels=[],
+                    volumes=[],
+                    poc=(zone.upper_bound + zone.lower_bound) / 2,
+                    vah=zone.upper_bound,
+                    val=zone.lower_bound,
+                    total_volume=1000000,
+                    buying_pressure=0.5,
+                    selling_pressure=0.5
+                )
+            
+            # Set confluence factors
+            zone.confluence_factors = zone_data.get('confluence_factors', [])
+            zone.timeframes_visible = zone_data.get('timeframes_visible', ['15'])
+            
+            return zone
+            
+        except Exception as e:
+            logger.error(f"Error creating zone from dict for {symbol}: {e}")
+            # Return a minimal zone as fallback
+            return EnhancedZone(
+                zone_type='demand',
+                upper_bound=100,
+                lower_bound=99,
+                midpoint=99.5,
+                strength_score=50,
+                formation_time=datetime.now(),
+                timeframe='15',
+                symbol=symbol
+            )
     
     def update_from_outcome(self, signal: IntelligentSignal, outcome: Dict):
         """Learn from trade outcomes to improve future decisions"""

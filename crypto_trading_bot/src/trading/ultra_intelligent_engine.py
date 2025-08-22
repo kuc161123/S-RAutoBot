@@ -786,7 +786,15 @@ class UltraIntelligentEngine:
                             
                             # Get account balance
                             account_info = await self.client.get_account_info()
-                            balance = float(account_info.get('totalAvailableBalance', 10000))
+                            balance = float(account_info.get('totalAvailableBalance', 0))
+                            
+                            # Also check availableBalance field as fallback
+                            if balance == 0:
+                                balance = float(account_info.get('availableBalance', 0))
+                            
+                            # Log balance for debugging
+                            if self.scan_counter % 10 == 0:  # Log every 10th scan
+                                logger.info(f"Account balance check: ${balance:.2f} (wallet: ${float(account_info.get('totalWalletBalance', 0)):.2f})")
                             
                             # Check if we have enough balance to open new positions
                             if balance < 10:  # Less than $10 available

@@ -627,8 +627,16 @@ class EnhancedBybitClient:
         try:
             await rate_limiter.acquire_request()
             
+            # Determine account type
+            account_type = "UNIFIED"
+            if self.testnet:
+                # Check if unified account
+                if self.is_unified_account is None:
+                    await self._check_account_type()
+                account_type = "UNIFIED" if self.is_unified_account else "CONTRACT"
+            
             response = self.http_client.get_wallet_balance(
-                accountType="UNIFIED" if not self.testnet else "CONTRACT",
+                accountType=account_type,
                 coin="USDT"
             )
             
@@ -638,9 +646,34 @@ class EnhancedBybitClient:
             # Extract balance info
             result = response["result"]["list"][0] if response["result"]["list"] else {}
             
+            # For CONTRACT account, look in coin list
+            if account_type == "CONTRACT" and "coin" in result:
+                for coin_data in result.get("coin", []):
+                    if coin_data.get("coin") == "USDT":
+                        available = float(coin_data.get("availableBalance", 0))
+                        wallet = float(coin_data.get("walletBalance", 0))
+                        
+                        logger.info(f"Contract account USDT balance: Wallet=${wallet:.2f}, Available=${available:.2f}")
+                        
+                        return {
+                            'totalWalletBalance': str(wallet),
+                            'totalAvailableBalance': str(available),
+                            'availableBalance': str(available),
+                            'totalMarginBalance': str(wallet),
+                            'totalInitialMargin': coin_data.get('initialMargin', '0'),
+                            'totalMaintenanceMargin': coin_data.get('maintenanceMargin', '0')
+                        }
+            
+            # For UNIFIED account
+            total_wallet = float(result.get('totalWalletBalance', 0))
+            total_available = float(result.get('totalAvailableBalance', 0))
+            
+            logger.info(f"Unified account balance: Wallet=${total_wallet:.2f}, Available=${total_available:.2f}")
+            
             return {
-                'totalWalletBalance': result.get('totalWalletBalance', '0'),
-                'totalAvailableBalance': result.get('totalAvailableBalance', '0'),
+                'totalWalletBalance': str(total_wallet),
+                'totalAvailableBalance': str(total_available),
+                'availableBalance': str(total_available),
                 'totalMarginBalance': result.get('totalMarginBalance', '0'),
                 'totalInitialMargin': result.get('totalInitialMargin', '0'),
                 'totalMaintenanceMargin': result.get('totalMaintenanceMargin', '0')

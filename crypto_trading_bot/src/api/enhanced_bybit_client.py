@@ -373,6 +373,26 @@ class EnhancedBybitClient:
             # Rate limit
             await rate_limiter.acquire_request()
             
+            # Ensure category is set for V5 API
+            if 'category' not in kwargs:
+                kwargs['category'] = 'linear'  # For USDT perpetuals
+            
+            # Ensure orderType is correctly formatted
+            if 'order_type' in kwargs:
+                kwargs['orderType'] = kwargs.pop('order_type')
+            
+            # Ensure timeInForce is correctly formatted
+            if 'time_in_force' in kwargs:
+                kwargs['timeInForce'] = kwargs.pop('time_in_force')
+                
+            # Ensure reduceOnly is correctly formatted
+            if 'reduce_only' in kwargs:
+                kwargs['reduceOnly'] = kwargs.pop('reduce_only')
+                
+            # Ensure closeOnTrigger is correctly formatted
+            if 'close_on_trigger' in kwargs:
+                kwargs['closeOnTrigger'] = kwargs.pop('close_on_trigger')
+            
             # Place order
             start = time.time()
             response = self.http_client.place_order(**kwargs)

@@ -360,7 +360,7 @@ class UltraIntelligentEngine:
             
             if not all_symbols:
                 logger.warning("No active symbols found, using defaults")
-                self.monitored_symbols = settings.default_symbols[:30]
+                self.monitored_symbols = settings.default_symbols[:100]
                 return
             
             logger.info(f"Found {len(all_symbols)} active symbols")
@@ -388,12 +388,12 @@ class UltraIntelligentEngine:
                 # Sort by volume and volatility
                 candidates.sort(key=lambda x: x['volume'] * abs(x['volatility']), reverse=True)
                 
-                # Select top symbols
-                self.monitored_symbols = [c['symbol'] for c in candidates[:30]]
+                # Select top symbols (increased to 100 for better market coverage)
+                self.monitored_symbols = [c['symbol'] for c in candidates[:100]]
                 logger.info(f"Selected {len(self.monitored_symbols)} high-volume symbols for trading")
             else:
                 logger.warning("No symbols met criteria, using defaults")
-                self.monitored_symbols = settings.default_symbols[:30]
+                self.monitored_symbols = settings.default_symbols[:100]
             
         except Exception as e:
             logger.error(f"Error selecting symbols: {e}", exc_info=True)

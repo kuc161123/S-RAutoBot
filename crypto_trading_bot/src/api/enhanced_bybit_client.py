@@ -430,7 +430,7 @@ class EnhancedBybitClient:
         try:
             # Validate leverage
             if symbol not in self.instruments:
-                logger.error(f"Unknown symbol: {symbol}")
+                logger.warning(f"Symbol {symbol} not available on Bybit, skipping leverage setting")
                 return False
                 
             inst = self.instruments[symbol]
@@ -450,8 +450,9 @@ class EnhancedBybitClient:
             )
             
             if response["retCode"] != 0:
-                # Some symbols might not support leverage change
-                if "not modified" in response.get("retMsg", "").lower():
+                # Error code 110043 means leverage is already set to this value - this is OK
+                if response["retCode"] == 110043 or "not modified" in response.get("retMsg", "").lower():
+                    logger.debug(f"Leverage already set to {leverage}x for {symbol}")
                     return True
                 logger.error(f"Set leverage failed for {symbol}: {response['retMsg']}")
                 return False

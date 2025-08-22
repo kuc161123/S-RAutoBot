@@ -13,15 +13,16 @@ import json
 import os
 
 from .config import settings
-from .api.bybit_client import BybitClient
-from .strategy.supply_demand import SupplyDemandStrategy
+from .api.enhanced_bybit_client import EnhancedBybitClient
+from .strategy.advanced_supply_demand import AdvancedSupplyDemandStrategy
 from .telegram.bot import TradingBot
 from .trading.order_manager import OrderManager
 from .db.database import init_db, close_db, DatabaseManager
 from .utils.logging import logger, trading_logger, get_prometheus_metrics
-from .trading.trading_engine import TradingEngine
+from .trading.fixed_integrated_engine import FixedIntegratedEngine
 from .utils.validation import validate_startup
 from .utils.health_check import health_monitor
+from .utils.bot_fixes import health_monitor as fixed_health_monitor
 
 # Initialize logger
 logger = structlog.get_logger(__name__)
@@ -54,12 +55,12 @@ async def lifespan(app: FastAPI):
         # Initialize database
         await init_db()
         
-        # Initialize Bybit client
-        bybit_client = BybitClient()
+        # Initialize Enhanced Bybit client
+        bybit_client = EnhancedBybitClient()
         await bybit_client.initialize()
         
-        # Initialize strategy
-        strategy = SupplyDemandStrategy()
+        # Initialize advanced strategy
+        strategy = AdvancedSupplyDemandStrategy()
         
         # Initialize order manager
         order_manager = OrderManager(bybit_client)
@@ -68,21 +69,19 @@ async def lifespan(app: FastAPI):
         telegram_bot = TradingBot(bybit_client, strategy)
         await telegram_bot.initialize()
         
-        # Initialize trading engine
-        trading_engine = TradingEngine(
+        # Initialize Fixed Integrated Engine
+        trading_engine = FixedIntegratedEngine(
             bybit_client=bybit_client,
-            strategy=strategy,
-            order_manager=order_manager,
             telegram_bot=telegram_bot
         )
+        await trading_engine.initialize()
         
-        # Start background tasks
-        asyncio.create_task(trading_engine.run())
+        # Start the fixed trading engine
+        await trading_engine.start()
+        
+        # Start periodic tasks
         asyncio.create_task(instrument_refresh_task())
         asyncio.create_task(daily_reset_task())
-        
-        # Subscribe to WebSocket streams
-        setup_websocket_subscriptions()
         
         # Start health monitoring
         await health_monitor.start_monitoring()

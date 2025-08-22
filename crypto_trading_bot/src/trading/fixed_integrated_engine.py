@@ -10,8 +10,9 @@ import redis.asyncio as redis
 import traceback
 
 from ..api.enhanced_bybit_client import EnhancedBybitClient
-from ..strategy.advanced_supply_demand import AdvancedSupplyDemandStrategy
+from ..strategy.advanced_supply_demand import AdvancedSupplyDemandStrategy, EnhancedZone
 from ..strategy.ml_predictor import ml_predictor
+from ..strategy.intelligent_decision_engine import decision_engine, IntelligentSignal
 from .position_manager import EnhancedPositionManager
 from .multi_timeframe_scanner import MultiTimeframeScanner
 from .order_manager import OrderManager
@@ -57,9 +58,9 @@ class FixedIntegratedEngine:
         self.positions_per_symbol = {}  # Enforces one position per symbol
         self.symbol_locks = {}  # Prevent concurrent operations per symbol
         
-        # Configuration - minimal for testing
-        self.monitored_symbols = settings.default_symbols[:5]  # Start with only 5 symbols for quick testing
-        self.batch_size = 2  # Very small batches to avoid rate limits
+        # Configuration - increased with intelligent decision making
+        self.monitored_symbols = settings.default_symbols[:20]  # Monitor 20 symbols with ML intelligence
+        self.batch_size = 5  # Process 5 symbols at a time to balance speed and rate limits
         
         # Performance tracking
         self.stats = {
@@ -373,8 +374,82 @@ class FixedIntegratedEngine:
                 logger.error(f"Signal processor error: {e}")
                 await asyncio.sleep(5)
                 
+    async def _prepare_market_data_for_ml(self, symbol: str, signal: Dict) -> Dict:
+        """Prepare comprehensive market data for ML decision making"""
+        try:
+            # Get recent price data
+            df = None
+            if hasattr(self.scanner, 'timeframe_data') and symbol in self.scanner.timeframe_data:
+                df = self.scanner.timeframe_data[symbol].get('15', None)  # Use 15m as primary
+            
+            if df is None:
+                df = await self.client.get_klines(symbol, '15', limit=100)
+            
+            # Calculate indicators
+            rsi = 50  # Default
+            atr = 0
+            if df is not None and not df.empty:
+                # Simple RSI calculation
+                if len(df) > 14:
+                    import pandas as pd
+                    delta = df['close'].diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+                    rs = gain / loss
+                    rsi = 100 - (100 / (1 + rs)).iloc[-1]
+                    if pd.isna(rsi):
+                        rsi = 50
+                
+                # ATR calculation
+                high = df['high']
+                low = df['low']
+                close = df['close'].shift(1)
+                import pandas as pd
+                tr = pd.concat([
+                    high - low,
+                    (high - close).abs(),
+                    (low - close).abs()
+                ], axis=1).max(axis=1)
+                atr = tr.rolling(window=14).mean().iloc[-1]
+                if pd.isna(atr):
+                    atr = 0
+            
+            # Get current price
+            current_price = float(signal.get('entry_price', 0))
+            if current_price == 0 and df is not None and not df.empty:
+                current_price = float(df['close'].iloc[-1])
+            
+            # Build market data dictionary
+            market_data = {
+                'dataframe': df,
+                'current_price': current_price,
+                'volatility': signal.get('volatility', 1.0),
+                'market_structure': signal.get('market_structure', 'ranging'),
+                'order_flow': signal.get('order_flow', 'neutral'),
+                'rsi': float(rsi),
+                'atr': float(atr),
+                'avg_volume': float(df['volume'].mean()) if df is not None and 'volume' in df.columns else 1000000.0,
+                'avg_liquidity': 1000000.0,  # Default
+                'data_quality': 0.9 if df is not None and len(df) > 50 else 0.7
+            }
+            
+            return market_data
+            
+        except Exception as e:
+            logger.error(f"Error preparing market data for ML: {e}")
+            # Return minimal market data
+            return {
+                'current_price': float(signal.get('entry_price', 0)),
+                'volatility': 1.0,
+                'market_structure': 'ranging',
+                'order_flow': 'neutral',
+                'rsi': 50.0,
+                'atr': 0.0,
+                'data_quality': 0.5
+            }
+    
     async def _execute_signal_safe(self, symbol: str, signal: Dict):
-        """Execute signal with all safety checks"""
+        """Execute signal with ML intelligence and all safety checks"""
         
         try:
             # Validate signal has required fields
@@ -389,16 +464,74 @@ class FixedIntegratedEngine:
                 logger.debug(f"Position already exists for {symbol}")
                 return
             
-            # Calculate risk-reward ratio (must be 1:2 or better)
-            risk_reward_ratio = self._calculate_risk_reward(signal)
+            # Get zone information from signal
+            zone = signal.get('zone')
+            if not zone:
+                # Create minimal zone from signal data if not present
+                zone = EnhancedZone(
+                    zone_type='demand' if signal['type'] == 'BUY' else 'supply',
+                    upper_bound=float(signal.get('entry_price', 0)) * 1.001,
+                    lower_bound=float(signal.get('entry_price', 0)) * 0.999,
+                    midpoint=float(signal.get('entry_price', 0)),
+                    strength_score=float(signal.get('score', 60)),
+                    composite_score=float(signal.get('score', 60)),
+                    rejection_strength=float(signal.get('departure_strength', 2.0)),
+                    institutional_interest=float(signal.get('institutional_interest', 50))
+                )
             
-            if risk_reward_ratio < 2.0:
-                logger.info(f"❌ Signal rejected for {symbol}: Risk-reward ratio 1:{risk_reward_ratio:.1f} < 1:2 (minimum)")
+            # Prepare market data for intelligent decision
+            market_data = await self._prepare_market_data_for_ml(symbol, signal)
+            
+            # Get account info
+            account_info = await self.client.get_account_info()
+            balance = float(account_info.get('totalAvailableBalance', 10000))
+            
+            # Make intelligent decision using ML
+            intelligent_signal = decision_engine.make_intelligent_decision(
+                symbol=symbol,
+                zone=zone,
+                market_data=market_data,
+                account_balance=balance,
+                existing_positions=list(self.positions_per_symbol.keys())
+            )
+            
+            if not intelligent_signal:
+                logger.info(f"🤖 Intelligent decision rejected signal for {symbol}")
                 return
             
-            logger.info(f"✅ Signal accepted for {symbol}: Risk-reward ratio 1:{risk_reward_ratio:.1f}")
+            # Log the intelligent decision
+            logger.info(
+                f"🤖 Intelligent Signal for {symbol}:\n"
+                f"  ML Success Prob: {intelligent_signal.ml_success_probability:.1%}\n"
+                f"  ML Confidence: {intelligent_signal.ml_confidence:.1%}\n"
+                f"  Signal Strength: {intelligent_signal.signal_strength:.1f}/100\n"
+                f"  Market Regime: {intelligent_signal.market_regime.value}\n"
+                f"  Trading Mode: {intelligent_signal.trading_mode.value}\n"
+                f"  Entry: ${intelligent_signal.entry_price:.4f}\n"
+                f"  Stop: ${intelligent_signal.stop_loss:.4f}\n"
+                f"  TP1: ${intelligent_signal.take_profit_1:.4f}\n"
+                f"  TP2: ${intelligent_signal.take_profit_2:.4f}\n"
+                f"  Position Size: {intelligent_signal.position_size:.4f}"
+            )
             
-            # Add risk-reward to signal for tracking
+            # Update signal with intelligent parameters
+            signal['entry_price'] = intelligent_signal.entry_price
+            signal['stop_loss'] = intelligent_signal.stop_loss
+            signal['take_profit_1'] = intelligent_signal.take_profit_1
+            signal['take_profit_2'] = intelligent_signal.take_profit_2
+            signal['take_profit'] = intelligent_signal.take_profit_2
+            signal['position_size'] = intelligent_signal.position_size
+            signal['ml_success_probability'] = intelligent_signal.ml_success_probability
+            signal['ml_confidence'] = intelligent_signal.ml_confidence
+            signal['signal_strength'] = intelligent_signal.signal_strength
+            signal['market_regime'] = intelligent_signal.market_regime.value
+            signal['trading_mode'] = intelligent_signal.trading_mode.value
+            signal['intelligent_signal'] = intelligent_signal  # Store for outcome tracking
+            
+            # Calculate risk-reward ratio for logging
+            risk = abs(intelligent_signal.entry_price - intelligent_signal.stop_loss)
+            reward = abs(intelligent_signal.take_profit_2 - intelligent_signal.entry_price)
+            risk_reward_ratio = reward / risk if risk > 0 else 0
             signal['risk_reward_ratio'] = risk_reward_ratio
                 
             # Check with position safety manager
@@ -415,19 +548,14 @@ class FixedIntegratedEngine:
                 logger.error("Insufficient balance")
                 return
                 
-            # Get ML parameters
-            market_data = {
-                'volatility': signal.get('volatility', 1.0),
-                'market_structure': signal.get('market_structure', 'ranging'),
-                'order_flow': signal.get('order_flow', 'neutral')
+            # Use intelligent parameters from ML decision
+            parameters = {
+                'final_size': intelligent_signal.position_size,
+                'stop_loss': intelligent_signal.stop_loss,
+                'take_profit_1': intelligent_signal.take_profit_1,
+                'take_profit_2': intelligent_signal.take_profit_2,
+                'trailing_stop_activation': intelligent_signal.trailing_stop_activation
             }
-            
-            parameters = self.position_manager.calculate_ml_optimized_parameters(
-                symbol=symbol,
-                signal=signal,
-                market_data=market_data,
-                account_balance=balance
-            )
             
             # Validate position size (get_instrument is a method, not property)
             instrument = self.client.get_instrument(symbol) if hasattr(self.client, 'get_instrument') else self.client.instruments.get(symbol)
@@ -679,7 +807,8 @@ class FixedIntegratedEngine:
         """Update daily statistics"""
         
         # Save to database
-        await self.db_manager.update_daily_stats(self.stats)
+        if hasattr(self.db_manager, 'update_daily_stats'):
+            await self.db_manager.update_daily_stats(self.stats)
         
     async def _log_trade_to_db(self, symbol: str, signal: Dict, parameters, order_id: str):
         """Log trade to database"""
@@ -697,7 +826,7 @@ class FixedIntegratedEngine:
             'leverage': parameters.final_leverage
         }
         
-        self.db_manager.log_trade(trade_data)
+        await self.db_manager.log_trade_async(trade_data)
         
     async def _update_position_data(self):
         """Update position data without re-registering (for periodic sync)"""
@@ -834,8 +963,11 @@ Confidence: {parameters.confidence_score:.1%}
                 'order_flow': signal.get('order_flow'),
                 'volume_analysis': signal.get('volume_analysis'),
                 'timeframes': signal.get('confirming_timeframes', []),
-                'ml_prediction': signal.get('ml_prediction'),
+                'ml_success_probability': signal.get('ml_success_probability', 0),
                 'ml_confidence': signal.get('ml_confidence', 0),
+                'signal_strength': signal.get('signal_strength', 0),
+                'market_regime': signal.get('market_regime', 'unknown'),
+                'trading_mode': signal.get('trading_mode', 'moderate'),
                 'zone_type': signal.get('zone_type'),
                 'departure_strength': signal.get('departure_strength', 0),
                 'base_candles': signal.get('base_candles', 0)
@@ -941,6 +1073,18 @@ Confidence: {parameters.confidence_score:.1%}
                             if trade_closed or pnl_percent > 100 or pnl_percent < -50:
                                 # Significant move or trade closed
                                 ml_predictor.training_data.append(outcome_data)
+                                
+                                # Update decision engine with outcome if intelligent signal exists
+                                intelligent_sig = signal.get('intelligent_signal')
+                                if intelligent_sig:
+                                    decision_engine.update_from_outcome(
+                                        intelligent_sig,
+                                        {
+                                            'profit': pnl,
+                                            'profit_ratio': abs(pnl_percent / 100),
+                                            'outcome': outcome
+                                        }
+                                    )
                                 
                                 # Trigger ML model update if enough new data
                                 if len(ml_predictor.training_data) % 10 == 0:

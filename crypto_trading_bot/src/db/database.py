@@ -149,17 +149,24 @@ class DatabaseManager:
     
     @staticmethod
     def log_trade(trade_data: dict) -> int:
-        """Log a trade to database"""
+        """Log a trade to database (sync version for backward compatibility)"""
         from .models import Trade, User, Symbol
         
         with get_db() as db:
-            # Get user
-            user = db.query(User).filter_by(
-                telegram_chat_id=trade_data['chat_id']
-            ).first()
+            # Get user (use default user if chat_id not provided)
+            chat_id = trade_data.get('chat_id', 0)
+            if chat_id:
+                user = db.query(User).filter_by(telegram_chat_id=chat_id).first()
+            else:
+                # Get or create default user for bot trades
+                user = db.query(User).filter_by(telegram_chat_id=0).first()
+                if not user:
+                    user = User(telegram_chat_id=0, username='bot')
+                    db.add(user)
+                    db.flush()
             
             if not user:
-                logger.error(f"User not found for chat_id {trade_data['chat_id']}")
+                logger.error(f"User not found for chat_id {chat_id}")
                 return None
             
             # Get or create symbol
@@ -179,10 +186,10 @@ class DatabaseManager:
                 order_id=trade_data.get('order_id'),
                 side=trade_data['side'],
                 entry_price=trade_data['entry_price'],
-                stop_loss=trade_data['stop_loss'],
-                take_profit_1=trade_data['take_profit_1'],
-                take_profit_2=trade_data['take_profit_2'],
-                position_size=trade_data['position_size'],
+                stop_loss=trade_data.get('stop_loss'),
+                take_profit_1=trade_data.get('take_profit_1'),
+                take_profit_2=trade_data.get('take_profit_2'),
+                position_size=trade_data.get('position_size'),
                 zone_type=trade_data.get('zone_type'),
                 zone_score=trade_data.get('zone_score')
             )
@@ -193,6 +200,13 @@ class DatabaseManager:
             
             logger.info(f"Logged trade {trade.id} for {trade_data['symbol']}")
             return trade.id
+    
+    @staticmethod
+    async def log_trade_async(trade_data: dict) -> int:
+        """Log a trade to database (async version)"""
+        return await asyncio.get_event_loop().run_in_executor(
+            None, DatabaseManager.log_trade, trade_data
+        )
     
     @staticmethod
     def close_trade(trade_id: int, exit_data: dict):

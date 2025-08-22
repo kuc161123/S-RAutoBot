@@ -93,6 +93,58 @@ class EnhancedZone:
         base_score -= self.test_count * 10
         
         return min(100, max(0, base_score))
+    
+    # Compatibility properties for legacy code
+    @property
+    def score(self) -> float:
+        """Alias for composite_score (backward compatibility)"""
+        return self.composite_score
+    
+    @property
+    def midpoint(self) -> float:
+        """Calculate zone midpoint"""
+        return (self.upper_bound + self.lower_bound) / 2
+    
+    @property
+    def touches(self) -> int:
+        """Alias for test_count (backward compatibility)"""
+        return self.test_count
+    
+    @touches.setter
+    def touches(self, value: int):
+        """Setter for touches (backward compatibility)"""
+        self.test_count = value
+    
+    @property
+    def created_at(self) -> datetime:
+        """Alias for formation_time (backward compatibility)"""
+        return self.formation_time
+    
+    @property
+    def age_hours(self) -> float:
+        """Alias for zone_age_hours (backward compatibility)"""
+        return self.zone_age_hours
+    
+    @age_hours.setter
+    def age_hours(self, value: float):
+        """Setter for age_hours (backward compatibility)"""
+        self.zone_age_hours = value
+    
+    @property
+    def status(self) -> str:
+        """Get zone status (backward compatibility)"""
+        if self.test_count > 3:
+            return 'invalidated'
+        elif self.test_count > 0:
+            return 'tested'
+        else:
+            return 'fresh'
+    
+    @status.setter
+    def status(self, value: str):
+        """Setter for status (backward compatibility)"""
+        # Status is derived from test_count, so we don't actually set it
+        pass
 
 class AdvancedSupplyDemandStrategy:
     """Enhanced Supply & Demand strategy with advanced features"""
@@ -816,3 +868,50 @@ class AdvancedSupplyDemandStrategy:
             
             # Update zone age
             zone.age_hours = (datetime.now() - zone.created_at).total_seconds() / 3600
+    
+    def check_entry_signal(self, symbol: str, current_price: float, 
+                          current_volume: float = 0) -> Optional[Dict[str, Any]]:
+        """
+        Check for entry signals (compatibility method for BacktestEngine)
+        
+        Args:
+            symbol: Trading symbol
+            current_price: Current market price
+            current_volume: Current volume (optional)
+            
+        Returns:
+            Trading signal dict or None
+        """
+        if symbol not in self.zones:
+            return None
+        
+        # Check each active zone for entry opportunity
+        for zone in self.get_active_zones(symbol):
+            # Check if price is at zone boundary
+            if zone.zone_type == 'demand':
+                # Look for long entry at demand zone
+                if zone.lower_bound <= current_price <= zone.upper_bound:
+                    if zone.touches == 0:  # Fresh zone
+                        return {
+                            'side': 'Buy',
+                            'zone': zone,
+                            'entry_price': current_price,
+                            'stop_loss': zone.lower_bound - (zone.upper_bound - zone.lower_bound) * 0.2,
+                            'take_profit': zone.upper_bound + (zone.upper_bound - zone.lower_bound) * 2,
+                            'confidence': zone.composite_score
+                        }
+            
+            elif zone.zone_type == 'supply':
+                # Look for short entry at supply zone
+                if zone.lower_bound <= current_price <= zone.upper_bound:
+                    if zone.touches == 0:  # Fresh zone
+                        return {
+                            'side': 'Sell',
+                            'zone': zone,
+                            'entry_price': current_price,
+                            'stop_loss': zone.upper_bound + (zone.upper_bound - zone.lower_bound) * 0.2,
+                            'take_profit': zone.lower_bound - (zone.upper_bound - zone.lower_bound) * 2,
+                            'confidence': zone.composite_score
+                        }
+        
+        return None

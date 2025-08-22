@@ -20,8 +20,11 @@ from telegram.ext import (
 import structlog
 
 from ..config import settings
+from typing import Union
 from ..api.bybit_client import BybitClient
+from ..api.enhanced_bybit_client import EnhancedBybitClient
 from ..strategy.supply_demand import SupplyDemandStrategy
+from ..strategy.advanced_supply_demand import AdvancedSupplyDemandStrategy
 from ..db.models import User, Trade, BacktestResult
 from ..backtesting.backtest_engine import BacktestEngine
 from .formatters import format_status, format_positions, format_backtest_result
@@ -31,7 +34,8 @@ logger = structlog.get_logger(__name__)
 class TradingBot:
     """Telegram bot for crypto trading"""
     
-    def __init__(self, bybit_client: BybitClient, strategy: SupplyDemandStrategy):
+    def __init__(self, bybit_client: Union[BybitClient, EnhancedBybitClient], 
+                 strategy: Union[SupplyDemandStrategy, AdvancedSupplyDemandStrategy]):
         self.bybit_client = bybit_client
         self.strategy = strategy
         self.application = None

@@ -4,7 +4,7 @@ from sqlalchemy.pool import NullPool
 from contextlib import contextmanager
 import asyncpg
 import asyncio
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 import structlog
 
 from ..config import settings
@@ -99,27 +99,31 @@ class DatabaseManager:
     """Database operations manager"""
     
     @staticmethod
-    def create_user(chat_id: int, username: str = None) -> int:
-        """Create a new user"""
+    def create_user(chat_id: int, username: str = None) -> Optional[int]:
+        """Create a new user with error handling"""
         from .models import User
         
-        with get_db() as db:
-            # Check if user exists
-            existing = db.query(User).filter_by(telegram_chat_id=chat_id).first()
-            if existing:
-                return existing.id
-            
-            # Create new user
-            user = User(
-                telegram_chat_id=chat_id,
-                username=username
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-            
-            logger.info(f"Created user {user.id} for chat_id {chat_id}")
-            return user.id
+        try:
+            with get_db() as db:
+                # Check if user exists
+                existing = db.query(User).filter_by(telegram_chat_id=chat_id).first()
+                if existing:
+                    return existing.id
+                
+                # Create new user
+                user = User(
+                    telegram_chat_id=chat_id,
+                    username=username
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+                
+                logger.info(f"Created user {user.id} for chat_id {chat_id}")
+                return user.id
+        except Exception as e:
+            logger.error(f"Failed to create user for chat_id {chat_id}: {e}")
+            return None
     
     @staticmethod
     def get_user(chat_id: int):

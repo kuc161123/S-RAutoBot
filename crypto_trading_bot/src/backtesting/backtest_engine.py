@@ -8,8 +8,11 @@ from plotly.subplots import make_subplots
 import structlog
 from dataclasses import dataclass, field
 
+from typing import Union
 from ..api.bybit_client import BybitClient
+from ..api.enhanced_bybit_client import EnhancedBybitClient
 from ..strategy.supply_demand import SupplyDemandStrategy, Zone, ZoneType
+from ..strategy.advanced_supply_demand import AdvancedSupplyDemandStrategy
 from ..config import settings
 from ..utils.rounding import (
     calculate_position_size,
@@ -46,7 +49,9 @@ class BacktestTrade:
 class BacktestEngine:
     """Backtesting engine for supply and demand strategy"""
     
-    def __init__(self, bybit_client: BybitClient, strategy: SupplyDemandStrategy):
+    def __init__(self, 
+                 bybit_client: Union[BybitClient, EnhancedBybitClient], 
+                 strategy: Union[SupplyDemandStrategy, AdvancedSupplyDemandStrategy]):
         self.client = bybit_client
         self.strategy = strategy
         self.trades: List[BacktestTrade] = []

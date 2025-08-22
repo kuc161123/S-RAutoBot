@@ -750,3 +750,69 @@ class AdvancedSupplyDemandStrategy:
             confidence += 5 * len(analysis['signals'])
         
         return min(100, confidence)
+    
+    # ============================================
+    # COMPATIBILITY METHODS FOR LEGACY CODE
+    # ============================================
+    
+    def get_active_zones(self, symbol: str) -> List[EnhancedZone]:
+        """
+        Get active zones for a symbol (compatibility method for TradingBot)
+        
+        Args:
+            symbol: Trading symbol
+            
+        Returns:
+            List of active zones for the symbol
+        """
+        if symbol not in self.zones:
+            return []
+        
+        # Return only fresh/valid zones
+        active_zones = [
+            zone for zone in self.zones[symbol]
+            if zone.is_fresh() and zone.composite_score >= self.min_zone_score
+        ]
+        
+        return active_zones
+    
+    def detect_zones(self, df: pd.DataFrame, symbol: str, timeframe: str) -> List[EnhancedZone]:
+        """
+        Detect zones compatibility wrapper for BacktestEngine
+        
+        Args:
+            df: Price dataframe
+            symbol: Trading symbol
+            timeframe: Timeframe string
+            
+        Returns:
+            List of detected zones
+        """
+        # Use analyze_market to detect zones
+        analysis = self.analyze_market(symbol, df, [timeframe])
+        return analysis.get('zones', [])
+    
+    def update_zones(self, symbol: str, current_price: float):
+        """
+        Update zone touches and status (compatibility method)
+        
+        Args:
+            symbol: Trading symbol
+            current_price: Current market price
+        """
+        if symbol not in self.zones:
+            return
+        
+        for zone in self.zones[symbol]:
+            # Check if price touches the zone
+            if zone.lower_bound <= current_price <= zone.upper_bound:
+                zone.touches += 1
+                zone.last_test_time = datetime.now()
+                
+                # Invalidate zone if touched too many times
+                if zone.touches > self.max_zone_tests:
+                    zone.status = 'invalidated'
+                    logger.info(f"Zone invalidated for {symbol} at {zone.midpoint:.2f}")
+            
+            # Update zone age
+            zone.age_hours = (datetime.now() - zone.created_at).total_seconds() / 3600

@@ -200,16 +200,30 @@ class BacktestEngine:
             
             # Detect zones periodically (every 10 candles)
             if i % 10 == 0:
-                new_zones = self.strategy.detect_zones(window_df, symbol, timeframe)
-                
-                # Add new zones, remove old ones
-                zones = [z for z in zones if z.age_hours < settings.sd_zone_max_age_hours]
-                zones.extend(new_zones)
-                zones = zones[-50:]  # Keep max 50 zones
+                try:
+                    # Check if strategy has detect_zones method
+                    if hasattr(self.strategy, 'detect_zones') and callable(self.strategy.detect_zones):
+                        new_zones = self.strategy.detect_zones(window_df, symbol, timeframe)
+                        if new_zones and isinstance(new_zones, list):
+                            # Add new zones, remove old ones
+                            zones = [z for z in zones if hasattr(z, 'age_hours') and z.age_hours < settings.sd_zone_max_age_hours]
+                            zones.extend(new_zones)
+                            zones = zones[-50:]  # Keep max 50 zones
+                    else:
+                        # Fallback: run market analysis to get zones
+                        analysis = self.strategy.analyze_market(symbol, window_df, [timeframe])
+                        if analysis and 'zones' in analysis:
+                            zones = analysis['zones'][:50]
+                except Exception as e:
+                    logger.debug(f"Zone detection error: {e}")
+                    zones = []
             
             # Update zones with current price
-            self.strategy.zones[symbol] = zones
-            self.strategy.update_zones(symbol, current_candle['close'])
+            if hasattr(self.strategy, 'zones'):
+                self.strategy.zones[symbol] = zones
+            
+            if hasattr(self.strategy, 'update_zones') and callable(self.strategy.update_zones):
+                self.strategy.update_zones(symbol, current_candle['close'])
             
             # Check open position
             if open_trade:
@@ -240,13 +254,23 @@ class BacktestEngine:
             
             # Check for new entry signal if no open position
             if not open_trade and current_capital > 0:
-                signal = self.strategy.check_entry_signal(
-                    symbol,
-                    current_candle['close'],
-                    current_capital,
-                    settings.default_risk_percent,
-                    instrument
-                )
+                try:
+                    # Check if strategy has check_entry_signal method
+                    if hasattr(self.strategy, 'check_entry_signal') and callable(self.strategy.check_entry_signal):
+                        signal = self.strategy.check_entry_signal(
+                            symbol,
+                            current_candle['close'],
+                            current_capital,
+                            settings.default_risk_percent,
+                            instrument
+                        )
+                    else:
+                        # Fallback: use analyze_market
+                        analysis = self.strategy.analyze_market(symbol, window_df, [timeframe])
+                        signal = analysis.get('signals', [None])[0] if analysis else None
+                except Exception as e:
+                    logger.debug(f"Signal check error: {e}")
+                    signal = None
                 
                 if signal:
                     # Create new trade

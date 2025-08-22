@@ -755,10 +755,10 @@ class AdvancedSupplyDemandStrategy:
                         entry_price = current_price if current_price < zone.upper_bound else zone.upper_bound
                         stop_loss = zone.lower_bound * 0.998  # Just below zone
                         
-                        # Calculate R:R based targets
+                        # Calculate R:R based targets (TP1=1:2, TP2=1:3)
                         risk = entry_price - stop_loss
-                        take_profit_1 = entry_price + (risk * 1.0)  # 1:1 R:R
-                        take_profit_2 = entry_price + (risk * 2.0)  # 1:2 R:R
+                        take_profit_1 = entry_price + (risk * 2.0)  # 1:2 R:R
+                        take_profit_2 = entry_price + (risk * 3.0)  # 1:3 R:R
                         
                         signal = {
                             'type': 'BUY',
@@ -810,10 +810,10 @@ class AdvancedSupplyDemandStrategy:
                         entry_price = current_price if current_price > zone.lower_bound else zone.lower_bound
                         stop_loss = zone.upper_bound * 1.002  # Just above zone
                         
-                        # Calculate R:R based targets
+                        # Calculate R:R based targets (TP1=1:2, TP2=1:3)
                         risk = stop_loss - entry_price
-                        take_profit_1 = entry_price - (risk * 1.0)  # 1:1 R:R
-                        take_profit_2 = entry_price - (risk * 2.0)  # 1:2 R:R
+                        take_profit_1 = entry_price - (risk * 2.0)  # 1:2 R:R
+                        take_profit_2 = entry_price - (risk * 3.0)  # 1:3 R:R
                         
                         signal = {
                             'type': 'SELL',
@@ -962,8 +962,10 @@ class AdvancedSupplyDemandStrategy:
                     if zone.touches == 0:  # Fresh zone
                         zone_range = zone.upper_bound - zone.lower_bound
                         stop_loss = zone.lower_bound - zone_range * 0.2
-                        take_profit_1 = zone.upper_bound + zone_range * 1.0
-                        take_profit_2 = zone.upper_bound + zone_range * 2.0
+                        # Updated R:R ratios: TP1=1:2, TP2=1:3
+                        risk = current_price - stop_loss
+                        take_profit_1 = current_price + (risk * 2.0)  # 1:2 R:R
+                        take_profit_2 = current_price + (risk * 3.0)  # 1:3 R:R
                         
                         # Calculate position size based on risk
                         risk_amount = account_balance * (risk_percent / 100)
@@ -988,8 +990,10 @@ class AdvancedSupplyDemandStrategy:
                     if zone.touches == 0:  # Fresh zone
                         zone_range = zone.upper_bound - zone.lower_bound
                         stop_loss = zone.upper_bound + zone_range * 0.2
-                        take_profit_1 = zone.lower_bound - zone_range * 1.0
-                        take_profit_2 = zone.lower_bound - zone_range * 2.0
+                        # Updated R:R ratios: TP1=1:2, TP2=1:3
+                        risk = stop_loss - current_price
+                        take_profit_1 = current_price - (risk * 2.0)  # 1:2 R:R
+                        take_profit_2 = current_price - (risk * 3.0)  # 1:3 R:R
                         
                         # Calculate position size based on risk
                         risk_amount = account_balance * (risk_percent / 100)

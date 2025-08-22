@@ -106,7 +106,7 @@ class Settings(BaseSettings):
     sd_zone_buffer_percent: float = Field(0.2, description="Buffer beyond zone for stops")
     sd_max_zone_touches: int = Field(3, description="Max touches before invalidation")
     sd_zone_max_age_hours: int = Field(168, description="Max age in hours (7 days)")
-    sd_min_zone_score: float = Field(60.0, description="Min score to trade zone")
+    sd_min_zone_score: float = Field(40.0, description="Min score to trade zone")
     
     # Risk Management
     use_trailing_stop: bool = Field(True)

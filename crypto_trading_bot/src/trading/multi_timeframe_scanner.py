@@ -253,8 +253,9 @@ class MultiTimeframeScanner:
         if aligned_zones:
             confluence_score += 15 * len(aligned_zones)
         
-        # Require minimum confluence
-        if confluence_score >= 40 and len(confirming_timeframes) >= 2:
+        # More lenient confluence requirements
+        # Accept if primary signal is strong OR has multi-timeframe support
+        if confluence_score >= 30 or (confluence_score >= 20 and primary_signal.get('confidence', 0) >= 70):
             # Enhance the signal with multi-timeframe data
             enhanced_signal = primary_signal.copy()
             enhanced_signal['confluence_score'] = confluence_score

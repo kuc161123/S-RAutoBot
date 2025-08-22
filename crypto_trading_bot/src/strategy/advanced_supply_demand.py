@@ -723,17 +723,20 @@ class AdvancedSupplyDemandStrategy:
         """Generate trading signals based on zones and market conditions"""
         
         signals = []
-        current_price = current_candle['close']
+        current_price = float(current_candle['close'])
         
         for zone in zones[:3]:  # Check top 3 zones
-            # For demand zones
+            # For demand zones (BUY signals)
             if zone.zone_type == 'demand':
-                # Check if price is approaching the zone
+                # Check if price is approaching or in the zone
                 distance_to_zone = (zone.upper_bound - current_price) / current_price
                 
-                if 0 < distance_to_zone < 0.005:  # Within 0.5% of zone
+                # More lenient: within 1% of zone or inside zone
+                if -0.002 < distance_to_zone < 0.01 or (zone.lower_bound <= current_price <= zone.upper_bound):
                     # Additional confirmations
                     confirmations = []
+                    
+                    logger.info(f"Demand zone detected: Price={current_price:.2f}, Zone=[{zone.lower_bound:.2f}, {zone.upper_bound:.2f}], Score={zone.composite_score:.1f}")
                     
                     if market_structure in [MarketStructure.BULLISH, MarketStructure.TRANSITIONING]:
                         confirmations.append("market_structure")
@@ -744,25 +747,47 @@ class AdvancedSupplyDemandStrategy:
                     if zone.institutional_interest > 70:
                         confirmations.append("institutional")
                     
-                    if len(confirmations) >= 2:
-                        signals.append({
+                    # More lenient: require only 1 confirmation for high-score zones
+                    min_confirmations = 1 if zone.composite_score >= 70 else 2
+                    
+                    if len(confirmations) >= min_confirmations:
+                        # Calculate proper entry, stop loss, and targets
+                        entry_price = current_price if current_price < zone.upper_bound else zone.upper_bound
+                        stop_loss = zone.lower_bound * 0.998  # Just below zone
+                        
+                        # Calculate R:R based targets
+                        risk = entry_price - stop_loss
+                        take_profit_1 = entry_price + (risk * 1.0)  # 1:1 R:R
+                        take_profit_2 = entry_price + (risk * 2.0)  # 1:2 R:R
+                        
+                        signal = {
                             'type': 'BUY',
                             'zone': zone,
-                            'entry_price': zone.upper_bound,
-                            'stop_loss': zone.lower_bound * 0.995,
-                            'take_profit_1': zone.upper_bound * 1.01,
-                            'take_profit_2': zone.upper_bound * 1.02,
+                            'entry_price': entry_price,
+                            'stop_loss': stop_loss,
+                            'take_profit_1': take_profit_1,
+                            'take_profit_2': take_profit_2,
+                            'take_profit': take_profit_2,  # Alias for compatibility
                             'confidence': zone.composite_score,
                             'confirmations': confirmations,
-                            'risk_reward': 2.0
-                        })
+                            'zone_type': zone.zone_type,
+                            'score': zone.composite_score,
+                            'departure_strength': zone.rejection_strength,
+                            'base_candles': len(confirmations),
+                            'market_structure': market_structure.value,
+                            'order_flow': order_flow.value
+                        }
+                        
+                        logger.info(f"BUY signal generated: Entry={entry_price:.2f}, SL={stop_loss:.2f}, TP1={take_profit_1:.2f}, TP2={take_profit_2:.2f}, Score={zone.composite_score:.1f}")
+                        signals.append(signal)
             
-            # For supply zones
+            # For supply zones (SELL signals)
             elif zone.zone_type == 'supply':
-                # Check if price is approaching the zone
+                # Check if price is approaching or in the zone
                 distance_to_zone = (current_price - zone.lower_bound) / current_price
                 
-                if 0 < distance_to_zone < 0.005:  # Within 0.5% of zone
+                # More lenient: within 1% of zone or inside zone
+                if -0.002 < distance_to_zone < 0.01 or (zone.lower_bound <= current_price <= zone.upper_bound):
                     # Additional confirmations
                     confirmations = []
                     
@@ -775,18 +800,41 @@ class AdvancedSupplyDemandStrategy:
                     if zone.institutional_interest > 70:
                         confirmations.append("institutional")
                     
-                    if len(confirmations) >= 2:
-                        signals.append({
+                    logger.info(f"Supply zone detected: Price={current_price:.2f}, Zone=[{zone.lower_bound:.2f}, {zone.upper_bound:.2f}], Score={zone.composite_score:.1f}")
+                    
+                    # More lenient: require only 1 confirmation for high-score zones
+                    min_confirmations = 1 if zone.composite_score >= 70 else 2
+                    
+                    if len(confirmations) >= min_confirmations:
+                        # Calculate proper entry, stop loss, and targets
+                        entry_price = current_price if current_price > zone.lower_bound else zone.lower_bound
+                        stop_loss = zone.upper_bound * 1.002  # Just above zone
+                        
+                        # Calculate R:R based targets
+                        risk = stop_loss - entry_price
+                        take_profit_1 = entry_price - (risk * 1.0)  # 1:1 R:R
+                        take_profit_2 = entry_price - (risk * 2.0)  # 1:2 R:R
+                        
+                        signal = {
                             'type': 'SELL',
                             'zone': zone,
-                            'entry_price': zone.lower_bound,
-                            'stop_loss': zone.upper_bound * 1.005,
-                            'take_profit_1': zone.lower_bound * 0.99,
-                            'take_profit_2': zone.lower_bound * 0.98,
+                            'entry_price': entry_price,
+                            'stop_loss': stop_loss,
+                            'take_profit_1': take_profit_1,
+                            'take_profit_2': take_profit_2,
+                            'take_profit': take_profit_2,  # Alias for compatibility
                             'confidence': zone.composite_score,
                             'confirmations': confirmations,
-                            'risk_reward': 2.0
-                        })
+                            'zone_type': zone.zone_type,
+                            'score': zone.composite_score,
+                            'departure_strength': zone.rejection_strength,
+                            'base_candles': len(confirmations),
+                            'market_structure': market_structure.value,
+                            'order_flow': order_flow.value
+                        }
+                        
+                        logger.info(f"SELL signal generated: Entry={entry_price:.2f}, SL={stop_loss:.2f}, TP1={take_profit_1:.2f}, TP2={take_profit_2:.2f}, Score={zone.composite_score:.1f}")
+                        signals.append(signal)
         
         return signals
     

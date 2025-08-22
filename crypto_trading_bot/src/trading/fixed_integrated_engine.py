@@ -377,8 +377,16 @@ class FixedIntegratedEngine:
         """Execute signal with all safety checks"""
         
         try:
+            # Validate signal has required fields
+            required_fields = ['type', 'entry_price', 'stop_loss']
+            missing_fields = [f for f in required_fields if f not in signal or signal.get(f) is None]
+            if missing_fields:
+                logger.warning(f"Signal missing required fields {missing_fields}: {signal}")
+                return
+            
             # Double-check position
             if symbol in self.positions_per_symbol:
+                logger.debug(f"Position already exists for {symbol}")
                 return
             
             # Calculate risk-reward ratio (must be 1:2 or better)
@@ -782,9 +790,10 @@ Confidence: {parameters.confidence_score:.1%}
         try:
             entry_price = float(signal.get('entry_price', 0))
             stop_loss = float(signal.get('stop_loss', 0))
-            take_profit = float(signal.get('take_profit', signal.get('take_profit_1', 0)))
+            take_profit = float(signal.get('take_profit', signal.get('take_profit_2', signal.get('take_profit_1', 0))))
             
             if entry_price == 0 or stop_loss == 0 or take_profit == 0:
+                logger.debug(f"Invalid prices for R:R calculation: Entry={entry_price}, SL={stop_loss}, TP={take_profit}")
                 return 0
             
             # Calculate risk and reward
@@ -796,9 +805,12 @@ Confidence: {parameters.confidence_score:.1%}
                 reward = entry_price - take_profit
             
             if risk <= 0:
+                logger.debug(f"Invalid risk calculation: Risk={risk}")
                 return 0
             
-            return reward / risk
+            ratio = reward / risk
+            logger.debug(f"R:R Calculation: Type={signal['type']}, Entry={entry_price:.2f}, SL={stop_loss:.2f}, TP={take_profit:.2f}, R:R={ratio:.2f}")
+            return ratio
             
         except Exception as e:
             logger.error(f"Error calculating risk-reward: {e}")

@@ -390,9 +390,13 @@ class EnhancedBybitClient:
                     # Get available balance
                     account_info = await self.get_account_info()
                     available_balance = float(account_info.get('availableBalance', 0))
+                    wallet_balance = float(account_info.get('totalWalletBalance', 0))
+                    
+                    # Log detailed balance info for debugging
+                    logger.info(f"Balance check for {symbol}: Wallet=${wallet_balance:.2f}, Available=${available_balance:.2f}, Required=${required_margin:.2f}")
                     
                     if available_balance < required_margin:
-                        logger.error(f"Insufficient balance for {symbol}: Required ${required_margin:.2f}, Available ${available_balance:.2f}")
+                        logger.error(f"Insufficient balance for {symbol}: Required ${required_margin:.2f}, Available ${available_balance:.2f}, Wallet=${wallet_balance:.2f}")
                         # Try to reduce quantity to fit available balance
                         max_affordable_qty = (available_balance * float(settings.default_leverage) * 0.95) / price  # Use 95% of available
                         max_affordable_qty = round_to_qty_step(max_affordable_qty, qty_step)

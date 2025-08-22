@@ -655,6 +655,8 @@ class UltraIntelligentEngine:
         try:
             positions = await self.client.get_positions()
             
+            logger.info(f"Found {len(positions)} positions on exchange")
+            
             for position in positions:
                 symbol = position.get('symbol')
                 
@@ -794,7 +796,15 @@ class UltraIntelligentEngine:
                             
                             # Log balance for debugging
                             if self.scan_counter % 10 == 0:  # Log every 10th scan
-                                logger.info(f"Account balance check: ${balance:.2f} (wallet: ${float(account_info.get('totalWalletBalance', 0)):.2f})")
+                                wallet_balance = float(account_info.get('totalWalletBalance', 0))
+                                used_margin = float(account_info.get('totalInitialMargin', 0))
+                                logger.info(f"Account balance: Wallet=${wallet_balance:.2f}, Available=${balance:.2f}, Used Margin=${used_margin:.2f}")
+                                
+                                # Log existing positions
+                                if self.active_positions:
+                                    logger.info(f"Active positions: {list(self.active_positions.keys())}")
+                                    total_position_value = sum(p.position_value for p in self.active_positions.values())
+                                    logger.info(f"Total position value: ${total_position_value:.2f}")
                             
                             # Check if we have enough balance to open new positions
                             if balance < 10:  # Less than $10 available

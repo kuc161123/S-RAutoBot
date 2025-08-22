@@ -11,7 +11,7 @@ import json
 import numpy as np
 import pandas as pd
 try:
-    import redis
+    import redis.asyncio as redis
 except ImportError:
     redis = None
 from collections import defaultdict, deque
@@ -323,22 +323,22 @@ class UltraIntelligentEngine:
                 self.redis_client = None
                 return
                 
-            # Use redis_url from settings
+            # Use redis_url from settings (async version)
             if hasattr(settings, 'redis_url'):
                 self.redis_client = redis.from_url(
                     settings.redis_url,
                     decode_responses=True
                 )
             else:
-                # Fallback to localhost if no Redis URL configured
+                # Fallback to localhost if no Redis URL configured (async version)
                 self.redis_client = redis.Redis(
                     host='localhost',
                     port=6379,
                     db=0,
                     decode_responses=True
                 )
-            # Test connection with sync ping (redis-py uses sync by default)
-            self.redis_client.ping()
+            # Note: With redis.asyncio, we can't ping synchronously in __init__
+            # The connection will be tested on first use
             logger.info("Redis connected successfully")
         except Exception as e:
             logger.warning(f"Redis connection failed (non-critical): {e}")
@@ -1543,10 +1543,14 @@ class UltraIntelligentEngine:
         
         ml_predictor.training_data.append(trade_data)
         
-        # Store in Redis
+        # Store in Redis (using async redis)
         if self.redis_client:
-            key = f"ml_trade:{signal.symbol}:{datetime.now().timestamp()}"
-            await self.redis_client.setex(key, 86400 * 30, json.dumps(trade_data))
+            try:
+                key = f"ml_trade:{signal.symbol}:{datetime.now().timestamp()}"
+                # Using redis.asyncio, setex needs to be awaited
+                await self.redis_client.setex(key, 86400 * 30, json.dumps(trade_data))
+            except Exception as e:
+                logger.warning(f"Failed to store ML trade data in Redis: {e}")
     
     async def _close_websocket_subscriptions(self):
         """Close all WebSocket subscriptions"""

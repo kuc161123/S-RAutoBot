@@ -854,7 +854,7 @@ class UltraIntelligentEngine:
                 if symbol in self.active_positions:
                     return False
                 
-                # Place order
+                # Place order with integrated TP/SL
                 order_data = {
                     'symbol': symbol,
                     'side': "Buy" if signal.action == "BUY" else "Sell",
@@ -862,7 +862,10 @@ class UltraIntelligentEngine:
                     'order_type': signal.order_type,
                     'time_in_force': signal.time_in_force,
                     'reduce_only': signal.reduce_only,
-                    'close_on_trigger': signal.close_on_trigger
+                    'close_on_trigger': signal.close_on_trigger,
+                    # Add TP/SL to the main order
+                    'stopLoss': str(signal.stop_loss),
+                    'takeProfit': str(signal.take_profit_1)
                 }
                 
                 # Add limit price for limit orders
@@ -925,7 +928,29 @@ class UltraIntelligentEngine:
                 
                 # Send notification
                 if self.telegram_bot:
-                    await self.telegram_bot.send_trade_notification(signal)
+                    # Format trade notification message
+                    message = (
+                        f"🚀 **NEW POSITION OPENED**\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"Symbol: {signal.symbol}\n"
+                        f"Side: {signal.action}\n"
+                        f"Entry: ${signal.entry_price:.4f}\n"
+                        f"Stop Loss: ${signal.stop_loss:.4f}\n"
+                        f"TP1: ${signal.take_profit_1:.4f}\n"
+                        f"TP2: ${signal.take_profit_2:.4f}\n"
+                        f"Size: {signal.position_size:.4f}\n"
+                        f"Risk: ${signal.risk_amount:.2f}\n"
+                        f"ML Confidence: {signal.ml_confidence:.1%}\n"
+                        f"━━━━━━━━━━━━━━━\n"
+                        f"Order ID: {order_id}"
+                    )
+                    
+                    # Send to all allowed chats
+                    for chat_id in settings.telegram_allowed_chat_ids:
+                        try:
+                            await self.telegram_bot.send_notification(chat_id, message)
+                        except Exception as e:
+                            logger.error(f"Failed to send notification to {chat_id}: {e}")
                 
                 logger.info(
                     f"✅ Position opened: {symbol} {position.side} "
@@ -943,32 +968,10 @@ class UltraIntelligentEngine:
     async def _set_position_stops(self, position: ActivePosition) -> bool:
         """Set stop loss and take profit orders"""
         try:
-            # Set stop loss
-            stop_order_id = await self.client.place_order(
-                symbol=position.symbol,
-                side="Sell" if position.side == "Buy" else "Buy",
-                qty=position.position_size,
-                order_type="STOP_MARKET",
-                stop_px=position.stop_loss,
-                reduce_only=True
-            )
+            # Note: TP/SL are now set with the initial order using stopLoss and takeProfit parameters
+            # This method is kept for backward compatibility and additional stop orders if needed
             
-            if stop_order_id:
-                position.stop_order_id = stop_order_id
-            
-            # Set take profit (initially TP1)
-            tp_order_id = await self.client.place_order(
-                symbol=position.symbol,
-                side="Sell" if position.side == "Buy" else "Buy",
-                qty=position.position_size * 0.5,  # 50% at TP1
-                order_type="TAKE_PROFIT_MARKET",
-                stop_px=position.take_profit_1,
-                reduce_only=True
-            )
-            
-            if tp_order_id:
-                position.tp_order_id = tp_order_id
-            
+            logger.info(f"TP/SL already set with initial order for {position.symbol}")
             return True
             
         except Exception as e:

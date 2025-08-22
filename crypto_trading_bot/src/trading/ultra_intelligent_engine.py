@@ -10,7 +10,10 @@ import structlog
 import json
 import numpy as np
 import pandas as pd
-import redis.asyncio as redis
+try:
+    import redis
+except ImportError:
+    redis = None
 from collections import defaultdict, deque
 
 from ..api.enhanced_bybit_client import EnhancedBybitClient
@@ -313,14 +316,29 @@ class UltraIntelligentEngine:
     async def _init_redis(self):
         """Initialize Redis connection"""
         try:
-            self.redis_client = redis.Redis(
-                host=settings.redis_host,
-                port=settings.redis_port,
-                db=settings.redis_db,
-                decode_responses=True
-            )
-            await self.redis_client.ping()
-            logger.info("Redis connected")
+            # Check if redis module is available
+            if redis is None:
+                logger.warning("Redis module not installed - caching disabled")
+                self.redis_client = None
+                return
+                
+            # Use redis_url from settings
+            if hasattr(settings, 'redis_url'):
+                self.redis_client = redis.from_url(
+                    settings.redis_url,
+                    decode_responses=True
+                )
+            else:
+                # Fallback to localhost if no Redis URL configured
+                self.redis_client = redis.Redis(
+                    host='localhost',
+                    port=6379,
+                    db=0,
+                    decode_responses=True
+                )
+            # Test connection with sync ping (redis-py uses sync by default)
+            self.redis_client.ping()
+            logger.info("Redis connected successfully")
         except Exception as e:
             logger.warning(f"Redis connection failed (non-critical): {e}")
             self.redis_client = None

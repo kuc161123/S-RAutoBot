@@ -183,7 +183,8 @@ class IntelligentDecisionEngine:
                 ml_confidence=ml_confidence,
                 ml_success_prob=ml_success_prob,
                 stop_distance=abs(entry_price - stop_loss),
-                symbol=symbol
+                symbol=symbol,
+                entry_price=entry_price
             )
             
             # 10. Extract ML features for tracking
@@ -394,7 +395,8 @@ class IntelligentDecisionEngine:
         ml_confidence: float,
         ml_success_prob: float,
         stop_distance: float,
-        symbol: str
+        symbol: str,
+        entry_price: float
     ) -> float:
         """Calculate position size using Kelly Criterion and ML predictions"""
         
@@ -417,6 +419,15 @@ class IntelligentDecisionEngine:
         # Apply safety limits
         max_position = account_balance * 0.1 / stop_distance  # Max 10% risk
         position_size = min(position_size, max_position)
+        
+        # Ensure minimum notional value (5 USDT minimum for Bybit)
+        min_notional = 5.5  # 5 USDT + 10% buffer
+        
+        if position_size * entry_price < min_notional:
+            # Adjust to meet minimum
+            min_position_size = min_notional / entry_price
+            logger.info(f"Adjusting position size for {symbol} from {position_size:.4f} to {min_position_size:.4f} to meet ${min_notional} minimum notional")
+            position_size = min_position_size
         
         return position_size
     

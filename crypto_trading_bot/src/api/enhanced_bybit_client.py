@@ -353,10 +353,35 @@ class EnhancedBybitClient:
                 qty_step = float(instrument.get('qty_step', 0.001))
                 original_qty = float(kwargs['qty'])
                 rounded_qty = round_to_qty_step(original_qty, qty_step)
+                
+                # Check minimum notional value (5 USDT for most symbols)
+                min_notional = float(instrument.get('min_notional', 5.0))
+                
+                # Get current price for notional calculation
+                # For market orders, we need to estimate the notional value
+                if 'price' in kwargs:
+                    price = float(kwargs['price'])
+                else:
+                    # Try to get last price from ticker
+                    ticker_info = await self.get_symbol_info(symbol)
+                    if ticker_info:
+                        price = float(ticker_info.get('lastPrice', 0))
+                    else:
+                        price = 0
+                
+                if price > 0:
+                    notional = rounded_qty * price
+                    if notional < min_notional:
+                        # Adjust quantity to meet minimum notional
+                        adjusted_qty = min_notional / price * 1.1  # Add 10% buffer
+                        adjusted_qty = round_to_qty_step(adjusted_qty, qty_step)
+                        logger.warning(f"Quantity {rounded_qty} (notional: ${notional:.2f}) below minimum ${min_notional}. Adjusted to {adjusted_qty}")
+                        rounded_qty = adjusted_qty
+                
                 kwargs['qty'] = str(rounded_qty)  # Bybit API expects string
                 
                 if original_qty != rounded_qty:
-                    logger.info(f"Rounded quantity from {original_qty} to {rounded_qty} (step: {qty_step})")
+                    logger.info(f"Adjusted quantity from {original_qty} to {rounded_qty} (step: {qty_step}, min notional: ${min_notional})")
             
             # Safety check - one position per symbol
             if not await position_safety.can_open_position(symbol, side):

@@ -130,6 +130,10 @@ class PositionSafetyManager:
         if symbol in self.active_positions:
             del self.active_positions[symbol]
             logger.info(f"Removed position for {symbol}")
+    
+    def has_position(self, symbol: str) -> bool:
+        """Check if position exists for symbol"""
+        return symbol in self.active_positions
 
 
 class MLDataValidator:

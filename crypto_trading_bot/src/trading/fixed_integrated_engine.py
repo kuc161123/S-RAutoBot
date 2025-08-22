@@ -57,9 +57,9 @@ class FixedIntegratedEngine:
         self.positions_per_symbol = {}  # Enforces one position per symbol
         self.symbol_locks = {}  # Prevent concurrent operations per symbol
         
-        # Configuration
-        self.monitored_symbols = settings.default_symbols[:300]
-        self.batch_size = 20  # Process symbols in batches
+        # Configuration - reduced for testing and stability
+        self.monitored_symbols = settings.default_symbols[:20]  # Start with 20 symbols
+        self.batch_size = 5  # Smaller batches to avoid rate limits
         
         # Performance tracking
         self.stats = {
@@ -388,6 +388,18 @@ class FixedIntegratedEngine:
             # Double-check position
             if symbol in self.positions_per_symbol:
                 return
+            
+            # Calculate risk-reward ratio (must be 1:2 or better)
+            risk_reward_ratio = self._calculate_risk_reward(signal)
+            
+            if risk_reward_ratio < 2.0:
+                logger.info(f"❌ Signal rejected for {symbol}: Risk-reward ratio 1:{risk_reward_ratio:.1f} < 1:2 (minimum)")
+                return
+            
+            logger.info(f"✅ Signal accepted for {symbol}: Risk-reward ratio 1:{risk_reward_ratio:.1f}")
+            
+            # Add risk-reward to signal for tracking
+            signal['risk_reward_ratio'] = risk_reward_ratio
                 
             # Check with position safety manager
             side = 'Buy' if signal['type'] == 'BUY' else 'Sell'
@@ -489,7 +501,10 @@ class FixedIntegratedEngine:
                 # Update scanner
                 self.scanner.update_position_status(symbol, position_type)
                 
-                # Log to database
+                # Track for ML learning first
+                await self._track_trade_for_ml(symbol, signal)
+                
+                # Log to database with risk-reward
                 await db_pool.execute_with_retry(
                     self._log_trade_to_db,
                     symbol, signal, parameters, order_id
@@ -501,7 +516,7 @@ class FixedIntegratedEngine:
                 # Update stats
                 self.stats['trades_today'] += 1
                 
-                logger.info(f"✅ Position opened for {symbol}: {position_type}, size={final_size}, R:R=1:{risk_reward_ratio:.1f}")
+                logger.info(f"✅ Position opened for {symbol}: {position_type}, size={final_size}, R:R=1:{signal.get('risk_reward_ratio', 0):.1f}")
                 
                 # Monitor trade outcome for ML learning
                 asyncio.create_task(self._monitor_trade_outcome(symbol, signal, order_id))
@@ -519,14 +534,14 @@ class FixedIntegratedEngine:
     async def _position_monitor(self):
         """Monitor positions with sync validation"""
         
-        sync_interval = 30  # Sync every 30 seconds
+        sync_interval = 300  # Sync every 5 minutes (not 30 seconds)
         last_sync = datetime.now()
         
         while self.is_running:
             try:
-                # Full sync periodically
+                # Update position data periodically (don't re-register)
                 if (datetime.now() - last_sync).total_seconds() > sync_interval:
-                    await self._sync_positions()
+                    await self._update_position_data()
                     last_sync = datetime.now()
                     
                 # Get current positions
@@ -684,6 +699,29 @@ class FixedIntegratedEngine:
         
         self.db_manager.log_trade(trade_data)
         
+    async def _update_position_data(self):
+        """Update position data without re-registering (for periodic sync)"""
+        try:
+            positions = await self.client.get_positions()
+            updated_count = 0
+            
+            for position in positions:
+                if float(position.get('size', 0)) > 0:
+                    symbol = position['symbol']
+                    
+                    # Only update if already tracking
+                    if symbol in self.positions_per_symbol:
+                        self.positions_per_symbol[symbol]['data'] = position
+                        self.positions_per_symbol[symbol]['unrealized_pnl'] = float(position.get('unrealisedPnl', 0))
+                        self.positions_per_symbol[symbol]['sync_time'] = datetime.now()
+                        updated_count += 1
+            
+            if updated_count > 0:
+                logger.debug(f"Updated data for {updated_count} positions")
+                
+        except Exception as e:
+            logger.error(f"Error updating position data: {e}")
+    
     async def _send_notification(self, symbol: str, signal: Dict, parameters):
         """Send trade notification"""
         

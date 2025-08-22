@@ -140,10 +140,13 @@ class MultiTimeframeScanner:
     async def _analyze_symbol(self, symbol: str) -> Optional[Dict]:
         """Analyze symbol across all timeframes for signals"""
         
+        logger.debug(f"Analyzing {symbol} for trading opportunities...")
+        
         # Update data for all timeframes
         await self._update_timeframe_data(symbol)
         
         if symbol not in self.timeframe_data:
+            logger.debug(f"No data available for {symbol}")
             return None
         
         # Analyze each timeframe
@@ -176,6 +179,11 @@ class MultiTimeframeScanner:
                     (zone, timeframe) for zone in analysis['zones'][:3]
                 ])
         
+        # Log analysis summary
+        if timeframe_analyses:
+            signals_found = sum(1 for a in timeframe_analyses.values() if a.get('signals'))
+            logger.debug(f"{symbol}: Analyzed {len(timeframe_analyses)} timeframes, {signals_found} have signals")
+        
         # Check for multi-timeframe confluence
         confluence_signal = self._check_confluence(
             symbol,
@@ -184,12 +192,18 @@ class MultiTimeframeScanner:
         )
         
         if confluence_signal:
+            logger.info(f"✅ Confluence signal found for {symbol}: {confluence_signal.get('type', 'UNKNOWN')}")
             # Determine if we should go long or short
             signal_type = self._determine_signal_type(confluence_signal)
             
             # Ensure we can take this position
             if self._can_take_position(symbol, signal_type):
+                logger.info(f"📊 Signal ready for {symbol}: Type={signal_type}")
                 return confluence_signal
+            else:
+                logger.debug(f"Cannot take position for {symbol} - already have position")
+        else:
+            logger.debug(f"No confluence found for {symbol}")
         
         return None
     

@@ -81,10 +81,13 @@ class MultiTimeframeScanner:
                 # Apply rate limiting
                 await rate_limiter.acquire()
                 
+                # Update timeframe data first
+                await self._update_timeframe_data(symbol)
+                
                 # Check if we already have a position for this symbol
                 if symbol in self.active_positions:
-                    # Already have a position, just update data
-                    await self._update_timeframe_data(symbol)
+                    # Already have a position, skip analysis
+                    pass
                 else:
                     # No position, look for opportunities
                     signal = await self._analyze_symbol(symbol)
@@ -112,7 +115,12 @@ class MultiTimeframeScanner:
                 cached_data = await self._get_cached_data(symbol, timeframe)
                 
                 if cached_data and self._is_cache_valid(cached_data):
-                    self.timeframe_data[symbol][timeframe] = cached_data['data']
+                    # Convert JSON string back to DataFrame
+                    if isinstance(cached_data['data'], str):
+                        df_cached = pd.read_json(cached_data['data'], orient='split')
+                    else:
+                        df_cached = cached_data['data']
+                    self.timeframe_data[symbol][timeframe] = df_cached
                 else:
                     # Fetch fresh data
                     df = await self.client.get_klines(symbol, timeframe, limit=200)
@@ -148,9 +156,9 @@ class MultiTimeframeScanner:
             
             df = self.timeframe_data[symbol][timeframe]
             
-            # Skip if dataframe is invalid
-            if df is None or df.empty:
-                logger.debug(f"Skipping {symbol} {timeframe} - no data")
+            # Skip if dataframe is invalid or not a DataFrame
+            if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+                logger.debug(f"Skipping {symbol} {timeframe} - invalid or no data")
                 continue
             
             # Run advanced supply/demand analysis

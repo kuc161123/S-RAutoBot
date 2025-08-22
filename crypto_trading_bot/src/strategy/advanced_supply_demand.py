@@ -5,7 +5,7 @@ Enhanced with institutional trading patterns and machine learning
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Any, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime, timedelta
 import structlog
@@ -145,6 +145,20 @@ class EnhancedZone:
         """Setter for status (backward compatibility)"""
         # Status is derived from test_count, so we don't actually set it
         pass
+
+@dataclass
+class TradingSignal:
+    """Trading signal for compatibility with BacktestEngine"""
+    zone: Any  # EnhancedZone
+    entry_price: float
+    stop_loss: float
+    take_profit_1: float
+    take_profit_2: float
+    position_size: float
+    side: str  # "Buy" or "Sell"
+    confidence: float
+    reason: str
+    timestamp: datetime = field(default_factory=datetime.now)
 
 class AdvancedSupplyDemandStrategy:
     """Enhanced Supply & Demand strategy with advanced features"""
@@ -869,15 +883,21 @@ class AdvancedSupplyDemandStrategy:
             # Update zone age
             zone.age_hours = (datetime.now() - zone.created_at).total_seconds() / 3600
     
-    def check_entry_signal(self, symbol: str, current_price: float, 
-                          current_volume: float = 0) -> Optional[Dict[str, Any]]:
+    def check_entry_signal(self, 
+                          symbol: str, 
+                          current_price: float,
+                          account_balance: float = 10000,
+                          risk_percent: float = 1.0,
+                          instrument_info: Optional[Dict[str, Any]] = None) -> Optional[TradingSignal]:
         """
         Check for entry signals (compatibility method for BacktestEngine)
         
         Args:
             symbol: Trading symbol
             current_price: Current market price
-            current_volume: Current volume (optional)
+            account_balance: Account balance for position sizing
+            risk_percent: Risk percentage per trade
+            instrument_info: Instrument details (tick size, etc.)
             
         Returns:
             Trading signal dict or None
@@ -892,26 +912,52 @@ class AdvancedSupplyDemandStrategy:
                 # Look for long entry at demand zone
                 if zone.lower_bound <= current_price <= zone.upper_bound:
                     if zone.touches == 0:  # Fresh zone
-                        return {
-                            'side': 'Buy',
-                            'zone': zone,
-                            'entry_price': current_price,
-                            'stop_loss': zone.lower_bound - (zone.upper_bound - zone.lower_bound) * 0.2,
-                            'take_profit': zone.upper_bound + (zone.upper_bound - zone.lower_bound) * 2,
-                            'confidence': zone.composite_score
-                        }
+                        zone_range = zone.upper_bound - zone.lower_bound
+                        stop_loss = zone.lower_bound - zone_range * 0.2
+                        take_profit_1 = zone.upper_bound + zone_range * 1.0
+                        take_profit_2 = zone.upper_bound + zone_range * 2.0
+                        
+                        # Calculate position size based on risk
+                        risk_amount = account_balance * (risk_percent / 100)
+                        stop_distance = abs(current_price - stop_loss)
+                        position_size = risk_amount / stop_distance if stop_distance > 0 else 0
+                        
+                        return TradingSignal(
+                            zone=zone,
+                            entry_price=current_price,
+                            stop_loss=stop_loss,
+                            take_profit_1=take_profit_1,
+                            take_profit_2=take_profit_2,
+                            position_size=position_size,
+                            side='Buy',
+                            confidence=zone.composite_score,
+                            reason=f'Fresh demand zone at {zone.midpoint:.2f}'
+                        )
             
             elif zone.zone_type == 'supply':
                 # Look for short entry at supply zone
                 if zone.lower_bound <= current_price <= zone.upper_bound:
                     if zone.touches == 0:  # Fresh zone
-                        return {
-                            'side': 'Sell',
-                            'zone': zone,
-                            'entry_price': current_price,
-                            'stop_loss': zone.upper_bound + (zone.upper_bound - zone.lower_bound) * 0.2,
-                            'take_profit': zone.lower_bound - (zone.upper_bound - zone.lower_bound) * 2,
-                            'confidence': zone.composite_score
-                        }
+                        zone_range = zone.upper_bound - zone.lower_bound
+                        stop_loss = zone.upper_bound + zone_range * 0.2
+                        take_profit_1 = zone.lower_bound - zone_range * 1.0
+                        take_profit_2 = zone.lower_bound - zone_range * 2.0
+                        
+                        # Calculate position size based on risk
+                        risk_amount = account_balance * (risk_percent / 100)
+                        stop_distance = abs(current_price - stop_loss)
+                        position_size = risk_amount / stop_distance if stop_distance > 0 else 0
+                        
+                        return TradingSignal(
+                            zone=zone,
+                            entry_price=current_price,
+                            stop_loss=stop_loss,
+                            take_profit_1=take_profit_1,
+                            take_profit_2=take_profit_2,
+                            position_size=position_size,
+                            side='Sell',
+                            confidence=zone.composite_score,
+                            reason=f'Fresh supply zone at {zone.midpoint:.2f}'
+                        )
         
         return None

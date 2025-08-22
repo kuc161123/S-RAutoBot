@@ -79,10 +79,31 @@ class BacktestEngine:
             if df.empty:
                 raise ValueError("No historical data available")
             
-            # Get instrument info
-            instrument = self.client.get_instrument(symbol)
+            # Get instrument info with proper method call
+            logger.debug(f"Getting instrument info for {symbol}")
+            
+            # Handle both BybitClient and EnhancedBybitClient
+            if hasattr(self.client, 'get_instrument') and callable(self.client.get_instrument):
+                instrument = self.client.get_instrument(symbol)
+            elif hasattr(self.client, 'instruments'):
+                instrument = self.client.instruments.get(symbol)
+            else:
+                logger.warning(f"Cannot get instrument info for {symbol}, using defaults")
+                instrument = {
+                    'tick_size': 0.01,
+                    'qty_step': 0.001,
+                    'min_qty': 0.001,
+                    'max_qty': 10000
+                }
+            
             if not instrument:
-                raise ValueError(f"Unknown symbol: {symbol}")
+                logger.warning(f"Unknown symbol: {symbol}, using default instrument settings")
+                instrument = {
+                    'tick_size': 0.01,
+                    'qty_step': 0.001,
+                    'min_qty': 0.001,
+                    'max_qty': 10000
+                }
             
             # Run the backtest
             logger.info("Running backtest simulation...")

@@ -429,8 +429,8 @@ class FixedIntegratedEngine:
                 account_balance=balance
             )
             
-            # Validate position size
-            instrument = self.client.get_instrument(symbol)
+            # Validate position size (get_instrument is a method, not property)
+            instrument = self.client.get_instrument(symbol) if hasattr(self.client, 'get_instrument') else self.client.instruments.get(symbol)
             if instrument:
                 min_qty = float(instrument['min_qty'])
                 max_qty = float(instrument['max_qty'])

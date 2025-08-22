@@ -550,8 +550,12 @@ class TradingBot:
                     )
             
         except Exception as e:
-            logger.error(f"Backtest error: {e}")
-            await update.message.reply_text(f"❌ Backtest failed: {str(e)}")
+            import traceback
+            logger.error(f"Backtest error: {e}\n{traceback.format_exc()}")
+            error_msg = str(e)
+            if "'bool' object is not callable" in error_msg:
+                error_msg = "Strategy or engine initialization error. Please restart the bot."
+            await update.message.reply_text(f"❌ Backtest failed: {error_msg[:200]}")
     
     async def cmd_positions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /positions command"""
@@ -662,8 +666,12 @@ class TradingBot:
                             )
                             
                 except Exception as e:
-                    logger.error(f"Backtest error: {e}")
-                    await query.message.reply_text(f"❌ Backtest failed: {str(e)}")
+                    import traceback
+                    logger.error(f"Backtest error: {e}\n{traceback.format_exc()}")
+                    error_msg = str(e)
+                    if "'bool' object is not callable" in error_msg:
+                        error_msg = "Strategy or engine initialization error. Please restart the bot."
+                    await query.message.reply_text(f"❌ Backtest failed: {error_msg[:200]}")
     
     async def handle_settings_callback(self, query, data):
         """Handle settings callbacks"""

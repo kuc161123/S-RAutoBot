@@ -229,6 +229,11 @@ class FixedIntegratedEngine:
         """Sync existing positions from exchange with proper clearing"""
         
         try:
+            # AGGRESSIVE CLEAR - Remove ALL phantom positions on startup
+            position_safety.active_positions.clear()
+            position_safety.pending_orders.clear()
+            logger.info("Cleared all position tracking data")
+            
             # First clear ALL stale tracking to prevent phantom positions
             await self.position_sync.clear_all_tracking(position_safety)
             self.positions_per_symbol.clear()

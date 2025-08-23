@@ -409,9 +409,25 @@ class EnhancedBybitClient:
                             logger.error(f"Cannot place order: Even minimum size ${min_notional} exceeds available balance")
                             return None
             
-            # Safety check - one position per symbol
+            # Double-check actual positions from exchange before denying
+            actual_positions = await self.get_positions()
+            has_actual_position = any(
+                pos.get('symbol') == symbol and float(pos.get('size', 0)) > 0 
+                for pos in actual_positions
+            )
+            
+            if has_actual_position:
+                logger.warning(f"Cannot open position for {symbol} - actual position exists on exchange")
+                return None
+            
+            # If no actual position but tracking says there is, clear it
+            if symbol in position_safety.active_positions:
+                logger.warning(f"Clearing phantom position tracking for {symbol}")
+                position_safety.remove_position(symbol)
+            
+            # Now check if we can open
             if not await position_safety.can_open_position(symbol, side):
-                logger.warning(f"Cannot open position for {symbol} - position already exists")
+                logger.warning(f"Cannot open position for {symbol} - safety check failed")
                 return None
                 
             # Validate order

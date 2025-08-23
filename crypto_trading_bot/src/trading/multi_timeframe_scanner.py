@@ -132,9 +132,23 @@ class MultiTimeframeScanner:
             # Update timeframe data
             await self._update_timeframe_data(symbol)
             
-            # Check if we already have a position
+            # Check if we already have a position (double-check with exchange)
             if symbol in self.active_positions:
-                return
+                # Verify position still exists on exchange
+                actual_positions = await self.client.get_positions()
+                has_position = any(
+                    pos.get('symbol') == symbol and float(pos.get('size', 0)) > 0
+                    for pos in actual_positions
+                )
+                
+                if has_position:
+                    logger.debug(f"Skipping {symbol} - position already exists")
+                    return
+                else:
+                    # Position was closed, remove from tracking
+                    logger.info(f"Position for {symbol} was closed, removing from tracking")
+                    del self.active_positions[symbol]
+                    position_safety.remove_position(symbol)
             
             # Look for opportunities
             signal = await self._analyze_symbol(symbol)
@@ -406,6 +420,18 @@ class MultiTimeframeScanner:
         """Process a trading signal"""
         
         try:
+            # FINAL CHECK: Ensure no position exists before processing
+            actual_positions = await self.client.get_positions()
+            has_position = any(
+                pos.get('symbol') == symbol and float(pos.get('size', 0)) > 0
+                for pos in actual_positions
+            )
+            
+            if has_position:
+                logger.warning(f"Aborting signal for {symbol} - position already exists on exchange")
+                self.active_positions[symbol] = 'existing'
+                return
+            
             # Record that we're taking a position
             signal_type = self._determine_signal_type(signal)
             self.active_positions[symbol] = signal_type

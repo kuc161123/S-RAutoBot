@@ -409,25 +409,38 @@ class EnhancedBybitClient:
                             logger.error(f"Cannot place order: Even minimum size ${min_notional} exceeds available balance")
                             return None
             
-            # Double-check actual positions from exchange before denying
+            # CRITICAL: Check actual positions from exchange - this is the source of truth
             actual_positions = await self.get_positions()
-            has_actual_position = any(
-                pos.get('symbol') == symbol and float(pos.get('size', 0)) > 0 
-                for pos in actual_positions
-            )
+            actual_position = None
+            for pos in actual_positions:
+                if pos.get('symbol') == symbol and float(pos.get('size', 0)) > 0:
+                    actual_position = pos
+                    break
             
-            if has_actual_position:
-                logger.warning(f"Cannot open position for {symbol} - actual position exists on exchange")
+            if actual_position:
+                # Real position exists - absolutely no new trades for this symbol
+                pos_side = actual_position.get('side', '')
+                pos_size = float(actual_position.get('size', 0))
+                logger.warning(f"Cannot open position for {symbol} - actual {pos_side} position exists with size {pos_size}")
+                
+                # Make sure tracking reflects reality
+                if symbol not in position_safety.active_positions:
+                    logger.info(f"Registering existing position for {symbol} in safety tracker")
+                    position_safety.register_position(symbol, {
+                        'side': pos_side,
+                        'size': pos_size,
+                        'entry_price': float(actual_position.get('avgPrice', 0))
+                    })
                 return None
             
-            # If no actual position but tracking says there is, clear it
+            # No actual position exists - clear any phantom tracking
             if symbol in position_safety.active_positions:
-                logger.warning(f"Clearing phantom position tracking for {symbol}")
+                logger.warning(f"Clearing phantom position tracking for {symbol} - no actual position on exchange")
                 position_safety.remove_position(symbol)
             
-            # Now check if we can open
+            # Final safety check (should pass since we cleared phantoms)
             if not await position_safety.can_open_position(symbol, side):
-                logger.warning(f"Cannot open position for {symbol} - safety check failed")
+                logger.error(f"Position safety check still failed for {symbol} after clearing - this shouldn't happen")
                 return None
                 
             # Validate order

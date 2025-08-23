@@ -67,7 +67,7 @@ class MLEnsemble:
         self.feature_scaler = RobustScaler()  # Robust to outliers
         self.target_scaler = StandardScaler()
         
-        # Feature configuration
+        # Feature configuration - Enhanced for multi-timeframe strategy
         self.feature_columns = [
             # Price features
             'returns_1', 'returns_5', 'returns_10',
@@ -79,9 +79,16 @@ class MLEnsemble:
             'volume_ratio', 'volume_ma_ratio',
             'volume_delta', 'cumulative_delta',
             
-            # Market structure
+            # Market structure - ENHANCED
             'trend_strength', 'support_distance', 'resistance_distance',
-            'higher_high', 'lower_low',
+            'higher_high', 'lower_low', 'higher_low', 'lower_high',
+            'structure_break', 'structure_confidence',
+            
+            # Multi-timeframe features - NEW
+            'htf_zone_distance', 'htf_zone_strength', 'htf_zone_type',
+            'ltf_structure_trend', 'ltf_structure_pattern',
+            'htf_ltf_alignment', 'zone_approach_velocity',
+            'rejection_strength', 'break_momentum',
             
             # Order flow
             'order_flow_imbalance', 'absorption_score',
@@ -98,6 +105,7 @@ class MLEnsemble:
             # Interaction features
             'volume_price_correlation',
             'delta_price_correlation',
+            'structure_zone_confluence',  # NEW
             'trend_volume_interaction'
         ]
         
@@ -170,9 +178,13 @@ class MLEnsemble:
         features['support_distance'] = self._calculate_support_distance(df)
         features['resistance_distance'] = self._calculate_resistance_distance(df)
         
-        # Higher highs and lower lows
+        # Enhanced market structure patterns
         features['higher_high'] = (df['high'] > df['high'].shift(1)).astype(int)
         features['lower_low'] = (df['low'] < df['low'].shift(1)).astype(int)
+        features['higher_low'] = (df['low'] > df['low'].shift(1)).astype(int)
+        features['lower_high'] = (df['high'] < df['high'].shift(1)).astype(int)
+        features['structure_break'] = self._detect_structure_break(df)
+        features['structure_confidence'] = self._calculate_structure_confidence(df)
         
         # Order flow features (simplified if not available)
         if 'order_flow_imbalance' in df.columns:
@@ -206,9 +218,34 @@ class MLEnsemble:
             features['day_sin'] = 0
             features['day_cos'] = 1
         
+        # Multi-timeframe features (if zone_data contains MTF info)
+        if zone_data and 'htf_zones' in zone_data:
+            features['htf_zone_distance'] = self._calculate_zone_distance(df, zone_data['htf_zones'])
+            features['htf_zone_strength'] = zone_data['htf_zones'][0]['strength'] if zone_data['htf_zones'] else 0
+            features['htf_zone_type'] = 1 if zone_data['htf_zones'] and zone_data['htf_zones'][0]['type'] == 'supply' else -1
+        else:
+            features['htf_zone_distance'] = 0
+            features['htf_zone_strength'] = 0
+            features['htf_zone_type'] = 0
+        
+        if zone_data and 'ltf_structure' in zone_data:
+            features['ltf_structure_trend'] = zone_data['ltf_structure'].get('trend', 0)
+            features['ltf_structure_pattern'] = zone_data['ltf_structure'].get('pattern_score', 0)
+            features['htf_ltf_alignment'] = zone_data.get('alignment_score', 0)
+        else:
+            features['ltf_structure_trend'] = 0
+            features['ltf_structure_pattern'] = 0
+            features['htf_ltf_alignment'] = 0
+        
+        # Zone approach dynamics
+        features['zone_approach_velocity'] = self._calculate_approach_velocity(df)
+        features['rejection_strength'] = self._calculate_rejection_strength(df)
+        features['break_momentum'] = self._calculate_break_momentum(df)
+        
         # Interaction features
         features['volume_price_correlation'] = df['close'].rolling(20).corr(df['volume'])
         features['delta_price_correlation'] = features['cumulative_delta'].rolling(20).corr(df['close'])
+        features['structure_zone_confluence'] = features['structure_confidence'] * features['htf_zone_strength'] / 100
         features['trend_volume_interaction'] = features['trend_strength'] * features['volume_ratio']
         
         # Fill NaN values
@@ -510,6 +547,95 @@ class MLEnsemble:
         
         if drift > self.drift_threshold:
             logger.warning(f"Model drift detected: {drift:.3f} > {self.drift_threshold}")
+    
+    def _detect_structure_break(self, df: pd.DataFrame) -> pd.Series:
+        """Detect market structure breaks"""
+        highs = df['high'].rolling(5).max()
+        lows = df['low'].rolling(5).min()
+        
+        # Bullish structure break: Close above recent high
+        bullish_break = (df['close'] > highs.shift(1)).astype(int)
+        
+        # Bearish structure break: Close below recent low
+        bearish_break = (df['close'] < lows.shift(1)).astype(int) * -1
+        
+        return bullish_break + bearish_break
+    
+    def _calculate_structure_confidence(self, df: pd.DataFrame) -> pd.Series:
+        """Calculate confidence in market structure"""
+        # Volume confirmation
+        vol_conf = df['volume'] / df['volume'].rolling(20).mean()
+        
+        # Price action confirmation (body vs wick ratio)
+        body = abs(df['close'] - df['open'])
+        wick = df['high'] - df['low']
+        pa_conf = body / (wick + 0.0001)
+        
+        # Combine confirmations
+        confidence = (vol_conf * 0.5 + pa_conf * 0.5) * 50
+        return confidence.clip(0, 100)
+    
+    def _calculate_zone_distance(self, df: pd.DataFrame, zones: List) -> pd.Series:
+        """Calculate distance to nearest zone"""
+        if not zones:
+            return pd.Series(0, index=df.index)
+        
+        current_price = df['close']
+        distances = []
+        
+        for _, row in current_price.items():
+            min_dist = float('inf')
+            for zone in zones[:3]:  # Check top 3 zones
+                if row > zone['upper']:
+                    dist = (row - zone['upper']) / row
+                elif row < zone['lower']:
+                    dist = (zone['lower'] - row) / row
+                else:
+                    dist = 0  # Inside zone
+                
+                min_dist = min(min_dist, dist)
+            distances.append(min_dist * 100)  # Convert to percentage
+        
+        return pd.Series(distances, index=df.index)
+    
+    def _calculate_approach_velocity(self, df: pd.DataFrame) -> pd.Series:
+        """Calculate how fast price is approaching a level"""
+        # Rate of change in price
+        roc = df['close'].pct_change(5) * 100
+        
+        # Acceleration (change in rate of change)
+        acceleration = roc.diff()
+        
+        return acceleration.fillna(0)
+    
+    def _calculate_rejection_strength(self, df: pd.DataFrame) -> pd.Series:
+        """Calculate strength of price rejection from levels"""
+        # Rejection from highs (upper wick)
+        upper_wick = df['high'] - df[['open', 'close']].max(axis=1)
+        
+        # Rejection from lows (lower wick)
+        lower_wick = df[['open', 'close']].min(axis=1) - df['low']
+        
+        # Total rejection relative to range
+        total_rejection = (upper_wick + lower_wick) / (df['high'] - df['low'] + 0.0001)
+        
+        # Volume-weighted rejection
+        vol_weight = df['volume'] / df['volume'].rolling(20).mean()
+        
+        return (total_rejection * vol_weight * 50).clip(0, 100)
+    
+    def _calculate_break_momentum(self, df: pd.DataFrame) -> pd.Series:
+        """Calculate momentum of price breaks"""
+        # Price momentum
+        momentum = df['close'].pct_change(3) * 100
+        
+        # Volume surge
+        vol_surge = df['volume'] / df['volume'].rolling(20).mean()
+        
+        # Combined break momentum
+        break_mom = momentum * vol_surge
+        
+        return break_mom.fillna(0)
             
             # Update drift scores
             for name in self.model_performance:

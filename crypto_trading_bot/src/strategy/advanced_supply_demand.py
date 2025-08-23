@@ -718,9 +718,21 @@ class AdvancedSupplyDemandStrategy:
         zones: List[EnhancedZone],
         current_candle: pd.Series,
         market_structure: MarketStructure,
-        order_flow: OrderFlowImbalance
+        order_flow: OrderFlowImbalance,
+        ltf_structure: Optional[Dict] = None,
+        htf_zones: Optional[List] = None
     ) -> List[Dict[str, Any]]:
-        """Generate trading signals based on zones and market conditions"""
+        """
+        Enhanced signal generation with multi-timeframe and market structure awareness
+        
+        Args:
+            zones: Supply/demand zones
+            current_candle: Current price candle
+            market_structure: Market structure
+            order_flow: Order flow imbalance
+            ltf_structure: Lower timeframe structure for HTF/LTF strategy
+            htf_zones: Higher timeframe zones for confluence
+        """
         
         signals = []
         current_price = float(current_candle['close'])
@@ -738,14 +750,37 @@ class AdvancedSupplyDemandStrategy:
                     
                     logger.info(f"Demand zone detected: Price={current_price:.2f}, Zone=[{zone.lower_bound:.2f}, {zone.upper_bound:.2f}], Score={zone.composite_score:.1f}")
                     
+                    # Market structure confirmations
                     if market_structure in [MarketStructure.BULLISH, MarketStructure.TRANSITIONING]:
                         confirmations.append("market_structure")
+                    
+                    # LTF structure confirmations (for HTF/LTF strategy)
+                    if ltf_structure:
+                        if 'HL' in ltf_structure.get('patterns', []):
+                            confirmations.append("higher_low")
+                        if 'HH' in ltf_structure.get('patterns', []):
+                            confirmations.append("higher_high")
+                        if ltf_structure.get('trend') == 'bullish':
+                            confirmations.append("ltf_bullish")
+                    
+                    # Order flow confirmations
                     if order_flow in [OrderFlowImbalance.BUYING, OrderFlowImbalance.STRONG_BUYING]:
                         confirmations.append("order_flow")
+                    
+                    # Zone quality confirmations
                     if zone.is_fresh:
                         confirmations.append("fresh_zone")
                     if zone.institutional_interest > 70:
                         confirmations.append("institutional")
+                    
+                    # HTF zone confluence
+                    if htf_zones:
+                        for htf_zone in htf_zones:
+                            if htf_zone.get('type') == 'demand':
+                                zone_overlap = abs(htf_zone.get('lower', 0) - zone.lower_bound) / zone.lower_bound
+                                if zone_overlap < 0.01:  # Within 1%
+                                    confirmations.append("htf_confluence")
+                                    break
                     
                     # More lenient: require only 1 confirmation for high-score zones
                     min_confirmations = 1 if zone.composite_score >= 70 else 2
@@ -775,7 +810,11 @@ class AdvancedSupplyDemandStrategy:
                             'departure_strength': zone.rejection_strength,
                             'base_candles': len(confirmations),
                             'market_structure': market_structure.value,
-                            'order_flow': order_flow.value
+                            'order_flow': order_flow.value,
+                            # MTF specific fields
+                            'ltf_structure': ltf_structure if ltf_structure else None,
+                            'has_htf_confluence': 'htf_confluence' in confirmations,
+                            'structure_aligned': any(c in confirmations for c in ['higher_low', 'higher_high', 'ltf_bullish'])
                         }
                         
                         logger.info(f"BUY signal generated: Entry={entry_price:.2f}, SL={stop_loss:.2f}, TP1={take_profit_1:.2f}, TP2={take_profit_2:.2f}, Score={zone.composite_score:.1f}")
@@ -791,14 +830,37 @@ class AdvancedSupplyDemandStrategy:
                     # Additional confirmations
                     confirmations = []
                     
+                    # Market structure confirmations
                     if market_structure in [MarketStructure.BEARISH, MarketStructure.TRANSITIONING]:
                         confirmations.append("market_structure")
+                    
+                    # LTF structure confirmations (for HTF/LTF strategy)
+                    if ltf_structure:
+                        if 'LH' in ltf_structure.get('patterns', []):
+                            confirmations.append("lower_high")
+                        if 'LL' in ltf_structure.get('patterns', []):
+                            confirmations.append("lower_low")
+                        if ltf_structure.get('trend') == 'bearish':
+                            confirmations.append("ltf_bearish")
+                    
+                    # Order flow confirmations
                     if order_flow in [OrderFlowImbalance.SELLING, OrderFlowImbalance.STRONG_SELLING]:
                         confirmations.append("order_flow")
+                    
+                    # Zone quality confirmations
                     if zone.is_fresh:
                         confirmations.append("fresh_zone")
                     if zone.institutional_interest > 70:
                         confirmations.append("institutional")
+                    
+                    # HTF zone confluence
+                    if htf_zones:
+                        for htf_zone in htf_zones:
+                            if htf_zone.get('type') == 'supply':
+                                zone_overlap = abs(htf_zone.get('upper', 0) - zone.upper_bound) / zone.upper_bound
+                                if zone_overlap < 0.01:  # Within 1%
+                                    confirmations.append("htf_confluence")
+                                    break
                     
                     logger.info(f"Supply zone detected: Price={current_price:.2f}, Zone=[{zone.lower_bound:.2f}, {zone.upper_bound:.2f}], Score={zone.composite_score:.1f}")
                     
@@ -830,7 +892,11 @@ class AdvancedSupplyDemandStrategy:
                             'departure_strength': zone.rejection_strength,
                             'base_candles': len(confirmations),
                             'market_structure': market_structure.value,
-                            'order_flow': order_flow.value
+                            'order_flow': order_flow.value,
+                            # MTF specific fields
+                            'ltf_structure': ltf_structure if ltf_structure else None,
+                            'has_htf_confluence': 'htf_confluence' in confirmations,
+                            'structure_aligned': any(c in confirmations for c in ['lower_high', 'lower_low', 'ltf_bearish'])
                         }
                         
                         logger.info(f"SELL signal generated: Entry={entry_price:.2f}, SL={stop_loss:.2f}, TP1={take_profit_1:.2f}, TP2={take_profit_2:.2f}, Score={zone.composite_score:.1f}")

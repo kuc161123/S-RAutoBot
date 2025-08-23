@@ -1,8 +1,9 @@
 """
-Multi-timeframe market scanner with Redis caching
+Multi-timeframe market scanner with HTF/LTF synchronization
+Implements the multi-timeframe supply/demand strategy with market structure
 """
 import asyncio
-from typing import Dict, List, Set, Tuple, Optional
+from typing import Dict, List, Set, Tuple, Optional, Any
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
@@ -13,30 +14,49 @@ import json
 from ..config import settings
 from ..api.bybit_client import BybitClient
 from ..strategy.advanced_supply_demand import AdvancedSupplyDemandStrategy
+from ..strategy.market_structure_analyzer import MarketStructureAnalyzer, MarketStructure
 from ..utils.reliability import rate_limiter, retry_with_backoff
+from ..utils.symbol_rotator import SymbolRotator
 
 logger = structlog.get_logger(__name__)
 
 class MultiTimeframeScanner:
-    """Scans multiple timeframes for trading opportunities"""
+    """
+    Enhanced scanner that synchronizes HTF supply/demand zones with LTF market structure
+    for precise entry signals across all symbols
+    """
     
     def __init__(self, bybit_client: BybitClient, strategy: AdvancedSupplyDemandStrategy):
         self.client = bybit_client
         self.strategy = strategy
+        self.structure_analyzer = MarketStructureAnalyzer()
         self.redis_client = None
         self.scanning_tasks = {}
+        
+        # Multi-timeframe data storage
         self.timeframe_data = {}  # symbol -> timeframe -> data
+        self.htf_zones = {}  # symbol -> supply/demand zones from HTF
+        self.ltf_structure = {}  # symbol -> market structure from LTF
         self.zone_confluence = {}  # symbol -> zones across timeframes
         
-        # Configure timeframes to monitor
-        self.timeframes = settings.monitored_timeframes  # ["5", "15", "60", "240"]
-        self.primary_timeframe = settings.default_timeframe  # "15"
+        # Timeframe configuration for strategy
+        self.htf_timeframes = ["240", "60"]  # Higher timeframes for zones (4H, 1H)
+        self.ltf_timeframes = ["15", "5"]  # Lower timeframes for structure (15m, 5m)
+        self.primary_htf = "240"  # Primary HTF for zone identification
+        self.primary_ltf = "15"  # Primary LTF for entry timing
         
-        # Top 300 symbols
-        self.symbols = settings.default_symbols[:300]
+        # ALL available symbols for maximum learning opportunities
+        self.symbols = settings.default_symbols[:300]  # All top 300 symbols
+        
+        # Symbol rotation for efficient scanning
+        self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=20)
+        self.current_scan_batch = []
         
         # Position tracking - one position per symbol
         self.active_positions = {}  # symbol -> position_type (long/short)
+        
+        # Performance tracking per symbol
+        self.symbol_performance = {}  # symbol -> {success_rate, best_tf_combo}
         
     async def initialize(self):
         """Initialize Redis connection for caching"""
@@ -54,16 +74,41 @@ class MultiTimeframeScanner:
             self.redis_client = None
     
     async def start_scanning(self):
-        """Start scanning all symbols on all timeframes"""
-        logger.info(f"Starting multi-timeframe scanner for {len(self.symbols)} symbols")
+        """Start scanning with symbol rotation for efficiency"""
+        logger.info(f"Starting multi-timeframe scanner for {len(self.symbols)} symbols with rotation")
         
-        # Create scanning tasks for each symbol
-        for symbol in self.symbols:
-            if symbol not in self.scanning_tasks:
-                task = asyncio.create_task(self._scan_symbol(symbol))
-                self.scanning_tasks[symbol] = task
+        # Start main scanning loop with rotation
+        self.scanning_task = asyncio.create_task(self._scanning_loop())
         
-        logger.info(f"Started {len(self.scanning_tasks)} scanning tasks")
+        logger.info("Scanner started with symbol rotation enabled")
+    
+    async def _scanning_loop(self):
+        """Main scanning loop that rotates through symbols"""
+        while True:
+            try:
+                # Get next batch of symbols to scan
+                batch = self.symbol_rotator.get_next_batch()
+                self.current_scan_batch = batch
+                
+                logger.debug(f"Scanning batch of {len(batch)} symbols")
+                
+                # Create tasks for batch
+                tasks = []
+                for symbol in batch:
+                    if symbol not in self.active_positions:  # Skip if we have position
+                        task = asyncio.create_task(self._scan_symbol_once(symbol))
+                        tasks.append(task)
+                
+                # Wait for batch to complete
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Brief pause between batches
+                await asyncio.sleep(5)
+                
+            except Exception as e:
+                logger.error(f"Scanning loop error: {e}")
+                await asyncio.sleep(10)
     
     async def stop_scanning(self):
         """Stop all scanning tasks"""
@@ -73,43 +118,44 @@ class MultiTimeframeScanner:
         self.scanning_tasks.clear()
         logger.info("Stopped all scanning tasks")
     
-    @retry_with_backoff(max_attempts=3)
-    async def _scan_symbol(self, symbol: str):
-        """Scan a single symbol across all timeframes"""
-        while True:
-            try:
-                # Apply rate limiting
-                await rate_limiter.acquire()
+    async def _scan_symbol_once(self, symbol: str):
+        """Scan a symbol once (for rotation mode)"""
+        try:
+            # Apply rate limiting
+            await rate_limiter.acquire()
+            
+            # Skip if should skip
+            if self.symbol_rotator.should_skip_symbol(symbol):
+                return
+            
+            # Update timeframe data
+            await self._update_timeframe_data(symbol)
+            
+            # Check if we already have a position
+            if symbol in self.active_positions:
+                return
+            
+            # Look for opportunities
+            signal = await self._analyze_symbol(symbol)
+            
+            if signal:
+                # Record signal for rotator
+                self.symbol_rotator.record_signal(symbol)
                 
-                # Update timeframe data first
-                await self._update_timeframe_data(symbol)
-                
-                # Check if we already have a position for this symbol
-                if symbol in self.active_positions:
-                    # Already have a position, skip analysis
-                    pass
-                else:
-                    # No position, look for opportunities
-                    signal = await self._analyze_symbol(symbol)
+                # Process if no position
+                if symbol not in self.active_positions:
+                    await self._process_signal(symbol, signal)
                     
-                    if signal:
-                        # Ensure only one position per symbol
-                        if symbol not in self.active_positions:
-                            await self._process_signal(symbol, signal)
-                
-                # Cache update interval based on timeframe
-                await asyncio.sleep(60)  # Check every minute
-                
-            except Exception as e:
-                logger.error(f"Error scanning {symbol}: {e}")
-                await asyncio.sleep(10)
+        except Exception as e:
+            logger.error(f"Error scanning {symbol}: {e}")
     
     async def _update_timeframe_data(self, symbol: str):
-        """Update data for all timeframes of a symbol"""
+        """Update HTF and LTF data for synchronized analysis"""
         
         self.timeframe_data[symbol] = {}
         
-        for timeframe in self.timeframes:
+        # Update HTF data for zone identification
+        for timeframe in self.htf_timeframes:
             try:
                 # Try to get from cache first
                 cached_data = await self._get_cached_data(symbol, timeframe)
@@ -122,8 +168,8 @@ class MultiTimeframeScanner:
                         df_cached = cached_data['data']
                     self.timeframe_data[symbol][timeframe] = df_cached
                 else:
-                    # Fetch fresh data
-                    df = await self.client.get_klines(symbol, timeframe, limit=200)
+                    # Fetch fresh data - more candles for HTF
+                    df = await self.client.get_klines(symbol, timeframe, limit=500)
                     
                     if df is not None and not df.empty:
                         # Store in memory
@@ -132,15 +178,34 @@ class MultiTimeframeScanner:
                         # Cache in Redis
                         await self._cache_data(symbol, timeframe, df)
                     else:
-                        logger.warning(f"No data returned for {symbol} {timeframe}")
+                        logger.warning(f"No HTF data returned for {symbol} {timeframe}")
                 
             except Exception as e:
-                logger.error(f"Error updating {symbol} {timeframe}: {e}")
+                logger.error(f"Error updating HTF {symbol} {timeframe}: {e}")
+        
+        # Update LTF data for market structure
+        for timeframe in self.ltf_timeframes:
+            try:
+                # Fetch fresh LTF data (more frequent updates needed)
+                df = await self.client.get_klines(symbol, timeframe, limit=200)
+                
+                if df is not None and not df.empty:
+                    self.timeframe_data[symbol][timeframe] = df
+                    # Cache with shorter TTL for LTF
+                    await self._cache_data(symbol, timeframe, df, ttl=60)
+                else:
+                    logger.warning(f"No LTF data returned for {symbol} {timeframe}")
+                    
+            except Exception as e:
+                logger.error(f"Error updating LTF {symbol} {timeframe}: {e}")
     
     async def _analyze_symbol(self, symbol: str) -> Optional[Dict]:
-        """Analyze symbol across all timeframes for signals"""
+        """
+        Analyze symbol using HTF zones and LTF market structure
+        This is the core of the multi-timeframe strategy
+        """
         
-        logger.debug(f"Analyzing {symbol} for trading opportunities...")
+        logger.debug(f"Analyzing {symbol} with HTF/LTF strategy...")
         
         # Update data for all timeframes
         await self._update_timeframe_data(symbol)
@@ -149,182 +214,181 @@ class MultiTimeframeScanner:
             logger.debug(f"No data available for {symbol}")
             return None
         
-        # Analyze each timeframe
-        timeframe_analyses = {}
-        zone_alignments = []
+        # Step 1: Get HTF supply/demand zones
+        htf_zones = await self._get_htf_zones(symbol)
+        if not htf_zones:
+            logger.debug(f"No HTF zones found for {symbol}")
+            return None
         
-        for timeframe in self.timeframes:
-            if timeframe not in self.timeframe_data[symbol]:
-                continue
+        # Step 2: Analyze LTF market structure
+        ltf_structure = await self._get_ltf_structure(symbol)
+        if not ltf_structure:
+            logger.debug(f"No LTF structure available for {symbol}")
+            return None
+        
+        # Step 3: Find confluence between HTF zones and LTF structure
+        signal = await self._find_htf_ltf_confluence(symbol, htf_zones, ltf_structure)
+        
+        if signal:
+            logger.info(f"Strong signal found for {symbol}: {signal['direction']} "
+                       f"at HTF zone with LTF {signal['structure_pattern']}")
             
+            # Store performance data for ML learning
+            await self._update_symbol_performance(symbol, signal)
+        
+        return signal
+    
+    async def _get_htf_zones(self, symbol: str) -> List[Dict]:
+        """Get supply/demand zones from higher timeframes"""
+        zones = []
+        
+        for timeframe in self.htf_timeframes:
+            if timeframe not in self.timeframe_data.get(symbol, {}):
+                continue
+                
             df = self.timeframe_data[symbol][timeframe]
-            
-            # Skip if dataframe is invalid or not a DataFrame
             if df is None or not isinstance(df, pd.DataFrame) or df.empty:
-                logger.debug(f"Skipping {symbol} {timeframe} - invalid or no data")
                 continue
             
-            # Run advanced supply/demand analysis
+            # Analyze HTF for zones
             analysis = self.strategy.analyze_market(
                 symbol=symbol,
                 df=df,
                 timeframes=[timeframe]
             )
             
-            timeframe_analyses[timeframe] = analysis
-            
-            # Collect zones for confluence
-            if analysis['zones']:
-                zone_alignments.extend([
-                    (zone, timeframe) for zone in analysis['zones'][:3]
-                ])
+            if analysis.get('zones'):
+                # Add timeframe info to zones
+                for zone in analysis['zones'][:5]:  # Top 5 zones
+                    zone_dict = {
+                        'type': zone.zone_type,
+                        'upper': zone.upper_bound,
+                        'lower': zone.lower_bound,
+                        'strength': zone.strength_score,
+                        'timeframe': timeframe,
+                        'touches': zone.test_count
+                    }
+                    zones.append(zone_dict)
         
-        # Log analysis summary
-        if timeframe_analyses:
-            signals_found = sum(1 for a in timeframe_analyses.values() if a.get('signals'))
-            logger.debug(f"{symbol}: Analyzed {len(timeframe_analyses)} timeframes, {signals_found} have signals")
-        
-        # Check for multi-timeframe confluence
-        confluence_signal = self._check_confluence(
-            symbol,
-            timeframe_analyses,
-            zone_alignments
-        )
-        
-        if confluence_signal:
-            logger.info(f"✅ Confluence signal found for {symbol}: {confluence_signal.get('type', 'UNKNOWN')}")
-            # Determine if we should go long or short
-            signal_type = self._determine_signal_type(confluence_signal)
-            
-            # Ensure we can take this position
-            if self._can_take_position(symbol, signal_type):
-                logger.info(f"📊 Signal ready for {symbol}: Type={signal_type}")
-                return confluence_signal
-            else:
-                logger.debug(f"Cannot take position for {symbol} - already have position")
-        else:
-            logger.debug(f"No confluence found for {symbol}")
-        
-        return None
+        # Sort by strength
+        zones.sort(key=lambda x: x['strength'], reverse=True)
+        return zones[:10]  # Return top 10 zones
     
-    def _check_confluence(
+    async def _get_ltf_structure(self, symbol: str) -> Optional[MarketStructure]:
+        """Analyze market structure on lower timeframes"""
+        
+        # Use primary LTF for structure analysis
+        if self.primary_ltf not in self.timeframe_data.get(symbol, {}):
+            return None
+            
+        df = self.timeframe_data[symbol][self.primary_ltf]
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            return None
+        
+        # Analyze market structure
+        structure = self.structure_analyzer.analyze_structure(df, self.primary_ltf)
+        
+        # Store for later use
+        self.ltf_structure[symbol] = structure
+        
+        return structure
+    
+    async def _find_htf_ltf_confluence(
         self,
         symbol: str,
-        analyses: Dict,
-        zone_alignments: List
+        htf_zones: List[Dict],
+        ltf_structure: MarketStructure
     ) -> Optional[Dict]:
-        """Check for confluence across timeframes"""
+        """
+        Find trading opportunities where HTF zones align with LTF structure
+        This is where the magic happens!
+        """
         
-        if not analyses:
+        if not htf_zones or not ltf_structure:
             return None
         
-        # Get primary timeframe analysis
-        primary_analysis = analyses.get(self.primary_timeframe)
-        if not primary_analysis or not primary_analysis['signals']:
+        # Get current price
+        current_price = self.timeframe_data[symbol][self.primary_ltf]['close'].iloc[-1]
+        
+        # Find nearby zones
+        nearby_zones = self._find_nearby_zones(current_price, htf_zones)
+        
+        if not nearby_zones:
             return None
         
-        primary_signal = primary_analysis['signals'][0]
-        confluence_score = 0
-        confirming_timeframes = [self.primary_timeframe]
-        
-        # Check alignment with other timeframes
-        for timeframe, analysis in analyses.items():
-            if timeframe == self.primary_timeframe:
-                continue
+        # Check each nearby zone for LTF structure confluence
+        for zone in nearby_zones:
+            # Determine zone bounds
+            supply_zone = (zone['lower'], zone['upper']) if zone['type'] == 'supply' else None
+            demand_zone = (zone['lower'], zone['upper']) if zone['type'] == 'demand' else None
             
-            # Check market structure alignment
-            if analysis['market_structure'] == primary_analysis['market_structure']:
-                confluence_score += 10
+            # Check for structure signal at zone
+            structure_signal = self.structure_analyzer.detect_entry_signal(
+                structure=ltf_structure,
+                current_price=current_price,
+                supply_zone=supply_zone,
+                demand_zone=demand_zone,
+                timeframe=self.primary_ltf
+            )
             
-            # Check order flow alignment
-            if analysis['order_flow'] == primary_analysis['order_flow']:
-                confluence_score += 10
-            
-            # Check for supporting signals
-            if analysis['signals']:
-                for signal in analysis['signals']:
-                    if signal['type'] == primary_signal['type']:
-                        confluence_score += 20
-                        confirming_timeframes.append(timeframe)
-                        break
-        
-        # Check zone alignment
-        aligned_zones = self._find_aligned_zones(zone_alignments)
-        if aligned_zones:
-            confluence_score += 15 * len(aligned_zones)
-        
-        # More lenient confluence requirements
-        # Accept if primary signal is strong OR has multi-timeframe support
-        if confluence_score >= 30 or (confluence_score >= 20 and primary_signal.get('confidence', 0) >= 70):
-            # Enhance the signal with multi-timeframe data
-            enhanced_signal = primary_signal.copy()
-            enhanced_signal['confluence_score'] = confluence_score
-            enhanced_signal['confirming_timeframes'] = confirming_timeframes
-            enhanced_signal['aligned_zones'] = aligned_zones
-            enhanced_signal['multi_timeframe'] = True
-            
-            return enhanced_signal
+            if structure_signal and structure_signal.confidence > 70:
+                # We have confluence! HTF zone + LTF structure
+                return {
+                    'symbol': symbol,
+                    'direction': structure_signal.direction,
+                    'entry_price': current_price,
+                    'entry_zone': structure_signal.entry_zone,
+                    'stop_loss': structure_signal.stop_loss,
+                    'htf_zone': zone,
+                    'ltf_structure': ltf_structure.trend.value,
+                    'structure_pattern': [p.value for p in structure_signal.pattern[-3:]],
+                    'confidence': (zone['strength'] + structure_signal.confidence) / 2,
+                    'timeframes': {
+                        'htf': zone['timeframe'],
+                        'ltf': self.primary_ltf
+                    }
+                }
         
         return None
     
-    def _find_aligned_zones(self, zone_alignments: List) -> List:
-        """Find zones that align across timeframes"""
-        aligned = []
+    def _find_nearby_zones(self, current_price: float, zones: List[Dict], threshold: float = 0.02) -> List[Dict]:
+        """Find zones within threshold distance of current price"""
+        nearby = []
         
-        for i, (zone1, tf1) in enumerate(zone_alignments):
-            for j, (zone2, tf2) in enumerate(zone_alignments[i+1:], i+1):
-                if tf1 != tf2:
-                    # Check if zones overlap
-                    overlap = self._zones_overlap(zone1, zone2)
-                    if overlap > 0.5:  # 50% overlap
-                        aligned.append({
-                            'zones': [zone1, zone2],
-                            'timeframes': [tf1, tf2],
-                            'overlap': overlap
-                        })
+        for zone in zones:
+            distance_to_zone = 0
+            
+            if current_price > zone['upper']:
+                # Price above zone
+                distance_to_zone = (current_price - zone['upper']) / current_price
+            elif current_price < zone['lower']:
+                # Price below zone
+                distance_to_zone = (zone['lower'] - current_price) / current_price
+            else:
+                # Price within zone
+                distance_to_zone = 0
+            
+            if distance_to_zone <= threshold:  # Within 2% of zone
+                nearby.append(zone)
         
-        return aligned
+        return nearby
     
-    def _zones_overlap(self, zone1, zone2) -> float:
-        """Calculate overlap percentage between two zones"""
+    async def _update_symbol_performance(self, symbol: str, signal: Dict):
+        """Track performance data for ML learning"""
+        if symbol not in self.symbol_performance:
+            self.symbol_performance[symbol] = {
+                'signals': [],
+                'success_rate': 0,
+                'best_htf': self.primary_htf,
+                'best_ltf': self.primary_ltf
+            }
         
-        # Calculate intersection
-        intersection_high = min(zone1.upper_bound, zone2.upper_bound)
-        intersection_low = max(zone1.lower_bound, zone2.lower_bound)
-        
-        if intersection_high < intersection_low:
-            return 0  # No overlap
-        
-        intersection_range = intersection_high - intersection_low
-        
-        # Calculate union
-        union_high = max(zone1.upper_bound, zone2.upper_bound)
-        union_low = min(zone1.lower_bound, zone2.lower_bound)
-        union_range = union_high - union_low
-        
-        if union_range == 0:
-            return 0
-        
-        return intersection_range / union_range
-    
-    def _determine_signal_type(self, signal: Dict) -> str:
-        """Determine if signal is for long or short position"""
-        return 'long' if signal['type'] == 'BUY' else 'short'
-    
-    def _can_take_position(self, symbol: str, signal_type: str) -> bool:
-        """Check if we can take a position (one per symbol)"""
-        
-        # No existing position for this symbol
-        if symbol not in self.active_positions:
-            return True
-        
-        # Already have a position of the same type
-        if self.active_positions[symbol] == signal_type:
-            return False
-        
-        # Have opposite position - would need to close first
-        # This should be handled by position manager
-        return False
+        # Add signal to history
+        self.symbol_performance[symbol]['signals'].append({
+            'timestamp': datetime.now(),
+            'signal': signal,
+            'result': None  # Will be updated after trade completes
+        })
     
     async def _process_signal(self, symbol: str, signal: Dict):
         """Process a trading signal"""
@@ -381,8 +445,8 @@ class MultiTimeframeScanner:
         
         return None
     
-    async def _cache_data(self, symbol: str, timeframe: str, df: pd.DataFrame):
-        """Cache data in Redis"""
+    async def _cache_data(self, symbol: str, timeframe: str, df: pd.DataFrame, ttl: Optional[int] = None):
+        """Cache data in Redis with optional TTL override"""
         
         if not self.redis_client:
             return
@@ -398,8 +462,8 @@ class MultiTimeframeScanner:
                 'symbol': symbol
             }
             
-            # Cache with expiration based on timeframe
-            expiry = self._get_cache_expiry(timeframe)
+            # Cache with expiration based on timeframe or custom TTL
+            expiry = ttl if ttl else self._get_cache_expiry(timeframe)
             await self.redis_client.setex(
                 key,
                 expiry,

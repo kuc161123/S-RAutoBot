@@ -12,6 +12,8 @@ import traceback
 from ..api.enhanced_bybit_client import EnhancedBybitClient
 from ..strategy.advanced_supply_demand import AdvancedSupplyDemandStrategy, EnhancedZone
 from ..strategy.ml_predictor import ml_predictor
+from ..strategy.ml_ensemble import MLEnsemble
+from ..strategy.mtf_strategy_learner import MTFStrategyLearner
 from ..strategy.intelligent_decision_engine import decision_engine, IntelligentSignal
 from .position_manager import EnhancedPositionManager
 from .multi_timeframe_scanner import MultiTimeframeScanner
@@ -50,6 +52,10 @@ class FixedIntegratedEngine:
         self.scanner = MultiTimeframeScanner(bybit_client, self.strategy)
         self.order_manager = OrderManager(bybit_client)
         
+        # ML components for multi-timeframe strategy
+        self.ml_ensemble = MLEnsemble()
+        self.mtf_learner = MTFStrategyLearner()
+        
         # Redis
         self.redis_client = None
         
@@ -58,9 +64,11 @@ class FixedIntegratedEngine:
         self.positions_per_symbol = {}  # Enforces one position per symbol
         self.symbol_locks = {}  # Prevent concurrent operations per symbol
         
-        # Configuration - increased with intelligent decision making
-        self.monitored_symbols = settings.default_symbols[:20]  # Monitor 20 symbols with ML intelligence
-        self.batch_size = 5  # Process 5 symbols at a time to balance speed and rate limits
+        # Configuration - TESTING MODE with ALL symbols for maximum learning
+        self.monitored_symbols = settings.default_symbols[:300]  # Monitor ALL top 300 symbols
+        self.batch_size = 10  # Process 10 symbols at a time (balanced for rate limits)
+        self.testing_mode = True  # Enable testing mode with extra safety
+        self.symbols_per_scan = 20  # Scan 20 symbols per cycle to avoid overwhelming
         
         # Performance tracking
         self.stats = {
@@ -183,12 +191,23 @@ class FixedIntegratedEngine:
         logger.info("Skipping margin mode initialization (unified accounts use cross margin only)")
         
     async def _init_ml_models(self):
-        """Initialize ML models with validation"""
+        """Initialize ML models with validation and MTF learner"""
         
         try:
+            # Initialize MTF strategy learner
+            if self.redis_client:
+                await self.mtf_learner.initialize(settings.redis_url)
+                logger.info("MTF Strategy Learner initialized")
+            
             # Try to load existing models
             ml_predictor.load_models("/tmp/ml_models")
             logger.info("ML models loaded successfully")
+            
+            # Initialize ML ensemble if available
+            if self.ml_ensemble.is_trained:
+                logger.info("ML ensemble models ready")
+            else:
+                logger.info("ML ensemble will learn from trades")
             
             # Validate training data if any
             if ml_predictor.training_data:
@@ -359,6 +378,19 @@ class FixedIntegratedEngine:
                         signal = await self.redis_client.get(f"signal:{symbol}")
                         if signal:
                             signal = json.loads(signal)
+                            
+                            # Check with MTF learner if we should take the trade
+                            should_trade, reason = self.mtf_learner.should_take_trade(symbol, signal)
+                            if not should_trade:
+                                logger.info(f"MTF Learner rejected {symbol}: {reason}")
+                                continue
+                            
+                            # Get optimal parameters from learner
+                            optimal_params = self.mtf_learner.get_optimal_parameters(symbol)
+                            
+                            # Enhance signal with learned parameters
+                            signal['optimal_params'] = optimal_params
+                            signal['mtf_confidence'] = optimal_params.get('win_rate', 0) * 100
                             
                             # Validate ML prediction if present
                             if 'ml_confidence' in signal:
@@ -606,7 +638,7 @@ class FixedIntegratedEngine:
             order_id = await self.client.place_order(**order_data)
             
             if order_id:
-                # Track position
+                # Track position with signal for MTF learning
                 position_type = 'long' if signal['type'] == 'BUY' else 'short'
                 self.positions_per_symbol[symbol] = {
                     'type': position_type,
@@ -616,7 +648,9 @@ class FixedIntegratedEngine:
                     'take_profit_1': signal.get('take_profit_1'),
                     'size': final_size,
                     'leverage': parameters.final_leverage,
-                    'entry_time': datetime.now()
+                    'entry_time': datetime.now(),
+                    'signal': signal,  # Store signal for MTF learner
+                    'zone': zone
                 }
                 
                 # Register with position safety
@@ -705,7 +739,7 @@ class FixedIntegratedEngine:
                 await asyncio.sleep(10)
                 
     async def _handle_position_closed(self, symbol: str, position_data: Optional[Dict]):
-        """Handle closed position with ML feedback"""
+        """Handle closed position with ML feedback and MTF learning"""
         
         if symbol not in self.positions_per_symbol:
             return
@@ -734,6 +768,17 @@ class FixedIntegratedEngine:
                         'zone': position_info.get('zone')
                     }
                 )
+                
+                # Record trade result for MTF learner
+                if position_info.get('signal'):
+                    result = {
+                        'profit': pnl,
+                        'profit_percent': pnl_percent,
+                        'risk_reward': abs(pnl_percent / 2.0) if pnl_percent > 0 else 0,
+                        'duration': (datetime.now() - position_info.get('entry_time', datetime.now())).total_seconds() / 3600
+                    }
+                    await self.mtf_learner.record_trade_result(symbol, position_info['signal'], result)
+                    logger.info(f"MTF Learner updated for {symbol} with PnL={pnl_percent:.2f}%")
                 
             # Update stats
             self.stats['pnl_today'] += pnl

@@ -36,11 +36,11 @@ class Settings(BaseSettings):
     )
     redis_url: str = Field("redis://localhost:6379/0", description="Redis URL")
     
-    # Trading Parameters
-    default_risk_percent: float = Field(1.0, ge=0.1, le=5.0)
-    max_concurrent_positions: int = Field(5, ge=1, le=20)
-    max_daily_loss_percent: float = Field(5.0, ge=1.0, le=10.0)
-    default_leverage: int = Field(10, ge=1, le=125)
+    # Trading Parameters - TESTING MODE WITH MINIMAL RISK (ALL SYMBOLS)
+    default_risk_percent: float = Field(0.3, ge=0.1, le=5.0)  # Only 0.3% risk per trade with many symbols
+    max_concurrent_positions: int = Field(3, ge=1, le=20)  # Max 3 positions spread across symbols
+    max_daily_loss_percent: float = Field(2.0, ge=1.0, le=10.0)  # Stop at 2% daily loss ($2)
+    default_leverage: int = Field(2, ge=1, le=125)  # Minimal 2x leverage for safety
     default_margin_mode: MarginMode = Field(MarginMode.ISOLATED)
     default_position_mode: PositionMode = Field(PositionMode.ONE_WAY)
     

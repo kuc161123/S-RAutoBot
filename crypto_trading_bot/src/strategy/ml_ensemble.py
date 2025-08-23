@@ -636,10 +636,6 @@ class MLEnsemble:
         break_mom = momentum * vol_surge
         
         return break_mom.fillna(0)
-            
-            # Update drift scores
-            for name in self.model_performance:
-                self.model_performance[name].drift_score = drift
     
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """Calculate RSI"""

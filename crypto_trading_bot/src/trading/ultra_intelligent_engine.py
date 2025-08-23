@@ -3,6 +3,7 @@ Ultra Intelligent Trading Engine with Complete Implementation
 This module ensures 100% implementation of all trading features
 """
 import asyncio
+import time
 from typing import Dict, List, Optional, Set, Any, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
@@ -174,7 +175,9 @@ class UltraIntelligentEngine:
         # Position tracking
         self.active_positions: Dict[str, ActivePosition] = {}
         self.position_locks: Dict[str, asyncio.Lock] = {}
+        self.position_cooldowns: Dict[str, float] = {}  # Symbol -> timestamp of last position
         self.max_positions_per_symbol = 1
+        self.position_cooldown_seconds = 30  # Wait 30 seconds between positions on same symbol
         
         # Symbol management
         self.monitored_symbols: List[str] = []
@@ -846,7 +849,8 @@ class UltraIntelligentEngine:
                                     sentiment_score=intelligent_signal.sentiment_score,
                                     momentum_score=intelligent_signal.momentum_score,
                                     volume_score=intelligent_signal.volume_score,
-                                    risk_amount=balance * 0.01,  # 1% risk
+                                    # Calculate actual risk amount (position size * distance to stop loss)
+                                    risk_amount=intelligent_signal.position_size * abs(intelligent_signal.entry_price - intelligent_signal.stop_loss),
                                     risk_reward_ratio=intelligent_signal.ml_expected_profit_ratio,
                                     position_value=intelligent_signal.position_size * intelligent_signal.entry_price,
                                     max_loss=intelligent_signal.position_size * abs(intelligent_signal.entry_price - intelligent_signal.stop_loss),
@@ -946,9 +950,44 @@ class UltraIntelligentEngine:
                 self.position_locks[symbol] = asyncio.Lock()
             
             async with self.position_locks[symbol]:
-                # Double check
+                # Check cooldown
+                if symbol in self.position_cooldowns:
+                    time_since_last = time.time() - self.position_cooldowns[symbol]
+                    if time_since_last < self.position_cooldown_seconds:
+                        logger.info(f"Cooldown active for {symbol}: {self.position_cooldown_seconds - time_since_last:.1f}s remaining")
+                        return False
+                
+                # Double check active positions
                 if symbol in self.active_positions:
+                    logger.info(f"Position already exists for {symbol}, skipping signal")
                     return False
+                
+                # Check position safety manager
+                from ..utils.bot_fixes import position_safety
+                if position_safety.has_position(symbol):
+                    logger.info(f"Position safety: Position already tracked for {symbol}")
+                    return False
+                
+                # Check Redis for pending position flag (prevents race conditions)
+                if self.redis_client:
+                    try:
+                        pending_key = f"pending_position:{symbol}"
+                        existing = await self.redis_client.get(pending_key)
+                        if existing:
+                            logger.info(f"Pending position already exists for {symbol}")
+                            return False
+                        
+                        # Set pending flag with 10 second expiry
+                        await self.redis_client.setex(pending_key, 10, "1")
+                    except Exception as e:
+                        logger.warning(f"Redis check failed: {e}")
+                
+                # Register position immediately to prevent duplicates
+                position_safety.register_position(symbol, {
+                    'side': "Buy" if signal.action == "BUY" else "Sell",
+                    'size': signal.position_size,
+                    'entry_price': signal.entry_price
+                })
                 
                 # Place order with integrated TP/SL
                 order_data = {
@@ -972,6 +1011,14 @@ class UltraIntelligentEngine:
                 order_id = await self.client.place_order(**order_data)
                 
                 if not order_id:
+                    # Order failed, clean up position registration
+                    position_safety.remove_position(symbol)
+                    # Clear Redis pending flag
+                    if self.redis_client:
+                        try:
+                            await self.redis_client.delete(f"pending_position:{symbol}")
+                        except:
+                            pass
                     return False
                 
                 self.metrics['orders_placed'] += 1
@@ -997,6 +1044,16 @@ class UltraIntelligentEngine:
                 )
                 
                 self.active_positions[symbol] = position
+                
+                # Set cooldown for this symbol
+                self.position_cooldowns[symbol] = time.time()
+                
+                # Clear Redis pending flag now that position is confirmed
+                if self.redis_client:
+                    try:
+                        await self.redis_client.delete(f"pending_position:{symbol}")
+                    except:
+                        pass
                 
                 # Set stop loss and take profit
                 await self._set_position_stops(position)

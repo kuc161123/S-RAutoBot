@@ -64,6 +64,13 @@ class ActivePosition:
     max_profit: float = 0
     max_loss: float = 0
     
+    # MAE/MFE tracking for ML learning
+    max_adverse_excursion: float = 0  # Maximum loss from entry
+    max_favorable_excursion: float = 0  # Maximum profit from entry
+    time_to_mae: float = 0  # Minutes to reach MAE
+    time_to_mfe: float = 0  # Minutes to reach MFE
+    mae_recovery: bool = False  # Did price recover from MAE?
+    
     # Timing
     entry_time: datetime = field(default_factory=datetime.now)
     last_update: datetime = field(default_factory=datetime.now)
@@ -80,7 +87,7 @@ class ActivePosition:
     position_value: float = 0
     
     def update_pnl(self, current_price: float):
-        """Update P&L calculations"""
+        """Update P&L calculations with MAE/MFE tracking"""
         self.current_price = current_price
         
         if self.side == "Buy":
@@ -95,6 +102,21 @@ class ActivePosition:
             self.max_profit = self.unrealized_pnl
         if self.unrealized_pnl < self.max_loss:
             self.max_loss = self.unrealized_pnl
+        
+        # Track MAE/MFE for ML learning (in price terms)
+        price_move_pct = (pnl_per_unit / self.entry_price) * 100
+        
+        if price_move_pct > self.max_favorable_excursion:
+            self.max_favorable_excursion = price_move_pct
+            self.time_to_mfe = (datetime.now() - self.entry_time).seconds / 60
+            
+        if price_move_pct < -abs(self.max_adverse_excursion):
+            self.max_adverse_excursion = abs(price_move_pct)
+            self.time_to_mae = (datetime.now() - self.entry_time).seconds / 60
+        
+        # Check if recovered from MAE
+        if self.max_adverse_excursion > 0 and price_move_pct > 0:
+            self.mae_recovery = True
         
         self.last_update = datetime.now()
 
@@ -293,6 +315,7 @@ class UltraIntelligentEngine:
         asyncio.create_task(self._performance_reporter())
         asyncio.create_task(self._symbol_rebalancer())
         asyncio.create_task(self._emergency_monitor())
+        asyncio.create_task(self._track_untested_zones())  # Track failed zones for ML
         
         logger.info("Ultra Intelligent Engine started")
     
@@ -955,17 +978,23 @@ class UltraIntelligentEngine:
                     time_since_last = time.time() - self.position_cooldowns[symbol]
                     if time_since_last < self.position_cooldown_seconds:
                         logger.info(f"Cooldown active for {symbol}: {self.position_cooldown_seconds - time_since_last:.1f}s remaining")
+                        # Track rejected signal for ML learning
+                        await self._track_rejected_signal(signal, "cooldown_active")
                         return False
                 
                 # Double check active positions
                 if symbol in self.active_positions:
                     logger.info(f"Position already exists for {symbol}, skipping signal")
+                    # Track rejected signal for ML learning
+                    await self._track_rejected_signal(signal, "position_exists")
                     return False
                 
                 # Check position safety manager
                 from ..utils.bot_fixes import position_safety
                 if position_safety.has_position(symbol):
                     logger.info(f"Position safety: Position already tracked for {symbol}")
+                    # Track rejected signal for ML learning
+                    await self._track_rejected_signal(signal, "position_safety_blocked")
                     return False
                 
                 # Check Redis for pending position flag (prevents race conditions)
@@ -1320,14 +1349,20 @@ class UltraIntelligentEngine:
         if symbol in self.active_positions:
             position = self.active_positions[symbol]
             
-            # Update ML with negative outcome
+            # Update ML with negative outcome including MAE/MFE data
             if position.intelligent_signal:
                 decision_engine.update_from_outcome(
                     position.intelligent_signal,
                     {
                         'profit': position.unrealized_pnl + position.realized_pnl,
                         'profit_ratio': -1,
-                        'outcome': 'stop_loss'
+                        'outcome': 'stop_loss',
+                        'mae': position.max_adverse_excursion,
+                        'mfe': position.max_favorable_excursion,
+                        'time_to_mae': position.time_to_mae,
+                        'time_to_mfe': position.time_to_mfe,
+                        'mae_recovery': position.mae_recovery,
+                        'duration_minutes': (datetime.now() - position.entry_time).seconds / 60
                     }
                 )
             
@@ -1353,14 +1388,20 @@ class UltraIntelligentEngine:
         if symbol in self.active_positions:
             position = self.active_positions[symbol]
             
-            # Update ML with positive outcome
+            # Update ML with positive outcome including MAE/MFE data
             if position.intelligent_signal:
                 decision_engine.update_from_outcome(
                     position.intelligent_signal,
                     {
                         'profit': position.unrealized_pnl + position.realized_pnl,
                         'profit_ratio': position.risk_reward_ratio,
-                        'outcome': 'take_profit'
+                        'outcome': 'take_profit',
+                        'mae': position.max_adverse_excursion,
+                        'mfe': position.max_favorable_excursion,
+                        'time_to_mae': position.time_to_mae,
+                        'time_to_mfe': position.time_to_mfe,
+                        'mae_recovery': position.mae_recovery,
+                        'duration_minutes': (datetime.now() - position.entry_time).seconds / 60
                     }
                 )
             
@@ -1473,21 +1514,42 @@ class UltraIntelligentEngine:
                 await asyncio.sleep(10)
     
     async def _ml_trainer(self):
-        """Train ML models periodically"""
+        """Train ML models more frequently for better learning"""
+        last_training_size = 0
         while self.is_running:
             try:
-                await asyncio.sleep(3600)  # Every hour
+                await asyncio.sleep(300)  # Every 5 minutes instead of hourly
                 
-                if len(ml_predictor.training_data) >= 100:
-                    logger.info("Training ML models...")
+                current_size = len(ml_predictor.training_data)
+                new_samples = current_size - last_training_size
+                
+                # Retrain if we have enough new samples OR it's been a while
+                should_train = (
+                    (current_size >= 50 and new_samples >= 10) or  # 10+ new samples
+                    (current_size >= 100 and new_samples >= 5) or   # 5+ new samples with good base
+                    (current_size >= 500 and new_samples >= 3)      # Even 3 samples matter with large dataset
+                )
+                
+                if should_train:
+                    logger.info(f"Training ML models with {current_size} samples ({new_samples} new)")
                     ml_predictor.train_models()
                     ml_predictor.save_models("/tmp/ml_models")
+                    last_training_size = current_size
                     
-                    # Send notification
-                    if self.telegram_bot:
-                        accuracy = ml_predictor.get_accuracy()
+                    # Calculate and log performance metrics
+                    if hasattr(ml_predictor, 'feature_importance') and ml_predictor.feature_importance:
+                        top_features = sorted(ml_predictor.feature_importance.items(), 
+                                            key=lambda x: x[1], reverse=True)[:3]
+                        logger.info(f"Top ML features: {top_features}")
+                    
+                    # Send notification periodically (not every time)
+                    if current_size % 100 == 0 and self.telegram_bot:
+                        accuracy = getattr(ml_predictor, 'test_score', 0.5)
                         await self.telegram_bot.send_notification(
-                            f"🤖 ML models retrained\nAccuracy: {accuracy:.1%}\nSamples: {len(ml_predictor.training_data)}"
+                            f"🤖 ML Update\n"
+                            f"Samples: {current_size}\n"
+                            f"New: {new_samples}\n"
+                            f"Accuracy: {accuracy:.1%}"
                         )
                 
             except Exception as e:
@@ -1580,8 +1642,11 @@ class UltraIntelligentEngine:
                 logger.error(f"Emergency monitor error: {e}")
                 await asyncio.sleep(5)
     
-    async def _track_trade_for_ml(self, signal: TradingSignalComplete):
-        """Track trade for ML learning"""
+    async def _track_trade_for_ml(self, signal: TradingSignalComplete, outcome: str = "opened"):
+        """Track trade for ML learning with enhanced features"""
+        # Get current market conditions
+        market_conditions = await self._get_current_market_conditions(signal.symbol)
+        
         trade_data = {
             'timestamp': datetime.now().isoformat(),
             'symbol': signal.symbol,
@@ -1595,10 +1660,24 @@ class UltraIntelligentEngine:
             'market_regime': signal.market_regime,
             'trading_mode': signal.trading_mode,
             'zone_score': signal.zone_score,
-            'features': signal.ml_features
+            'features': signal.ml_features,
+            # Enhanced features for better learning
+            'hour_of_day': datetime.now().hour,
+            'day_of_week': datetime.now().weekday(),
+            'volatility': market_conditions.get('volatility', 0),
+            'volume_24h': market_conditions.get('volume_24h', 0),
+            'trend_strength': market_conditions.get('trend_strength', 0),
+            'outcome': outcome,
+            'position_size': signal.position_size,
+            'risk_amount': signal.risk_amount
         }
         
         ml_predictor.training_data.append(trade_data)
+        
+        # Trigger immediate retraining if we have enough new samples
+        if len(ml_predictor.training_data) % 10 == 0 and len(ml_predictor.training_data) >= 50:
+            logger.info(f"Triggering ML retraining with {len(ml_predictor.training_data)} samples")
+            ml_predictor.train_models()
         
         # Store in Redis (using async redis)
         if self.redis_client:
@@ -1608,6 +1687,122 @@ class UltraIntelligentEngine:
                 await self.redis_client.setex(key, 86400 * 30, json.dumps(trade_data))
             except Exception as e:
                 logger.warning(f"Failed to store ML trade data in Redis: {e}")
+    
+    async def _track_rejected_signal(self, signal: TradingSignalComplete, reason: str):
+        """Track rejected signals for negative learning"""
+        try:
+            rejected_data = {
+                'timestamp': datetime.now().isoformat(),
+                'symbol': signal.symbol,
+                'rejection_reason': reason,
+                'ml_confidence': signal.ml_confidence,
+                'zone_score': signal.zone_score,
+                'market_regime': signal.market_regime,
+                'hour_of_day': datetime.now().hour,
+                'day_of_week': datetime.now().weekday(),
+                'outcome': 'rejected'
+            }
+            
+            # Store for ML learning - negative examples are valuable
+            ml_predictor.training_data.append(rejected_data)
+            
+            # Track rejection reasons
+            if not hasattr(self, 'rejection_stats'):
+                self.rejection_stats = defaultdict(int)
+            self.rejection_stats[reason] += 1
+            
+            # Log periodically
+            if sum(self.rejection_stats.values()) % 100 == 0:
+                logger.info(f"Signal rejection stats: {dict(self.rejection_stats)}")
+                
+        except Exception as e:
+            logger.debug(f"Error tracking rejected signal: {e}")
+    
+    async def _get_current_market_conditions(self, symbol: str) -> Dict:
+        """Get current market conditions for ML features"""
+        try:
+            # Get ticker info
+            ticker = await self.client.get_symbol_info(symbol)
+            if not ticker:
+                return {}
+            
+            # Calculate volatility (24h price change)
+            volatility = abs(float(ticker.get('price24hPcnt', 0)))
+            
+            # Get volume
+            volume_24h = float(ticker.get('turnover24h', 0))
+            
+            # Determine trend strength
+            price_change = float(ticker.get('price24hPcnt', 0))
+            if abs(price_change) > 5:
+                trend_strength = 1.0  # Strong trend
+            elif abs(price_change) > 2:
+                trend_strength = 0.5  # Moderate trend
+            else:
+                trend_strength = 0.1  # Weak/ranging
+            
+            return {
+                'volatility': volatility,
+                'volume_24h': volume_24h,
+                'trend_strength': trend_strength,
+                'price_change_24h': price_change,
+                'last_price': float(ticker.get('lastPrice', 0)),
+                'bid_ask_spread': abs(float(ticker.get('bid1Price', 0)) - float(ticker.get('ask1Price', 0)))
+            }
+            
+        except Exception as e:
+            logger.debug(f"Error getting market conditions: {e}")
+            return {}
+    
+    async def _track_untested_zones(self):
+        """Track zones that don't get traded for negative learning"""
+        while self.is_running:
+            try:
+                await asyncio.sleep(300)  # Every 5 minutes
+                
+                # Track zones that have been identified but not traded
+                for symbol in self.monitored_symbols[:20]:  # Sample check
+                    try:
+                        # Get current price
+                        ticker = await self.client.get_symbol_info(symbol)
+                        if not ticker:
+                            continue
+                        
+                        current_price = float(ticker.get('lastPrice', 0))
+                        
+                        # Check if we have zones for this symbol
+                        if symbol in self.pending_signals:
+                            signal = self.pending_signals[symbol]
+                            
+                            # Check if zone has been violated without trading
+                            zone_violated = False
+                            if signal.action == "BUY" and current_price < signal.stop_loss:
+                                zone_violated = True
+                            elif signal.action == "SELL" and current_price > signal.stop_loss:
+                                zone_violated = True
+                            
+                            if zone_violated:
+                                # Track this as a failed zone for ML learning
+                                ml_predictor.training_data.append({
+                                    'timestamp': datetime.now().isoformat(),
+                                    'symbol': symbol,
+                                    'zone_type': signal.zone_type,
+                                    'zone_score': signal.zone_score,
+                                    'ml_confidence': signal.ml_confidence,
+                                    'outcome': 'zone_failed',
+                                    'reason': 'zone_violated_without_entry'
+                                })
+                                
+                                # Remove from pending
+                                del self.pending_signals[symbol]
+                                logger.info(f"Zone failed for {symbol} - tracked for ML learning")
+                                
+                    except Exception as e:
+                        logger.debug(f"Error tracking zone for {symbol}: {e}")
+                        
+            except Exception as e:
+                logger.error(f"Zone tracker error: {e}")
+                await asyncio.sleep(300)
     
     async def _close_websocket_subscriptions(self):
         """Close all WebSocket subscriptions"""

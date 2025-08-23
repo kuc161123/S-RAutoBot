@@ -169,13 +169,13 @@ class AdvancedSupplyDemandStrategy:
         self.volume_profiles: Dict[str, VolumeProfile] = {}
         self.order_flow_history: Dict[str, deque] = {}
         
-        # Configuration
-        self.min_zone_score = 65  # Minimum score to trade
-        self.max_zone_age_hours = 168  # 7 days
-        self.max_zone_tests = 3
-        self.volume_threshold_multiplier = 1.5  # Volume must be 1.5x average
-        self.rejection_speed_threshold = 2.0  # ATR multiplier for strong rejection
-        self.institutional_volume_threshold = 0.7  # 70% of volume at zone
+        # Configuration - Adjusted for testing to generate more signals
+        self.min_zone_score = 40  # Lowered from 65 for more signals during testing
+        self.max_zone_age_hours = 336  # 14 days (increased from 7)
+        self.max_zone_tests = 5  # Increased from 3
+        self.volume_threshold_multiplier = 1.2  # Lowered from 1.5
+        self.rejection_speed_threshold = 1.5  # Lowered from 2.0
+        self.institutional_volume_threshold = 0.5  # Lowered from 0.7
         
     def analyze_market(
         self,

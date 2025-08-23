@@ -65,8 +65,8 @@ class MarketStructureAnalyzer:
     """
     
     def __init__(self):
-        self.min_swing_strength = 3  # Minimum candles for swing validation
-        self.structure_lookback = 50  # Candles to look back for structure
+        self.min_swing_strength = 2  # Reduced from 3 for more sensitive detection
+        self.structure_lookback = 30  # Reduced from 50 for faster structure detection
         self.volume_threshold = 1.2  # Volume must be 1.2x average for strong swing
         
     def analyze_structure(
@@ -319,7 +319,7 @@ class MarketStructureAnalyzer:
         """
         Detect entry signals based on structure and zones
         """
-        if structure.confidence < 60:
+        if structure.confidence < 40:  # Lowered from 60 for testing
             return None
         
         signal = None
@@ -365,7 +365,7 @@ class MarketStructureAnalyzer:
                         direction='long',
                         entry_zone=(demand_zone[0], demand_zone[1]),
                         stop_loss=structure.last_low.price * 0.995 if structure.last_low else demand_zone[0] * 0.99,
-                        confidence=structure.confidence * 0.8,  # Lower confidence for reversals
+                        confidence=structure.confidence * 0.9,  # Slightly higher confidence for testing
                         pattern=structure.structure_pattern,
                         timeframe=timeframe
                     )
@@ -379,7 +379,7 @@ class MarketStructureAnalyzer:
                         direction='short',
                         entry_zone=(supply_zone[0], supply_zone[1]),
                         stop_loss=structure.last_high.price * 1.005 if structure.last_high else supply_zone[1] * 1.01,
-                        confidence=structure.confidence * 0.8,
+                        confidence=structure.confidence * 0.9,  # Slightly higher for testing
                         pattern=structure.structure_pattern,
                         timeframe=timeframe
                     )

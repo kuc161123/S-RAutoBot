@@ -27,6 +27,7 @@ from ..utils.bot_fixes import (
     db_pool,
     health_monitor
 )
+from ..utils.position_sync import PositionSynchronizer
 
 logger = structlog.get_logger(__name__)
 
@@ -55,6 +56,9 @@ class FixedIntegratedEngine:
         # ML components for multi-timeframe strategy
         self.ml_ensemble = MLEnsemble()
         self.mtf_learner = MTFStrategyLearner()
+        
+        # Position synchronization
+        self.position_sync = PositionSynchronizer(bybit_client)
         
         # Redis
         self.redis_client = None
@@ -222,15 +226,23 @@ class FixedIntegratedEngine:
             logger.info("Will train from scratch with new data")
             
     async def _sync_positions(self):
-        """Sync existing positions from exchange"""
+        """Sync existing positions from exchange with proper clearing"""
         
         try:
+            # First clear ALL stale tracking to prevent phantom positions
+            await self.position_sync.clear_all_tracking(position_safety)
+            self.positions_per_symbol.clear()
+            
+            # Now get fresh positions from exchange
             positions = await self.client.get_positions()
             
+            # Only track actual positions with size > 0
+            active_count = 0
             for position in positions:
-                if float(position.get('size', 0)) > 0:
+                size = float(position.get('size', 0))
+                if size > 0:
                     symbol = position['symbol']
-                    side = position['side']
+                    side = position.get('side', '')
                     
                     # Determine position type
                     position_type = 'long' if side == 'Buy' else 'short'
@@ -240,7 +252,7 @@ class FixedIntegratedEngine:
                         'type': position_type,
                         'data': position,
                         'entry_price': float(position.get('avgPrice', 0)),
-                        'size': float(position.get('size', 0)),
+                        'size': size,
                         'unrealized_pnl': float(position.get('unrealisedPnl', 0)),
                         'sync_time': datetime.now()
                     }
@@ -248,14 +260,15 @@ class FixedIntegratedEngine:
                     # Register with position safety
                     position_safety.register_position(symbol, {
                         'side': side,
-                        'size': float(position.get('size', 0)),
+                        'size': size,
                         'entry_price': float(position.get('avgPrice', 0))
                     })
                     
                     # Update scanner
                     self.scanner.update_position_status(symbol, position_type)
+                    active_count += 1
                     
-            logger.info(f"Synced {len(self.positions_per_symbol)} existing positions")
+            logger.info(f"Position sync complete: {active_count} active positions (cleared all phantom tracking)")
             
         except Exception as e:
             logger.error(f"Error syncing positions: {e}")
@@ -696,14 +709,14 @@ class FixedIntegratedEngine:
     async def _position_monitor(self):
         """Monitor positions with sync validation"""
         
-        sync_interval = 300  # Sync every 5 minutes (not 30 seconds)
+        sync_interval = 60  # Sync every minute to prevent phantom positions
         last_sync = datetime.now()
         
         while self.is_running:
             try:
-                # Update position data periodically (don't re-register)
+                # Resync positions periodically to clear phantom tracking
                 if (datetime.now() - last_sync).total_seconds() > sync_interval:
-                    await self._update_position_data()
+                    await self._sync_positions()  # Full resync to clear phantoms
                     last_sync = datetime.now()
                     
                 # Get current positions

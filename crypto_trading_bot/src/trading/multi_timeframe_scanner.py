@@ -17,6 +17,7 @@ from ..strategy.advanced_supply_demand import AdvancedSupplyDemandStrategy
 from ..strategy.market_structure_analyzer import MarketStructureAnalyzer, MarketStructure
 from ..utils.reliability import rate_limiter, retry_with_backoff
 from ..utils.symbol_rotator import SymbolRotator
+from ..utils.signal_debugger import signal_debugger
 
 logger = structlog.get_logger(__name__)
 
@@ -205,6 +206,7 @@ class MultiTimeframeScanner:
         This is the core of the multi-timeframe strategy
         """
         
+        signal_debugger.log_scan_start(symbol)
         logger.debug(f"Analyzing {symbol} with HTF/LTF strategy...")
         
         # Update data for all timeframes
@@ -212,29 +214,39 @@ class MultiTimeframeScanner:
         
         if symbol not in self.timeframe_data:
             logger.debug(f"No data available for {symbol}")
+            signal_debugger.log_no_signal(symbol, "No data available")
             return None
         
         # Step 1: Get HTF supply/demand zones
         htf_zones = await self._get_htf_zones(symbol)
+        signal_debugger.log_htf_zones(symbol, htf_zones)
+        
         if not htf_zones:
             logger.debug(f"No HTF zones found for {symbol}")
+            signal_debugger.log_no_signal(symbol, "No HTF zones")
             return None
         
         # Step 2: Analyze LTF market structure
         ltf_structure = await self._get_ltf_structure(symbol)
+        signal_debugger.log_ltf_structure(symbol, ltf_structure)
+        
         if not ltf_structure:
             logger.debug(f"No LTF structure available for {symbol}")
+            signal_debugger.log_no_signal(symbol, "No LTF structure")
             return None
         
         # Step 3: Find confluence between HTF zones and LTF structure
         signal = await self._find_htf_ltf_confluence(symbol, htf_zones, ltf_structure)
         
         if signal:
+            signal_debugger.log_signal_generated(symbol, signal)
             logger.info(f"Strong signal found for {symbol}: {signal['direction']} "
                        f"at HTF zone with LTF {signal['structure_pattern']}")
             
             # Store performance data for ML learning
             await self._update_symbol_performance(symbol, signal)
+        else:
+            signal_debugger.log_no_signal(symbol, "No HTF/LTF confluence")
         
         return signal
     
@@ -331,7 +343,7 @@ class MultiTimeframeScanner:
                 timeframe=self.primary_ltf
             )
             
-            if structure_signal and structure_signal.confidence > 70:
+            if structure_signal and structure_signal.confidence > 45:  # Lowered from 70 for testing
                 # We have confluence! HTF zone + LTF structure
                 return {
                     'symbol': symbol,
@@ -351,7 +363,7 @@ class MultiTimeframeScanner:
         
         return None
     
-    def _find_nearby_zones(self, current_price: float, zones: List[Dict], threshold: float = 0.02) -> List[Dict]:
+    def _find_nearby_zones(self, current_price: float, zones: List[Dict], threshold: float = 0.03) -> List[Dict]:  # Increased from 0.02 for testing
         """Find zones within threshold distance of current price"""
         nearby = []
         
@@ -368,7 +380,7 @@ class MultiTimeframeScanner:
                 # Price within zone
                 distance_to_zone = 0
             
-            if distance_to_zone <= threshold:  # Within 2% of zone
+            if distance_to_zone <= threshold:  # Within 3% of zone (increased for testing)
                 nearby.append(zone)
         
         return nearby

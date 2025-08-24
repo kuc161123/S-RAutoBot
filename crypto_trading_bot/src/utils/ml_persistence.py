@@ -5,29 +5,13 @@ Handles saving and loading ML models to/from database
 import pickle
 import json
 import base64
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 import structlog
-from sqlalchemy import Column, Integer, String, DateTime, LargeBinary, Float
-from ..db.models import Base
+from ..db.models import MLModel
 from ..db.database import DatabaseManager
 
 logger = structlog.get_logger(__name__)
-
-
-class MLModel(Base):
-    """Database model for storing ML models"""
-    __tablename__ = 'ml_models'
-    
-    id = Column(Integer, primary_key=True)
-    model_name = Column(String(100), unique=True, nullable=False)
-    model_data = Column(LargeBinary)  # Pickled model
-    model_metadata = Column(String)  # JSON metadata
-    accuracy = Column(Float)
-    training_samples = Column(Integer)
-    version = Column(Integer, default=1)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class MLPersistenceManager:
@@ -73,11 +57,11 @@ class MLPersistenceManager:
                 })
             
             # Check if model exists
-            existing = await self.db_manager.get_ml_model(model_name)
+            existing = self.db_manager.get_ml_model(model_name)
             
             if existing:
                 # Update existing model
-                await self.db_manager.update_ml_model(
+                self.db_manager.update_ml_model(
                     model_name=model_name,
                     model_data=model_bytes,
                     model_metadata=metadata_json,
@@ -88,7 +72,7 @@ class MLPersistenceManager:
                 logger.info(f"Updated ML model {model_name} (version {existing.version + 1})")
             else:
                 # Create new model
-                await self.db_manager.create_ml_model(
+                self.db_manager.create_ml_model(
                     model_name=model_name,
                     model_data=model_bytes,
                     model_metadata=metadata_json,
@@ -115,7 +99,7 @@ class MLPersistenceManager:
         """
         try:
             # Get model from database
-            model_record = await self.db_manager.get_ml_model(model_name)
+            model_record = self.db_manager.get_ml_model(model_name)
             
             if not model_record:
                 logger.warning(f"ML model {model_name} not found")
@@ -124,10 +108,11 @@ class MLPersistenceManager:
             # Deserialize model
             model_data = pickle.loads(model_record.model_data)
             
+            accuracy_str = f"{model_record.accuracy:.2%}" if model_record.accuracy else "N/A"
             logger.info(
                 f"Loaded ML model {model_name} "
                 f"(version {model_record.version}, "
-                f"accuracy: {model_record.accuracy:.2%} if model_record.accuracy else 'N/A', "
+                f"accuracy: {accuracy_str}, "
                 f"samples: {model_record.training_samples})"
             )
             
@@ -148,7 +133,7 @@ class MLPersistenceManager:
             Model metadata dictionary or None
         """
         try:
-            model_record = await self.db_manager.get_ml_model(model_name)
+            model_record = self.db_manager.get_ml_model(model_name)
             
             if not model_record:
                 return None
@@ -176,7 +161,7 @@ class MLPersistenceManager:
             List of model metadata dictionaries
         """
         try:
-            models = await self.db_manager.list_ml_models()
+            models = self.db_manager.list_ml_models()
             
             return [
                 {
@@ -204,7 +189,7 @@ class MLPersistenceManager:
             Success status
         """
         try:
-            await self.db_manager.delete_ml_model(model_name)
+            self.db_manager.delete_ml_model(model_name)
             logger.info(f"Deleted ML model {model_name}")
             return True
             

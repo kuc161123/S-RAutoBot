@@ -116,8 +116,13 @@ class DatabaseManager:
                     username=username
                 )
                 db.add(user)
-                db.commit()
-                db.refresh(user)
+                try:
+                    db.commit()
+                    db.refresh(user)
+                except Exception as e:
+                    db.rollback()
+                    logger.error(f"Failed to commit user creation: {e}")
+                    raise
                 
                 logger.info(f"Created user {user.id} for chat_id {chat_id}")
                 return user.id
@@ -144,8 +149,13 @@ class DatabaseManager:
                 for key, value in kwargs.items():
                     if hasattr(user, key):
                         setattr(user, key, value)
-                db.commit()
-                logger.info(f"Updated settings for user {user.id}")
+                try:
+                    db.commit()
+                    logger.info(f"Updated settings for user {user.id}")
+                except Exception as e:
+                    db.rollback()
+                    logger.error(f"Failed to update user settings: {e}")
+                    raise
     
     @staticmethod
     def log_trade(trade_data: dict) -> int:
@@ -195,11 +205,15 @@ class DatabaseManager:
             )
             
             db.add(trade)
-            db.commit()
-            db.refresh(trade)
-            
-            logger.info(f"Logged trade {trade.id} for {trade_data['symbol']}")
-            return trade.id
+            try:
+                db.commit()
+                db.refresh(trade)
+                logger.info(f"Logged trade {trade.id} for {trade_data['symbol']}")
+                return trade.id
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Failed to log trade: {e}")
+                raise
     
     @staticmethod
     async def log_trade_async(trade_data: dict) -> int:
@@ -307,9 +321,13 @@ class DatabaseManager:
             )
             
             db.add(zone)
-            db.commit()
-            
-            logger.info(f"Saved {zone_data['zone_type']} zone for {zone_data['symbol']}")
+            try:
+                db.commit()
+                logger.info(f"Saved {zone_data['zone_type']} zone for {zone_data['symbol']}")
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Failed to save zone: {e}")
+                raise
     
     @staticmethod
     def log_error(error_type: str, error_message: str, context: dict = None):
@@ -364,6 +382,78 @@ class DatabaseManager:
                 Trade.status == TradeStatus.CLOSED,
                 Trade.exit_time >= today
             ).all()
+    
+    @staticmethod
+    def get_ml_model(model_name: str):
+        """Get ML model from database"""
+        from .models import MLModel
+        
+        with get_db() as db:
+            return db.query(MLModel).filter_by(model_name=model_name).first()
+    
+    @staticmethod
+    def create_ml_model(**kwargs):
+        """Create new ML model record"""
+        from .models import MLModel
+        
+        with get_db() as db:
+            model = MLModel(**kwargs)
+            db.add(model)
+            try:
+                db.commit()
+                db.refresh(model)
+                return model
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Failed to create ML model: {e}")
+                raise
+    
+    @staticmethod
+    def update_ml_model(model_name: str, **kwargs):
+        """Update existing ML model"""
+        from .models import MLModel
+        
+        with get_db() as db:
+            model = db.query(MLModel).filter_by(model_name=model_name).first()
+            if model:
+                for key, value in kwargs.items():
+                    if hasattr(model, key):
+                        setattr(model, key, value)
+                try:
+                    db.commit()
+                    db.refresh(model)
+                    return model
+                except Exception as e:
+                    db.rollback()
+                    logger.error(f"Failed to update ML model: {e}")
+                    raise
+            return None
+    
+    @staticmethod
+    def list_ml_models():
+        """List all ML models"""
+        from .models import MLModel
+        
+        with get_db() as db:
+            return db.query(MLModel).order_by(MLModel.updated_at.desc()).all()
+    
+    @staticmethod
+    def delete_ml_model(model_name: str):
+        """Delete ML model"""
+        from .models import MLModel
+        
+        with get_db() as db:
+            model = db.query(MLModel).filter_by(model_name=model_name).first()
+            if model:
+                try:
+                    db.delete(model)
+                    db.commit()
+                    return True
+                except Exception as e:
+                    db.rollback()
+                    logger.error(f"Failed to delete ML model: {e}")
+                    raise
+            return False
     
     @staticmethod
     def get_daily_trades():

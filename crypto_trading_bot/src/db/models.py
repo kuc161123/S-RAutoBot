@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime, 
-    JSON, ForeignKey, Index, Enum as SQLEnum, Text
+    JSON, ForeignKey, Index, Enum as SQLEnum, Text, LargeBinary
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
@@ -238,3 +238,17 @@ class ErrorLog(Base):
         Index('idx_error_type', error_type),
         Index('idx_error_resolved', resolved),
     )
+
+class MLModel(Base):
+    """Database model for storing ML models"""
+    __tablename__ = 'ml_models'
+    
+    id = Column(Integer, primary_key=True)
+    model_name = Column(String(100), unique=True, nullable=False)
+    model_data = Column(LargeBinary)  # Pickled model
+    model_metadata = Column(String)  # JSON metadata
+    accuracy = Column(Float)
+    training_samples = Column(Integer)
+    version = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

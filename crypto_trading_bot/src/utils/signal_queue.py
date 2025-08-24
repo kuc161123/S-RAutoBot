@@ -7,10 +7,7 @@ import asyncio
 from typing import Dict, Optional, List, Any
 from datetime import datetime
 import structlog
-try:
-    import redis.asyncio as redis
-except ImportError:
-    redis = None
+from .redis_manager import redis_manager
 
 logger = structlog.get_logger(__name__)
 
@@ -21,44 +18,30 @@ class SignalQueue:
     Ensures signals are not lost between generator and executor
     """
     
-    def __init__(self, redis_client: Optional[redis.Redis] = None):
-        self.redis_client = redis_client
+    def __init__(self):
+        self.redis_client = None
         self.queue_key = "trading:signal_queue"
         self.processing_key = "trading:signal_processing"
         self.completed_key = "trading:signal_completed"
         self.failed_key = "trading:signal_failed"
         self.signal_ttl = 300  # 5 minutes TTL for signals
+        self.in_memory_queue = None
         
     async def connect(self, redis_url: str = None):
         """
-        Connect to Redis if not already connected
+        Connect to Redis using shared manager
         """
         if self.redis_client:
             return
         
-        if not redis:
-            logger.warning("Redis module not available - using in-memory queue")
-            self.in_memory_queue = asyncio.Queue()
-            return
+        # Get client from shared manager
+        self.redis_client = await redis_manager.get_client(redis_url)
         
-        try:
-            if redis_url:
-                self.redis_client = redis.from_url(redis_url, decode_responses=True)
-            else:
-                self.redis_client = redis.Redis(
-                    host='localhost',
-                    port=6379,
-                    db=0,
-                    decode_responses=True
-                )
-            
-            # Test connection
-            await self.redis_client.ping()
-            logger.info("Signal queue connected to Redis")
-            
-        except Exception as e:
-            logger.warning(f"Redis connection failed, using in-memory queue: {e}")
+        if not self.redis_client:
+            logger.warning("Redis not available - using in-memory queue")
             self.in_memory_queue = asyncio.Queue()
+        else:
+            logger.info("Signal queue connected to Redis via shared manager")
     
     async def push(self, signal: Dict[str, Any]) -> bool:
         """

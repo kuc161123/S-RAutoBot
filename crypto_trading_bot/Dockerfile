@@ -3,27 +3,26 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies in smaller chunks to reduce memory usage
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     postgresql-client \
     libpq-dev \
-    chromium \
-    chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    CHROMIUM_DRIVER_PATH=/usr/bin/chromedriver
+    PYTHONUNBUFFERED=1
 
 # Copy requirements
-COPY requirements.txt .
+COPY requirements-prod.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with memory optimization
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --no-compile -r requirements-prod.txt
 
 # Copy application code
 COPY . .

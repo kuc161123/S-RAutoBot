@@ -39,7 +39,7 @@ class SignalQueue:
         self.redis_client = await redis_manager.get_client(redis_url)
         
         if not self.redis_client:
-            logger.warning("Redis not available - using in-memory queue")
+            logger.info("Using in-memory signal queue (Redis not configured)")
             self.in_memory_queue = asyncio.Queue()
         else:
             logger.info("Signal queue connected to Redis via shared manager")

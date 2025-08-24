@@ -61,6 +61,19 @@ class RedisManager:
                         # Try to get from environment
                         redis_url = os.getenv('REDIS_URL')
                     
+                    # Skip Redis if URL is localhost or internal and we're in production
+                    if redis_url and ('localhost' in redis_url or 'redis.railway.internal' in redis_url):
+                        # Check if we can actually connect
+                        import socket
+                        try:
+                            # Try to resolve the hostname
+                            if 'redis.railway.internal' in redis_url:
+                                socket.gethostbyname('redis.railway.internal')
+                        except socket.gaierror:
+                            # Can't resolve internal hostname, skip Redis
+                            logger.info("Redis internal hostname not resolvable - skipping Redis (will use in-memory queue)")
+                            return None
+                    
                     if redis_url:
                         logger.info(f"Attempting Redis connection to: {redis_url.split('@')[-1] if '@' in redis_url else redis_url}")
                         
@@ -80,20 +93,9 @@ class RedisManager:
                             retry_on_timeout=True
                         )
                     else:
-                        # Create connection pool for localhost
-                        self._pool = redis.ConnectionPool(
-                            host='localhost',
-                            port=6379,
-                            db=0,
-                            max_connections=20,  # Pool size
-                            decode_responses=True,
-                            socket_keepalive=True,
-                            socket_keepalive_options={
-                                1: 1,  # TCP_KEEPIDLE
-                                2: 1,  # TCP_KEEPINTVL
-                                3: 5,  # TCP_KEEPCNT
-                            }
-                        )
+                        # No Redis URL provided - skip Redis
+                        logger.info("No Redis URL configured - using in-memory queue")
+                        return None
                 
                 # Create client from pool
                 self._client = redis.Redis(connection_pool=self._pool)

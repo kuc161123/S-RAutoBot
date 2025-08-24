@@ -34,7 +34,7 @@ class Settings(BaseSettings):
         "postgresql://user:password@localhost:5432/crypto_bot",
         description="PostgreSQL connection URL"
     )
-    redis_url: str = Field("redis://localhost:6379/0", description="Redis URL")
+    redis_url: str = Field("", description="Redis URL (optional - will use in-memory queue if not provided)")
     
     # Trading Parameters - TESTING MODE WITH 1% RISK AND 10X LEVERAGE
     default_risk_percent: float = Field(1.0, ge=0.1, le=5.0)  # 1% risk per trade as requested

@@ -102,7 +102,7 @@ class MLPersistenceManager:
             model_record = await async_db.get_ml_model(model_name)
             
             if not model_record:
-                logger.warning(f"ML model {model_name} not found")
+                logger.info(f"ML model {model_name} not found - will be created after training")
                 return None
             
             # Deserialize model

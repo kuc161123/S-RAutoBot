@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     default_leverage: int = Field(10, ge=1, le=125)  # Fixed 10x leverage as requested
     default_margin_mode: MarginMode = Field(MarginMode.ISOLATED)
     default_position_mode: PositionMode = Field(PositionMode.ONE_WAY)
+    close_positions_on_stop: bool = Field(False, description="Close all positions on shutdown")
+    close_positions_on_shutdown: bool = Field(False, description="Close all positions on graceful shutdown")
     
     # Trading settings - Top 300 crypto futures on Bybit
     default_symbols: List[str] = Field(default=[

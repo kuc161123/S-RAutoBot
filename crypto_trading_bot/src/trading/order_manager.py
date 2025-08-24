@@ -400,6 +400,25 @@ class OrderManager:
         except Exception as e:
             logger.error(f"Error handling position update: {e}")
     
+    async def handle_execution_update(self, update: Dict[str, Any]) -> None:
+        """Handle execution/trade updates from WebSocket"""
+        try:
+            symbol = update.get('symbol')
+            exec_type = update.get('execType')
+            order_id = update.get('orderId')
+            
+            logger.info(f"Execution update for {symbol}: {exec_type} (order: {order_id})")
+            
+            # Track the execution
+            if exec_type == 'Trade':
+                # Order was filled
+                if order_id in self.pending_orders:
+                    del self.pending_orders[order_id]
+                    logger.info(f"Order {order_id} executed and removed from pending")
+            
+        except Exception as e:
+            logger.error(f"Error handling execution update: {e}")
+    
     async def close_position(self, symbol: str, reason: str = "manual") -> bool:
         """Manually close a position"""
         try:

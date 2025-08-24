@@ -332,7 +332,7 @@ class UltraIntelligentEngine:
         asyncio.create_task(self._symbol_rebalancer())
         asyncio.create_task(self._emergency_monitor())
         asyncio.create_task(self._track_untested_zones())  # Track failed zones for ML
-        asyncio.create_task(self.mtf_scanner.start_scanner())  # Start MTF scanner
+        asyncio.create_task(self.mtf_scanner.start_scanning())  # Start MTF scanner
         
         logger.info("Ultra Intelligent Engine started")
     

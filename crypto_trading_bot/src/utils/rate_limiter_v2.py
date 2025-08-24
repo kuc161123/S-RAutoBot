@@ -57,6 +57,7 @@ class EnhancedRateLimiter:
         # Bybit V5 limits
         self.limits = {
             'default': {'requests': 600, 'window': 5},  # 600 req/5s
+            'api_request': {'requests': 600, 'window': 5},  # Compatibility alias
             'order': {'requests': 100, 'window': 5},    # Order operations
             'websocket': {'requests': 500, 'window': 300}  # 500 connections/5min
         }
@@ -64,6 +65,7 @@ class EnhancedRateLimiter:
         # Sliding window tracking
         self.request_times: Dict[str, deque] = {
             'default': deque(),
+            'api_request': deque(),  # Compatibility alias
             'order': deque(),
             'websocket': deque()
         }
@@ -415,24 +417,25 @@ class EnhancedRateLimiter:
         
         return 0.0
 
-# Global rate limiter instance
-rate_limiter_v2 = EnhancedRateLimiter()
+# Create extended class with compatibility methods
+class EnhancedRateLimiterWithCompat(EnhancedRateLimiter):
+    """Enhanced rate limiter with compatibility methods for existing code"""
+    
+    async def acquire_request(self):
+        """Compatibility method for existing code"""
+        # Ensure started
+        if not self.running:
+            await self.start()
+        await self.acquire('api_request')
+    
+    def handle_rate_limit_error(self):
+        """Compatibility method for existing code"""
+        self._handle_rate_limit_error()
+    
+    def reset_backoff(self):
+        """Compatibility method for existing code"""
+        self.circuit_breaker_failure_count = 0
+        self.circuit_breaker_last_failure = 0
 
-# Adapter methods for compatibility with existing code
-async def acquire_request():
-    """Compatibility method for existing code"""
-    await rate_limiter_v2.acquire('api_request')
-
-def handle_rate_limit_error():
-    """Compatibility method for existing code"""
-    rate_limiter_v2._handle_rate_limit_error()
-
-def reset_backoff():
-    """Compatibility method for existing code"""
-    rate_limiter_v2.circuit_breaker_failure_count = 0
-    rate_limiter_v2.circuit_breaker_last_failure = 0
-
-# Add compatibility methods to the instance
-rate_limiter_v2.acquire_request = acquire_request
-rate_limiter_v2.handle_rate_limit_error = handle_rate_limit_error  
-rate_limiter_v2.reset_backoff = reset_backoff
+# Global rate limiter instance with compatibility
+rate_limiter_v2 = EnhancedRateLimiterWithCompat()

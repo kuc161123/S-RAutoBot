@@ -137,8 +137,9 @@ class OrderManager:
     async def _check_exposure_limits(self, signal: TradingSignal, account_balance: float) -> bool:
         """Check if we can take this trade based on exposure limits"""
         
-        # Check max concurrent positions
-        if len(self.active_positions) >= settings.max_concurrent_positions:
+        # Check one position per symbol rule (no total position limit)
+        if signal.zone.symbol in self.active_positions:
+            logger.warning(f"Position already exists for {signal.zone.symbol}")
             return False
         
         # Check daily loss limit

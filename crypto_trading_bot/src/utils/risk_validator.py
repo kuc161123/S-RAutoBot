@@ -17,7 +17,7 @@ class RiskValidator:
     def __init__(self):
         self.required_leverage = 10
         self.required_risk_percent = 1.0
-        self.max_concurrent_positions = 3
+        self.one_position_per_symbol = True  # Enforce one position per symbol rule
         
     def validate_trade_parameters(
         self,
@@ -115,13 +115,16 @@ class RiskValidator:
     def validate_total_exposure(
         self,
         account_balance: float,
-        open_positions: Dict[str, Dict]
+        open_positions: Dict[str, Dict],
+        new_symbol: str = None
     ) -> Tuple[bool, str]:
         """
         Validate that total exposure doesn't exceed limits
+        Check one position per symbol rule
         """
-        if len(open_positions) >= self.max_concurrent_positions:
-            return False, f"Maximum {self.max_concurrent_positions} concurrent positions allowed"
+        # Check one position per symbol rule
+        if new_symbol and new_symbol in open_positions:
+            return False, f"Position already exists for {new_symbol} (one position per symbol)"
         
         total_margin = 0
         total_risk = 0

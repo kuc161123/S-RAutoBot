@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     
     # Trading Parameters - TESTING MODE WITH 1% RISK AND 10X LEVERAGE
     default_risk_percent: float = Field(1.0, ge=0.1, le=5.0)  # 1% risk per trade as requested
-    max_concurrent_positions: int = Field(3, ge=1, le=20)  # Max 3 positions (3% total risk)
-    max_daily_loss_percent: float = Field(3.0, ge=1.0, le=10.0)  # Stop at 3% daily loss ($3 with $100)
+    max_concurrent_positions: int = Field(999, ge=1, le=999)  # Unlimited positions (one per symbol)
+    max_daily_loss_percent: float = Field(10.0, ge=1.0, le=50.0)  # Increased for multiple positions
     default_leverage: int = Field(10, ge=1, le=125)  # Fixed 10x leverage as requested
     default_margin_mode: MarginMode = Field(MarginMode.ISOLATED)
     default_position_mode: PositionMode = Field(PositionMode.ONE_WAY)

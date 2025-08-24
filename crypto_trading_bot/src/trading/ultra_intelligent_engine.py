@@ -21,11 +21,14 @@ from ..api.enhanced_bybit_client import EnhancedBybitClient
 from ..strategy.advanced_supply_demand import AdvancedSupplyDemandStrategy, EnhancedZone
 from ..strategy.intelligent_decision_engine import decision_engine, IntelligentSignal
 from ..strategy.ml_predictor import ml_predictor
+from ..strategy.ml_ensemble import MLEnsemble
+from ..strategy.mtf_strategy_learner import MTFStrategyLearner
 from ..telegram.bot import TradingBot
 from ..config import settings
 from ..db.database import DatabaseManager
 from ..monitoring.performance_tracker import get_performance_tracker
 from ..utils.bot_fixes import position_safety, ml_validator, db_pool, health_monitor
+from ..utils.comprehensive_recovery import recovery_manager, with_recovery
 
 logger = structlog.get_logger(__name__)
 
@@ -191,8 +194,10 @@ class UltraIntelligentEngine:
         # DatabaseManager is static, no need to instantiate
         self.performance_tracker = get_performance_tracker(DatabaseManager)
         
-        # Strategy components
+        # Strategy and ML components
         self.strategy = AdvancedSupplyDemandStrategy()
+        self.ml_ensemble = MLEnsemble()
+        self.mtf_learner = MTFStrategyLearner()
         
         # Position tracking
         self.active_positions: Dict[str, ActivePosition] = {}
@@ -735,6 +740,7 @@ class UltraIntelligentEngine:
         except Exception as e:
             logger.error(f"Error syncing positions: {e}")
     
+    @with_recovery("market_data_updater")
     async def _market_data_updater(self):
         """Update market data periodically"""
         while self.is_running:
@@ -762,6 +768,7 @@ class UltraIntelligentEngine:
                 logger.error(f"Market data updater error: {e}")
                 await asyncio.sleep(10)
     
+    @with_recovery("signal_generator")
     async def _signal_generator(self):
         """Generate trading signals continuously"""
         while self.is_running:
@@ -1165,6 +1172,7 @@ class UltraIntelligentEngine:
             logger.error(f"Error setting stops for {position.symbol}: {e}")
             return False
     
+    @with_recovery("position_manager")
     async def _position_manager(self):
         """Manage open positions"""
         while self.is_running:

@@ -61,17 +61,11 @@ class RedisManager:
                         # Try to get from environment
                         redis_url = os.getenv('REDIS_URL')
                     
-                    # Skip Redis if URL is localhost or internal and we're in production
-                    if redis_url and ('localhost' in redis_url or 'redis.railway.internal' in redis_url):
-                        # Check if we can actually connect
-                        import socket
-                        try:
-                            # Try to resolve the hostname
-                            if 'redis.railway.internal' in redis_url:
-                                socket.gethostbyname('redis.railway.internal')
-                        except socket.gaierror:
-                            # Can't resolve internal hostname, skip Redis
-                            logger.info("Redis internal hostname not resolvable - skipping Redis (will use in-memory queue)")
+                    # Skip localhost Redis in production
+                    if redis_url and 'localhost' in redis_url:
+                        import os
+                        if os.getenv('ENVIRONMENT') == 'production':
+                            logger.info("Skipping localhost Redis in production - using in-memory queue")
                             return None
                     
                     if redis_url:
@@ -106,7 +100,11 @@ class RedisManager:
                 return self._client
                 
             except Exception as e:
-                logger.error(f"Failed to connect to Redis: {e}")
+                error_msg = str(e)
+                if 'redis.railway.internal' in (redis_url or ''):
+                    logger.info("Redis connection failed (internal hostname may not be accessible locally) - using in-memory queue")
+                else:
+                    logger.warning(f"Redis connection failed: {error_msg} - using in-memory queue")
                 self._client = None
                 return None
     

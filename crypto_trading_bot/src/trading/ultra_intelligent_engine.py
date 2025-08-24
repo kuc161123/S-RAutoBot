@@ -1765,9 +1765,9 @@ class UltraIntelligentEngine:
         while self.is_running:
             try:
                 # Check for rapid drawdown using position_manager
-                positions = await self.position_manager.get_all_positions()
+                positions = self.position_manager.get_all_positions()
                 if len(positions) > 0:
-                    total_unrealized = sum(p.get('unrealized_pnl', 0) for p in positions.values())
+                    total_unrealized = sum(getattr(p, 'unrealized_pnl', 0) for p in positions.values())
                     if total_unrealized < -5000:  # $5000 drawdown
                         logger.critical("EMERGENCY: Rapid drawdown detected!")
                         self.emergency_stop = True

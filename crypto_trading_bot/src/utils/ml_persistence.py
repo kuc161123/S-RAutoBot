@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 import structlog
 from ..db.models import MLModel
-from ..db.database import DatabaseManager
+from ..db.async_database import async_db
 
 logger = structlog.get_logger(__name__)
 
@@ -20,7 +20,7 @@ class MLPersistenceManager:
     """
     
     def __init__(self):
-        self.db_manager = DatabaseManager()
+        pass  # Use async_db directly, no need for instance
         
     async def save_model(
         self,
@@ -57,11 +57,11 @@ class MLPersistenceManager:
                 })
             
             # Check if model exists
-            existing = self.db_manager.get_ml_model(model_name)
+            existing = await async_db.get_ml_model(model_name)
             
             if existing:
                 # Update existing model
-                self.db_manager.update_ml_model(
+                await async_db.update_ml_model(
                     model_name=model_name,
                     model_data=model_bytes,
                     model_metadata=metadata_json,
@@ -72,7 +72,7 @@ class MLPersistenceManager:
                 logger.info(f"Updated ML model {model_name} (version {existing.version + 1})")
             else:
                 # Create new model
-                self.db_manager.create_ml_model(
+                await async_db.create_ml_model(
                     model_name=model_name,
                     model_data=model_bytes,
                     model_metadata=metadata_json,
@@ -99,7 +99,7 @@ class MLPersistenceManager:
         """
         try:
             # Get model from database
-            model_record = self.db_manager.get_ml_model(model_name)
+            model_record = await async_db.get_ml_model(model_name)
             
             if not model_record:
                 logger.warning(f"ML model {model_name} not found")
@@ -133,7 +133,7 @@ class MLPersistenceManager:
             Model metadata dictionary or None
         """
         try:
-            model_record = self.db_manager.get_ml_model(model_name)
+            model_record = await async_db.get_ml_model(model_name)
             
             if not model_record:
                 return None
@@ -161,7 +161,7 @@ class MLPersistenceManager:
             List of model metadata dictionaries
         """
         try:
-            models = self.db_manager.list_ml_models()
+            models = await async_db.list_ml_models()
             
             return [
                 {
@@ -189,7 +189,7 @@ class MLPersistenceManager:
             Success status
         """
         try:
-            self.db_manager.delete_ml_model(model_name)
+            await async_db.delete_ml_model(model_name)
             logger.info(f"Deleted ML model {model_name}")
             return True
             

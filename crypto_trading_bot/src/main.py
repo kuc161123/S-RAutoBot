@@ -1,6 +1,7 @@
 import asyncio
 import signal
 import sys
+import atexit
 from fastapi import FastAPI, Request, Response, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
@@ -20,7 +21,7 @@ from .trading.order_manager import OrderManager
 from .db.database import init_db, close_db, DatabaseManager
 from .utils.logging import logger, trading_logger, get_prometheus_metrics
 from .utils.metrics_collector import metrics_collector
-from .trading.fixed_integrated_engine import FixedIntegratedEngine
+# Removed FixedIntegratedEngine - using only UltraIntelligentEngine
 from .utils.validation import validate_startup
 from .utils.health_check import health_monitor
 from .utils.bot_fixes import health_monitor as fixed_health_monitor
@@ -219,6 +220,58 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Graceful shutdown handler
+shutdown_event = asyncio.Event()
+
+async def graceful_shutdown(sig=None):
+    """Handle graceful shutdown on SIGTERM/SIGINT"""
+    if sig:
+        logger.info(f"Received signal {sig}, initiating graceful shutdown...")
+    else:
+        logger.info("Initiating graceful shutdown...")
+    
+    global trading_engine, bybit_client
+    
+    try:
+        # Stop accepting new trades
+        if trading_engine:
+            trading_engine.trading_enabled = False
+            logger.info("Trading disabled, closing existing positions...")
+            
+            # Close all positions if configured
+            if hasattr(settings, 'close_positions_on_shutdown') and settings.close_positions_on_shutdown:
+                await trading_engine._close_all_positions("GRACEFUL_SHUTDOWN")
+            
+            # Save ML models
+            logger.info("Saving ML models...")
+            await trading_engine.stop()
+        
+        # Close WebSocket connections
+        if bybit_client:
+            await bybit_client.close()
+        
+        # Cleanup async database thread pool
+        from .db.async_database import async_db
+        async_db.cleanup()
+        
+        logger.info("Graceful shutdown complete")
+        
+    except Exception as e:
+        logger.error(f"Error during graceful shutdown: {e}")
+    finally:
+        shutdown_event.set()
+
+# Register signal handlers
+def signal_handler(sig, frame):
+    """Handle system signals"""
+    asyncio.create_task(graceful_shutdown(sig))
+
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
+# Register atexit handler
+atexit.register(lambda: asyncio.run(graceful_shutdown()))
 
 # Add CORS middleware
 app.add_middleware(

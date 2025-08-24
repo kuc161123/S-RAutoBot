@@ -433,7 +433,8 @@ class SystemHealthMonitor:
 
 
 # Global instances
-rate_limiter = RateLimitManager()
+# Use the enhanced rate limiter instead of duplicating
+from .rate_limiter_v2 import rate_limiter_v2 as rate_limiter
 position_safety = PositionSafetyManager()
 ml_validator = MLDataValidator()
 db_pool = DatabaseConnectionPool()

@@ -559,11 +559,9 @@ class MultiTimeframeScanner:
                 json.dumps(signal, default=str)
             )
             
-            # Also add to signal queue
-            await self.redis_client.lpush(
-                "signal_queue",
-                json.dumps({'symbol': symbol, 'timestamp': signal['timestamp']})
-            )
+            # Add to the shared signal queue used by UltraIntelligentEngine
+            from ..utils.signal_queue import signal_queue
+            await signal_queue.push(signal)
             
         except Exception as e:
             logger.error(f"Error storing signal: {e}")

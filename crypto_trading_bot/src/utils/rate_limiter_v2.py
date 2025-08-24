@@ -417,3 +417,22 @@ class EnhancedRateLimiter:
 
 # Global rate limiter instance
 rate_limiter_v2 = EnhancedRateLimiter()
+
+# Adapter methods for compatibility with existing code
+async def acquire_request():
+    """Compatibility method for existing code"""
+    await rate_limiter_v2.acquire('api_request')
+
+def handle_rate_limit_error():
+    """Compatibility method for existing code"""
+    rate_limiter_v2._handle_rate_limit_error()
+
+def reset_backoff():
+    """Compatibility method for existing code"""
+    rate_limiter_v2.circuit_breaker_failure_count = 0
+    rate_limiter_v2.circuit_breaker_last_failure = 0
+
+# Add compatibility methods to the instance
+rate_limiter_v2.acquire_request = acquire_request
+rate_limiter_v2.handle_rate_limit_error = handle_rate_limit_error  
+rate_limiter_v2.reset_backoff = reset_backoff

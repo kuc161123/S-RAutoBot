@@ -168,8 +168,8 @@ class EnhancedBybitClient:
                 testnet=self.testnet,
                 channel_type="linear",
                 ping_interval=20,  # Send ping every 20 seconds
-                ping_timeout=10,   # Wait 10 seconds for pong
-                max_active_time=600  # Max connection time 10 minutes
+                ping_timeout=10    # Wait 10 seconds for pong
+                # Removed max_active_time for persistent connection
             )
             
             # Private WebSocket with heartbeat
@@ -179,8 +179,8 @@ class EnhancedBybitClient:
                 api_key=self.api_key,
                 api_secret=self.api_secret,
                 ping_interval=20,  # Send ping every 20 seconds
-                ping_timeout=10,   # Wait 10 seconds for pong
-                max_active_time=600  # Max connection time 10 minutes
+                ping_timeout=10    # Wait 10 seconds for pong
+                # Removed max_active_time for persistent connection
             )
             
             # Note: Handlers should be set via callbacks in subscription methods

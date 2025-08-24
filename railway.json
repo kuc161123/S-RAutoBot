@@ -2,8 +2,7 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "Dockerfile",
-    "buildContext": "crypto_trading_bot"
+    "dockerfilePath": "./crypto_trading_bot/Dockerfile"
   },
   "deploy": {
     "numReplicas": 1,

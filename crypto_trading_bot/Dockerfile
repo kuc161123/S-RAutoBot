@@ -19,14 +19,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     CHROMIUM_DRIVER_PATH=/usr/bin/chromedriver
 
 # Copy requirements
-COPY requirements.txt .
+COPY crypto_trading_bot/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . .
+COPY crypto_trading_bot/ .
 
 # Create non-root user
 RUN useradd -m -u 1000 botuser && \

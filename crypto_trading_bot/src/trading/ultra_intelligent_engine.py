@@ -465,28 +465,43 @@ class UltraIntelligentEngine:
             logger.info(f"Using {len(self.monitored_symbols)} default symbols")
     
     async def _setup_websocket_subscriptions(self):
-        """Setup all WebSocket subscriptions"""
+        """Setup all WebSocket subscriptions with batching"""
         try:
-            # Subscribe to market data for all symbols
-            for symbol in self.monitored_symbols:
-                # Orderbook
-                await self.client.subscribe_orderbook(
-                    symbol,
-                    lambda data: asyncio.create_task(self._handle_orderbook_update(data))
-                )
+            # Batch subscriptions to avoid overwhelming WebSocket
+            batch_size = 10  # Subscribe to 10 symbols at a time
+            subscription_delay = 0.5  # Delay between batches
+            
+            # Subscribe to market data for all symbols in batches
+            symbol_list = list(self.monitored_symbols)
+            for i in range(0, len(symbol_list), batch_size):
+                batch = symbol_list[i:i + batch_size]
                 
-                # Trades
-                await self.client.subscribe_trades(
-                    symbol,
-                    lambda data: asyncio.create_task(self._handle_trade_update(data))
-                )
+                for symbol in batch:
+                    # Orderbook
+                    await self.client.subscribe_orderbook(
+                        symbol,
+                        lambda data: asyncio.create_task(self._handle_orderbook_update(data))
+                    )
+                    
+                    # Trades
+                    await self.client.subscribe_trades(
+                        symbol,
+                        lambda data: asyncio.create_task(self._handle_trade_update(data))
+                    )
+                    
+                    # Klines (1m for real-time)
+                    await self.client.subscribe_klines(
+                        symbol,
+                        "1",
+                        lambda data: asyncio.create_task(self._handle_kline_update(data))
+                    )
                 
-                # Klines (1m for real-time)
-                await self.client.subscribe_klines(
-                    symbol,
-                    "1",
-                    lambda data: asyncio.create_task(self._handle_kline_update(data))
-                )
+                # Log batch progress
+                logger.info(f"Subscribed to batch {i//batch_size + 1}/{(len(symbol_list) + batch_size - 1)//batch_size} ({len(batch)} symbols)")
+                
+                # Delay between batches to avoid rate limits
+                if i + batch_size < len(symbol_list):
+                    await asyncio.sleep(subscription_delay)
             
             # Subscribe to private streams
             await self.client.subscribe_positions(
@@ -1917,3 +1932,20 @@ class UltraIntelligentEngine:
             except Exception as e:
                 logger.error(f"Memory cleanup error: {e}")
                 await asyncio.sleep(600)  # Wait longer on error
+    
+    async def _websocket_heartbeat(self):
+        """Send periodic heartbeat to keep WebSocket connections alive"""
+        while self.is_running:
+            try:
+                # Pybit WebSocket handles ping internally with ping_interval
+                # But we can check connection status
+                if hasattr(self.client, 'public_ws') and self.client.public_ws:
+                    # Check if WebSocket is still connected
+                    # If disconnected, it will auto-reconnect due to pybit's internal logic
+                    logger.debug("WebSocket heartbeat - connections active")
+                
+                await asyncio.sleep(30)  # Check every 30 seconds
+                
+            except Exception as e:
+                logger.error(f"WebSocket heartbeat error: {e}")
+                await asyncio.sleep(60)

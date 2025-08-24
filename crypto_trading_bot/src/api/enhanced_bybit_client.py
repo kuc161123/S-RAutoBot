@@ -163,18 +163,24 @@ class EnhancedBybitClient:
         """Connect WebSockets with auto-reconnect"""
         
         try:
-            # Public WebSocket
+            # Public WebSocket with heartbeat
             self.public_ws = WebSocket(
                 testnet=self.testnet,
-                channel_type="linear"
+                channel_type="linear",
+                ping_interval=20,  # Send ping every 20 seconds
+                ping_timeout=10,   # Wait 10 seconds for pong
+                max_active_time=600  # Max connection time 10 minutes
             )
             
-            # Private WebSocket
+            # Private WebSocket with heartbeat
             self.private_ws = WebSocket(
                 testnet=self.testnet,
                 channel_type="private",
                 api_key=self.api_key,
-                api_secret=self.api_secret
+                api_secret=self.api_secret,
+                ping_interval=20,  # Send ping every 20 seconds
+                ping_timeout=10,   # Wait 10 seconds for pong
+                max_active_time=600  # Max connection time 10 minutes
             )
             
             # Note: Handlers should be set via callbacks in subscription methods

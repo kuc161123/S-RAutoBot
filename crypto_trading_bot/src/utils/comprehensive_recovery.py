@@ -10,6 +10,7 @@ import structlog
 import traceback
 from dataclasses import dataclass, field
 from enum import Enum
+from .circuit_breaker import circuit_manager
 
 logger = structlog.get_logger(__name__)
 
@@ -48,7 +49,7 @@ class ComprehensiveRecoveryManager:
         self.max_retries = 3
         self.retry_delays = [1, 5, 15]  # Exponential backoff
         self.emergency_stop_threshold = 10  # Errors in 1 minute
-        self.circuit_breakers: Dict[str, Dict] = {}
+        self.circuit_manager = circuit_manager  # Use shared circuit breaker manager
         
     async def handle_error(
         self,
@@ -273,6 +274,48 @@ class ComprehensiveRecoveryManager:
             except Exception as e:
                 logger.error(f"Health check failed: {e}")
                 await asyncio.sleep(60)
+    
+    async def call_with_circuit_breaker(
+        self,
+        component: str,
+        func: Callable,
+        *args,
+        **kwargs
+    ) -> Any:
+        """
+        Execute function with circuit breaker protection
+        
+        Args:
+            component: Component name
+            func: Function to execute
+            *args: Function arguments
+            **kwargs: Function keyword arguments
+            
+        Returns:
+            Function result
+        """
+        breaker = self.circuit_manager.get_breaker(
+            name=component,
+            failure_threshold=5,
+            recovery_timeout=60
+        )
+        
+        try:
+            return await breaker.call(func, *args, **kwargs)
+        except Exception as e:
+            # Handle error with recovery logic
+            action = await self.handle_error(e, component)
+            
+            if action == RecoveryAction.RETRY:
+                # Retry with exponential backoff
+                for delay in self.retry_delays:
+                    await asyncio.sleep(delay)
+                    try:
+                        return await breaker.call(func, *args, **kwargs)
+                    except:
+                        continue
+            
+            raise e
 
 
 # Global instance

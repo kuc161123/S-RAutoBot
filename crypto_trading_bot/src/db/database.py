@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import QueuePool
 from contextlib import contextmanager
 import asyncpg
 import asyncio
@@ -12,10 +12,16 @@ from .models import Base
 
 logger = structlog.get_logger(__name__)
 
-# Sync engine for SQLAlchemy ORM
+# Sync engine for SQLAlchemy ORM with proper pooling
 engine = create_engine(
     settings.database_url,
-    poolclass=NullPool,  # Disable connection pooling for async compatibility
+    poolclass=QueuePool,
+    pool_size=20,  # Number of persistent connections
+    max_overflow=40,  # Maximum overflow connections
+    pool_timeout=30,  # Timeout for getting connection from pool
+    pool_recycle=1800,  # Recycle connections after 30 minutes
+    pool_pre_ping=True,  # Test connections before using
+    isolation_level="READ_COMMITTED",  # Proper isolation for trading
     echo=False
 )
 

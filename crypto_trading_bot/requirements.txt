@@ -19,6 +19,7 @@ ta==0.11.0
 scipy==1.11.4
 scikit-learn==1.3.2
 xgboost==2.0.3
+shap==0.44.0
 joblib==1.3.2
 
 # Backtesting

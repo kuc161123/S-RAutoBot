@@ -19,6 +19,7 @@ from .telegram.bot import TradingBot
 from .trading.order_manager import OrderManager
 from .db.database import init_db, close_db, DatabaseManager
 from .utils.logging import logger, trading_logger, get_prometheus_metrics
+from .utils.metrics_collector import metrics_collector
 from .trading.fixed_integrated_engine import FixedIntegratedEngine
 from .utils.validation import validate_startup
 from .utils.health_check import health_monitor
@@ -284,8 +285,9 @@ async def telegram_webhook(request: Request):
 @app.get("/metrics")
 async def metrics():
     """Prometheus metrics endpoint"""
-    metrics_text = get_prometheus_metrics()
-    return Response(content=metrics_text, media_type="text/plain")
+    # Get metrics from the new collector
+    metrics_text = metrics_collector.get_metrics()
+    return Response(content=metrics_text, media_type="text/plain; version=0.0.4")
 
 @app.get("/dashboard")
 async def monitoring_dashboard():

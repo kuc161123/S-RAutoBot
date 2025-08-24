@@ -16,6 +16,13 @@ from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 import xgboost as xgb
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+    logger = structlog.get_logger(__name__)
+    logger.warning("SHAP not available - ML interpretability disabled")
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -121,6 +128,10 @@ class MLEnsemble:
         
         # Drift detection
         self.baseline_performance = None
+        
+        # SHAP explainer for interpretability
+        self.shap_explainer = None
+        self.feature_importance_history = []
         self.drift_threshold = 0.15  # 15% performance drop
         
         # State
@@ -330,6 +341,14 @@ class MLEnsemble:
             
             # Update feature importance
             self._update_feature_importance(X_train)
+            
+            # Create SHAP explainer for XGBoost model
+            if SHAP_AVAILABLE and self.models['xgboost'] is not None:
+                try:
+                    self.shap_explainer = shap.TreeExplainer(self.models['xgboost'])
+                    logger.info("SHAP explainer created for model interpretability")
+                except Exception as e:
+                    logger.warning(f"Failed to create SHAP explainer: {e}")
             
             # Mark as trained
             self.is_trained = True
@@ -797,5 +816,47 @@ class MLEnsemble:
             self.target_scaler = joblib.load(target_scaler_path)
         
         self.is_trained = any(model is not None for model in self.models.values())
+    
+    def get_shap_values(self, X: pd.DataFrame) -> Optional[np.ndarray]:
+        """
+        Get SHAP values for interpretability
         
-        logger.info(f"Models loaded from {path}")
+        Args:
+            X: Feature DataFrame
+            
+        Returns:
+            SHAP values array or None
+        """
+        if not SHAP_AVAILABLE or self.shap_explainer is None:
+            return None
+        
+        try:
+            # Prepare features
+            X_features = X[self.feature_columns] if all(col in X.columns for col in self.feature_columns) else X
+            X_scaled = self.feature_scaler.transform(X_features)
+            
+            # Calculate SHAP values
+            shap_values = self.shap_explainer.shap_values(X_scaled)
+            
+            # Store feature importance from SHAP
+            if len(shap_values) > 0:
+                mean_shap = np.abs(shap_values).mean(axis=0)
+                shap_importance = {
+                    self.feature_columns[i]: float(mean_shap[i])
+                    for i in range(len(self.feature_columns))
+                    if i < len(mean_shap)
+                }
+                self.feature_importance_history.append({
+                    'timestamp': datetime.now(),
+                    'importance': shap_importance
+                })
+                
+                # Log top features
+                top_features = sorted(shap_importance.items(), key=lambda x: x[1], reverse=True)[:5]
+                logger.info(f"Top SHAP features: {top_features}")
+            
+            return shap_values
+            
+        except Exception as e:
+            logger.error(f"Failed to calculate SHAP values: {e}")
+            return None

@@ -42,6 +42,13 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     global bybit_client, strategy, telegram_bot, order_manager, trading_engine
     
+    # Check for minimal mode (for Railway health checks)
+    import os
+    if os.getenv("MINIMAL_MODE") == "true":
+        logger.info("Starting in MINIMAL MODE for health checks")
+        yield
+        return
+    
     try:
         logger.info("Starting Crypto Trading Bot...")
         startup_start = datetime.now()

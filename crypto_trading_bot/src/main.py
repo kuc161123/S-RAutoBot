@@ -201,6 +201,16 @@ async def lifespan(app: FastAPI):
     finally:
         logger.info("Shutting down bot...")
         
+        # Stop Telegram bot first to prevent duplicate polling
+        if telegram_bot and telegram_bot.application:
+            try:
+                logger.info("Stopping Telegram bot...")
+                await telegram_bot.application.stop()
+                await telegram_bot.application.shutdown()
+                logger.info("Telegram bot stopped")
+            except Exception as e:
+                logger.error(f"Error stopping Telegram bot: {e}")
+        
         # Stop trading engine
         if trading_engine:
             await trading_engine.stop()
@@ -231,9 +241,19 @@ async def graceful_shutdown(sig=None):
     else:
         logger.info("Initiating graceful shutdown...")
     
-    global trading_engine, bybit_client
+    global trading_engine, bybit_client, telegram_bot
     
     try:
+        # Stop Telegram bot first to prevent duplicate polling
+        if telegram_bot and telegram_bot.application:
+            try:
+                logger.info("Stopping Telegram bot...")
+                await telegram_bot.application.stop()
+                await telegram_bot.application.shutdown()
+                logger.info("Telegram bot stopped")
+            except Exception as e:
+                logger.error(f"Error stopping Telegram bot: {e}")
+        
         # Stop accepting new trades
         if trading_engine:
             trading_engine.trading_enabled = False

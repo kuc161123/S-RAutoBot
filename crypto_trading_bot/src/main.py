@@ -129,7 +129,7 @@ async def lifespan(app: FastAPI):
             
             # Setup WebSocket subscriptions AFTER engine initialization
             logger.info("Setting up WebSocket subscriptions...")
-            setup_websocket_subscriptions()
+            await setup_websocket_subscriptions()
             logger.info("✅ WebSocket subscriptions configured")
             
         except asyncio.TimeoutError:
@@ -983,7 +983,7 @@ async def send_daily_summary():
     for chat_id in settings.telegram_allowed_chat_ids:
         await telegram_bot.send_notification(chat_id, message)
 
-def setup_websocket_subscriptions():
+async def setup_websocket_subscriptions():
     """Setup WebSocket subscriptions with proper error handling"""
     global bybit_client, order_manager, trading_engine
     
@@ -994,11 +994,11 @@ def setup_websocket_subscriptions():
     try:
         # Subscribe to private streams
         if hasattr(bybit_client, 'subscribe_positions'):
-            bybit_client.subscribe_positions(order_manager.handle_position_update)
+            await bybit_client.subscribe_positions(order_manager.handle_position_update)
         if hasattr(bybit_client, 'subscribe_orders'):
-            bybit_client.subscribe_orders(order_manager.handle_order_update)
+            await bybit_client.subscribe_orders(order_manager.handle_order_update)
         if hasattr(bybit_client, 'subscribe_executions'):
-            bybit_client.subscribe_executions(order_manager.handle_execution_update)
+            await bybit_client.subscribe_executions(order_manager.handle_execution_update)
         
         # Setup heartbeat task
         asyncio.create_task(websocket_heartbeat())

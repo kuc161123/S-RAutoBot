@@ -830,14 +830,14 @@ class EnhancedBybitClient:
             if self.public_ws:
                 try:
                     self.public_ws.exit()
-                except:
-                    pass
+                except Exception as ws_error:
+                    logger.debug(f"Error closing public WebSocket: {ws_error}")
             
             if self.private_ws:
                 try:
                     self.private_ws.exit()
-                except:
-                    pass
+                except Exception as ws_error:
+                    logger.debug(f"Error closing private WebSocket: {ws_error}")
             
             logger.info("Bybit client connections closed")
         except Exception as e:

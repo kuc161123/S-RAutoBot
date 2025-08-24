@@ -23,6 +23,7 @@ from ..strategy.intelligent_decision_engine import decision_engine, IntelligentS
 from ..strategy.ml_predictor import ml_predictor
 from ..strategy.ml_ensemble import MLEnsemble
 from ..strategy.mtf_strategy_learner import MTFStrategyLearner
+from .multi_timeframe_scanner import MultiTimeframeScanner
 from ..telegram.bot import TradingBot
 from ..config import settings
 from ..db.database import DatabaseManager
@@ -200,6 +201,7 @@ class UltraIntelligentEngine:
         self.strategy = AdvancedSupplyDemandStrategy()
         self.ml_ensemble = MLEnsemble()
         self.mtf_learner = MTFStrategyLearner()
+        self.mtf_scanner = MultiTimeframeScanner(bybit_client)
         
         # Position tracking
         self.active_positions: Dict[str, ActivePosition] = {}
@@ -298,6 +300,9 @@ class UltraIntelligentEngine:
             # Sync existing positions
             await self._sync_existing_positions()
             
+            # Initialize multi-timeframe scanner
+            await self.mtf_scanner.initialize()
+            
             self.initialization_complete = True
             logger.info(f"Ultra Intelligent Engine initialized with {len(self.monitored_symbols)} symbols")
             
@@ -324,6 +329,7 @@ class UltraIntelligentEngine:
         asyncio.create_task(self._symbol_rebalancer())
         asyncio.create_task(self._emergency_monitor())
         asyncio.create_task(self._track_untested_zones())  # Track failed zones for ML
+        asyncio.create_task(self.mtf_scanner.start_scanner())  # Start MTF scanner
         
         logger.info("Ultra Intelligent Engine started")
     
@@ -1573,10 +1579,14 @@ class UltraIntelligentEngine:
     async def _ml_trainer(self):
         """Train ML models more frequently for better learning"""
         last_training_size = 0
+        last_ensemble_train = 0
+        last_mtf_train = 0
+        
         while self.is_running:
             try:
-                await asyncio.sleep(300)  # Every 5 minutes instead of hourly
+                await asyncio.sleep(300)  # Every 5 minutes
                 
+                # Train main ML predictor
                 current_size = len(ml_predictor.training_data)
                 new_samples = current_size - last_training_size
                 
@@ -1590,7 +1600,20 @@ class UltraIntelligentEngine:
                 if should_train:
                     logger.info(f"Training ML models with {current_size} samples ({new_samples} new)")
                     ml_predictor.train_models()
-                    ml_predictor.save_models("/tmp/ml_models")
+                    
+                    # Save to database instead of /tmp
+                    if ml_predictor.model_trained:
+                        await ml_persistence.save_model(
+                            'ml_predictor',
+                            ml_predictor.model,
+                            metadata={
+                                'feature_importance': getattr(ml_predictor, 'feature_importance', {}),
+                                'training_timestamp': datetime.now().isoformat()
+                            },
+                            accuracy=getattr(ml_predictor, 'test_score', 0.5),
+                            training_samples=current_size
+                        )
+                    
                     last_training_size = current_size
                     
                     # Calculate and log performance metrics
@@ -1608,6 +1631,37 @@ class UltraIntelligentEngine:
                             f"New: {new_samples}\n"
                             f"Accuracy: {accuracy:.1%}"
                         )
+                
+                # Train ensemble models periodically
+                ensemble_samples = len(self.ml_ensemble.training_data) if hasattr(self.ml_ensemble, 'training_data') else 0
+                if ensemble_samples > last_ensemble_train + 20:
+                    logger.info(f"Training ML ensemble with {ensemble_samples} samples")
+                    self.ml_ensemble.train()
+                    
+                    # Save ensemble to database
+                    if hasattr(self.ml_ensemble, 'models'):
+                        await ml_persistence.save_model(
+                            'ml_ensemble',
+                            self.ml_ensemble.models,
+                            metadata={'training_timestamp': datetime.now().isoformat()},
+                            training_samples=ensemble_samples
+                        )
+                    
+                    last_ensemble_train = ensemble_samples
+                
+                # Train MTF learner for each symbol
+                for symbol in self.monitored_symbols[:10]:  # Train top 10 symbols more frequently
+                    if self.mtf_learner.should_retrain(symbol):
+                        logger.info(f"Training MTF learner for {symbol}")
+                        await self.mtf_learner.train_for_symbol(symbol)
+                        
+                        # Save MTF learner state
+                        if hasattr(self.mtf_learner, 'symbol_parameters'):
+                            await ml_persistence.save_model(
+                                f'mtf_learner_{symbol}',
+                                self.mtf_learner.symbol_parameters.get(symbol, {}),
+                                metadata={'symbol': symbol, 'training_timestamp': datetime.now().isoformat()}
+                            )
                 
             except Exception as e:
                 logger.error(f"ML trainer error: {e}")

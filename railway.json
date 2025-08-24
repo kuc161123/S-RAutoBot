@@ -2,12 +2,12 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "./crypto_trading_bot/Dockerfile.minimal"
+    "dockerfilePath": "./crypto_trading_bot/Dockerfile"
   },
   "deploy": {
     "numReplicas": 1,
     "healthcheckPath": "/health",
-    "healthcheckTimeout": 60,
+    "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }

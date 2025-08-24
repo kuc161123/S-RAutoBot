@@ -206,6 +206,7 @@ class UltraIntelligentEngine:
         
         # Use unified position manager for all position tracking
         self.position_manager = unified_position_manager
+        self.active_positions: Dict[str, Any] = {}  # Initialize active_positions dictionary
         self.position_cooldowns: Dict[str, float] = {}  # Symbol -> timestamp of last position
         self.max_positions_per_symbol = 1
         self.position_cooldown_seconds = 30  # Wait 30 seconds between positions on same symbol
@@ -1759,9 +1760,10 @@ class UltraIntelligentEngine:
         """Monitor for emergency conditions"""
         while self.is_running:
             try:
-                # Check for rapid drawdown
-                if len(self.active_positions) > 0:
-                    total_unrealized = sum(p.unrealized_pnl for p in self.active_positions.values())
+                # Check for rapid drawdown using position_manager
+                positions = await self.position_manager.get_all_positions()
+                if len(positions) > 0:
+                    total_unrealized = sum(p.get('unrealized_pnl', 0) for p in positions.values())
                     if total_unrealized < -5000:  # $5000 drawdown
                         logger.critical("EMERGENCY: Rapid drawdown detected!")
                         self.emergency_stop = True

@@ -29,10 +29,6 @@ RUN useradd -m -u 1000 botuser && \
 
 USER botuser
 
-# Health check - simplified
-HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=5 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
-
 # Expose port
 EXPOSE 8000
 

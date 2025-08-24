@@ -55,7 +55,15 @@ class RedisManager:
             try:
                 # Create connection pool if not exists
                 if self._pool is None:
+                    # Check for Railway internal Redis URL
+                    import os
+                    if not redis_url:
+                        # Try to get from environment
+                        redis_url = os.getenv('REDIS_URL')
+                    
                     if redis_url:
+                        logger.info(f"Attempting Redis connection to: {redis_url.split('@')[-1] if '@' in redis_url else redis_url}")
+                        
                         # Create connection pool from URL
                         from redis.asyncio.connection import ConnectionPool
                         self._pool = ConnectionPool.from_url(
@@ -67,7 +75,9 @@ class RedisManager:
                                 1: 1,  # TCP_KEEPIDLE
                                 2: 1,  # TCP_KEEPINTVL
                                 3: 5,  # TCP_KEEPCNT
-                            }
+                            },
+                            socket_connect_timeout=5,  # Add connection timeout
+                            retry_on_timeout=True
                         )
                     else:
                         # Create connection pool for localhost

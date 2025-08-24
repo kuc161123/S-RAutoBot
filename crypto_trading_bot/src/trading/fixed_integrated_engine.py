@@ -28,6 +28,7 @@ from ..utils.bot_fixes import (
     health_monitor
 )
 from ..utils.position_sync import PositionSynchronizer
+from ..utils.risk_validator import risk_validator
 
 logger = structlog.get_logger(__name__)
 
@@ -148,8 +149,10 @@ class FixedIntegratedEngine:
         
         logger.info(f"Initializing settings for {len(self.monitored_symbols)} symbols...")
         
-        leverage = settings.default_leverage
+        leverage = 10  # Fixed 10x leverage as per requirements
         margin_mode = settings.default_margin_mode.value
+        
+        logger.info(f"Initializing all symbols with {leverage}x leverage")
         
         # Process in batches to avoid overwhelming the API
         successful = 0
@@ -627,8 +630,23 @@ class FixedIntegratedEngine:
                 logger.error(f"No instrument data for {symbol}")
                 return
                 
-            # Set leverage
-            await self.client.set_leverage(symbol, parameters.final_leverage)
+            # Set leverage - always use 10x as per requirements
+            await self.client.set_leverage(symbol, 10)
+            logger.debug(f"Setting {symbol} to 10x leverage for trade")
+            
+            # Validate risk parameters before placing order
+            account_balance = await self._get_account_balance()
+            is_valid, error_msg = risk_validator.validate_trade_parameters(
+                account_balance=account_balance,
+                position_size=final_size,
+                entry_price=signal.get('entry_price', 0),
+                stop_loss=signal.get('stop_loss', 0),
+                leverage=10
+            )
+            
+            if not is_valid:
+                logger.error(f"Risk validation failed for {symbol}: {error_msg}")
+                return
             
             # Set margin mode
             await self.client.set_margin_mode(symbol, parameters.margin_mode)
@@ -665,7 +683,7 @@ class FixedIntegratedEngine:
                     'stop_loss': signal.get('stop_loss'),
                     'take_profit_1': signal.get('take_profit_1'),
                     'size': final_size,
-                    'leverage': parameters.final_leverage,
+                    'leverage': 10,  # Always 10x leverage
                     'entry_time': datetime.now(),
                     'signal': signal,  # Store signal for MTF learner
                     'zone': zone
@@ -811,6 +829,15 @@ class FixedIntegratedEngine:
         except Exception as e:
             logger.error(f"Error handling closed position for {symbol}: {e}")
             
+    async def _get_account_balance(self) -> float:
+        """Get current account balance"""
+        try:
+            balance_info = await self.client.get_balance()
+            return balance_info.get('availableBalance', 100.0)  # Default to $100 if error
+        except Exception as e:
+            logger.error(f"Error getting balance: {e}")
+            return 100.0  # Default to test balance
+    
     async def _ml_trainer(self):
         """Periodic ML model training"""
         

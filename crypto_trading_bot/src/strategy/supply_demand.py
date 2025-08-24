@@ -490,7 +490,8 @@ class SupplyDemandStrategy:
             stop_distance_percent,
             entry_price,
             float(instrument_info['qty_step']),
-            float(instrument_info.get('min_notional', 0))
+            float(instrument_info.get('min_notional', 0)),
+            leverage=10  # Always use 10x leverage
         )
         
         if position_size <= 0:

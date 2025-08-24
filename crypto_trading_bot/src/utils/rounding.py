@@ -29,10 +29,11 @@ def calculate_position_size(
     stop_distance_percent: float,
     price: float,
     qty_step: float,
-    min_notional: float = 0
+    min_notional: float = 0,
+    leverage: int = 10  # Default to 10x leverage as per requirements
 ) -> float:
     """
-    Calculate position size based on risk management rules
+    Calculate position size based on risk management rules with leverage
     
     Args:
         account_balance: Total account balance
@@ -41,14 +42,21 @@ def calculate_position_size(
         price: Current price of the asset
         qty_step: Minimum quantity step for the symbol
         min_notional: Minimum notional value for the position
+        leverage: Leverage to use (default 10x)
     
     Returns:
         Position size in base currency
+    
+    Example with $100 balance, 1% risk, 3% stop distance, 10x leverage:
+        - Risk amount = $100 * 1% = $1
+        - Position value = $1 / 3% = $33.33
+        - With 10x leverage, actual position size = $33.33 (margin required = $3.33)
     """
-    # Calculate risk amount
+    # Calculate risk amount (how much we're willing to lose)
     risk_amount = account_balance * (risk_percent / 100)
     
     # Calculate position value based on stop distance
+    # This is the notional value that would result in our risk amount loss at stop
     position_value = risk_amount / (stop_distance_percent / 100)
     
     # Calculate quantity
@@ -60,6 +68,13 @@ def calculate_position_size(
     # Check minimum notional
     if qty * price < min_notional:
         qty = round_to_qty_step(min_notional / price, qty_step)
+    
+    # Verify margin requirement doesn't exceed available balance
+    margin_required = (qty * price) / leverage
+    if margin_required > account_balance * 0.95:  # Use max 95% of balance for safety
+        # Reduce position size to fit available balance
+        max_qty = (account_balance * 0.95 * leverage) / price
+        qty = round_to_qty_step(max_qty, qty_step)
     
     return qty
 

@@ -7,6 +7,20 @@
   "deploy": {
     "numReplicas": 1,
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 3
+    "restartPolicyMaxRetries": 3,
+    "region": "europe-west4"
+  },
+  "environments": {
+    "production": {
+      "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "./crypto_trading_bot/Dockerfile"
+      },
+      "deploy": {
+        "numReplicas": 1,
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 3
+      }
+    }
   }
 }

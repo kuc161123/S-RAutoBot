@@ -202,7 +202,7 @@ class UltraIntelligentEngine:
         self.strategy = AdvancedSupplyDemandStrategy()
         self.ml_ensemble = MLEnsemble()
         self.mtf_learner = MTFStrategyLearner()
-        self.mtf_scanner = MultiTimeframeScanner(bybit_client)
+        self.mtf_scanner = MultiTimeframeScanner(bybit_client, self.strategy)
         
         # Use unified position manager for all position tracking
         self.position_manager = unified_position_manager

@@ -12,7 +12,7 @@ import redis.asyncio as redis
 import json
 
 from ..config import settings
-from ..api.bybit_client import BybitClient
+from ..api.enhanced_bybit_client import EnhancedBybitClient as BybitClient
 from ..strategy.advanced_supply_demand import AdvancedSupplyDemandStrategy
 from ..strategy.market_structure_analyzer import MarketStructureAnalyzer, MarketStructure
 from ..utils.reliability import rate_limiter, retry_with_backoff

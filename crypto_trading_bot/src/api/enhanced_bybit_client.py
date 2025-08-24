@@ -13,11 +13,12 @@ import pandas as pd
 from ..config import settings
 from ..utils.bot_fixes import (
     rate_limiter, 
-    position_safety,
     ws_manager,
     health_monitor,
     OrderValidation
 )
+from ..utils.circuit_breaker import CircuitBreaker
+from ..trading.unified_position_manager import unified_position_manager
 from ..utils.rounding import round_to_tick, round_to_qty_step
 
 logger = structlog.get_logger(__name__)
@@ -72,6 +73,11 @@ class EnhancedBybitClient:
             
             # Initialize order validator
             self.order_validator = OrderValidation(self.instruments)
+            
+            # Initialize circuit breakers for different API categories
+            self.market_data_breaker = CircuitBreaker("market_data", failure_threshold=5, recovery_timeout=30)
+            self.trading_breaker = CircuitBreaker("trading", failure_threshold=3, recovery_timeout=60)
+            self.account_breaker = CircuitBreaker("account", failure_threshold=5, recovery_timeout=30)
             
             # Connect WebSockets with auto-reconnect
             await self._connect_websockets()
@@ -346,7 +352,12 @@ class EnhancedBybitClient:
             return pd.DataFrame()
             
     async def place_order(self, **kwargs) -> Optional[str]:
-        """Place order with validation and safety checks"""
+        """Place order with validation, circuit breaker, and safety checks"""
+        
+        # Check circuit breaker first
+        if not await self.trading_breaker.call(lambda: True):
+            logger.error("Trading circuit breaker is OPEN, rejecting order")
+            return None
         
         symbol = kwargs.get('symbol')
         side = kwargs.get('side')

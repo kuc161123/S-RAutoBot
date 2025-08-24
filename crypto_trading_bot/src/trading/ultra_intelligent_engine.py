@@ -28,10 +28,11 @@ from ..telegram.bot import TradingBot
 from ..config import settings
 from ..db.database import DatabaseManager
 from ..monitoring.performance_tracker import get_performance_tracker
-from ..utils.bot_fixes import position_safety, ml_validator, db_pool, health_monitor
+from ..utils.bot_fixes import ml_validator, db_pool, health_monitor
 from ..utils.comprehensive_recovery import recovery_manager, with_recovery
 from ..utils.ml_persistence import ml_persistence
 from ..utils.signal_queue import signal_queue
+from .unified_position_manager import unified_position_manager
 
 logger = structlog.get_logger(__name__)
 
@@ -203,12 +204,14 @@ class UltraIntelligentEngine:
         self.mtf_learner = MTFStrategyLearner()
         self.mtf_scanner = MultiTimeframeScanner(bybit_client)
         
-        # Position tracking
-        self.active_positions: Dict[str, ActivePosition] = {}
-        self.position_locks: Dict[str, asyncio.Lock] = {}
+        # Use unified position manager for all position tracking
+        self.position_manager = unified_position_manager
         self.position_cooldowns: Dict[str, float] = {}  # Symbol -> timestamp of last position
         self.max_positions_per_symbol = 1
         self.position_cooldown_seconds = 30  # Wait 30 seconds between positions on same symbol
+        
+        # Register as observer for position changes
+        self.position_manager.register_observer(self._on_position_change)
         
         # Symbol management
         self.monitored_symbols: List[str] = []
@@ -590,7 +593,7 @@ class UltraIntelligentEngine:
                 symbol = position.get('symbol')
                 size = float(position.get('size', 0))
                 
-                if size > 0 and symbol in self.active_positions:
+                if size > 0 and self.position_manager.has_position(symbol):
                     # Update position data
                     pos = self.active_positions[symbol]
                     pos.update_pnl(float(position.get('markPrice', pos.current_price)))
@@ -599,7 +602,7 @@ class UltraIntelligentEngine:
                     # Check for stop/TP management
                     await self._check_position_management(symbol, pos)
                     
-                elif size == 0 and symbol in self.active_positions:
+                elif size == 0 and self.position_manager.has_position(symbol):
                     # Position closed
                     await self._handle_position_closed(symbol, position)
                     
@@ -621,8 +624,8 @@ class UltraIntelligentEngine:
                     self.metrics['orders_rejected'] += 1
                 
                 # Handle stop/TP fills
-                if symbol in self.active_positions:
-                    pos = self.active_positions[symbol]
+                if self.position_manager.has_position(symbol):
+                    pos = self.position_manager.get_position(symbol)
                     if order_id == pos.stop_order_id and status == 'Filled':
                         self.metrics['sl_hits'] += 1
                         await self._handle_stop_loss_hit(symbol)
@@ -643,8 +646,8 @@ class UltraIntelligentEngine:
                 qty = float(execution.get('execQty', 0))
                 fee = float(execution.get('execFee', 0))
                 
-                if symbol in self.active_positions:
-                    pos = self.active_positions[symbol]
+                if self.position_manager.has_position(symbol):
+                    pos = self.position_manager.get_position(symbol)
                     pos.fees_paid += fee
                     
         except Exception as e:
@@ -709,7 +712,7 @@ class UltraIntelligentEngine:
                     exchange_positions.add(symbol)
                     
                     # If position exists on exchange but not in our tracking, add it
-                    if symbol not in self.active_positions:
+                    if not self.position_manager.has_position(symbol):
                         logger.warning(f"Found untracked position for {symbol}, syncing...")
                         
                         # Safe conversion for avgPrice
@@ -726,10 +729,10 @@ class UltraIntelligentEngine:
                         })
             
             # Check for positions in our tracking that no longer exist on exchange
-            for symbol in list(self.active_positions.keys()):
+            for symbol in list(self.position_manager.get_all_positions().keys()):
                 if symbol not in exchange_positions:
                     logger.warning(f"Position for {symbol} no longer exists on exchange, removing...")
-                    del self.active_positions[symbol]
+                    await self.position_manager.close_position(symbol, reason='SYNC_WITH_EXCHANGE')
                     position_safety.remove_position(symbol)
                     
         except Exception as e:
@@ -787,7 +790,14 @@ class UltraIntelligentEngine:
                         position_value=size * avg_price
                     )
                     
-                    self.active_positions[symbol] = pos
+                    await self.position_manager.register_position(
+                        symbol=symbol,
+                        side=side,
+                        size=size,
+                        entry_price=avg_price,
+                        stop_loss=stop_loss,
+                        take_profit=take_profit
+                    )
                     logger.info(f"Synced existing position: {symbol} {side} {size}")
                     
         except Exception as e:
@@ -836,7 +846,7 @@ class UltraIntelligentEngine:
                 # Check each symbol for signals
                 for symbol in self.monitored_symbols:
                     # Skip if position exists
-                    if symbol in self.active_positions:
+                    if self.position_manager.has_position(symbol):
                         continue
                     
                     # Skip if signal recently generated
@@ -891,9 +901,9 @@ class UltraIntelligentEngine:
                                 logger.info(f"Account balance: Wallet=${wallet_balance:.2f}, Available=${balance:.2f}, Used Margin=${used_margin:.2f}")
                                 
                                 # Log existing positions
-                                if self.active_positions:
-                                    logger.info(f"Active positions: {list(self.active_positions.keys())}")
-                                    total_position_value = sum(p.position_value for p in self.active_positions.values())
+                                if self.position_manager.get_position_count() > 0:
+                                    logger.info(f"Active positions: {list(self.position_manager.get_all_positions().keys())}")
+                                    total_position_value = self.position_manager.get_total_portfolio_value()
                                     logger.info(f"Total position value: ${total_position_value:.2f}")
                             
                             # Check if we have enough balance to open new positions
@@ -1087,11 +1097,12 @@ class UltraIntelligentEngine:
                         logger.warning(f"Redis check failed: {e}")
                 
                 # Register position immediately to prevent duplicates
-                position_safety.register_position(symbol, {
-                    'side': "Buy" if signal.get('action') == "BUY" else "Sell",
-                    'size': signal.get('position_size'),
-                    'entry_price': signal.get('entry_price')
-                })
+                await self.position_manager.register_position(
+                    symbol=symbol,
+                    side="Buy" if signal.get('action') == "BUY" else "Sell",
+                    size=signal.get('position_size'),
+                    entry_price=signal.get('entry_price')
+                )
                 
                 # Place order with integrated TP/SL
                 order_data = {
@@ -1126,6 +1137,9 @@ class UltraIntelligentEngine:
                     return False
                 
                 self.metrics['orders_placed'] += 1
+                
+                # Use database transaction for atomic position creation
+                from ..db.async_database import async_db
                 
                 # Create position tracking
                 position = ActivePosition(
@@ -1877,6 +1891,16 @@ class UltraIntelligentEngine:
         except Exception as e:
             logger.debug(f"Error getting market conditions: {e}")
             return {}
+    
+    async def _on_position_change(self, event: str, position: Any):
+        """Handle position change notifications from unified manager"""
+        logger.debug(f"Position {event}: {position.symbol}")
+        
+        # Update portfolio heat based on position changes
+        if event == "position_opened":
+            self.portfolio_heat += position.risk_amount / 10000
+        elif event == "position_closed":
+            self.portfolio_heat -= position.risk_amount / 10000
     
     async def _track_untested_zones(self):
         """Track zones that don't get traded for negative learning"""

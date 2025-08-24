@@ -823,3 +823,22 @@ class EnhancedBybitClient:
     async def subscribe_executions(self, callback: Any):
         """Subscribe to execution updates - currently disabled"""
         logger.debug("Execution subscription skipped (not implemented for v5)")
+    
+    async def close(self):
+        """Close WebSocket connections and cleanup"""
+        try:
+            if self.public_ws:
+                try:
+                    self.public_ws.exit()
+                except:
+                    pass
+            
+            if self.private_ws:
+                try:
+                    self.private_ws.exit()
+                except:
+                    pass
+            
+            logger.info("Bybit client connections closed")
+        except Exception as e:
+            logger.error(f"Error closing Bybit client: {e}")

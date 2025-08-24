@@ -153,7 +153,7 @@ class MLPersistenceManager:
             logger.error(f"Failed to get metadata for {model_name}: {e}")
             return None
     
-    async def list_models(self) -> List[Dict]:
+    async def list_models(self):
         """
         List all available ML models
         

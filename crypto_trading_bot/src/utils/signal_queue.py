@@ -6,6 +6,7 @@ import json
 import asyncio
 from typing import Dict, Optional, List, Any
 from datetime import datetime
+from dataclasses import asdict
 import structlog
 from .redis_manager import redis_manager
 
@@ -43,35 +44,44 @@ class SignalQueue:
         else:
             logger.info("Signal queue connected to Redis via shared manager")
     
-    async def push(self, signal: Dict[str, Any]) -> bool:
+    async def push(self, signal: Any) -> bool:
         """
         Push signal to queue
         
         Args:
-            signal: Signal dictionary to queue
+            signal: Signal (dict or dataclass) to queue
         
         Returns:
             Success status
         """
         try:
+            # Convert dataclass to dict if needed
+            if hasattr(signal, '__dataclass_fields__'):
+                signal_dict = asdict(signal)
+            elif isinstance(signal, dict):
+                signal_dict = signal.copy()
+            else:
+                signal_dict = dict(signal)
+            
             # Add metadata
-            signal['queued_at'] = datetime.utcnow().isoformat()
-            signal['signal_id'] = f"{signal.get('symbol')}_{datetime.utcnow().timestamp()}"
+            signal_dict['queued_at'] = datetime.utcnow().isoformat()
+            if 'signal_id' not in signal_dict:
+                signal_dict['signal_id'] = f"{signal_dict.get('symbol')}_{datetime.utcnow().timestamp()}"
             
             if self.redis_client:
                 # Push to Redis queue
-                signal_json = json.dumps(signal)
+                signal_json = json.dumps(signal_dict)
                 await self.redis_client.lpush(self.queue_key, signal_json)
                 
                 # Set expiry on the queue
                 await self.redis_client.expire(self.queue_key, self.signal_ttl)
                 
-                logger.info(f"Signal queued for {signal.get('symbol')}: {signal.get('signal_id')}")
+                logger.info(f"Signal queued for {signal_dict.get('symbol')}: {signal_dict.get('signal_id')}")
                 return True
             else:
                 # Use in-memory queue
-                await self.in_memory_queue.put(signal)
-                logger.info(f"Signal queued in memory for {signal.get('symbol')}")
+                await self.in_memory_queue.put(signal_dict)
+                logger.info(f"Signal queued in memory for {signal_dict.get('symbol')}")
                 return True
                 
         except Exception as e:

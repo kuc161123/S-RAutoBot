@@ -513,6 +513,41 @@ class EnhancedBybitClient:
                 
             logger.error(f"Error placing order: {e}")
             return None
+    
+    async def cancel_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel an order"""
+        try:
+            # Check if order exists in cache
+            if order_id in self.orders:
+                order = self.orders[order_id]
+                if order.get('orderStatus') in ['Filled', 'Cancelled', 'Rejected']:
+                    logger.info(f"Order {order_id} already {order['orderStatus']}")
+                    return True
+            
+            # Rate limit
+            await rate_limiter.acquire_request()
+            
+            # Cancel order
+            response = self.http_client.cancel_order(
+                category="linear",
+                symbol=symbol,
+                orderId=order_id
+            )
+            
+            if response["retCode"] != 0:
+                logger.error(f"Failed to cancel order {order_id}: {response['retMsg']}")
+                return False
+            
+            # Update cache
+            if order_id in self.orders:
+                self.orders[order_id]['orderStatus'] = 'Cancelled'
+            
+            logger.info(f"Cancelled order {order_id} for {symbol}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error cancelling order {order_id}: {e}")
+            return False
             
     async def get_positions(self) -> List[Dict]:
         """Get positions with caching"""

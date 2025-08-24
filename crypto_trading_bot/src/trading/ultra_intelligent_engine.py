@@ -966,6 +966,7 @@ class UltraIntelligentEngine:
     
     async def _signal_executor(self):
         """Execute signals from queue"""
+        logger.info("Signal executor started")
         while self.is_running:
             try:
                 # Get signal from Redis queue
@@ -973,21 +974,30 @@ class UltraIntelligentEngine:
                 if not signal:
                     continue
                 
+                logger.info(f"Processing signal for {signal.get('symbol')}")
+                
                 if not self.trading_enabled:
+                    logger.warning("Trading disabled, skipping signal")
                     continue
                 
                 # Check if we can take this position
                 if not await self._can_take_position(signal):
+                    logger.info(f"Cannot take position for {signal.get('symbol')}")
                     continue
                 
                 # Execute the signal
+                logger.info(f"Executing signal for {signal.get('symbol')}")
                 success = await self._execute_signal(signal)
                 
                 if success:
                     self.metrics['signals_executed'] += 1
+                    logger.info(f"✅ Successfully executed signal for {signal.get('symbol')}")
                     # Remove from pending
-                    if signal.symbol in self.pending_signals:
-                        del self.pending_signals[signal.symbol]
+                    symbol = signal.get('symbol')
+                    if symbol in self.pending_signals:
+                        del self.pending_signals[symbol]
+                else:
+                    logger.warning(f"❌ Failed to execute signal for {signal.get('symbol')}")
                 
             except asyncio.TimeoutError:
                 continue
@@ -995,16 +1005,19 @@ class UltraIntelligentEngine:
                 logger.error(f"Signal executor error: {e}")
                 self.metrics['errors'] += 1
     
-    async def _can_take_position(self, signal: TradingSignalComplete) -> bool:
+    async def _can_take_position(self, signal: Dict[str, Any]) -> bool:
         """Check if we can take this position"""
         
+        symbol = signal.get('symbol')
+        risk_amount = signal.get('risk_amount', 0)
+        
         # Check if position already exists
-        if signal.symbol in self.active_positions:
+        if symbol in self.active_positions:
             return False
         
         # Check portfolio heat
-        if self.portfolio_heat + (signal.risk_amount / 10000) > self.max_portfolio_heat:
-            logger.warning(f"Portfolio heat too high for {signal.symbol}")
+        if self.portfolio_heat + (risk_amount / 10000) > self.max_portfolio_heat:
+            logger.warning(f"Portfolio heat too high for {symbol}")
             return False
         
         # Check daily loss limit
@@ -1014,21 +1027,21 @@ class UltraIntelligentEngine:
         
         # Check correlations
         correlated_positions = 0
-        for symbol, pos in self.active_positions.items():
-            if symbol in self.symbol_performance[signal.symbol].get('correlation', {}):
-                if abs(self.symbol_performance[signal.symbol]['correlation'][symbol]) > 0.7:
+        for sym, pos in self.active_positions.items():
+            if sym in self.symbol_performance[symbol].get('correlation', {}):
+                if abs(self.symbol_performance[symbol]['correlation'][sym]) > 0.7:
                     correlated_positions += 1
         
         if correlated_positions >= self.max_correlated_positions:
-            logger.warning(f"Too many correlated positions for {signal.symbol}")
+            logger.warning(f"Too many correlated positions for {symbol}")
             return False
         
         return True
     
-    async def _execute_signal(self, signal: TradingSignalComplete) -> bool:
+    async def _execute_signal(self, signal: Dict[str, Any]) -> bool:
         """Execute a trading signal"""
         try:
-            symbol = signal.symbol
+            symbol = signal.get('symbol')
             
             # Get lock
             if symbol not in self.position_locks:
@@ -1075,28 +1088,28 @@ class UltraIntelligentEngine:
                 
                 # Register position immediately to prevent duplicates
                 position_safety.register_position(symbol, {
-                    'side': "Buy" if signal.action == "BUY" else "Sell",
-                    'size': signal.position_size,
-                    'entry_price': signal.entry_price
+                    'side': "Buy" if signal.get('action') == "BUY" else "Sell",
+                    'size': signal.get('position_size'),
+                    'entry_price': signal.get('entry_price')
                 })
                 
                 # Place order with integrated TP/SL
                 order_data = {
                     'symbol': symbol,
-                    'side': "Buy" if signal.action == "BUY" else "Sell",
-                    'qty': signal.position_size,
-                    'order_type': signal.order_type,
-                    'time_in_force': signal.time_in_force,
-                    'reduce_only': signal.reduce_only,
-                    'close_on_trigger': signal.close_on_trigger,
+                    'side': "Buy" if signal.get('action') == "BUY" else "Sell",
+                    'qty': signal.get('position_size'),
+                    'order_type': signal.get('order_type', 'MARKET'),
+                    'time_in_force': signal.get('time_in_force', 'GTC'),
+                    'reduce_only': signal.get('reduce_only', False),
+                    'close_on_trigger': signal.get('close_on_trigger', False),
                     # Add TP/SL to the main order
-                    'stopLoss': str(signal.stop_loss),
-                    'takeProfit': str(signal.take_profit_1)
+                    'stopLoss': str(signal.get('stop_loss')),
+                    'takeProfit': str(signal.get('take_profit_1'))
                 }
                 
                 # Add limit price for limit orders
-                if signal.order_type == "LIMIT":
-                    order_data['price'] = signal.entry_price
+                if signal.get('order_type') == "LIMIT":
+                    order_data['price'] = signal.get('entry_price')
                 
                 # Place the order
                 order_id = await self.client.place_order(**order_data)
@@ -1117,19 +1130,19 @@ class UltraIntelligentEngine:
                 # Create position tracking
                 position = ActivePosition(
                     symbol=symbol,
-                    side="Buy" if signal.action == "BUY" else "Sell",
-                    entry_price=signal.entry_price,
-                    current_price=signal.entry_price,
-                    position_size=signal.position_size,
-                    stop_loss=signal.stop_loss,
-                    take_profit_1=signal.take_profit_1,
-                    take_profit_2=signal.take_profit_2,
+                    side="Buy" if signal.get('action') == "BUY" else "Sell",
+                    entry_price=signal.get('entry_price'),
+                    current_price=signal.get('entry_price'),
+                    position_size=signal.get('position_size'),
+                    stop_loss=signal.get('stop_loss'),
+                    take_profit_1=signal.get('take_profit_1'),
+                    take_profit_2=signal.get('take_profit_2'),
                     intelligent_signal=signal,
-                    ml_confidence=signal.ml_confidence,
-                    ml_predicted_profit=signal.ml_expected_profit,
-                    risk_amount=signal.risk_amount,
-                    risk_reward_ratio=signal.risk_reward_ratio,
-                    position_value=signal.position_value,
+                    ml_confidence=signal.get('ml_confidence'),
+                    ml_predicted_profit=signal.get('ml_expected_profit'),
+                    risk_amount=signal.get('risk_amount'),
+                    risk_reward_ratio=signal.get('risk_reward_ratio'),
+                    position_value=signal.get('position_value'),
                     entry_order_id=order_id,
                     expected_close_time=datetime.now() + timedelta(hours=4)
                 )
@@ -1150,7 +1163,7 @@ class UltraIntelligentEngine:
                 await self._set_position_stops(position)
                 
                 # Update portfolio heat
-                self.portfolio_heat += signal.risk_amount / 10000
+                self.portfolio_heat += signal.get('risk_amount', 0) / 10000
                 
                 # Track for ML
                 await self._track_trade_for_ml(signal)
@@ -1753,25 +1766,25 @@ class UltraIntelligentEngine:
                 logger.error(f"Emergency monitor error: {e}")
                 await asyncio.sleep(5)
     
-    async def _track_trade_for_ml(self, signal: TradingSignalComplete, outcome: str = "opened"):
+    async def _track_trade_for_ml(self, signal: Dict[str, Any], outcome: str = "opened"):
         """Track trade for ML learning with enhanced features"""
         # Get current market conditions
-        market_conditions = await self._get_current_market_conditions(signal.symbol)
+        market_conditions = await self._get_current_market_conditions(signal.get('symbol'))
         
         trade_data = {
             'timestamp': datetime.now().isoformat(),
-            'symbol': signal.symbol,
-            'side': signal.action,
-            'entry_price': signal.entry_price,
-            'stop_loss': signal.stop_loss,
-            'take_profit_1': signal.take_profit_1,
-            'take_profit_2': signal.take_profit_2,
-            'ml_success_probability': signal.ml_success_probability,
-            'ml_confidence': signal.ml_confidence,
-            'market_regime': signal.market_regime,
-            'trading_mode': signal.trading_mode,
-            'zone_score': signal.zone_score,
-            'features': signal.ml_features,
+            'symbol': signal.get('symbol'),
+            'side': signal.get('action'),
+            'entry_price': signal.get('entry_price'),
+            'stop_loss': signal.get('stop_loss'),
+            'take_profit_1': signal.get('take_profit_1'),
+            'take_profit_2': signal.get('take_profit_2'),
+            'ml_success_probability': signal.get('ml_success_probability'),
+            'ml_confidence': signal.get('ml_confidence'),
+            'market_regime': signal.get('market_regime'),
+            'trading_mode': signal.get('trading_mode'),
+            'zone_score': signal.get('zone_score'),
+            'features': signal.get('ml_features'),
             # Enhanced features for better learning
             'hour_of_day': datetime.now().hour,
             'day_of_week': datetime.now().weekday(),
@@ -1779,8 +1792,8 @@ class UltraIntelligentEngine:
             'volume_24h': market_conditions.get('volume_24h', 0),
             'trend_strength': market_conditions.get('trend_strength', 0),
             'outcome': outcome,
-            'position_size': signal.position_size,
-            'risk_amount': signal.risk_amount
+            'position_size': signal.get('position_size'),
+            'risk_amount': signal.get('risk_amount')
         }
         
         ml_predictor.training_data.append(trade_data)
@@ -1799,16 +1812,16 @@ class UltraIntelligentEngine:
             except Exception as e:
                 logger.warning(f"Failed to store ML trade data in Redis: {e}")
     
-    async def _track_rejected_signal(self, signal: TradingSignalComplete, reason: str):
+    async def _track_rejected_signal(self, signal: Dict[str, Any], reason: str):
         """Track rejected signals for negative learning"""
         try:
             rejected_data = {
                 'timestamp': datetime.now().isoformat(),
-                'symbol': signal.symbol,
+                'symbol': signal.get('symbol'),
                 'rejection_reason': reason,
-                'ml_confidence': signal.ml_confidence,
-                'zone_score': signal.zone_score,
-                'market_regime': signal.market_regime,
+                'ml_confidence': signal.get('ml_confidence'),
+                'zone_score': signal.get('zone_score'),
+                'market_regime': signal.get('market_regime'),
                 'hour_of_day': datetime.now().hour,
                 'day_of_week': datetime.now().weekday(),
                 'outcome': 'rejected'

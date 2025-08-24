@@ -982,17 +982,38 @@ async def send_daily_summary():
         await telegram_bot.send_notification(chat_id, message)
 
 def setup_websocket_subscriptions():
-    """Setup WebSocket subscriptions"""
-    global bybit_client, order_manager
+    """Setup WebSocket subscriptions with proper error handling"""
+    global bybit_client, order_manager, trading_engine
     
     if not bybit_client or not order_manager:
+        logger.error("Cannot setup WebSocket - missing client or order manager")
         return
     
-    # Subscribe to private streams
-    bybit_client.subscribe_positions(order_manager.handle_position_update)
-    bybit_client.subscribe_orders(order_manager.handle_order_update)
-    
-    logger.info("WebSocket subscriptions setup complete")
+    try:
+        # Subscribe to private streams
+        if hasattr(bybit_client, 'subscribe_positions'):
+            bybit_client.subscribe_positions(order_manager.handle_position_update)
+        if hasattr(bybit_client, 'subscribe_orders'):
+            bybit_client.subscribe_orders(order_manager.handle_order_update)
+        if hasattr(bybit_client, 'subscribe_executions'):
+            bybit_client.subscribe_executions(order_manager.handle_execution_update)
+        
+        # Setup heartbeat task
+        asyncio.create_task(websocket_heartbeat())
+        
+        logger.info("WebSocket subscriptions setup complete with heartbeat")
+    except Exception as e:
+        logger.error(f"Failed to setup WebSocket subscriptions: {e}")
+
+async def websocket_heartbeat():
+    """Send periodic heartbeat to keep WebSocket alive"""
+    while True:
+        try:
+            await asyncio.sleep(30)  # Every 30 seconds
+            if bybit_client and hasattr(bybit_client, 'ping_websocket'):
+                await bybit_client.ping_websocket()
+        except Exception as e:
+            logger.error(f"WebSocket heartbeat failed: {e}")
 
 def signal_handler(sig, frame):
     """Handle shutdown signals"""

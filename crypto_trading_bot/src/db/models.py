@@ -29,11 +29,11 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Settings
-    risk_percent = Column(Float, default=1.0)
-    max_concurrent_positions = Column(Integer, default=5)
-    max_daily_loss_percent = Column(Float, default=5.0)
-    default_leverage = Column(Integer, default=3)
+    # Settings (defaults from config, not hardcoded)
+    risk_percent = Column(Float)
+    max_concurrent_positions = Column(Integer)  # No default, use from config
+    max_daily_loss_percent = Column(Float)
+    default_leverage = Column(Integer)
     trading_enabled = Column(Boolean, default=False)
     
     # Relationships

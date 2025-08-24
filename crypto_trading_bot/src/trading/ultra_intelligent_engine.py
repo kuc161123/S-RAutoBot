@@ -29,6 +29,8 @@ from ..db.database import DatabaseManager
 from ..monitoring.performance_tracker import get_performance_tracker
 from ..utils.bot_fixes import position_safety, ml_validator, db_pool, health_monitor
 from ..utils.comprehensive_recovery import recovery_manager, with_recovery
+from ..utils.ml_persistence import ml_persistence
+from ..utils.signal_queue import signal_queue
 
 logger = structlog.get_logger(__name__)
 
@@ -226,8 +228,8 @@ class UltraIntelligentEngine:
         self.ws_subscriptions = set()
         self.ws_handlers = {}
         
-        # Signal queue
-        self.signal_queue: asyncio.Queue = asyncio.Queue()
+        # Signal queue (using Redis-backed queue)
+        self.signal_queue = signal_queue  # Use global Redis-backed queue
         self.pending_signals: Dict[str, TradingSignalComplete] = {}
         
         # Risk management
@@ -269,8 +271,9 @@ class UltraIntelligentEngine:
         try:
             logger.info("Initializing Ultra Intelligent Engine...")
             
-            # Initialize Redis
+            # Initialize Redis and signal queue
             await self._init_redis()
+            await signal_queue.connect(settings.redis_url if hasattr(settings, 'redis_url') else None)
             
             # Load ML models
             await self._load_ml_models()
@@ -336,9 +339,23 @@ class UltraIntelligentEngine:
         # Close WebSocket connections
         await self._close_websocket_subscriptions()
         
-        # Save ML models
+        # Save ML models to persistent storage
         if ml_predictor.model_trained:
-            ml_predictor.save_models("/tmp/ml_models")
+            await ml_persistence.save_model(
+                'ml_predictor',
+                ml_predictor.model,
+                metadata={'feature_importance': getattr(ml_predictor, 'feature_importance', {})},
+                accuracy=getattr(ml_predictor, 'test_score', 0.5),
+                training_samples=len(ml_predictor.training_data)
+            )
+        
+        # Save ensemble models
+        if hasattr(self.ml_ensemble, 'models'):
+            await ml_persistence.save_model('ml_ensemble', self.ml_ensemble.models)
+        
+        # Save MTF learner
+        if hasattr(self.mtf_learner, 'symbol_parameters'):
+            await ml_persistence.save_model('mtf_learner', self.mtf_learner.symbol_parameters)
         
         # Save performance report
         await self.performance_tracker.save_report()
@@ -376,12 +393,27 @@ class UltraIntelligentEngine:
             self.redis_client = None
     
     async def _load_ml_models(self):
-        """Load ML models if available"""
+        """Load ML models from persistent storage"""
         try:
-            ml_predictor.load_models("/tmp/ml_models")
-            logger.info(f"ML models loaded (trained: {ml_predictor.model_trained})")
-        except:
-            logger.info("No ML models found, will train from scratch")
+            # Load ml_predictor model
+            predictor_model = await ml_persistence.load_model('ml_predictor')
+            if predictor_model:
+                ml_predictor.model = predictor_model
+                ml_predictor.model_trained = True
+            
+            # Load ml_ensemble models
+            ensemble_model = await ml_persistence.load_model('ml_ensemble')
+            if ensemble_model:
+                self.ml_ensemble.models = ensemble_model
+            
+            # Load mtf_learner data
+            mtf_model = await ml_persistence.load_model('mtf_learner')
+            if mtf_model:
+                self.mtf_learner.symbol_parameters = mtf_model
+            
+            logger.info(f"ML models loaded from database (trained: {ml_predictor.model_trained})")
+        except Exception as e:
+            logger.info(f"No ML models found or error loading: {e}, will train from scratch")
     
     async def _select_trading_symbols(self):
         """Dynamically select best symbols to trade"""
@@ -890,7 +922,7 @@ class UltraIntelligentEngine:
                                 )
                                 
                                 # Add to queue
-                                await self.signal_queue.put(complete_signal)
+                                await self.signal_queue.push(complete_signal)
                                 self.pending_signals[symbol] = complete_signal
                                 self.metrics['signals_generated'] += 1
                                 
@@ -915,8 +947,10 @@ class UltraIntelligentEngine:
         """Execute signals from queue"""
         while self.is_running:
             try:
-                # Get signal from queue
-                signal = await asyncio.wait_for(self.signal_queue.get(), timeout=5)
+                # Get signal from Redis queue
+                signal = await self.signal_queue.pop(timeout=5)
+                if not signal:
+                    continue
                 
                 if not self.trading_enabled:
                     continue
@@ -1834,3 +1868,52 @@ class UltraIntelligentEngine:
             'ml_trained': ml_predictor.model_trained,
             'ml_samples': len(ml_predictor.training_data)
         }
+    
+    async def _memory_cleanup(self):
+        """Periodic memory cleanup to prevent leaks"""
+        while self.is_running:
+            try:
+                # Clean up old market data
+                current_symbols = set(self.monitored_symbols)
+                
+                # Remove data for symbols no longer monitored
+                for symbol in list(self.market_data.keys()):
+                    if symbol not in current_symbols:
+                        del self.market_data[symbol]
+                        logger.info(f"Cleaned market data for {symbol}")
+                
+                # Clean orderbook data
+                for symbol in list(self.orderbook_data.keys()):
+                    if symbol not in current_symbols:
+                        del self.orderbook_data[symbol]
+                
+                # Limit trade flow history
+                for symbol in self.trade_flow:
+                    if len(self.trade_flow[symbol]) > 100:
+                        # Keep only last 100 items
+                        self.trade_flow[symbol] = deque(
+                            list(self.trade_flow[symbol])[-100:],
+                            maxlen=100
+                        )
+                
+                # Clean ML training data if too large
+                if len(ml_predictor.training_data) > 10000:
+                    # Keep only last 10000 samples
+                    ml_predictor.training_data = ml_predictor.training_data[-10000:]
+                    logger.info("Trimmed ML training data to 10000 samples")
+                
+                # Clean symbol performance for inactive symbols
+                for symbol in list(self.symbol_performance.keys()):
+                    if symbol not in current_symbols:
+                        del self.symbol_performance[symbol]
+                
+                # Run garbage collection
+                import gc
+                gc.collect()
+                
+                logger.info("Memory cleanup completed")
+                await asyncio.sleep(300)  # Run every 5 minutes
+                
+            except Exception as e:
+                logger.error(f"Memory cleanup error: {e}")
+                await asyncio.sleep(600)  # Wait longer on error

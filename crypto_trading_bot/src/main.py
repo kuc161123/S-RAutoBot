@@ -46,14 +46,26 @@ async def lifespan(app: FastAPI):
         logger.info("Starting Crypto Trading Bot...")
         startup_start = datetime.now()
         
-        # Run startup validation
-        logger.info("Running startup validation...")
-        validation_passed = await validate_startup()
+        # Set overall startup timeout
+        startup_timeout = 120  # 2 minutes max for startup
         
-        if not validation_passed:
-            logger.error("Startup validation failed - check configuration")
-            # Continue anyway but in limited mode
-            logger.warning("Starting in LIMITED MODE - some features may not work")
+        async def startup_with_timeout():
+            # Run startup validation
+            logger.info("Running startup validation...")
+            validation_passed = await validate_startup()
+            
+            if not validation_passed:
+                logger.error("Startup validation failed - check configuration")
+                # Continue anyway but in limited mode
+                logger.warning("Starting in LIMITED MODE - some features may not work")
+            return validation_passed
+        
+        # Run validation with timeout
+        try:
+            validation_passed = await asyncio.wait_for(startup_with_timeout(), timeout=30)
+        except asyncio.TimeoutError:
+            logger.warning("Validation timed out - continuing anyway")
+            validation_passed = False
         
         # Initialize database with timeout
         logger.info("[1/8] Initializing database...")
@@ -322,7 +334,13 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint with comprehensive monitoring"""
+    """Simple health check endpoint for Railway"""
+    # Return immediately for Railway health checks
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
+@app.get("/health/detailed")
+async def detailed_health_check():
+    """Detailed health check endpoint with comprehensive monitoring"""
     report = health_monitor.get_health_report()
     
     # Return appropriate HTTP status code

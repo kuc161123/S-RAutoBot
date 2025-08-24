@@ -207,6 +207,7 @@ class UltraIntelligentEngine:
         # Use unified position manager for all position tracking
         self.position_manager = unified_position_manager
         self.active_positions: Dict[str, Any] = {}  # Initialize active_positions dictionary
+        self.position_locks: Dict[str, asyncio.Lock] = {}  # Initialize position locks for thread safety
         self.position_cooldowns: Dict[str, float] = {}  # Symbol -> timestamp of last position
         self.max_positions_per_symbol = 1
         self.position_cooldown_seconds = 30  # Wait 30 seconds between positions on same symbol
@@ -968,12 +969,12 @@ class UltraIntelligentEngine:
                 if self.scan_counter % 5 == 0:
                     await self._sync_positions_with_exchange()
                 
-                await asyncio.sleep(30)  # Check every 30 seconds
+                await asyncio.sleep(60)  # Check every 60 seconds to reduce CPU usage
                 
             except Exception as e:
                 logger.error(f"Signal generator error: {e}")
                 self.metrics['errors'] += 1
-                await asyncio.sleep(10)
+                await asyncio.sleep(30)  # Longer sleep on error to reduce CPU
     
     async def _signal_executor(self):
         """Execute signals from queue"""
@@ -1011,10 +1012,13 @@ class UltraIntelligentEngine:
                     logger.warning(f"❌ Failed to execute signal for {signal.get('symbol')}")
                 
             except asyncio.TimeoutError:
+                # Add small delay to prevent tight loop
+                await asyncio.sleep(0.1)
                 continue
             except Exception as e:
                 logger.error(f"Signal executor error: {e}")
                 self.metrics['errors'] += 1
+                await asyncio.sleep(1)  # Sleep on error to prevent CPU spinning
     
     async def _can_take_position(self, signal: Dict[str, Any]) -> bool:
         """Check if we can take this position"""

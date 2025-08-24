@@ -1190,15 +1190,15 @@ class UltraIntelligentEngine:
                     await DatabaseManager.log_trade_async({
                         'symbol': symbol,
                         'side': position.side,
-                        'entry_price': signal.entry_price,
-                        'stop_loss': signal.stop_loss,
-                        'take_profit_1': signal.take_profit_1,
-                        'take_profit_2': signal.take_profit_2,
-                        'position_size': signal.position_size,
-                        'zone_type': signal.zone_type,
-                        'zone_score': signal.zone_score,
-                        'ml_confidence': signal.ml_confidence,
-                        'ml_success_probability': signal.ml_success_probability
+                        'entry_price': signal.get('entry_price'),
+                        'stop_loss': signal.get('stop_loss'),
+                        'take_profit_1': signal.get('take_profit_1'),
+                        'take_profit_2': signal.get('take_profit_2'),
+                        'position_size': signal.get('position_size'),
+                        'zone_type': signal.get('zone_type'),
+                        'zone_score': signal.get('zone_score'),
+                        'ml_confidence': signal.get('ml_confidence'),
+                        'ml_success_probability': signal.get('ml_success_probability')
                     })
                 except Exception as e:
                     logger.error(f"Failed to log trade to database: {e}", exc_info=True)
@@ -1209,15 +1209,15 @@ class UltraIntelligentEngine:
                     message = (
                         f"🚀 **NEW POSITION OPENED**\n"
                         f"━━━━━━━━━━━━━━━\n"
-                        f"Symbol: {signal.symbol}\n"
-                        f"Side: {signal.action}\n"
-                        f"Entry: ${signal.entry_price:.4f}\n"
-                        f"Stop Loss: ${signal.stop_loss:.4f}\n"
-                        f"TP1: ${signal.take_profit_1:.4f}\n"
-                        f"TP2: ${signal.take_profit_2:.4f}\n"
-                        f"Size: {signal.position_size:.4f}\n"
-                        f"Risk: ${signal.risk_amount:.2f}\n"
-                        f"ML Confidence: {signal.ml_confidence:.1%}\n"
+                        f"Symbol: {signal.get('symbol')}\n"
+                        f"Side: {signal.get('action')}\n"
+                        f"Entry: ${signal.get('entry_price', 0):.4f}\n"
+                        f"Stop Loss: ${signal.get('stop_loss', 0):.4f}\n"
+                        f"TP1: ${signal.get('take_profit_1', 0):.4f}\n"
+                        f"TP2: ${signal.get('take_profit_2', 0):.4f}\n"
+                        f"Size: {signal.get('position_size', 0):.4f}\n"
+                        f"Risk: ${signal.get('risk_amount', 0):.2f}\n"
+                        f"ML Confidence: {signal.get('ml_confidence', 0):.1%}\n"
                         f"━━━━━━━━━━━━━━━\n"
                         f"Order ID: {order_id}"
                     )
@@ -1231,14 +1231,14 @@ class UltraIntelligentEngine:
                 
                 logger.info(
                     f"✅ Position opened: {symbol} {position.side} "
-                    f"Size={signal.position_size:.4f}, "
-                    f"ML Confidence={signal.ml_confidence:.1%}"
+                    f"Size={signal.get('position_size', 0):.4f}, "
+                    f"ML Confidence={signal.get('ml_confidence', 0):.1%}"
                 )
                 
                 return True
                 
         except Exception as e:
-            logger.error(f"Error executing signal for {signal.symbol}: {e}", exc_info=True)
+            logger.error(f"Error executing signal for {signal.get('symbol')}: {e}", exc_info=True)
             self.metrics['errors'] += 1
             return False
     
@@ -1822,7 +1822,7 @@ class UltraIntelligentEngine:
         # Store in Redis (using async redis)
         if self.redis_client:
             try:
-                key = f"ml_trade:{signal.symbol}:{datetime.now().timestamp()}"
+                key = f"ml_trade:{signal.get('symbol')}:{datetime.now().timestamp()}"
                 # Using redis.asyncio, setex needs to be awaited
                 await self.redis_client.setex(key, 86400 * 30, json.dumps(trade_data))
             except Exception as e:
@@ -1926,9 +1926,9 @@ class UltraIntelligentEngine:
                             
                             # Check if zone has been violated without trading
                             zone_violated = False
-                            if signal.action == "BUY" and current_price < signal.stop_loss:
+                            if signal.get('action') == "BUY" and current_price < signal.get('stop_loss', float('inf')):
                                 zone_violated = True
-                            elif signal.action == "SELL" and current_price > signal.stop_loss:
+                            elif signal.get('action') == "SELL" and current_price > signal.get('stop_loss', 0):
                                 zone_violated = True
                             
                             if zone_violated:
@@ -1936,9 +1936,9 @@ class UltraIntelligentEngine:
                                 ml_predictor.training_data.append({
                                     'timestamp': datetime.now().isoformat(),
                                     'symbol': symbol,
-                                    'zone_type': signal.zone_type,
-                                    'zone_score': signal.zone_score,
-                                    'ml_confidence': signal.ml_confidence,
+                                    'zone_type': signal.get('zone_type'),
+                                    'zone_score': signal.get('zone_score'),
+                                    'ml_confidence': signal.get('ml_confidence'),
                                     'outcome': 'zone_failed',
                                     'reason': 'zone_violated_without_entry'
                                 })

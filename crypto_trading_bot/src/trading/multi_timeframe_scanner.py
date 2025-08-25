@@ -50,7 +50,7 @@ class MultiTimeframeScanner:
         self.symbols = settings.default_symbols[:300]  # All top 300 symbols
         
         # Symbol rotation for efficient scanning
-        self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=20)
+        self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=30)
         self.current_scan_batch = []
         
         # Position tracking - one position per symbol

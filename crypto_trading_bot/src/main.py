@@ -343,7 +343,12 @@ async def root():
 async def health_check():
     """Simple health check endpoint for Railway"""
     # Return immediately for Railway health checks
-    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+    return {
+        "status": "ok", 
+        "timestamp": datetime.now().isoformat(),
+        "version": "2.0-ML-Dashboard",
+        "features": ["ML insights", "Enhanced alerts", "Performance tracking"]
+    }
 
 @app.get("/health/detailed")
 async def detailed_health_check():
@@ -392,14 +397,29 @@ async def monitoring_dashboard():
     """Interactive monitoring dashboard with ML insights"""
     # Read the enhanced ML dashboard HTML
     import os
-    dashboard_path = os.path.join(os.path.dirname(__file__), 'templates', 'ml_dashboard.html')
     
-    try:
-        with open(dashboard_path, 'r') as f:
-            return HTMLResponse(content=f.read())
-    except FileNotFoundError:
-        # Fallback to embedded HTML if file not found
-        html_content = """
+    # Try multiple paths to find the template
+    possible_paths = [
+        os.path.join(os.path.dirname(__file__), 'templates', 'ml_dashboard.html'),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates', 'ml_dashboard.html'),
+        '/app/src/templates/ml_dashboard.html',  # Docker path
+        'src/templates/ml_dashboard.html'  # Relative path
+    ]
+    
+    for dashboard_path in possible_paths:
+        if os.path.exists(dashboard_path):
+            try:
+                with open(dashboard_path, 'r') as f:
+                    logger.info(f"Loading dashboard from: {dashboard_path}")
+                    return HTMLResponse(content=f.read())
+            except Exception as e:
+                logger.error(f"Error reading dashboard file: {e}")
+                continue
+    
+    # If no file found, log and use fallback
+    logger.warning("ML dashboard template not found, using fallback")
+    # Fallback to embedded HTML if file not found
+    html_content = """
     <!DOCTYPE html>
     <html>
     <head>

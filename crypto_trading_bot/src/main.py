@@ -389,8 +389,17 @@ async def metrics():
 
 @app.get("/dashboard")
 async def monitoring_dashboard():
-    """Interactive monitoring dashboard"""
-    html_content = """
+    """Interactive monitoring dashboard with ML insights"""
+    # Read the enhanced ML dashboard HTML
+    import os
+    dashboard_path = os.path.join(os.path.dirname(__file__), 'templates', 'ml_dashboard.html')
+    
+    try:
+        with open(dashboard_path, 'r') as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        # Fallback to embedded HTML if file not found
+        html_content = """
     <!DOCTYPE html>
     <html>
     <head>
@@ -1016,6 +1025,261 @@ async def get_zones(symbol: str):
         ],
         "count": len(zones)
     }
+
+@app.get("/api/ml/stats")
+async def get_ml_stats():
+    """Get ML model statistics"""
+    global trading_engine
+    
+    if not trading_engine:
+        return {"error": "Trading engine not initialized"}
+    
+    try:
+        from .strategy.ml_predictor import ml_predictor
+        from .strategy.ml_ensemble import MLEnsemble
+        
+        # Get ML predictor stats
+        ml_stats = {
+            "model_trained": ml_predictor.model_trained,
+            "training_samples": len(ml_predictor.training_data),
+            "min_samples_required": ml_predictor.min_training_samples,
+            "feature_importance": ml_predictor.feature_importance if ml_predictor.model_trained else {},
+            "test_accuracy": getattr(ml_predictor, 'test_score', 0) if ml_predictor.model_trained else 0,
+            "models": {
+                "success_classifier": ml_predictor.success_classifier is not None,
+                "profit_regressor": ml_predictor.profit_regressor is not None
+            }
+        }
+        
+        # Get recent prediction accuracy from trading engine
+        if hasattr(trading_engine, 'ml_ensemble'):
+            ml_stats["ensemble_models"] = len(getattr(trading_engine.ml_ensemble, 'models', []))
+        
+        # Calculate prediction success rate from recent trades
+        if hasattr(trading_engine, 'symbol_performance'):
+            total_predictions = 0
+            successful_predictions = 0
+            for symbol, perf in trading_engine.symbol_performance.items():
+                if 'ml_predictions' in perf:
+                    total_predictions += perf['ml_predictions']
+                    successful_predictions += perf.get('ml_successes', 0)
+            
+            ml_stats["prediction_success_rate"] = (
+                successful_predictions / total_predictions if total_predictions > 0 else 0
+            )
+        
+        return ml_stats
+        
+    except Exception as e:
+        logger.error(f"Error getting ML stats: {e}")
+        return {"error": str(e)}
+
+@app.get("/api/ml/predictions")
+async def get_ml_predictions():
+    """Get recent ML predictions with outcomes"""
+    global trading_engine
+    
+    if not trading_engine:
+        return {"error": "Trading engine not initialized"}
+    
+    try:
+        predictions = []
+        
+        # Get recent signals from pending and active positions
+        for symbol, signal in trading_engine.pending_signals.items():
+            predictions.append({
+                "symbol": symbol,
+                "ml_confidence": signal.get('ml_confidence', 0),
+                "ml_success_probability": signal.get('ml_success_probability', 0),
+                "zone_score": signal.get('zone_score', 0),
+                "market_regime": signal.get('market_regime', 'Unknown'),
+                "status": "pending",
+                "timestamp": signal.get('timestamp', datetime.now().isoformat())
+            })
+        
+        # Get active positions with ML data
+        for symbol, position in trading_engine.active_positions.items():
+            predictions.append({
+                "symbol": symbol,
+                "ml_confidence": position.ml_confidence,
+                "ml_predicted_profit": position.ml_predicted_profit,
+                "actual_pnl": position.unrealized_pnl + position.realized_pnl,
+                "status": "active",
+                "entry_time": position.entry_time.isoformat()
+            })
+        
+        return {
+            "predictions": predictions,
+            "total": len(predictions)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting ML predictions: {e}")
+        return {"error": str(e)}
+
+@app.get("/api/zones/summary")
+async def get_zones_summary():
+    """Get zone performance summary across all symbols"""
+    global strategy, trading_engine
+    
+    if not strategy or not trading_engine:
+        return {"error": "Components not initialized"}
+    
+    try:
+        zone_summary = {
+            "total_zones": 0,
+            "zones_by_type": {"SUPPLY": 0, "DEMAND": 0},
+            "avg_zone_score": 0,
+            "zones_by_symbol": {},
+            "best_zones": []
+        }
+        
+        all_scores = []
+        
+        # Analyze zones for monitored symbols
+        for symbol in trading_engine.monitored_symbols[:50]:  # Sample first 50
+            zones = strategy.get_active_zones(symbol)
+            if zones:
+                zone_summary["zones_by_symbol"][symbol] = len(zones)
+                zone_summary["total_zones"] += len(zones)
+                
+                for zone in zones:
+                    zone_summary["zones_by_type"][zone.zone_type.value] += 1
+                    all_scores.append(zone.score)
+                    
+                    # Track best zones
+                    if zone.score > 80:
+                        zone_summary["best_zones"].append({
+                            "symbol": symbol,
+                            "type": zone.zone_type.value,
+                            "score": zone.score,
+                            "price_range": f"{zone.lower_bound:.4f}-{zone.upper_bound:.4f}"
+                        })
+        
+        # Calculate average score
+        if all_scores:
+            zone_summary["avg_zone_score"] = sum(all_scores) / len(all_scores)
+        
+        # Sort best zones by score
+        zone_summary["best_zones"] = sorted(
+            zone_summary["best_zones"], 
+            key=lambda x: x["score"], 
+            reverse=True
+        )[:10]  # Top 10
+        
+        return zone_summary
+        
+    except Exception as e:
+        logger.error(f"Error getting zone summary: {e}")
+        return {"error": str(e)}
+
+@app.get("/api/trading/metrics")
+async def get_trading_metrics():
+    """Get detailed trading metrics from the engine"""
+    global trading_engine
+    
+    if not trading_engine:
+        return {"error": "Trading engine not initialized"}
+    
+    try:
+        metrics = {
+            "signals_generated": trading_engine.metrics.get('signals_generated', 0),
+            "signals_executed": trading_engine.metrics.get('signals_executed', 0),
+            "orders_placed": trading_engine.metrics.get('orders_placed', 0),
+            "orders_filled": trading_engine.metrics.get('orders_filled', 0),
+            "orders_rejected": trading_engine.metrics.get('orders_rejected', 0),
+            "sl_hits": trading_engine.metrics.get('sl_hits', 0),
+            "tp_hits": trading_engine.metrics.get('tp_hits', 0),
+            "partial_closes": trading_engine.metrics.get('partial_closes', 0),
+            "trailing_stops": trading_engine.metrics.get('trailing_stops', 0),
+            "errors": trading_engine.metrics.get('errors', 0),
+            "portfolio_heat": trading_engine.portfolio_heat,
+            "daily_pnl": trading_engine.current_daily_pnl,
+            "active_positions": len(trading_engine.active_positions),
+            "pending_signals": len(trading_engine.pending_signals),
+            "monitored_symbols": len(trading_engine.monitored_symbols),
+            "trading_enabled": trading_engine.trading_enabled,
+            "emergency_stop": trading_engine.emergency_stop
+        }
+        
+        # Calculate success rates
+        if metrics["signals_generated"] > 0:
+            metrics["execution_rate"] = metrics["signals_executed"] / metrics["signals_generated"]
+        else:
+            metrics["execution_rate"] = 0
+        
+        if metrics["orders_placed"] > 0:
+            metrics["fill_rate"] = metrics["orders_filled"] / metrics["orders_placed"]
+        else:
+            metrics["fill_rate"] = 0
+        
+        return metrics
+        
+    except Exception as e:
+        logger.error(f"Error getting trading metrics: {e}")
+        return {"error": str(e)}
+
+@app.get("/api/performance/detailed")
+async def get_detailed_performance():
+    """Get detailed performance by symbol and market regime"""
+    global trading_engine
+    
+    if not trading_engine:
+        return {"error": "Trading engine not initialized"}
+    
+    try:
+        # Get symbol performance
+        symbol_performance = []
+        for symbol, perf in trading_engine.symbol_performance.items():
+            if perf['trades'] > 0:
+                symbol_performance.append({
+                    "symbol": symbol,
+                    "trades": perf['trades'],
+                    "wins": perf['wins'],
+                    "win_rate": perf['win_rate'],
+                    "total_pnl": perf['total_pnl'],
+                    "avg_pnl": perf['total_pnl'] / perf['trades']
+                })
+        
+        # Sort by total PnL
+        symbol_performance = sorted(
+            symbol_performance, 
+            key=lambda x: x['total_pnl'], 
+            reverse=True
+        )[:20]  # Top 20
+        
+        # Calculate overall statistics
+        total_trades = sum(p['trades'] for p in trading_engine.symbol_performance.values())
+        total_wins = sum(p['wins'] for p in trading_engine.symbol_performance.values())
+        total_pnl = sum(p['total_pnl'] for p in trading_engine.symbol_performance.values())
+        
+        return {
+            "overall": {
+                "total_trades": total_trades,
+                "total_wins": total_wins,
+                "win_rate": (total_wins / total_trades * 100) if total_trades > 0 else 0,
+                "total_pnl": total_pnl,
+                "daily_pnl": trading_engine.current_daily_pnl
+            },
+            "by_symbol": symbol_performance,
+            "active_positions": [
+                {
+                    "symbol": symbol,
+                    "side": pos.side,
+                    "entry_price": pos.entry_price,
+                    "current_price": pos.current_price,
+                    "unrealized_pnl": pos.unrealized_pnl,
+                    "ml_confidence": pos.ml_confidence,
+                    "risk_amount": pos.risk_amount,
+                    "duration_minutes": (datetime.now() - pos.entry_time).total_seconds() / 60
+                }
+                for symbol, pos in trading_engine.active_positions.items()
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting detailed performance: {e}")
+        return {"error": str(e)}
 
 # Background tasks
 async def instrument_refresh_task():

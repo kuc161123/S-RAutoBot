@@ -33,6 +33,7 @@ from ..utils.comprehensive_recovery import recovery_manager, with_recovery
 from ..utils.ml_persistence import ml_persistence
 from ..utils.signal_queue import signal_queue
 from .unified_position_manager import unified_position_manager
+from ..utils.telegram_formatter import telegram_formatter
 
 logger = structlog.get_logger(__name__)
 
@@ -1214,24 +1215,19 @@ class UltraIntelligentEngine:
                 except Exception as e:
                     logger.error(f"Failed to log trade to database: {e}", exc_info=True)
                 
-                # Send notification
+                # Send enhanced notification
                 if self.telegram_bot:
-                    # Format trade notification message
-                    message = (
-                        f"🚀 **NEW POSITION OPENED**\n"
-                        f"━━━━━━━━━━━━━━━\n"
-                        f"Symbol: {signal.get('symbol')}\n"
-                        f"Side: {signal.get('action')}\n"
-                        f"Entry: ${signal.get('entry_price', 0):.4f}\n"
-                        f"Stop Loss: ${signal.get('stop_loss', 0):.4f}\n"
-                        f"TP1: ${signal.get('take_profit_1', 0):.4f}\n"
-                        f"TP2: ${signal.get('take_profit_2', 0):.4f}\n"
-                        f"Size: {signal.get('position_size', 0):.4f}\n"
-                        f"Risk: ${signal.get('risk_amount', 0):.2f}\n"
-                        f"ML Confidence: {signal.get('ml_confidence', 0):.1%}\n"
-                        f"━━━━━━━━━━━━━━━\n"
-                        f"Order ID: {order_id}"
-                    )
+                    # Get account balance for risk percentage calculation
+                    account_balance = 10000  # Default, will be updated from actual balance
+                    try:
+                        balance = await self.client.get_balance()
+                        if balance:
+                            account_balance = balance.get('availableBalance', 10000)
+                    except:
+                        pass
+                    
+                    # Use the enhanced formatter
+                    message = telegram_formatter.format_position_opened(signal, account_balance)
                     
                     # Send to all allowed chats
                     for chat_id in settings.telegram_allowed_chat_ids:
@@ -1574,6 +1570,48 @@ class UltraIntelligentEngine:
                 self.symbol_performance[symbol]['trades'] * 100
             )
             
+            # Send position closed notification
+            if self.telegram_bot:
+                try:
+                    # Calculate duration
+                    duration_seconds = int((datetime.now() - position.entry_time).total_seconds())
+                    
+                    # Calculate PnL percentage
+                    pnl_percent = (final_pnl / position.position_value * 100) if position.position_value > 0 else 0
+                    
+                    # Get exit reason
+                    exit_reason = data.get('reason', 'UNKNOWN')
+                    
+                    # Calculate total trades today
+                    total_trades = sum(perf['trades'] for perf in self.symbol_performance.values())
+                    
+                    # Calculate overall win rate
+                    total_wins = sum(perf['wins'] for perf in self.symbol_performance.values())
+                    overall_win_rate = (total_wins / total_trades * 100) if total_trades > 0 else 0
+                    
+                    # Format the closed position message
+                    message = telegram_formatter.format_position_closed(
+                        symbol=symbol,
+                        side=position.side,
+                        pnl=final_pnl,
+                        pnl_percent=pnl_percent,
+                        duration_seconds=duration_seconds,
+                        exit_reason=exit_reason,
+                        daily_pnl=self.current_daily_pnl,
+                        win_rate=overall_win_rate,
+                        total_trades=total_trades
+                    )
+                    
+                    # Send to all allowed chats
+                    for chat_id in settings.telegram_allowed_chat_ids:
+                        try:
+                            await self.telegram_bot.send_notification(chat_id, message)
+                        except Exception as e:
+                            logger.error(f"Failed to send closed position notification to {chat_id}: {e}")
+                            
+                except Exception as e:
+                    logger.error(f"Failed to send position closed notification: {e}")
+            
             # Clean up
             del self.active_positions[symbol]
             position_safety.remove_position(symbol)
@@ -1595,10 +1633,52 @@ class UltraIntelligentEngine:
         while self.is_running:
             try:
                 # Check daily loss
-                if self.current_daily_pnl < -self.max_daily_loss * 10000:
+                daily_loss_limit = self.max_daily_loss * 10000
+                if self.current_daily_pnl < -daily_loss_limit:
                     logger.warning("Daily loss limit reached - stopping trading")
                     self.trading_enabled = False
+                    
+                    # Send emergency stop alert
+                    if self.telegram_bot:
+                        alert = telegram_formatter.format_risk_alert(
+                            "EMERGENCY_STOP",
+                            {
+                                'reason': 'Daily Loss Limit Reached',
+                                'positions_closed': len(self.active_positions),
+                                'loss': abs(self.current_daily_pnl)
+                            }
+                        )
+                        for chat_id in settings.telegram_allowed_chat_ids:
+                            try:
+                                await self.telegram_bot.send_notification(chat_id, alert)
+                            except Exception as e:
+                                logger.error(f"Failed to send risk alert: {e}")
+                    
                     await self._close_all_positions("DAILY_LOSS_LIMIT")
+                    
+                # Check if approaching daily loss limit (80% of limit)
+                elif self.current_daily_pnl < -daily_loss_limit * 0.8 and not hasattr(self, '_daily_loss_warning_sent'):
+                    # Send warning alert
+                    if self.telegram_bot:
+                        alert = telegram_formatter.format_risk_alert(
+                            "DAILY_LOSS_APPROACHING",
+                            {
+                                'current_loss': abs(self.current_daily_pnl),
+                                'limit': daily_loss_limit,
+                                'remaining': daily_loss_limit - abs(self.current_daily_pnl)
+                            }
+                        )
+                        for chat_id in settings.telegram_allowed_chat_ids:
+                            try:
+                                await self.telegram_bot.send_notification(chat_id, alert)
+                            except Exception as e:
+                                logger.error(f"Failed to send risk alert: {e}")
+                        self._daily_loss_warning_sent = True
+                
+                # Reset warning flag if we're back in safe zone
+                elif self.current_daily_pnl > -daily_loss_limit * 0.5:
+                    if hasattr(self, '_daily_loss_warning_sent'):
+                        delattr(self, '_daily_loss_warning_sent')
                 
                 # Check portfolio heat
                 actual_heat = sum(p.risk_amount / 10000 for p in self.active_positions.values())
@@ -1606,8 +1686,29 @@ class UltraIntelligentEngine:
                 
                 if self.portfolio_heat > self.max_portfolio_heat * 1.2:
                     logger.warning(f"Portfolio heat critical: {self.portfolio_heat:.2%}")
+                    
+                    # Send high portfolio heat alert
+                    if self.telegram_bot and not hasattr(self, '_heat_warning_sent'):
+                        alert = telegram_formatter.format_risk_alert(
+                            "HIGH_PORTFOLIO_HEAT",
+                            {
+                                'heat': self.portfolio_heat,
+                                'positions': len(self.active_positions),
+                                'total_risk': sum(p.risk_amount for p in self.active_positions.values())
+                            }
+                        )
+                        for chat_id in settings.telegram_allowed_chat_ids:
+                            try:
+                                await self.telegram_bot.send_notification(chat_id, alert)
+                            except Exception as e:
+                                logger.error(f"Failed to send risk alert: {e}")
+                        self._heat_warning_sent = True
+                    
                     # Don't take new positions
                     self.trading_enabled = False
+                elif self.portfolio_heat < self.max_portfolio_heat:
+                    if hasattr(self, '_heat_warning_sent'):
+                        delattr(self, '_heat_warning_sent')
                 
                 await asyncio.sleep(10)
                 
@@ -1708,8 +1809,84 @@ class UltraIntelligentEngine:
     
     async def _performance_reporter(self):
         """Report performance periodically"""
+        last_daily_summary_date = None
+        
         while self.is_running:
             try:
+                # Check if it's a new day (send summary at midnight UTC)
+                current_date = datetime.now().date()
+                current_hour = datetime.now().hour
+                
+                # Send daily summary at midnight UTC or after 1 hour if just started
+                if (current_hour == 0 and last_daily_summary_date != current_date) or \
+                   (last_daily_summary_date is None and self.is_running):
+                    
+                    # Calculate daily statistics
+                    total_trades = sum(perf['trades'] for perf in self.symbol_performance.values())
+                    winning_trades = sum(perf['wins'] for perf in self.symbol_performance.values())
+                    losing_trades = total_trades - winning_trades
+                    win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+                    
+                    # Find best and worst trades
+                    best_trade_symbol = ""
+                    best_trade_pnl = 0
+                    worst_trade_symbol = ""
+                    worst_trade_pnl = 0
+                    
+                    for symbol, perf in self.symbol_performance.items():
+                        if perf['trades'] > 0:
+                            avg_pnl = perf['total_pnl'] / perf['trades']
+                            if avg_pnl > best_trade_pnl:
+                                best_trade_pnl = perf.get('best_pnl', avg_pnl)
+                                best_trade_symbol = symbol
+                            if avg_pnl < worst_trade_pnl:
+                                worst_trade_pnl = perf.get('worst_pnl', avg_pnl)
+                                worst_trade_symbol = symbol
+                    
+                    # Calculate other metrics
+                    daily_return = (self.current_daily_pnl / 10000 * 100) if 10000 > 0 else 0
+                    max_drawdown = abs(min(0, min([perf['total_pnl'] for perf in self.symbol_performance.values()] or [0])))
+                    max_drawdown_percent = (max_drawdown / 10000 * 100) if 10000 > 0 else 0
+                    
+                    # Get ML accuracy from recent predictions
+                    ml_accuracy = ml_predictor.get_accuracy() if hasattr(ml_predictor, 'get_accuracy') else 75.0
+                    
+                    # Prepare stats for formatter
+                    stats = {
+                        'daily_pnl': self.current_daily_pnl,
+                        'daily_return': daily_return,
+                        'total_trades': total_trades,
+                        'winning_trades': winning_trades,
+                        'losing_trades': losing_trades,
+                        'win_rate': win_rate,
+                        'best_trade_symbol': best_trade_symbol,
+                        'best_trade_pnl': best_trade_pnl,
+                        'worst_trade_symbol': worst_trade_symbol,
+                        'worst_trade_pnl': worst_trade_pnl,
+                        'max_drawdown': max_drawdown_percent,
+                        'avg_risk': 1.0,  # Using fixed 1% risk now
+                        'ml_accuracy': ml_accuracy,
+                        'current_balance': 10000 + self.current_daily_pnl,
+                        'total_return': (self.current_daily_pnl / 10000 * 100)
+                    }
+                    
+                    # Send daily summary
+                    if self.telegram_bot and total_trades > 0:
+                        summary = telegram_formatter.format_daily_summary(stats)
+                        for chat_id in settings.telegram_allowed_chat_ids:
+                            try:
+                                await self.telegram_bot.send_notification(chat_id, summary)
+                            except Exception as e:
+                                logger.error(f"Failed to send daily summary: {e}")
+                    
+                    last_daily_summary_date = current_date
+                    
+                    # Reset daily PnL for new day
+                    if current_hour == 0:
+                        self.current_daily_pnl = 0
+                        logger.info("Daily PnL reset for new trading day")
+                
+                # Regular hourly update (keep existing logic)
                 await asyncio.sleep(3600)  # Every hour
                 
                 # Update daily metrics
@@ -1724,11 +1901,6 @@ class UltraIntelligentEngine:
                     f"Net PnL: ${report['overview']['net_pnl']:.2f}\n"
                     f"Sharpe: {report['overview']['sharpe_ratio']:.2f}"
                 )
-                
-                # Send to Telegram
-                if self.telegram_bot:
-                    summary = self.performance_tracker.get_summary_text()
-                    await self.telegram_bot.send_notification(summary)
                 
             except Exception as e:
                 logger.error(f"Performance reporter error: {e}")

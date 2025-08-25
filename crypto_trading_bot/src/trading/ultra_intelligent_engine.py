@@ -424,8 +424,33 @@ class UltraIntelligentEngine:
                 self.mtf_learner.symbol_parameters = mtf_model
             
             logger.info(f"ML models loaded from database (trained: {ml_predictor.model_trained})")
+            
+            # Load enhanced ML predictor models
+            try:
+                from ..strategy.enhanced_ml_predictor import enhanced_ml_predictor
+                enhanced_ml_predictor.load_models('/tmp/ml_models')
+                if enhanced_ml_predictor.model_trained:
+                    logger.info(f"Enhanced ML models loaded: v{enhanced_ml_predictor.model_version}")
+            except Exception as e:
+                logger.debug(f"Enhanced ML models not loaded: {e}")
+            
         except Exception as e:
             logger.info(f"No ML models found or error loading: {e}, will train from scratch")
+            
+        # Check if ML needs bootstrapping
+        try:
+            from ..utils.ml_initializer import ml_initializer
+            status = ml_initializer.get_ml_training_status()
+            
+            if status['needs_bootstrap']:
+                logger.info("ML models need bootstrapping, initiating...")
+                success = await ml_initializer.bootstrap_ml_training()
+                if success:
+                    logger.info("ML models bootstrapped successfully")
+                else:
+                    logger.warning("ML bootstrap failed, will collect real data")
+        except Exception as e:
+            logger.debug(f"ML bootstrap check failed: {e}")
     
     async def _select_trading_symbols(self):
         """Dynamically select best symbols to trade"""

@@ -1075,6 +1075,56 @@ async def get_zones(symbol: str):
         "count": len(zones)
     }
 
+@app.get("/api/ml/training-status")
+async def get_ml_training_status():
+    """Get detailed ML training status"""
+    try:
+        from .utils.ml_initializer import ml_initializer
+        status = ml_initializer.get_ml_training_status()
+        return status
+    except Exception as e:
+        logger.error(f"Error getting ML training status: {e}")
+        return {"error": str(e)}
+
+@app.post("/api/ml/bootstrap")
+async def bootstrap_ml_training():
+    """Bootstrap ML training with synthetic data to get started faster"""
+    try:
+        from .utils.ml_initializer import ml_initializer
+        
+        # Check if already trained
+        status = ml_initializer.get_ml_training_status()
+        if status['enhanced_ml']['trained']:
+            return {
+                "success": False,
+                "message": "ML models already trained",
+                "status": status
+            }
+        
+        # Run bootstrap
+        logger.info("Starting ML bootstrap training...")
+        success = await ml_initializer.bootstrap_ml_training()
+        
+        if success:
+            return {
+                "success": True,
+                "message": "ML models bootstrapped successfully",
+                "status": ml_initializer.get_ml_training_status()
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Bootstrap failed - not enough samples",
+                "status": ml_initializer.get_ml_training_status()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error bootstrapping ML: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 @app.get("/api/ml/stats")
 async def get_ml_stats():
     """Get ML model statistics"""

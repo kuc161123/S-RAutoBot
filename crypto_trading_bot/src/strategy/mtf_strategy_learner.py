@@ -136,6 +136,39 @@ class MTFStrategyLearner:
             logger.error(f"Failed to initialize learner: {e}")
             self.redis_client = None
     
+    def should_retrain(self, symbol: str) -> bool:
+        """
+        Check if the model for this symbol should be retrained
+        
+        Returns:
+            bool: True if retraining is needed
+        """
+        if symbol not in self.symbol_profiles:
+            return True  # New symbol needs training
+        
+        profile = self.symbol_profiles[symbol]
+        
+        # Retrain if no recent trades
+        if profile.total_trades < self.min_trades_for_learning:
+            return False  # Not enough data yet
+        
+        # Retrain every 50 trades
+        if profile.total_trades % 50 == 0:
+            return True
+        
+        # Retrain if last update was too long ago
+        if profile.last_update:
+            time_since_update = datetime.now() - profile.last_update
+            if time_since_update.days > 7:  # Retrain weekly
+                return True
+        
+        # Retrain if performance is poor
+        recent_performance = profile.pattern_performance.get(profile.best_pattern_key, {})
+        if recent_performance.get('win_rate', 0) < 0.4:  # Below 40% win rate
+            return True
+        
+        return False
+    
     async def record_trade_result(
         self,
         symbol: str,

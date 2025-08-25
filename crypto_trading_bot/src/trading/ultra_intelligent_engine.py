@@ -28,7 +28,7 @@ from ..telegram.bot import TradingBot
 from ..config import settings
 from ..db.database import DatabaseManager
 from ..monitoring.performance_tracker import get_performance_tracker
-from ..utils.bot_fixes import ml_validator, db_pool, health_monitor
+from ..utils.bot_fixes import ml_validator, db_pool, health_monitor, position_safety
 from ..utils.comprehensive_recovery import recovery_manager, with_recovery
 from ..utils.ml_persistence import ml_persistence
 from ..utils.signal_queue import signal_queue
@@ -1081,7 +1081,6 @@ class UltraIntelligentEngine:
                     return False
                 
                 # Check position safety manager
-                from ..utils.bot_fixes import position_safety
                 if position_safety.has_position(symbol):
                     logger.info(f"Position safety: Position already tracked for {symbol}")
                     # Track rejected signal for ML learning
@@ -1789,19 +1788,29 @@ class UltraIntelligentEngine:
                     
                     last_ensemble_train = ensemble_samples
                 
-                # Train MTF learner for each symbol
-                for symbol in self.monitored_symbols[:10]:  # Train top 10 symbols more frequently
-                    if self.mtf_learner.should_retrain(symbol):
-                        logger.info(f"Training MTF learner for {symbol}")
-                        await self.mtf_learner.train_for_symbol(symbol)
-                        
-                        # Save MTF learner state
-                        if hasattr(self.mtf_learner, 'symbol_parameters'):
-                            await ml_persistence.save_model(
-                                f'mtf_learner_{symbol}',
-                                self.mtf_learner.symbol_parameters.get(symbol, {}),
-                                metadata={'symbol': symbol, 'training_timestamp': datetime.now().isoformat()}
-                            )
+                # Train MTF learner for each symbol with error handling
+                try:
+                    if hasattr(self.mtf_learner, 'should_retrain'):
+                        for symbol in self.monitored_symbols[:10]:  # Train top 10 symbols more frequently
+                            try:
+                                if self.mtf_learner.should_retrain(symbol):
+                                    logger.info(f"Training MTF learner for {symbol}")
+                                    await self.mtf_learner.train_for_symbol(symbol)
+                                    
+                                    # Save MTF learner state
+                                    if hasattr(self.mtf_learner, 'symbol_parameters'):
+                                        await ml_persistence.save_model(
+                                            f'mtf_learner_{symbol}',
+                                            self.mtf_learner.symbol_parameters.get(symbol, {}),
+                                            metadata={'symbol': symbol, 'training_timestamp': datetime.now().isoformat()}
+                                        )
+                            except Exception as e:
+                                logger.warning(f"MTF training failed for {symbol}: {e}")
+                                continue
+                    else:
+                        logger.debug("MTF learner not fully initialized yet")
+                except AttributeError as e:
+                    logger.debug(f"MTF learner method not available: {e}")
                 
             except Exception as e:
                 logger.error(f"ML trainer error: {e}")

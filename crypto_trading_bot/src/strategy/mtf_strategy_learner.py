@@ -107,6 +107,7 @@ class MTFStrategyLearner:
     def __init__(self):
         self.redis_client = None
         self.symbol_profiles: Dict[str, SymbolLearningProfile] = {}
+        self.symbol_parameters: Dict[str, Dict[str, Any]] = {}  # Store learned parameters
         
         # Learning configuration
         self.min_trades_for_learning = 10
@@ -168,6 +169,123 @@ class MTFStrategyLearner:
             return True
         
         return False
+    
+    async def train_for_symbol(self, symbol: str):
+        """
+        Train the MTF learner for a specific symbol
+        Analyzes historical patterns and updates optimal parameters
+        
+        Args:
+            symbol: Trading symbol to train
+        """
+        try:
+            # Initialize profile if new symbol
+            if symbol not in self.symbol_profiles:
+                self.symbol_profiles[symbol] = SymbolLearningProfile(symbol=symbol)
+                logger.info(f"Created new learning profile for {symbol}")
+            
+            profile = self.symbol_profiles[symbol]
+            
+            # Skip if not enough data
+            if profile.total_trades < self.min_trades_for_learning:
+                logger.debug(f"Not enough trades for {symbol}: {profile.total_trades}/{self.min_trades_for_learning}")
+                return
+            
+            # Update best pattern based on performance
+            profile.update_best_pattern()
+            
+            # Analyze patterns and update parameters
+            best_patterns = sorted(
+                profile.pattern_performance.items(),
+                key=lambda x: x[1].get('win_rate', 0) * x[1].get('total_trades', 0),
+                reverse=True
+            )[:3]  # Top 3 patterns
+            
+            if best_patterns:
+                # Extract optimal parameters from best patterns
+                optimal_htf = None
+                optimal_ltf = None
+                optimal_strategy = None
+                
+                for pattern_key, performance in best_patterns:
+                    parts = pattern_key.split('_')
+                    if len(parts) >= 3:
+                        if performance.get('win_rate', 0) > 0.5:
+                            optimal_htf = parts[0]
+                            optimal_ltf = parts[1]
+                            optimal_strategy = parts[2] if len(parts) > 2 else 'rejection'
+                            break
+                
+                # Update profile with optimal parameters
+                if optimal_htf and optimal_ltf:
+                    profile.optimal_htf = optimal_htf
+                    profile.optimal_ltf = optimal_ltf
+                    profile.preferred_patterns = [optimal_strategy]
+                    profile.last_update = datetime.now()
+                    
+                    logger.info(
+                        f"Updated {symbol} parameters: HTF={optimal_htf}, LTF={optimal_ltf}, "
+                        f"Strategy={optimal_strategy}, Win Rate={best_patterns[0][1].get('win_rate', 0):.2%}"
+                    )
+                    
+                    # Update symbol_parameters for easy access
+                    self.symbol_parameters[symbol] = {
+                        'htf': optimal_htf,
+                        'ltf': optimal_ltf,
+                        'strategy': optimal_strategy,
+                        'confidence': profile.confidence_score,
+                        'win_rate': profile.win_rate(),
+                        'total_trades': profile.total_trades,
+                        'last_update': datetime.now().isoformat()
+                    }
+                    
+                    # Save to Redis if available
+                    await self._save_profile(symbol)
+            
+            # Clean up old pattern data (keep last 100 patterns)
+            if len(profile.recent_patterns) > 100:
+                profile.recent_patterns = profile.recent_patterns[-100:]
+            
+            # Remove expired patterns
+            current_time = datetime.now()
+            expired_keys = [
+                key for key in profile.pattern_performance.keys()
+                if (current_time - profile.pattern_performance[key].get('last_seen', current_time)).days > self.pattern_expiry_days
+            ]
+            
+            for key in expired_keys:
+                del profile.pattern_performance[key]
+            
+            logger.info(f"Training completed for {symbol}: {profile.total_trades} trades analyzed")
+            
+        except Exception as e:
+            logger.error(f"Error training MTF learner for {symbol}: {e}")
+    
+    def get_symbol_parameters(self, symbol: str) -> Dict[str, Any]:
+        """
+        Get the learned parameters for a symbol
+        
+        Returns:
+            Dict containing optimal HTF, LTF, and strategy parameters
+        """
+        if symbol not in self.symbol_profiles:
+            # Return defaults for unknown symbols
+            return {
+                'htf': '60',  # 1H
+                'ltf': '15',  # 15m
+                'strategy': 'rejection',
+                'confidence': 0.5
+            }
+        
+        profile = self.symbol_profiles[symbol]
+        return {
+            'htf': profile.optimal_htf,
+            'ltf': profile.optimal_ltf,
+            'strategy': profile.preferred_patterns[0] if profile.preferred_patterns else 'rejection',
+            'confidence': profile.confidence_score,
+            'win_rate': profile.win_rate(),
+            'total_trades': profile.total_trades
+        }
     
     async def record_trade_result(
         self,

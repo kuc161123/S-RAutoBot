@@ -398,27 +398,15 @@ class IntelligentDecisionEngine:
         symbol: str,
         entry_price: float
     ) -> float:
-        """Calculate position size using Kelly Criterion and ML predictions"""
+        """Calculate position size using fixed 1% risk formula"""
         
-        # Kelly Criterion: f = (p*b - q) / b
-        # where p = probability of win, q = probability of loss, b = odds
-        p = ml_success_prob
-        q = 1 - p
-        b = 2  # Assume 1:2 risk-reward minimum
+        # Simple fixed risk calculation - exactly 1% of account per trade
+        # No Kelly Criterion, no ML adjustments
+        risk_amount = account_balance * 0.01  # 1% risk
         
-        kelly_fraction = (p * b - q) / b if b > 0 else 0
-        kelly_fraction = max(0, min(0.25, kelly_fraction))  # Cap at 25% of capital
-        
-        # Adjust by confidence
-        adjusted_fraction = kelly_fraction * ml_confidence
-        
-        # Calculate position size
-        position_value = account_balance * adjusted_fraction
-        position_size = position_value / stop_distance if stop_distance > 0 else 0
-        
-        # Apply safety limits
-        max_position = account_balance * 0.1 / stop_distance  # Max 10% risk
-        position_size = min(position_size, max_position)
+        # Calculate position size based on stop distance
+        # Position size = Risk Amount / Stop Distance
+        position_size = risk_amount / stop_distance if stop_distance > 0 else 0
         
         # Further limit based on available balance (use max 30% per position)
         max_position_value = account_balance * 0.3
@@ -937,52 +925,14 @@ class AdaptiveRiskManager:
     ) -> Dict[str, float]:
         """Calculate adaptive risk parameters"""
         
-        # Base risk per trade
-        base_risk_percent = {
-            TradingMode.AGGRESSIVE: 2.0,
-            TradingMode.MODERATE: 1.5,
-            TradingMode.CONSERVATIVE: 1.0,
-            TradingMode.SCALPING: 0.5,
-            TradingMode.SWING: 2.0,
-            TradingMode.DEFENSIVE: 0.5
-        }
+        # Fixed risk per trade - exactly 1% as requested
+        # No dynamic adjustments based on ML, market regime, or portfolio
+        final_risk_percent = 1.0
         
-        risk_percent = base_risk_percent.get(trading_mode, 1.0)
-        
-        # Adjust for ML confidence
-        if ml_confidence > 0.8:
-            risk_adjustment = 1.2
-        elif ml_confidence > 0.7:
-            risk_adjustment = 1.0
-        elif ml_confidence > 0.6:
-            risk_adjustment = 0.8
-        else:
-            risk_adjustment = 0.5
-        
-        # Adjust for market regime
-        regime_adjustment = {
-            MarketRegime.TRENDING_STRONG: 1.2,
-            MarketRegime.TRENDING_WEAK: 1.0,
-            MarketRegime.RANGING_TIGHT: 0.8,
-            MarketRegime.RANGING_WIDE: 0.9,
-            MarketRegime.VOLATILE: 0.6,
-            MarketRegime.BREAKOUT: 1.1,
-            MarketRegime.ACCUMULATION: 1.0,
-            MarketRegime.DISTRIBUTION: 0.7
-        }
-        
-        regime_adj = regime_adjustment.get(market_regime, 1.0)
-        
-        # Adjust for portfolio exposure
-        portfolio_adjustment = 1.0
-        if len(existing_positions) > 5:
-            portfolio_adjustment = 0.8
-        elif len(existing_positions) > 10:
-            portfolio_adjustment = 0.6
-        
-        # Calculate final risk
-        final_risk_percent = risk_percent * risk_adjustment * regime_adj * portfolio_adjustment
-        final_risk_percent = min(3.0, max(0.25, final_risk_percent))  # Cap between 0.25% and 3%
+        # Keep these for logging purposes only, but don't use them
+        risk_adjustment = 1.0  # No ML adjustment
+        regime_adj = 1.0  # No regime adjustment
+        portfolio_adjustment = 1.0  # No portfolio adjustment
         
         # Calculate position scaling
         position_scaling = risk_adjustment * regime_adj

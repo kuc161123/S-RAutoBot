@@ -1101,6 +1101,13 @@ class UltraIntelligentEngine:
                     except Exception as e:
                         logger.warning(f"Redis check failed: {e}")
                 
+                # Set leverage to 10x before placing order
+                try:
+                    await self.client.set_leverage(symbol, 10)
+                    logger.info(f"Set leverage to 10x for {symbol}")
+                except Exception as e:
+                    logger.warning(f"Failed to set leverage for {symbol}: {e}")
+                
                 # Register position immediately to prevent duplicates
                 await self.position_manager.register_position(
                     symbol=symbol,

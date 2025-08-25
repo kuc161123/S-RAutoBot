@@ -398,11 +398,28 @@ class IntelligentDecisionEngine:
         symbol: str,
         entry_price: float
     ) -> float:
-        """Calculate position size using fixed 1% risk formula"""
+        """Calculate position size using hybrid risk formula"""
         
-        # Simple fixed risk calculation - exactly 1% of account per trade
-        # No Kelly Criterion, no ML adjustments
-        risk_amount = account_balance * 0.01  # 1% risk
+        # Get the risk percent from the parent context
+        # This will be between 0.75% and 2.0% based on ML confidence
+        # For now, we'll use a moderate approach based on ML confidence
+        
+        # Determine risk based on ML confidence (bounded)
+        if ml_confidence >= 0.85:
+            risk_percent = 0.02  # 2% for very high confidence
+        elif ml_confidence >= 0.75:
+            # Scale between 1% and 2%
+            risk_percent = 0.01 + (ml_confidence - 0.75) * 0.1
+        elif ml_confidence >= 0.65:
+            risk_percent = 0.01  # 1% for medium confidence
+        elif ml_confidence >= 0.55:
+            # Scale between 0.75% and 1%
+            risk_percent = 0.0075 + (ml_confidence - 0.55) * 0.025
+        else:
+            risk_percent = 0.0075  # 0.75% for low confidence
+        
+        # Calculate risk amount
+        risk_amount = account_balance * risk_percent
         
         # Calculate position size based on stop distance
         # Position size = Risk Amount / Stop Distance
@@ -925,17 +942,62 @@ class AdaptiveRiskManager:
     ) -> Dict[str, float]:
         """Calculate adaptive risk parameters"""
         
-        # Fixed risk per trade - exactly 1% as requested
-        # No dynamic adjustments based on ML, market regime, or portfolio
-        final_risk_percent = 1.0
+        # Moderate Hybrid Risk Management
+        # Base risk with bounded ML adjustments (0.75% - 2.0%)
+        MIN_RISK_PERCENT = 0.75
+        BASE_RISK_PERCENT = 1.0
+        MAX_RISK_PERCENT = 2.0
         
-        # Keep these for logging purposes only, but don't use them
-        risk_adjustment = 1.0  # No ML adjustment
-        regime_adj = 1.0  # No regime adjustment
-        portfolio_adjustment = 1.0  # No portfolio adjustment
+        # Start with base risk
+        risk_percent = BASE_RISK_PERCENT
+        
+        # ML Confidence adjustment (bounded)
+        if ml_confidence >= 0.85:
+            # Very high confidence: Use max risk
+            risk_percent = MAX_RISK_PERCENT
+        elif ml_confidence >= 0.75:
+            # High confidence: Scale between base and max
+            # Linear interpolation: 0.75->1.0, 0.85->2.0
+            risk_percent = BASE_RISK_PERCENT + (ml_confidence - 0.75) * 10 * (MAX_RISK_PERCENT - BASE_RISK_PERCENT)
+        elif ml_confidence >= 0.65:
+            # Medium confidence: Use base risk
+            risk_percent = BASE_RISK_PERCENT
+        elif ml_confidence >= 0.55:
+            # Lower confidence: Scale between min and base
+            # Linear interpolation: 0.55->0.75, 0.65->1.0
+            risk_percent = MIN_RISK_PERCENT + (ml_confidence - 0.55) * 10 * (BASE_RISK_PERCENT - MIN_RISK_PERCENT) / 2.5
+        else:
+            # Low confidence: Use minimum risk
+            risk_percent = MIN_RISK_PERCENT
+        
+        # Market regime adjustment (small, bounded)
+        regime_multiplier = 1.0
+        if market_regime in [MarketRegime.TRENDING_STRONG, MarketRegime.BREAKOUT]:
+            regime_multiplier = 1.1  # Slight increase for strong trends
+        elif market_regime in [MarketRegime.VOLATILE, MarketRegime.DISTRIBUTION]:
+            regime_multiplier = 0.9  # Slight decrease for volatile markets
+        
+        # Apply regime adjustment with bounds
+        risk_percent = risk_percent * regime_multiplier
+        
+        # Final safety bounds - ensure we never exceed limits
+        final_risk_percent = max(MIN_RISK_PERCENT, min(MAX_RISK_PERCENT, risk_percent))
+        
+        # For logging
+        risk_adjustment = risk_percent / BASE_RISK_PERCENT
+        regime_adj = regime_multiplier
+        portfolio_adjustment = 1.0
         
         # Calculate position scaling
         position_scaling = risk_adjustment * regime_adj
+        
+        # Log the risk decision
+        logger.info(
+            f"Hybrid Risk Decision: ML Confidence={ml_confidence:.1%}, "
+            f"Market Regime={market_regime.value}, "
+            f"Risk={final_risk_percent:.2f}% "
+            f"(Range: {MIN_RISK_PERCENT}%-{MAX_RISK_PERCENT}%)"
+        )
         
         return {
             'risk_percent': final_risk_percent,

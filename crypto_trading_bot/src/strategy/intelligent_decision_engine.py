@@ -12,6 +12,7 @@ import structlog
 from enum import Enum
 
 from .ml_predictor import ml_predictor, ZoneFeatures
+from .enhanced_ml_predictor import enhanced_ml_predictor, PredictionResult
 from .advanced_supply_demand import EnhancedZone, MarketStructure, OrderFlowImbalance, VolumeProfile
 
 logger = structlog.get_logger(__name__)
@@ -54,7 +55,10 @@ class IntelligentSignal:
     ml_success_probability: float
     ml_expected_profit_ratio: float
     ml_confidence: float
+    ml_confidence_lower: float  # Lower bound of confidence interval
+    ml_confidence_upper: float  # Upper bound of confidence interval
     ml_features: Dict[str, float]
+    ml_warnings: List[str]  # Any ML warnings
     
     # Adaptive parameters
     market_regime: MarketRegime
@@ -126,17 +130,37 @@ class IntelligentDecisionEngine:
             regime = self.regime_detector.detect_regime(market_data)
             self.current_regime[symbol] = regime
             
-            # 2. Get ML predictions for the zone
-            ml_success_prob, ml_profit_ratio = ml_predictor.predict_zone_success(
-                zone, market_data
-            )
-            
-            # 3. Calculate ML confidence based on model accuracy and data quality
-            ml_confidence = self._calculate_ml_confidence(
-                ml_success_prob, 
-                ml_profit_ratio,
-                market_data
-            )
+            # 2. Get enhanced ML predictions with confidence intervals
+            # Try enhanced predictor first, fallback to original if needed
+            try:
+                ml_prediction = enhanced_ml_predictor.predict_with_confidence(
+                    zone, market_data
+                )
+                ml_success_prob = ml_prediction.success_probability
+                ml_profit_ratio = ml_prediction.expected_profit
+                ml_confidence = ml_prediction.prediction_confidence
+                ml_confidence_lower = ml_prediction.confidence_lower
+                ml_confidence_upper = ml_prediction.confidence_upper
+                ml_warnings = ml_prediction.warnings
+                
+                # Log any ML warnings
+                if ml_warnings:
+                    logger.info(f"ML warnings for {symbol}: {', '.join(ml_warnings)}")
+                    
+            except Exception as e:
+                logger.warning(f"Enhanced ML predictor failed, using original: {e}")
+                # Fallback to original predictor
+                ml_success_prob, ml_profit_ratio = ml_predictor.predict_zone_success(
+                    zone, market_data
+                )
+                ml_confidence = self._calculate_ml_confidence(
+                    ml_success_prob, 
+                    ml_profit_ratio,
+                    market_data
+                )
+                ml_confidence_lower = max(0, ml_success_prob - 0.15)
+                ml_confidence_upper = min(1, ml_success_prob + 0.15)
+                ml_warnings = []
             
             # 4. Determine trading mode based on market conditions
             trading_mode = self._determine_trading_mode(
@@ -221,7 +245,7 @@ class IntelligentDecisionEngine:
                 volume_score=volume_score
             )
             
-            # Create intelligent signal
+            # Create intelligent signal with enhanced ML data
             signal = IntelligentSignal(
                 symbol=symbol,
                 side='Buy' if zone.zone_type == 'demand' else 'Sell',
@@ -233,7 +257,10 @@ class IntelligentDecisionEngine:
                 ml_success_probability=ml_success_prob,
                 ml_expected_profit_ratio=ml_profit_ratio,
                 ml_confidence=ml_confidence,
+                ml_confidence_lower=ml_confidence_lower,
+                ml_confidence_upper=ml_confidence_upper,
                 ml_features=ml_features,
+                ml_warnings=ml_warnings,
                 market_regime=regime,
                 trading_mode=trading_mode,
                 risk_adjustment=risk_params['risk_adjustment'],
@@ -696,7 +723,30 @@ class IntelligentDecisionEngine:
         actual_success = outcome['profit'] > 0
         tracker['ml_accuracy'].append(predicted_success == actual_success)
         
-        # Update ML training data
+        # Update both ML predictors with outcome
+        try:
+            # Get zone data for the signal (if available)
+            zone = getattr(signal, '_zone', None)
+            if zone:
+                # Update enhanced ML predictor
+                enhanced_ml_predictor.add_training_sample(
+                    zone=zone,
+                    market_data={'regime': regime.value, 'symbol': signal.symbol},
+                    outcome=actual_success,
+                    profit_ratio=outcome.get('profit_ratio', 0)
+                )
+                
+                # Update prediction outcome for performance tracking
+                if hasattr(signal, 'prediction_id'):
+                    enhanced_ml_predictor.update_prediction_outcome(
+                        signal.prediction_id,
+                        actual_success,
+                        outcome.get('profit_ratio', 0)
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to update enhanced ML: {e}")
+        
+        # Also update original ML predictor for compatibility
         ml_predictor.training_data.append({
             'features': signal.ml_features,
             'success': actual_success,

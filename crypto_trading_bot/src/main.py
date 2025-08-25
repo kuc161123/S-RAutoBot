@@ -1056,20 +1056,46 @@ async def get_ml_stats():
     
     try:
         from .strategy.ml_predictor import ml_predictor
+        from .strategy.enhanced_ml_predictor import enhanced_ml_predictor
         from .strategy.ml_ensemble import MLEnsemble
         
-        # Get ML predictor stats
-        ml_stats = {
-            "model_trained": ml_predictor.model_trained,
-            "training_samples": len(ml_predictor.training_data),
-            "min_samples_required": ml_predictor.min_training_samples,
-            "feature_importance": ml_predictor.feature_importance if ml_predictor.model_trained else {},
-            "test_accuracy": getattr(ml_predictor, 'test_score', 0) if ml_predictor.model_trained else 0,
-            "models": {
-                "success_classifier": ml_predictor.success_classifier is not None,
-                "profit_regressor": ml_predictor.profit_regressor is not None
+        # Try to get enhanced ML stats first
+        try:
+            enhanced_stats = enhanced_ml_predictor.get_model_diagnostics()
+            ml_stats = {
+                "model_version": enhanced_stats.get('model_version', '1.0.0'),
+                "model_trained": enhanced_stats.get('model_trained', False),
+                "training_samples": enhanced_stats.get('training_samples', 0),
+                "min_samples_required": 100,
+                "feature_importance": enhanced_stats.get('feature_importance', {}),
+                "test_accuracy": enhanced_stats['performance'].get('accuracy', 0) if 'performance' in enhanced_stats else 0,
+                "precision": enhanced_stats['performance'].get('precision', 0) if 'performance' in enhanced_stats else 0,
+                "recall": enhanced_stats['performance'].get('recall', 0) if 'performance' in enhanced_stats else 0,
+                "f1_score": enhanced_stats['performance'].get('f1_score', 0) if 'performance' in enhanced_stats else 0,
+                "total_predictions": enhanced_stats['performance'].get('total_predictions', 0) if 'performance' in enhanced_stats else 0,
+                "correct_predictions": enhanced_stats['performance'].get('correct_predictions', 0) if 'performance' in enhanced_stats else 0,
+                "models": {
+                    "success_classifier": True,
+                    "profit_regressor": True,
+                    "anomaly_detector": True,
+                    "enhanced": True
+                },
+                "last_training": enhanced_stats.get('last_training'),
+                "warnings": enhanced_stats.get('warnings', [])
             }
-        }
+        except:
+            # Fallback to original ML predictor stats
+            ml_stats = {
+                "model_trained": ml_predictor.model_trained,
+                "training_samples": len(ml_predictor.training_data),
+                "min_samples_required": ml_predictor.min_training_samples,
+                "feature_importance": ml_predictor.feature_importance if ml_predictor.model_trained else {},
+                "test_accuracy": getattr(ml_predictor, 'test_score', 0) if ml_predictor.model_trained else 0,
+                "models": {
+                    "success_classifier": ml_predictor.success_classifier is not None,
+                    "profit_regressor": ml_predictor.profit_regressor is not None
+                }
+            }
         
         # Get recent prediction accuracy from trading engine
         if hasattr(trading_engine, 'ml_ensemble'):

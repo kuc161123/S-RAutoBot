@@ -243,10 +243,11 @@ async def lifespan(app: FastAPI):
         
         logger.info("Bot shutdown complete")
 
-# Create FastAPI app
+# Create FastAPI app with updated version
 app = FastAPI(
-    title="Crypto Trading Bot",
-    version="1.0.0",
+    title="Ultra Intelligent Crypto Trading Bot",
+    version="2.1.0-ML-Enhanced",
+    description="Advanced trading bot with enhanced ML predictions and confidence intervals",
     lifespan=lifespan
 )
 
@@ -346,8 +347,36 @@ async def health_check():
     return {
         "status": "ok", 
         "timestamp": datetime.now().isoformat(),
-        "version": "2.0-ML-Dashboard",
-        "features": ["ML insights", "Enhanced alerts", "Performance tracking"]
+        "version": "2.1-ML-Enhanced",
+        "deployment_date": "2025-08-25",
+        "features": [
+            "Enhanced ML with confidence intervals",
+            "25 ML features with anomaly detection", 
+            "Cross-validation training",
+            "Performance tracking dashboard",
+            "Telegram formatter v2"
+        ],
+        "ml_version": "enhanced_v2"
+    }
+
+@app.get("/version")
+async def get_version():
+    """Explicit version endpoint"""
+    return {
+        "bot_version": "2.1.0",
+        "ml_version": "enhanced_v2",
+        "dashboard_version": "ML-Enhanced",
+        "last_update": "2025-08-25 15:00 UTC",
+        "git_commit": "8a6bb2f",
+        "changes": [
+            "Enhanced ML predictor with 25 features",
+            "Confidence intervals for predictions",
+            "Anomaly detection with Isolation Forest",
+            "Cross-validation training",
+            "Performance metrics tracking",
+            "Improved dashboard with ML insights",
+            "Enhanced Telegram notifications"
+        ]
     }
 
 @app.get("/health/detailed")

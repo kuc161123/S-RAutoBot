@@ -173,17 +173,29 @@ class MultiTimeframeScanner:
                 
                 # Wait for batch to complete with timeout
                 if tasks:
-                    results = await asyncio.wait_for(
-                        asyncio.gather(*tasks, return_exceptions=True),
-                        timeout=60  # 60 second timeout for batch
-                    )
+                    try:
+                        results = await asyncio.wait_for(
+                            asyncio.gather(*tasks, return_exceptions=True),
+                            timeout=60  # 60 second timeout for batch
+                        )
+                        
+                        # Count successes/failures
+                        for result in results:
+                            if isinstance(result, asyncio.CancelledError):
+                                # Don't count cancellations as failures
+                                logger.debug("Task cancelled during batch processing")
+                            elif isinstance(result, Exception):
+                                self.scan_metrics['failed_scans'] += 1
+                            else:
+                                self.scan_metrics['successful_scans'] += 1
                     
-                    # Count successes/failures
-                    for result in results:
-                        if isinstance(result, Exception):
-                            self.scan_metrics['failed_scans'] += 1
-                        else:
-                            self.scan_metrics['successful_scans'] += 1
+                    except asyncio.TimeoutError:
+                        logger.warning(f"Batch scan timeout for {len(tasks)} symbols")
+                        self.scan_metrics['failed_scans'] += len(tasks)
+                        # Cancel remaining tasks
+                        for task in tasks:
+                            if not task.done():
+                                task.cancel()
                 
                 # Update metrics
                 self.scan_metrics['total_scans'] += len(batch)
@@ -219,7 +231,7 @@ class MultiTimeframeScanner:
                 await asyncio.sleep(10)
     
     async def stop_scanning(self):
-        """Stop all scanning tasks"""
+        """Stop all scanning tasks gracefully"""
         self.is_scanning = False
         
         # Cancel main scanning task
@@ -228,11 +240,20 @@ class MultiTimeframeScanner:
             try:
                 await self.scanning_task
             except asyncio.CancelledError:
-                pass
+                logger.debug("Main scanning task cancelled successfully")
+            except Exception as e:
+                logger.error(f"Error stopping scanning task: {e}")
         
         # Cancel other tasks
-        for task in self.scanning_tasks.values():
-            task.cancel()
+        for task_name, task in self.scanning_tasks.items():
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    logger.debug(f"Task {task_name} cancelled successfully")
+                except Exception as e:
+                    logger.error(f"Error cancelling task {task_name}: {e}")
         
         self.scanning_tasks.clear()
         logger.info("Stopped all scanning tasks")
@@ -438,6 +459,11 @@ class MultiTimeframeScanner:
             
             # Success - update last scan time
             self.last_scan_time = datetime.now()
+        
+        except asyncio.CancelledError:
+            # Task was cancelled, this is normal during shutdown
+            logger.debug(f"Scan cancelled for {symbol}")
+            raise  # Re-raise to properly handle cancellation
                     
         except Exception as e:
             logger.error(f"Error scanning {symbol}: {e}")
@@ -746,7 +772,7 @@ class MultiTimeframeScanner:
             logger.info(f"Position opened for {symbol}: {status}")
     
     async def _get_cached_data(self, symbol: str, timeframe: str) -> Optional[Dict]:
-        """Get cached data from Redis"""
+        """Get cached data from Redis with proper error handling"""
         
         if not self.redis_client:
             return None
@@ -757,14 +783,24 @@ class MultiTimeframeScanner:
             
             if data:
                 return json.loads(data)
+        
+        except asyncio.CancelledError:
+            # Task cancelled, don't log as error
+            logger.debug(f"Redis operation cancelled for {symbol}:{timeframe}")
+            raise  # Re-raise to handle properly
+            
+        except (ConnectionError, TimeoutError) as e:
+            logger.warning(f"Redis connection issue for {symbol}:{timeframe}: {e}")
+            return None
             
         except Exception as e:
-            logger.error(f"Redis get error: {e}")
+            logger.error(f"Redis get error for {symbol}:{timeframe}: {e}")
+            return None
         
         return None
     
     async def _cache_data(self, symbol: str, timeframe: str, df: pd.DataFrame, ttl: Optional[int] = None):
-        """Cache data in Redis with optional TTL override"""
+        """Cache data in Redis with proper error handling"""
         
         if not self.redis_client:
             return
@@ -787,9 +823,18 @@ class MultiTimeframeScanner:
                 expiry,
                 json.dumps(data)
             )
+        
+        except asyncio.CancelledError:
+            # Task cancelled, don't log as error
+            logger.debug(f"Redis cache operation cancelled for {symbol}:{timeframe}")
+            raise  # Re-raise to handle properly
+            
+        except (ConnectionError, TimeoutError) as e:
+            logger.warning(f"Redis connection issue during cache for {symbol}:{timeframe}: {e}")
+            # Continue without caching
             
         except Exception as e:
-            logger.error(f"Redis cache error: {e}")
+            logger.error(f"Redis cache error for {symbol}:{timeframe}: {e}")
     
     def _get_cache_expiry(self, timeframe: str) -> int:
         """Get cache expiry in seconds based on timeframe"""

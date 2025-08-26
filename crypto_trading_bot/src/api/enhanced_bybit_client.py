@@ -301,12 +301,16 @@ class EnhancedBybitClient:
     async def get_klines(self, symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
         """Get klines with rate limiting and error handling"""
         
+        logger.info(f"🔍 Fetching klines: symbol={symbol}, interval={interval}, limit={limit}")
+        
         try:
             # Rate limit
             await rate_limiter.acquire_request()
             
             # Make request
             start = time.time()
+            logger.debug(f"📡 Calling Bybit API: get_kline(category='linear', symbol='{symbol}', interval='{interval}', limit={limit})")
+            
             response = self.http_client.get_kline(
                 category="linear",
                 symbol=symbol,
@@ -314,6 +318,8 @@ class EnhancedBybitClient:
                 limit=limit
             )
             latency = (time.time() - start) * 1000
+            
+            logger.info(f"📡 API Response: retCode={response.get('retCode')}, retMsg={response.get('retMsg')}")
             
             # Record metrics
             health_monitor.record_api_latency(latency)

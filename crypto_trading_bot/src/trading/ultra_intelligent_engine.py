@@ -203,7 +203,8 @@ class UltraIntelligentEngine:
         self.strategy = AdvancedSupplyDemandStrategy()
         self.ml_ensemble = MLEnsemble()
         self.mtf_learner = MTFStrategyLearner()
-        self.mtf_scanner = MultiTimeframeScanner(bybit_client, self.strategy)
+        # Scanner will be initialized after symbols are selected
+        self.mtf_scanner = None
         
         # Use unified position manager for all position tracking
         self.position_manager = unified_position_manager
@@ -306,7 +307,8 @@ class UltraIntelligentEngine:
             # Sync existing positions
             await self._sync_existing_positions()
             
-            # Initialize multi-timeframe scanner
+            # Initialize multi-timeframe scanner with all monitored symbols
+            self.mtf_scanner = MultiTimeframeScanner(self.client, self.strategy, self.monitored_symbols)
             await self.mtf_scanner.initialize()
             
             self.initialization_complete = True
@@ -454,88 +456,65 @@ class UltraIntelligentEngine:
             logger.debug(f"ML bootstrap check failed: {e}")
     
     async def _select_trading_symbols(self):
-        """Dynamically select best symbols to trade"""
+        """Use ALL active USDT perpetual symbols from Bybit"""
         try:
             # Get all active symbols
             all_symbols = await self.client.get_active_symbols()
             
             if not all_symbols:
                 logger.warning("No active symbols found, using defaults")
-                self.monitored_symbols = settings.default_symbols[:200]
+                self.monitored_symbols = settings.default_symbols[:50]
                 return
             
-            logger.info(f"Found {len(all_symbols)} active symbols")
+            logger.info(f"Found {len(all_symbols)} active USDT perpetual symbols")
             
-            # Filter by criteria
-            candidates = []
-            symbols_to_check = min(len(all_symbols), 250)  # Check up to 250 symbols to find 200 good ones
+            # Use ALL active symbols - no filtering
+            self.monitored_symbols = all_symbols
             
-            for symbol in all_symbols[:symbols_to_check]:
-                try:
-                    info = await self.client.get_symbol_info(symbol)
-                    if info:
-                        volume_24h = float(info.get('turnover24h', 0))
-                        if volume_24h > 10000000:  # Min $10M daily volume
-                            candidates.append({
-                                'symbol': symbol,
-                                'volume': volume_24h,
-                                'volatility': float(info.get('price24hPcnt', 0))
-                            })
-                except Exception as e:
-                    logger.debug(f"Error getting info for {symbol}: {e}")
-                    continue
+            logger.info(f"Monitoring ALL {len(self.monitored_symbols)} active symbols for trading")
             
-            if candidates:
-                # Sort by volume and volatility
-                candidates.sort(key=lambda x: x['volume'] * abs(x['volatility']), reverse=True)
-                
-                # Select top symbols (increased to 200 for better market coverage)
-                self.monitored_symbols = [c['symbol'] for c in candidates[:200]]
-                logger.info(f"Selected {len(self.monitored_symbols)} high-volume symbols for trading")
-            else:
-                logger.warning("No symbols met criteria, using defaults")
-                self.monitored_symbols = settings.default_symbols[:200]
+            # Log sample for verification
+            if len(self.monitored_symbols) > 10:
+                sample = self.monitored_symbols[:5]
+                logger.info(f"First 5 symbols: {sample}")
+                sample_end = self.monitored_symbols[-5:]
+                logger.info(f"Last 5 symbols: {sample_end}")
             
         except Exception as e:
             logger.error(f"Error selecting symbols: {e}", exc_info=True)
-            # Fallback to default symbols (use more in error case too)
+            # Fallback to default symbols
             self.monitored_symbols = settings.default_symbols[:50]
-            logger.info(f"Using {len(self.monitored_symbols)} default symbols")
+            logger.info(f"Using {len(self.monitored_symbols)} default symbols as fallback")
     
     async def _setup_websocket_subscriptions(self):
-        """Setup all WebSocket subscriptions with batching"""
+        """Setup optimized WebSocket subscriptions for 558 symbols"""
         try:
-            # Batch subscriptions to avoid overwhelming WebSocket
-            batch_size = 10  # Subscribe to 10 symbols at a time
-            subscription_delay = 0.5  # Delay between batches
+            # For 558 symbols, we need to be selective about subscriptions
+            # Only subscribe to klines (5m) for all symbols
+            # Subscribe to orderbook/trades only for active positions
             
-            # Subscribe to market data for all symbols in batches
+            batch_size = 20  # Increased batch size
+            subscription_delay = 1.0  # Longer delay for stability
+            
+            # Subscribe to 5m klines for all symbols (less data than 1m)
             symbol_list = list(self.monitored_symbols)
+            logger.info(f"Setting up WebSocket subscriptions for {len(symbol_list)} symbols")
+            
             for i in range(0, len(symbol_list), batch_size):
                 batch = symbol_list[i:i + batch_size]
                 
                 for symbol in batch:
-                    # Orderbook
-                    await self.client.subscribe_orderbook(
-                        symbol,
-                        lambda data: asyncio.create_task(self._handle_orderbook_update(data))
-                    )
-                    
-                    # Trades
-                    await self.client.subscribe_trades(
-                        symbol,
-                        lambda data: asyncio.create_task(self._handle_trade_update(data))
-                    )
-                    
-                    # Klines (1m for real-time)
+                    # Only subscribe to 5m klines for all symbols (reduced data load)
                     await self.client.subscribe_klines(
                         symbol,
-                        "1",
+                        "5",  # 5-minute candles instead of 1-minute
                         lambda data: asyncio.create_task(self._handle_kline_update(data))
                     )
                 
                 # Log batch progress
-                logger.info(f"Subscribed to batch {i//batch_size + 1}/{(len(symbol_list) + batch_size - 1)//batch_size} ({len(batch)} symbols)")
+                batch_num = i//batch_size + 1
+                total_batches = (len(symbol_list) + batch_size - 1)//batch_size
+                logger.info(f"Subscribed klines batch {batch_num}/{total_batches} ({len(batch)} symbols)")
                 
                 # Delay between batches to avoid rate limits
                 if i + batch_size < len(symbol_list):
@@ -554,10 +533,34 @@ class UltraIntelligentEngine:
                 lambda data: asyncio.create_task(self._handle_execution_update(data))
             )
             
-            logger.info(f"WebSocket subscriptions setup for {len(self.monitored_symbols)} symbols")
+            logger.info(f"WebSocket kline subscriptions setup for {len(self.monitored_symbols)} symbols")
+            
+            # Subscribe to detailed data for active positions only
+            await self._subscribe_position_details()
             
         except Exception as e:
             logger.error(f"Error setting up WebSocket subscriptions: {e}")
+    
+    async def _subscribe_position_details(self):
+        """Subscribe to orderbook/trades for active positions only"""
+        try:
+            for symbol in self.active_positions.keys():
+                # Subscribe to orderbook for active positions
+                await self.client.subscribe_orderbook(
+                    symbol,
+                    lambda data: asyncio.create_task(self._handle_orderbook_update(data))
+                )
+                
+                # Subscribe to trades for active positions
+                await self.client.subscribe_trades(
+                    symbol,
+                    lambda data: asyncio.create_task(self._handle_trade_update(data))
+                )
+                
+                logger.debug(f"Subscribed to detailed data for position: {symbol}")
+                
+        except Exception as e:
+            logger.error(f"Error subscribing to position details: {e}")
     
     async def _handle_orderbook_update(self, data: Dict):
         """Handle orderbook updates"""

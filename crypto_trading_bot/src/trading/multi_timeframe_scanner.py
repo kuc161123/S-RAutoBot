@@ -27,7 +27,7 @@ class MultiTimeframeScanner:
     for precise entry signals across all symbols
     """
     
-    def __init__(self, bybit_client: BybitClient, strategy: AdvancedSupplyDemandStrategy):
+    def __init__(self, bybit_client: BybitClient, strategy: AdvancedSupplyDemandStrategy, symbols: List[str] = None):
         self.client = bybit_client
         self.strategy = strategy
         self.structure_analyzer = MarketStructureAnalyzer()
@@ -46,11 +46,16 @@ class MultiTimeframeScanner:
         self.primary_htf = "240"  # Primary HTF for zone identification
         self.primary_ltf = "15"  # Primary LTF for entry timing
         
-        # ALL available symbols for maximum learning opportunities
-        self.symbols = settings.default_symbols[:300]  # All top 300 symbols
+        # Use provided symbols or defaults
+        if symbols:
+            self.symbols = symbols
+            logger.info(f"Scanner initialized with {len(symbols)} provided symbols")
+        else:
+            self.symbols = settings.default_symbols[:50]  # Fallback
+            logger.warning("No symbols provided to scanner, using defaults")
         
-        # Symbol rotation for efficient scanning
-        self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=30)
+        # Symbol rotation for efficient scanning - reduced batch size for rate limits
+        self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=15)  # Reduced from 30
         self.current_scan_batch = []
         
         # Position tracking - one position per symbol
@@ -92,6 +97,13 @@ class MultiTimeframeScanner:
             logger.error(f"Redis connection failed: {e}")
             # Continue without Redis (degraded mode)
             self.redis_client = None
+    
+    def update_symbols(self, new_symbols: List[str]):
+        """Update the symbol list dynamically"""
+        if new_symbols != self.symbols:
+            logger.info(f"Updating scanner symbols from {len(self.symbols)} to {len(new_symbols)}")
+            self.symbols = new_symbols
+            self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=15)
     
     async def start_scanning(self):
         """Start scanning with symbol rotation for efficiency and auto-recovery"""
@@ -184,11 +196,11 @@ class MultiTimeframeScanner:
                 if scan_duration > 0:
                     self.scan_metrics['symbols_per_minute'] = (len(batch) / scan_duration) * 60
                 
-                # Brief pause between batches
-                await asyncio.sleep(5)
+                # Longer pause between batches for rate limiting with 558 symbols
+                await asyncio.sleep(10)  # Increased from 5 to 10 seconds
                 
-                # Clean up old data periodically (every 100 scans)
-                if self.scan_count % 100 == 0:
+                # Clean up old data more frequently (every 50 scans) for memory management
+                if self.scan_count % 50 == 0:
                     await self._cleanup_old_data()
                 
             except asyncio.TimeoutError:
@@ -288,26 +300,55 @@ class MultiTimeframeScanner:
         logger.info("Scanner restarted successfully")
     
     async def _cleanup_old_data(self):
-        """Clean up old timeframe data to prevent memory issues"""
+        """Aggressive cleanup for managing 558 symbols in memory"""
         try:
             current_time = datetime.now()
             symbols_to_clean = []
             
-            # Find symbols with stale data
+            # More aggressive cleanup thresholds for 558 symbols
+            max_cached_symbols = 100  # Only keep data for 100 symbols max
+            stale_threshold = 1800  # 30 minutes (reduced from 1 hour)
+            
+            # Count current cached symbols
+            cached_count = len(self.timeframe_data)
+            
+            if cached_count > max_cached_symbols:
+                # Sort symbols by last scan time and clean oldest
+                symbol_times = []
+                for symbol in self.timeframe_data.keys():
+                    if symbol in self.active_positions:
+                        continue  # Never clean active positions
+                    
+                    last_scan = None
+                    if symbol in self.symbol_rotator.symbol_stats:
+                        last_scan = self.symbol_rotator.symbol_stats[symbol].get('last_scan')
+                    
+                    if last_scan:
+                        symbol_times.append((symbol, last_scan))
+                    else:
+                        symbols_to_clean.append(symbol)  # Clean if no scan time
+                
+                # Sort by last scan time (oldest first)
+                symbol_times.sort(key=lambda x: x[1])
+                
+                # Clean oldest symbols to get under limit
+                num_to_clean = cached_count - max_cached_symbols
+                for symbol, _ in symbol_times[:num_to_clean]:
+                    symbols_to_clean.append(symbol)
+            
+            # Also clean stale symbols
             for symbol in list(self.timeframe_data.keys()):
-                # Skip active positions
-                if symbol in self.active_positions:
+                if symbol in self.active_positions or symbol in symbols_to_clean:
                     continue
                 
-                # Check if symbol was recently scanned
                 if symbol in self.symbol_rotator.symbol_stats:
                     last_scan = self.symbol_rotator.symbol_stats[symbol].get('last_scan')
-                    if last_scan and (current_time - last_scan).total_seconds() > 3600:  # 1 hour
+                    if last_scan and (current_time - last_scan).total_seconds() > stale_threshold:
                         symbols_to_clean.append(symbol)
             
             # Clean up old data
             cleaned = 0
-            for symbol in symbols_to_clean:
+            for symbol in set(symbols_to_clean):  # Use set to avoid duplicates
                 if symbol in self.timeframe_data:
                     del self.timeframe_data[symbol]
                     cleaned += 1
@@ -317,7 +358,7 @@ class MultiTimeframeScanner:
                     del self.ltf_structure[symbol]
             
             if cleaned > 0:
-                logger.debug(f"Cleaned up data for {cleaned} inactive symbols")
+                logger.info(f"Memory cleanup: removed data for {cleaned} symbols, {len(self.timeframe_data)} remain cached")
                 
         except Exception as e:
             logger.error(f"Cleanup error: {e}")

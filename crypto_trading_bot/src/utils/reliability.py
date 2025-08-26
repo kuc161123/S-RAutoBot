@@ -363,7 +363,9 @@ class SafeExecutor:
             return fallback_value
 
 # Global instances
-rate_limiter = RateLimiter(max_requests=100, time_window=60)
+# Bybit rate limit: 600 requests per 5 seconds
+# For 558 symbols, we need more granular control
+rate_limiter = RateLimiter(max_requests=50, time_window=10)  # 50 requests per 10 seconds = 300/min
 connection_monitor = ConnectionMonitor()
 data_validator = DataValidator()
 error_recovery = ErrorRecovery()

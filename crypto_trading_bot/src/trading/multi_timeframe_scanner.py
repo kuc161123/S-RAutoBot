@@ -1186,10 +1186,14 @@ class MultiTimeframeScanner:
     async def _store_signal(self, symbol: str, signal: Dict):
         """Store signal in Redis for execution"""
         
+        logger.info(f"📝 Starting signal storage for {symbol}")
+        
         try:
             # Add metadata
             signal['timestamp'] = datetime.now().isoformat()
             signal['symbol'] = symbol
+            
+            logger.info(f"📝 Signal metadata added for {symbol}")
             
             # Store in Redis if available
             if self.redis_client:
@@ -1201,19 +1205,28 @@ class MultiTimeframeScanner:
                         60,  # 1 minute expiry
                         json.dumps(signal, default=str)
                     )
+                    logger.info(f"📝 Signal stored in Redis for {symbol}")
                 except Exception as e:
                     logger.warning(f"Failed to store in Redis: {e}")
+            else:
+                logger.info(f"📝 No Redis client, skipping Redis storage")
             
             # ALWAYS push to signal queue (it handles Redis/memory fallback)
+            logger.info(f"📝 Importing signal queue for {symbol}")
             from ..utils.signal_queue import signal_queue
             
             # Ensure signal queue is connected
+            logger.info(f"📝 Checking signal queue connection - Redis: {signal_queue.redis_client is not None}, Memory: {signal_queue.in_memory_queue is not None}")
+            
             if not signal_queue.redis_client and not signal_queue.in_memory_queue:
+                logger.info(f"📝 Signal queue not connected, initializing...")
                 from ..config import settings
                 redis_url = getattr(settings, 'redis_url', None)
                 await signal_queue.connect(redis_url)
+                logger.info(f"📝 Signal queue connected - Redis: {signal_queue.redis_client is not None}, Memory: {signal_queue.in_memory_queue is not None}")
             
             # Push signal
+            logger.info(f"📝 Pushing signal to queue for {symbol}...")
             success = await signal_queue.push(signal)
             if success:
                 logger.info(f"✅ Signal queued for {symbol}: direction={signal.get('direction')}, confidence={signal.get('confidence', 0):.1f}")

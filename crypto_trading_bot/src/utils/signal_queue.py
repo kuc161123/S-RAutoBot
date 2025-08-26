@@ -55,6 +55,8 @@ class SignalQueue:
             Success status
         """
         try:
+            logger.debug(f"SignalQueue.push called for {signal.get('symbol') if isinstance(signal, dict) else 'unknown'}")
+            
             # Convert dataclass to dict if needed
             if hasattr(signal, '__dataclass_fields__'):
                 signal_dict = asdict(signal)
@@ -68,6 +70,8 @@ class SignalQueue:
             if 'signal_id' not in signal_dict:
                 signal_dict['signal_id'] = f"{signal_dict.get('symbol')}_{datetime.utcnow().timestamp()}"
             
+            logger.debug(f"Signal prepared: {signal_dict.get('signal_id')} for {signal_dict.get('symbol')}")
+            
             if self.redis_client:
                 # Push to Redis queue
                 signal_json = json.dumps(signal_dict)
@@ -76,13 +80,16 @@ class SignalQueue:
                 # Set expiry on the queue
                 await self.redis_client.expire(self.queue_key, self.signal_ttl)
                 
-                logger.info(f"Signal queued for {signal_dict.get('symbol')}: {signal_dict.get('signal_id')}")
+                logger.info(f"✅ Signal queued in Redis for {signal_dict.get('symbol')}: {signal_dict.get('signal_id')}")
                 return True
-            else:
+            elif self.in_memory_queue:
                 # Use in-memory queue
                 await self.in_memory_queue.put(signal_dict)
-                logger.info(f"Signal queued in memory for {signal_dict.get('symbol')}")
+                logger.info(f"✅ Signal queued in memory for {signal_dict.get('symbol')}")
                 return True
+            else:
+                logger.error(f"❌ No queue available! Redis: {self.redis_client is not None}, Memory: {self.in_memory_queue is not None}")
+                return False
                 
         except Exception as e:
             logger.error(f"Failed to queue signal: {e}")
@@ -99,6 +106,8 @@ class SignalQueue:
             Signal dictionary or None
         """
         try:
+            logger.debug(f"SignalQueue.pop called with timeout={timeout}s")
+            
             if self.redis_client:
                 # Blocking pop from Redis with timeout
                 result = await self.redis_client.brpop(self.queue_key, timeout=timeout)

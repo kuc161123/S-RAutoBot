@@ -94,6 +94,10 @@ class MultiTimeframeScanner:
     async def initialize(self):
         """Initialize Redis connection for caching"""
         try:
+            # Clear any leftover position tracking from previous runs
+            self.active_positions.clear()
+            logger.info("Scanner initialized, position tracking cleared")
+            
             # Try to connect with retries
             max_retries = 3
             retry_delay = 2
@@ -286,6 +290,10 @@ class MultiTimeframeScanner:
                 # Clean up old data more frequently (every 50 scans) for memory management
                 if self.scan_count % 50 == 0:
                     await self._cleanup_old_data()
+                
+                # Sync positions every 10 scans to prevent stale tracking
+                if self.scan_count % 10 == 0:
+                    await self.sync_positions_with_exchange()
                 
             except asyncio.TimeoutError:
                 logger.warning("Batch scan timeout, continuing with next batch")
@@ -594,7 +602,7 @@ class MultiTimeframeScanner:
                 logger.info(f"📤 Processing signal for {symbol} (no existing position)")
                 await self._process_signal(symbol, signal)
             else:
-                logger.info(f"⚠️ Skipping signal for {symbol} (position exists)")
+                logger.warning(f"⚠️ Skipping signal for {symbol} - position already tracked in scanner: {self.active_positions.get(symbol)}")
         else:
             logger.debug(f"No signal for {symbol}")
     
@@ -901,7 +909,7 @@ class MultiTimeframeScanner:
             
             # Skip if signal was marked invalid
             if signal.get('invalid', False):
-                logger.warning(f"Skipping invalid signal for {symbol}")
+                logger.error(f"❌ Signal validation failed for {symbol} - check prices: entry={signal.get('entry_price'):.8f}, sl={signal.get('stop_loss'):.8f}, tp={signal.get('take_profit_1'):.8f}")
                 return
             
             # Record that we're taking a position
@@ -910,7 +918,17 @@ class MultiTimeframeScanner:
             
             # Store signal in Redis for execution
             logger.info(f"📤 Storing signal for {symbol}: entry={signal.get('entry_price'):.8f}, sl={signal.get('stop_loss'):.8f}, tp={signal.get('take_profit_1'):.8f}")
-            await self._store_signal(symbol, signal)
+            
+            # Try to store the signal
+            try:
+                await self._store_signal(symbol, signal)
+            except Exception as e:
+                logger.error(f"Failed to store signal for {symbol}: {e}")
+                # Clear position tracking on storage failure
+                if symbol in self.active_positions:
+                    del self.active_positions[symbol]
+                    logger.info(f"Cleared position tracking for {symbol} after storage failure")
+                return
             
             logger.info(
                 f"Signal generated for {symbol}: "
@@ -937,6 +955,39 @@ class MultiTimeframeScanner:
             # Position opened
             self.active_positions[symbol] = status
             logger.info(f"Position opened for {symbol}: {status}")
+    
+    async def sync_positions_with_exchange(self):
+        """Sync position tracking with actual exchange positions"""
+        try:
+            actual_positions = await self.client.get_positions()
+            active_symbols = set()
+            
+            for pos in actual_positions:
+                symbol = pos.get('symbol')
+                size = float(pos.get('size', 0))
+                if symbol and size > 0:
+                    active_symbols.add(symbol)
+                    # Add to tracking if not already tracked
+                    if symbol not in self.active_positions:
+                        side = 'long' if pos.get('side') == 'Buy' else 'short'
+                        self.active_positions[symbol] = side
+                        logger.info(f"Added {symbol} to position tracking from exchange sync")
+            
+            # Remove symbols that no longer have positions
+            symbols_to_remove = []
+            for symbol in self.active_positions:
+                if symbol not in active_symbols:
+                    symbols_to_remove.append(symbol)
+            
+            for symbol in symbols_to_remove:
+                del self.active_positions[symbol]
+                logger.info(f"Removed {symbol} from position tracking (no position on exchange)")
+            
+            if symbols_to_remove or active_symbols:
+                logger.info(f"Position sync complete: {len(self.active_positions)} active positions")
+                
+        except Exception as e:
+            logger.error(f"Failed to sync positions: {e}")
     
     def _determine_signal_type(self, signal: Dict) -> str:
         """Determine signal type from direction"""

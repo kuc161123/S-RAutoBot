@@ -2116,8 +2116,14 @@ class UltraIntelligentEngine:
                 # Get scanner status
                 scanner_status = self.mtf_scanner.get_scanner_status()
                 
+                # Ensure scanner_status is valid
+                if not scanner_status:
+                    logger.warning("Scanner status is None, skipping health check")
+                    continue
+                
                 # Check if scanner is healthy
-                if not scanner_status['healthy']:
+                is_healthy = scanner_status.get('healthy', False)
+                if not is_healthy:
                     time_since_last = scanner_status.get('last_scan_seconds_ago', float('inf'))
                     
                     # Ensure time_since_last is not None

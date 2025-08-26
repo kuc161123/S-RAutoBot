@@ -616,7 +616,9 @@ class MultiTimeframeScanner:
                 return  # Skip this symbol
         
         # Look for opportunities
-        logger.info(f"\n🔎 Analyzing {symbol}...")
+        logger.info(f"\n{'='*60}")
+        logger.info(f"🔎 ANALYZING {symbol.upper()} FOR ZONES AND SIGNALS")
+        logger.info(f"{'='*60}")
         signal = await self._analyze_symbol(symbol)
         
         if signal:
@@ -659,9 +661,11 @@ class MultiTimeframeScanner:
         self.timeframe_data[symbol] = {}
         api_timeout = 20  # 20 second timeout for API calls (increased for stability)
         
-        # Update HTF data for zone identification  
+        # Update HTF data for zone identification
+        logger.info(f"🎯 Starting zone detection data fetch for {symbol}")
+        logger.info(f"📒 HTF timeframes for zones: {self.htf_timeframes}")
         for timeframe in self.htf_timeframes:
-            logger.info(f"📊 Fetching {timeframe} data for {symbol}")
+            logger.info(f"📊 Fetching {timeframe}-minute data for {symbol} (500 candles for zone detection)")
             try:
                 # Try to get from cache first (with timeout)
                 try:
@@ -691,7 +695,8 @@ class MultiTimeframeScanner:
                         if df is not None and not df.empty:
                             # Store in memory
                             self.timeframe_data[symbol][timeframe] = df
-                            logger.info(f"✅ Got {len(df)} candles for {symbol} {timeframe}, last price: {df['close'].iloc[-1]:.2f}")
+                            logger.info(f"✅ HTF DATA READY: Got {len(df)} candles for {symbol} {timeframe}min, last price: {df['close'].iloc[-1]:.2f}")
+                            logger.info(f"🔬 This data will be used for ZONE DETECTION")
                             
                             # Cache in Redis (don't wait if it fails)
                             asyncio.create_task(self._cache_data_async(symbol, timeframe, df))
@@ -745,10 +750,11 @@ class MultiTimeframeScanner:
         """
         
         signal_debugger.log_scan_start(symbol)
-        logger.debug(f"Analyzing {symbol} with HTF/LTF strategy...")
+        logger.info(f"🔬 Phase 1: Fetching multi-timeframe data for {symbol}")
         
         # Update data for all timeframes
         await self._update_timeframe_data(symbol)
+        logger.info(f"🔬 Phase 2: Analyzing zones and signals for {symbol}")
         
         if symbol not in self.timeframe_data or not self.timeframe_data[symbol]:
             logger.warning(f"⚠️ No data available for {symbol}, trying with single timeframe")
@@ -768,9 +774,13 @@ class MultiTimeframeScanner:
         
         # FIRST: Check if strategy has any signals directly
         # This is what generates the "BUY signal generated" logs
-        logger.info(f"🔍 Checking strategy for direct signals on {symbol}")
+        logger.info(f"🔍 Starting zone analysis for {symbol}")
         available_timeframes = list(self.timeframe_data.get(symbol, {}).keys())
-        logger.info(f"🔍 Available timeframes for {symbol}: {available_timeframes}")
+        logger.info(f"🔍 Timeframes with data for {symbol}: {available_timeframes}")
+        
+        if not available_timeframes:
+            logger.warning(f"⚠️ NO DATA AVAILABLE for {symbol}! Cannot detect zones. Check if HTF data fetch succeeded.")
+            return None
         
         # Try HTF timeframes first, but also try any available timeframe
         timeframes_to_check = self.htf_timeframes + available_timeframes

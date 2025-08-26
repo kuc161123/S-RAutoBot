@@ -56,9 +56,12 @@ class MultiTimeframeScanner:
         
         # Symbol rotation - use scaling config
         try:
-            from ..config.scaling_config import scaling_config
+            try:
+                from ..config import scaling_config
+            except ImportError:
+                from ..config.scaling_config import scaling_config
             batch_size = scaling_config.get_batch_size()
-        except:
+        except Exception as e:
             # Fallback if config not available
             batch_size = min(10, max(5, len(self.symbols) // 2))
         
@@ -279,9 +282,12 @@ class MultiTimeframeScanner:
                 
                 # Pause between batches - use scaling config
                 try:
-                    from ..config.scaling_config import scaling_config
+                    try:
+                        from ..config import scaling_config
+                    except ImportError:
+                        from ..config.scaling_config import scaling_config
                     batch_delay = scaling_config.get_scan_delay()
-                except:
+                except Exception as e:
                     # Fallback if config not available
                     batch_delay = 10 if len(self.symbols) <= 20 else 30
                 

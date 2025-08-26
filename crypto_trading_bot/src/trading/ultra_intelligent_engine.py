@@ -467,7 +467,12 @@ class UltraIntelligentEngine:
     async def _select_trading_symbols(self):
         """Select symbols for trading based on scaling configuration"""
         try:
-            from ..config.scaling_config import scaling_config
+            try:
+                # Try importing from config package
+                from ..config import scaling_config
+            except ImportError:
+                # Fallback to direct import if package import fails
+                from ..config.scaling_config import scaling_config
             
             # Get all active symbols
             all_symbols = await self.client.get_active_symbols()

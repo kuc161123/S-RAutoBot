@@ -41,7 +41,8 @@ class MultiTimeframeScanner:
         self.zone_confluence = {}  # symbol -> zones across timeframes
         
         # Timeframe configuration for strategy
-        self.htf_timeframes = ["240", "60"]  # Higher timeframes for zones (4H, 1H)
+        # Use consistent timeframe format (minutes as string)
+        self.htf_timeframes = ["240", "60"]  # Higher timeframes for zones (4H, 1H)  
         self.ltf_timeframes = ["15", "5"]  # Lower timeframes for structure (15m, 5m)
         self.primary_htf = "240"  # Primary HTF for zone identification
         self.primary_ltf = "15"  # Primary LTF for entry timing
@@ -627,11 +628,13 @@ class MultiTimeframeScanner:
     async def _update_timeframe_data(self, symbol: str):
         """Update HTF and LTF data with timeout protection"""
         
+        logger.info(f"📊 Fetching data for {symbol}...")
         self.timeframe_data[symbol] = {}
         api_timeout = 20  # 20 second timeout for API calls (increased for stability)
         
-        # Update HTF data for zone identification
+        # Update HTF data for zone identification  
         for timeframe in self.htf_timeframes:
+            logger.info(f"📊 Fetching {timeframe} data for {symbol}")
             try:
                 # Try to get from cache first (with timeout)
                 try:
@@ -661,14 +664,18 @@ class MultiTimeframeScanner:
                         if df is not None and not df.empty:
                             # Store in memory
                             self.timeframe_data[symbol][timeframe] = df
+                            logger.info(f"✅ Got {len(df)} candles for {symbol} {timeframe}, last price: {df['close'].iloc[-1]:.2f}")
                             
                             # Cache in Redis (don't wait if it fails)
                             asyncio.create_task(self._cache_data_async(symbol, timeframe, df))
                         else:
-                            logger.warning(f"No HTF data returned for {symbol} {timeframe}")
+                            logger.warning(f"❌ No HTF data returned for {symbol} {timeframe}")
                     
                     except asyncio.TimeoutError:
-                        logger.error(f"API timeout fetching HTF {symbol} {timeframe}")
+                        logger.error(f"❌ API timeout fetching HTF {symbol} {timeframe}")
+                        continue
+                    except Exception as e:
+                        logger.error(f"❌ API error fetching {symbol} {timeframe}: {str(e)}")
                         continue
                 
             except Exception as e:
@@ -716,23 +723,41 @@ class MultiTimeframeScanner:
         # Update data for all timeframes
         await self._update_timeframe_data(symbol)
         
-        if symbol not in self.timeframe_data:
-            logger.debug(f"No data available for {symbol}")
-            signal_debugger.log_no_signal(symbol, "No data available")
-            return None
+        if symbol not in self.timeframe_data or not self.timeframe_data[symbol]:
+            logger.warning(f"⚠️ No data available for {symbol}, trying with single timeframe")
+            # Try to get at least one timeframe
+            try:
+                df = await self.client.get_klines(symbol, "15", limit=100)
+                if df is not None and not df.empty:
+                    self.timeframe_data[symbol] = {"15": df}
+                    logger.info(f"✅ Got fallback 15m data for {symbol}")
+                else:
+                    logger.error(f"❌ Failed to get any data for {symbol}")
+                    signal_debugger.log_no_signal(symbol, "No data available")
+                    return None
+            except Exception as e:
+                logger.error(f"❌ Fallback data fetch failed for {symbol}: {e}")
+                return None
         
         # FIRST: Check if strategy has any signals directly
         # This is what generates the "BUY signal generated" logs
         logger.info(f"🔍 Checking strategy for direct signals on {symbol}")
-        for timeframe in self.htf_timeframes:
-            logger.debug(f"Checking timeframe {timeframe} for {symbol}")
+        available_timeframes = list(self.timeframe_data.get(symbol, {}).keys())
+        logger.info(f"🔍 Available timeframes for {symbol}: {available_timeframes}")
+        
+        # Try HTF timeframes first, but also try any available timeframe
+        timeframes_to_check = self.htf_timeframes + available_timeframes
+        timeframes_to_check = list(dict.fromkeys(timeframes_to_check))  # Remove duplicates
+        
+        for timeframe in timeframes_to_check:
+            logger.info(f"📊 Checking timeframe {timeframe} for {symbol}")
             if timeframe not in self.timeframe_data.get(symbol, {}):
-                logger.debug(f"No data for {symbol} on {timeframe}")
+                logger.debug(f"⚠️ No data for {symbol} on {timeframe}, skipping")
                 continue
             
             df = self.timeframe_data[symbol][timeframe]
             if df is None or not isinstance(df, pd.DataFrame) or df.empty:
-                logger.debug(f"Empty dataframe for {symbol} on {timeframe}")
+                logger.warning(f"❌ Empty dataframe for {symbol} on {timeframe}")
                 continue
             
             logger.info(f"📊 Calling strategy.analyze_market for {symbol} on {timeframe}")

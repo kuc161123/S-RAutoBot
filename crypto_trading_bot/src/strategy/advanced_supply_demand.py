@@ -170,7 +170,7 @@ class AdvancedSupplyDemandStrategy:
         self.order_flow_history: Dict[str, deque] = {}
         
         # Configuration - Adjusted for testing to generate more signals
-        self.min_zone_score = 30  # Lowered to 30 for aggressive signal generation
+        self.min_zone_score = 10  # ULTRA LOW - Accept almost any zone for testing
         self.max_zone_age_hours = 336  # 14 days (increased from 7)
         self.max_zone_tests = 5  # Increased from 3
         self.volume_threshold_multiplier = 1.2  # Lowered from 1.5
@@ -515,7 +515,7 @@ class AdvancedSupplyDemandStrategy:
         body = abs(candle['close'] - candle['open'])
         lower_wick = candle['open'] - candle['low'] if candle['close'] > candle['open'] else candle['close'] - candle['low']
         
-        if lower_wick > body * 2:  # Long lower wick
+        if lower_wick > body * 1:  # Any lower wick (very lenient)
             return True
         
         # Bullish engulfing
@@ -544,7 +544,7 @@ class AdvancedSupplyDemandStrategy:
         body = abs(candle['close'] - candle['open'])
         upper_wick = candle['high'] - candle['close'] if candle['close'] > candle['open'] else candle['high'] - candle['open']
         
-        if upper_wick > body * 2:  # Long upper wick
+        if upper_wick > body * 1:  # Any upper wick (very lenient)
             return True
         
         # Bearish engulfing
@@ -737,14 +737,14 @@ class AdvancedSupplyDemandStrategy:
         signals = []
         current_price = float(current_candle['close'])
         
-        for zone in zones[:5]:  # Check top 5 zones (increased from 3)
+        for zone in zones[:10]:  # Check top 10 zones for maximum opportunities
             # For demand zones (BUY signals)
             if zone.zone_type == 'demand':
                 # Check if price is approaching or in the zone
                 distance_to_zone = (zone.upper_bound - current_price) / current_price
                 
-                # Much more lenient: within 3% of zone or inside zone
-                if -0.01 < distance_to_zone < 0.03 or (zone.lower_bound <= current_price <= zone.upper_bound):
+                # EXTREMELY lenient: within 10% of zone or inside zone (massive range)
+                if -0.05 < distance_to_zone < 0.10 or (zone.lower_bound <= current_price <= zone.upper_bound):
                     # Additional confirmations
                     confirmations = []
                     
@@ -782,8 +782,8 @@ class AdvancedSupplyDemandStrategy:
                                     confirmations.append("htf_confluence")
                                     break
                     
-                    # Very lenient: no confirmations needed for high-score zones
-                    min_confirmations = 0 if zone.composite_score >= 60 else 1
+                    # NO CONFIRMATIONS NEEDED - Testing mode
+                    min_confirmations = 0  # Always 0 for testing - accept all zones!
                     
                     if len(confirmations) >= min_confirmations:
                         # Calculate proper entry, stop loss, and targets
@@ -825,8 +825,8 @@ class AdvancedSupplyDemandStrategy:
                 # Check if price is approaching or in the zone
                 distance_to_zone = (current_price - zone.lower_bound) / current_price
                 
-                # Much more lenient: within 3% of zone or inside zone
-                if -0.01 < distance_to_zone < 0.03 or (zone.lower_bound <= current_price <= zone.upper_bound):
+                # EXTREMELY lenient: within 10% of zone or inside zone (massive range)
+                if -0.05 < distance_to_zone < 0.10 or (zone.lower_bound <= current_price <= zone.upper_bound):
                     # Additional confirmations
                     confirmations = []
                     
@@ -864,8 +864,8 @@ class AdvancedSupplyDemandStrategy:
                     
                     logger.info(f"Supply zone detected: Price={current_price:.8f}, Zone=[{zone.lower_bound:.8f}, {zone.upper_bound:.8f}], Score={zone.composite_score:.1f}")
                     
-                    # Very lenient: no confirmations needed for high-score zones
-                    min_confirmations = 0 if zone.composite_score >= 60 else 1
+                    # NO CONFIRMATIONS NEEDED - Testing mode
+                    min_confirmations = 0  # Always 0 for testing - accept all zones!
                     
                     if len(confirmations) >= min_confirmations:
                         # Calculate proper entry, stop loss, and targets

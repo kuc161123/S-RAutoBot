@@ -352,10 +352,33 @@ class MultiTimeframeScanner:
         stuck_threshold = 300  # Consider stuck if no scan in 5 minutes (increased for slower pace)
         restart_count = 0
         max_restarts = 10  # Allow up to 10 restarts
+        status_report_interval = 0  # Counter for status reports
         
         while self.is_scanning:
             try:
                 await asyncio.sleep(check_interval)
+                status_report_interval += 1
+                
+                # Every 5 minutes, show a status report
+                if status_report_interval >= 5:
+                    status_report_interval = 0
+                    logger.info("\n" + "="*60)
+                    logger.info("📊 SCANNER STATUS REPORT")
+                    logger.info("="*60)
+                    logger.info(f"✅ Active positions: {len(self.active_positions)}")
+                    logger.info(f"📈 Signals generated: {self.scan_metrics.get('signals_generated', 0)}")
+                    logger.info(f"🔍 Symbols being monitored: {len(self.symbol_rotator.active_symbols)}")
+                    
+                    if self.scan_metrics.get('last_signal_time'):
+                        time_since = (datetime.now() - self.scan_metrics['last_signal_time']).total_seconds() / 60
+                        logger.info(f"⏰ Last signal: {time_since:.1f} minutes ago")
+                    
+                    # Show some active zones if available
+                    if hasattr(self.strategy, 'zones'):
+                        total_zones = sum(len(zones) for zones in self.strategy.zones.values())
+                        logger.info(f"🎯 Total zones tracked: {total_zones}")
+                    
+                    logger.info("="*60 + "\n")
                 
                 # Check if scanner is stuck
                 if self.last_scan_time:
@@ -593,9 +616,13 @@ class MultiTimeframeScanner:
                 return  # Skip this symbol
         
         # Look for opportunities
-        logger.info(f"🔎 Starting analysis for {symbol}...")
+        logger.info(f"\n🔎 Analyzing {symbol}...")
         signal = await self._analyze_symbol(symbol)
-        logger.info(f"🔎 Analysis complete for {symbol}: signal={'YES' if signal else 'NO'}")
+        
+        if signal:
+            logger.info(f"✨ SIGNAL FOUND for {symbol}!")
+        else:
+            logger.debug(f"No signal for {symbol}")
         
         if signal:
             logger.info(f"🚨 SIGNAL DETAILS for {symbol}: direction={signal.get('direction')}, "
@@ -1327,7 +1354,16 @@ class MultiTimeframeScanner:
             logger.info(f"📝 Pushing signal to queue for {symbol}...")
             success = await signal_queue.push(signal)
             if success:
-                logger.info(f"✅ Signal queued for {symbol}: direction={signal.get('direction')}, confidence={signal.get('confidence', 0):.1f}")
+                logger.info(f"\n" + "="*60)
+                logger.info(f"🎆 SIGNAL QUEUED FOR EXECUTION!")
+                logger.info(f"  Symbol: {symbol}")
+                logger.info(f"  Direction: {signal.get('direction', 'UNKNOWN').upper()}")
+                logger.info(f"  Entry: ${signal.get('entry_price', 0):.2f}")
+                logger.info(f"  Stop Loss: ${signal.get('stop_loss', 0):.2f}")
+                logger.info(f"  Target: ${signal.get('take_profit_1', 0):.2f}")
+                logger.info(f"  Confidence: {signal.get('confidence', 0):.1f}%")
+                logger.info("="*60 + "\n")
+                self.scan_metrics['signals_queued'] = self.scan_metrics.get('signals_queued', 0) + 1
             else:
                 logger.error(f"❌ Failed to queue signal for {symbol}")
             

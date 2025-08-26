@@ -236,6 +236,15 @@ class AdvancedSupplyDemandStrategy:
             valid_zones = [z for z in zones if z.composite_score >= self.min_zone_score]
             logger.info(f"🔍 Valid zones after filtering: {len(valid_zones)}")
             
+            # Log top zones for visibility
+            if valid_zones:
+                current_price = float(df['close'].iloc[-1])
+                logger.info(f"🎯 Top 3 zones for {symbol} (Current price: {current_price:.2f}):")
+                for i, zone in enumerate(valid_zones[:3]):
+                    distance_pct = ((zone.midpoint - current_price) / current_price) * 100
+                    logger.info(f"   Zone {i+1}: {zone.zone_type.upper()} [{zone.lower_bound:.2f}-{zone.upper_bound:.2f}] "
+                              f"Score: {zone.composite_score:.1f}, Distance: {distance_pct:+.2f}%")
+            
             # If no zones found, create a simple zone for testing
             if not valid_zones and len(df) > 50:
                 logger.warning(f"⚠️ No zones found for {symbol}, creating test zone")
@@ -782,7 +791,7 @@ class AdvancedSupplyDemandStrategy:
                     # Additional confirmations
                     confirmations = []
                     
-                    logger.info(f"Demand zone detected: Price={current_price:.8f}, Zone=[{zone.lower_bound:.8f}, {zone.upper_bound:.8f}], Score={zone.composite_score:.1f}")
+                    logger.info(f"✅ DEMAND ZONE HIT! Price={current_price:.2f} is near zone [{zone.lower_bound:.2f}, {zone.upper_bound:.2f}] Score={zone.composite_score:.1f}")
                     
                     # Market structure confirmations
                     if market_structure in [MarketStructure.BULLISH, MarketStructure.TRANSITIONING]:
@@ -851,7 +860,11 @@ class AdvancedSupplyDemandStrategy:
                             'structure_aligned': any(c in confirmations for c in ['higher_low', 'higher_high', 'ltf_bullish'])
                         }
                         
-                        logger.info(f"BUY signal generated: Entry={entry_price:.8f}, SL={stop_loss:.8f}, TP1={take_profit_1:.8f}, TP2={take_profit_2:.8f}, Score={zone.composite_score:.1f}")
+                        logger.info(f"🚀 BUY SIGNAL GENERATED for {symbol}!")
+                    logger.info(f"   Entry: ${entry_price:.2f}, Stop Loss: ${stop_loss:.2f}")
+                    logger.info(f"   Target 1: ${take_profit_1:.2f} (+{((take_profit_1/entry_price - 1) * 100):.1f}%)")
+                    logger.info(f"   Target 2: ${take_profit_2:.2f} (+{((take_profit_2/entry_price - 1) * 100):.1f}%)")
+                    logger.info(f"   Risk/Reward: 1:{((take_profit_1 - entry_price) / (entry_price - stop_loss)):.1f}")
                         signals.append(signal)
             
             # For supply zones (SELL signals)
@@ -896,7 +909,7 @@ class AdvancedSupplyDemandStrategy:
                                     confirmations.append("htf_confluence")
                                     break
                     
-                    logger.info(f"Supply zone detected: Price={current_price:.8f}, Zone=[{zone.lower_bound:.8f}, {zone.upper_bound:.8f}], Score={zone.composite_score:.1f}")
+                    logger.info(f"✅ SUPPLY ZONE HIT! Price={current_price:.2f} is near zone [{zone.lower_bound:.2f}, {zone.upper_bound:.2f}] Score={zone.composite_score:.1f}")
                     
                     # NO CONFIRMATIONS NEEDED - Testing mode
                     min_confirmations = 0  # Always 0 for testing - accept all zones!
@@ -933,7 +946,11 @@ class AdvancedSupplyDemandStrategy:
                             'structure_aligned': any(c in confirmations for c in ['lower_high', 'lower_low', 'ltf_bearish'])
                         }
                         
-                        logger.info(f"SELL signal generated: Entry={entry_price:.8f}, SL={stop_loss:.8f}, TP1={take_profit_1:.8f}, TP2={take_profit_2:.8f}, Score={zone.composite_score:.1f}")
+                        logger.info(f"🔻 SELL SIGNAL GENERATED for {symbol}!")
+                    logger.info(f"   Entry: ${entry_price:.2f}, Stop Loss: ${stop_loss:.2f}")
+                    logger.info(f"   Target 1: ${take_profit_1:.2f} (-{((1 - take_profit_1/entry_price) * 100):.1f}%)")
+                    logger.info(f"   Target 2: ${take_profit_2:.2f} (-{((1 - take_profit_2/entry_price) * 100):.1f}%)")
+                    logger.info(f"   Risk/Reward: 1:{((entry_price - take_profit_1) / (stop_loss - entry_price)):.1f}")
                         signals.append(signal)
         
         return signals

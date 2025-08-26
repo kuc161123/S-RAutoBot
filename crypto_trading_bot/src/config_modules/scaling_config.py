@@ -16,7 +16,7 @@ Scaling Plan:
 
 class ScalingConfig:
     # Current phase (change this to scale up)
-    CURRENT_PHASE = 2  # Phase 2 (50 symbols) - Increased for more signal opportunities
+    CURRENT_PHASE = 3  # Phase 3 (100 symbols) - Doubled for maximum signal opportunities
     
     # Phase definitions
     PHASES = {

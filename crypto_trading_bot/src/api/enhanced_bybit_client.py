@@ -301,7 +301,7 @@ class EnhancedBybitClient:
     async def get_klines(self, symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
         """Get klines with rate limiting and error handling"""
         
-        logger.info(f"🔍 Fetching klines: symbol={symbol}, interval={interval}, limit={limit}")
+        logger.debug(f"🔍 Fetching klines: symbol={symbol}, interval={interval}, limit={limit}")
         
         try:
             # Rate limit
@@ -319,7 +319,7 @@ class EnhancedBybitClient:
             )
             latency = (time.time() - start) * 1000
             
-            logger.info(f"📡 API Response: retCode={response.get('retCode')}, retMsg={response.get('retMsg')}")
+            logger.debug(f"📡 API Response: retCode={response.get('retCode')}, retMsg={response.get('retMsg')}")
             
             # Record metrics
             health_monitor.record_api_latency(latency)

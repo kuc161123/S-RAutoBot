@@ -141,7 +141,8 @@ class MultiTimeframeScanner:
     
     async def start_scanning(self):
         """Start scanning with symbol rotation for efficiency and auto-recovery"""
-        logger.info(f"Starting multi-timeframe scanner for {len(self.symbols)} symbols with rotation")
+        logger.info(f"🚀 Starting multi-timeframe scanner for {len(self.symbols)} symbols")
+        logger.info(f"📋 Symbol list sample: {self.symbols[:10] if self.symbols else 'NO SYMBOLS!'}")
         
         if self.is_scanning:
             logger.warning("Scanner already running, restarting...")
@@ -152,13 +153,18 @@ class MultiTimeframeScanner:
         self.last_scan_time = datetime.now()
         self.consecutive_errors = 0
         
+        # Log scanner configuration
+        logger.info(f"Scanner config: batch_size={self.symbol_rotator.max_concurrent}, symbols={len(self.symbols)}")
+        
         # Start main scanning loop with rotation and recovery wrapper
         self.scanning_task = asyncio.create_task(self._scanning_loop_with_recovery())
+        logger.info("Created scanning task")
         
         # Start health monitor
         asyncio.create_task(self._health_monitor())
+        logger.info("Created health monitor task")
         
-        logger.info("Scanner started with symbol rotation and health monitoring enabled")
+        logger.info("✅ Scanner started successfully!")
     
     async def _scanning_loop_with_recovery(self):
         """Scanning loop with automatic recovery on failure"""
@@ -187,8 +193,12 @@ class MultiTimeframeScanner:
     
     async def _scanning_loop(self):
         """Main scanning loop that rotates through symbols"""
+        batch_count = 0
+        logger.info(f"🚀 Scanner loop started with {len(self.symbols)} total symbols")
+        
         while self.is_scanning:
             try:
+                batch_count += 1
                 scan_start_time = datetime.now()
                 
                 # Get next batch of symbols to scan
@@ -196,14 +206,25 @@ class MultiTimeframeScanner:
                 self.current_scan_batch = batch
                 self.last_batch_time = datetime.now()
                 
-                logger.debug(f"Scanning batch of {len(batch)} symbols")
+                # Check if batch is empty and handle it
+                if not batch:
+                    logger.warning(f"Empty batch returned! Using fallback symbols")
+                    # Use first few symbols as fallback
+                    batch = self.symbols[:self.symbol_rotator.max_concurrent] if self.symbols else []
+                    if not batch:
+                        logger.error("No symbols available to scan!")
+                        await asyncio.sleep(10)
+                        continue
+                
+                logger.info(f"📊 Batch #{batch_count}: Scanning {len(batch)} symbols: {batch[:3]}...")
                 
                 # Create tasks for batch
                 tasks = []
                 for symbol in batch:
-                    if symbol not in self.active_positions:  # Skip if we have position
-                        task = asyncio.create_task(self._scan_symbol_once(symbol))
-                        tasks.append(task)
+                    # Always try to scan, don't skip based on positions yet
+                    task = asyncio.create_task(self._scan_symbol_once(symbol))
+                    tasks.append(task)
+                    logger.debug(f"Created scan task for {symbol}")
                 
                 # Wait for batch to complete with timeout
                 if tasks:
@@ -538,6 +559,7 @@ class MultiTimeframeScanner:
                 return  # Skip this symbol
         
         # Look for opportunities
+        logger.debug(f"Analyzing {symbol} for opportunities...")
         signal = await self._analyze_symbol(symbol)
         
         if signal:
@@ -545,12 +567,19 @@ class MultiTimeframeScanner:
             self.scan_metrics['signals_generated'] += 1
             self.scan_metrics['last_signal_time'] = datetime.now()
             
+            logger.info(f"🎯 SIGNAL GENERATED for {symbol}! Direction={signal.get('direction')}, Entry={signal.get('entry_price')}")
+            
             # Record signal for rotator
             self.symbol_rotator.record_signal(symbol)
             
             # Process if no position
             if symbol not in self.active_positions:
+                logger.info(f"📤 Processing signal for {symbol} (no existing position)")
                 await self._process_signal(symbol, signal)
+            else:
+                logger.info(f"⚠️ Skipping signal for {symbol} (position exists)")
+        else:
+            logger.debug(f"No signal for {symbol}")
     
     async def _update_timeframe_data(self, symbol: str):
         """Update HTF and LTF data with timeout protection"""
@@ -907,20 +936,45 @@ class MultiTimeframeScanner:
             else:
                 signal['action'] = 'BUY'  # Default
         
-        # Ensure position size
+        # Ensure position size (use a reasonable default)
         if 'position_size' not in signal or not signal['position_size']:
-            # Calculate default position size (example: $100 worth)
+            # Calculate default position size ($100 worth or minimum)
             entry_price = signal.get('entry_price', 1.0)
             if entry_price > 0:
-                signal['position_size'] = min(0.01, 100.0 / entry_price)  # $100 or 0.01 max
+                # $100 worth, but at least 0.001 and max 1.0
+                signal['position_size'] = max(0.001, min(1.0, 100.0 / entry_price))
             else:
-                signal['position_size'] = 0.01
+                signal['position_size'] = 0.001
         
-        # Ensure all price fields are present
+        # CRITICAL: Add risk_amount for portfolio heat calculation
+        if 'risk_amount' not in signal:
+            # Calculate risk based on stop loss distance
+            entry = signal.get('entry_price', 0)
+            stop = signal.get('stop_loss', 0)
+            size = signal['position_size']
+            
+            if entry > 0 and stop > 0:
+                risk_per_unit = abs(entry - stop)
+                signal['risk_amount'] = risk_per_unit * size * entry  # Dollar risk
+            else:
+                # Default to 1% of $10000 = $100 risk
+                signal['risk_amount'] = 100
+        
+        # Ensure confidence score
+        if 'confidence' not in signal:
+            signal['confidence'] = signal.get('zone_score', 50.0)
+        
+        # Ensure all required price fields
         signal.setdefault('order_type', 'MARKET')
         signal.setdefault('time_in_force', 'GTC')
         signal.setdefault('reduce_only', False)
         signal.setdefault('close_on_trigger', False)
+        
+        # Add ML fields if missing
+        signal.setdefault('ml_confidence', 0.5)
+        signal.setdefault('ml_success_probability', 0.5)
+        
+        logger.info(f"Signal formatted for {signal.get('symbol')}: action={signal['action']}, size={signal['position_size']:.4f}, risk=${signal['risk_amount']:.2f}")
         
         return signal
     

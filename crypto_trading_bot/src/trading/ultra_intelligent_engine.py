@@ -465,22 +465,56 @@ class UltraIntelligentEngine:
             logger.debug(f"ML bootstrap check failed: {e}")
     
     async def _select_trading_symbols(self):
-        """Use ALL active USDT perpetual symbols from Bybit"""
+        """Select symbols for trading based on scaling configuration"""
         try:
+            from ..config.scaling_config import scaling_config
+            
             # Get all active symbols
             all_symbols = await self.client.get_active_symbols()
             
             if not all_symbols:
                 logger.warning("No active symbols found, using defaults")
-                self.monitored_symbols = settings.default_symbols[:50]
+                self.monitored_symbols = settings.default_symbols[:20]
                 return
             
             logger.info(f"Found {len(all_symbols)} active USDT perpetual symbols")
             
-            # Use ALL active symbols - no filtering
-            self.monitored_symbols = all_symbols
+            # Get target count from scaling config
+            target_count = scaling_config.get_symbol_count()
+            phase_description = scaling_config.get_description()
             
-            logger.info(f"Monitoring ALL {len(self.monitored_symbols)} active symbols for trading")
+            # If target is -1, use all symbols
+            if target_count == -1:
+                self.monitored_symbols = all_symbols
+                logger.info(f"🚀 PRODUCTION MODE: Monitoring ALL {len(self.monitored_symbols)} symbols")
+            else:
+                # Top liquid symbols ordered by priority
+                top_liquid_symbols = [
+                    "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "SOLUSDT",
+                    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT",
+                    "LINKUSDT", "LTCUSDT", "UNIUSDT", "ATOMUSDT", "ETCUSDT",
+                    "XLMUSDT", "NEARUSDT", "FILUSDT", "APTUSDT", "ARBUSDT",
+                    "OPUSDT", "INJUSDT", "SUIUSDT", "SEIUSDT", "TIAUSDT",
+                    "WLDUSDT", "PEPEUSDT", "FLOKIUSDT", "BONKUSDT", "ORDIUSDT",
+                    "STXUSDT", "WIFUSDT", "JUPUSDT", "TRBUSDT", "IMXUSDT",
+                    "RENDERUSDT", "FETUSDT", "AGIXUSDT", "GRTUSDT", "THETAUSDT",
+                    "ARUSDT", "OCEANUSDT", "AKASHUSDT", "RUNEUSDT", "ICPUSDT",
+                    "COSMOSUSDT", "DYDXUSDT", "BLURUSDT", "PENDLEUSDT", "CYBERUSDT"
+                ]
+                
+                # Use top liquid symbols that are in active symbols list
+                self.monitored_symbols = [s for s in top_liquid_symbols if s in all_symbols][:target_count]
+                
+                # If we don't have enough, fill with other active symbols
+                if len(self.monitored_symbols) < target_count:
+                    remaining = target_count - len(self.monitored_symbols)
+                    other_symbols = [s for s in all_symbols if s not in self.monitored_symbols]
+                    self.monitored_symbols.extend(other_symbols[:remaining])
+                
+                logger.info(f"🔬 Phase {scaling_config.CURRENT_PHASE}: {phase_description}")
+                logger.info(f"📊 Monitoring {len(self.monitored_symbols)} symbols (target: {target_count})")
+            
+            logger.info(f"📈 Scaling phases: 20 → 50 → 100 → 200 → 300 → {len(all_symbols)}")
             
             # Log sample for verification
             if len(self.monitored_symbols) > 10:
@@ -496,14 +530,13 @@ class UltraIntelligentEngine:
             logger.info(f"Using {len(self.monitored_symbols)} default symbols as fallback")
     
     async def _setup_websocket_subscriptions(self):
-        """Setup optimized WebSocket subscriptions for 558 symbols"""
+        """Setup WebSocket subscriptions for monitored symbols"""
         try:
-            # For 558 symbols, we need to be selective about subscriptions
-            # Only subscribe to klines (5m) for all symbols
-            # Subscribe to orderbook/trades only for active positions
+            # With only 20 symbols, we can subscribe to more data types
+            # Subscribe to 1m and 5m klines, plus orderbook for active positions
             
-            batch_size = 10  # Smaller batch size for stability
-            subscription_delay = 3.0  # Much longer delay between batches
+            batch_size = 5  # Smaller batches for reliability
+            subscription_delay = 1.0  # 1 second delay between batches for 20 symbols
             
             # Subscribe to 5m klines for all symbols (less data than 1m)
             symbol_list = list(self.monitored_symbols)

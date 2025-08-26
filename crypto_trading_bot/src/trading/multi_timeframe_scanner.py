@@ -54,8 +54,16 @@ class MultiTimeframeScanner:
             self.symbols = settings.default_symbols[:50]  # Fallback
             logger.warning("No symbols provided to scanner, using defaults")
         
-        # Symbol rotation - much smaller batch size for stability
-        self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=5)  # Reduced to 5 for reliability
+        # Symbol rotation - use scaling config
+        try:
+            from ..config.scaling_config import scaling_config
+            batch_size = scaling_config.get_batch_size()
+        except:
+            # Fallback if config not available
+            batch_size = min(10, max(5, len(self.symbols) // 2))
+        
+        self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=batch_size)
+        logger.info(f"Symbol rotator configured with batch size: {batch_size} for {len(self.symbols)} symbols")
         self.current_scan_batch = []
         
         # Position tracking - one position per symbol
@@ -137,7 +145,9 @@ class MultiTimeframeScanner:
         if new_symbols != self.symbols:
             logger.info(f"Updating scanner symbols from {len(self.symbols)} to {len(new_symbols)}")
             self.symbols = new_symbols
-            self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=15)
+            batch_size = min(10, max(5, len(self.symbols) // 2))
+            self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=batch_size)
+            logger.info(f"Rotator updated with batch size: {batch_size} for {len(new_symbols)} symbols")
     
     async def start_scanning(self):
         """Start scanning with symbol rotation for efficiency and auto-recovery"""
@@ -263,8 +273,15 @@ class MultiTimeframeScanner:
                 if scan_duration > 0:
                     self.scan_metrics['symbols_per_minute'] = (len(batch) / scan_duration) * 60
                 
-                # Much longer pause between batches for stability
-                await asyncio.sleep(30)  # 30 seconds between batches for reliability
+                # Pause between batches - use scaling config
+                try:
+                    from ..config.scaling_config import scaling_config
+                    batch_delay = scaling_config.get_scan_delay()
+                except:
+                    # Fallback if config not available
+                    batch_delay = 10 if len(self.symbols) <= 20 else 30
+                
+                await asyncio.sleep(batch_delay)
                 
                 # Clean up old data more frequently (every 50 scans) for memory management
                 if self.scan_count % 50 == 0:

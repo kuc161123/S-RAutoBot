@@ -294,8 +294,10 @@ class MultiTimeframeScanner:
     
     async def _health_monitor(self):
         """Monitor scanner health and restart if needed"""
-        check_interval = 30  # Check every 30 seconds
-        stuck_threshold = 120  # Consider stuck if no scan in 2 minutes
+        check_interval = 20  # Check every 20 seconds (more frequent)
+        stuck_threshold = 90  # Consider stuck if no scan in 90 seconds (reduced from 120)
+        restart_count = 0
+        max_restarts = 10  # Allow up to 10 restarts
         
         while self.is_scanning:
             try:
@@ -306,7 +308,8 @@ class MultiTimeframeScanner:
                     time_since_last_scan = (datetime.now() - self.last_scan_time).total_seconds()
                     
                     if time_since_last_scan > stuck_threshold:
-                        logger.error(f"Scanner appears stuck! No scan for {time_since_last_scan:.0f} seconds")
+                        restart_count += 1
+                        logger.error(f"⚠️ Scanner stuck! No scan for {time_since_last_scan:.0f}s (restart #{restart_count})")
                         
                         # Log current state
                         logger.info(f"Scanner state: scanning={self.is_scanning}, "
@@ -314,16 +317,34 @@ class MultiTimeframeScanner:
                                   f"errors={self.consecutive_errors}, "
                                   f"total_scans={self.scan_count}")
                         
-                        # Attempt restart
-                        logger.info("Attempting scanner restart...")
-                        await self._restart_scanner()
+                        if restart_count <= max_restarts:
+                            # Attempt restart
+                            logger.info("🔄 Restarting scanner...")
+                            await self._restart_scanner()
+                            
+                            # Reset consecutive errors after restart
+                            self.consecutive_errors = 0
+                        else:
+                            logger.critical(f"Scanner failed after {max_restarts} restarts!")
+                            self.is_scanning = False
+                            break
+                else:
+                    # No scans yet, update last scan time to prevent false positives
+                    self.last_scan_time = datetime.now()
+                
+                # Reset restart count if scanner is healthy
+                if self.last_scan_time and (datetime.now() - self.last_scan_time).total_seconds() < 60:
+                    if restart_count > 0:
+                        logger.info(f"✅ Scanner recovered, resetting restart counter")
+                        restart_count = 0
                 
                 # Log health metrics periodically
-                if self.scan_count > 0 and self.scan_count % 100 == 0:
-                    logger.info(f"Scanner health: scans={self.scan_metrics['total_scans']}, "
+                if self.scan_count > 0 and self.scan_count % 50 == 0:  # More frequent logging
+                    logger.info(f"📊 Scanner health: scans={self.scan_metrics['total_scans']}, "
                               f"success_rate={self._get_success_rate():.1f}%, "
                               f"scan_rate={self.scan_metrics['symbols_per_minute']:.1f}/min, "
-                              f"signals={self.scan_metrics['signals_generated']}")
+                              f"signals={self.scan_metrics['signals_generated']}, "
+                              f"errors={self.error_count}")
                 
             except Exception as e:
                 logger.error(f"Health monitor error: {e}")
@@ -443,22 +464,55 @@ class MultiTimeframeScanner:
         }
     
     async def _scan_symbol_once(self, symbol: str):
-        """Scan a symbol once (for rotation mode)"""
+        """Scan a symbol once with timeout protection"""
+        scan_timeout = 30  # 30 second timeout for entire scan
+        
         try:
-            # Apply rate limiting
-            await rate_limiter.acquire()
+            # Wrap entire scan in timeout
+            await asyncio.wait_for(
+                self._scan_symbol_inner(symbol),
+                timeout=scan_timeout
+            )
             
-            # Skip if should skip
-            if self.symbol_rotator.should_skip_symbol(symbol):
-                return
+            # Success - update last scan time
+            self.last_scan_time = datetime.now()
             
-            # Update timeframe data
-            await self._update_timeframe_data(symbol)
+        except asyncio.TimeoutError:
+            logger.error(f"Scan timeout for {symbol} after {scan_timeout}s")
+            self.error_count += 1
+            self.consecutive_errors += 1
+            # Don't re-raise timeout, let scanner continue
             
-            # Check if we already have a position (double-check with exchange)
-            if symbol in self.active_positions:
-                # Verify position still exists on exchange
-                actual_positions = await self.client.get_positions()
+        except asyncio.CancelledError:
+            # Task was cancelled, this is normal during shutdown
+            logger.debug(f"Scan cancelled for {symbol}")
+            raise  # Re-raise to properly handle cancellation
+            
+        except Exception as e:
+            logger.error(f"Error scanning {symbol}: {e}")
+            self.error_count += 1
+            raise  # Re-raise to be counted as failed scan
+    
+    async def _scan_symbol_inner(self, symbol: str):
+        """Inner scan logic without timeout wrapper"""
+        # Apply rate limiting
+        await rate_limiter.acquire()
+        
+        # Skip if should skip
+        if self.symbol_rotator.should_skip_symbol(symbol):
+            return
+        
+        # Update timeframe data
+        await self._update_timeframe_data(symbol)
+        
+        # Check if we already have a position (double-check with exchange)
+        if symbol in self.active_positions:
+            # Verify position still exists on exchange (with timeout)
+            try:
+                actual_positions = await asyncio.wait_for(
+                    self.client.get_positions(),
+                    timeout=5  # 5 second timeout
+                )
                 has_position = any(
                     pos.get('symbol') == symbol and float(pos.get('size', 0)) > 0
                     for pos in actual_positions
@@ -475,45 +529,44 @@ class MultiTimeframeScanner:
                     # Import position_safety here to avoid circular import
                     from ..utils.bot_fixes import position_safety
                     position_safety.remove_position(symbol)
-            
-            # Look for opportunities
-            signal = await self._analyze_symbol(symbol)
-            
-            if signal:
-                # Update metrics
-                self.scan_metrics['signals_generated'] += 1
-                self.scan_metrics['last_signal_time'] = datetime.now()
-                
-                # Record signal for rotator
-                self.symbol_rotator.record_signal(symbol)
-                
-                # Process if no position
-                if symbol not in self.active_positions:
-                    await self._process_signal(symbol, signal)
-            
-            # Success - update last scan time
-            self.last_scan_time = datetime.now()
-        
-        except asyncio.CancelledError:
-            # Task was cancelled, this is normal during shutdown
-            logger.debug(f"Scan cancelled for {symbol}")
-            raise  # Re-raise to properly handle cancellation
                     
-        except Exception as e:
-            logger.error(f"Error scanning {symbol}: {e}")
-            self.error_count += 1
-            raise  # Re-raise to be counted as failed scan
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout checking positions for {symbol}")
+                return  # Skip this symbol
+        
+        # Look for opportunities
+        signal = await self._analyze_symbol(symbol)
+        
+        if signal:
+            # Update metrics
+            self.scan_metrics['signals_generated'] += 1
+            self.scan_metrics['last_signal_time'] = datetime.now()
+            
+            # Record signal for rotator
+            self.symbol_rotator.record_signal(symbol)
+            
+            # Process if no position
+            if symbol not in self.active_positions:
+                await self._process_signal(symbol, signal)
     
     async def _update_timeframe_data(self, symbol: str):
-        """Update HTF and LTF data for synchronized analysis"""
+        """Update HTF and LTF data with timeout protection"""
         
         self.timeframe_data[symbol] = {}
+        api_timeout = 10  # 10 second timeout for API calls
         
         # Update HTF data for zone identification
         for timeframe in self.htf_timeframes:
             try:
-                # Try to get from cache first
-                cached_data = await self._get_cached_data(symbol, timeframe)
+                # Try to get from cache first (with timeout)
+                try:
+                    cached_data = await asyncio.wait_for(
+                        self._get_cached_data(symbol, timeframe),
+                        timeout=5  # 5 second timeout for cache
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"Cache timeout for {symbol} {timeframe}")
+                    cached_data = None
                 
                 if cached_data and self._is_cache_valid(cached_data):
                     # Convert JSON string back to DataFrame
@@ -523,17 +576,25 @@ class MultiTimeframeScanner:
                         df_cached = cached_data['data']
                     self.timeframe_data[symbol][timeframe] = df_cached
                 else:
-                    # Fetch fresh data - more candles for HTF
-                    df = await self.client.get_klines(symbol, timeframe, limit=500)
-                    
-                    if df is not None and not df.empty:
-                        # Store in memory
-                        self.timeframe_data[symbol][timeframe] = df
+                    # Fetch fresh data with timeout
+                    try:
+                        df = await asyncio.wait_for(
+                            self.client.get_klines(symbol, timeframe, limit=500),
+                            timeout=api_timeout
+                        )
                         
-                        # Cache in Redis
-                        await self._cache_data(symbol, timeframe, df)
-                    else:
-                        logger.warning(f"No HTF data returned for {symbol} {timeframe}")
+                        if df is not None and not df.empty:
+                            # Store in memory
+                            self.timeframe_data[symbol][timeframe] = df
+                            
+                            # Cache in Redis (don't wait if it fails)
+                            asyncio.create_task(self._cache_data_async(symbol, timeframe, df))
+                        else:
+                            logger.warning(f"No HTF data returned for {symbol} {timeframe}")
+                    
+                    except asyncio.TimeoutError:
+                        logger.error(f"API timeout fetching HTF {symbol} {timeframe}")
+                        continue
                 
             except Exception as e:
                 logger.error(f"Error updating HTF {symbol} {timeframe}: {e}")
@@ -541,18 +602,32 @@ class MultiTimeframeScanner:
         # Update LTF data for market structure
         for timeframe in self.ltf_timeframes:
             try:
-                # Fetch fresh LTF data (more frequent updates needed)
-                df = await self.client.get_klines(symbol, timeframe, limit=200)
+                # Fetch fresh LTF data with timeout
+                df = await asyncio.wait_for(
+                    self.client.get_klines(symbol, timeframe, limit=200),
+                    timeout=api_timeout
+                )
                 
                 if df is not None and not df.empty:
                     self.timeframe_data[symbol][timeframe] = df
-                    # Cache with shorter TTL for LTF
-                    await self._cache_data(symbol, timeframe, df, ttl=60)
+                    # Cache async (don't wait)
+                    asyncio.create_task(self._cache_data_async(symbol, timeframe, df, ttl=60))
                 else:
                     logger.warning(f"No LTF data returned for {symbol} {timeframe}")
+            
+            except asyncio.TimeoutError:
+                logger.error(f"API timeout fetching LTF {symbol} {timeframe}")
+                continue
                     
             except Exception as e:
                 logger.error(f"Error updating LTF {symbol} {timeframe}: {e}")
+    
+    async def _cache_data_async(self, symbol: str, timeframe: str, df: pd.DataFrame, ttl: Optional[int] = None):
+        """Cache data asynchronously to prevent blocking"""
+        try:
+            await self._cache_data(symbol, timeframe, df, ttl)
+        except Exception as e:
+            logger.debug(f"Failed to cache data for {symbol} {timeframe}: {e}")
     
     async def _analyze_symbol(self, symbol: str) -> Optional[Dict]:
         """

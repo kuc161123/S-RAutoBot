@@ -861,10 +861,10 @@ class AdvancedSupplyDemandStrategy:
                         }
                         
                         logger.info(f"🚀 BUY SIGNAL GENERATED for {symbol}!")
-                    logger.info(f"   Entry: ${entry_price:.2f}, Stop Loss: ${stop_loss:.2f}")
-                    logger.info(f"   Target 1: ${take_profit_1:.2f} (+{((take_profit_1/entry_price - 1) * 100):.1f}%)")
-                    logger.info(f"   Target 2: ${take_profit_2:.2f} (+{((take_profit_2/entry_price - 1) * 100):.1f}%)")
-                    logger.info(f"   Risk/Reward: 1:{((take_profit_1 - entry_price) / (entry_price - stop_loss)):.1f}")
+                        logger.info(f"   Entry: ${entry_price:.2f}, Stop Loss: ${stop_loss:.2f}")
+                        logger.info(f"   Target 1: ${take_profit_1:.2f} (+{((take_profit_1/entry_price - 1) * 100):.1f}%)")
+                        logger.info(f"   Target 2: ${take_profit_2:.2f} (+{((take_profit_2/entry_price - 1) * 100):.1f}%)")
+                        logger.info(f"   Risk/Reward: 1:{((take_profit_1 - entry_price) / (entry_price - stop_loss)):.1f}")
                         signals.append(signal)
             
             # For supply zones (SELL signals)
@@ -947,10 +947,10 @@ class AdvancedSupplyDemandStrategy:
                         }
                         
                         logger.info(f"🔻 SELL SIGNAL GENERATED for {symbol}!")
-                    logger.info(f"   Entry: ${entry_price:.2f}, Stop Loss: ${stop_loss:.2f}")
-                    logger.info(f"   Target 1: ${take_profit_1:.2f} (-{((1 - take_profit_1/entry_price) * 100):.1f}%)")
-                    logger.info(f"   Target 2: ${take_profit_2:.2f} (-{((1 - take_profit_2/entry_price) * 100):.1f}%)")
-                    logger.info(f"   Risk/Reward: 1:{((entry_price - take_profit_1) / (stop_loss - entry_price)):.1f}")
+                        logger.info(f"   Entry: ${entry_price:.2f}, Stop Loss: ${stop_loss:.2f}")
+                        logger.info(f"   Target 1: ${take_profit_1:.2f} (-{((1 - take_profit_1/entry_price) * 100):.1f}%)")
+                        logger.info(f"   Target 2: ${take_profit_2:.2f} (-{((1 - take_profit_2/entry_price) * 100):.1f}%)")
+                        logger.info(f"   Risk/Reward: 1:{((entry_price - take_profit_1) / (stop_loss - entry_price)):.1f}")
                         signals.append(signal)
         
         return signals

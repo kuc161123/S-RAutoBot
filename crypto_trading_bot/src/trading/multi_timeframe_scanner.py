@@ -375,7 +375,7 @@ class MultiTimeframeScanner:
                     logger.info("="*60)
                     logger.info(f"✅ Active positions: {len(self.active_positions)}")
                     logger.info(f"📈 Signals generated: {self.scan_metrics.get('signals_generated', 0)}")
-                    logger.info(f"🔍 Symbols being monitored: {len(self.symbol_rotator.active_symbols)}")
+                    logger.info(f"🔍 Symbols being monitored: {len(self.symbols)}")
                     
                     if self.scan_metrics.get('last_signal_time'):
                         time_since = (datetime.now() - self.scan_metrics['last_signal_time']).total_seconds() / 60

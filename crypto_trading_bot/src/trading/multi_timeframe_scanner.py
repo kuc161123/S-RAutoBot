@@ -86,17 +86,51 @@ class MultiTimeframeScanner:
     async def initialize(self):
         """Initialize Redis connection for caching"""
         try:
-            self.redis_client = redis.from_url(
-                settings.redis_url,
-                encoding="utf-8",
-                decode_responses=True
-            )
-            await self.redis_client.ping()
-            logger.info("Redis connected for multi-timeframe caching")
+            # Try to connect with retries
+            max_retries = 3
+            retry_delay = 2
+            
+            for attempt in range(max_retries):
+                try:
+                    self.redis_client = redis.from_url(
+                        settings.redis_url,
+                        encoding="utf-8",
+                        decode_responses=True,
+                        socket_connect_timeout=5,
+                        socket_timeout=5,
+                        retry_on_timeout=True
+                    )
+                    await self.redis_client.ping()
+                    logger.info("Redis connected for multi-timeframe caching")
+                    
+                    # Also initialize signal queue connection
+                    from ..utils.signal_queue import signal_queue
+                    if not signal_queue.redis_client and not signal_queue.in_memory_queue:
+                        await signal_queue.connect(settings.redis_url)
+                    
+                    break  # Success, exit retry loop
+                    
+                except Exception as e:
+                    logger.warning(f"Redis connection attempt {attempt + 1}/{max_retries} failed: {e}")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(retry_delay)
+                    else:
+                        logger.error("Redis connection failed after all retries")
+                        self.redis_client = None
+                        
         except Exception as e:
-            logger.error(f"Redis connection failed: {e}")
+            logger.error(f"Redis initialization error: {e}")
             # Continue without Redis (degraded mode)
             self.redis_client = None
+            
+        # Ensure signal queue is initialized even without Redis
+        try:
+            from ..utils.signal_queue import signal_queue
+            if not signal_queue.redis_client and not signal_queue.in_memory_queue:
+                await signal_queue.connect(None)  # Will use in-memory queue
+                logger.info("Signal queue initialized with in-memory fallback")
+        except Exception as e:
+            logger.error(f"Failed to initialize signal queue: {e}")
     
     def update_symbols(self, new_symbols: List[str]):
         """Update the symbol list dynamically"""
@@ -738,6 +772,9 @@ class MultiTimeframeScanner:
                 self.active_positions[symbol] = 'existing'
                 return
             
+            # Ensure signal has correct format
+            signal = self._ensure_signal_format(signal)
+            
             # Record that we're taking a position
             signal_type = self._determine_signal_type(signal)
             self.active_positions[symbol] = signal_type
@@ -770,6 +807,44 @@ class MultiTimeframeScanner:
             # Position opened
             self.active_positions[symbol] = status
             logger.info(f"Position opened for {symbol}: {status}")
+    
+    def _determine_signal_type(self, signal: Dict) -> str:
+        """Determine signal type from direction"""
+        direction = signal.get('direction', '').lower()
+        if 'long' in direction or 'buy' in direction:
+            return 'long'
+        elif 'short' in direction or 'sell' in direction:
+            return 'short'
+        return 'unknown'
+    
+    def _ensure_signal_format(self, signal: Dict) -> Dict:
+        """Ensure signal has all required fields for execution"""
+        # Add action field if missing
+        if 'action' not in signal:
+            direction = signal.get('direction', '').upper()
+            if 'LONG' in direction or 'BUY' in direction:
+                signal['action'] = 'BUY'
+            elif 'SHORT' in direction or 'SELL' in direction:
+                signal['action'] = 'SELL'
+            else:
+                signal['action'] = 'BUY'  # Default
+        
+        # Ensure position size
+        if 'position_size' not in signal or not signal['position_size']:
+            # Calculate default position size (example: $100 worth)
+            entry_price = signal.get('entry_price', 1.0)
+            if entry_price > 0:
+                signal['position_size'] = min(0.01, 100.0 / entry_price)  # $100 or 0.01 max
+            else:
+                signal['position_size'] = 0.01
+        
+        # Ensure all price fields are present
+        signal.setdefault('order_type', 'MARKET')
+        signal.setdefault('time_in_force', 'GTC')
+        signal.setdefault('reduce_only', False)
+        signal.setdefault('close_on_trigger', False)
+        
+        return signal
     
     async def _get_cached_data(self, symbol: str, timeframe: str) -> Optional[Dict]:
         """Get cached data from Redis with proper error handling"""
@@ -867,29 +942,42 @@ class MultiTimeframeScanner:
     async def _store_signal(self, symbol: str, signal: Dict):
         """Store signal in Redis for execution"""
         
-        if not self.redis_client:
-            return
-        
         try:
-            key = f"signal:{symbol}"
-            
             # Add metadata
             signal['timestamp'] = datetime.now().isoformat()
             signal['symbol'] = symbol
             
-            # Store with short expiry (signals are time-sensitive)
-            await self.redis_client.setex(
-                key,
-                60,  # 1 minute expiry
-                json.dumps(signal, default=str)
-            )
+            # Store in Redis if available
+            if self.redis_client:
+                try:
+                    key = f"signal:{symbol}"
+                    # Store with short expiry (signals are time-sensitive)
+                    await self.redis_client.setex(
+                        key,
+                        60,  # 1 minute expiry
+                        json.dumps(signal, default=str)
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to store in Redis: {e}")
             
-            # Add to the shared signal queue used by UltraIntelligentEngine
+            # ALWAYS push to signal queue (it handles Redis/memory fallback)
             from ..utils.signal_queue import signal_queue
-            await signal_queue.push(signal)
+            
+            # Ensure signal queue is connected
+            if not signal_queue.redis_client and not signal_queue.in_memory_queue:
+                from ..config import settings
+                redis_url = getattr(settings, 'redis_url', None)
+                await signal_queue.connect(redis_url)
+            
+            # Push signal
+            success = await signal_queue.push(signal)
+            if success:
+                logger.info(f"✅ Signal queued for {symbol}: direction={signal.get('direction')}, confidence={signal.get('confidence', 0):.1f}")
+            else:
+                logger.error(f"❌ Failed to queue signal for {symbol}")
             
         except Exception as e:
-            logger.error(f"Error storing signal: {e}")
+            logger.error(f"Error storing signal for {symbol}: {e}", exc_info=True)
 
 # Global scanner instance
 multi_timeframe_scanner = None

@@ -1008,32 +1008,69 @@ class UltraIntelligentEngine:
     
     async def _signal_executor(self):
         """Execute signals from queue"""
-        logger.info("Signal executor started")
+        logger.info("🚀 Signal executor started - waiting for trading signals...")
+        
+        # Log queue status periodically
+        last_status_log = datetime.now()
+        signals_processed = 0
+        
         while self.is_running:
             try:
+                # Log queue status every minute
+                if (datetime.now() - last_status_log).total_seconds() > 60:
+                    queue_size = await self.signal_queue.get_queue_size()
+                    logger.info(f"📊 Signal executor status: {signals_processed} processed, {queue_size} pending")
+                    last_status_log = datetime.now()
+                
                 # Get signal from Redis queue
                 signal = await self.signal_queue.pop(timeout=5)
                 if not signal:
                     continue
                 
-                logger.info(f"Processing signal for {signal.get('symbol')}")
+                signals_processed += 1
+                
+                # Log the complete signal for debugging
+                logger.info(f"🎯 Processing signal #{signals_processed} for {signal.get('symbol')}: direction={signal.get('direction')}, confidence={signal.get('confidence', 0):.1f}")
+                logger.debug(f"Full signal: {signal}")
                 
                 if not self.trading_enabled:
-                    logger.warning("Trading disabled, skipping signal")
+                    logger.warning("⚠️ Trading disabled, skipping signal")
                     continue
                 
                 # Check if we can take this position
                 if not await self._can_take_position(signal):
-                    logger.info(f"Cannot take position for {signal.get('symbol')}")
+                    logger.info(f"🚫 Cannot take position for {signal.get('symbol')} - risk/position checks failed")
                     continue
                 
                 # Execute the signal
-                logger.info(f"Executing signal for {signal.get('symbol')}")
+                logger.info(f"💰 Executing trade for {signal.get('symbol')}: {signal.get('direction')} @ {signal.get('entry_price', 0):.4f}")
                 success = await self._execute_signal(signal)
                 
                 if success:
                     self.metrics['signals_executed'] += 1
-                    logger.info(f"✅ Successfully executed signal for {signal.get('symbol')}")
+                    logger.info(f"✅ Successfully opened {signal.get('direction')} position for {signal.get('symbol')}")
+                    
+                    # Send enhanced Telegram notification
+                    if self.telegram_bot:
+                        try:
+                            message = f"🎯 **New Position Opened**\n\n"
+                            message += f"**Symbol:** {signal.get('symbol')}\n"
+                            message += f"**Direction:** {signal.get('direction', 'UNKNOWN')}\n"
+                            message += f"**Entry Price:** ${signal.get('entry_price', 0):.4f}\n"
+                            message += f"**Stop Loss:** ${signal.get('stop_loss', 0):.4f}\n"
+                            message += f"**Take Profit:** ${signal.get('take_profit_1', 0):.4f}\n"
+                            message += f"**Position Size:** {signal.get('position_size', 0):.4f}\n"
+                            message += f"**Confidence:** {signal.get('confidence', 0):.1f}%\n"
+                            
+                            if signal.get('htf_zone'):
+                                message += f"**Zone:** {signal['htf_zone'].get('type', '')} @ {signal['htf_zone'].get('timeframe', '')}\n"
+                            
+                            for chat_id in settings.telegram_allowed_chat_ids:
+                                await self.telegram_bot.send_notification(chat_id, message)
+                                logger.info(f"📱 Telegram notification sent to {chat_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to send Telegram notification: {e}")
+                    
                     # Remove from pending
                     symbol = signal.get('symbol')
                     if symbol in self.pending_signals:
@@ -1042,11 +1079,11 @@ class UltraIntelligentEngine:
                     logger.warning(f"❌ Failed to execute signal for {signal.get('symbol')}")
                 
             except asyncio.TimeoutError:
-                # Add small delay to prevent tight loop
+                # Normal - no signals in queue
                 await asyncio.sleep(0.1)
                 continue
             except Exception as e:
-                logger.error(f"Signal executor error: {e}")
+                logger.error(f"Signal executor error: {e}", exc_info=True)
                 self.metrics['errors'] += 1
                 await asyncio.sleep(1)  # Sleep on error to prevent CPU spinning
     

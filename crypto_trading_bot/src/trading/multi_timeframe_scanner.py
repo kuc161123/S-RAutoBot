@@ -118,10 +118,10 @@ class MultiTimeframeScanner:
                     await self.redis_client.ping()
                     logger.info("Redis connected for multi-timeframe caching")
                     
-                    # Also initialize signal queue connection
+                    # Signal queue will be connected by engine - don't connect here
+                    # This prevents multiple connection attempts
                     from ..utils.signal_queue import signal_queue
-                    if not signal_queue.redis_client and not signal_queue.in_memory_queue:
-                        await signal_queue.connect(settings.redis_url)
+                    logger.debug(f"Signal queue status: Redis={signal_queue.redis_client is not None}, Memory={signal_queue.in_memory_queue is not None}")
                     
                     break  # Success, exit retry loop
                     
@@ -138,12 +138,12 @@ class MultiTimeframeScanner:
             # Continue without Redis (degraded mode)
             self.redis_client = None
             
-        # Ensure signal queue is initialized even without Redis
+        # Check signal queue status (should be initialized by engine)
         try:
             from ..utils.signal_queue import signal_queue
             if not signal_queue.redis_client and not signal_queue.in_memory_queue:
-                await signal_queue.connect(None)  # Will use in-memory queue
-                logger.info("Signal queue initialized with in-memory fallback")
+                logger.warning("Signal queue not yet initialized by engine - scanner will wait")
+                # Don't connect here - let engine handle it
         except Exception as e:
             logger.error(f"Failed to initialize signal queue: {e}")
     
@@ -1107,13 +1107,20 @@ class MultiTimeframeScanner:
         
         # Ensure position size (use a reasonable default)
         if 'position_size' not in signal or not signal['position_size']:
-            # Calculate default position size ($100 worth or minimum)
+            # Calculate default position size with minimum notional value
             entry_price = signal.get('entry_price', 1.0)
             if entry_price > 0:
-                # $100 worth, but at least 0.001 and max 1.0
-                signal['position_size'] = max(0.001, min(1.0, 100.0 / entry_price))
+                # Ensure minimum $20 notional value (Bybit requires $5-10 minimum)
+                min_notional = 20.0  # $20 minimum for safety
+                min_size = min_notional / entry_price
+                
+                # Target $100 worth, but ensure minimum
+                target_size = 100.0 / entry_price
+                signal['position_size'] = max(min_size, target_size)
+                
+                logger.info(f"Calculated position size: {signal['position_size']:.6f} (notional: ${signal['position_size'] * entry_price:.2f})")
             else:
-                signal['position_size'] = 0.001
+                signal['position_size'] = 0.01  # Safer default
         
         # CRITICAL: Add risk_amount for portfolio heat calculation
         if 'risk_amount' not in signal:
@@ -1272,15 +1279,13 @@ class MultiTimeframeScanner:
             logger.info(f"📝 Importing signal queue for {symbol}")
             from ..utils.signal_queue import signal_queue
             
-            # Ensure signal queue is connected
+            # Check signal queue is connected (by engine)
             logger.info(f"📝 Checking signal queue connection - Redis: {signal_queue.redis_client is not None}, Memory: {signal_queue.in_memory_queue is not None}")
             
             if not signal_queue.redis_client and not signal_queue.in_memory_queue:
-                logger.info(f"📝 Signal queue not connected, initializing...")
-                from ..config import settings
-                redis_url = getattr(settings, 'redis_url', None)
-                await signal_queue.connect(redis_url)
-                logger.info(f"📝 Signal queue connected - Redis: {signal_queue.redis_client is not None}, Memory: {signal_queue.in_memory_queue is not None}")
+                logger.error(f"📝 Signal queue not connected! Engine should have initialized it")
+                # Don't connect here - this is a critical error
+                # The engine must connect the queue first
             
             # Push signal
             logger.info(f"📝 Pushing signal to queue for {symbol}...")

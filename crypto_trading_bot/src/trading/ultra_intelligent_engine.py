@@ -469,10 +469,10 @@ class UltraIntelligentEngine:
         try:
             try:
                 # Try importing from config package
-                from ..config import scaling_config
+                from ..config_modules import scaling_config
             except ImportError:
                 # Fallback to direct import if package import fails
-                from ..config.scaling_config import scaling_config
+                from ..config_modules.scaling_config import scaling_config
             
             # Get all active symbols
             all_symbols = await self.client.get_active_symbols()

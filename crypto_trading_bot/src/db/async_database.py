@@ -108,23 +108,18 @@ class AsyncDatabaseManager:
     @staticmethod
     async def create_ml_model(**kwargs) -> bool:
         """Create ML model asynchronously"""
+        from functools import partial
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            executor,
-            DatabaseManager.create_ml_model,
-            **kwargs
-        )
+        func = partial(DatabaseManager.create_ml_model, **kwargs)
+        return await loop.run_in_executor(executor, func)
     
     @staticmethod
     async def update_ml_model(model_name: str, **kwargs) -> bool:
         """Update ML model asynchronously"""
+        from functools import partial
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            executor,
-            DatabaseManager.update_ml_model,
-            model_name,
-            **kwargs
-        )
+        func = partial(DatabaseManager.update_ml_model, model_name, **kwargs)
+        return await loop.run_in_executor(executor, func)
     
     @staticmethod
     async def delete_ml_model(model_name: str) -> bool:

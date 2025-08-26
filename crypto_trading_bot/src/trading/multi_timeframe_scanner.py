@@ -233,7 +233,8 @@ class MultiTimeframeScanner:
                         await asyncio.sleep(10)
                         continue
                 
-                logger.info(f"📊 Batch #{batch_count}: Scanning {len(batch)} symbols: {batch[:3]}...")
+                # Log full batch for debugging signal generation issues
+                logger.info(f"📊 Batch #{batch_count}: Scanning {len(batch)} symbols: {', '.join(batch)}")
                 
                 # Create tasks for batch
                 tasks = []
@@ -528,6 +529,7 @@ class MultiTimeframeScanner:
             
             # Success - update last scan time
             self.last_scan_time = datetime.now()
+            logger.debug(f"✅ Scan completed for {symbol}")
             
         except asyncio.TimeoutError:
             logger.error(f"Scan timeout for {symbol} after {scan_timeout}s")
@@ -590,8 +592,14 @@ class MultiTimeframeScanner:
                 return  # Skip this symbol
         
         # Look for opportunities
-        logger.debug(f"Analyzing {symbol} for opportunities...")
+        logger.info(f"🔎 Starting analysis for {symbol}...")
         signal = await self._analyze_symbol(symbol)
+        logger.info(f"🔎 Analysis complete for {symbol}: signal={'YES' if signal else 'NO'}")
+        
+        if signal:
+            logger.info(f"🚨 SIGNAL DETAILS for {symbol}: direction={signal.get('direction')}, "
+                       f"entry={signal.get('entry_price')}, sl={signal.get('stop_loss')}, "
+                       f"tp={signal.get('take_profit_1')}")
         
         if signal:
             # Update metrics
@@ -606,7 +614,11 @@ class MultiTimeframeScanner:
             # Process if no position
             if symbol not in self.active_positions:
                 logger.info(f"📤 Processing signal for {symbol} (no existing position)")
-                await self._process_signal(symbol, signal)
+                try:
+                    await self._process_signal(symbol, signal)
+                    logger.info(f"✅ Signal processed for {symbol}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to process signal for {symbol}: {e}", exc_info=True)
             else:
                 logger.warning(f"⚠️ Skipping signal for {symbol} - position already tracked in scanner: {self.active_positions.get(symbol)}")
         else:
@@ -711,20 +723,27 @@ class MultiTimeframeScanner:
         
         # FIRST: Check if strategy has any signals directly
         # This is what generates the "BUY signal generated" logs
+        logger.info(f"🔍 Checking strategy for direct signals on {symbol}")
         for timeframe in self.htf_timeframes:
+            logger.debug(f"Checking timeframe {timeframe} for {symbol}")
             if timeframe not in self.timeframe_data.get(symbol, {}):
+                logger.debug(f"No data for {symbol} on {timeframe}")
                 continue
             
             df = self.timeframe_data[symbol][timeframe]
             if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+                logger.debug(f"Empty dataframe for {symbol} on {timeframe}")
                 continue
             
+            logger.info(f"📊 Calling strategy.analyze_market for {symbol} on {timeframe}")
             # Get analysis from strategy - includes both zones AND signals
             analysis = self.strategy.analyze_market(
                 symbol=symbol,
                 df=df,
                 timeframes=[timeframe]
             )
+            
+            logger.info(f"📊 Strategy returned: zones={len(analysis.get('zones', []))}, signals={len(analysis.get('signals', []))}")
             
             # Check for signals from strategy
             if analysis.get('signals') and len(analysis['signals']) > 0:
@@ -737,6 +756,8 @@ class MultiTimeframeScanner:
                     signal['confidence'] = signal.get('confidence', 80)
                     logger.info(f"🔥 Using strategy signal for {symbol}: {signal.get('direction')} @ {signal.get('entry_price')}")
                     return signal
+            else:
+                logger.debug(f"No signals from strategy for {symbol} on {timeframe}")
         
         # If no direct signals from strategy, continue with HTF/LTF confluence method
         # Step 1: Get HTF supply/demand zones

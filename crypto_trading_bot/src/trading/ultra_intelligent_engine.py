@@ -521,12 +521,8 @@ class UltraIntelligentEngine:
             
             logger.info(f"📈 Scaling phases: 20 → 50 → 100 → 200 → 300 → {len(all_symbols)}")
             
-            # Log sample for verification
-            if len(self.monitored_symbols) > 10:
-                sample = self.monitored_symbols[:5]
-                logger.info(f"First 5 symbols: {sample}")
-                sample_end = self.monitored_symbols[-5:]
-                logger.info(f"Last 5 symbols: {sample_end}")
+            # Log ALL symbols for debugging signal generation
+            logger.info(f"🎯 ALL SELECTED SYMBOLS: {', '.join(self.monitored_symbols)}")
             
         except Exception as e:
             logger.error(f"Error selecting symbols: {e}", exc_info=True)
@@ -913,11 +909,22 @@ class UltraIntelligentEngine:
     @with_recovery("signal_generator")
     async def _signal_generator(self):
         """Generate trading signals continuously"""
+        # DISABLED: Using MTF scanner for signal generation to avoid conflicts
+        logger.info("📊 Engine signal generator disabled - using MTF scanner for all signals")
         while self.is_running:
             try:
-                # Increment scan counter
+                # Just sync positions periodically instead of generating signals
                 self.scan_counter += 1
                 
+                if self.scan_counter % 5 == 0:
+                    await self._sync_positions_with_exchange()
+                
+                # Sleep longer since we're not generating signals here
+                await asyncio.sleep(60)
+                
+                continue  # Skip all signal generation logic below
+                
+                # DISABLED CODE BELOW - keeping for reference
                 if not self.trading_enabled:
                     await asyncio.sleep(10)
                     continue

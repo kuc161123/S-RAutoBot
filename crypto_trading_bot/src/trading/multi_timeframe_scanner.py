@@ -703,6 +703,36 @@ class MultiTimeframeScanner:
             signal_debugger.log_no_signal(symbol, "No data available")
             return None
         
+        # FIRST: Check if strategy has any signals directly
+        # This is what generates the "BUY signal generated" logs
+        for timeframe in self.htf_timeframes:
+            if timeframe not in self.timeframe_data.get(symbol, {}):
+                continue
+            
+            df = self.timeframe_data[symbol][timeframe]
+            if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+                continue
+            
+            # Get analysis from strategy - includes both zones AND signals
+            analysis = self.strategy.analyze_market(
+                symbol=symbol,
+                df=df,
+                timeframes=[timeframe]
+            )
+            
+            # Check for signals from strategy
+            if analysis.get('signals') and len(analysis['signals']) > 0:
+                logger.info(f"🎯 Found {len(analysis['signals'])} signals from strategy for {symbol}")
+                # Return the first valid signal
+                for signal in analysis['signals']:
+                    # Add required fields if missing
+                    signal['symbol'] = symbol
+                    signal['timeframe'] = timeframe
+                    signal['confidence'] = signal.get('confidence', 80)
+                    logger.info(f"🔥 Using strategy signal for {symbol}: {signal.get('direction')} @ {signal.get('entry_price')}")
+                    return signal
+        
+        # If no direct signals from strategy, continue with HTF/LTF confluence method
         # Step 1: Get HTF supply/demand zones
         htf_zones = await self._get_htf_zones(symbol)
         signal_debugger.log_htf_zones(symbol, htf_zones)

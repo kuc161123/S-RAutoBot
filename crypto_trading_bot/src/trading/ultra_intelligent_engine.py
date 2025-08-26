@@ -493,8 +493,8 @@ class UltraIntelligentEngine:
             # Only subscribe to klines (5m) for all symbols
             # Subscribe to orderbook/trades only for active positions
             
-            batch_size = 20  # Increased batch size
-            subscription_delay = 1.0  # Longer delay for stability
+            batch_size = 10  # Smaller batch size for stability
+            subscription_delay = 3.0  # Much longer delay between batches
             
             # Subscribe to 5m klines for all symbols (less data than 1m)
             symbol_list = list(self.monitored_symbols)

@@ -54,8 +54,8 @@ class MultiTimeframeScanner:
             self.symbols = settings.default_symbols[:50]  # Fallback
             logger.warning("No symbols provided to scanner, using defaults")
         
-        # Symbol rotation for efficient scanning - reduced batch size for rate limits
-        self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=15)  # Reduced from 30
+        # Symbol rotation - much smaller batch size for stability
+        self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=5)  # Reduced to 5 for reliability
         self.current_scan_batch = []
         
         # Position tracking - one position per symbol
@@ -242,8 +242,8 @@ class MultiTimeframeScanner:
                 if scan_duration > 0:
                     self.scan_metrics['symbols_per_minute'] = (len(batch) / scan_duration) * 60
                 
-                # Longer pause between batches for rate limiting with 558 symbols
-                await asyncio.sleep(10)  # Increased from 5 to 10 seconds
+                # Much longer pause between batches for stability
+                await asyncio.sleep(30)  # 30 seconds between batches for reliability
                 
                 # Clean up old data more frequently (every 50 scans) for memory management
                 if self.scan_count % 50 == 0:
@@ -294,8 +294,8 @@ class MultiTimeframeScanner:
     
     async def _health_monitor(self):
         """Monitor scanner health and restart if needed"""
-        check_interval = 20  # Check every 20 seconds (more frequent)
-        stuck_threshold = 90  # Consider stuck if no scan in 90 seconds (reduced from 120)
+        check_interval = 60  # Check every minute (adjusted for slower scanning)
+        stuck_threshold = 300  # Consider stuck if no scan in 5 minutes (increased for slower pace)
         restart_count = 0
         max_restarts = 10  # Allow up to 10 restarts
         
@@ -465,7 +465,7 @@ class MultiTimeframeScanner:
     
     async def _scan_symbol_once(self, symbol: str):
         """Scan a symbol once with timeout protection"""
-        scan_timeout = 30  # 30 second timeout for entire scan
+        scan_timeout = 45  # 45 second timeout for entire scan (increased for stability)
         
         try:
             # Wrap entire scan in timeout
@@ -498,6 +498,9 @@ class MultiTimeframeScanner:
         # Apply rate limiting
         await rate_limiter.acquire()
         
+        # Additional small delay for stability
+        await asyncio.sleep(1)  # 1 second delay between symbols
+        
         # Skip if should skip
         if self.symbol_rotator.should_skip_symbol(symbol):
             return
@@ -511,7 +514,7 @@ class MultiTimeframeScanner:
             try:
                 actual_positions = await asyncio.wait_for(
                     self.client.get_positions(),
-                    timeout=5  # 5 second timeout
+                    timeout=10  # 10 second timeout (increased for stability)
                 )
                 has_position = any(
                     pos.get('symbol') == symbol and float(pos.get('size', 0)) > 0
@@ -553,7 +556,7 @@ class MultiTimeframeScanner:
         """Update HTF and LTF data with timeout protection"""
         
         self.timeframe_data[symbol] = {}
-        api_timeout = 10  # 10 second timeout for API calls
+        api_timeout = 20  # 20 second timeout for API calls (increased for stability)
         
         # Update HTF data for zone identification
         for timeframe in self.htf_timeframes:

@@ -59,6 +59,25 @@ class MultiTimeframeScanner:
         # Performance tracking per symbol
         self.symbol_performance = {}  # symbol -> {success_rate, best_tf_combo}
         
+        # Health monitoring
+        self.scanning_task = None
+        self.is_scanning = False
+        self.last_scan_time = None
+        self.last_batch_time = None
+        self.scan_count = 0
+        self.error_count = 0
+        self.consecutive_errors = 0
+        self.max_consecutive_errors = 10
+        self.scan_metrics = {
+            'total_scans': 0,
+            'successful_scans': 0,
+            'failed_scans': 0,
+            'signals_generated': 0,
+            'last_signal_time': None,
+            'symbols_per_minute': 0,
+            'average_scan_time': 0
+        }
+        
     async def initialize(self):
         """Initialize Redis connection for caching"""
         try:
@@ -75,21 +94,61 @@ class MultiTimeframeScanner:
             self.redis_client = None
     
     async def start_scanning(self):
-        """Start scanning with symbol rotation for efficiency"""
+        """Start scanning with symbol rotation for efficiency and auto-recovery"""
         logger.info(f"Starting multi-timeframe scanner for {len(self.symbols)} symbols with rotation")
         
-        # Start main scanning loop with rotation
-        self.scanning_task = asyncio.create_task(self._scanning_loop())
+        if self.is_scanning:
+            logger.warning("Scanner already running, restarting...")
+            await self.stop_scanning()
+            await asyncio.sleep(2)
         
-        logger.info("Scanner started with symbol rotation enabled")
+        self.is_scanning = True
+        self.last_scan_time = datetime.now()
+        self.consecutive_errors = 0
+        
+        # Start main scanning loop with rotation and recovery wrapper
+        self.scanning_task = asyncio.create_task(self._scanning_loop_with_recovery())
+        
+        # Start health monitor
+        asyncio.create_task(self._health_monitor())
+        
+        logger.info("Scanner started with symbol rotation and health monitoring enabled")
+    
+    async def _scanning_loop_with_recovery(self):
+        """Scanning loop with automatic recovery on failure"""
+        max_retries = 5
+        retry_count = 0
+        
+        while self.is_scanning:
+            try:
+                await self._scanning_loop()
+                retry_count = 0  # Reset on successful run
+                
+            except Exception as e:
+                retry_count += 1
+                self.consecutive_errors += 1
+                logger.error(f"Scanner crashed (attempt {retry_count}/{max_retries}): {e}")
+                
+                if retry_count >= max_retries:
+                    logger.critical("Scanner failed too many times, stopping")
+                    self.is_scanning = False
+                    break
+                
+                # Exponential backoff
+                wait_time = min(60, 2 ** retry_count)
+                logger.info(f"Restarting scanner in {wait_time} seconds...")
+                await asyncio.sleep(wait_time)
     
     async def _scanning_loop(self):
         """Main scanning loop that rotates through symbols"""
-        while True:
+        while self.is_scanning:
             try:
+                scan_start_time = datetime.now()
+                
                 # Get next batch of symbols to scan
                 batch = self.symbol_rotator.get_next_batch()
                 self.current_scan_batch = batch
+                self.last_batch_time = datetime.now()
                 
                 logger.debug(f"Scanning batch of {len(batch)} symbols")
                 
@@ -100,24 +159,192 @@ class MultiTimeframeScanner:
                         task = asyncio.create_task(self._scan_symbol_once(symbol))
                         tasks.append(task)
                 
-                # Wait for batch to complete
+                # Wait for batch to complete with timeout
                 if tasks:
-                    await asyncio.gather(*tasks, return_exceptions=True)
+                    results = await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True),
+                        timeout=60  # 60 second timeout for batch
+                    )
+                    
+                    # Count successes/failures
+                    for result in results:
+                        if isinstance(result, Exception):
+                            self.scan_metrics['failed_scans'] += 1
+                        else:
+                            self.scan_metrics['successful_scans'] += 1
+                
+                # Update metrics
+                self.scan_metrics['total_scans'] += len(batch)
+                self.last_scan_time = datetime.now()
+                self.scan_count += len(batch)
+                self.consecutive_errors = 0  # Reset on successful batch
+                
+                # Calculate scan rate
+                scan_duration = (datetime.now() - scan_start_time).total_seconds()
+                if scan_duration > 0:
+                    self.scan_metrics['symbols_per_minute'] = (len(batch) / scan_duration) * 60
                 
                 # Brief pause between batches
                 await asyncio.sleep(5)
                 
+                # Clean up old data periodically (every 100 scans)
+                if self.scan_count % 100 == 0:
+                    await self._cleanup_old_data()
+                
+            except asyncio.TimeoutError:
+                logger.warning("Batch scan timeout, continuing with next batch")
+                self.consecutive_errors += 1
+                await asyncio.sleep(2)
+                
             except Exception as e:
+                self.consecutive_errors += 1
                 logger.error(f"Scanning loop error: {e}")
+                
+                if self.consecutive_errors >= self.max_consecutive_errors:
+                    logger.error("Too many consecutive errors, scanner needs restart")
+                    raise
+                
                 await asyncio.sleep(10)
     
     async def stop_scanning(self):
         """Stop all scanning tasks"""
+        self.is_scanning = False
+        
+        # Cancel main scanning task
+        if self.scanning_task and not self.scanning_task.done():
+            self.scanning_task.cancel()
+            try:
+                await self.scanning_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Cancel other tasks
         for task in self.scanning_tasks.values():
             task.cancel()
         
         self.scanning_tasks.clear()
         logger.info("Stopped all scanning tasks")
+    
+    async def _health_monitor(self):
+        """Monitor scanner health and restart if needed"""
+        check_interval = 30  # Check every 30 seconds
+        stuck_threshold = 120  # Consider stuck if no scan in 2 minutes
+        
+        while self.is_scanning:
+            try:
+                await asyncio.sleep(check_interval)
+                
+                # Check if scanner is stuck
+                if self.last_scan_time:
+                    time_since_last_scan = (datetime.now() - self.last_scan_time).total_seconds()
+                    
+                    if time_since_last_scan > stuck_threshold:
+                        logger.error(f"Scanner appears stuck! No scan for {time_since_last_scan:.0f} seconds")
+                        
+                        # Log current state
+                        logger.info(f"Scanner state: scanning={self.is_scanning}, "
+                                  f"batch_size={len(self.current_scan_batch)}, "
+                                  f"errors={self.consecutive_errors}, "
+                                  f"total_scans={self.scan_count}")
+                        
+                        # Attempt restart
+                        logger.info("Attempting scanner restart...")
+                        await self._restart_scanner()
+                
+                # Log health metrics periodically
+                if self.scan_count > 0 and self.scan_count % 100 == 0:
+                    logger.info(f"Scanner health: scans={self.scan_metrics['total_scans']}, "
+                              f"success_rate={self._get_success_rate():.1f}%, "
+                              f"scan_rate={self.scan_metrics['symbols_per_minute']:.1f}/min, "
+                              f"signals={self.scan_metrics['signals_generated']}")
+                
+            except Exception as e:
+                logger.error(f"Health monitor error: {e}")
+    
+    async def _restart_scanner(self):
+        """Restart the scanner"""
+        logger.warning("Restarting scanner...")
+        
+        # Stop current scanning
+        self.is_scanning = False
+        if self.scanning_task and not self.scanning_task.done():
+            self.scanning_task.cancel()
+            try:
+                await self.scanning_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Wait a bit
+        await asyncio.sleep(5)
+        
+        # Reset state
+        self.consecutive_errors = 0
+        self.last_scan_time = datetime.now()
+        
+        # Restart
+        self.is_scanning = True
+        self.scanning_task = asyncio.create_task(self._scanning_loop_with_recovery())
+        
+        logger.info("Scanner restarted successfully")
+    
+    async def _cleanup_old_data(self):
+        """Clean up old timeframe data to prevent memory issues"""
+        try:
+            current_time = datetime.now()
+            symbols_to_clean = []
+            
+            # Find symbols with stale data
+            for symbol in list(self.timeframe_data.keys()):
+                # Skip active positions
+                if symbol in self.active_positions:
+                    continue
+                
+                # Check if symbol was recently scanned
+                if symbol in self.symbol_rotator.symbol_stats:
+                    last_scan = self.symbol_rotator.symbol_stats[symbol].get('last_scan')
+                    if last_scan and (current_time - last_scan).total_seconds() > 3600:  # 1 hour
+                        symbols_to_clean.append(symbol)
+            
+            # Clean up old data
+            cleaned = 0
+            for symbol in symbols_to_clean:
+                if symbol in self.timeframe_data:
+                    del self.timeframe_data[symbol]
+                    cleaned += 1
+                if symbol in self.htf_zones:
+                    del self.htf_zones[symbol]
+                if symbol in self.ltf_structure:
+                    del self.ltf_structure[symbol]
+            
+            if cleaned > 0:
+                logger.debug(f"Cleaned up data for {cleaned} inactive symbols")
+                
+        except Exception as e:
+            logger.error(f"Cleanup error: {e}")
+    
+    def _get_success_rate(self) -> float:
+        """Calculate scanner success rate"""
+        total = self.scan_metrics['successful_scans'] + self.scan_metrics['failed_scans']
+        if total == 0:
+            return 100.0
+        return (self.scan_metrics['successful_scans'] / total) * 100
+    
+    def get_scanner_status(self) -> Dict:
+        """Get current scanner status for monitoring"""
+        time_since_last_scan = None
+        if self.last_scan_time:
+            time_since_last_scan = (datetime.now() - self.last_scan_time).total_seconds()
+        
+        return {
+            'is_scanning': self.is_scanning,
+            'last_scan_seconds_ago': time_since_last_scan,
+            'current_batch_size': len(self.current_scan_batch),
+            'active_positions': len(self.active_positions),
+            'consecutive_errors': self.consecutive_errors,
+            'metrics': self.scan_metrics,
+            'success_rate': self._get_success_rate(),
+            'healthy': self.is_scanning and time_since_last_scan and time_since_last_scan < 120
+        }
     
     async def _scan_symbol_once(self, symbol: str):
         """Scan a symbol once (for rotation mode)"""
@@ -148,21 +375,33 @@ class MultiTimeframeScanner:
                     # Position was closed, remove from tracking
                     logger.info(f"Position for {symbol} was closed, removing from tracking")
                     del self.active_positions[symbol]
+                    
+                    # Import position_safety here to avoid circular import
+                    from ..utils.bot_fixes import position_safety
                     position_safety.remove_position(symbol)
             
             # Look for opportunities
             signal = await self._analyze_symbol(symbol)
             
             if signal:
+                # Update metrics
+                self.scan_metrics['signals_generated'] += 1
+                self.scan_metrics['last_signal_time'] = datetime.now()
+                
                 # Record signal for rotator
                 self.symbol_rotator.record_signal(symbol)
                 
                 # Process if no position
                 if symbol not in self.active_positions:
                     await self._process_signal(symbol, signal)
+            
+            # Success - update last scan time
+            self.last_scan_time = datetime.now()
                     
         except Exception as e:
             logger.error(f"Error scanning {symbol}: {e}")
+            self.error_count += 1
+            raise  # Re-raise to be counted as failed scan
     
     async def _update_timeframe_data(self, symbol: str):
         """Update HTF and LTF data for synchronized analysis"""

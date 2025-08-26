@@ -336,6 +336,7 @@ class UltraIntelligentEngine:
         asyncio.create_task(self._emergency_monitor())
         asyncio.create_task(self._track_untested_zones())  # Track failed zones for ML
         asyncio.create_task(self.mtf_scanner.start_scanning())  # Start MTF scanner
+        asyncio.create_task(self._scanner_watchdog())  # Monitor scanner health
         
         logger.info("Ultra Intelligent Engine started")
     
@@ -1972,6 +1973,65 @@ class UltraIntelligentEngine:
             except Exception as e:
                 logger.error(f"Symbol rebalancer error: {e}")
                 await asyncio.sleep(86400)
+    
+    async def _scanner_watchdog(self):
+        """Monitor scanner health and restart if needed"""
+        check_interval = 60  # Check every minute
+        stuck_threshold = 180  # Consider stuck if no activity for 3 minutes
+        restart_attempts = 0
+        max_restart_attempts = 5
+        
+        while self.is_running:
+            try:
+                await asyncio.sleep(check_interval)
+                
+                # Get scanner status
+                scanner_status = self.mtf_scanner.get_scanner_status()
+                
+                # Check if scanner is healthy
+                if not scanner_status['healthy']:
+                    time_since_last = scanner_status.get('last_scan_seconds_ago', float('inf'))
+                    
+                    if time_since_last > stuck_threshold:
+                        logger.error(f"Scanner appears stuck! No activity for {time_since_last:.0f} seconds")
+                        
+                        if restart_attempts < max_restart_attempts:
+                            logger.info(f"Attempting scanner restart (attempt {restart_attempts + 1}/{max_restart_attempts})")
+                            
+                            # Stop scanner
+                            await self.mtf_scanner.stop_scanning()
+                            await asyncio.sleep(5)
+                            
+                            # Restart scanner
+                            await self.mtf_scanner.start_scanning()
+                            restart_attempts += 1
+                            
+                            logger.info("Scanner restarted via watchdog")
+                            
+                            # Send notification
+                            if self.telegram_bot:
+                                await self.telegram_bot.send_notification(
+                                    settings.telegram_channel_id,
+                                    f"🔧 Scanner was stuck and has been restarted\n"
+                                    f"Last activity: {time_since_last:.0f}s ago\n"
+                                    f"Restart attempt: {restart_attempts}/{max_restart_attempts}"
+                                )
+                        else:
+                            logger.critical(f"Scanner restart failed after {max_restart_attempts} attempts")
+                            self.emergency_stop = True
+                else:
+                    # Scanner is healthy, reset restart counter
+                    if restart_attempts > 0:
+                        logger.info("Scanner recovered, resetting restart counter")
+                        restart_attempts = 0
+                
+                # Log scanner metrics periodically
+                if scanner_status['metrics']['total_scans'] > 0 and scanner_status['metrics']['total_scans'] % 500 == 0:
+                    logger.info(f"Scanner metrics: {scanner_status['metrics']}")
+                    
+            except Exception as e:
+                logger.error(f"Scanner watchdog error: {e}")
+                await asyncio.sleep(check_interval)
     
     async def _emergency_monitor(self):
         """Monitor for emergency conditions"""

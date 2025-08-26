@@ -537,15 +537,23 @@ class MultiTimeframeScanner:
         if self.last_scan_time:
             time_since_last_scan = (datetime.now() - self.last_scan_time).total_seconds()
         
+        # Determine if scanner is healthy
+        is_healthy = False
+        if self.is_scanning:
+            if time_since_last_scan is not None:
+                is_healthy = time_since_last_scan < 600  # Healthy if scanned within 10 minutes
+            else:
+                is_healthy = True  # If no scan time yet, assume healthy (just started)
+        
         return {
             'is_scanning': self.is_scanning,
             'last_scan_seconds_ago': time_since_last_scan,
-            'current_batch_size': len(self.current_scan_batch),
+            'current_batch_size': len(self.current_scan_batch) if self.current_scan_batch else 0,
             'active_positions': len(self.active_positions),
             'consecutive_errors': self.consecutive_errors,
             'metrics': self.scan_metrics,
             'success_rate': self._get_success_rate(),
-            'healthy': self.is_scanning and time_since_last_scan and time_since_last_scan < 600  # Adjusted for slower scanning pace
+            'healthy': is_healthy
         }
     
     async def _scan_symbol_once(self, symbol: str):

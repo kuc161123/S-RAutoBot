@@ -2120,6 +2120,10 @@ class UltraIntelligentEngine:
                 if not scanner_status['healthy']:
                     time_since_last = scanner_status.get('last_scan_seconds_ago', float('inf'))
                     
+                    # Ensure time_since_last is not None
+                    if time_since_last is None:
+                        time_since_last = float('inf')
+                    
                     if time_since_last > stuck_threshold:
                         logger.error(f"Scanner appears stuck! No activity for {time_since_last:.0f} seconds")
                         
@@ -2149,6 +2153,8 @@ class UltraIntelligentEngine:
                         else:
                             logger.critical(f"Scanner restart failed after {max_restart_attempts} attempts")
                             self.emergency_stop = True
+                            # Don't crash, just stop trying to restart
+                            restart_attempts = 0
                 else:
                     # Scanner is healthy, reset restart counter
                     if restart_attempts > 0:
@@ -2156,8 +2162,9 @@ class UltraIntelligentEngine:
                         restart_attempts = 0
                 
                 # Log scanner metrics periodically
-                if scanner_status['metrics']['total_scans'] > 0 and scanner_status['metrics']['total_scans'] % 500 == 0:
-                    logger.info(f"Scanner metrics: {scanner_status['metrics']}")
+                total_scans = scanner_status.get('metrics', {}).get('total_scans', 0)
+                if total_scans and total_scans > 0 and total_scans % 500 == 0:
+                    logger.info(f"Scanner metrics: {scanner_status.get('metrics', {})}")
                     
             except Exception as e:
                 logger.error(f"Scanner watchdog error: {e}")

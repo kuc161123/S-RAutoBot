@@ -232,7 +232,9 @@ class AdvancedSupplyDemandStrategy:
                 zones = self._add_timeframe_confluence(zones, symbol, timeframes)
             
             # 6. Score and filter zones
+            logger.info(f"🔍 Total zones detected: {len(zones)}, Min score required: {self.min_zone_score}")
             valid_zones = [z for z in zones if z.composite_score >= self.min_zone_score]
+            logger.info(f"🔍 Valid zones after filtering: {len(valid_zones)}")
             analysis['zones'] = sorted(valid_zones, key=lambda z: z.composite_score, reverse=True)
             
             # 7. Generate trading signals
@@ -737,11 +739,15 @@ class AdvancedSupplyDemandStrategy:
         signals = []
         current_price = float(current_candle['close'])
         
+        logger.info(f"🔍 Checking for signals: Current price={current_price:.8f}, Zones to check={len(zones[:10])}")
+        
         for zone in zones[:10]:  # Check top 10 zones for maximum opportunities
             # For demand zones (BUY signals)
             if zone.zone_type == 'demand':
                 # Check if price is approaching or in the zone
                 distance_to_zone = (zone.upper_bound - current_price) / current_price
+                
+                logger.debug(f"  Demand zone: Price={current_price:.8f}, Zone=[{zone.lower_bound:.8f}, {zone.upper_bound:.8f}], Distance={distance_to_zone:.4f}")
                 
                 # EXTREMELY lenient: within 10% of zone or inside zone (massive range)
                 if -0.05 < distance_to_zone < 0.10 or (zone.lower_bound <= current_price <= zone.upper_bound):

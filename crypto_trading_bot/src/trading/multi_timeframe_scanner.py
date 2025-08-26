@@ -736,12 +736,22 @@ class MultiTimeframeScanner:
                 continue
             
             logger.info(f"📊 Calling strategy.analyze_market for {symbol} on {timeframe}")
+            logger.info(f"📊 DataFrame shape: {df.shape}, Last price: {df['close'].iloc[-1]:.4f}")
+            
             # Get analysis from strategy - includes both zones AND signals
             analysis = self.strategy.analyze_market(
                 symbol=symbol,
                 df=df,
                 timeframes=[timeframe]
             )
+            
+            # Log zone details
+            zones = analysis.get('zones', [])
+            if zones:
+                logger.info(f"📊 Found {len(zones)} zones for {symbol}:")
+                for i, zone in enumerate(zones[:3]):  # Log first 3 zones
+                    logger.info(f"  Zone {i+1}: Type={zone.zone_type}, Score={zone.composite_score:.1f}, "
+                              f"Range=[{zone.lower_bound:.4f}, {zone.upper_bound:.4f}]")
             
             logger.info(f"📊 Strategy returned: zones={len(analysis.get('zones', []))}, signals={len(analysis.get('signals', []))}")
             

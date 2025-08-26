@@ -1142,6 +1142,11 @@ class UltraIntelligentEngine:
         try:
             symbol = signal.get('symbol')
             
+            # Log full signal for debugging
+            logger.info(f"🔍 Executing signal with data: symbol={symbol}, action={signal.get('action')}, "
+                       f"position_size={signal.get('position_size')}, entry={signal.get('entry_price')}, "
+                       f"sl={signal.get('stop_loss')}, tp={signal.get('take_profit_1')}")
+            
             # Get lock
             if symbol not in self.position_locks:
                 self.position_locks[symbol] = asyncio.Lock()
@@ -1192,18 +1197,30 @@ class UltraIntelligentEngine:
                     logger.warning(f"Failed to set leverage for {symbol}: {e}")
                 
                 # Register position immediately to prevent duplicates
-                await self.position_manager.register_position(
-                    symbol=symbol,
-                    side="Buy" if signal.get('action') == "BUY" else "Sell",
-                    size=signal.get('position_size'),
-                    entry_price=signal.get('entry_price')
-                )
+                try:
+                    logger.info(f"📋 Registering position for {symbol} with position manager")
+                    await self.position_manager.register_position(
+                        symbol=symbol,
+                        side="Buy" if signal.get('action') == "BUY" else "Sell",
+                        size=signal.get('position_size'),
+                        entry_price=signal.get('entry_price')
+                    )
+                    logger.info(f"✅ Position registered for {symbol}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to register position for {symbol}: {e}", exc_info=True)
+                    # Continue anyway - try to place the order
+                
+                # Validate position size
+                position_size = signal.get('position_size')
+                if not position_size or position_size <= 0:
+                    logger.error(f"❌ Invalid position size for {symbol}: {position_size}")
+                    return False
                 
                 # Place order with integrated TP/SL
                 order_data = {
                     'symbol': symbol,
                     'side': "Buy" if signal.get('action') == "BUY" else "Sell",
-                    'qty': signal.get('position_size'),
+                    'qty': position_size,
                     'order_type': signal.get('order_type', 'MARKET'),
                     'time_in_force': signal.get('time_in_force', 'GTC'),
                     'reduce_only': signal.get('reduce_only', False),
@@ -1217,10 +1234,19 @@ class UltraIntelligentEngine:
                 if signal.get('order_type') == "LIMIT":
                     order_data['price'] = signal.get('entry_price')
                 
+                # Log the order attempt
+                logger.info(f"📝 Placing {order_data['side']} order for {symbol}: qty={order_data['qty']}, SL={order_data['stopLoss']}, TP={order_data['takeProfit']}")
+                
                 # Place the order
-                order_id = await self.client.place_order(**order_data)
+                try:
+                    order_id = await self.client.place_order(**order_data)
+                    logger.info(f"✅ Order placed successfully: {order_id}")
+                except Exception as e:
+                    logger.error(f"❌ Order placement failed for {symbol}: {e}", exc_info=True)
+                    order_id = None
                 
                 if not order_id:
+                    logger.error(f"❌ Order failed for {symbol}, cleaning up...")
                     # Order failed, clean up position registration
                     position_safety.remove_position(symbol)
                     # Clear Redis pending flag
@@ -2065,14 +2091,16 @@ class UltraIntelligentEngine:
                             
                             logger.info("Scanner restarted via watchdog")
                             
-                            # Send notification
-                            if self.telegram_bot:
-                                await self.telegram_bot.send_notification(
-                                    settings.telegram_channel_id,
-                                    f"🔧 Scanner was stuck and has been restarted\n"
-                                    f"Last activity: {time_since_last:.0f}s ago\n"
-                                    f"Restart attempt: {restart_attempts}/{max_restart_attempts}"
-                                )
+                            # Send notification to all allowed chat IDs
+                            if self.telegram_bot and settings.telegram_allowed_chat_ids:
+                                message = (f"🔧 Scanner was stuck and has been restarted\n"
+                                          f"Last activity: {time_since_last:.0f}s ago\n"
+                                          f"Restart attempt: {restart_attempts}/{max_restart_attempts}")
+                                for chat_id in settings.telegram_allowed_chat_ids:
+                                    try:
+                                        await self.telegram_bot.send_notification(chat_id, message)
+                                    except Exception as e:
+                                        logger.error(f"Failed to send restart notification: {e}")
                         else:
                             logger.critical(f"Scanner restart failed after {max_restart_attempts} attempts")
                             self.emergency_stop = True

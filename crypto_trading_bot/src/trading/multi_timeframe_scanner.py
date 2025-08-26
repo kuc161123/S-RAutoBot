@@ -882,11 +882,17 @@ class MultiTimeframeScanner:
             # Ensure signal has correct format
             signal = self._ensure_signal_format(signal)
             
+            # Skip if signal was marked invalid
+            if signal.get('invalid', False):
+                logger.warning(f"Skipping invalid signal for {symbol}")
+                return
+            
             # Record that we're taking a position
             signal_type = self._determine_signal_type(signal)
             self.active_positions[symbol] = signal_type
             
             # Store signal in Redis for execution
+            logger.info(f"📤 Storing signal for {symbol}: entry={signal.get('entry_price'):.8f}, sl={signal.get('stop_loss'):.8f}, tp={signal.get('take_profit_1'):.8f}")
             await self._store_signal(symbol, signal)
             
             logger.info(
@@ -926,9 +932,47 @@ class MultiTimeframeScanner:
     
     def _ensure_signal_format(self, signal: Dict) -> Dict:
         """Ensure signal has all required fields for execution"""
+        
+        # First validate critical fields exist
+        entry_price = signal.get('entry_price', 0)
+        stop_loss = signal.get('stop_loss', 0) 
+        take_profit = signal.get('take_profit_1', 0)
+        
+        # Validate prices are reasonable
+        if entry_price <= 0:
+            logger.error(f"Invalid signal - entry price is zero or negative: {entry_price}")
+            signal['invalid'] = True
+            return signal
+            
+        # Check stop loss makes sense for the direction
+        direction = signal.get('direction', '').upper()
+        if 'BUY' in direction or 'LONG' in direction:
+            if stop_loss >= entry_price:
+                logger.error(f"Invalid BUY signal - stop loss {stop_loss:.8f} >= entry {entry_price:.8f}")
+                signal['invalid'] = True
+                return signal
+            if take_profit <= entry_price:
+                logger.error(f"Invalid BUY signal - take profit {take_profit:.8f} <= entry {entry_price:.8f}")
+                signal['invalid'] = True
+                return signal
+        elif 'SELL' in direction or 'SHORT' in direction:
+            if stop_loss <= entry_price:
+                logger.error(f"Invalid SELL signal - stop loss {stop_loss:.8f} <= entry {entry_price:.8f}")
+                signal['invalid'] = True
+                return signal
+            if take_profit >= entry_price:
+                logger.error(f"Invalid SELL signal - take profit {take_profit:.8f} >= entry {entry_price:.8f}")
+                signal['invalid'] = True
+                return signal
+        
+        # Check risk/reward ratio
+        risk = abs(entry_price - stop_loss)
+        reward = abs(take_profit - entry_price)
+        if risk > 0 and reward / risk < 0.5:  # Less than 0.5:1 RR is terrible
+            logger.warning(f"Poor risk/reward ratio: {reward/risk:.2f}:1 for {signal.get('symbol')}")
+        
         # Add action field if missing
         if 'action' not in signal:
-            direction = signal.get('direction', '').upper()
             if 'LONG' in direction or 'BUY' in direction:
                 signal['action'] = 'BUY'
             elif 'SHORT' in direction or 'SELL' in direction:

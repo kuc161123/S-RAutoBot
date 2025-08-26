@@ -748,7 +748,7 @@ class AdvancedSupplyDemandStrategy:
                     # Additional confirmations
                     confirmations = []
                     
-                    logger.info(f"Demand zone detected: Price={current_price:.2f}, Zone=[{zone.lower_bound:.2f}, {zone.upper_bound:.2f}], Score={zone.composite_score:.1f}")
+                    logger.info(f"Demand zone detected: Price={current_price:.8f}, Zone=[{zone.lower_bound:.8f}, {zone.upper_bound:.8f}], Score={zone.composite_score:.1f}")
                     
                     # Market structure confirmations
                     if market_structure in [MarketStructure.BULLISH, MarketStructure.TRANSITIONING]:
@@ -817,7 +817,7 @@ class AdvancedSupplyDemandStrategy:
                             'structure_aligned': any(c in confirmations for c in ['higher_low', 'higher_high', 'ltf_bullish'])
                         }
                         
-                        logger.info(f"BUY signal generated: Entry={entry_price:.2f}, SL={stop_loss:.2f}, TP1={take_profit_1:.2f}, TP2={take_profit_2:.2f}, Score={zone.composite_score:.1f}")
+                        logger.info(f"BUY signal generated: Entry={entry_price:.8f}, SL={stop_loss:.8f}, TP1={take_profit_1:.8f}, TP2={take_profit_2:.8f}, Score={zone.composite_score:.1f}")
                         signals.append(signal)
             
             # For supply zones (SELL signals)
@@ -862,7 +862,7 @@ class AdvancedSupplyDemandStrategy:
                                     confirmations.append("htf_confluence")
                                     break
                     
-                    logger.info(f"Supply zone detected: Price={current_price:.2f}, Zone=[{zone.lower_bound:.2f}, {zone.upper_bound:.2f}], Score={zone.composite_score:.1f}")
+                    logger.info(f"Supply zone detected: Price={current_price:.8f}, Zone=[{zone.lower_bound:.8f}, {zone.upper_bound:.8f}], Score={zone.composite_score:.1f}")
                     
                     # More lenient: require only 1 confirmation for high-score zones
                     min_confirmations = 1 if zone.composite_score >= 70 else 2
@@ -899,7 +899,7 @@ class AdvancedSupplyDemandStrategy:
                             'structure_aligned': any(c in confirmations for c in ['lower_high', 'lower_low', 'ltf_bearish'])
                         }
                         
-                        logger.info(f"SELL signal generated: Entry={entry_price:.2f}, SL={stop_loss:.2f}, TP1={take_profit_1:.2f}, TP2={take_profit_2:.2f}, Score={zone.composite_score:.1f}")
+                        logger.info(f"SELL signal generated: Entry={entry_price:.8f}, SL={stop_loss:.8f}, TP1={take_profit_1:.8f}, TP2={take_profit_2:.8f}, Score={zone.composite_score:.1f}")
                         signals.append(signal)
         
         return signals

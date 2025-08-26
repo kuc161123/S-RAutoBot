@@ -61,13 +61,13 @@ class MultiTimeframeScanner:
                 from ..config_modules import scaling_config
             except ImportError:
                 from ..config_modules.scaling_config import scaling_config
-            batch_size = scaling_config.get_batch_size()
+            self.batch_size = scaling_config.get_batch_size()
         except Exception as e:
             # Fallback if config not available
-            batch_size = min(10, max(5, len(self.symbols) // 2))
+            self.batch_size = min(10, max(5, len(self.symbols) // 2))
         
-        self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=batch_size)
-        logger.info(f"Symbol rotator configured with batch size: {batch_size} for {len(self.symbols)} symbols")
+        self.symbol_rotator = SymbolRotator(self.symbols, max_concurrent=self.batch_size)
+        logger.info(f"Symbol rotator configured with batch size: {self.batch_size} for {len(self.symbols)} symbols")
         self.current_scan_batch = []
         
         # Position tracking - one position per symbol

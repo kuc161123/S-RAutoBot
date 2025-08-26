@@ -159,8 +159,16 @@ class MultiTimeframeScanner:
     
     async def start_scanning(self):
         """Start scanning with symbol rotation for efficiency and auto-recovery"""
-        logger.info(f"🚀 Starting multi-timeframe scanner for {len(self.symbols)} symbols")
+        logger.info("\n" + "="*80)
+        logger.info("🎆 MULTI-TIMEFRAME SCANNER STARTING UP")
+        logger.info("="*80)
+        logger.info(f"📊 Total symbols to scan: {len(self.symbols)}")
         logger.info(f"📋 Symbol list sample: {self.symbols[:10] if self.symbols else 'NO SYMBOLS!'}")
+        logger.info(f"🕒 HTF timeframes (for zone detection): {self.htf_timeframes}")
+        logger.info(f"🕓 LTF timeframes (for entry signals): {self.ltf_timeframes}")
+        logger.info(f"🎯 Batch size: {self.batch_size} symbols per batch")
+        logger.info(f"⚡ ZONE DETECTION WILL START IN SECONDS!")
+        logger.info("="*80 + "\n")
         
         if self.is_scanning:
             logger.warning("Scanner already running, restarting...")

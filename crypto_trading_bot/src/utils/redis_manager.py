@@ -61,6 +61,14 @@ class RedisManager:
                         # Try to get from environment
                         redis_url = os.getenv('REDIS_URL')
                     
+                    # Handle Railway internal URL when running locally
+                    if redis_url and 'redis.railway.internal' in redis_url:
+                        # Check if we're running locally (not on Railway)
+                        import os
+                        if not os.getenv('RAILWAY_ENVIRONMENT'):
+                            logger.info("Railway internal Redis URL detected but not running on Railway - using in-memory queue")
+                            return None
+                    
                     # Skip localhost Redis in production
                     if redis_url and 'localhost' in redis_url:
                         import os

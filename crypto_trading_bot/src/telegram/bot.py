@@ -41,6 +41,7 @@ class TradingBot:
         self.application = None
         self.trading_enabled = False
         self.monitored_symbols = set()
+        self.trading_engine = None  # Will be set by engine after initialization
         
     async def initialize(self):
         """Initialize the bot"""
@@ -79,6 +80,29 @@ class TradingBot:
         ))
         
         logger.info("Telegram bot initialized")
+        
+        # Send test notification to confirm bot is working
+        try:
+            await self.application.initialize()
+            if settings.telegram_allowed_chat_ids:
+                test_message = "🤖 **Trading Bot Started**\n\n"
+                test_message += f"✅ Telegram connection established\n"
+                test_message += f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                test_message += f"🔧 Mode: Ultra Intelligent Engine\n"
+                test_message += f"Use /help to see available commands"
+                
+                for chat_id in settings.telegram_allowed_chat_ids:
+                    try:
+                        await self.application.bot.send_message(
+                            chat_id=chat_id,
+                            text=test_message,
+                            parse_mode='Markdown'
+                        )
+                        logger.info(f"✅ Test notification sent successfully to chat_id {chat_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to send test notification to chat_id {chat_id}: {e}")
+        except Exception as e:
+            logger.error(f"Failed to send startup notification: {e}")
     
     async def check_authorization(self, update: Update) -> bool:
         """Check if user is authorized"""
@@ -374,7 +398,35 @@ class TradingBot:
                 total_zones
             )
             
-            await update.message.reply_text(status_text, parse_mode='Markdown')
+            # Add diagnostic information
+            diagnostic_text = "\n\n📊 **Diagnostics:**\n"
+            
+            # Check trading engine status if available
+            if hasattr(self, 'trading_engine') and self.trading_engine:
+                try:
+                    engine_status = self.trading_engine.get_status()
+                    diagnostic_text += f"• Engine: {'🟢 Running' if engine_status.get('running') else '🔴 Stopped'}\n"
+                    diagnostic_text += f"• Trading: {'✅ Enabled' if engine_status.get('trading_enabled') else '❌ Disabled'}\n"
+                    diagnostic_text += f"• Positions: {engine_status.get('active_positions', 0)}\n"
+                    diagnostic_text += f"• Portfolio Heat: {engine_status.get('portfolio_heat', '0%')}\n"
+                except:
+                    diagnostic_text += "• Engine: ⚠️ Status unavailable\n"
+            else:
+                diagnostic_text += "• Engine: ⚠️ Not connected\n"
+            
+            # Check scanner status
+            try:
+                from ..utils.signal_queue import signal_queue
+                queue_stats = await signal_queue.get_stats()
+                diagnostic_text += f"• Signal Queue: {queue_stats.get('queue_size', 0)} pending\n"
+                diagnostic_text += f"• Processing: {queue_stats.get('processing', 0)} signals\n"
+            except:
+                diagnostic_text += "• Signal Queue: ⚠️ Unavailable\n"
+            
+            # Check telegram connection
+            diagnostic_text += f"• Telegram: {'🟢 Connected' if self.application and self.application.bot else '🔴 Disconnected'}\n"
+            
+            await update.message.reply_text(status_text + diagnostic_text, parse_mode='Markdown')
             logger.info("Status command completed successfully")
             
         except Exception as e:
@@ -864,13 +916,25 @@ class TradingBot:
     async def send_notification(self, chat_id: int, message: str, parse_mode: str = 'Markdown'):
         """Send notification to user"""
         try:
+            if not self.application:
+                logger.error("Telegram bot not initialized - cannot send notification")
+                return False
+            
+            if not self.application.bot:
+                logger.error("Telegram bot instance not available - cannot send notification")
+                return False
+            
+            logger.debug(f"Sending notification to chat_id {chat_id}")
             await self.application.bot.send_message(
                 chat_id=chat_id,
                 text=message,
                 parse_mode=parse_mode
             )
+            logger.debug(f"✅ Notification sent successfully to chat_id {chat_id}")
+            return True
         except Exception as e:
-            logger.error(f"Failed to send notification: {e}")
+            logger.error(f"Failed to send notification to chat_id {chat_id}: {e}", exc_info=True)
+            return False
     
     async def run_webhook(self, webhook_url: str, secret_token: str):
         """Run bot with webhook"""

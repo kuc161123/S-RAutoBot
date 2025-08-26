@@ -313,6 +313,11 @@ class UltraIntelligentEngine:
             await self.mtf_scanner.initialize()
             logger.info("Scanner initialized successfully")
             
+            # Set reference in Telegram bot for diagnostics
+            if self.telegram_bot:
+                self.telegram_bot.trading_engine = self
+                logger.info("Telegram bot reference set for diagnostics")
+            
             self.initialization_complete = True
             logger.info(f"Ultra Intelligent Engine initialized with {len(self.monitored_symbols)} symbols")
             
@@ -1013,17 +1018,21 @@ class UltraIntelligentEngine:
     async def _signal_executor(self):
         """Execute signals from queue"""
         logger.info("🚀 Signal executor started - waiting for trading signals...")
+        logger.info(f"📊 Initial status - Trading enabled: {self.trading_enabled}, Emergency stop: {self.emergency_stop}")
         
         # Log queue status periodically
         last_status_log = datetime.now()
         signals_processed = 0
+        signals_executed = 0
+        signals_rejected = 0
         
         while self.is_running:
             try:
                 # Log queue status every minute
                 if (datetime.now() - last_status_log).total_seconds() > 60:
                     queue_size = await self.signal_queue.get_queue_size()
-                    logger.info(f"📊 Signal executor status: {signals_processed} processed, {queue_size} pending")
+                    logger.info(f"📊 Signal executor status: {signals_processed} processed, {signals_executed} executed, {signals_rejected} rejected, {queue_size} pending")
+                    logger.info(f"📊 Trading status: enabled={self.trading_enabled}, positions={len(self.active_positions)}, heat={self.portfolio_heat:.2%}")
                     last_status_log = datetime.now()
                 
                 # Get signal from Redis queue
@@ -1038,12 +1047,16 @@ class UltraIntelligentEngine:
                 logger.debug(f"Full signal: {signal}")
                 
                 if not self.trading_enabled:
-                    logger.warning("⚠️ Trading disabled, skipping signal")
+                    logger.warning(f"⚠️ Trading disabled (enabled={self.trading_enabled}), skipping signal")
+                    signals_rejected += 1
                     continue
                 
                 # Check if we can take this position
-                if not await self._can_take_position(signal):
+                logger.info(f"🔍 Checking if we can take position for {signal.get('symbol')}...")
+                can_take = await self._can_take_position(signal)
+                if not can_take:
                     logger.info(f"🚫 Cannot take position for {signal.get('symbol')} - risk/position checks failed")
+                    signals_rejected += 1
                     continue
                 
                 # Execute the signal
@@ -1052,6 +1065,7 @@ class UltraIntelligentEngine:
                 
                 if success:
                     self.metrics['signals_executed'] += 1
+                    signals_executed += 1
                     logger.info(f"✅ Successfully opened {signal.get('direction')} position for {signal.get('symbol')}")
                     
                     # Send enhanced Telegram notification
@@ -1080,6 +1094,7 @@ class UltraIntelligentEngine:
                     if symbol in self.pending_signals:
                         del self.pending_signals[symbol]
                 else:
+                    signals_rejected += 1
                     logger.warning(f"❌ Failed to execute signal for {signal.get('symbol')}")
                 
             except asyncio.TimeoutError:
@@ -2019,7 +2034,7 @@ class UltraIntelligentEngine:
     async def _scanner_watchdog(self):
         """Monitor scanner health and restart if needed"""
         check_interval = 60  # Check every minute
-        stuck_threshold = 180  # Consider stuck if no activity for 3 minutes
+        stuck_threshold = 600  # Consider stuck if no activity for 10 minutes (adjusted for slower scanning)
         restart_attempts = 0
         max_restart_attempts = 5
         

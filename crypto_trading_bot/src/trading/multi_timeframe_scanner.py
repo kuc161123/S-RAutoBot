@@ -481,7 +481,7 @@ class MultiTimeframeScanner:
             'consecutive_errors': self.consecutive_errors,
             'metrics': self.scan_metrics,
             'success_rate': self._get_success_rate(),
-            'healthy': self.is_scanning and time_since_last_scan and time_since_last_scan < 120
+            'healthy': self.is_scanning and time_since_last_scan and time_since_last_scan < 600  # Adjusted for slower scanning pace
         }
     
     async def _scan_symbol_once(self, symbol: str):

@@ -1283,9 +1283,10 @@ class MultiTimeframeScanner:
             logger.info(f"📝 Checking signal queue connection - Redis: {signal_queue.redis_client is not None}, Memory: {signal_queue.in_memory_queue is not None}")
             
             if not signal_queue.redis_client and not signal_queue.in_memory_queue:
-                logger.error(f"📝 Signal queue not connected! Engine should have initialized it")
-                # Don't connect here - this is a critical error
-                # The engine must connect the queue first
+                logger.warning(f"📝 Signal queue not connected! Initializing in-memory fallback...")
+                # Emergency fallback - connect with in-memory queue
+                await signal_queue.connect(None)  # Will create in-memory queue
+                logger.info(f"📝 Emergency fallback: Memory queue created")
             
             # Push signal
             logger.info(f"📝 Pushing signal to queue for {symbol}...")

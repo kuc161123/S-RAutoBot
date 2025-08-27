@@ -352,10 +352,15 @@ class EnhancedBybitClient:
             return df
             
         except Exception as e:
-            if "403" in str(e) or "429" in str(e):
+            error_str = str(e)
+            if "403" in error_str or "429" in error_str or "10006" in error_str or "Too many visits" in error_str:
+                # Handle rate limit error
                 rate_limiter.handle_rate_limit_error()
+                logger.warning(f"Rate limit hit for {symbol}, backing off...")
+                # Return empty dataframe for now, scanner will retry later
+                return pd.DataFrame()
                 
-            logger.error(f"Error fetching klines for {symbol}: {e}")
+            logger.error(f"Error fetching klines for {symbol}: {error_str}")
             return pd.DataFrame()
             
     async def place_order(self, **kwargs) -> Optional[str]:

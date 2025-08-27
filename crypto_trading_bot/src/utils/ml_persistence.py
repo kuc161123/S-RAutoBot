@@ -118,16 +118,9 @@ class MLPersistenceManager:
                 training_samples = getattr(model_record, 'training_samples', 0) or 0
             except Exception as attr_error:
                 # If we can't access attributes, the session is detached
-                logger.warning(f"Session detached for {model_name}, using defaults")
-                # Still try to get the model data if possible
-                try:
-                    model_bytes = model_record.model_data
-                except:
-                    logger.error(f"Cannot access model data for {model_name}")
-                    return None
-                version = 1
-                accuracy = None
-                training_samples = 0
+                logger.warning(f"Session detached for {model_name}, model will be recreated after training")
+                # Return None to trigger model recreation
+                return None
             
             # Deserialize model
             model_data = pickle.loads(model_bytes)

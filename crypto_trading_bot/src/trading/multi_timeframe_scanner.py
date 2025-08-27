@@ -592,8 +592,16 @@ class MultiTimeframeScanner:
         # Apply rate limiting
         await rate_limiter.acquire()
         
-        # Additional small delay for stability
-        await asyncio.sleep(1)  # 1 second delay between symbols
+        # Additional delay for stability and to prevent rate limits
+        # Use adaptive delay based on number of symbols
+        if len(self.symbols) > 50:
+            delay = 3  # 3 seconds for large lists
+        elif len(self.symbols) > 20:
+            delay = 2  # 2 seconds for medium lists
+        else:
+            delay = 1  # 1 second for small lists
+        
+        await asyncio.sleep(delay)
         
         # Skip if should skip
         if self.symbol_rotator.should_skip_symbol(symbol):
@@ -723,7 +731,13 @@ class MultiTimeframeScanner:
                         logger.error(f"❌ API timeout fetching HTF {symbol} {timeframe}")
                         continue
                     except Exception as e:
-                        logger.error(f"❌ API error fetching {symbol} {timeframe}: {str(e)}")
+                        error_str = str(e)
+                        if "10006" in error_str or "Too many visits" in error_str or "rate limit" in error_str.lower():
+                            logger.warning(f"⏳ Rate limit hit for {symbol} {timeframe}, will retry later")
+                            # Add extra delay when rate limit is hit
+                            await asyncio.sleep(5)
+                        else:
+                            logger.error(f"❌ API error fetching {symbol} {timeframe}: {error_str}")
                         continue
                 
             except Exception as e:
@@ -750,7 +764,13 @@ class MultiTimeframeScanner:
                 continue
                     
             except Exception as e:
-                logger.error(f"Error updating LTF {symbol} {timeframe}: {e}")
+                error_str = str(e)
+                if "10006" in error_str or "Too many visits" in error_str or "rate limit" in error_str.lower():
+                    logger.warning(f"⏳ Rate limit hit for LTF {symbol} {timeframe}, will retry later")
+                    # Add extra delay when rate limit is hit
+                    await asyncio.sleep(5)
+                else:
+                    logger.error(f"Error updating LTF {symbol} {timeframe}: {error_str}")
     
     async def _cache_data_async(self, symbol: str, timeframe: str, df: pd.DataFrame, ttl: Optional[int] = None):
         """Cache data asynchronously to prevent blocking"""

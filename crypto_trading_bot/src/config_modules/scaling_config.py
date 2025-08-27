@@ -16,7 +16,7 @@ Scaling Plan:
 
 class ScalingConfig:
     # Current phase (change this to scale up)
-    CURRENT_PHASE = 1  # Phase 1 (20 symbols) - Basic testing with more opportunities
+    CURRENT_PHASE = 6  # Phase 6 - PRODUCTION MODE: All available symbols
     
     # Phase definitions
     PHASES = {
@@ -58,9 +58,9 @@ class ScalingConfig:
         },
         6: {
             'symbol_count': -1,  # -1 means all available symbols
-            'batch_size': 5,
-            'scan_delay': 30,
-            'description': 'Production - All symbols'
+            'batch_size': 20,  # Scan 20 symbols per batch for efficiency
+            'scan_delay': 10,  # 10 seconds between batches for continuous scanning
+            'description': 'Production - All symbols with optimized batching'
         }
     }
     

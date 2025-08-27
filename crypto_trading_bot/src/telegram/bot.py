@@ -77,7 +77,8 @@ class TradingBot:
                 test_message += f"✅ Trading is ENABLED automatically\n"
                 test_message += f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                 test_message += f"🔧 Mode: Ultra Intelligent Engine\n"
-                test_message += f"📊 Monitoring 20 symbols\n\n"
+                test_message += f"📊 Monitoring ALL AVAILABLE SYMBOLS\n"
+                test_message += f"🔄 Continuous batch scanning (20 symbols/batch)\n\n"
                 test_message += f"Bot will trade automatically - no action needed"
                 
                 for chat_id in settings.telegram_allowed_chat_ids:

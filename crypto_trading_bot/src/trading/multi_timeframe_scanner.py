@@ -162,14 +162,15 @@ class MultiTimeframeScanner:
     async def start_scanning(self):
         """Start scanning with symbol rotation for efficiency and auto-recovery"""
         logger.info("\n" + "="*80)
-        logger.info("🎆 MULTI-TIMEFRAME SCANNER STARTING UP")
+        logger.info("🎆 MULTI-TIMEFRAME SCANNER STARTING UP - PRODUCTION MODE")
         logger.info("="*80)
-        logger.info(f"📊 Total symbols to scan: {len(self.symbols)}")
-        logger.info(f"📋 Symbol list sample: {self.symbols[:10] if self.symbols else 'NO SYMBOLS!'}")
+        logger.info(f"📊 Total symbols to scan: {len(self.symbols)} {'(ALL AVAILABLE)' if len(self.symbols) > 100 else ''}")
+        logger.info(f"📋 First 10 symbols: {self.symbols[:10] if self.symbols else 'NO SYMBOLS!'}")
         logger.info(f"🕒 HTF timeframes (for zone detection): {self.htf_timeframes}")
         logger.info(f"🕓 LTF timeframes (for entry signals): {self.ltf_timeframes}")
         logger.info(f"🎯 Batch size: {self.batch_size} symbols per batch")
-        logger.info(f"⚡ ZONE DETECTION WILL START IN SECONDS!")
+        logger.info(f"⏱️ Estimated full cycle time: {(len(self.symbols) / self.batch_size * 15):.1f} minutes")
+        logger.info(f"⚡ SCANNING ALL CRYPTO MARKETS CONTINUOUSLY!")
         logger.info("="*80 + "\n")
         
         if self.is_scanning:
@@ -244,8 +245,11 @@ class MultiTimeframeScanner:
                         await asyncio.sleep(10)
                         continue
                 
-                # Log full batch for debugging signal generation issues
-                logger.info(f"📊 Batch #{batch_count}: Scanning {len(batch)} symbols: {', '.join(batch)}")
+                # Log batch progress
+                total_batches = (len(self.symbols) + self.batch_size - 1) // self.batch_size
+                batch_num = (batch_count % total_batches) + 1
+                logger.info(f"📊 Batch {batch_num}/{total_batches} (Cycle #{(batch_count // total_batches) + 1}): Scanning {len(batch)} symbols")
+                logger.debug(f"Symbols in batch: {', '.join(batch[:5])}..." if len(batch) > 5 else f"Symbols: {', '.join(batch)}")
                 
                 # Create tasks for batch
                 tasks = []
@@ -594,14 +598,9 @@ class MultiTimeframeScanner:
         # Apply rate limiting
         await rate_limiter.acquire()
         
-        # Additional delay for stability and to prevent rate limits
-        # Use adaptive delay based on number of symbols
-        if len(self.symbols) > 50:
-            delay = 3  # 3 seconds for large lists
-        elif len(self.symbols) > 20:
-            delay = 2  # 2 seconds for medium lists
-        else:
-            delay = 1  # 1 second for small lists
+        # Minimal delay for production mode - rely on rate limiter
+        # Small delay to prevent API overload
+        delay = 0.5  # 500ms between symbols for smooth operation
         
         await asyncio.sleep(delay)
         

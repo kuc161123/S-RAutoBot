@@ -39,7 +39,7 @@ class TradingBot:
         self.bybit_client = bybit_client
         self.strategy = strategy
         self.application = None
-        self.trading_enabled = False
+        self.trading_enabled = True  # Auto-start enabled
         self.monitored_symbols = set()
         self.trading_engine = None  # Will be set by engine after initialization
         
@@ -56,45 +56,15 @@ class TradingBot:
         )
         
         # Add command handlers
+        # MONITORING ONLY - No manual controls
+        # Only basic status and monitoring commands
         self.application.add_handler(CommandHandler("start", self.cmd_start))
-        self.application.add_handler(CommandHandler("help", self.cmd_help))
-        self.application.add_handler(CommandHandler("enable", self.cmd_enable))
-        self.application.add_handler(CommandHandler("disable", self.cmd_disable))
         self.application.add_handler(CommandHandler("status", self.cmd_status))
-        self.application.add_handler(CommandHandler("symbols", self.cmd_symbols))
-        self.application.add_handler(CommandHandler("margin", self.cmd_margin))
-        self.application.add_handler(CommandHandler("leverage", self.cmd_leverage))
-        self.application.add_handler(CommandHandler("risk", self.cmd_risk))
-        self.application.add_handler(CommandHandler("strategy", self.cmd_strategy))
-        self.application.add_handler(CommandHandler("backtest", self.cmd_backtest))
         self.application.add_handler(CommandHandler("positions", self.cmd_positions))
         self.application.add_handler(CommandHandler("logs", self.cmd_logs))
-        
-        # Emergency controls
-        self.application.add_handler(CommandHandler("emergency", self.cmd_emergency))
-        self.application.add_handler(CommandHandler("panic", self.cmd_panic))
-        self.application.add_handler(CommandHandler("closeall", self.cmd_closeall))
-        
-        # ML model controls
-        self.application.add_handler(CommandHandler("ml", self.cmd_ml))
-        self.application.add_handler(CommandHandler("retrain", self.cmd_retrain))
-        
-        # Zone monitoring
         self.application.add_handler(CommandHandler("zones", self.cmd_zones))
-        self.application.add_handler(CommandHandler("signals", self.cmd_signals))
         
-        # Scanner controls
-        self.application.add_handler(CommandHandler("scanner", self.cmd_scanner))
-        self.application.add_handler(CommandHandler("phase", self.cmd_phase))
-        
-        # Add callback query handler for inline keyboards
-        self.application.add_handler(CallbackQueryHandler(self.handle_callback))
-        
-        # Add message handler for keyboard buttons
-        self.application.add_handler(MessageHandler(
-            filters.TEXT & ~filters.COMMAND, 
-            self.handle_keyboard_button
-        ))
+        # No keyboard buttons or callback handlers - monitoring only
         
         logger.info("Telegram bot initialized")
         
@@ -102,11 +72,13 @@ class TradingBot:
         try:
             await self.application.initialize()
             if settings.telegram_allowed_chat_ids:
-                test_message = "🤖 **Trading Bot Started**\n\n"
-                test_message += f"✅ Telegram connection established\n"
+                test_message = "🤖 **AUTO-TRADING BOT STARTED**\n\n"
+                test_message += f"✅ Bot is now FULLY AUTONOMOUS\n"
+                test_message += f"✅ Trading is ENABLED automatically\n"
                 test_message += f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
                 test_message += f"🔧 Mode: Ultra Intelligent Engine\n"
-                test_message += f"Use /help to see available commands"
+                test_message += f"📊 Monitoring 20 symbols\n\n"
+                test_message += f"Bot will trade automatically - no action needed"
                 
                 for chat_id in settings.telegram_allowed_chat_ids:
                     try:
@@ -289,30 +261,26 @@ class TradingBot:
             return
         
         welcome_text = (
-            "🤖 *Welcome to Crypto Trading Bot!*\n\n"
-            "This bot trades crypto futures on Bybit using Supply & Demand strategy.\n\n"
-            "⚠️ *Risk Warning:* Futures trading involves significant risk. "
-            "Only trade with funds you can afford to lose.\n\n"
-            "📋 *Quick Start:*\n"
-            "1. Configure risk with /risk\n"
-            "2. Select symbols with /symbols\n"
-            "3. Enable trading with /enable\n\n"
-            "Use /help to see all commands."
+            "🤖 **AUTO-TRADING BOT ACTIVE**\n\n"
+            "✅ Bot is running in FULL AUTOMATIC mode\n\n"
+            "**Current Operation:**\n"
+            "• Scanning markets continuously\n"
+            "• Detecting supply/demand zones\n"  
+            "• Executing trades automatically\n"
+            "• Managing risk and positions\n\n"
+            "**Monitoring Commands:**\n"
+            "/status - Current bot status\n"
+            "/positions - Open positions\n"
+            "/zones - Active zones\n"
+            "/logs - Recent activity\n\n"
+            "⚠️ Manual controls disabled - Bot operates autonomously"
         )
         
-        # Create main menu keyboard
-        keyboard = [
-            [KeyboardButton("📊 Status"), KeyboardButton("🤖 Auto-Trading")],
-            [KeyboardButton("💹 Positions"), KeyboardButton("⚙️ Settings")],
-            [KeyboardButton("🎯 Enable"), KeyboardButton("🛑 Disable")],
-            [KeyboardButton("📈 Backtest"), KeyboardButton("🚨 Emergency")]
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        # No keyboard buttons - monitoring only
         
         await update.message.reply_text(
             welcome_text,
-            parse_mode='Markdown',
-            reply_markup=reply_markup
+            parse_mode='Markdown'
         )
     
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -403,7 +371,7 @@ class TradingBot:
             return
         
         # Disable trading in both bot and engine
-        self.trading_enabled = False
+        self.trading_enabled = True  # Auto-start enabled
         if hasattr(self, 'trading_engine') and self.trading_engine:
             self.trading_engine.trading_enabled = False
             logger.info("Trading disabled in both bot and engine")
@@ -852,7 +820,7 @@ class TradingBot:
         
         elif data == "disable_trading":
             # Disable trading in both bot and engine
-            self.trading_enabled = False
+            self.trading_enabled = True  # Auto-start enabled
             if hasattr(self, 'trading_engine') and self.trading_engine:
                 self.trading_engine.trading_enabled = False
                 logger.info("Trading disabled via callback in both bot and engine")
@@ -930,7 +898,7 @@ class TradingBot:
         # Emergency control callbacks
         elif data == "emergency_confirm":
             # Disable trading in both bot and engine
-            self.trading_enabled = False
+            self.trading_enabled = True  # Auto-start enabled
             
             if hasattr(self, 'trading_engine') and self.trading_engine:
                 self.trading_engine.trading_enabled = False
@@ -1479,7 +1447,7 @@ class TradingBot:
             return
         
         # Immediately disable trading in both bot and engine
-        self.trading_enabled = False
+        self.trading_enabled = True  # Auto-start enabled
         
         if hasattr(self, 'trading_engine') and self.trading_engine:
             # Disable trading in engine

@@ -16,7 +16,7 @@ Scaling Plan:
 
 class ScalingConfig:
     # Current phase (change this to scale up)
-    CURRENT_PHASE = 0  # Phase 0 (5 symbols) - Minimal testing phase
+    CURRENT_PHASE = 1  # Phase 1 (20 symbols) - Basic testing with more opportunities
     
     # Phase definitions
     PHASES = {

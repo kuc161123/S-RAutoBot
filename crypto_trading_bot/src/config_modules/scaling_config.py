@@ -16,10 +16,16 @@ Scaling Plan:
 
 class ScalingConfig:
     # Current phase (change this to scale up)
-    CURRENT_PHASE = 3  # Phase 3 (100 symbols) - Doubled for maximum signal opportunities
+    CURRENT_PHASE = 0  # Phase 0 (5 symbols) - Minimal testing phase
     
     # Phase definitions
     PHASES = {
+        0: {
+            'symbol_count': 5,
+            'batch_size': 5,
+            'scan_delay': 5,  # seconds between batches
+            'description': 'Minimal Testing - 5 symbols only for debugging'
+        },
         1: {
             'symbol_count': 20,
             'batch_size': 10,
@@ -98,10 +104,16 @@ class ScalingConfig:
     @classmethod
     def set_phase(cls, phase: int):
         """Set specific phase"""
-        if 1 <= phase <= 6:
+        if 0 <= phase <= 6:
             cls.CURRENT_PHASE = phase
             return True
         return False
+    
+    @classmethod
+    def get_testing_symbols(cls):
+        """Get specific symbols for testing phase"""
+        # Use top 5 most liquid symbols for testing
+        return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT']
 
 # Export config instance
 scaling_config = ScalingConfig()

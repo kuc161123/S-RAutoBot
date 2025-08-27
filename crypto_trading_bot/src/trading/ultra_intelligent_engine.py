@@ -488,8 +488,13 @@ class UltraIntelligentEngine:
             target_count = scaling_config.get_symbol_count()
             phase_description = scaling_config.get_description()
             
+            # If phase 0 (testing), use specific 5 symbols
+            if scaling_config.CURRENT_PHASE == 0:
+                self.monitored_symbols = scaling_config.get_testing_symbols()
+                logger.info(f"🧪 TESTING MODE: Using only {len(self.monitored_symbols)} symbols for debugging")
+                logger.info(f"📋 Test symbols: {', '.join(self.monitored_symbols)}")
             # If target is -1, use all symbols
-            if target_count == -1:
+            elif target_count == -1:
                 self.monitored_symbols = all_symbols
                 logger.info(f"🚀 PRODUCTION MODE: Monitoring ALL {len(self.monitored_symbols)} symbols")
             else:

@@ -42,9 +42,11 @@ class MultiTimeframeScanner:
         
         # Timeframe configuration for strategy
         # Use consistent timeframe format (minutes as string)
-        self.htf_timeframes = ["240", "60"]  # Higher timeframes for zones (4H, 1H)  
+        # Modified timeframes for better signal generation
+        # Use medium timeframes for zone detection (more actionable zones)
+        self.htf_timeframes = ["60", "15"]  # Zone detection on 1H and 15min
         self.ltf_timeframes = ["15", "5"]  # Lower timeframes for structure (15m, 5m)
-        self.primary_htf = "240"  # Primary HTF for zone identification
+        self.primary_htf = "60"  # Primary HTF for zone identification (1 hour)
         self.primary_ltf = "15"  # Primary LTF for entry timing
         
         # Use provided symbols or defaults
@@ -845,27 +847,50 @@ class MultiTimeframeScanner:
             
             # Log zone details
             zones = analysis.get('zones', [])
-            if zones:
-                logger.info(f"📊 Found {len(zones)} zones for {symbol}:")
-                for i, zone in enumerate(zones[:3]):  # Log first 3 zones
-                    logger.info(f"  Zone {i+1}: Type={zone.zone_type}, Score={zone.composite_score:.1f}, "
-                              f"Range=[{zone.lower_bound:.4f}, {zone.upper_bound:.4f}]")
+            current_price = df['close'].iloc[-1]
             
-            logger.info(f"📊 Strategy returned: zones={len(analysis.get('zones', []))}, signals={len(analysis.get('signals', []))}")
+            if zones:
+                logger.info(f"📊 Found {len(zones)} zones for {symbol} (Current price: {current_price:.4f}):")
+                for i, zone in enumerate(zones[:5]):  # Log first 5 zones
+                    distance_pct = 0
+                    if current_price > zone.upper_bound:
+                        distance_pct = ((current_price - zone.upper_bound) / current_price) * 100
+                        distance_str = f"+{distance_pct:.2f}% above"
+                    elif current_price < zone.lower_bound:
+                        distance_pct = ((zone.lower_bound - current_price) / current_price) * 100
+                        distance_str = f"-{distance_pct:.2f}% below"
+                    else:
+                        distance_str = "INSIDE ZONE"
+                    
+                    logger.info(f"  Zone {i+1}: {zone.zone_type.upper()} [{zone.lower_bound:.2f}-{zone.upper_bound:.2f}] "
+                              f"Score={zone.composite_score:.1f}, Distance={distance_str}")
+            else:
+                logger.warning(f"⚠️ NO ZONES FOUND for {symbol} on {timeframe}min!")
+            
+            logger.info(f"📊 Strategy analysis complete: zones={len(analysis.get('zones', []))}, signals={len(analysis.get('signals', []))}")
             
             # Check for signals from strategy
             if analysis.get('signals') and len(analysis['signals']) > 0:
-                logger.info(f"🎯 Found {len(analysis['signals'])} signals from strategy for {symbol}")
+                logger.info(f"🎯🎯🎯 SIGNALS FOUND! {len(analysis['signals'])} signals from strategy for {symbol}")
+                
+                # Log each signal detail
+                for idx, sig in enumerate(analysis['signals']):
+                    logger.info(f"  Signal {idx+1}: {sig.get('type')} @ {sig.get('entry_price', 0):.2f}, "
+                              f"SL={sig.get('stop_loss', 0):.2f}, TP={sig.get('take_profit_1', 0):.2f}, "
+                              f"Confidence={sig.get('confidence', 0):.1f}")
+                
                 # Return the first valid signal
                 for signal in analysis['signals']:
                     # Add required fields if missing
                     signal['symbol'] = symbol
                     signal['timeframe'] = timeframe
                     signal['confidence'] = signal.get('confidence', 80)
-                    logger.info(f"🔥 Using strategy signal for {symbol}: {signal.get('direction')} @ {signal.get('entry_price')}")
+                    signal['direction'] = signal.get('type', 'BUY')  # Map 'type' to 'direction'
+                    
+                    logger.info(f"🔥🔥🔥 RETURNING SIGNAL for {symbol}: {signal.get('direction')} @ {signal.get('entry_price'):.2f}")
                     return signal
             else:
-                logger.debug(f"No signals from strategy for {symbol} on {timeframe}")
+                logger.warning(f"❌ NO SIGNALS from strategy for {symbol} on {timeframe}min (despite {len(zones)} zones)")
         
         # If no direct signals from strategy, continue with HTF/LTF confluence method
         # Step 1: Get HTF supply/demand zones

@@ -70,6 +70,23 @@ class TradingBot:
         self.application.add_handler(CommandHandler("positions", self.cmd_positions))
         self.application.add_handler(CommandHandler("logs", self.cmd_logs))
         
+        # Emergency controls
+        self.application.add_handler(CommandHandler("emergency", self.cmd_emergency))
+        self.application.add_handler(CommandHandler("panic", self.cmd_panic))
+        self.application.add_handler(CommandHandler("closeall", self.cmd_closeall))
+        
+        # ML model controls
+        self.application.add_handler(CommandHandler("ml", self.cmd_ml))
+        self.application.add_handler(CommandHandler("retrain", self.cmd_retrain))
+        
+        # Zone monitoring
+        self.application.add_handler(CommandHandler("zones", self.cmd_zones))
+        self.application.add_handler(CommandHandler("signals", self.cmd_signals))
+        
+        # Scanner controls
+        self.application.add_handler(CommandHandler("scanner", self.cmd_scanner))
+        self.application.add_handler(CommandHandler("phase", self.cmd_phase))
+        
         # Add callback query handler for inline keyboards
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
         
@@ -258,15 +275,27 @@ class TradingBot:
             "/disable - Stop automated trading\n"
             "/status - Show bot status\n"
             "/positions - View open positions\n\n"
+            "🚨 *Emergency Controls:*\n"
+            "/emergency - Emergency stop (disable + close all)\n"
+            "/panic - Panic mode (stop all, preserve positions)\n"
+            "/closeall - Close all positions immediately\n\n"
+            "🤖 *ML & Intelligence:*\n"
+            "/ml - ML model status & control\n"
+            "/retrain - Retrain ML models\n\n"
+            "📊 *Monitoring:*\n"
+            "/zones - View active S/D zones\n"
+            "/signals - View recent signals\n"
+            "/scanner - Scanner status & control\n"
+            "/phase - Scaling phase management\n"
+            "/logs - View recent activity logs\n\n"
             "⚙️ *Configuration:*\n"
             "/symbols - Manage traded symbols\n"
             "/margin <symbol> <cross|isolated> - Set margin mode\n"
             "/leverage <symbol> <value> - Set leverage (1-125x)\n"
             "/risk - Configure risk parameters\n"
             "/strategy - Configure strategy settings\n\n"
-            "📊 *Analysis:*\n"
-            "/backtest <symbol> <timeframe> <days> - Run backtest\n"
-            "/logs - View recent activity logs\n\n"
+            "📈 *Analysis:*\n"
+            "/backtest <symbol> <timeframe> <days> - Run backtest\n\n"
             "💡 *Examples:*\n"
             "`/margin BTCUSDT isolated`\n"
             "`/leverage BTCUSDT 5`\n"
@@ -653,20 +682,42 @@ class TradingBot:
             await update.message.reply_text(f"❌ Backtest failed: {error_msg[:200]}")
     
     async def cmd_positions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /positions command"""
+        """Handle /positions command with interactive management"""
         if not await self.check_authorization(update):
             return
         
         try:
             positions = await self.bybit_client.get_positions()
-            open_positions = [p for p in positions if float(p['size']) > 0]
+            open_positions = [p for p in positions if float(p.get('size', 0)) > 0]
             
             if not open_positions:
                 await update.message.reply_text("📊 No open positions")
                 return
             
             text = format_positions(open_positions)
-            await update.message.reply_text(text, parse_mode='Markdown')
+            
+            # Add interactive buttons for position management
+            keyboard = []
+            
+            # Add close buttons for first 3 positions
+            for i, pos in enumerate(open_positions[:3]):
+                symbol = pos['symbol']
+                side = pos['side']
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"Close {symbol} ({side})",
+                        callback_data=f"close_{symbol}"
+                    )
+                ])
+            
+            # Add general actions
+            keyboard.append([
+                InlineKeyboardButton("🔄 Refresh", callback_data="positions_refresh"),
+                InlineKeyboardButton("🚨 Close All", callback_data="closeall_confirm")
+            ])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
             
         except Exception as e:
             logger.error(f"Error fetching positions: {e}")
@@ -767,6 +818,213 @@ class TradingBot:
                     if "'bool' object is not callable" in error_msg:
                         error_msg = "Strategy or engine initialization error. Please restart the bot."
                     await query.message.reply_text(f"❌ Backtest failed: {error_msg[:200]}")
+        
+        # Emergency control callbacks
+        elif data == "emergency_confirm":
+            # Disable trading
+            self.trading_enabled = False
+            
+            # Close all positions
+            try:
+                positions = await self.bybit_client.get_positions()
+                open_positions = [p for p in positions if float(p.get('size', 0)) > 0]
+                closed_count = 0
+                
+                for pos in open_positions:
+                    try:
+                        await self.bybit_client.close_position(pos['symbol'])
+                        closed_count += 1
+                    except:
+                        pass
+                
+                await query.edit_message_text(
+                    f"🚨 **EMERGENCY STOP COMPLETE**\n\n"
+                    f"✅ Trading disabled\n"
+                    f"✅ Closed {closed_count}/{len(open_positions)} positions\n\n"
+                    f"System is now safe.",
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                await query.edit_message_text(f"❌ Emergency stop error: {str(e)}")
+        
+        elif data == "emergency_cancel":
+            await query.edit_message_text("❌ Emergency stop cancelled")
+        
+        elif data == "closeall_confirm":
+            try:
+                positions = await self.bybit_client.get_positions()
+                open_positions = [p for p in positions if float(p.get('size', 0)) > 0]
+                closed = []
+                failed = []
+                
+                for pos in open_positions:
+                    try:
+                        await self.bybit_client.close_position(pos['symbol'])
+                        closed.append(pos['symbol'])
+                    except Exception as e:
+                        failed.append(pos['symbol'])
+                
+                text = "📊 **Position Closure Results**\n\n"
+                if closed:
+                    text += f"✅ Closed: {', '.join(closed)}\n"
+                if failed:
+                    text += f"❌ Failed: {', '.join(failed)}\n"
+                
+                await query.edit_message_text(text, parse_mode='Markdown')
+            except Exception as e:
+                await query.edit_message_text(f"❌ Error: {str(e)}")
+        
+        elif data == "closeall_cancel":
+            await query.edit_message_text("❌ Close all cancelled")
+        
+        # ML control callbacks
+        elif data == "ml_retrain":
+            await query.edit_message_text("🔄 Starting ML retraining...")
+            if hasattr(self, 'trading_engine') and self.trading_engine:
+                if hasattr(self.trading_engine, 'ml_trainer'):
+                    asyncio.create_task(self.trading_engine.ml_trainer.train_models())
+                    await query.edit_message_text("✅ ML retraining started")
+                else:
+                    await query.edit_message_text("❌ ML trainer not available")
+            else:
+                await query.edit_message_text("❌ Engine not connected")
+        
+        elif data == "ml_stats":
+            text = "📊 **ML Model Statistics**\n\n"
+            text += "Model performance metrics coming soon..."
+            await query.edit_message_text(text, parse_mode='Markdown')
+        
+        elif data == "ml_pause":
+            if hasattr(self, 'trading_engine') and self.trading_engine:
+                if hasattr(self.trading_engine, 'ml_enabled'):
+                    self.trading_engine.ml_enabled = False
+                    await query.edit_message_text("⏸️ ML predictions paused")
+                else:
+                    await query.edit_message_text("❌ ML control not available")
+            else:
+                await query.edit_message_text("❌ Engine not connected")
+        
+        elif data == "ml_resume":
+            if hasattr(self, 'trading_engine') and self.trading_engine:
+                if hasattr(self.trading_engine, 'ml_enabled'):
+                    self.trading_engine.ml_enabled = True
+                    await query.edit_message_text("▶️ ML predictions resumed")
+                else:
+                    await query.edit_message_text("❌ ML control not available")
+            else:
+                await query.edit_message_text("❌ Engine not connected")
+        
+        # Scanner control callbacks
+        elif data == "scanner_start":
+            if hasattr(self, 'trading_engine') and self.trading_engine:
+                if hasattr(self.trading_engine, 'start_scanner'):
+                    asyncio.create_task(self.trading_engine.start_scanner())
+                    await query.edit_message_text("▶️ Scanner started")
+                else:
+                    await query.edit_message_text("❌ Scanner control not available")
+            else:
+                await query.edit_message_text("❌ Engine not connected")
+        
+        elif data == "scanner_stop":
+            if hasattr(self, 'trading_engine') and self.trading_engine:
+                if hasattr(self.trading_engine, 'scanner_task'):
+                    self.trading_engine.scanner_task.cancel()
+                    await query.edit_message_text("⏸️ Scanner stopped")
+                else:
+                    await query.edit_message_text("❌ Scanner not running")
+            else:
+                await query.edit_message_text("❌ Engine not connected")
+        
+        elif data == "scanner_restart":
+            if hasattr(self, 'trading_engine') and self.trading_engine:
+                if hasattr(self.trading_engine, 'scanner_task'):
+                    self.trading_engine.scanner_task.cancel()
+                    await asyncio.sleep(1)
+                if hasattr(self.trading_engine, 'start_scanner'):
+                    asyncio.create_task(self.trading_engine.start_scanner())
+                    await query.edit_message_text("🔄 Scanner restarted")
+                else:
+                    await query.edit_message_text("❌ Scanner control not available")
+            else:
+                await query.edit_message_text("❌ Engine not connected")
+        
+        # Phase control callbacks
+        elif data.startswith("phase_"):
+            from ..config_modules.scaling_config import scaling_config
+            
+            if data == "phase_prev":
+                current = scaling_config.CURRENT_PHASE
+                if current > 0:
+                    scaling_config.set_phase(current - 1)
+                    await query.edit_message_text(f"✅ Switched to Phase {current - 1}")
+                else:
+                    await query.edit_message_text("Already at Phase 0")
+            
+            elif data == "phase_next":
+                if scaling_config.next_phase():
+                    await query.edit_message_text(f"✅ Advanced to Phase {scaling_config.CURRENT_PHASE}")
+                else:
+                    await query.edit_message_text("Already at maximum phase")
+            
+            else:
+                # Direct phase selection (phase_0, phase_1, etc.)
+                try:
+                    phase_num = int(data.split("_")[1])
+                    if scaling_config.set_phase(phase_num):
+                        config = scaling_config.get_current_config()
+                        await query.edit_message_text(
+                            f"✅ **Phase {phase_num} Activated**\n\n"
+                            f"{config['description']}\n"
+                            f"Symbols: {config['symbol_count']}\n"
+                            f"Batch: {config['batch_size']}\n"
+                            f"Delay: {config['scan_delay']}s",
+                            parse_mode='Markdown'
+                        )
+                    else:
+                        await query.edit_message_text("❌ Invalid phase number")
+                except:
+                    await query.edit_message_text("❌ Error setting phase")
+        
+        # Position management callbacks
+        elif data == "positions_refresh":
+            try:
+                positions = await self.bybit_client.get_positions()
+                open_positions = [p for p in positions if float(p.get('size', 0)) > 0]
+                
+                if not open_positions:
+                    await query.edit_message_text("📊 No open positions")
+                else:
+                    text = format_positions(open_positions)
+                    
+                    # Recreate keyboard with updated positions
+                    keyboard = []
+                    for i, pos in enumerate(open_positions[:3]):
+                        symbol = pos['symbol']
+                        side = pos['side']
+                        keyboard.append([
+                            InlineKeyboardButton(
+                                f"Close {symbol} ({side})",
+                                callback_data=f"close_{symbol}"
+                            )
+                        ])
+                    
+                    keyboard.append([
+                        InlineKeyboardButton("🔄 Refresh", callback_data="positions_refresh"),
+                        InlineKeyboardButton("🚨 Close All", callback_data="closeall_confirm")
+                    ])
+                    
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+            except Exception as e:
+                await query.edit_message_text(f"❌ Error: {str(e)}")
+        
+        elif data.startswith("close_"):
+            symbol = data.replace("close_", "")
+            try:
+                await self.bybit_client.close_position(symbol)
+                await query.edit_message_text(f"✅ Closed position: {symbol}")
+            except Exception as e:
+                await query.edit_message_text(f"❌ Failed to close {symbol}: {str(e)}")
     
     async def handle_settings_callback(self, query, data):
         """Handle settings callbacks"""
@@ -913,8 +1171,8 @@ class TradingBot:
                 text = "📊 No symbols currently monitored"
             await query.edit_message_text(text, parse_mode='Markdown')
     
-    async def send_notification(self, chat_id: int, message: str, parse_mode: str = 'Markdown'):
-        """Send notification to user"""
+    async def send_notification(self, chat_id: int, message: str, parse_mode: str = 'Markdown', reply_markup=None):
+        """Send notification to user with optional buttons"""
         try:
             if not self.application:
                 logger.error("Telegram bot not initialized - cannot send notification")
@@ -928,13 +1186,112 @@ class TradingBot:
             await self.application.bot.send_message(
                 chat_id=chat_id,
                 text=message,
-                parse_mode=parse_mode
+                parse_mode=parse_mode,
+                reply_markup=reply_markup
             )
             logger.debug(f"✅ Notification sent successfully to chat_id {chat_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to send notification to chat_id {chat_id}: {e}", exc_info=True)
             return False
+    
+    async def send_trade_signal_notification(self, signal: Dict):
+        """Send interactive trade signal notification"""
+        from .formatters import format_trade_signal
+        
+        message = format_trade_signal(signal)
+        
+        # Add interactive buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Take Trade", callback_data=f"take_{signal['symbol']}_{signal['side']}"),
+                InlineKeyboardButton("❌ Skip", callback_data="signal_skip")
+            ],
+            [
+                InlineKeyboardButton("📊 View Chart", callback_data=f"chart_{signal['symbol']}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        for chat_id in settings.telegram_allowed_chat_ids:
+            await self.send_notification(chat_id, message, reply_markup=reply_markup)
+    
+    async def send_position_closed_notification(self, trade: Dict):
+        """Send position closed notification with stats"""
+        from .formatters import format_trade_closed
+        
+        message = format_trade_closed(trade)
+        
+        # Add buttons for follow-up actions
+        keyboard = [
+            [
+                InlineKeyboardButton("📊 View Summary", callback_data="daily_summary"),
+                InlineKeyboardButton("💹 All Positions", callback_data="positions_refresh")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        for chat_id in settings.telegram_allowed_chat_ids:
+            await self.send_notification(chat_id, message, reply_markup=reply_markup)
+    
+    async def send_error_notification(self, error_type: str, error_message: str, critical: bool = False):
+        """Send error notification with recovery options"""
+        from .formatters import format_error
+        
+        message = format_error(error_type, error_message)
+        
+        # Add recovery buttons for critical errors
+        if critical:
+            keyboard = [
+                [
+                    InlineKeyboardButton("🚨 Emergency Stop", callback_data="emergency_confirm"),
+                    InlineKeyboardButton("🔄 Restart Scanner", callback_data="scanner_restart")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+        else:
+            reply_markup = None
+        
+        for chat_id in settings.telegram_allowed_chat_ids:
+            await self.send_notification(chat_id, message, reply_markup=reply_markup)
+    
+    async def send_daily_summary(self):
+        """Send daily trading summary"""
+        from .formatters import format_daily_summary
+        from datetime import datetime, timedelta
+        
+        # Calculate daily stats (this would come from your database)
+        summary = {
+            'date': datetime.now().strftime('%Y-%m-%d'),
+            'total_trades': 0,
+            'winning_trades': 0,
+            'losing_trades': 0,
+            'total_pnl': 0,
+            'total_fees': 0,
+            'best_symbol': 'N/A',
+            'best_pnl': 0,
+            'worst_symbol': 'N/A',
+            'worst_pnl': 0
+        }
+        
+        # Get actual data if engine is available
+        if hasattr(self, 'trading_engine') and self.trading_engine:
+            if hasattr(self.trading_engine, 'get_daily_stats'):
+                summary = await self.trading_engine.get_daily_stats()
+        
+        message = format_daily_summary(summary)
+        
+        # Add action buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("📊 Full Report", callback_data="report_full"),
+                InlineKeyboardButton("📈 Backtest", callback_data="bt_BTCUSDT_15_30")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        for chat_id in settings.telegram_allowed_chat_ids:
+            await self.send_notification(chat_id, message, reply_markup=reply_markup)
     
     async def run_webhook(self, webhook_url: str, secret_token: str):
         """Run bot with webhook"""
@@ -972,3 +1329,329 @@ class TradingBot:
                 else:
                     logger.error("Failed to start bot after all retries")
                     raise
+    
+    async def cmd_emergency(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Emergency stop - disable trading and close all positions"""
+        if not await self.check_authorization(update):
+            return
+        
+        await update.message.reply_text(
+            "🚨 **EMERGENCY STOP INITIATED**\n\n"
+            "This will:\n"
+            "1. Disable automated trading\n"
+            "2. Close all open positions\n"
+            "3. Cancel all pending orders\n\n"
+            "Are you sure?",
+            parse_mode='Markdown'
+        )
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("🚨 CONFIRM EMERGENCY", callback_data="emergency_confirm"),
+                InlineKeyboardButton("❌ Cancel", callback_data="emergency_cancel")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("Confirm emergency stop:", reply_markup=reply_markup)
+    
+    async def cmd_panic(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Panic mode - stop all activity but preserve positions"""
+        if not await self.check_authorization(update):
+            return
+        
+        # Immediately disable trading
+        self.trading_enabled = False
+        
+        # Stop scanner if available
+        if hasattr(self, 'trading_engine') and self.trading_engine:
+            if hasattr(self.trading_engine, 'scanner_task'):
+                self.trading_engine.scanner_task.cancel()
+        
+        await update.message.reply_text(
+            "😱 **PANIC MODE ACTIVATED**\n\n"
+            "✅ Trading disabled\n"
+            "✅ Scanner stopped\n"
+            "✅ New signals blocked\n"
+            "ℹ️ Positions preserved\n\n"
+            "Use /enable to resume trading",
+            parse_mode='Markdown'
+        )
+        logger.warning("Panic mode activated by user")
+    
+    async def cmd_closeall(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Close all open positions immediately"""
+        if not await self.check_authorization(update):
+            return
+        
+        positions = await self.bybit_client.get_positions()
+        open_positions = [p for p in positions if float(p.get('size', 0)) > 0]
+        
+        if not open_positions:
+            await update.message.reply_text("📊 No open positions to close")
+            return
+        
+        text = f"⚠️ **Close All Positions**\n\n"
+        text += f"Found {len(open_positions)} open positions\n\n"
+        for pos in open_positions[:5]:  # Show first 5
+            text += f"• {pos['symbol']}: {pos['side']} {pos['size']}\n"
+        if len(open_positions) > 5:
+            text += f"• ... and {len(open_positions) - 5} more\n"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Close All", callback_data="closeall_confirm"),
+                InlineKeyboardButton("❌ Cancel", callback_data="closeall_cancel")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def cmd_ml(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """ML model status and control"""
+        if not await self.check_authorization(update):
+            return
+        
+        text = "🤖 **ML Model Control**\n\n"
+        
+        # Check if ML trainer exists
+        if hasattr(self, 'trading_engine') and self.trading_engine:
+            if hasattr(self.trading_engine, 'ml_trainer'):
+                ml_trainer = self.trading_engine.ml_trainer
+                text += "✅ ML System Active\n\n"
+                text += f"Models: RF, GB, XGB, MLP\n"
+                text += f"Features: 27 technical indicators\n"
+                text += f"Training: Continuous learning\n\n"
+                
+                # Get last training info if available
+                if hasattr(ml_trainer, 'last_training_time'):
+                    text += f"Last trained: {ml_trainer.last_training_time}\n"
+                if hasattr(ml_trainer, 'training_accuracy'):
+                    text += f"Accuracy: {ml_trainer.training_accuracy:.2%}\n"
+            else:
+                text += "⚠️ ML System Not Found\n"
+        else:
+            text += "⚠️ Engine Not Connected\n"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("🔄 Retrain Models", callback_data="ml_retrain"),
+                InlineKeyboardButton("📊 Model Stats", callback_data="ml_stats")
+            ],
+            [
+                InlineKeyboardButton("⏸️ Pause ML", callback_data="ml_pause"),
+                InlineKeyboardButton("▶️ Resume ML", callback_data="ml_resume")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def cmd_retrain(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Retrain ML models"""
+        if not await self.check_authorization(update):
+            return
+        
+        await update.message.reply_text("🔄 Starting ML model retraining...")
+        
+        # Trigger retraining
+        if hasattr(self, 'trading_engine') and self.trading_engine:
+            if hasattr(self.trading_engine, 'ml_trainer'):
+                try:
+                    asyncio.create_task(self.trading_engine.ml_trainer.train_models())
+                    await update.message.reply_text(
+                        "✅ ML retraining started\n"
+                        "This may take several minutes..."
+                    )
+                except Exception as e:
+                    await update.message.reply_text(f"❌ Retraining failed: {str(e)}")
+            else:
+                await update.message.reply_text("❌ ML trainer not available")
+        else:
+            await update.message.reply_text("❌ Trading engine not connected")
+    
+    async def cmd_zones(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """View active supply/demand zones"""
+        if not await self.check_authorization(update):
+            return
+        
+        text = "📊 **Active Supply/Demand Zones**\n\n"
+        
+        # Get zones from strategy
+        total_zones = 0
+        zone_summary = {}
+        
+        if hasattr(self.strategy, 'zones'):
+            for symbol in list(self.monitored_symbols)[:5]:  # Show top 5 symbols
+                if symbol in self.strategy.zones:
+                    zones = self.strategy.zones[symbol]
+                    if zones:
+                        supply_zones = [z for z in zones if z.get('type') == 'supply']
+                        demand_zones = [z for z in zones if z.get('type') == 'demand']
+                        zone_summary[symbol] = {
+                            'supply': len(supply_zones),
+                            'demand': len(demand_zones)
+                        }
+                        total_zones += len(zones)
+        
+        if zone_summary:
+            for symbol, counts in zone_summary.items():
+                text += f"**{symbol}**\n"
+                text += f"  🔴 Supply: {counts['supply']} zones\n"
+                text += f"  🟢 Demand: {counts['demand']} zones\n\n"
+            text += f"_Total: {total_zones} zones across {len(zone_summary)} symbols_"
+        else:
+            text += "No active zones detected\n\n"
+            text += "_Zones are updated every scan cycle_"
+        
+        await update.message.reply_text(text, parse_mode='Markdown')
+    
+    async def cmd_signals(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """View recent signals"""
+        if not await self.check_authorization(update):
+            return
+        
+        text = "📡 **Recent Trading Signals**\n\n"
+        
+        # Get signal queue stats
+        try:
+            from ..utils.signal_queue import signal_queue
+            stats = await signal_queue.get_stats()
+            
+            text += f"📊 Queue Status:\n"
+            text += f"• Pending: {stats.get('queue_size', 0)}\n"
+            text += f"• Processing: {stats.get('processing', 0)}\n"
+            text += f"• Processed: {stats.get('processed_total', 0)}\n\n"
+            
+            # Get recent signals if available
+            recent = stats.get('recent_signals', [])
+            if recent:
+                text += "🕐 Recent Signals:\n"
+                for signal in recent[:5]:
+                    text += f"• {signal.get('symbol', 'N/A')}: {signal.get('side', 'N/A')} @ {signal.get('time', 'N/A')}\n"
+            else:
+                text += "_No recent signals_"
+        except:
+            text += "⚠️ Signal queue unavailable"
+        
+        await update.message.reply_text(text, parse_mode='Markdown')
+    
+    async def cmd_scanner(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Scanner status and control"""
+        if not await self.check_authorization(update):
+            return
+        
+        text = "🔍 **Symbol Scanner Status**\n\n"
+        
+        # Get scanner status
+        if hasattr(self, 'trading_engine') and self.trading_engine:
+            if hasattr(self.trading_engine, 'scanner'):
+                text += "✅ Scanner Active\n\n"
+                text += f"Symbols: {len(self.monitored_symbols)}\n"
+                text += f"Batch Size: 5\n"
+                text += f"Scan Interval: 5 seconds\n\n"
+                
+                # Check if scanner task is running
+                if hasattr(self.trading_engine, 'scanner_task'):
+                    if self.trading_engine.scanner_task and not self.trading_engine.scanner_task.done():
+                        text += "Status: 🟢 Running\n"
+                    else:
+                        text += "Status: 🔴 Stopped\n"
+            else:
+                text += "⚠️ Scanner Not Found\n"
+        else:
+            text += "⚠️ Engine Not Connected\n"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("▶️ Start Scanner", callback_data="scanner_start"),
+                InlineKeyboardButton("⏸️ Stop Scanner", callback_data="scanner_stop")
+            ],
+            [
+                InlineKeyboardButton("🔄 Restart Scanner", callback_data="scanner_restart")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def cmd_phase(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Scaling phase management"""
+        if not await self.check_authorization(update):
+            return
+        
+        from ..config_modules.scaling_config import scaling_config
+        
+        current_phase = scaling_config.CURRENT_PHASE
+        current_config = scaling_config.get_current_config()
+        
+        text = f"📈 **Scaling Phase Management**\n\n"
+        text += f"Current Phase: {current_phase}\n"
+        text += f"Description: {current_config['description']}\n"
+        text += f"Symbol Count: {current_config['symbol_count']}\n"
+        text += f"Batch Size: {current_config['batch_size']}\n"
+        text += f"Scan Delay: {current_config['scan_delay']}s\n\n"
+        
+        text += "**All Phases:**\n"
+        for phase_num, phase_config in scaling_config.PHASES.items():
+            emoji = "👉" if phase_num == current_phase else "  "
+            text += f"{emoji} Phase {phase_num}: {phase_config['symbol_count']} symbols\n"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("⬅️ Previous", callback_data="phase_prev"),
+                InlineKeyboardButton("➡️ Next", callback_data="phase_next")
+            ],
+            [
+                InlineKeyboardButton(f"Phase 0 (5)", callback_data="phase_0"),
+                InlineKeyboardButton(f"Phase 1 (20)", callback_data="phase_1"),
+                InlineKeyboardButton(f"Phase 2 (50)", callback_data="phase_2")
+            ],
+            [
+                InlineKeyboardButton(f"Phase 3 (100)", callback_data="phase_3"),
+                InlineKeyboardButton(f"Phase 4 (200)", callback_data="phase_4"),
+                InlineKeyboardButton(f"Phase 5 (300)", callback_data="phase_5")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+    
+    async def cmd_logs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """View recent activity logs"""
+        if not await self.check_authorization(update):
+            return
+        
+        import os
+        from datetime import datetime, timedelta
+        
+        text = "📋 **Recent Activity Logs**\n\n"
+        
+        # Try to read last 20 lines from log file
+        log_file = "/tmp/trading_bot.log"
+        if os.path.exists(log_file):
+            try:
+                with open(log_file, 'r') as f:
+                    lines = f.readlines()
+                    recent_lines = lines[-20:] if len(lines) > 20 else lines
+                    
+                    # Filter for important messages
+                    important_keywords = ['SIGNAL', 'TRADE', 'ERROR', 'Zone', 'Position', 'ML']
+                    filtered_lines = []
+                    
+                    for line in recent_lines:
+                        if any(keyword in line for keyword in important_keywords):
+                            # Simplify the line
+                            parts = line.split(' - ', 2)
+                            if len(parts) >= 3:
+                                time_part = parts[0].split()[-1] if parts[0] else ''
+                                message = parts[2].strip() if len(parts) > 2 else line.strip()
+                                filtered_lines.append(f"{time_part}: {message[:50]}...")
+                    
+                    if filtered_lines:
+                        text += "\n".join(filtered_lines[-10:])  # Show last 10 important messages
+                    else:
+                        text += "No significant events in recent logs"
+            except Exception as e:
+                text += f"Error reading logs: {str(e)}"
+        else:
+            text += "Log file not found\n\n"
+            text += "_Logs are stored temporarily and reset on restart_"
+        
+        await update.message.reply_text(text, parse_mode='Markdown')

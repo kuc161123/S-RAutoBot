@@ -159,10 +159,61 @@ class TradingBot:
             await self.show_settings_menu(update, context)
         elif text == "📈 Backtest":
             await self.show_backtest_help(update, context)
+        elif text == "🤖 Auto-Trading":
+            await self.show_autotrading_status(update, context)
+        elif text == "🚨 Emergency":
+            await self.cmd_emergency(update, context)
         else:
             await update.message.reply_text(
                 "Unknown command. Use /help to see available commands."
             )
+    
+    async def show_autotrading_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show detailed autotrading status"""
+        status_text = "🤖 **Auto-Trading Status**\n\n"
+        
+        # Check bot status
+        if self.trading_enabled:
+            status_text += "✅ **AUTO-TRADING IS ACTIVE**\n\n"
+            status_text += "The bot is automatically:\n"
+            status_text += "• Scanning for supply/demand zones\n"
+            status_text += "• Analyzing price action patterns\n"
+            status_text += "• Generating trading signals\n"
+            status_text += "• Executing trades automatically\n"
+            status_text += "• Managing stop losses and take profits\n\n"
+        else:
+            status_text += "🔴 **AUTO-TRADING IS DISABLED**\n\n"
+            status_text += "The bot is in monitoring mode only.\n"
+            status_text += "No trades will be executed.\n\n"
+        
+        # Check engine sync
+        if hasattr(self, 'trading_engine') and self.trading_engine:
+            engine_enabled = self.trading_engine.trading_enabled
+            if engine_enabled == self.trading_enabled:
+                status_text += "✅ Engine synchronized\n"
+            else:
+                status_text += "⚠️ Engine out of sync - restart recommended\n"
+            
+            # Show active settings
+            status_text += f"\n**Active Settings:**\n"
+            status_text += f"• Risk per trade: {settings.default_risk_percent}%\n"
+            status_text += f"• Max positions: {settings.max_concurrent_positions}\n"
+            status_text += f"• Symbols monitored: {len(self.monitored_symbols)}\n"
+        
+        # Add control buttons
+        if self.trading_enabled:
+            keyboard = [
+                [InlineKeyboardButton("🛑 Disable Auto-Trading", callback_data="disable_trading")],
+                [InlineKeyboardButton("📊 View Positions", callback_data="positions_refresh")]
+            ]
+        else:
+            keyboard = [
+                [InlineKeyboardButton("🎯 Enable Auto-Trading", callback_data="enable_confirm")],
+                [InlineKeyboardButton("⚙️ Configure Settings", callback_data="settings_risk")]
+            ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(status_text, parse_mode='Markdown', reply_markup=reply_markup)
     
     async def show_settings_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show settings menu"""
@@ -251,9 +302,10 @@ class TradingBot:
         
         # Create main menu keyboard
         keyboard = [
-            [KeyboardButton("📊 Status"), KeyboardButton("💹 Positions")],
+            [KeyboardButton("📊 Status"), KeyboardButton("🤖 Auto-Trading")],
+            [KeyboardButton("💹 Positions"), KeyboardButton("⚙️ Settings")],
             [KeyboardButton("🎯 Enable"), KeyboardButton("🛑 Disable")],
-            [KeyboardButton("⚙️ Settings"), KeyboardButton("📈 Backtest")]
+            [KeyboardButton("📈 Backtest"), KeyboardButton("🚨 Emergency")]
         ]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
@@ -350,10 +402,16 @@ class TradingBot:
             await update.message.reply_text("🛑 Trading is already disabled")
             return
         
+        # Disable trading in both bot and engine
         self.trading_enabled = False
+        if hasattr(self, 'trading_engine') and self.trading_engine:
+            self.trading_engine.trading_enabled = False
+            logger.info("Trading disabled in both bot and engine")
+        
         await update.message.reply_text(
             "🛑 *Trading Disabled*\n\n"
             "Automated trading has been stopped.\n"
+            "Scanner will continue monitoring but won't execute trades.\n"
             "Existing positions will remain open.",
             parse_mode='Markdown'
         )
@@ -433,15 +491,31 @@ class TradingBot:
             # Check trading engine status if available
             if hasattr(self, 'trading_engine') and self.trading_engine:
                 try:
-                    engine_status = self.trading_engine.get_status()
-                    diagnostic_text += f"• Engine: {'🟢 Running' if engine_status.get('running') else '🔴 Stopped'}\n"
-                    diagnostic_text += f"• Trading: {'✅ Enabled' if engine_status.get('trading_enabled') else '❌ Disabled'}\n"
-                    diagnostic_text += f"• Positions: {engine_status.get('active_positions', 0)}\n"
-                    diagnostic_text += f"• Portfolio Heat: {engine_status.get('portfolio_heat', '0%')}\n"
-                except:
-                    diagnostic_text += "• Engine: ⚠️ Status unavailable\n"
+                    # Get real-time engine status
+                    engine_trading = self.trading_engine.trading_enabled
+                    engine_emergency = getattr(self.trading_engine, 'emergency_stop', False)
+                    engine_positions = len(getattr(self.trading_engine, 'active_positions', {}))
+                    engine_heat = getattr(self.trading_engine, 'portfolio_heat', 0)
+                    
+                    # Check if engine status matches bot status
+                    sync_status = "✅ Synced" if engine_trading == self.trading_enabled else "⚠️ Out of sync"
+                    
+                    diagnostic_text += f"• Engine: 🟢 Connected {sync_status}\n"
+                    diagnostic_text += f"• Bot Trading: {'✅ Enabled' if self.trading_enabled else '❌ Disabled'}\n"
+                    diagnostic_text += f"• Engine Trading: {'✅ Enabled' if engine_trading else '❌ Disabled'}\n"
+                    diagnostic_text += f"• Emergency Stop: {'🚨 ACTIVE' if engine_emergency else '✅ Clear'}\n"
+                    diagnostic_text += f"• Active Positions: {engine_positions}\n"
+                    diagnostic_text += f"• Portfolio Heat: {engine_heat:.1%}\n"
+                    
+                    # Check scanner status
+                    if hasattr(self.trading_engine, 'scanner_task'):
+                        scanner_running = self.trading_engine.scanner_task and not self.trading_engine.scanner_task.done()
+                        diagnostic_text += f"• Scanner: {'🟢 Running' if scanner_running else '🔴 Stopped'}\n"
+                except Exception as e:
+                    diagnostic_text += f"• Engine: ⚠️ Error getting status: {str(e)[:30]}\n"
             else:
                 diagnostic_text += "• Engine: ⚠️ Not connected\n"
+                diagnostic_text += f"• Bot Trading: {'✅ Enabled' if self.trading_enabled else '❌ Disabled'}\n"
             
             # Check scanner status
             try:
@@ -749,15 +823,49 @@ class TradingBot:
         
         if data == "enable_confirm":
             self.trading_enabled = True
+            
+            # Also enable trading in the engine if connected
+            if hasattr(self, 'trading_engine') and self.trading_engine:
+                self.trading_engine.trading_enabled = True
+                self.trading_engine.emergency_stop = False  # Clear emergency stop
+                
+                # Restart scanner if it was stopped
+                if hasattr(self.trading_engine, 'start_scanner'):
+                    asyncio.create_task(self.trading_engine.start_scanner())
+                    logger.info("Scanner restarted with trading enabled")
+                
+                logger.info("Trading enabled in both bot and engine, emergency stop cleared")
+            
             await query.edit_message_text(
                 "✅ *Trading Enabled*\n\n"
-                "The bot is now actively monitoring and trading.",
+                "• Automated trading is active\n"
+                "• Scanner is monitoring symbols\n"
+                "• Signals will be executed automatically\n"
+                "• Emergency stop cleared\n\n"
+                "The bot will now take trades based on supply/demand zones.",
                 parse_mode='Markdown'
             )
-            logger.info("Trading enabled by user")
+            logger.info("Trading enabled by user - autotrading is active")
             
         elif data == "enable_cancel":
             await query.edit_message_text("❌ Trading enable cancelled")
+        
+        elif data == "disable_trading":
+            # Disable trading in both bot and engine
+            self.trading_enabled = False
+            if hasattr(self, 'trading_engine') and self.trading_engine:
+                self.trading_engine.trading_enabled = False
+                logger.info("Trading disabled via callback in both bot and engine")
+            
+            await query.edit_message_text(
+                "🛑 **Auto-Trading Disabled**\n\n"
+                "• Automated trading stopped\n"
+                "• Scanner continues monitoring\n"
+                "• No new trades will be executed\n"
+                "• Existing positions remain open\n\n"
+                "Use /enable or press Enable button to resume.",
+                parse_mode='Markdown'
+            )
             
         elif data.startswith("risk_"):
             risk = float(data.split("_")[1])
@@ -821,8 +929,16 @@ class TradingBot:
         
         # Emergency control callbacks
         elif data == "emergency_confirm":
-            # Disable trading
+            # Disable trading in both bot and engine
             self.trading_enabled = False
+            
+            if hasattr(self, 'trading_engine') and self.trading_engine:
+                self.trading_engine.trading_enabled = False
+                self.trading_engine.emergency_stop = True
+                
+                # Cancel scanner task
+                if hasattr(self.trading_engine, 'scanner_task'):
+                    self.trading_engine.scanner_task.cancel()
             
             # Close all positions
             try:
@@ -840,10 +956,13 @@ class TradingBot:
                 await query.edit_message_text(
                     f"🚨 **EMERGENCY STOP COMPLETE**\n\n"
                     f"✅ Trading disabled\n"
+                    f"✅ Emergency stop engaged\n"
+                    f"✅ Scanner stopped\n"
                     f"✅ Closed {closed_count}/{len(open_positions)} positions\n\n"
-                    f"System is now safe.",
+                    f"System is now safe. Use /enable to resume.",
                     parse_mode='Markdown'
                 )
+                logger.warning(f"Emergency stop executed - closed {closed_count} positions")
             except Exception as e:
                 await query.edit_message_text(f"❌ Emergency stop error: {str(e)}")
         
@@ -1359,11 +1478,15 @@ class TradingBot:
         if not await self.check_authorization(update):
             return
         
-        # Immediately disable trading
+        # Immediately disable trading in both bot and engine
         self.trading_enabled = False
         
-        # Stop scanner if available
         if hasattr(self, 'trading_engine') and self.trading_engine:
+            # Disable trading in engine
+            self.trading_engine.trading_enabled = False
+            self.trading_engine.emergency_stop = True
+            
+            # Stop scanner if available
             if hasattr(self.trading_engine, 'scanner_task'):
                 self.trading_engine.scanner_task.cancel()
         
@@ -1372,6 +1495,7 @@ class TradingBot:
             "✅ Trading disabled\n"
             "✅ Scanner stopped\n"
             "✅ New signals blocked\n"
+            "✅ Emergency stop engaged\n"
             "ℹ️ Positions preserved\n\n"
             "Use /enable to resume trading",
             parse_mode='Markdown'

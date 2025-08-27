@@ -89,8 +89,8 @@ class EnhancedZone:
         if self.zone_age_hours > 168:  # 7 days
             base_score *= 0.8
         
-        # Penalty for multiple tests
-        base_score -= self.test_count * 10
+        # Penalty for multiple tests (reduced for testing)
+        base_score -= self.test_count * 5
         
         return min(100, max(0, base_score))
     
@@ -170,7 +170,7 @@ class AdvancedSupplyDemandStrategy:
         self.order_flow_history: Dict[str, deque] = {}
         
         # Configuration - Adjusted for testing to generate more signals
-        self.min_zone_score = 10  # ULTRA LOW - Accept almost any zone for testing
+        self.min_zone_score = 5  # EXTREMELY LOW - Accept almost any zone for testing
         self.max_zone_age_hours = 336  # 14 days (increased from 7)
         self.max_zone_tests = 5  # Increased from 3
         self.volume_threshold_multiplier = 1.2  # Lowered from 1.5
@@ -278,7 +278,8 @@ class AdvancedSupplyDemandStrategy:
                     analysis['zones'],
                     df.iloc[-1],
                     market_structure,
-                    order_flow
+                    order_flow,
+                    symbol=symbol
                 )
                 analysis['signals'] = signals
             
@@ -446,6 +447,9 @@ class AdvancedSupplyDemandStrategy:
         df['atr'] = self._calculate_atr(df)
         avg_volume = df['volume'].rolling(20).mean()
         
+        logger.info(f"🔍 Scanning {len(df)} candles for zone detection")
+        zones_found = {'demand': 0, 'supply': 0}
+        
         # Look for strong rejections (demand zones)
         # Start from 10 instead of 20 for more zones
         for i in range(10, len(df) - 1):
@@ -455,8 +459,9 @@ class AdvancedSupplyDemandStrategy:
                 zone_high = df.iloc[i]['high']
                 zone_low = df.iloc[i]['low']
                 
-                # Calculate rejection strength
-                rejection_strength = abs(df.iloc[i+1]['close'] - df.iloc[i]['low']) / df.iloc[i]['atr']
+                # Calculate rejection strength (handle NaN ATR)
+                atr_value = df.iloc[i]['atr'] if pd.notna(df.iloc[i]['atr']) and df.iloc[i]['atr'] > 0 else 1.0
+                rejection_strength = abs(df.iloc[i+1]['close'] - df.iloc[i]['low']) / atr_value
                 
                 # Check volume spike
                 volume_spike = df.iloc[i]['volume'] / avg_volume.iloc[i] if avg_volume.iloc[i] > 0 else 1
@@ -493,6 +498,7 @@ class AdvancedSupplyDemandStrategy:
                 )
                 
                 zones.append(zone)
+                zones_found['demand'] += 1
         
         # Look for strong rejections (supply zones)
         # Start from 10 instead of 20 for more zones
@@ -503,8 +509,9 @@ class AdvancedSupplyDemandStrategy:
                 zone_high = df.iloc[i]['high']
                 zone_low = df.iloc[i]['low']
                 
-                # Calculate rejection strength
-                rejection_strength = abs(df.iloc[i]['high'] - df.iloc[i+1]['close']) / df.iloc[i]['atr']
+                # Calculate rejection strength (handle NaN ATR)
+                atr_value = df.iloc[i]['atr'] if pd.notna(df.iloc[i]['atr']) and df.iloc[i]['atr'] > 0 else 1.0
+                rejection_strength = abs(df.iloc[i]['high'] - df.iloc[i+1]['close']) / atr_value
                 
                 # Check volume spike
                 volume_spike = df.iloc[i]['volume'] / avg_volume.iloc[i] if avg_volume.iloc[i] > 0 else 1
@@ -541,7 +548,9 @@ class AdvancedSupplyDemandStrategy:
                 )
                 
                 zones.append(zone)
+                zones_found['supply'] += 1
         
+        logger.info(f"📊 Zone detection complete: Found {zones_found['demand']} demand zones, {zones_found['supply']} supply zones")
         return zones
     
     def _is_bullish_rejection(self, df: pd.DataFrame, i: int) -> bool:
@@ -550,11 +559,12 @@ class AdvancedSupplyDemandStrategy:
         prev_candle = df.iloc[i-1] if i > 0 else None
         next_candle = df.iloc[i+1] if i < len(df) - 1 else None
         
-        # Hammer pattern
+        # Hammer pattern - make it more lenient for testing
         body = abs(candle['close'] - candle['open'])
         lower_wick = candle['open'] - candle['low'] if candle['close'] > candle['open'] else candle['close'] - candle['low']
         
-        if lower_wick > body * 1:  # Any lower wick (very lenient)
+        # Very lenient: any wick at all (even tiny) counts
+        if lower_wick > body * 0.5:  # Wick is at least half the body size
             return True
         
         # Bullish engulfing
@@ -579,11 +589,12 @@ class AdvancedSupplyDemandStrategy:
         prev_candle = df.iloc[i-1] if i > 0 else None
         next_candle = df.iloc[i+1] if i < len(df) - 1 else None
         
-        # Shooting star pattern
+        # Shooting star pattern - make it more lenient for testing
         body = abs(candle['close'] - candle['open'])
         upper_wick = candle['high'] - candle['close'] if candle['close'] > candle['open'] else candle['high'] - candle['open']
         
-        if upper_wick > body * 1:  # Any upper wick (very lenient)
+        # Very lenient: any wick at all (even tiny) counts
+        if upper_wick > body * 0.5:  # Wick is at least half the body size
             return True
         
         # Bearish engulfing
@@ -759,7 +770,8 @@ class AdvancedSupplyDemandStrategy:
         market_structure: MarketStructure,
         order_flow: OrderFlowImbalance,
         ltf_structure: Optional[Dict] = None,
-        htf_zones: Optional[List] = None
+        htf_zones: Optional[List] = None,
+        symbol: str = "UNKNOWN"
     ) -> List[Dict[str, Any]]:
         """
         Enhanced signal generation with multi-timeframe and market structure awareness
@@ -786,8 +798,8 @@ class AdvancedSupplyDemandStrategy:
                 
                 logger.debug(f"  Demand zone: Price={current_price:.8f}, Zone=[{zone.lower_bound:.8f}, {zone.upper_bound:.8f}], Distance={distance_to_zone:.4f}")
                 
-                # EXTREMELY lenient: within 10% of zone or inside zone (massive range)
-                if -0.05 < distance_to_zone < 0.10 or (zone.lower_bound <= current_price <= zone.upper_bound):
+                # More reasonable: within 2% of zone or inside zone
+                if -0.01 < distance_to_zone < 0.02 or (zone.lower_bound <= current_price <= zone.upper_bound):
                     # Additional confirmations
                     confirmations = []
                     
@@ -872,8 +884,8 @@ class AdvancedSupplyDemandStrategy:
                 # Check if price is approaching or in the zone
                 distance_to_zone = (current_price - zone.lower_bound) / current_price
                 
-                # EXTREMELY lenient: within 10% of zone or inside zone (massive range)
-                if -0.05 < distance_to_zone < 0.10 or (zone.lower_bound <= current_price <= zone.upper_bound):
+                # More reasonable: within 2% of zone or inside zone
+                if -0.01 < distance_to_zone < 0.02 or (zone.lower_bound <= current_price <= zone.upper_bound):
                     # Additional confirmations
                     confirmations = []
                     

@@ -110,11 +110,24 @@ class MLPersistenceManager:
                 logger.info(f"ML model {model_name} not found - will be created after training")
                 return None
             
-            # Extract data while record is accessible
-            model_bytes = model_record.model_data
-            version = model_record.version if model_record.version else 1
-            accuracy = model_record.accuracy
-            training_samples = model_record.training_samples
+            # Extract data while record is accessible - handle potential None values
+            try:
+                model_bytes = model_record.model_data
+                version = getattr(model_record, 'version', 1) or 1
+                accuracy = getattr(model_record, 'accuracy', None)
+                training_samples = getattr(model_record, 'training_samples', 0) or 0
+            except Exception as attr_error:
+                # If we can't access attributes, the session is detached
+                logger.warning(f"Session detached for {model_name}, using defaults")
+                # Still try to get the model data if possible
+                try:
+                    model_bytes = model_record.model_data
+                except:
+                    logger.error(f"Cannot access model data for {model_name}")
+                    return None
+                version = 1
+                accuracy = None
+                training_samples = 0
             
             # Deserialize model
             model_data = pickle.loads(model_bytes)

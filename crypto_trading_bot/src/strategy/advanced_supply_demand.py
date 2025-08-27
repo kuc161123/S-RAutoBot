@@ -484,44 +484,41 @@ class AdvancedSupplyDemandStrategy:
         logger.debug(f"ATR range: {df['atr'].min():.4f} - {df['atr'].max():.4f}")
         
         zones_found = {'demand': 0, 'supply': 0}
-        rejections_checked = {'bullish': 0, 'bearish': 0}
+        extreme_moves_found = 0
         
-        # Look for strong rejections (demand zones)
-        # Start from 20 to ensure we have avg_volume data
-        for i in range(20, min(len(df) - 2, 30)):  # Check first 10 candles for testing
-            rejections_checked['bullish'] += 1
-            # FOR TESTING: Create zone every 5th candle
-            if i % 5 == 0:  # Force zone creation for testing
-                logger.info(f"🔴 FORCING ZONE CREATION at index {i} for testing")
-                # Calculate zone bounds
+        # Scan entire dataframe (not just first 30 candles) for extreme moves
+        # Look for zones from the origin where price moved away strongly
+        for i in range(5, len(df) - 5):  # Need room for pattern detection
+            
+            # Method 1: V-Shaped Reactions (Complete trend reversal)
+            # Check for demand zones (price reversal from down to up)
+            if self._detect_v_shaped_reversal(df, i, 'bullish'):
                 zone_high = df.iloc[i]['high']
-                zone_low = df.iloc[i]['low']
+                zone_low = df.iloc[i-2:i+1]['low'].min()  # Include consolidation area
                 
-                # Calculate rejection strength (handle NaN ATR)
-                atr_value = df.iloc[i]['atr'] if pd.notna(df.iloc[i]['atr']) and df.iloc[i]['atr'] > 0 else 1.0
-                rejection_strength = abs(df.iloc[i+1]['close'] - df.iloc[i]['low']) / atr_value
+                logger.info(f"🟢 V-shaped bullish reversal detected at index {i}, price {df.iloc[i]['close']:.4f}")
+                extreme_moves_found += 1
                 
-                # Check volume spike
+                # Calculate metrics
+                atr_value = df.iloc[i]['atr'] if pd.notna(df.iloc[i]['atr']) and df.iloc[i]['atr'] > 0 else df.iloc[i]['close'] * 0.001
+                rejection_strength = abs(df.iloc[i]['high'] - df.iloc[i]['low']) / atr_value
                 volume_spike = df.iloc[i]['volume'] / avg_volume.iloc[i] if avg_volume.iloc[i] > 0 else 1
                 
-                # Estimate institutional interest
                 institutional_interest = self._calculate_institutional_interest(
                     df, i, volume_spike, rejection_strength
                 )
                 
-                # Identify confluence factors
                 confluence_factors = self._identify_confluence_factors(
                     df, i, volume_profile, market_structure
                 )
+                confluence_factors.append('v_shaped_reversal')
                 
-                # Create zone
-                # FOR TESTING: Use high strength score
-                test_strength = 80  # High score for testing
+                # Create demand zone
                 zone = EnhancedZone(
                     zone_type='demand',
                     upper_bound=zone_high,
                     lower_bound=zone_low,
-                    strength_score=test_strength,  # Use high score for testing
+                    strength_score=60 + min(40, rejection_strength * 10),  # Base 60 + up to 40 for strength
                     volume_profile=volume_profile,
                     order_flow_imbalance=order_flow,
                     formation_time=df.index[i] if isinstance(df.index[i], pd.Timestamp) else pd.Timestamp(df.index[i]),
@@ -537,43 +534,214 @@ class AdvancedSupplyDemandStrategy:
                 
                 zones.append(zone)
                 zones_found['demand'] += 1
-        
-        # Look for strong rejections (supply zones)
-        # Start from 20 to ensure we have avg_volume data
-        for i in range(20, min(len(df) - 2, 30)):  # Check first 10 candles for testing
-            rejections_checked['bearish'] += 1
-            # FOR TESTING: Create zone every 5th candle starting at 22
-            if (i - 2) % 5 == 0:  # Force zone creation for testing
-                logger.info(f"🔴 FORCING SUPPLY ZONE CREATION at index {i} for testing")
-                # Calculate zone bounds
-                zone_high = df.iloc[i]['high']
+            
+            # Check for supply zones (price reversal from up to down)
+            elif self._detect_v_shaped_reversal(df, i, 'bearish'):
+                zone_high = df.iloc[i-2:i+1]['high'].max()  # Include consolidation area
                 zone_low = df.iloc[i]['low']
                 
-                # Calculate rejection strength (handle NaN ATR)
-                atr_value = df.iloc[i]['atr'] if pd.notna(df.iloc[i]['atr']) and df.iloc[i]['atr'] > 0 else 1.0
-                rejection_strength = abs(df.iloc[i]['high'] - df.iloc[i+1]['close']) / atr_value
+                logger.info(f"🔴 V-shaped bearish reversal detected at index {i}, price {df.iloc[i]['close']:.4f}")
+                extreme_moves_found += 1
                 
-                # Check volume spike
+                # Calculate metrics
+                atr_value = df.iloc[i]['atr'] if pd.notna(df.iloc[i]['atr']) and df.iloc[i]['atr'] > 0 else df.iloc[i]['close'] * 0.001
+                rejection_strength = abs(df.iloc[i]['high'] - df.iloc[i]['low']) / atr_value
                 volume_spike = df.iloc[i]['volume'] / avg_volume.iloc[i] if avg_volume.iloc[i] > 0 else 1
                 
-                # Estimate institutional interest
                 institutional_interest = self._calculate_institutional_interest(
                     df, i, volume_spike, rejection_strength
                 )
                 
-                # Identify confluence factors
                 confluence_factors = self._identify_confluence_factors(
                     df, i, volume_profile, market_structure
                 )
+                confluence_factors.append('v_shaped_reversal')
                 
-                # Create zone
-                # FOR TESTING: Use high strength score
-                test_strength = 80  # High score for testing
+                # Create supply zone
                 zone = EnhancedZone(
                     zone_type='supply',
                     upper_bound=zone_high,
                     lower_bound=zone_low,
-                    strength_score=test_strength,  # Use high score for testing
+                    strength_score=60 + min(40, rejection_strength * 10),  # Base 60 + up to 40 for strength
+                    volume_profile=volume_profile,
+                    order_flow_imbalance=order_flow,
+                    formation_time=df.index[i] if isinstance(df.index[i], pd.Timestamp) else pd.Timestamp(df.index[i]),
+                    test_count=0,
+                    rejection_strength=rejection_strength,
+                    institutional_interest=institutional_interest,
+                    confluence_factors=confluence_factors,
+                    timeframes_visible=['current'],
+                    last_test_time=None,
+                    zone_age_hours=0,
+                    liquidity_pool=df.iloc[i]['volume'] * df.iloc[i]['close']
+                )
+                
+                zones.append(zone)
+                zones_found['supply'] += 1
+            
+            # Method 2: Breakout from consolidation with extreme candle
+            elif self._detect_breakout_pattern(df, i, 'bullish'):
+                # Find the consolidation base
+                base_start = max(0, i - 10)
+                base_end = i
+                zone_high = df.iloc[base_start:base_end]['high'].max()
+                zone_low = df.iloc[base_start:base_end]['low'].min()
+                
+                logger.info(f"🟢 Bullish breakout detected at index {i}, price {df.iloc[i]['close']:.4f}")
+                extreme_moves_found += 1
+                
+                # Calculate metrics
+                atr_value = df.iloc[i]['atr'] if pd.notna(df.iloc[i]['atr']) and df.iloc[i]['atr'] > 0 else df.iloc[i]['close'] * 0.001
+                breakout_strength = (df.iloc[i]['close'] - df.iloc[i]['open']) / atr_value
+                volume_spike = df.iloc[i]['volume'] / avg_volume.iloc[i] if avg_volume.iloc[i] > 0 else 1
+                
+                institutional_interest = self._calculate_institutional_interest(
+                    df, i, volume_spike, breakout_strength
+                )
+                
+                confluence_factors = self._identify_confluence_factors(
+                    df, i, volume_profile, market_structure
+                )
+                confluence_factors.append('breakout_pattern')
+                
+                # Create demand zone at the base
+                zone = EnhancedZone(
+                    zone_type='demand',
+                    upper_bound=zone_high,
+                    lower_bound=zone_low,
+                    strength_score=50 + min(50, breakout_strength * 10),
+                    volume_profile=volume_profile,
+                    order_flow_imbalance=order_flow,
+                    formation_time=df.index[i] if isinstance(df.index[i], pd.Timestamp) else pd.Timestamp(df.index[i]),
+                    test_count=0,
+                    rejection_strength=breakout_strength,
+                    institutional_interest=institutional_interest,
+                    confluence_factors=confluence_factors,
+                    timeframes_visible=['current'],
+                    last_test_time=None,
+                    zone_age_hours=0,
+                    liquidity_pool=df.iloc[base_start:base_end]['volume'].sum() * df.iloc[i]['close']
+                )
+                
+                zones.append(zone)
+                zones_found['demand'] += 1
+                
+            elif self._detect_breakout_pattern(df, i, 'bearish'):
+                # Find the consolidation base
+                base_start = max(0, i - 10)
+                base_end = i
+                zone_high = df.iloc[base_start:base_end]['high'].max()
+                zone_low = df.iloc[base_start:base_end]['low'].min()
+                
+                logger.info(f"🔴 Bearish breakout detected at index {i}, price {df.iloc[i]['close']:.4f}")
+                extreme_moves_found += 1
+                
+                # Calculate metrics
+                atr_value = df.iloc[i]['atr'] if pd.notna(df.iloc[i]['atr']) and df.iloc[i]['atr'] > 0 else df.iloc[i]['close'] * 0.001
+                breakout_strength = (df.iloc[i]['open'] - df.iloc[i]['close']) / atr_value
+                volume_spike = df.iloc[i]['volume'] / avg_volume.iloc[i] if avg_volume.iloc[i] > 0 else 1
+                
+                institutional_interest = self._calculate_institutional_interest(
+                    df, i, volume_spike, breakout_strength
+                )
+                
+                confluence_factors = self._identify_confluence_factors(
+                    df, i, volume_profile, market_structure
+                )
+                confluence_factors.append('breakout_pattern')
+                
+                # Create supply zone at the base
+                zone = EnhancedZone(
+                    zone_type='supply',
+                    upper_bound=zone_high,
+                    lower_bound=zone_low,
+                    strength_score=50 + min(50, breakout_strength * 10),
+                    volume_profile=volume_profile,
+                    order_flow_imbalance=order_flow,
+                    formation_time=df.index[i] if isinstance(df.index[i], pd.Timestamp) else pd.Timestamp(df.index[i]),
+                    test_count=0,
+                    rejection_strength=breakout_strength,
+                    institutional_interest=institutional_interest,
+                    confluence_factors=confluence_factors,
+                    timeframes_visible=['current'],
+                    last_test_time=None,
+                    zone_age_hours=0,
+                    liquidity_pool=df.iloc[base_start:base_end]['volume'].sum() * df.iloc[i]['close']
+                )
+                
+                zones.append(zone)
+                zones_found['supply'] += 1
+            
+            # Method 3: Classic rejection patterns (hammer, shooting star, engulfing)
+            # These are less reliable but still valid
+            elif self._is_bullish_rejection(df, i) and df.iloc[i]['volume'] > avg_volume.iloc[i] * 1.5:
+                zone_high = df.iloc[i]['high']
+                zone_low = df.iloc[i]['low']
+                
+                logger.debug(f"Bullish rejection pattern at index {i}")
+                
+                # Calculate metrics
+                atr_value = df.iloc[i]['atr'] if pd.notna(df.iloc[i]['atr']) and df.iloc[i]['atr'] > 0 else df.iloc[i]['close'] * 0.001
+                rejection_strength = abs(df.iloc[i]['high'] - df.iloc[i]['low']) / atr_value
+                volume_spike = df.iloc[i]['volume'] / avg_volume.iloc[i] if avg_volume.iloc[i] > 0 else 1
+                
+                institutional_interest = self._calculate_institutional_interest(
+                    df, i, volume_spike, rejection_strength
+                )
+                
+                confluence_factors = self._identify_confluence_factors(
+                    df, i, volume_profile, market_structure
+                )
+                confluence_factors.append('rejection_pattern')
+                
+                # Create demand zone with lower score
+                zone = EnhancedZone(
+                    zone_type='demand',
+                    upper_bound=zone_high,
+                    lower_bound=zone_low,
+                    strength_score=30 + min(40, rejection_strength * 5),
+                    volume_profile=volume_profile,
+                    order_flow_imbalance=order_flow,
+                    formation_time=df.index[i] if isinstance(df.index[i], pd.Timestamp) else pd.Timestamp(df.index[i]),
+                    test_count=0,
+                    rejection_strength=rejection_strength,
+                    institutional_interest=institutional_interest,
+                    confluence_factors=confluence_factors,
+                    timeframes_visible=['current'],
+                    last_test_time=None,
+                    zone_age_hours=0,
+                    liquidity_pool=df.iloc[i]['volume'] * df.iloc[i]['close']
+                )
+                
+                zones.append(zone)
+                zones_found['demand'] += 1
+                
+            elif self._is_bearish_rejection(df, i) and df.iloc[i]['volume'] > avg_volume.iloc[i] * 1.5:
+                zone_high = df.iloc[i]['high']
+                zone_low = df.iloc[i]['low']
+                
+                logger.debug(f"Bearish rejection pattern at index {i}")
+                
+                # Calculate metrics
+                atr_value = df.iloc[i]['atr'] if pd.notna(df.iloc[i]['atr']) and df.iloc[i]['atr'] > 0 else df.iloc[i]['close'] * 0.001
+                rejection_strength = abs(df.iloc[i]['high'] - df.iloc[i]['low']) / atr_value
+                volume_spike = df.iloc[i]['volume'] / avg_volume.iloc[i] if avg_volume.iloc[i] > 0 else 1
+                
+                institutional_interest = self._calculate_institutional_interest(
+                    df, i, volume_spike, rejection_strength
+                )
+                
+                confluence_factors = self._identify_confluence_factors(
+                    df, i, volume_profile, market_structure
+                )
+                confluence_factors.append('rejection_pattern')
+                
+                # Create supply zone with lower score
+                zone = EnhancedZone(
+                    zone_type='supply',
+                    upper_bound=zone_high,
+                    lower_bound=zone_low,
+                    strength_score=30 + min(40, rejection_strength * 5),
                     volume_profile=volume_profile,
                     order_flow_imbalance=order_flow,
                     formation_time=df.index[i] if isinstance(df.index[i], pd.Timestamp) else pd.Timestamp(df.index[i]),
@@ -590,8 +758,12 @@ class AdvancedSupplyDemandStrategy:
                 zones.append(zone)
                 zones_found['supply'] += 1
         
-        logger.info(f"📊 Zone detection complete: Checked {rejections_checked['bullish']} candles for bullish, {rejections_checked['bearish']} for bearish")
-        logger.info(f"📊 Found {zones_found['demand']} demand zones, {zones_found['supply']} supply zones")
+        # Sort zones by score and keep top zones
+        zones = sorted(zones, key=lambda z: z.composite_score, reverse=True)[:20]  # Keep top 20 zones
+        
+        logger.info(f"📊 Zone detection complete: Found {extreme_moves_found} extreme moves")
+        logger.info(f"📊 Created {zones_found['demand']} demand zones, {zones_found['supply']} supply zones")
+        logger.info(f"📊 Keeping top {len(zones)} zones after filtering")
         return zones
     
     def _is_bullish_rejection(self, df: pd.DataFrame, i: int) -> bool:
@@ -677,6 +849,81 @@ class AdvancedSupplyDemandStrategy:
             if (next_candle['close'] < next_candle['open'] and
                 (next_candle['open'] - next_candle['close']) > atr_value * 1.5):
                 return True
+        
+        return False
+    
+    def _detect_v_shaped_reversal(self, df: pd.DataFrame, i: int, direction: str) -> bool:
+        """Detect V-shaped reversal pattern (complete trend change)"""
+        if i < 5 or i >= len(df) - 3:
+            return False
+        
+        try:
+            if direction == 'bullish':
+                # Was in downtrend: lower lows
+                downtrend = (df.iloc[i-5:i-2]['low'].min() > df.iloc[i-2:i]['low'].min())
+                # Now reversing up strongly
+                reversal = (df.iloc[i]['close'] > df.iloc[i-1]['high'] and 
+                           df.iloc[i+1]['close'] > df.iloc[i]['high'] if i+1 < len(df) else True)
+                # Volume confirmation
+                volume_surge = df.iloc[i]['volume'] > df.iloc[i-5:i]['volume'].mean() * 1.8
+                
+                return downtrend and reversal and volume_surge
+                
+            elif direction == 'bearish':
+                # Was in uptrend: higher highs
+                uptrend = (df.iloc[i-5:i-2]['high'].max() < df.iloc[i-2:i]['high'].max())
+                # Now reversing down strongly
+                reversal = (df.iloc[i]['close'] < df.iloc[i-1]['low'] and
+                           df.iloc[i+1]['close'] < df.iloc[i]['low'] if i+1 < len(df) else True)
+                # Volume confirmation
+                volume_surge = df.iloc[i]['volume'] > df.iloc[i-5:i]['volume'].mean() * 1.8
+                
+                return uptrend and reversal and volume_surge
+                
+        except Exception as e:
+            logger.debug(f"Error detecting V-shaped reversal at {i}: {e}")
+            return False
+        
+        return False
+    
+    def _detect_breakout_pattern(self, df: pd.DataFrame, i: int, direction: str) -> bool:
+        """Detect breakout from consolidation pattern"""
+        if i < 10 or i >= len(df) - 1:
+            return False
+        
+        try:
+            # Check for consolidation phase before breakout
+            consolidation_range = df.iloc[i-10:i]
+            high_range = consolidation_range['high'].max() - consolidation_range['high'].min()
+            low_range = consolidation_range['low'].max() - consolidation_range['low'].min()
+            avg_range = (high_range + low_range) / 2
+            
+            # Consolidation should have small range (sideways movement)
+            atr_value = df.iloc[i]['atr'] if 'atr' in df.columns and pd.notna(df.iloc[i]['atr']) else df.iloc[i]['close'] * 0.01
+            is_consolidation = avg_range < atr_value * 3
+            
+            if not is_consolidation:
+                return False
+            
+            if direction == 'bullish':
+                # Breakout candle should be large and close above consolidation
+                breakout_size = df.iloc[i]['close'] - df.iloc[i]['open']
+                is_breakout = (breakout_size > atr_value * 1.5 and
+                              df.iloc[i]['close'] > consolidation_range['high'].max() and
+                              df.iloc[i]['volume'] > consolidation_range['volume'].mean() * 2)
+                return is_breakout
+                
+            elif direction == 'bearish':
+                # Breakdown candle should be large and close below consolidation
+                breakdown_size = df.iloc[i]['open'] - df.iloc[i]['close']
+                is_breakdown = (breakdown_size > atr_value * 1.5 and
+                               df.iloc[i]['close'] < consolidation_range['low'].min() and
+                               df.iloc[i]['volume'] > consolidation_range['volume'].mean() * 2)
+                return is_breakdown
+                
+        except Exception as e:
+            logger.debug(f"Error detecting breakout pattern at {i}: {e}")
+            return False
         
         return False
     

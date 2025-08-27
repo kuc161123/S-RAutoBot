@@ -60,6 +60,10 @@ class MLPersistenceManager:
             existing = await async_db.get_ml_model(model_name)
             
             if existing:
+                # Store version before the session closes
+                current_version = existing.version if existing.version else 0
+                new_version = current_version + 1
+                
                 # Update existing model
                 await async_db.update_ml_model(
                     model_name=model_name,
@@ -67,9 +71,9 @@ class MLPersistenceManager:
                     model_metadata=metadata_json,
                     accuracy=accuracy,
                     training_samples=training_samples,
-                    version=existing.version + 1
+                    version=new_version
                 )
-                logger.info(f"Updated ML model {model_name} (version {existing.version + 1})")
+                logger.info(f"Updated ML model {model_name} (version {new_version})")
             else:
                 # Create new model
                 await async_db.create_ml_model(
@@ -77,7 +81,8 @@ class MLPersistenceManager:
                     model_data=model_bytes,
                     model_metadata=metadata_json,
                     accuracy=accuracy,
-                    training_samples=training_samples
+                    training_samples=training_samples,
+                    version=1
                 )
                 logger.info(f"Saved new ML model {model_name}")
             
@@ -105,15 +110,21 @@ class MLPersistenceManager:
                 logger.info(f"ML model {model_name} not found - will be created after training")
                 return None
             
-            # Deserialize model
-            model_data = pickle.loads(model_record.model_data)
+            # Extract data while record is accessible
+            model_bytes = model_record.model_data
+            version = model_record.version if model_record.version else 1
+            accuracy = model_record.accuracy
+            training_samples = model_record.training_samples
             
-            accuracy_str = f"{model_record.accuracy:.2%}" if model_record.accuracy else "N/A"
+            # Deserialize model
+            model_data = pickle.loads(model_bytes)
+            
+            accuracy_str = f"{accuracy:.2%}" if accuracy else "N/A"
             logger.info(
                 f"Loaded ML model {model_name} "
-                f"(version {model_record.version}, "
+                f"(version {version}, "
                 f"accuracy: {accuracy_str}, "
-                f"samples: {model_record.training_samples})"
+                f"samples: {training_samples})"
             )
             
             return model_data
@@ -138,13 +149,21 @@ class MLPersistenceManager:
             if not model_record:
                 return None
             
-            metadata = json.loads(model_record.model_metadata)
+            # Extract values while record is still accessible
+            metadata_json = model_record.model_metadata if model_record.model_metadata else '{}'
+            version = model_record.version if model_record.version else 1
+            accuracy = model_record.accuracy
+            training_samples = model_record.training_samples
+            created_at = model_record.created_at.isoformat() if model_record.created_at else None
+            updated_at = model_record.updated_at.isoformat() if model_record.updated_at else None
+            
+            metadata = json.loads(metadata_json)
             metadata.update({
-                'version': model_record.version,
-                'accuracy': model_record.accuracy,
-                'training_samples': model_record.training_samples,
-                'created_at': model_record.created_at.isoformat(),
-                'updated_at': model_record.updated_at.isoformat()
+                'version': version,
+                'accuracy': accuracy,
+                'training_samples': training_samples,
+                'created_at': created_at,
+                'updated_at': updated_at
             })
             
             return metadata
@@ -163,16 +182,18 @@ class MLPersistenceManager:
         try:
             models = await async_db.list_ml_models()
             
-            return [
-                {
-                    'name': model.model_name,
-                    'version': model.version,
-                    'accuracy': model.accuracy,
-                    'training_samples': model.training_samples,
-                    'updated_at': model.updated_at.isoformat()
-                }
-                for model in models
-            ]
+            result = []
+            for model in models:
+                # Extract values immediately while model is accessible
+                result.append({
+                    'name': model.model_name if model.model_name else 'unknown',
+                    'version': model.version if model.version else 1,
+                    'accuracy': model.accuracy if model.accuracy else 0,
+                    'training_samples': model.training_samples if model.training_samples else 0,
+                    'updated_at': model.updated_at.isoformat() if model.updated_at else None
+                })
+            
+            return result
             
         except Exception as e:
             logger.error(f"Failed to list ML models: {e}")

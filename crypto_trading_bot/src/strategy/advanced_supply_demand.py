@@ -170,7 +170,7 @@ class AdvancedSupplyDemandStrategy:
         self.order_flow_history: Dict[str, deque] = {}
         
         # Configuration - Adjusted for testing to generate more signals
-        self.min_zone_score = 5  # EXTREMELY LOW - Accept almost any zone for testing
+        self.min_zone_score = 1  # ULTRA LOW FOR TESTING - Accept ANY zone
         self.max_zone_age_hours = 336  # 14 days (increased from 7)
         self.max_zone_tests = 5  # Increased from 3
         self.volume_threshold_multiplier = 1.2  # Lowered from 1.5
@@ -246,7 +246,7 @@ class AdvancedSupplyDemandStrategy:
                               f"Score: {zone.composite_score:.1f}, Distance: {distance_pct:+.2f}%")
             
             # If no zones found, create a simple zone for testing
-            if not valid_zones and len(df) > 50:
+            if not valid_zones and len(df) > 30:  # Reduced from 50 for easier testing
                 logger.warning(f"⚠️ No zones found for {symbol}, creating test zone")
                 current_price = float(df['close'].iloc[-1])
                 test_zone = EnhancedZone(
@@ -256,7 +256,7 @@ class AdvancedSupplyDemandStrategy:
                     strength_score=50,
                     volume_profile=volume_profile,
                     order_flow_imbalance=order_flow,
-                    formation_time=pd.Timestamp(df.index[-10]),
+                    formation_time=df.index[-10] if isinstance(df.index[-10], pd.Timestamp) else pd.Timestamp(df.index[-10]),
                     test_count=0,
                     rejection_strength=2.0,
                     institutional_interest=50,
@@ -443,16 +443,30 @@ class AdvancedSupplyDemandStrategy:
         
         zones = []
         
+        # Validate dataframe
+        if len(df) < 30:
+            logger.warning(f"Not enough data for zone detection: {len(df)} candles")
+            return zones
+        
         # Calculate ATR for rejection strength
         df['atr'] = self._calculate_atr(df)
         avg_volume = df['volume'].rolling(20).mean()
+        # Fill NaN values with current volume for the first 20 candles
+        avg_volume = avg_volume.fillna(df['volume'])
         
+        # Log data statistics for debugging
         logger.info(f"🔍 Scanning {len(df)} candles for zone detection")
+        logger.debug(f"Price range: {df['low'].min():.4f} - {df['high'].max():.4f}")
+        logger.debug(f"Volume range: {df['volume'].min():.2f} - {df['volume'].max():.2f}")
+        logger.debug(f"ATR range: {df['atr'].min():.4f} - {df['atr'].max():.4f}")
+        
         zones_found = {'demand': 0, 'supply': 0}
+        rejections_checked = {'bullish': 0, 'bearish': 0}
         
         # Look for strong rejections (demand zones)
-        # Start from 10 instead of 20 for more zones
-        for i in range(10, len(df) - 1):
+        # Start from 20 to ensure we have avg_volume data
+        for i in range(20, len(df) - 2):
+            rejections_checked['bullish'] += 1
             # Check for bullish rejection (hammer, bullish engulfing, etc.)
             if self._is_bullish_rejection(df, i):
                 # Calculate zone bounds
@@ -486,7 +500,7 @@ class AdvancedSupplyDemandStrategy:
                     ),
                     volume_profile=volume_profile,
                     order_flow_imbalance=order_flow,
-                    formation_time=pd.Timestamp(df.index[i]),
+                    formation_time=df.index[i] if isinstance(df.index[i], pd.Timestamp) else pd.Timestamp(df.index[i]),
                     test_count=0,
                     rejection_strength=rejection_strength,
                     institutional_interest=institutional_interest,
@@ -501,8 +515,9 @@ class AdvancedSupplyDemandStrategy:
                 zones_found['demand'] += 1
         
         # Look for strong rejections (supply zones)
-        # Start from 10 instead of 20 for more zones
-        for i in range(10, len(df) - 1):
+        # Start from 20 to ensure we have avg_volume data
+        for i in range(20, len(df) - 2):
+            rejections_checked['bearish'] += 1
             # Check for bearish rejection
             if self._is_bearish_rejection(df, i):
                 # Calculate zone bounds
@@ -536,7 +551,7 @@ class AdvancedSupplyDemandStrategy:
                     ),
                     volume_profile=volume_profile,
                     order_flow_imbalance=order_flow,
-                    formation_time=pd.Timestamp(df.index[i]),
+                    formation_time=df.index[i] if isinstance(df.index[i], pd.Timestamp) else pd.Timestamp(df.index[i]),
                     test_count=0,
                     rejection_strength=rejection_strength,
                     institutional_interest=institutional_interest,
@@ -550,7 +565,8 @@ class AdvancedSupplyDemandStrategy:
                 zones.append(zone)
                 zones_found['supply'] += 1
         
-        logger.info(f"📊 Zone detection complete: Found {zones_found['demand']} demand zones, {zones_found['supply']} supply zones")
+        logger.info(f"📊 Zone detection complete: Checked {rejections_checked['bullish']} candles for bullish, {rejections_checked['bearish']} for bearish")
+        logger.info(f"📊 Found {zones_found['demand']} demand zones, {zones_found['supply']} supply zones")
         return zones
     
     def _is_bullish_rejection(self, df: pd.DataFrame, i: int) -> bool:
@@ -559,12 +575,20 @@ class AdvancedSupplyDemandStrategy:
         prev_candle = df.iloc[i-1] if i > 0 else None
         next_candle = df.iloc[i+1] if i < len(df) - 1 else None
         
+        # ULTRA SIMPLE for testing - just check if this is a local low
+        if i > 2 and i < len(df) - 2:
+            # Check if current low is lower than surrounding candles
+            if (candle['low'] < df.iloc[i-1]['low'] and 
+                candle['low'] < df.iloc[i-2]['low'] and
+                candle['low'] < df.iloc[i+1]['low']):
+                return True
+        
         # Hammer pattern - make it more lenient for testing
         body = abs(candle['close'] - candle['open'])
         lower_wick = candle['open'] - candle['low'] if candle['close'] > candle['open'] else candle['close'] - candle['low']
         
         # Very lenient: any wick at all (even tiny) counts
-        if lower_wick > body * 0.5:  # Wick is at least half the body size
+        if lower_wick > body * 0.3:  # Even smaller ratio
             return True
         
         # Bullish engulfing
@@ -576,9 +600,10 @@ class AdvancedSupplyDemandStrategy:
                 return True
         
         # Strong bullish candle after decline
-        if next_candle is not None:
+        if next_candle is not None and 'atr' in df.columns and i < len(df):
+            atr_value = df.iloc[i]['atr'] if pd.notna(df.iloc[i]['atr']) else 0.0001
             if (next_candle['close'] > next_candle['open'] and
-                (next_candle['close'] - next_candle['open']) > candle['atr'] * 1.5):
+                (next_candle['close'] - next_candle['open']) > atr_value * 1.5):
                 return True
         
         return False
@@ -589,12 +614,20 @@ class AdvancedSupplyDemandStrategy:
         prev_candle = df.iloc[i-1] if i > 0 else None
         next_candle = df.iloc[i+1] if i < len(df) - 1 else None
         
+        # ULTRA SIMPLE for testing - just check if this is a local high
+        if i > 2 and i < len(df) - 2:
+            # Check if current high is higher than surrounding candles
+            if (candle['high'] > df.iloc[i-1]['high'] and 
+                candle['high'] > df.iloc[i-2]['high'] and
+                candle['high'] > df.iloc[i+1]['high']):
+                return True
+        
         # Shooting star pattern - make it more lenient for testing
         body = abs(candle['close'] - candle['open'])
         upper_wick = candle['high'] - candle['close'] if candle['close'] > candle['open'] else candle['high'] - candle['open']
         
         # Very lenient: any wick at all (even tiny) counts
-        if upper_wick > body * 0.5:  # Wick is at least half the body size
+        if upper_wick > body * 0.3:  # Even smaller ratio
             return True
         
         # Bearish engulfing
@@ -606,9 +639,10 @@ class AdvancedSupplyDemandStrategy:
                 return True
         
         # Strong bearish candle after rise
-        if next_candle is not None:
+        if next_candle is not None and 'atr' in df.columns and i < len(df):
+            atr_value = df.iloc[i]['atr'] if pd.notna(df.iloc[i]['atr']) else 0.0001
             if (next_candle['close'] < next_candle['open'] and
-                (next_candle['open'] - next_candle['close']) > candle['atr'] * 1.5):
+                (next_candle['open'] - next_candle['close']) > atr_value * 1.5):
                 return True
         
         return False
@@ -625,6 +659,9 @@ class AdvancedSupplyDemandStrategy:
         
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         atr = tr.rolling(window=period).mean()
+        
+        # Fill NaN values with a reasonable default (0.01% of price)
+        atr = atr.fillna(df['close'] * 0.0001)
         
         return atr
     

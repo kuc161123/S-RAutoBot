@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     )
     redis_url: str = Field("", description="Redis URL (optional - will use in-memory queue if not provided)")
     
+    # Additional Database Settings (for docker-compose compatibility)
+    db_user: Optional[str] = Field("botuser", description="Database user")
+    db_password: Optional[str] = Field("botpassword", description="Database password")
+    db_name: Optional[str] = Field("crypto_bot", description="Database name")
+    
+    # Grafana Settings (for docker-compose compatibility)
+    grafana_user: Optional[str] = Field("admin", description="Grafana admin user")
+    grafana_password: Optional[str] = Field("admin", description="Grafana admin password")
+    
     # Trading Parameters - TESTING MODE WITH 1% RISK AND 10X LEVERAGE
     default_risk_percent: float = Field(1.0, ge=0.1, le=5.0)  # 1% risk per trade as requested
     max_concurrent_positions: int = Field(999, ge=1, le=999)  # Unlimited positions (one per symbol)

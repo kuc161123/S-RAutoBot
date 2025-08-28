@@ -141,11 +141,6 @@ class TradingSignalComplete:
     take_profit_2: float
     position_size: float
     
-    # Zone data - made optional and generic to work with multiple strategies
-    zone: Optional[Any] = None  # Can be EnhancedZone, OrderBlock, FVG, etc.
-    zone_score: float = 0
-    zone_type: str = ""
-    
     # ML predictions
     ml_success_probability: float
     ml_expected_profit: float
@@ -164,6 +159,11 @@ class TradingSignalComplete:
     risk_reward_ratio: float
     position_value: float
     max_loss: float
+    
+    # Zone data - made optional and generic to work with multiple strategies
+    zone: Optional[Any] = None  # Can be EnhancedZone, OrderBlock, FVG, etc.
+    zone_score: float = 0
+    zone_type: str = ""
     
     # Execution parameters
     order_type: str = "MARKET"

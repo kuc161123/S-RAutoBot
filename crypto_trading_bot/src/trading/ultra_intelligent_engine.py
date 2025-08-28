@@ -141,10 +141,10 @@ class TradingSignalComplete:
     take_profit_2: float
     position_size: float
     
-    # Zone data
-    zone: EnhancedZone
-    zone_score: float
-    zone_type: str
+    # Zone data - made optional and generic to work with multiple strategies
+    zone: Optional[Any] = None  # Can be EnhancedZone, OrderBlock, FVG, etc.
+    zone_score: float = 0
+    zone_type: str = ""
     
     # ML predictions
     ml_success_probability: float

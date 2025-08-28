@@ -15,7 +15,7 @@ import os
 
 from .config import settings
 from .api.enhanced_bybit_client import EnhancedBybitClient
-from .strategy.advanced_supply_demand import AdvancedSupplyDemandStrategy
+from .strategy.hybrid_smart_money_strategy import HybridSmartMoneyStrategy
 from .telegram.bot import TradingBot
 from .trading.order_manager import OrderManager
 from .db.database import init_db, close_db, DatabaseManager
@@ -99,11 +99,11 @@ async def lifespan(app: FastAPI):
             logger.error(f"Bybit client initialization failed: {e}")
             raise
         
-        # Initialize advanced strategy
-        logger.info("[3/8] Initializing trading strategy...")
+        # Initialize NEW hybrid smart money strategy
+        logger.info("[3/8] Initializing HYBRID trading strategy...")
         try:
-            strategy = AdvancedSupplyDemandStrategy()
-            logger.info("✅ Strategy initialized successfully")
+            strategy = HybridSmartMoneyStrategy()
+            logger.info("✅ HYBRID Strategy initialized successfully (70%+ win rate target)")
         except Exception as e:
             logger.error(f"Strategy initialization failed: {e}")
             raise
@@ -245,9 +245,9 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app with updated version
 app = FastAPI(
-    title="Ultra Intelligent Crypto Trading Bot",
-    version="2.1.0-ML-Enhanced",
-    description="Advanced trading bot with enhanced ML predictions and confidence intervals",
+    title="Hybrid Smart Money Trading Bot",
+    version="3.0.0-HSMM",
+    description="High-performance bot with Smart Money Concepts, Mean Reversion, and VWAP strategies (70%+ win rate target)",
     lifespan=lifespan
 )
 
@@ -347,35 +347,38 @@ async def health_check():
     return {
         "status": "ok", 
         "timestamp": datetime.now().isoformat(),
-        "version": "2.1-ML-Enhanced",
-        "deployment_date": "2025-08-25",
+        "version": "3.0-HSMM",
+        "deployment_date": "2025-08-28",
         "features": [
-            "Enhanced ML with confidence intervals",
-            "25 ML features with anomaly detection", 
-            "Cross-validation training",
-            "Performance tracking dashboard",
-            "Telegram formatter v2"
+            "Hybrid Smart Money Strategy (ICT/SMC)",
+            "Mean Reversion with BB+RSI", 
+            "VWAP Momentum Breakout",
+            "ML Signal Scoring & Filtering",
+            "70%+ Win Rate Target",
+            "Order Blocks & Fair Value Gaps",
+            "Liquidity Sweep Detection"
         ],
-        "ml_version": "enhanced_v2"
+        "strategy_version": "hybrid_v1"
     }
 
 @app.get("/version")
 async def get_version():
     """Explicit version endpoint"""
     return {
-        "bot_version": "2.1.0",
-        "ml_version": "enhanced_v2",
-        "dashboard_version": "ML-Enhanced",
-        "last_update": "2025-08-25 15:00 UTC",
-        "git_commit": "8a6bb2f",
+        "bot_version": "3.0.0",
+        "strategy_version": "HSMM-v1",
+        "dashboard_version": "Hybrid-Smart-Money",
+        "last_update": "2025-08-28 00:00 UTC",
+        "git_commit": "new-strategy",
         "changes": [
-            "Enhanced ML predictor with 25 features",
-            "Confidence intervals for predictions",
-            "Anomaly detection with Isolation Forest",
-            "Cross-validation training",
-            "Performance metrics tracking",
-            "Improved dashboard with ML insights",
-            "Enhanced Telegram notifications"
+            "Complete strategy overhaul to Hybrid Smart Money",
+            "ICT/SMC Order Blocks and Fair Value Gaps",
+            "Mean Reversion with Bollinger Bands + RSI",
+            "VWAP Momentum Breakout Strategy",
+            "ML Signal Scoring and Filtering",
+            "Target 70%+ win rate with proven strategies",
+            "Multi-confluence signal generation",
+            "Position sizing based on confidence"
         ]
     }
 

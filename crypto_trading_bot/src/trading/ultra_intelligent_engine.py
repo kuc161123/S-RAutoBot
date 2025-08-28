@@ -18,7 +18,8 @@ except ImportError:
 from collections import defaultdict, deque
 
 from ..api.enhanced_bybit_client import EnhancedBybitClient
-from ..strategy.advanced_supply_demand import AdvancedSupplyDemandStrategy, EnhancedZone
+from ..strategy.hybrid_smart_money_strategy import HybridSmartMoneyStrategy, HybridSignal
+from ..strategy.ml_signal_scorer import ml_signal_scorer
 from ..strategy.intelligent_decision_engine import decision_engine, IntelligentSignal
 from ..strategy.ml_predictor import ml_predictor
 from ..strategy.ml_ensemble import MLEnsemble
@@ -200,7 +201,8 @@ class UltraIntelligentEngine:
         self.performance_tracker = get_performance_tracker(DatabaseManager)
         
         # Strategy and ML components
-        self.strategy = AdvancedSupplyDemandStrategy()
+        self.strategy = HybridSmartMoneyStrategy()  # Use new hybrid strategy
+        self.ml_signal_scorer = ml_signal_scorer  # ML signal scoring
         self.ml_ensemble = MLEnsemble()
         self.mtf_learner = MTFStrategyLearner()
         # Scanner will be initialized after symbols are selected
@@ -954,14 +956,18 @@ class UltraIntelligentEngine:
                     if df is None or len(df) < 50:
                         continue
                     
-                    # Run strategy analysis
-                    analysis = self.strategy.analyze_market(symbol, df, ['15'])
+                    # Run NEW hybrid strategy analysis
+                    hybrid_signals = self.strategy.analyze(symbol, df)
                     
-                    if analysis.get('signals'):
-                        for signal in analysis['signals']:
-                            # Get zone
-                            zone = signal.get('zone')
-                            if not zone:
+                    # Score signals with ML
+                    if hybrid_signals:
+                        scored_signals = self.ml_signal_scorer.score_signals(
+                            hybrid_signals, 
+                            {symbol: df}
+                        )
+                        
+                        for signal in scored_signals:
+                            if signal.confidence < 50:
                                 continue
                             
                             # Prepare market data for ML
@@ -1002,45 +1008,45 @@ class UltraIntelligentEngine:
                                 logger.warning(f"Insufficient balance (${balance:.2f}) to open new positions")
                                 continue
                             
-                            # Make intelligent decision
-                            intelligent_signal = decision_engine.make_intelligent_decision(
-                                symbol=symbol,
-                                zone=zone,
-                                market_data=market_data,
-                                account_balance=balance,
-                                existing_positions=list(self.active_positions.keys())
-                            )
-                            
-                            if intelligent_signal:
-                                # Create complete signal
+                            # Convert HybridSignal to complete trading signal
+                            if True:  # Always true since we pre-filtered by confidence
+                                # Calculate position size based on risk management
+                                risk_per_trade = balance * (settings.default_risk_percent / 100)
+                                stop_distance = abs(signal.entry_price - signal.stop_loss)
+                                base_position_size = risk_per_trade / stop_distance if stop_distance > 0 else 0
+                                
+                                # Adjust position size by confidence multiplier
+                                position_size = base_position_size * signal.position_size_multiplier
+                                
+                                # Create complete signal from HybridSignal
                                 complete_signal = TradingSignalComplete(
                                     symbol=symbol,
-                                    action="BUY" if intelligent_signal.side == "Buy" else "SELL",
-                                    entry_price=intelligent_signal.entry_price,
-                                    stop_loss=intelligent_signal.stop_loss,
-                                    take_profit_1=intelligent_signal.take_profit_1,
-                                    take_profit_2=intelligent_signal.take_profit_2,
-                                    position_size=intelligent_signal.position_size,
-                                    zone=zone,
-                                    zone_score=zone.composite_score,
-                                    zone_type=zone.zone_type,
-                                    ml_success_probability=intelligent_signal.ml_success_probability,
-                                    ml_expected_profit=intelligent_signal.ml_expected_profit_ratio,
-                                    ml_confidence=intelligent_signal.ml_confidence,
-                                    ml_features=intelligent_signal.ml_features,
-                                    market_regime=intelligent_signal.market_regime.value,
-                                    trading_mode=intelligent_signal.trading_mode.value,
-                                    sentiment_score=intelligent_signal.sentiment_score,
-                                    momentum_score=intelligent_signal.momentum_score,
-                                    volume_score=intelligent_signal.volume_score,
+                                    action="BUY" if signal.direction == "buy" else "SELL",
+                                    entry_price=signal.entry_price,
+                                    stop_loss=signal.stop_loss,
+                                    take_profit_1=signal.take_profit_1,
+                                    take_profit_2=signal.take_profit_2,
+                                    position_size=position_size,
+                                    zone=signal.order_block or signal.fvg,  # Use order block or FVG as zone
+                                    zone_score=signal.confidence,
+                                    zone_type=signal.signal_type.value,
+                                    ml_success_probability=signal.ml_score / 100,
+                                    ml_expected_profit=signal.risk_reward_ratio,
+                                    ml_confidence=signal.confidence / 100,
+                                    ml_features=signal.ml_features,
+                                    market_regime="trending" if "Breakout" in signal.signal_type.value else "ranging",
+                                    trading_mode="aggressive" if signal.confidence > 70 else "conservative",
+                                    sentiment_score=signal.confidence,
+                                    momentum_score=signal.ml_features.get('momentum_score', 50),
+                                    volume_score=signal.ml_features.get('volume_ratio', 1.0) * 50,
                                     # Calculate actual risk amount (position size * distance to stop loss)
-                                    risk_amount=intelligent_signal.position_size * abs(intelligent_signal.entry_price - intelligent_signal.stop_loss),
-                                    risk_reward_ratio=intelligent_signal.ml_expected_profit_ratio,
-                                    position_value=intelligent_signal.position_size * intelligent_signal.entry_price,
-                                    max_loss=intelligent_signal.position_size * abs(intelligent_signal.entry_price - intelligent_signal.stop_loss),
+                                    risk_amount=position_size * stop_distance,
+                                    risk_reward_ratio=signal.risk_reward_ratio,
+                                    position_value=position_size * signal.entry_price,
+                                    max_loss=position_size * stop_distance,
                                     signal_id=f"{symbol}_{datetime.now().timestamp()}",
-                                    confidence_factors=intelligent_signal.confidence_factors,
-                                    risk_factors=intelligent_signal.risk_factors
+                                    confidence_factors=signal.confluences,
+                                    risk_factors=[]  # Add risk factors if needed
                                 )
                                 
                                 # Add to queue
@@ -1049,9 +1055,11 @@ class UltraIntelligentEngine:
                                 self.metrics['signals_generated'] += 1
                                 
                                 logger.info(
-                                    f"📊 Signal generated for {symbol}: "
-                                    f"ML Prob={intelligent_signal.ml_success_probability:.1%}, "
-                                    f"Confidence={intelligent_signal.ml_confidence:.1%}"
+                                    f"📊 HYBRID Signal generated for {symbol}: "
+                                    f"Type={signal.signal_type.value}, "
+                                    f"Direction={signal.direction}, "
+                                    f"Confidence={signal.confidence:.1f}%, "
+                                    f"ML Score={signal.ml_score:.1f}%"
                                 )
                 
                 # Sync positions every 5 iterations (2.5 minutes)

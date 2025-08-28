@@ -45,7 +45,7 @@ class MLSignalScorer:
                 features = self._extract_ml_features(signal, market_data.get(signal.symbol))
                 
                 # Get ML prediction if model is trained
-                if self.ml_predictor.is_model_trained():
+                if self.ml_predictor.model_trained:
                     ml_result = self.ml_predictor.predict(features)
                     
                     # Update signal with ML scores
@@ -88,7 +88,7 @@ class MLSignalScorer:
                 signal = self._enhance_by_signal_type(signal)
                 
                 # Filter based on final confidence
-                if signal.confidence >= 50:  # Minimum 50% confidence after ML scoring
+                if signal.confidence >= 30:  # Lowered to 30% to allow more signals
                     scored_signals.append(signal)
                     
             except Exception as e:

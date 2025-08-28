@@ -218,6 +218,10 @@ class HybridSmartMoneyStrategy:
     
     def _detect_market_regime(self, df: pd.DataFrame) -> MarketRegime:
         """Classify current market regime"""
+        # Calculate indicators if not present
+        if 'ema_fast' not in df.columns:
+            df = self._calculate_indicators(df)
+            
         recent_df = df.tail(50)
         
         # Trend detection

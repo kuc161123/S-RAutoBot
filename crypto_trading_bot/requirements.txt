@@ -16,7 +16,7 @@ websocket-client==1.7.0
 pandas==2.1.4
 numpy==1.26.3
 ta==0.11.0
-TA-Lib==0.4.28
+# TA-Lib==0.4.28  # Optional - using 'ta' library as fallback
 scipy==1.11.4
 scikit-learn==1.3.2
 xgboost==2.0.3

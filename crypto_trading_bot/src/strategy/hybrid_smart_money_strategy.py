@@ -11,7 +11,12 @@ from enum import Enum
 from datetime import datetime, timedelta
 import structlog
 from scipy import stats
-import talib
+# Use our wrapper that works with 'ta' library instead of talib
+try:
+    import talib
+except ImportError:
+    # Use ta library wrapper if talib not available
+    from ..utils import technical_indicators as talib
 
 logger = structlog.get_logger(__name__)
 

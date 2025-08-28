@@ -3,23 +3,12 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies including TA-Lib
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     postgresql-client \
     libpq-dev \
-    wget \
-    make \
-    && cd /tmp \
-    && wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
-    && tar -xzf ta-lib-0.4.0-src.tar.gz \
-    && cd ta-lib \
-    && ./configure --prefix=/usr \
-    && make \
-    && make install \
-    && cd / \
-    && rm -rf /tmp/ta-lib* \
     && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables

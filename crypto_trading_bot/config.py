@@ -89,19 +89,19 @@ class Settings(BaseSettings):
             "CRVUSDT", "LDOUSDT", "1INCHUSDT", "SUSHIUSDT", "GMXUSDT",
             
             # AI and compute
-            "RENDERUSDT", "FETUSDT", "AGIXUSDT", "OCEANUSDT", "RNDR3USDT",
-            "TAOUSDT", "GRTUSDT", "ARKMUSDT", "AIUSDT", "PHBUSDT",
+            "RENDERUSDT", "FETUSDT", "AGIXUSDT", "OCEANUSDT", "TAOUSDT",
+            "GRTUSDT", "ARKMUSDT", "AIUSDT", "PHBUSDT", "CTSIUSDT",
             
             # Gaming and metaverse
-            "SANDUSDT", "AXSUSDT", "MANAUSDT", "GALAUSDT", "ENJUSDT",
-            "GMTUSDT", "MAGICUSDT", "APEUSDT", "ILOUSDT", "HIGHUSDT",
+            "SANDUSDT", "AXSUSDT", "MANAUSDT", "ENJUSDT", "GALAUSDT",
+            "GMTUSDT", "MAGICUSDT", "APEUSDT", "HIGHUSDT", "ALICEUSDT",
             
             # Infrastructure
             "ATOMUSDT", "FILUSDT", "HBARUSDT", "ALGOUSDT", "VETUSDT",
             "THETAUSDT", "FTMUSDT", "XTZUSDT", "EGLDUSDT", "FLOWUSDT",
             
-            # Meme coins (with correct Bybit format)
-            "SHIBUSDT", "PEPEUSDT", "BONKUSDT", "FLOKIUSDT", "WIFUSDT",
+            # Meme coins (with correct Bybit 1000x format)
+            "1000SHIBUSDT", "1000PEPEUSDT", "1000BONKUSDT", "1000FLOKIUSDT", "WIFUSDT",
             "MEMEUSDT", "DOGSUSDT", "1000LUNCUSDT", "1000XECUSDT", "SPELLUSDT",
             
             # Others high volume
@@ -109,10 +109,10 @@ class Settings(BaseSettings):
             "PENDLEUSDT", "WLDUSDT", "BLURUSDT", "PEOPLEUSDT", "CKBUSDT",
             "LRCUSDT", "ENSUSDT", "DYDXUSDT", "ZRXUSDT", "BATUSDT",
             
-            # Additional verified symbols
+            # Additional verified symbols  
             "JASMYUSDT", "STMXUSDT", "ACHUSDT", "RSRUSDT", "SXPUSDT",
             "IOTXUSDT", "CYBERUSDT", "NTRNUSDT", "MAVUSDT", "MDTUSDT",
-            "MASKUSDT", "GALAUSDT", "C98USDT", "RNDRUSDT", "ARPAUSDT"
+            "MASKUSDT", "C98USDT", "RNDRUSDT", "ARPAUSDT", "MTLUSDT"
         ],
         description="Top 100 liquid trading pairs"
     )

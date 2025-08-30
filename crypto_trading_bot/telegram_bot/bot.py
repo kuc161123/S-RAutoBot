@@ -5,7 +5,7 @@ import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import structlog
-from typing import List
+from typing import List, Optional
 
 logger = structlog.get_logger(__name__)
 
@@ -23,32 +23,56 @@ class TelegramBot:
     
     async def start(self):
         """Start the Telegram bot"""
-        try:
-            # Create application
-            self.app = Application.builder().token(self.token).build()
-            
-            # Add command handlers
-            self.app.add_handler(CommandHandler("start", self.cmd_start))
-            self.app.add_handler(CommandHandler("stop", self.cmd_stop))
-            self.app.add_handler(CommandHandler("status", self.cmd_status))
-            self.app.add_handler(CommandHandler("positions", self.cmd_positions))
-            self.app.add_handler(CommandHandler("balance", self.cmd_balance))
-            self.app.add_handler(CommandHandler("stats", self.cmd_stats))
-            self.app.add_handler(CommandHandler("help", self.cmd_help))
-            
-            # Start bot
-            await self.app.initialize()
-            await self.app.start()
-            await self.app.updater.start_polling()
-            
-            self.is_running = True
-            logger.info("Telegram bot started")
-            
-            # Send startup message
-            await self.send_message("🚀 Trading bot started successfully!")
-            
-        except Exception as e:
-            logger.error(f"Failed to start Telegram bot: {e}")
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                # Create application with conflict handling
+                self.app = Application.builder().token(self.token).build()
+                
+                # Add command handlers
+                self.app.add_handler(CommandHandler("start", self.cmd_start))
+                self.app.add_handler(CommandHandler("stop", self.cmd_stop))
+                self.app.add_handler(CommandHandler("status", self.cmd_status))
+                self.app.add_handler(CommandHandler("positions", self.cmd_positions))
+                self.app.add_handler(CommandHandler("balance", self.cmd_balance))
+                self.app.add_handler(CommandHandler("stats", self.cmd_stats))
+                self.app.add_handler(CommandHandler("help", self.cmd_help))
+                
+                # Start bot
+                await self.app.initialize()
+                await self.app.start()
+                
+                # Try to stop any existing polling first
+                try:
+                    await self.app.updater.stop()
+                except:
+                    pass
+                
+                # Start polling with drop_pending_updates to clear old sessions
+                await self.app.updater.start_polling(drop_pending_updates=True)
+                
+                self.is_running = True
+                logger.info("Telegram bot started successfully")
+                
+                # Send startup message
+                await self.send_message("🚀 Trading bot started successfully!")
+                break  # Success, exit retry loop
+                
+            except Exception as e:
+                retry_count += 1
+                if "Conflict" in str(e):
+                    logger.warning(f"Telegram conflict detected (attempt {retry_count}/{max_retries}). Another instance may be running.")
+                    if retry_count < max_retries:
+                        logger.info("Waiting 10 seconds before retry...")
+                        await asyncio.sleep(10)
+                    else:
+                        logger.error("Failed to start Telegram bot after retries. Continuing without Telegram.")
+                        self.app = None  # Disable Telegram functionality
+                else:
+                    logger.error(f"Failed to start Telegram bot: {e}")
+                    break
     
     async def stop(self):
         """Stop the Telegram bot"""

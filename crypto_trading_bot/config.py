@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     bybit_api_secret: str = Field(..., env="BYBIT_API_SECRET")
     bybit_testnet: bool = Field(True, env="BYBIT_TESTNET")
     
-    # Telegram Configuration
-    telegram_bot_token: str = Field(..., env="TELEGRAM_BOT_TOKEN")
+    # Telegram Configuration (Optional)
+    telegram_bot_token: Optional[str] = Field(None, env="TELEGRAM_BOT_TOKEN")
     telegram_chat_ids: List[int] = Field(default_factory=list, env="TELEGRAM_CHAT_IDS")
     
     @field_validator('bybit_testnet', mode='before')

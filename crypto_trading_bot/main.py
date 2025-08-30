@@ -63,12 +63,16 @@ class TradingBot:
                 risk_per_trade=settings.risk_per_trade
             )
             
-            # Initialize Telegram bot if configured
-            if settings.telegram_enabled:
-                self.telegram_bot = TelegramBot(
-                    token=settings.telegram_bot_token,
-                    chat_ids=settings.telegram_chat_ids
-                )
+            # Initialize Telegram bot if configured (optional)
+            try:
+                if settings.telegram_enabled:
+                    self.telegram_bot = TelegramBot(
+                        token=settings.telegram_bot_token,
+                        chat_ids=settings.telegram_chat_ids
+                    )
+            except Exception as e:
+                logger.warning(f"Telegram bot initialization failed (non-critical): {e}")
+                self.telegram_bot = None
             
             # Initialize order executor
             self.order_executor = OrderExecutor(
@@ -110,9 +114,13 @@ class TradingBot:
             self.health_server = HealthCheckServer(self, port=int(os.getenv('PORT', 8080)))
             await self.health_server.start()
             
-            # Start Telegram bot
+            # Start Telegram bot (optional, non-critical)
             if self.telegram_bot:
-                await self.telegram_bot.start()
+                try:
+                    await self.telegram_bot.start()
+                except Exception as e:
+                    logger.warning(f"Telegram bot failed to start (non-critical): {e}")
+                    logger.info("Bot will continue without Telegram notifications")
             
             # Log startup info
             balance = self.exchange.get_account_balance()
@@ -216,7 +224,7 @@ if __name__ == "__main__":
             sys.exit(1)
         
         # Verify required environment variables are set
-        required_vars = ['BYBIT_API_KEY', 'BYBIT_API_SECRET', 'TELEGRAM_BOT_TOKEN']
+        required_vars = ['BYBIT_API_KEY', 'BYBIT_API_SECRET']
         missing_vars = [var for var in required_vars if not os.getenv(var)]
         
         if missing_vars:

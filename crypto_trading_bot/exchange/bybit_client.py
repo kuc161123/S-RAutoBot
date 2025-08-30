@@ -39,11 +39,17 @@ class BybitClient:
         self.on_kline_update = None
         self.on_position_update = None
         
+        # Event loop reference for WebSocket callbacks
+        self.loop = None
+        
         logger.info(f"Bybit client initialized ({'Testnet' if testnet else 'Mainnet'})")
     
     async def initialize(self, symbols: List[str]):
         """Initialize client with symbols"""
         try:
+            # Store the event loop for WebSocket callbacks
+            self.loop = asyncio.get_event_loop()
+            
             # Test connection
             server_time = self.client.get_server_time()
             logger.info(f"Connected to Bybit. Server time: {server_time['result']['timeNano']}")
@@ -159,8 +165,12 @@ class BybitClient:
                             ]).drop_duplicates(subset=['timestamp'], keep='last').tail(500)
                             
                             # Trigger callback if set
-                            if self.on_kline_update:
-                                asyncio.create_task(self.on_kline_update(symbol, self.kline_data[symbol]))
+                            if self.on_kline_update and self.loop:
+                                # Schedule the coroutine in the main event loop
+                                asyncio.run_coroutine_threadsafe(
+                                    self.on_kline_update(symbol, self.kline_data[symbol]), 
+                                    self.loop
+                                )
                                 
                 except Exception as e:
                     logger.error(f"Error handling kline update: {e}")
@@ -174,8 +184,12 @@ class BybitClient:
                             self.positions[symbol] = position
                             
                             # Trigger callback if set
-                            if self.on_position_update:
-                                asyncio.create_task(self.on_position_update(symbol, position))
+                            if self.on_position_update and self.loop:
+                                # Schedule the coroutine in the main event loop
+                                asyncio.run_coroutine_threadsafe(
+                                    self.on_position_update(symbol, position), 
+                                    self.loop
+                                )
                                 
                 except Exception as e:
                     logger.error(f"Error handling position update: {e}")

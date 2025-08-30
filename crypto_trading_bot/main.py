@@ -16,7 +16,7 @@ from strategy.simple_strategy import SimpleStrategy
 from trading.position_manager import PositionManager
 from trading.order_executor import OrderExecutor
 from trading.signal_generator import SignalGenerator
-from telegram.bot import TelegramBot
+from telegram_bot.bot import TelegramBot
 from utils.logger import setup_logger
 
 # Setup logger

@@ -1,49 +1,24 @@
-# Core
-python-telegram-bot==20.7
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-redis[hiredis]==5.0.1
-asyncpg==0.29.0
-sqlalchemy==2.0.25
-alembic==1.13.1
-psycopg2-binary==2.9.9
-
-# Bybit
-pybit==5.6.2
-websocket-client==1.7.0
-
-# Data & Analysis
-pandas==2.1.4
-numpy==1.26.3
-ta==0.11.0
-# TA-Lib==0.4.28  # Optional - using 'ta' library as fallback
-scipy==1.11.4
-scikit-learn==1.3.2
-xgboost==2.0.3
-shap==0.44.0
-joblib==1.3.2
-
-# Backtesting
-vectorbt==0.26.0
-plotly==5.18.0
-kaleido==0.2.1
-
-# Utils
+# Core dependencies
 python-dotenv==1.0.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
-cryptography==41.0.7
-httpx==0.25.2
-tenacity==8.2.3
 
-# Monitoring
-prometheus-client==0.19.0
+# Bybit API
+pybit==5.6.2
+websocket-client==1.7.0
+
+# Data processing
+pandas==2.1.4
+numpy==1.26.3
+ta==0.11.0
+
+# Telegram
+python-telegram-bot==20.7
+
+# Async support
+aiohttp==3.9.1
+asyncio==3.4.3
+
+# Logging
 structlog==24.1.0
-psutil==5.9.6
-
-# Development
-pytest==7.4.4
-pytest-asyncio==0.23.3
-black==23.12.1
-mypy==1.8.0
-pre-commit==3.6.0
+colorama==0.4.6

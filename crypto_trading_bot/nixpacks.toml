@@ -1,8 +1,0 @@
-# Let Nixpacks auto-detect Python and handle the build
-# Railway's Nixpacks will automatically:
-# 1. Detect Python from requirements.txt
-# 2. Set up the virtual environment
-# 3. Install dependencies
-
-[start]
-cmd = "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"

@@ -8,58 +8,37 @@ __pycache__
 *.pyo
 *.pyd
 .Python
-env/
-venv/
 pip-log.txt
 pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.mypy_cache
-.pytest_cache
-.hypothesis
-
-# Virtual environments
-.env
 .venv
-env/
 venv/
 ENV/
+env/
 
-# IDEs
+# Environment files
+.env
+.env.*
+!env.example
+
+# IDE
 .vscode
 .idea
 *.swp
 *.swo
-*~
+.claude
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Project specific
-*.db
-*.sqlite
-*.sqlite3
-logs/
-temp/
-tmp/
-
 # Documentation
 *.md
-docs/
-README.md
-RAILWAY_SETUP.md
+!README.md
 
-# Local environment files
-.env.local
-.env.development
-.env.test
+# Railway specific
+railway.env
+RAILWAY_DEPLOYMENT.md
 
-# Keep Railway env file
-!.env.railway
+# Logs
+logs/
+*.log

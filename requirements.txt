@@ -1,0 +1,23 @@
+# Core dependencies
+python-dotenv==1.0.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Bybit API
+pybit==5.6.2
+websocket-client==1.7.0
+
+# Data processing
+pandas==2.1.4
+numpy==1.26.3
+ta==0.11.0
+
+# Telegram
+python-telegram-bot==20.7
+
+# Async support
+aiohttp==3.9.1
+
+# Logging
+structlog==24.1.0
+colorama==0.4.6

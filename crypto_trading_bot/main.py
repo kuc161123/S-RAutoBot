@@ -185,9 +185,11 @@ if __name__ == "__main__":
     print()
     
     try:
-        # Check if .env file exists
+        # Check if running locally (not in Docker/Railway)
         import os
-        if not os.path.exists('.env'):
+        is_production = os.getenv('RAILWAY_ENVIRONMENT') or os.path.exists('/.dockerenv')
+        
+        if not is_production and not os.path.exists('.env'):
             print("❌ ERROR: .env file not found!")
             print("Please create a .env file with the following variables:")
             print("  BYBIT_API_KEY=your_api_key")
@@ -195,6 +197,15 @@ if __name__ == "__main__":
             print("  BYBIT_TESTNET=true")
             print("  TELEGRAM_BOT_TOKEN=your_bot_token")
             print("  TELEGRAM_CHAT_IDS=[your_chat_id]")
+            sys.exit(1)
+        
+        # Verify required environment variables are set
+        required_vars = ['BYBIT_API_KEY', 'BYBIT_API_SECRET', 'TELEGRAM_BOT_TOKEN']
+        missing_vars = [var for var in required_vars if not os.getenv(var)]
+        
+        if missing_vars:
+            print(f"❌ ERROR: Missing required environment variables: {', '.join(missing_vars)}")
+            print("Please set these in Railway's environment variables section")
             sys.exit(1)
         
         # Run the bot

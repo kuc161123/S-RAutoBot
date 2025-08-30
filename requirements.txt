@@ -1,5 +1,4 @@
 # Core dependencies
-python-dotenv==1.0.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
 
@@ -20,4 +19,7 @@ aiohttp==3.9.1
 
 # Logging
 structlog==24.1.0
-colorama==0.4.6
+
+# Optional for local development only
+# python-dotenv==1.0.0
+# colorama==0.4.6

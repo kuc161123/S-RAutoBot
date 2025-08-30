@@ -100,22 +100,38 @@ class BybitClient:
             return None
     
     async def start_websockets(self, symbols: List[str]):
-        """Start WebSocket connections"""
+        """Start WebSocket connections with retry logic for server stability"""
+        max_retries = 5
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                # Public WebSocket for market data
+                self.ws_public = WebSocket(
+                    testnet=self.testnet,
+                    channel_type="linear"
+                )
+                
+                # Private WebSocket for account updates
+                self.ws_private = WebSocket(
+                    testnet=self.testnet,
+                    channel_type="private",
+                    api_key=self.api_key,
+                    api_secret=self.api_secret
+                )
+                
+                # Connection successful, exit retry loop
+                break
+                
+            except Exception as e:
+                retry_count += 1
+                logger.error(f"WebSocket connection failed (attempt {retry_count}/{max_retries}): {e}")
+                if retry_count < max_retries:
+                    await asyncio.sleep(5 * retry_count)  # Exponential backoff
+                else:
+                    raise Exception("Failed to establish WebSocket connection after multiple attempts")
+        
         try:
-            # Public WebSocket for market data
-            self.ws_public = WebSocket(
-                testnet=self.testnet,
-                channel_type="linear"
-            )
-            
-            # Private WebSocket for account updates
-            self.ws_private = WebSocket(
-                testnet=self.testnet,
-                channel_type="private",
-                api_key=self.api_key,
-                api_secret=self.api_secret
-            )
-            
             # Subscribe to kline streams
             kline_streams = [f"kline.15.{symbol}" for symbol in symbols]
             

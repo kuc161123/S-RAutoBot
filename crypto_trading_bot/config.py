@@ -6,10 +6,14 @@ from pydantic import Field, field_validator
 from typing import List, Optional, Union
 import os
 import json
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Only load .env in development
+if not os.getenv('RAILWAY_ENVIRONMENT') and not os.path.exists('/.dockerenv'):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass  # dotenv not required in production
 
 class Settings(BaseSettings):
     """Application settings"""

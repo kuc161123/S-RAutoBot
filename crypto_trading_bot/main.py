@@ -6,8 +6,14 @@ Simple, clean, and efficient trading bot for Bybit
 import asyncio
 import signal
 import sys
+import os
 from typing import Optional
 import structlog
+
+# Set event loop policy for server environments
+if sys.platform == 'linux':
+    import asyncio
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
 # Import our modules
 from config import settings
@@ -18,6 +24,7 @@ from trading.order_executor import OrderExecutor
 from trading.signal_generator import SignalGenerator
 from telegram_bot.bot import TelegramBot
 from utils.logger import setup_logger
+from utils.health_check import HealthCheckServer
 
 # Setup logger
 logger = setup_logger(settings.log_level)
@@ -32,6 +39,7 @@ class TradingBot:
         self.order_executor: Optional[OrderExecutor] = None
         self.signal_generator: Optional[SignalGenerator] = None
         self.telegram_bot: Optional[TelegramBot] = None
+        self.health_server: Optional[HealthCheckServer] = None
         self.is_running = False
         
         logger.info("Trading bot initializing...")
@@ -98,6 +106,10 @@ class TradingBot:
             
             self.is_running = True
             
+            # Start health check server for monitoring
+            self.health_server = HealthCheckServer(self, port=int(os.getenv('PORT', 8080)))
+            await self.health_server.start()
+            
             # Start Telegram bot
             if self.telegram_bot:
                 await self.telegram_bot.start()
@@ -142,6 +154,10 @@ class TradingBot:
             # Stop Telegram bot
             if self.telegram_bot:
                 await self.telegram_bot.stop()
+            
+            # Stop health check server
+            if self.health_server:
+                await self.health_server.stop()
             
             # Clean up exchange
             if self.exchange:

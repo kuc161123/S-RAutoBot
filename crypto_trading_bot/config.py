@@ -2,9 +2,10 @@
 Configuration management for the crypto trading bot
 """
 from pydantic_settings import BaseSettings
-from pydantic import Field
-from typing import List, Optional
+from pydantic import Field, field_validator
+from typing import List, Optional, Union
 import os
+import json
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -22,6 +23,33 @@ class Settings(BaseSettings):
     telegram_bot_token: str = Field(..., env="TELEGRAM_BOT_TOKEN")
     telegram_chat_ids: List[int] = Field(default_factory=list, env="TELEGRAM_CHAT_IDS")
     
+    @field_validator('bybit_testnet', mode='before')
+    def parse_bool(cls, v):
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            # Remove quotes if present
+            v = v.strip('"').strip("'").lower()
+            return v in ('true', '1', 'yes', 'on')
+        return bool(v)
+    
+    @field_validator('telegram_chat_ids', mode='before')
+    def parse_chat_ids(cls, v):
+        if isinstance(v, list):
+            return v
+        if isinstance(v, int):
+            return [v]
+        if isinstance(v, str):
+            # Try to parse as JSON array first
+            if v.startswith('['):
+                try:
+                    return json.loads(v)
+                except:
+                    pass
+            # Otherwise treat as single ID
+            return [int(v.strip())]
+        return v if v else []
+    
     # Trading Configuration
     initial_symbols: List[str] = Field(
         default=[
@@ -32,9 +60,9 @@ class Settings(BaseSettings):
     )
     
     # Risk Management
-    risk_per_trade: float = Field(0.01, ge=0.001, le=0.05, description="Risk 1% per trade")
-    max_positions: int = Field(10, ge=1, le=50, description="Maximum concurrent positions")
-    leverage: int = Field(10, ge=1, le=20, description="Trading leverage")
+    risk_per_trade: float = Field(0.01, ge=0.001, le=1.0, description="Risk per trade (0.01 = 1%)")
+    max_positions: int = Field(10, ge=1, le=200, description="Maximum concurrent positions")
+    leverage: int = Field(10, ge=1, le=125, description="Trading leverage")
     
     # Strategy Parameters
     rsi_period: int = Field(14, description="RSI period")

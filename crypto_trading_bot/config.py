@@ -54,13 +54,48 @@ class Settings(BaseSettings):
             return [int(v.strip())]
         return v if v else []
     
+    @field_validator('initial_symbols', mode='before')
+    def parse_symbols(cls, v):
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            # Try to parse as JSON array first
+            if v.startswith('['):
+                try:
+                    return json.loads(v)
+                except:
+                    pass
+            # Otherwise treat as comma-separated list
+            return [s.strip() for s in v.split(',') if s.strip()]
+        return v if v else []
+    
     # Trading Configuration
     initial_symbols: List[str] = Field(
+        env="INITIAL_SYMBOLS",
         default=[
+            # Top 100 most liquid crypto pairs on Bybit
             "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-            "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "MATICUSDT", "LINKUSDT"
+            "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "MATICUSDT", "LINKUSDT",
+            "DOTUSDT", "TONUSDT", "SHIBUSDT", "TRXUSDT", "NEARUSDT",
+            "UNIUSDT", "LTCUSDT", "BCHUSDT", "PEPEUSDT", "APTUSDT",
+            "ICPUSDT", "ETCUSDT", "WIFUSDT", "STXUSDT", "MANTAUSDT",
+            "RENDERUSDT", "IMXUSDT", "ARBUSDT", "OPUSDT", "MKRUSDT",
+            "INJUSDT", "ATOMUSDT", "FILUSDT", "HBARUSDT", "TAOUSDT",
+            "TIAUSDT", "GRTUSDT", "ARUSDT", "KASUSDT", "FTMUSDT",
+            "ALGOUSDT", "SEIUSDT", "SUIUSDT", "VETUSDT", "FETUSDT",
+            "THETAUSDT", "ORDIUSDT", "RUNEUSDT", "BONKUSDT", "NOTUSDT",
+            "SANDUSDT", "AXSUSDT", "MANAUSDT", "FLOKIUSDT", "GALAUSDT",
+            "COREUSDT", "FLOWUSDT", "XTZUSDT", "EGLDUSDT", "CFXUSDT",
+            "MINAUSDT", "QNTUSDT", "AAVEUSDT", "APEUSDT", "CROUSDT",
+            "SNXUSDT", "PENDLEUSDT", "WLDUSDT", "CHZUSDT", "FXSUSDT",
+            "NFPUSDT", "AGIXUSDT", "JUPUSDT", "EOSUSDT", "IOTAUSDT",
+            "PYTH1000USDT", "GMTUSDT", "BLURUSDT", "LDOUSDT", "1INCHUSDT",
+            "SSVUSDT", "PEOPLEUSDT", "ENJUSDT", "CKBUSDT", "LRCUSDT",
+            "ENSUSDT", "ACEUSDT", "DYDXUSDT", "COMPUSDT", "YFIUSDT",
+            "ZRXUSDT", "CRVUSDT", "BALLUSDT", "ILVUSDT", "UMAUSDT",
+            "BATUSDT", "ARKMUSDT", "ANKRUSDT", "AIUSDT", "RDNTUSDT"
         ],
-        description="Start with top 10 symbols"
+        description="Top 100 liquid trading pairs"
     )
     
     # Risk Management - ALL FROM ENV VARS

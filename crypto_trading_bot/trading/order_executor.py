@@ -11,9 +11,10 @@ logger = structlog.get_logger(__name__)
 class OrderExecutor:
     """Execute trading orders"""
     
-    def __init__(self, exchange_client, position_manager, telegram_notifier=None):
+    def __init__(self, exchange_client, position_manager, config, telegram_notifier=None):
         self.exchange = exchange_client
         self.position_manager = position_manager
+        self.config = config
         self.telegram = telegram_notifier
         self.pending_orders = {}
         
@@ -36,8 +37,8 @@ class OrderExecutor:
                 await self._notify(f"❌ Insufficient balance: ${balance:.2f}")
                 return False
             
-            # Determine leverage based on signal type (scalping vs swing)
-            leverage = 5 if hasattr(signal, 'signal_type') and signal.signal_type == "SCALP" else 10
+            # Determine leverage based on signal type using config values
+            leverage = self.config.scalp_leverage if hasattr(signal, 'signal_type') and signal.signal_type == "SCALP" else self.config.swing_leverage
             
             # Calculate position size
             position_size = self.position_manager.calculate_position_size(

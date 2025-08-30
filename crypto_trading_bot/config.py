@@ -63,29 +63,33 @@ class Settings(BaseSettings):
         description="Start with top 10 symbols"
     )
     
-    # Risk Management (adjusted for scalping)
-    risk_per_trade: float = Field(0.005, ge=0.001, le=1.0, description="Risk per trade (0.005 = 0.5% for scalping)")
-    max_positions: int = Field(15, ge=1, le=200, description="Maximum concurrent positions (more for scalping)")
-    leverage: int = Field(5, ge=1, le=125, description="Trading leverage (lower for scalping safety)")
+    # Risk Management - ALL FROM ENV VARS
+    risk_per_trade: float = Field(..., env="RISK_PER_TRADE", ge=0.001, le=1.0, description="Risk per trade")
+    max_positions: int = Field(..., env="MAX_POSITIONS", ge=1, le=200, description="Maximum concurrent positions")
+    leverage: int = Field(..., env="LEVERAGE", ge=1, le=125, description="Trading leverage")
     
-    # Strategy Parameters
-    rsi_period: int = Field(14, description="RSI period")
-    rsi_oversold: float = Field(30.0, description="RSI oversold level")
-    rsi_overbought: float = Field(70.0, description="RSI overbought level")
-    macd_fast: int = Field(12, description="MACD fast period")
-    macd_slow: int = Field(26, description="MACD slow period")
-    macd_signal: int = Field(9, description="MACD signal period")
+    # Strategy Parameters - FROM ENV VARS WITH DEFAULTS
+    rsi_period: int = Field(14, env="RSI_PERIOD", description="RSI period")
+    rsi_oversold: float = Field(30.0, env="RSI_OVERSOLD", description="RSI oversold level")
+    rsi_overbought: float = Field(70.0, env="RSI_OVERBOUGHT", description="RSI overbought level")
+    macd_fast: int = Field(12, env="MACD_FAST", description="MACD fast period")
+    macd_slow: int = Field(26, env="MACD_SLOW", description="MACD slow period")
+    macd_signal: int = Field(9, env="MACD_SIGNAL", description="MACD signal period")
     
-    # System Configuration (optimized for scalping)
-    scan_interval: int = Field(30, description="Scan interval in seconds (faster for scalping)")
-    min_volume_24h: float = Field(5000000, description="Minimum 24h volume in USDT (higher for liquidity)")
-    startup_delay: int = Field(5, description="Startup delay in seconds")
+    # System Configuration - FROM ENV VARS
+    scan_interval: int = Field(30, env="SCAN_INTERVAL", description="Scan interval in seconds")
+    min_volume_24h: float = Field(1000000, env="MIN_VOLUME_24H", description="Minimum 24h volume in USDT")
+    startup_delay: int = Field(5, env="STARTUP_DELAY", description="Startup delay in seconds")
     
-    # Scalping specific parameters
-    scalp_timeframe: str = Field("5", description="Timeframe for scalping (5m candles)")
-    scalp_profit_target: float = Field(0.003, description="Quick profit target (0.3%)")
-    scalp_stop_loss: float = Field(0.002, description="Tight stop loss (0.2%)")
-    min_risk_reward: float = Field(1.2, description="Minimum risk/reward ratio")
+    # Scalping specific parameters - FROM ENV VARS
+    scalp_timeframe: str = Field("5", env="SCALP_TIMEFRAME", description="Timeframe for scalping")
+    scalp_profit_target: float = Field(0.003, env="SCALP_PROFIT_TARGET", description="Quick profit target")
+    scalp_stop_loss: float = Field(0.002, env="SCALP_STOP_LOSS", description="Tight stop loss")
+    min_risk_reward: float = Field(1.2, env="MIN_RISK_REWARD", description="Minimum risk/reward ratio")
+    
+    # Scalping leverage settings - FROM ENV VARS
+    scalp_leverage: int = Field(5, env="SCALP_LEVERAGE", description="Leverage for scalp trades")
+    swing_leverage: int = Field(10, env="SWING_LEVERAGE", description="Leverage for swing trades")
     
     # Logging
     log_level: str = Field("INFO", description="Logging level")

@@ -48,11 +48,12 @@ class TradingBot:
     async def initialize(self):
         """Initialize all components"""
         try:
-            # Initialize exchange client
+            # Initialize exchange client with config
             self.exchange = BybitClient(
                 api_key=settings.bybit_api_key,
                 api_secret=settings.bybit_api_secret,
-                testnet=settings.bybit_testnet
+                testnet=settings.bybit_testnet,
+                config=settings
             )
             
             # Initialize scalping strategy
@@ -79,6 +80,7 @@ class TradingBot:
             self.order_executor = OrderExecutor(
                 exchange_client=self.exchange,
                 position_manager=self.position_manager,
+                config=settings,
                 telegram_notifier=self.telegram_bot
             )
             

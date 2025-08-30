@@ -14,10 +14,11 @@ logger = structlog.get_logger(__name__)
 class BybitClient:
     """Simple and efficient Bybit client"""
     
-    def __init__(self, api_key: str, api_secret: str, testnet: bool = True):
+    def __init__(self, api_key: str, api_secret: str, testnet: bool = True, config=None):
         self.api_key = api_key
         self.api_secret = api_secret
         self.testnet = testnet
+        self.config = config
         
         # Initialize HTTP client
         self.client = HTTP(
@@ -68,9 +69,13 @@ class BybitClient:
             logger.error(f"Failed to initialize: {e}")
             return False
     
-    async def fetch_klines(self, symbol: str, interval: str = "5", limit: int = 200):
+    async def fetch_klines(self, symbol: str, interval: str = None, limit: int = 200):
         """Fetch historical kline data"""
         try:
+            # Use interval from config if not provided
+            if interval is None:
+                interval = self.config.scalp_timeframe if self.config else "5"
+            
             response = self.client.get_kline(
                 category="linear",
                 symbol=symbol,
@@ -138,8 +143,9 @@ class BybitClient:
                     raise Exception("Failed to establish WebSocket connection after multiple attempts")
         
         try:
-            # Subscribe to kline streams (5m for scalping)
-            kline_streams = [f"kline.5.{symbol}" for symbol in symbols]
+            # Subscribe to kline streams using config timeframe
+            interval = int(self.config.scalp_timeframe) if self.config else 5
+            kline_streams = [f"kline.{interval}.{symbol}" for symbol in symbols]
             
             def handle_kline(message):
                 """Handle kline updates"""
@@ -194,9 +200,10 @@ class BybitClient:
                 except Exception as e:
                     logger.error(f"Error handling position update: {e}")
             
-            # Subscribe to streams (5m for scalping)
+            # Subscribe to streams using config timeframe
+            ws_interval = int(self.config.scalp_timeframe) if self.config else 5
             self.ws_public.kline_stream(
-                interval=5,
+                interval=ws_interval,
                 symbol=symbols,
                 callback=handle_kline
             )

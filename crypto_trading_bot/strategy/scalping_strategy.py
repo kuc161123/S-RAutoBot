@@ -38,20 +38,23 @@ class ScalpingStrategy:
         self.rsi_oversold = config.get('rsi_oversold', 30)
         self.rsi_overbought = config.get('rsi_overbought', 70)
         
-        # Scalping specific settings
-        self.scalp_rsi_oversold = 25  # More extreme for scalping
-        self.scalp_rsi_overbought = 75
+        # Scalping specific settings from config
+        self.scalp_rsi_oversold = config.get('rsi_oversold', 30) - 5  # More extreme for scalping
+        self.scalp_rsi_overbought = config.get('rsi_overbought', 70) + 5
         self.min_volume_multiplier = 2.0  # Higher volume for scalps
         
         # Support/Resistance settings
         self.sr_lookback = 50  # Candles to look back for S/R
         self.sr_touches = 2  # Min touches to confirm S/R
-        self.sr_tolerance = 0.002  # 0.2% tolerance for S/R levels
+        self.sr_tolerance = config.get('scalp_stop_loss', 0.002)  # Use stop loss as tolerance
         
         # Market structure settings
         self.trend_ema_fast = 9
         self.trend_ema_slow = 21
         self.structure_lookback = 20
+        
+        # Risk reward from config
+        self.min_risk_reward = config.get('min_risk_reward', 1.2)
         
         logger.info(f"Scalping strategy initialized - RSI: {self.rsi_oversold}/{self.rsi_overbought}")
     
@@ -377,8 +380,8 @@ class ScalpingStrategy:
             reward = take_profit - price
             risk_reward = reward / risk if risk > 0 else 0
             
-            # Only take trades with good R:R
-            if risk_reward >= 1.2:
+            # Only take trades with good R:R from config
+            if risk_reward >= self.min_risk_reward:
                 confidence = min(scalp_score / 12, 1.0)
                 
                 return TradingSignal(
@@ -411,8 +414,8 @@ class ScalpingStrategy:
             reward = price - take_profit
             risk_reward = reward / risk if risk > 0 else 0
             
-            # Only take trades with good R:R
-            if risk_reward >= 1.2:
+            # Only take trades with good R:R from config
+            if risk_reward >= self.min_risk_reward:
                 confidence = min(sell_score / 12, 1.0)
                 
                 return TradingSignal(

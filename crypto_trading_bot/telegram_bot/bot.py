@@ -44,6 +44,15 @@ class TelegramBot:
                 await self.app.initialize()
                 await self.app.start()
                 
+                # Force close any existing connections
+                try:
+                    # Delete webhook to ensure no other instance is using it
+                    await self.app.bot.delete_webhook(drop_pending_updates=True)
+                    logger.info("Cleared any existing webhook")
+                    await asyncio.sleep(2)  # Give time for cleanup
+                except Exception as e:
+                    logger.debug(f"Webhook deletion: {e}")
+                
                 # Try to stop any existing polling first
                 try:
                     await self.app.updater.stop()
@@ -51,7 +60,11 @@ class TelegramBot:
                     pass
                 
                 # Start polling with drop_pending_updates to clear old sessions
-                await self.app.updater.start_polling(drop_pending_updates=True)
+                await self.app.updater.start_polling(
+                    drop_pending_updates=True,
+                    poll_interval=0.5,
+                    pool_timeout=10
+                )
                 
                 self.is_running = True
                 logger.info("Telegram bot started successfully")

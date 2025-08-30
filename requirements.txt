@@ -20,6 +20,9 @@ aiohttp==3.9.1
 # Logging
 structlog==24.1.0
 
+# Process management
+psutil==5.9.8
+
 # Optional for local development only
 # python-dotenv==1.0.0
 # colorama==0.4.6

@@ -25,6 +25,7 @@ from trading.signal_generator import SignalGenerator
 from telegram_bot.bot import TelegramBot
 from utils.logger import setup_logger
 from utils.health_check import HealthCheckServer
+from utils.instance_lock import InstanceLock
 
 # Setup logger
 logger = setup_logger(settings.log_level)
@@ -103,6 +104,14 @@ class TradingBot:
     async def start(self):
         """Start the trading bot"""
         try:
+            # Kill any conflicting instances first
+            logger.info("Checking for conflicting bot instances...")
+            InstanceLock.kill_other_instances()
+            
+            # Create lock file
+            if not InstanceLock.create_lock_file():
+                logger.warning("Could not create lock file, but continuing...")
+            
             # Initialize components
             if not await self.initialize():
                 logger.error("Failed to initialize bot")
@@ -180,6 +189,9 @@ class TradingBot:
                 logger.info(f"  Total P&L: ${stats['total_pnl']:.2f}")
             
             logger.info("Trading bot stopped successfully")
+            
+            # Remove lock file
+            InstanceLock.remove_lock_file()
             
         except Exception as e:
             logger.error(f"Error during shutdown: {e}")

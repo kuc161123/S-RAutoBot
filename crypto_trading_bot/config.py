@@ -74,26 +74,40 @@ class Settings(BaseSettings):
         env="INITIAL_SYMBOLS",
         default=[
             # Top 100 most liquid crypto pairs on Bybit
+            # Core majors
             "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
             "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "MATICUSDT", "LINKUSDT",
-            "DOTUSDT", "TONUSDT", "SHIBUSDT", "TRXUSDT", "NEARUSDT",
-            "UNIUSDT", "LTCUSDT", "BCHUSDT", "PEPEUSDT", "APTUSDT",
-            "ICPUSDT", "ETCUSDT", "WIFUSDT", "STXUSDT", "MANTAUSDT",
-            "RENDERUSDT", "IMXUSDT", "ARBUSDT", "OPUSDT", "MKRUSDT",
-            "INJUSDT", "ATOMUSDT", "FILUSDT", "HBARUSDT", "TAOUSDT",
-            "TIAUSDT", "GRTUSDT", "ARUSDT", "KASUSDT", "FTMUSDT",
-            "ALGOUSDT", "SEIUSDT", "SUIUSDT", "VETUSDT", "FETUSDT",
-            "THETAUSDT", "ORDIUSDT", "RUNEUSDT", "BONKUSDT", "NOTUSDT",
-            "SANDUSDT", "AXSUSDT", "MANAUSDT", "FLOKIUSDT", "GALAUSDT",
-            "COREUSDT", "FLOWUSDT", "XTZUSDT", "EGLDUSDT", "CFXUSDT",
-            "MINAUSDT", "QNTUSDT", "AAVEUSDT", "APEUSDT", "CROUSDT",
-            "SNXUSDT", "PENDLEUSDT", "WLDUSDT", "CHZUSDT", "FXSUSDT",
-            "NFPUSDT", "AGIXUSDT", "JUPUSDT", "EOSUSDT", "IOTAUSDT",
-            "PYTH1000USDT", "GMTUSDT", "BLURUSDT", "LDOUSDT", "1INCHUSDT",
-            "SSVUSDT", "PEOPLEUSDT", "ENJUSDT", "CKBUSDT", "LRCUSDT",
-            "ENSUSDT", "ACEUSDT", "DYDXUSDT", "COMPUSDT", "YFIUSDT",
-            "ZRXUSDT", "CRVUSDT", "BALLUSDT", "ILVUSDT", "UMAUSDT",
-            "BATUSDT", "ARKMUSDT", "ANKRUSDT", "AIUSDT", "RDNTUSDT"
+            "DOTUSDT", "TONUSDT", "TRXUSDT", "NEARUSDT", "UNIUSDT",
+            "LTCUSDT", "BCHUSDT", "APTUSDT", "ICPUSDT", "ETCUSDT",
+            
+            # Layer 2s and scaling
+            "ARBUSDT", "OPUSDT", "INJUSDT", "STXUSDT", "MANTAUSDT",
+            "IMXUSDT", "SEIUSDT", "SUIUSDT", "CELOUSDT", "ROSEUSDT",
+            
+            # DeFi tokens
+            "MKRUSDT", "AAVEUSDT", "SNXUSDT", "COMPUSDT", "YFIUSDT",
+            "CRVUSDT", "LDOUSDT", "1INCHUSDT", "SUSHIUSDT", "GMXUSDT",
+            
+            # AI and compute
+            "RENDERUSDT", "FETUSDT", "AGIXUSDT", "OCEANUSDT", "RNDR3SUSDT",
+            "TAOUSDT", "GRTUSDT", "ARKMUSDT", "AIUSDT", "PHBUSDT",
+            
+            # Gaming and metaverse
+            "SANDUSDT", "AXSUSDT", "MANAUSDT", "GALAUSDT", "ENJUSDT",
+            "GMTUSDT", "MAGICUSDT", "APEUSDT", "RNDRUSDT", "HIGHUSDT",
+            
+            # Infrastructure
+            "ATOMUSDT", "FILUSDT", "HBARUSDT", "ALGOUSDT", "VETUSDT",
+            "THETAUSDT", "FTMUSDT", "XTZUSDT", "EGLDUSDT", "FLOWUSDT",
+            
+            # Meme coins (with correct Bybit format)
+            "1000SHIBUSDT", "1000PEPEUSDT", "1000BONKUSDT", "1000FLOKIUSDT", "WIFUSDT",
+            "MEMEUSDT", "BABYDOGEUSDT", "1000LUNCUSDT", "1000XECUSDT", "SPELLUSDT",
+            
+            # Others
+            "ORDIUSDT", "RUNEUSDT", "CFXUSDT", "QNTUSDT", "CHZUSDT",
+            "PENDLEUSDT", "WLDUSDT", "BLURUSDT", "PEOPLEUSDT", "CKBUSDT",
+            "LRCUSDT", "ENSUSDT", "DYDXUSDT", "ZRXUSDT", "BATUSDT"
         ],
         description="Top 100 liquid trading pairs"
     )

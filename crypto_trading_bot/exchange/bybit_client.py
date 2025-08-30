@@ -55,9 +55,19 @@ class BybitClient:
             server_time = self.client.get_server_time()
             logger.info(f"Connected to Bybit. Server time: {server_time['result']['timeNano']}")
             
-            # Fetch initial data for all symbols in parallel
+            # Fetch initial data for all symbols in parallel (skip invalid ones)
             tasks = [self.fetch_klines(symbol) for symbol in symbols]
-            await asyncio.gather(*tasks)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Filter out failed symbols
+            valid_symbols = []
+            for symbol, result in zip(symbols, results):
+                if not isinstance(result, Exception) and result is not None:
+                    valid_symbols.append(symbol)
+                else:
+                    logger.warning(f"Skipping invalid symbol: {symbol}")
+            
+            symbols = valid_symbols
             
             # Start WebSocket connections
             await self.start_websockets(symbols)

@@ -18,7 +18,7 @@ if sys.platform == 'linux':
 # Import our modules
 from config import settings
 from exchange.bybit_client import BybitClient
-from strategy.simple_strategy import SimpleStrategy
+from strategy.scalping_strategy import ScalpingStrategy
 from trading.position_manager import PositionManager
 from trading.order_executor import OrderExecutor
 from trading.signal_generator import SignalGenerator
@@ -55,8 +55,8 @@ class TradingBot:
                 testnet=settings.bybit_testnet
             )
             
-            # Initialize strategy
-            self.strategy = SimpleStrategy(vars(settings))
+            # Initialize scalping strategy
+            self.strategy = ScalpingStrategy(vars(settings))
             
             # Initialize position manager
             self.position_manager = PositionManager(

@@ -36,12 +36,15 @@ class OrderExecutor:
                 await self._notify(f"❌ Insufficient balance: ${balance:.2f}")
                 return False
             
+            # Determine leverage based on signal type (scalping vs swing)
+            leverage = 5 if hasattr(signal, 'signal_type') and signal.signal_type == "SCALP" else 10
+            
             # Calculate position size
             position_size = self.position_manager.calculate_position_size(
                 balance=balance,
                 entry_price=signal.price,
                 stop_loss=signal.stop_loss,
-                leverage=10  # Using 10x leverage as configured
+                leverage=leverage
             )
             
             if position_size <= 0:
@@ -49,7 +52,7 @@ class OrderExecutor:
                 return False
             
             # Set leverage for the symbol
-            self.exchange.set_leverage(symbol, 10)
+            self.exchange.set_leverage(symbol, leverage)
             
             # Place the order
             side = "Buy" if signal.action == "BUY" else "Sell"
@@ -73,15 +76,19 @@ class OrderExecutor:
                     take_profit=signal.take_profit
                 )
                 
-                # Send notification
+                # Send notification with signal type
+                signal_type = getattr(signal, 'signal_type', 'TRADE')
+                risk_reward = getattr(signal, 'risk_reward', 0)
+                
                 message = (
-                    f"✅ **Position Opened**\n"
+                    f"✅ **{signal_type} Position Opened**\n"
                     f"Symbol: {symbol}\n"
                     f"Side: {signal.action}\n"
                     f"Entry: ${signal.price:.4f}\n"
                     f"Size: {position_size:.4f}\n"
                     f"Stop Loss: ${signal.stop_loss:.4f}\n"
                     f"Take Profit: ${signal.take_profit:.4f}\n"
+                    f"R:R Ratio: {risk_reward:.2f}\n"
                     f"Reason: {signal.reason}\n"
                     f"Confidence: {signal.confidence*100:.1f}%"
                 )

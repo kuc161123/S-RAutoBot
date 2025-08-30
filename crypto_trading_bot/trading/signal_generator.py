@@ -20,7 +20,8 @@ class SignalGenerator:
         
         self.market_data: Dict[str, pd.DataFrame] = {}
         self.last_signal_time: Dict[str, datetime] = {}
-        self.signal_cooldown = timedelta(minutes=15)  # Avoid duplicate signals
+        self.signal_cooldown = timedelta(minutes=5)  # Shorter cooldown for scalping
+        self.scalp_cooldown = timedelta(minutes=2)  # Even shorter for pure scalps
         
         logger.info("Signal generator initialized")
     
@@ -89,10 +90,11 @@ class SignalGenerator:
         try:
             symbol = signal.symbol
             
-            # Check cooldown
+            # Check cooldown (shorter for scalps)
             if symbol in self.last_signal_time:
                 time_since_last = datetime.now() - self.last_signal_time[symbol]
-                if time_since_last < self.signal_cooldown:
+                cooldown = self.scalp_cooldown if hasattr(signal, 'signal_type') and signal.signal_type == "SCALP" else self.signal_cooldown
+                if time_since_last < cooldown:
                     logger.debug(f"Signal for {symbol} still in cooldown")
                     return
             

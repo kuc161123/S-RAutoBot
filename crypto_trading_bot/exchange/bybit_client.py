@@ -68,7 +68,7 @@ class BybitClient:
             logger.error(f"Failed to initialize: {e}")
             return False
     
-    async def fetch_klines(self, symbol: str, interval: str = "15", limit: int = 200):
+    async def fetch_klines(self, symbol: str, interval: str = "5", limit: int = 200):
         """Fetch historical kline data"""
         try:
             response = self.client.get_kline(
@@ -138,8 +138,8 @@ class BybitClient:
                     raise Exception("Failed to establish WebSocket connection after multiple attempts")
         
         try:
-            # Subscribe to kline streams
-            kline_streams = [f"kline.15.{symbol}" for symbol in symbols]
+            # Subscribe to kline streams (5m for scalping)
+            kline_streams = [f"kline.5.{symbol}" for symbol in symbols]
             
             def handle_kline(message):
                 """Handle kline updates"""
@@ -194,9 +194,9 @@ class BybitClient:
                 except Exception as e:
                     logger.error(f"Error handling position update: {e}")
             
-            # Subscribe to streams
+            # Subscribe to streams (5m for scalping)
             self.ws_public.kline_stream(
-                interval=15,
+                interval=5,
                 symbol=symbols,
                 callback=handle_kline
             )

@@ -353,53 +353,52 @@ class BybitClient:
             return False
     
     def _format_quantity(self, symbol: str, qty: float) -> float:
-        """Format quantity based on symbol requirements"""
-        # Comprehensive quantity rules for Bybit (decimal places)
+        """Format quantity based on symbol requirements - FROM OFFICIAL BYBIT API"""
+        # Official Bybit quantity decimal rules (fetched from API)
         qty_rules = {
-            # Integer only (0 decimals)
-            "1000SHIBUSDT": 0, "1000PEPEUSDT": 0, "1000BONKUSDT": 0,
-            "1000FLOKIUSDT": 0, "1000LUNCUSDT": 0, "1000XECUSDT": 0,
-            "DOGSUSDT": 0, "SHIBUSDT": 0, "PEPEUSDT": 0, "BONKUSDT": 0,
-            "FLOKIUSDT": 0, "SPELLUSDT": 0, "MEMEUSDT": 0,
+            # 0 decimals (integer only)
+            "1000BONKUSDT": 0, "1000FLOKIUSDT": 0, "1000LUNCUSDT": 0,
+            "1000PEPEUSDT": 0, "1000XECUSDT": 0, "ACHUSDT": 0,
+            "ADAUSDT": 0, "ANKRUSDT": 0, "ARKMUSDT": 0, "ARPAUSDT": 0,
+            "BLURUSDT": 0, "CFXUSDT": 0, "CHZUSDT": 0, "CKBUSDT": 0,
+            "CROUSDT": 0, "CTSIUSDT": 0, "DOGEUSDT": 0, "DOGSUSDT": 0,
+            "GALAUSDT": 0, "GMTUSDT": 0, "HBARUSDT": 0, "IOTXUSDT": 0,
+            "JASMYUSDT": 0, "JUPUSDT": 0, "KASUSDT": 0, "MAGICUSDT": 0,
+            "MAVUSDT": 0, "MEMEUSDT": 0, "NOTUSDT": 0, "NTRNUSDT": 0,
+            "PENDLEUSDT": 0, "PEOPLEUSDT": 0, "PHBUSDT": 0, "PYTHUSDT": 0,
+            "RDNTUSDT": 0, "ROSEUSDT": 0, "RSRUSDT": 0, "SANDUSDT": 0,
+            "SEIUSDT": 0, "SPELLUSDT": 0, "SUIUSDT": 0, "TRXUSDT": 0,
+            "VETUSDT": 0, "WIFUSDT": 0, "XRPUSDT": 0, "ZRXUSDT": 0,
+            "MATICUSDT": 0, "FETUSDT": 0, "STMXUSDT": 0,
             
-            # 1 decimal place
-            "ADAUSDT": 1, "XRPUSDT": 1, "DOGEUSDT": 1, "MATICUSDT": 1,
-            "TRXUSDT": 1, "VETUSDT": 1, "CHZUSDT": 1, "ENJUSDT": 1,
-            "BATUSDT": 1, "ANKRUSDT": 1, "JASMYUSDT": 1, "STMXUSDT": 1,
-            "ACHUSDT": 1, "IOTXUSDT": 1, "GALAUSDT": 1, "MANAUSDT": 1,
-            "SANDUSDT": 1, "ALGOUSDT": 1, "HBARUSDT": 1, "CKBUSDT": 1,
-            "PEOPLEUSDT": 1, "RSRUSDT": 1, "MTLUSDT": 1, "C98USDT": 1,
+            # 1 decimal
+            "1INCHUSDT": 1, "ACEUSDT": 1, "AIUSDT": 1, "ALGOUSDT": 1,
+            "ALICEUSDT": 1, "APEUSDT": 1, "ARBUSDT": 1, "ARUSDT": 1,
+            "ATOMUSDT": 1, "AVAXUSDT": 1, "AXSUSDT": 1, "BATUSDT": 1,
+            "C98USDT": 1, "CELOUSDT": 1, "COREUSDT": 1, "CRVUSDT": 1,
+            "CYBERUSDT": 1, "DOTUSDT": 1, "DYDXUSDT": 1, "ENJUSDT": 1,
+            "ENSUSDT": 1, "ETCUSDT": 1, "FILUSDT": 1, "FLOWUSDT": 1,
+            "GRTUSDT": 1, "HIGHUSDT": 1, "ICPUSDT": 1, "IMXUSDT": 1,
+            "INJUSDT": 1, "IOTAUSDT": 1, "LDOUSDT": 1, "LINKUSDT": 1,
+            "LRCUSDT": 1, "LTCUSDT": 1, "MANAUSDT": 1, "MANTAUSDT": 1,
+            "MASKUSDT": 1, "MINAUSDT": 1, "MTLUSDT": 1, "NEARUSDT": 1,
+            "OPUSDT": 1, "RENDERUSDT": 1, "RUNEUSDT": 1, "SNXUSDT": 1,
+            "SOLUSDT": 1, "STXUSDT": 1, "SUSHIUSDT": 1, "SXPUSDT": 1,
+            "THETAUSDT": 1, "TIAUSDT": 1, "TONUSDT": 1, "UMAUSDT": 1,
+            "UNIUSDT": 1, "WLDUSDT": 1, "XTZUSDT": 1, "FTMUSDT": 1,
+            "AGIXUSDT": 1, "OCEANUSDT": 1, "EOSUSDT": 1,
             
             # 2 decimals
-            "ETHUSDT": 2, "BNBUSDT": 2, "SOLUSDT": 2, "AVAXUSDT": 2,
-            "LINKUSDT": 2, "DOTUSDT": 2, "UNIUSDT": 2, "ATOMUSDT": 2,
-            "NEARUSDT": 2, "FTMUSDT": 2, "ICPUSDT": 2,
-            "APTUSDT": 2, "ARBUSDT": 2, "OPUSDT": 2, "INJUSDT": 2,
-            "IMXUSDT": 2, "SEIUSDT": 2, "SUIUSDT": 2, "LDOUSDT": 2,
-            "GRTUSDT": 2, "CRVUSDT": 2, "SNXUSDT": 2, "GMXUSDT": 2,
-            "WLDUSDT": 2, "PENDLEUSDT": 2, "MAGICUSDT": 2, "AXSUSDT": 2,
-            "SUSHIUSDT": 2, "ENSUSDT": 2, "LRCUSDT": 2, "ZRXUSDT": 2,
-            "1INCHUSDT": 2, "DYDXUSDT": 2, "OCEANUSDT": 2, "MASKUSDT": 2,
-            "SXPUSDT": 2, "RNDRUSDT": 2, "ARPAUSDT": 2, "ALICEUSDT": 2,
+            "AAVEUSDT": 2, "APTUSDT": 2, "BCHUSDT": 2, "BNBUSDT": 2,
+            "COMPUSDT": 2, "EGLDUSDT": 2, "ETHUSDT": 2, "FXSUSDT": 2,
+            "GMXUSDT": 2, "ILVUSDT": 2, "ORDIUSDT": 2, "QNTUSDT": 2,
+            "SSVUSDT": 2, "MKRUSDT": 2,
             
             # 3 decimals
-            "BTCUSDT": 3, "LTCUSDT": 3, "BCHUSDT": 3, "ETCUSDT": 3,
+            "BTCUSDT": 3, "TAOUSDT": 3,
             
-            # Special cases - Integer only
-            "FILUSDT": 0, "TAOUSDT": 0, 
-            
-            # Special cases (0 or 1 decimal)
-            "MKRUSDT": 2, "AAVEUSDT": 2, "COMPUSDT": 2, "YFIUSDT": 3,
-            "EGLDUSDT": 2, "QNTUSDT": 2, "RUNEUSDT": 1, "THETAUSDT": 1,
-            "XTZUSDT": 1, "EOSUSDT": 1, "XLMUSDT": 1, "TONUSDT": 1,
-            "STXUSDT": 1, "MANTAUSDT": 1, "RENDERUSDT": 1, "FETUSDT": 1,
-            "AGIXUSDT": 1, "APEUSDT": 1, "WIFUSDT": 1,
-            "ORDIUSDT": 1, "CFXUSDT": 1, "BLURUSDT": 1, "FLOWUSDT": 1,
-            "GMTUSDT": 1, "CELOUSDT": 1, "ROSEUSDT": 1, "KASUSDT": 1,
-            "TIAUSDT": 1, "ARUSDT": 1, "ARKMUSDT": 1, "AIUSDT": 1,
-            "PHBUSDT": 1, "CTSIUSDT": 1, "HIGHUSDT": 1, "CYBERUSDT": 1,
-            "NTRNUSDT": 1, "MAVUSDT": 1, "MDTUSDT": 1, "ILVUSDT": 2,
-            "UMAUSDT": 1, "FXSUSDT": 2, "NFPUSDT": 1,
+            # 4 decimals
+            "YFIUSDT": 4,
             
             # Default for unknowns
             "default": 1

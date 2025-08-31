@@ -137,7 +137,10 @@ class TradingBot:
             balance = self.exchange.get_account_balance()
             logger.info(f"Starting trading bot...")
             logger.info(f"Mode: {'TESTNET' if settings.is_testnet else 'MAINNET'}")
-            logger.info(f"Balance: ${balance:.2f}")
+            if balance is not None:
+                logger.info(f"Balance: ${balance:.2f}")
+            else:
+                logger.warning("Could not retrieve balance, continuing anyway...")
             logger.info(f"Symbols: {', '.join(settings.initial_symbols)}")
             logger.info(f"Risk per trade: {settings.risk_per_trade*100:.1f}%")
             logger.info(f"Max positions: {settings.max_positions}")

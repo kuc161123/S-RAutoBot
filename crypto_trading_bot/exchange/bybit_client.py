@@ -239,7 +239,12 @@ class BybitClient:
                 for coin in coins:
                     if coin['coin'] == 'USDT':
                         # Use availableToWithdraw which is the available balance for trading
-                        balance = float(coin.get('availableToWithdraw', coin.get('walletBalance', 0)))
+                        balance_str = coin.get('availableToWithdraw', coin.get('walletBalance', '0'))
+                        # Handle empty string or None
+                        if not balance_str or balance_str == '':
+                            balance = 0.0
+                        else:
+                            balance = float(balance_str)
                         logger.info(f"Account balance: ${balance:.2f}")
                         return balance
                 return 0.0

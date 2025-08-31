@@ -321,8 +321,11 @@ class BybitClient:
             position = next((p for p in positions if p['symbol'] == symbol), None)
             
             if not position:
-                logger.warning(f"No position found for {symbol}")
+                logger.debug(f"No position found for {symbol}")
                 return False
+            
+            # Format quantity properly
+            qty = self._format_quantity(symbol, position['size'])
             
             # Place opposite order to close
             side = "Sell" if position['side'] == "Buy" else "Buy"
@@ -332,7 +335,7 @@ class BybitClient:
                 symbol=symbol,
                 side=side,
                 orderType="Market",
-                qty=str(position['size']),
+                qty=str(qty),
                 timeInForce="IOC",
                 positionIdx=0,
                 reduceOnly=True
@@ -370,7 +373,7 @@ class BybitClient:
             # 2 decimals
             "ETHUSDT": 2, "BNBUSDT": 2, "SOLUSDT": 2, "AVAXUSDT": 2,
             "LINKUSDT": 2, "DOTUSDT": 2, "UNIUSDT": 2, "ATOMUSDT": 2,
-            "NEARUSDT": 2, "FILUSDT": 2, "FTMUSDT": 2, "ICPUSDT": 2,
+            "NEARUSDT": 2, "FTMUSDT": 2, "ICPUSDT": 2,
             "APTUSDT": 2, "ARBUSDT": 2, "OPUSDT": 2, "INJUSDT": 2,
             "IMXUSDT": 2, "SEIUSDT": 2, "SUIUSDT": 2, "LDOUSDT": 2,
             "GRTUSDT": 2, "CRVUSDT": 2, "SNXUSDT": 2, "GMXUSDT": 2,
@@ -382,12 +385,15 @@ class BybitClient:
             # 3 decimals
             "BTCUSDT": 3, "LTCUSDT": 3, "BCHUSDT": 3, "ETCUSDT": 3,
             
+            # Special cases - Integer only
+            "FILUSDT": 0, "TAOUSDT": 0, 
+            
             # Special cases (0 or 1 decimal)
             "MKRUSDT": 2, "AAVEUSDT": 2, "COMPUSDT": 2, "YFIUSDT": 3,
             "EGLDUSDT": 2, "QNTUSDT": 2, "RUNEUSDT": 1, "THETAUSDT": 1,
             "XTZUSDT": 1, "EOSUSDT": 1, "XLMUSDT": 1, "TONUSDT": 1,
             "STXUSDT": 1, "MANTAUSDT": 1, "RENDERUSDT": 1, "FETUSDT": 1,
-            "AGIXUSDT": 1, "TAOUSDT": 2, "APEUSDT": 1, "WIFUSDT": 1,
+            "AGIXUSDT": 1, "APEUSDT": 1, "WIFUSDT": 1,
             "ORDIUSDT": 1, "CFXUSDT": 1, "BLURUSDT": 1, "FLOWUSDT": 1,
             "GMTUSDT": 1, "CELOUSDT": 1, "ROSEUSDT": 1, "KASUSDT": 1,
             "TIAUSDT": 1, "ARUSDT": 1, "ARKMUSDT": 1, "AIUSDT": 1,

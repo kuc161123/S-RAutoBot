@@ -249,8 +249,8 @@ class BybitClient:
                    take_profit: Optional[float] = None) -> Optional[dict]:
         """Place a market order"""
         try:
-            # Round quantity to appropriate decimals
-            qty = round(qty, 3)
+            # Get appropriate quantity precision for symbol
+            qty = self._format_quantity(symbol, qty)
             
             order_params = {
                 "category": "linear",
@@ -349,6 +349,66 @@ class BybitClient:
             logger.error(f"Error closing position: {e}")
             return False
     
+    def _format_quantity(self, symbol: str, qty: float) -> float:
+        """Format quantity based on symbol requirements"""
+        # Comprehensive quantity rules for Bybit (decimal places)
+        qty_rules = {
+            # Integer only (0 decimals)
+            "1000SHIBUSDT": 0, "1000PEPEUSDT": 0, "1000BONKUSDT": 0,
+            "1000FLOKIUSDT": 0, "1000LUNCUSDT": 0, "1000XECUSDT": 0,
+            "DOGSUSDT": 0, "SHIBUSDT": 0, "PEPEUSDT": 0, "BONKUSDT": 0,
+            "FLOKIUSDT": 0, "SPELLUSDT": 0, "MEMEUSDT": 0,
+            
+            # 1 decimal place
+            "ADAUSDT": 1, "XRPUSDT": 1, "DOGEUSDT": 1, "MATICUSDT": 1,
+            "TRXUSDT": 1, "VETUSDT": 1, "CHZUSDT": 1, "ENJUSDT": 1,
+            "BATUSDT": 1, "ANKRUSDT": 1, "JASMYUSDT": 1, "STMXUSDT": 1,
+            "ACHUSDT": 1, "IOTXUSDT": 1, "GALAUSDT": 1, "MANAUSDT": 1,
+            "SANDUSDT": 1, "ALGOUSDT": 1, "HBARUSDT": 1, "CKBUSDT": 1,
+            "PEOPLEUSDT": 1, "RSRUSDT": 1, "MTLUSDT": 1, "C98USDT": 1,
+            
+            # 2 decimals
+            "ETHUSDT": 2, "BNBUSDT": 2, "SOLUSDT": 2, "AVAXUSDT": 2,
+            "LINKUSDT": 2, "DOTUSDT": 2, "UNIUSDT": 2, "ATOMUSDT": 2,
+            "NEARUSDT": 2, "FILUSDT": 2, "FTMUSDT": 2, "ICPUSDT": 2,
+            "APTUSDT": 2, "ARBUSDT": 2, "OPUSDT": 2, "INJUSDT": 2,
+            "IMXUSDT": 2, "SEIUSDT": 2, "SUIUSDT": 2, "LDOUSDT": 2,
+            "GRTUSDT": 2, "CRVUSDT": 2, "SNXUSDT": 2, "GMXUSDT": 2,
+            "WLDUSDT": 2, "PENDLEUSDT": 2, "MAGICUSDT": 2, "AXSUSDT": 2,
+            "SUSHIUSDT": 2, "ENSUSDT": 2, "LRCUSDT": 2, "ZRXUSDT": 2,
+            "1INCHUSDT": 2, "DYDXUSDT": 2, "OCEANUSDT": 2, "MASKUSDT": 2,
+            "SXPUSDT": 2, "RNDRUSDT": 2, "ARPAUSDT": 2, "ALICEUSDT": 2,
+            
+            # 3 decimals
+            "BTCUSDT": 3, "LTCUSDT": 3, "BCHUSDT": 3, "ETCUSDT": 3,
+            
+            # Special cases (0 or 1 decimal)
+            "MKRUSDT": 2, "AAVEUSDT": 2, "COMPUSDT": 2, "YFIUSDT": 3,
+            "EGLDUSDT": 2, "QNTUSDT": 2, "RUNEUSDT": 1, "THETAUSDT": 1,
+            "XTZUSDT": 1, "EOSUSDT": 1, "XLMUSDT": 1, "TONUSDT": 1,
+            "STXUSDT": 1, "MANTAUSDT": 1, "RENDERUSDT": 1, "FETUSDT": 1,
+            "AGIXUSDT": 1, "TAOUSDT": 2, "APEUSDT": 1, "WIFUSDT": 1,
+            "ORDIUSDT": 1, "CFXUSDT": 1, "BLURUSDT": 1, "FLOWUSDT": 1,
+            "GMTUSDT": 1, "CELOUSDT": 1, "ROSEUSDT": 1, "KASUSDT": 1,
+            "TIAUSDT": 1, "ARUSDT": 1, "ARKMUSDT": 1, "AIUSDT": 1,
+            "PHBUSDT": 1, "CTSIUSDT": 1, "HIGHUSDT": 1, "CYBERUSDT": 1,
+            "NTRNUSDT": 1, "MAVUSDT": 1, "MDTUSDT": 1, "ILVUSDT": 2,
+            "UMAUSDT": 1, "FXSUSDT": 2, "NFPUSDT": 1,
+            
+            # Default for unknowns
+            "default": 1
+        }
+        
+        # Get precision for this symbol
+        precision = qty_rules.get(symbol, qty_rules["default"])
+        
+        # For integer quantities
+        if precision == 0:
+            return float(int(qty))
+        
+        # For decimal quantities
+        return round(qty, precision)
+    
     def set_leverage(self, symbol: str, leverage: int) -> bool:
         """Set leverage for a symbol"""
         try:
@@ -361,6 +421,10 @@ class BybitClient:
             
             if response['retCode'] == 0:
                 logger.info(f"Leverage set to {leverage}x for {symbol}")
+                return True
+            elif response['retCode'] == 110043:
+                # Leverage already set correctly, not an error
+                logger.debug(f"Leverage already set to {leverage}x for {symbol}")
                 return True
             else:
                 logger.error(f"Failed to set leverage: {response['retMsg']}")

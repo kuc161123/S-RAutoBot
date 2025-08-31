@@ -73,48 +73,69 @@ class Settings(BaseSettings):
     initial_symbols: List[str] = Field(
         env="INITIAL_SYMBOLS",
         default=[
-            # Top 100 most liquid crypto pairs on Bybit
-            # Core majors
+            # Top 200 most liquid crypto pairs on Bybit (expanded list)
+            # Core majors (20)
             "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
             "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "MATICUSDT", "LINKUSDT",
             "DOTUSDT", "TONUSDT", "TRXUSDT", "NEARUSDT", "UNIUSDT",
             "LTCUSDT", "BCHUSDT", "APTUSDT", "ICPUSDT", "ETCUSDT",
             
-            # Layer 2s and scaling
+            # Layer 2s and scaling (20)
             "ARBUSDT", "OPUSDT", "INJUSDT", "STXUSDT", "MANTAUSDT",
             "IMXUSDT", "SEIUSDT", "SUIUSDT", "CELOUSDT", "ROSEUSDT",
+            "STRKUSDT", "ZKSUSDT", "TIAUSDT", "PYTHUSDT", "JUPUSDT",
+            "DYMUSDT", "ALTUSDT", "ZETAUSDT", "METISUSDT", "MNTUSDT",
             
-            # DeFi tokens
+            # DeFi tokens (25)
             "MKRUSDT", "AAVEUSDT", "SNXUSDT", "COMPUSDT", "YFIUSDT",
             "CRVUSDT", "LDOUSDT", "1INCHUSDT", "SUSHIUSDT", "GMXUSDT",
+            "RPLUSUSDT", "FXSUSDT", "BALUSDT", "KNCUSDT", "UMAUSDT",
+            "RADUSDT", "BONDUSDT", "BICOUSDT", "DFIUSDT", "QUICKUSDT",
+            "OSMOUSDT", "CAKEUSDT", "JOEUSDT", "BENQIUSDT", "ALPACAUSDT",
             
-            # AI and compute
+            # AI and compute (20)
             "RENDERUSDT", "FETUSDT", "AGIXUSDT", "OCEANUSDT", "TAOUSDT",
             "GRTUSDT", "ARKMUSDT", "AIUSDT", "PHBUSDT", "CTSIUSDT",
+            "NMRUSDT", "RLCUSDT", "GLMUSDT", "IQUSDT", "MDTUSDT",
+            "ANCUSDT", "MLNUSDT", "NKNUSDT", "DATAUSDT", "BNTUSDT",
             
-            # Gaming and metaverse
+            # Gaming and metaverse (20)
             "SANDUSDT", "AXSUSDT", "MANAUSDT", "ENJUSDT", "GALAUSDT",
             "GMTUSDT", "MAGICUSDT", "APEUSDT", "HIGHUSDT", "ALICEUSDT",
+            "ILLUSDT", "YGGUSDT", "GALUSDT", "BEAMUSDT", "PIXELUSDT",
+            "HEROESUSDT", "STARUSDT", "ATLASUSDT", "POLISUSDT", "TLMUSDT",
             
-            # Infrastructure
+            # Infrastructure (25)
             "ATOMUSDT", "FILUSDT", "HBARUSDT", "ALGOUSDT", "VETUSDT",
             "THETAUSDT", "FTMUSDT", "XTZUSDT", "EGLDUSDT", "FLOWUSDT",
+            "QNTUSDT", "KASUSDT", "HNTUSDT", "MINAUSDT", "ARUSDT",
+            "KLAYUSDT", "EOSUSDT", "WAVESUSDT", "NEOUSDT", "XLMUSDT",
+            "IOTAUSDT", "DASHUSDT", "XMRUSDT", "ZCASHUSDT", "DCRUSDT",
             
-            # Meme coins (with correct Bybit format - removed invalid 1000SHIBUSDT)
+            # Meme coins (20)
             "1000PEPEUSDT", "1000BONKUSDT", "1000FLOKIUSDT", "WIFUSDT",
             "MEMEUSDT", "DOGSUSDT", "1000LUNCUSDT", "1000XECUSDT", "SPELLUSDT",
+            "SHIB1000USDT", "BABYDOGEUSDT", "FLOKIUSDT", "SATSUSDT", "1000RATSUSDT",
+            "ORDIUSDT", "NOTUSDT", "HMSTRUSDT", "CATUSDT", "DOGUSDT",
+            "GOATUSDT",
             
-            # Others high volume
-            "ORDIUSDT", "RUNEUSDT", "CFXUSDT", "QNTUSDT", "CHZUSDT",
-            "PENDLEUSDT", "WLDUSDT", "BLURUSDT", "PEOPLEUSDT", "CKBUSDT",
-            "LRCUSDT", "ENSUSDT", "DYDXUSDT", "ZRXUSDT", "BATUSDT",
+            # Exchange tokens (10)
+            "CROUSDT", "MXUSDT", "BNXUSDT", "NEXOUSDT", "TRBUSDT",
+            "BIGTIMEUSDT", "MDXUSDT", "USTUSDT", "COCOSUSDT", "SNTUSDT",
             
-            # Additional verified symbols  
-            "JASMYUSDT", "STMXUSDT", "ACHUSDT", "RSRUSDT", "SXPUSDT",
-            "IOTXUSDT", "CYBERUSDT", "NTRNUSDT", "MAVUSDT", "MDTUSDT",
-            "MASKUSDT", "C98USDT", "RNDRUSDT", "ARPAUSDT", "MTLUSDT"
+            # More DeFi (10)
+            "USDCUSDT", "RBNUSDT", "COTIUSDT", "KEYUSDT", "COMBOUSDT",
+            "DAIUSDT", "TRUUSDT", "FORMUSDT", "DEXEUSDT", "REEFUSDT",
+            
+            # Others high volume (30) - trimmed to reach exactly 200
+            "RUNEUSDT", "CFXUSDT", "CHZUSDT", "PENDLEUSDT", "WLDUSDT",
+            "BLURUSDT", "PEOPLEUSDT", "CKBUSDT", "LRCUSDT", "ENSUSDT",
+            "DYDXUSDT", "ZRXUSDT", "BATUSDT", "JASMYUSDT", "STMXUSDT",
+            "ACHUSDT", "RSRUSDT", "SXPUSDT", "IOTXUSDT", "CYBERUSDT",
+            "NTRNUSDT", "MAVUSDT", "MASKUSDT", "C98USDT", "RNDRUSDT",
+            "ARPAUSDT", "MTLUSDT", "ANKRUSDT", "LPTUSDT", "SKLUSDT"
         ],
-        description="Top 100 liquid trading pairs"
+        description="Top 200 liquid trading pairs"
     )
     
     # Risk Management - ALL FROM ENV VARS

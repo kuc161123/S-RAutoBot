@@ -205,7 +205,7 @@ class AggressiveStrategy:
             return None
     
     def scan_symbols(self, market_data: dict) -> list:
-        """Scan all symbols for signals"""
+        """Scan all symbols for signals - NO LIMIT"""
         signals = []
         
         for symbol, df in market_data.items():
@@ -218,4 +218,5 @@ class AggressiveStrategy:
         
         logger.info(f"Aggressive scan: {len(signals)} signals from {len(market_data)} symbols")
         
-        return signals[:10]  # Return up to 10 signals
+        # Return ALL signals - let position manager handle limits
+        return signals

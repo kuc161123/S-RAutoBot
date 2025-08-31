@@ -34,6 +34,10 @@ class PositionManager:
         
         logger.info(f"Position manager initialized - Max positions: {max_positions}, Risk: {risk_per_trade*100}%")
     
+    def has_position(self, symbol: str) -> bool:
+        """Check if we have a position in this symbol"""
+        return symbol in self.positions
+    
     def can_open_position(self, symbol: str) -> bool:
         """Check if we can open a new position"""
         # Check if we already have a position in this symbol

@@ -42,12 +42,23 @@ class SignalGenerator:
             # Set up WebSocket callbacks
             self.exchange.on_kline_update = self.on_kline_update
             
-            # Main scanning loop
+            # Main scanning loop - CONTINUOUS AGGRESSIVE SCANNING
             while True:
                 try:
+                    # Scan for signals on ALL symbols continuously
                     await self.scan_for_signals()
+                    
+                    # Check existing positions
                     await self.executor.check_positions()
-                    await asyncio.sleep(self.config.scan_interval)
+                    
+                    # Log scanning status
+                    open_positions = len(self.executor.position_manager.positions)
+                    max_positions = self.config.max_positions
+                    logger.info(f"Scanning complete - Positions: {open_positions}/{max_positions}")
+                    
+                    # Shorter interval for more aggressive scanning
+                    scan_interval = min(self.config.scan_interval, 30)  # Max 30 seconds
+                    await asyncio.sleep(scan_interval)
                     
                 except Exception as e:
                     logger.error(f"Error in scan loop: {e}")
@@ -135,12 +146,18 @@ class SignalGenerator:
         try:
             symbol = signal.symbol
             
-            # Check cooldown (shorter for scalps)
-            if symbol in self.last_signal_time:
+            # IMPORTANT: Only apply cooldown if we HAVE a position
+            # This allows continuous scanning for symbols without positions
+            if self.executor.position_manager.has_position(symbol):
+                logger.debug(f"Already have position in {symbol}, skipping signal")
+                return
+            
+            # Check cooldown ONLY for failed attempts (not successful trades)
+            if symbol in self.last_signal_time and symbol not in self.executor.position_manager.positions:
                 time_since_last = datetime.now() - self.last_signal_time[symbol]
-                cooldown = self.scalp_cooldown if hasattr(signal, 'signal_type') and signal.signal_type == "SCALP" else self.signal_cooldown
+                cooldown = timedelta(minutes=2)  # Short cooldown for retry after failed attempt
                 if time_since_last < cooldown:
-                    logger.debug(f"Signal for {symbol} still in cooldown")
+                    logger.debug(f"Signal for {symbol} in retry cooldown")
                     return
             
             # Check confidence threshold
@@ -149,9 +166,17 @@ class SignalGenerator:
                 return
             
             # Execute signal
-            if await self.executor.execute_signal(signal):
+            success = await self.executor.execute_signal(signal)
+            
+            # Only track failed attempts for cooldown
+            if not success:
                 self.last_signal_time[symbol] = datetime.now()
-                logger.info(f"Signal executed for {symbol}")
+                logger.info(f"Signal failed for {symbol}, will retry after cooldown")
+            else:
+                # Clear cooldown on success
+                if symbol in self.last_signal_time:
+                    del self.last_signal_time[symbol]
+                logger.info(f"Signal executed successfully for {symbol}")
             
         except Exception as e:
             logger.error(f"Error processing signal: {e}")

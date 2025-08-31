@@ -56,8 +56,8 @@ class SignalGenerator:
                     max_positions = self.config.max_positions
                     logger.info(f"Scanning complete - Positions: {open_positions}/{max_positions}")
                     
-                    # Shorter interval for more aggressive scanning
-                    scan_interval = min(self.config.scan_interval, 30)  # Max 30 seconds
+                    # Adjusted interval for 100 symbols (45 seconds to prevent overwhelming)
+                    scan_interval = min(self.config.scan_interval, 45)  # Max 45 seconds for 100 symbols
                     await asyncio.sleep(scan_interval)
                     
                 except Exception as e:
@@ -109,9 +109,9 @@ class SignalGenerator:
     async def scan_for_signals(self):
         """Scan all symbols for trading signals"""
         try:
-            # Batch symbols to avoid rate limiting (5 symbols at a time)
+            # Batch symbols to avoid rate limiting (10 symbols at a time for 100 total)
             symbols = list(self.exchange.kline_data.keys())
-            batch_size = 5
+            batch_size = 10  # Increased batch size for efficiency
             
             for i in range(0, len(symbols), batch_size):
                 batch = symbols[i:i+batch_size]
@@ -126,7 +126,7 @@ class SignalGenerator:
                 
                 # Small delay between batches to avoid rate limiting
                 if i + batch_size < len(symbols):
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.2)  # Reduced delay since we have better batching
             
             # Get signals from strategy
             signals = self.strategy.scan_symbols(self.market_data)

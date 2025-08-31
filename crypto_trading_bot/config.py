@@ -73,20 +73,44 @@ class Settings(BaseSettings):
     initial_symbols: List[str] = Field(
         env="INITIAL_SYMBOLS",
         default=[
-            # TOP 30 MOST LIQUID PAIRS ONLY - Prevents rate limiting
-            # Majors (10)
+            # TOP 100 LIQUID PAIRS - More opportunities with managed rate limiting
+            # Majors (15)
             "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
             "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "MATICUSDT", "LINKUSDT",
-            
-            # High volume alts (10)
             "DOTUSDT", "TONUSDT", "TRXUSDT", "NEARUSDT", "UNIUSDT",
-            "LTCUSDT", "APTUSDT", "ARBUSDT", "OPUSDT", "INJUSDT",
             
-            # Popular memes & trending (10)
+            # High volume alts (20)
+            "LTCUSDT", "APTUSDT", "ARBUSDT", "OPUSDT", "INJUSDT",
+            "ATOMUSDT", "FILUSDT", "LDOUSDT", "STXUSDT", "IMXUSDT",
+            "HBARUSDT", "RNDRUSDT", "EGLDUSDT", "THETAUSDT", "AXSUSDT",
+            "SANDUSDT", "MANAUSDT", "GALAUSDT", "ICPUSDT", "QNTUSDT",
+            
+            # Layer 2 & Scaling (10)
+            "STRKUSDT", "ZKUSDT", "MANTAUSDT", "BLURUSDT", "ACEUSDT",
+            "NFPUSDT", "AIUSDT", "XAIUSDT", "DYMUSDT", "ALTUSDT",
+            
+            # DeFi tokens (15)
+            "AAVEUSDT", "COMPUSDT", "MKRUSDT", "SNXUSDT", "RUNEUSDT",
+            "CRVUSDT", "SUSHIUSDT", "1INCHUSDT", "UMAUSDT", "YFIUSDT",
+            "BALUSDT", "DYDXUSDT", "GMXUSDT", "RDNTUSDT", "MAGICUSDT",
+            
+            # Gaming & Metaverse (10)
+            "FLOWUSDT", "CHZUSDT", "ENJUSDT", "ALICEUSDT", "SUPERUSDT",
+            "TLMUSDT", "ILVUSDT", "ROSEUSDT", "APEUSDT", "GMTUSDT",
+            
+            # Memes & Trending (15)
             "1000PEPEUSDT", "WIFUSDT", "1000BONKUSDT", "1000FLOKIUSDT",
-            "MEMEUSDT", "ORDIUSDT", "SEIUSDT", "SUIUSDT", "TIAUSDT", "JUPUSDT"
+            "MEMEUSDT", "ORDIUSDT", "SEIUSDT", "SUIUSDT", "TIAUSDT", 
+            "JUPUSDT", "PYTHUSDT", "PIXELUSDT", "STEEMUSDT", "JTOUSDT", "BEAMUSDT",
+            
+            # Infrastructure & Data (10)
+            "FETUSDT", "OCEANUSDT", "RSRUSDT", "ARKUSDT", "GLMUSDT",
+            "ANKRUSDT", "CELOUSDT", "ONEUSDT", "IOTXUSDT", "KAVAUSDT",
+            
+            # Additional high liquidity (5)
+            "XLMUSDT", "ALGOUSDT", "VETUSDT", "FTMUSDT", "ETCUSDT"
         ],
-        description="Top 30 liquid pairs to prevent rate limiting"
+        description="Top 100 liquid pairs for more trading opportunities"
     )
     
     # Risk Management - ALL FROM ENV VARS

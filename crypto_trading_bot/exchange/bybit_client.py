@@ -228,9 +228,9 @@ class BybitClient:
     def get_account_balance(self) -> Optional[float]:
         """Get USDT balance"""
         try:
+            # Try UNIFIED account first
             response = self.client.get_wallet_balance(
-                accountType="UNIFIED",
-                coin="USDT"
+                accountType="UNIFIED"
             )
             
             if response['retCode'] == 0:

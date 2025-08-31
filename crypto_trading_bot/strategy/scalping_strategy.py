@@ -58,10 +58,10 @@ class ScalpingStrategy:
         # Scalping specific settings from config
         self.scalp_rsi_oversold = config.get('rsi_oversold', 30) - 5  # More extreme for scalping
         self.scalp_rsi_overbought = config.get('rsi_overbought', 70) + 5
-        self.min_volume_multiplier = 2.0  # Higher volume for scalps
+        self.min_volume_multiplier = 1.5  # Reduced from 2.0 to 1.5 for more opportunities
         
         # WIN RATE IMPROVEMENTS - Multiple confirmation requirements
-        self.min_confirmations = 3  # Minimum confirmations needed for signal
+        self.min_confirmations = config.get('min_confirmations', 2)  # Reduced from 3 to 2 for more signals
         self.use_volume_profile = True  # Volume confirmation
         self.use_momentum_filter = True  # Momentum confirmation  
         self.use_trend_filter = True  # Trade with trend only
@@ -400,15 +400,15 @@ class ScalpingStrategy:
             signal_type = "SCALP"
             sl_multiplier = self.scalp_rr_sl_multiplier  # From config only
             tp_multiplier = self.scalp_rr_tp_multiplier  # From config only
-            min_score = 5  # Need good confluence for scalps
+            min_score = 3  # Reduced from 5 to 3 for more scalp signals
         else:
             signal_type = "SWING"
             sl_multiplier = self.rr_sl_multiplier  # From config only
             tp_multiplier = self.rr_tp_multiplier  # From config only
-            min_score = 4
+            min_score = 2  # Reduced from 4 to 2 for more swing signals
         
-        # Generate BUY signal with stricter requirements  
-        if scalp_score >= min_score and scalp_score > sell_score * 1.2 and volume_ok and confirmations >= self.min_confirmations:
+        # Generate BUY signal with balanced requirements  
+        if scalp_score >= min_score and scalp_score > sell_score and volume_ok and confirmations >= self.min_confirmations:
             # Calculate scalping stop loss and take profit
             if nearest_support > 0:
                 # Use support as stop loss reference
@@ -443,8 +443,8 @@ class ScalpingStrategy:
                     risk_reward=risk_reward
                 )
         
-        # Generate SELL signal with stricter requirements
-        elif sell_score >= min_score and sell_score > scalp_score * 1.2 and volume_ok and sell_confirmations >= self.min_confirmations:
+        # Generate SELL signal with balanced requirements
+        elif sell_score >= min_score and sell_score > scalp_score and volume_ok and sell_confirmations >= self.min_confirmations:
             # Calculate scalping stop loss and take profit for shorts
             if nearest_resistance < float('inf'):
                 stop_loss = max(nearest_resistance * 1.005, price + (atr * sl_multiplier))

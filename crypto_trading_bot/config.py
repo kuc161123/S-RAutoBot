@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # Bybit API Configuration
     bybit_api_key: str = Field(..., env="BYBIT_API_KEY")
     bybit_api_secret: str = Field(..., env="BYBIT_API_SECRET")
-    bybit_testnet: bool = Field(True, env="BYBIT_TESTNET")
+    bybit_testnet: bool = Field(False, env="BYBIT_TESTNET")  # Default to mainnet
     
     # Telegram Configuration (Optional)
     telegram_bot_token: Optional[str] = Field(None, env="TELEGRAM_BOT_TOKEN")
@@ -161,6 +161,7 @@ class Settings(BaseSettings):
     scalp_profit_target: float = Field(0.003, env="SCALP_PROFIT_TARGET", description="Quick profit target")
     scalp_stop_loss: float = Field(0.002, env="SCALP_STOP_LOSS", description="Tight stop loss")
     min_risk_reward: float = Field(1.2, env="MIN_RISK_REWARD", description="Minimum risk/reward ratio")
+    min_confirmations: int = Field(2, env="MIN_CONFIRMATIONS", description="Minimum confirmations for signal")
     
     # Risk/Reward multipliers - FROM ENV VARS ONLY
     rr_sl_multiplier: float = Field(1.0, env="RR_SL_MULTIPLIER", description="Stop loss ATR multiplier")

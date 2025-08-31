@@ -1,6 +1,26 @@
 # ================================================
 # COMPLETE RAILWAY ENVIRONMENT VARIABLES
-# Copy ALL of these to Railway's environment section
+# Copy ALL of these to Railway's Variables tab
+# ================================================
+#
+# HOW TO ADJUST RISK SETTINGS IN RAILWAY:
+# 
+# RISK_PER_TRADE: Controls position sizing
+#   - 0.001 = 0.1% (Very Conservative: $0.25 per trade on $250)
+#   - 0.005 = 0.5% (Moderate: $1.25 per trade on $250)
+#   - 0.01  = 1.0% (Aggressive: $2.50 per trade on $250)
+#   - 0.02  = 2.0% (Very Aggressive: $5.00 per trade on $250)
+#
+# MAX_POSITIONS: Maximum concurrent trades
+#   - 5  = Conservative (max 5 trades open)
+#   - 10 = Moderate (max 10 trades open)
+#   - 20 = Aggressive (max 20 trades open)
+#
+# LEVERAGE: Position multiplier
+#   - 5  = Conservative (5x position size)
+#   - 10 = Moderate (10x position size)
+#   - 20 = Aggressive (20x position size)
+#
 # ================================================
 
 # === REQUIRED - Bot won't start without these ===
@@ -11,9 +31,9 @@ BYBIT_API_SECRET=your_actual_mainnet_api_secret_here
 BYBIT_TESTNET=false
 
 # Risk Management (REQUIRED - control these in Railway)
-RISK_PER_TRADE=0.005
-MAX_POSITIONS=10
-LEVERAGE=10
+RISK_PER_TRADE=0.005     # Risk per trade: 0.001 (0.1%) to 1.0 (100%)
+MAX_POSITIONS=10         # Max open positions: 1 to 200
+LEVERAGE=10              # Default leverage: 1 to 125
 
 # === HIGHLY RECOMMENDED - For better trading ===
 
@@ -24,9 +44,9 @@ STRATEGY_TYPE=aggressive
 MIN_CONFIRMATIONS=1
 MIN_RISK_REWARD=1.0
 
-# Scalping Parameters
-SCALP_LEVERAGE=5
-SWING_LEVERAGE=10
+# Leverage Settings (Different for scalp vs swing trades)
+SCALP_LEVERAGE=5         # Lower leverage for quick scalps: 1-125
+SWING_LEVERAGE=10        # Higher leverage for swings: 1-125
 SCALP_TIMEFRAME=5
 SCALP_PROFIT_TARGET=0.003
 SCALP_STOP_LOSS=0.002

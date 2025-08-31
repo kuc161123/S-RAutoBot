@@ -37,8 +37,8 @@ class OrderExecutor:
                 await self._notify(f"❌ Insufficient balance: ${balance:.2f}")
                 return False
             
-            # Determine leverage based on signal type using config values
-            leverage = self.config.scalp_leverage if hasattr(signal, 'signal_type') and signal.signal_type == "SCALP" else self.config.swing_leverage
+            # Use the single leverage value from config (scalping-focused)
+            leverage = self.config.leverage  # Single leverage for all trades
             
             # Calculate position size
             position_size = self.position_manager.calculate_position_size(
@@ -143,7 +143,9 @@ class OrderExecutor:
                 
         except Exception as e:
             logger.error(f"Error executing signal: {e}")
-            await self._notify(f"❌ Error executing signal: {e}")
+            # Escape special characters for Telegram markdown
+            error_msg = str(e).replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("]", "\\]")
+            await self._notify(f"❌ Error executing signal: {error_msg}")
             return False
     
     async def check_positions(self):

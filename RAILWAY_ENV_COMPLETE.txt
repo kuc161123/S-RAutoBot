@@ -1,0 +1,69 @@
+# ================================================
+# COMPLETE RAILWAY ENVIRONMENT VARIABLES
+# Copy ALL of these to Railway's environment section
+# ================================================
+
+# === REQUIRED - Bot won't start without these ===
+
+# Bybit API (Your MAINNET credentials)
+BYBIT_API_KEY=your_actual_mainnet_api_key_here
+BYBIT_API_SECRET=your_actual_mainnet_api_secret_here
+BYBIT_TESTNET=false
+
+# Risk Management (REQUIRED - control these in Railway)
+RISK_PER_TRADE=0.005
+MAX_POSITIONS=10
+LEVERAGE=10
+
+# === HIGHLY RECOMMENDED - For better trading ===
+
+# Strategy Selection
+STRATEGY_TYPE=aggressive
+
+# Signal Generation
+MIN_CONFIRMATIONS=1
+MIN_RISK_REWARD=1.0
+
+# Scalping Parameters
+SCALP_LEVERAGE=5
+SWING_LEVERAGE=10
+SCALP_TIMEFRAME=5
+SCALP_PROFIT_TARGET=0.003
+SCALP_STOP_LOSS=0.002
+
+# Risk/Reward Multipliers
+RR_SL_MULTIPLIER=1.5
+RR_TP_MULTIPLIER=3.0
+SCALP_RR_SL_MULTIPLIER=1.0
+SCALP_RR_TP_MULTIPLIER=2.0
+
+# === OPTIONAL - Have good defaults ===
+
+# System Configuration
+SCAN_INTERVAL=30
+MIN_VOLUME_24H=1000000
+STARTUP_DELAY=5
+
+# Strategy Parameters (for fine-tuning)
+RSI_PERIOD=14
+RSI_OVERSOLD=35
+RSI_OVERBOUGHT=65
+MACD_FAST=12
+MACD_SLOW=26
+MACD_SIGNAL=9
+
+# Logging
+LOG_LEVEL=INFO
+
+# Telegram (Optional)
+TELEGRAM_BOT_TOKEN=your_bot_token_if_you_have_one
+TELEGRAM_CHAT_IDS=[your_chat_id]
+
+# ================================================
+# NOTES:
+# 1. RISK_PER_TRADE, MAX_POSITIONS, LEVERAGE are REQUIRED
+# 2. Set STRATEGY_TYPE=aggressive for more signals
+# 3. Set MIN_CONFIRMATIONS=1 for maximum signals
+# 4. Adjust RR multipliers to control risk/reward
+# 5. Make sure API keys are for MAINNET not testnet
+# ================================================

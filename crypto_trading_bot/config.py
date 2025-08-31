@@ -152,7 +152,7 @@ class Settings(BaseSettings):
     swing_leverage: int = Field(10, env="SWING_LEVERAGE", description="Leverage for swing trades")
     
     # Logging
-    log_level: str = Field("INFO", description="Logging level")
+    log_level: str = Field("DEBUG", env="LOG_LEVEL", description="Logging level")
     
     class Config:
         env_file = ".env"

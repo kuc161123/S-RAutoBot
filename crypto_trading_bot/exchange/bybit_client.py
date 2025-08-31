@@ -234,19 +234,42 @@ class BybitClient:
             )
             
             if response['retCode'] == 0:
-                # Get available balance (not wallet balance) for trading
-                coins = response['result']['list'][0]['coin']
-                for coin in coins:
-                    if coin['coin'] == 'USDT':
-                        # Use availableToWithdraw which is the available balance for trading
-                        balance_str = coin.get('availableToWithdraw', coin.get('walletBalance', '0'))
-                        # Handle empty string or None
-                        if not balance_str or balance_str == '':
-                            balance = 0.0
-                        else:
-                            balance = float(balance_str)
-                        logger.info(f"Account balance: ${balance:.2f}")
+                # Debug log the full response
+                logger.debug(f"Balance response: {response}")
+                
+                # Navigate the response structure correctly
+                result = response.get('result', {})
+                if 'list' in result and len(result['list']) > 0:
+                    account_info = result['list'][0]
+                    
+                    # Try to get totalAvailableBalance first (best for derivatives)
+                    available_balance = account_info.get('totalAvailableBalance')
+                    if available_balance:
+                        balance = float(available_balance)
+                        logger.info(f"Account balance (available): ${balance:.2f}")
                         return balance
+                    
+                    # Otherwise check coin array
+                    coins = account_info.get('coin', [])
+                    for coin in coins:
+                        if coin.get('coin') == 'USDT':
+                            # Try different balance fields
+                            balance_str = (
+                                coin.get('availableToWithdraw') or 
+                                coin.get('walletBalance') or 
+                                coin.get('free') or 
+                                coin.get('equity') or 
+                                '0'
+                            )
+                            # Handle empty string or None
+                            if not balance_str or balance_str == '':
+                                balance = 0.0
+                            else:
+                                balance = float(balance_str)
+                            logger.info(f"Account balance (USDT): ${balance:.2f}")
+                            return balance
+                
+                logger.warning("Could not find USDT balance in response")
                 return 0.0
             else:
                 logger.error(f"Failed to get balance: {response['retMsg']}")
@@ -254,6 +277,7 @@ class BybitClient:
                 
         except Exception as e:
             logger.error(f"Error getting balance: {e}")
+            logger.exception("Full traceback:")
             return None
     
     def place_order(self, symbol: str, side: str, qty: float, 

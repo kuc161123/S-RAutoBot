@@ -119,38 +119,29 @@ class Settings(BaseSettings):
     leverage: int = Field(..., env="LEVERAGE", ge=1, le=125, description="Trading leverage")
     max_position_value_multiplier: float = Field(..., env="MAX_POSITION_VALUE_MULTIPLIER", ge=0.5, le=5.0, description="Max position value as multiple of balance")
     
-    # Strategy Parameters - ALL REQUIRED FROM ENV VARS
-    rsi_period: int = Field(..., env="RSI_PERIOD", description="RSI period")
-    rsi_oversold: float = Field(..., env="RSI_OVERSOLD", description="RSI oversold level")
-    rsi_overbought: float = Field(..., env="RSI_OVERBOUGHT", description="RSI overbought level")
-    macd_fast: int = Field(..., env="MACD_FAST", description="MACD fast period")
-    macd_slow: int = Field(..., env="MACD_SLOW", description="MACD slow period")
-    macd_signal: int = Field(..., env="MACD_SIGNAL", description="MACD signal period")
+    # Strategy Parameters - HARDCODED OPTIMAL VALUES
+    rsi_period: int = Field(default=14, description="RSI period (standard)")
+    rsi_oversold: float = Field(default=35, description="RSI oversold level")
+    rsi_overbought: float = Field(default=65, description="RSI overbought level")
+    macd_fast: int = Field(default=12, description="MACD fast period")
+    macd_slow: int = Field(default=26, description="MACD slow period")
+    macd_signal: int = Field(default=9, description="MACD signal period")
     
-    # System Configuration - ALL REQUIRED FROM ENV VARS
-    scan_interval: int = Field(..., env="SCAN_INTERVAL", description="Scan interval in seconds")
-    min_volume_24h: float = Field(..., env="MIN_VOLUME_24H", description="Minimum 24h volume in USDT")
-    startup_delay: int = Field(..., env="STARTUP_DELAY", description="Startup delay in seconds")
+    # System Configuration - HARDCODED OPTIMAL VALUES
+    scan_interval: int = Field(default=60, description="Scan interval in seconds")
+    min_volume_24h: float = Field(default=1000000, description="Minimum 24h volume in USDT")
+    startup_delay: int = Field(default=5, description="Startup delay in seconds")
     
-    # Scalping specific parameters - ALL REQUIRED FROM ENV VARS
-    scalp_timeframe: str = Field(..., env="SCALP_TIMEFRAME", description="Timeframe for scalping")
-    scalp_profit_target: float = Field(..., env="SCALP_PROFIT_TARGET", description="Quick profit target")
-    scalp_stop_loss: float = Field(..., env="SCALP_STOP_LOSS", description="Tight stop loss")
-    min_risk_reward: float = Field(..., env="MIN_RISK_REWARD", description="Minimum risk/reward ratio")
-    min_confirmations: int = Field(..., env="MIN_CONFIRMATIONS", description="Minimum confirmations for signal")
+    # Signal Requirements - HARDCODED OPTIMAL VALUES
+    min_risk_reward: float = Field(default=1.0, description="Minimum risk/reward ratio")
+    min_confirmations: int = Field(default=1, description="Minimum confirmations for signal")
     
-    # Risk/Reward multipliers - ALL REQUIRED FROM ENV VARS
-    rr_sl_multiplier: float = Field(..., env="RR_SL_MULTIPLIER", description="Stop loss ATR multiplier")
-    rr_tp_multiplier: float = Field(..., env="RR_TP_MULTIPLIER", description="Take profit ATR multiplier")
-    scalp_rr_sl_multiplier: float = Field(..., env="SCALP_RR_SL_MULTIPLIER", description="Scalp SL multiplier")
-    scalp_rr_tp_multiplier: float = Field(..., env="SCALP_RR_TP_MULTIPLIER", description="Scalp TP multiplier")
+    # Risk/Reward multipliers - HARDCODED OPTIMAL VALUES
+    rr_sl_multiplier: float = Field(default=1.5, description="Stop loss ATR multiplier")
+    rr_tp_multiplier: float = Field(default=3.0, description="Take profit ATR multiplier")
     
-    # Scalping leverage settings - ALL REQUIRED FROM ENV VARS
-    scalp_leverage: int = Field(..., env="SCALP_LEVERAGE", description="Leverage for scalp trades")
-    swing_leverage: int = Field(..., env="SWING_LEVERAGE", description="Leverage for swing trades")
-    
-    # Logging - REQUIRED FROM ENV VARS
-    log_level: str = Field(..., env="LOG_LEVEL", description="Logging level")
+    # Logging - HARDCODED
+    log_level: str = Field(default="INFO", description="Logging level")
     
     # Strategy removed - using enhanced aggressive only
     

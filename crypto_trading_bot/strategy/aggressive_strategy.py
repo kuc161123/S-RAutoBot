@@ -50,9 +50,7 @@ class AggressiveStrategy:
         self.rr_sl_multiplier = config.get('rr_sl_multiplier', 1.5)
         self.rr_tp_multiplier = config.get('rr_tp_multiplier', 2.5)
         
-        # Scalping features for better accuracy
-        self.scalp_rr_sl_multiplier = config.get('scalp_rr_sl_multiplier', 1.0)
-        self.scalp_rr_tp_multiplier = config.get('scalp_rr_tp_multiplier', 1.5)
+        # Removed scalping - using unified R/R multipliers
         
         # Trend analysis (from scalping)
         self.trend_ema_fast = 9

@@ -112,7 +112,8 @@ class OrderExecutor:
                     entry_price=signal.price,
                     size=position_size,
                     stop_loss=signal.stop_loss,
-                    take_profit=signal.take_profit
+                    take_profit=signal.take_profit,
+                    trade_id=getattr(signal, 'trade_id', None)  # Pass ML trade ID
                 )
                 
                 # Send notification with signal type
@@ -186,6 +187,19 @@ class OrderExecutor:
                 position = self.position_manager.positions.get(symbol)
                 if position:
                     pnl_emoji = "🟢" if position.pnl > 0 else "🔴"
+                    
+                    # Update ML tracking if we have a trade_id
+                    if hasattr(position, 'trade_id') and position.trade_id:
+                        try:
+                            # Get strategy instance to update ML
+                            if hasattr(self, 'strategy') and hasattr(self.strategy, 'update_trade_result'):
+                                self.strategy.update_trade_result(
+                                    position.trade_id,
+                                    exit_price,
+                                    position.pnl
+                                )
+                        except Exception as e:
+                            logger.debug(f"Could not update ML result: {e}")
                     
                     message = (
                         f"{pnl_emoji} **Position Closed**\n"

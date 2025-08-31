@@ -87,6 +87,9 @@ class TradingBot:
                 telegram_notifier=self.telegram_bot
             )
             
+            # Link strategy for ML updates
+            self.order_executor.strategy = self.strategy
+            
             # Initialize signal generator
             self.signal_generator = SignalGenerator(
                 exchange_client=self.exchange,

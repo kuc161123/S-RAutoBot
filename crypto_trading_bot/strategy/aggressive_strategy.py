@@ -31,7 +31,7 @@ class TradingSignal:
             self.timestamp = datetime.now()
 
 class AggressiveStrategy:
-    """Enhanced aggressive strategy with trend and structure analysis"""
+    """Enhanced aggressive strategy with trend and structure analysis + ML"""
     
     def __init__(self, config: dict):
         self.config = config
@@ -65,7 +65,33 @@ class AggressiveStrategy:
         # Market structure settings
         self.structure_lookback = 20
         
-        logger.info(f"Enhanced aggressive strategy with S/R - RSI: {self.rsi_oversold}/{self.rsi_overbought}, Min score: {self.min_score}")
+        # Initialize ML components
+        self._init_ml_components()
+        
+        logger.info(f"Enhanced aggressive strategy with ML + S/R - RSI: {self.rsi_oversold}/{self.rsi_overbought}, Min score: {self.min_score}")
+    
+    def _init_ml_components(self):
+        """Initialize ML tracking and optimization components"""
+        try:
+            from ..ml.performance_tracker import PerformanceTracker
+            from ..ml.adaptive_optimizer import AdaptiveOptimizer
+            
+            # Initialize performance tracker
+            self.performance_tracker = PerformanceTracker(data_dir="ml_data")
+            
+            # Initialize adaptive optimizer
+            self.optimizer = AdaptiveOptimizer(self.performance_tracker, self.config)
+            
+            # ML prediction cache
+            self.ml_predictions = {}
+            self.ml_enabled = True
+            
+            logger.info("ML components initialized successfully")
+        except Exception as e:
+            logger.warning(f"ML components not available: {e}")
+            self.performance_tracker = None
+            self.optimizer = None
+            self.ml_enabled = False
     
     def _find_support_resistance(self, df: pd.DataFrame) -> tuple:
         """Find support and resistance levels with strength scoring"""
@@ -285,7 +311,7 @@ class AggressiveStrategy:
         return patterns
     
     def analyze(self, symbol: str, df: pd.DataFrame) -> Optional[TradingSignal]:
-        """Enhanced analysis with trend, S/R, and market structure"""
+        """Enhanced analysis with trend, S/R, market structure, and ML"""
         try:
             if len(df) < 50:  # Need less data
                 return None
@@ -301,6 +327,14 @@ class AggressiveStrategy:
             
             # Get current price
             price = current['close']
+            
+            # Get ML-optimized parameters if available
+            if self.ml_enabled and self.optimizer:
+                ml_params = self.optimizer.get_optimized_params(symbol, current.to_dict())
+                # Apply ML-optimized thresholds
+                self.rsi_oversold = ml_params.get('rsi_oversold', self.rsi_oversold)
+                self.rsi_overbought = ml_params.get('rsi_overbought', self.rsi_overbought)
+                self.min_score = ml_params.get('min_signal_score', self.min_score)
             
             # Find support and resistance levels
             support_levels, resistance_levels = self._find_support_resistance(df)
@@ -526,17 +560,56 @@ class AggressiveStrategy:
                 
                 confidence = min(buy_score / 8, 1.0)  # Adjusted for more conditions
                 
+                # Track signal in ML if enabled
+                trade_id = None
+                if self.ml_enabled and self.performance_tracker:
+                    market_conditions = {
+                        'rsi': current.get('rsi', 0),
+                        'macd': current.get('macd', 0),
+                        'macd_signal': current.get('macd_signal', 0),
+                        'stoch_rsi_k': current.get('stoch_rsi_k', 0),
+                        'volume_ratio': current.get('volume', 0) / current.get('volume_ma', 1) if 'volume_ma' in current else 1,
+                        'distance_to_support': dist_to_support,
+                        'distance_to_resistance': dist_to_resistance,
+                        'trend': trend,
+                        'volatility': atr_percentage
+                    }
+                    
+                    trade_id = self.performance_tracker.record_entry(
+                        symbol=symbol,
+                        action="BUY",
+                        price=price,
+                        market_data=market_conditions,
+                        confirmations=buy_reasons,
+                        score=buy_score,
+                        confidence=confidence,
+                        params={
+                            'rsi_threshold': self.rsi_oversold,
+                            'min_confirmations': 2,
+                            'min_score': self.min_score
+                        }
+                    )
+                    logger.debug(f"ML tracking BUY signal: {trade_id}")
+                
                 logger.info(f"BUY signal for {symbol}: Score {buy_score}, Reasons: {buy_reasons}")
                 
-                return TradingSignal(
+                signal = TradingSignal(
                     symbol=symbol,
                     action="BUY",
                     price=price,
                     confidence=confidence,
                     reason=", ".join(buy_reasons[:2]),
                     stop_loss=stop_loss,
-                    take_profit=take_profit
+                    take_profit=take_profit,
+                    signal_type="SCALP",
+                    risk_reward=(take_profit - price) / (price - stop_loss)
                 )
+                
+                # Store trade ID for tracking
+                if trade_id:
+                    signal.trade_id = trade_id
+                
+                return signal
             
             elif sell_score >= min_score and sell_score > buy_score and volume_ok:
                 # Smart stop loss placement using resistance with volatility adaptation
@@ -557,17 +630,56 @@ class AggressiveStrategy:
                 
                 confidence = min(sell_score / 8, 1.0)  # Adjusted for more conditions
                 
+                # Track signal in ML if enabled
+                trade_id = None
+                if self.ml_enabled and self.performance_tracker:
+                    market_conditions = {
+                        'rsi': current.get('rsi', 0),
+                        'macd': current.get('macd', 0),
+                        'macd_signal': current.get('macd_signal', 0),
+                        'stoch_rsi_k': current.get('stoch_rsi_k', 0),
+                        'volume_ratio': current.get('volume', 0) / current.get('volume_ma', 1) if 'volume_ma' in current else 1,
+                        'distance_to_support': dist_to_support,
+                        'distance_to_resistance': dist_to_resistance,
+                        'trend': trend,
+                        'volatility': atr_percentage
+                    }
+                    
+                    trade_id = self.performance_tracker.record_entry(
+                        symbol=symbol,
+                        action="SELL",
+                        price=price,
+                        market_data=market_conditions,
+                        confirmations=sell_reasons,
+                        score=sell_score,
+                        confidence=confidence,
+                        params={
+                            'rsi_threshold': self.rsi_overbought,
+                            'min_confirmations': 2,
+                            'min_score': self.min_score
+                        }
+                    )
+                    logger.debug(f"ML tracking SELL signal: {trade_id}")
+                
                 logger.info(f"SELL signal for {symbol}: Score {sell_score}, Reasons: {sell_reasons}")
                 
-                return TradingSignal(
+                signal = TradingSignal(
                     symbol=symbol,
                     action="SELL",
                     price=price,
                     confidence=confidence,
                     reason=", ".join(sell_reasons[:2]),
                     stop_loss=stop_loss,
-                    take_profit=take_profit
+                    take_profit=take_profit,
+                    signal_type="SCALP",
+                    risk_reward=(price - take_profit) / (stop_loss - price)
                 )
+                
+                # Store trade ID for tracking
+                if trade_id:
+                    signal.trade_id = trade_id
+                
+                return signal
             
             return None
             
@@ -591,3 +703,24 @@ class AggressiveStrategy:
         
         # Return ALL signals - let position manager handle limits
         return signals
+    
+    def get_ml_status(self) -> dict:
+        """Get ML components status"""
+        if not self.ml_enabled:
+            return {'enabled': False, 'reason': 'ML components not initialized'}
+        
+        try:
+            from ..ml.ml_manager import MLManager
+            ml_manager = MLManager(self, self.config)
+            return ml_manager.get_status()
+        except Exception as e:
+            return {'enabled': False, 'error': str(e)}
+    
+    def update_trade_result(self, trade_id: str, exit_price: float, pnl: float):
+        """Update ML tracking with trade result"""
+        if self.ml_enabled and self.performance_tracker and trade_id:
+            try:
+                self.performance_tracker.record_exit(trade_id, exit_price, pnl)
+                logger.debug(f"ML updated trade {trade_id}: Exit {exit_price}, PNL {pnl}")
+            except Exception as e:
+                logger.error(f"Failed to update ML trade result: {e}")

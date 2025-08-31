@@ -21,6 +21,7 @@ class Position:
     pnl: float = 0.0
     pnl_percent: float = 0.0
     status: str = "OPEN"  # OPEN, CLOSED, PENDING
+    trade_id: Optional[str] = None  # ML tracking ID
 
 class PositionManager:
     """Manage trading positions"""
@@ -161,7 +162,7 @@ class PositionManager:
             return 0
     
     def add_position(self, symbol: str, side: str, entry_price: float, 
-                    size: float, stop_loss: float, take_profit: float) -> bool:
+                    size: float, stop_loss: float, take_profit: float, trade_id: Optional[str] = None) -> bool:
         """Add a new position"""
         try:
             if not self.can_open_position(symbol):
@@ -173,7 +174,8 @@ class PositionManager:
                 entry_price=entry_price,
                 size=size,
                 stop_loss=stop_loss,
-                take_profit=take_profit
+                take_profit=take_profit,
+                trade_id=trade_id
             )
             
             self.positions[symbol] = position

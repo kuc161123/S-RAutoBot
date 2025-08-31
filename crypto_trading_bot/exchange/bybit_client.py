@@ -83,8 +83,9 @@ class BybitClient:
         """Fetch historical kline data"""
         try:
             # Use interval from config if not provided
+            # HARDCODED: 5 minute timeframe for scalping
             if interval is None:
-                interval = self.config.scalp_timeframe if self.config else "5"
+                interval = "5"  # 5 minute candles for scalping
             
             response = self.client.get_kline(
                 category="linear",
@@ -153,8 +154,9 @@ class BybitClient:
                     raise Exception("Failed to establish WebSocket connection after multiple attempts")
         
         try:
-            # Subscribe to kline streams using config timeframe
-            interval = int(self.config.scalp_timeframe) if self.config else 5
+            # Subscribe to kline streams using hardcoded timeframe
+            # HARDCODED: 5 minute timeframe for scalping
+            interval = 5  # 5 minute candles
             kline_streams = [f"kline.{interval}.{symbol}" for symbol in symbols]
             
             def handle_kline(message):
@@ -210,8 +212,9 @@ class BybitClient:
                 except Exception as e:
                     logger.error(f"Error handling position update: {e}")
             
-            # Subscribe to streams using config timeframe
-            ws_interval = int(self.config.scalp_timeframe) if self.config else 5
+            # Subscribe to streams using hardcoded timeframe
+            # HARDCODED: 5 minute timeframe for scalping
+            ws_interval = 5  # 5 minute candles
             self.ws_public.kline_stream(
                 interval=ws_interval,
                 symbol=symbols,

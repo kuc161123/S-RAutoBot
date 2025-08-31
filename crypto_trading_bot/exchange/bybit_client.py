@@ -234,8 +234,15 @@ class BybitClient:
             )
             
             if response['retCode'] == 0:
-                balance = float(response['result']['list'][0]['coin'][0]['walletBalance'])
-                return balance
+                # Get available balance (not wallet balance) for trading
+                coins = response['result']['list'][0]['coin']
+                for coin in coins:
+                    if coin['coin'] == 'USDT':
+                        # Use availableToWithdraw which is the available balance for trading
+                        balance = float(coin.get('availableToWithdraw', coin.get('walletBalance', 0)))
+                        logger.info(f"Account balance: ${balance:.2f}")
+                        return balance
+                return 0.0
             else:
                 logger.error(f"Failed to get balance: {response['retMsg']}")
                 return None
@@ -261,6 +268,8 @@ class BybitClient:
                 "timeInForce": "IOC",
                 "positionIdx": 0  # One-way mode
             }
+            
+            logger.debug(f"Placing order: {symbol} {side} qty={qty}")
             
             # Add stop loss if provided
             if stop_loss:

@@ -359,7 +359,7 @@ class BybitClient:
             # 0 decimals (integer only)
             "1000BONKUSDT": 0, "1000FLOKIUSDT": 0, "1000LUNCUSDT": 0,
             "1000PEPEUSDT": 0, "1000XECUSDT": 0, "ACHUSDT": 0,
-            "ADAUSDT": 0, "ANKRUSDT": 0, "ARKMUSDT": 0, "ARPAUSDT": 0,
+            "ADAUSDT": 0, "ANKRUSDT": 0, "ARPAUSDT": 0,
             "BLURUSDT": 0, "CFXUSDT": 0, "CHZUSDT": 0, "CKBUSDT": 0,
             "CROUSDT": 0, "CTSIUSDT": 0, "DOGEUSDT": 0, "DOGSUSDT": 0,
             "GALAUSDT": 0, "GMTUSDT": 0, "HBARUSDT": 0, "IOTXUSDT": 0,
@@ -369,14 +369,15 @@ class BybitClient:
             "RDNTUSDT": 0, "ROSEUSDT": 0, "RSRUSDT": 0, "SANDUSDT": 0,
             "SEIUSDT": 0, "SPELLUSDT": 0, "SUIUSDT": 0, "TRXUSDT": 0,
             "VETUSDT": 0, "WIFUSDT": 0, "XRPUSDT": 0, "ZRXUSDT": 0,
-            "MATICUSDT": 0, "FETUSDT": 0, "STMXUSDT": 0,
+            "MATICUSDT": 0, "FETUSDT": 0, "STMXUSDT": 0, "ARKMUSDT": 0,
+            "1INCHUSDT": 0, "ENJUSDT": 0,
             
             # 1 decimal
-            "1INCHUSDT": 1, "ACEUSDT": 1, "AIUSDT": 1, "ALGOUSDT": 1,
+            "ACEUSDT": 1, "AIUSDT": 1, "ALGOUSDT": 1,
             "ALICEUSDT": 1, "APEUSDT": 1, "ARBUSDT": 1, "ARUSDT": 1,
             "ATOMUSDT": 1, "AVAXUSDT": 1, "AXSUSDT": 1, "BATUSDT": 1,
             "C98USDT": 1, "CELOUSDT": 1, "COREUSDT": 1, "CRVUSDT": 1,
-            "CYBERUSDT": 1, "DOTUSDT": 1, "DYDXUSDT": 1, "ENJUSDT": 1,
+            "CYBERUSDT": 1, "DOTUSDT": 1, "DYDXUSDT": 1,
             "ENSUSDT": 1, "ETCUSDT": 1, "FILUSDT": 1, "FLOWUSDT": 1,
             "GRTUSDT": 1, "HIGHUSDT": 1, "ICPUSDT": 1, "IMXUSDT": 1,
             "INJUSDT": 1, "IOTAUSDT": 1, "LDOUSDT": 1, "LINKUSDT": 1,

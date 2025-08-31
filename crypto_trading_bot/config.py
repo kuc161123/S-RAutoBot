@@ -100,8 +100,8 @@ class Settings(BaseSettings):
             "ATOMUSDT", "FILUSDT", "HBARUSDT", "ALGOUSDT", "VETUSDT",
             "THETAUSDT", "FTMUSDT", "XTZUSDT", "EGLDUSDT", "FLOWUSDT",
             
-            # Meme coins (with correct Bybit 1000x format)
-            "1000SHIBUSDT", "1000PEPEUSDT", "1000BONKUSDT", "1000FLOKIUSDT", "WIFUSDT",
+            # Meme coins (with correct Bybit format - removed invalid 1000SHIBUSDT)
+            "1000PEPEUSDT", "1000BONKUSDT", "1000FLOKIUSDT", "WIFUSDT",
             "MEMEUSDT", "DOGSUSDT", "1000LUNCUSDT", "1000XECUSDT", "SPELLUSDT",
             
             # Others high volume

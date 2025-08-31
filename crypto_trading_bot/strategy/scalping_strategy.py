@@ -29,10 +29,27 @@ class TradingSignal:
             self.timestamp = datetime.now()
 
 class ScalpingStrategy:
-    """Advanced scalping strategy with S/R and market structure"""
+    """Advanced scalping strategy with S/R, market structure, and ML optimization"""
     
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, ml_enabled: bool = True):
         self.config = config
+        self.ml_enabled = ml_enabled
+        
+        # Initialize ML components if enabled
+        self.performance_tracker = None
+        self.optimizer = None
+        
+        if self.ml_enabled:
+            try:
+                from ml.performance_tracker import PerformanceTracker
+                from ml.adaptive_optimizer import AdaptiveOptimizer
+                
+                self.performance_tracker = PerformanceTracker()
+                self.optimizer = AdaptiveOptimizer(self.performance_tracker, config)
+                logger.info("ML optimization enabled in shadow mode with auto-activation")
+            except Exception as e:
+                logger.warning(f"ML components not available: {e}")
+                self.ml_enabled = False
         
         # RSI settings (keep existing)
         self.rsi_oversold = config.get('rsi_oversold', 30)

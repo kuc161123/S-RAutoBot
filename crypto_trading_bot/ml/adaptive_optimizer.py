@@ -38,7 +38,14 @@ class AdaptiveOptimizer:
         self.shadow_mode = True
         self.shadow_performance = []
         
-        logger.info("Adaptive optimizer initialized in shadow mode")
+        # Auto-activation settings
+        self.auto_activate = True  # Automatically go live when performance is good
+        self.auto_activate_threshold = 2.0  # Need 2% improvement
+        self.min_shadow_trades = 30  # Minimum trades before auto-activation
+        self.consecutive_good_evals = 3  # Need 3 consecutive good evaluations
+        self.good_eval_count = 0
+        
+        logger.info("Adaptive optimizer initialized in shadow mode with auto-activation enabled")
     
     def _load_adaptations(self) -> Dict:
         """Load saved adaptations"""
@@ -60,6 +67,10 @@ class AdaptiveOptimizer:
         """Get optimized parameters for current conditions"""
         # Start with base config
         params = self.base_config.copy()
+        
+        # Check for auto-activation
+        if self.shadow_mode and self.auto_activate:
+            self._check_auto_activation()
         
         # Check if we should adapt
         if not self._should_adapt():
@@ -210,6 +221,54 @@ class AdaptiveOptimizer:
         # Keep only recent trades
         if len(self.shadow_performance) > 100:
             self.shadow_performance = self.shadow_performance[-100:]
+    
+    def _check_auto_activation(self):
+        """Check if ML should auto-activate based on performance"""
+        if not self.auto_activate or not self.shadow_mode:
+            return
+        
+        eval_result = self.evaluate_shadow_performance()
+        
+        # Check if we have enough data
+        if eval_result['status'] != 'ready':
+            return
+        
+        # Check if we meet minimum trades requirement
+        if eval_result['shadow_trades'] < self.min_shadow_trades:
+            return
+        
+        # Check if improvement is sufficient
+        improvement = eval_result.get('improvement', 0)
+        
+        if improvement >= self.auto_activate_threshold:
+            self.good_eval_count += 1
+            logger.info(f"ML Shadow Performance GOOD ({self.good_eval_count}/{self.consecutive_good_evals}): "
+                       f"Win rate {eval_result['shadow_win_rate']:.1f}% "
+                       f"(+{improvement:.1f}% vs baseline)")
+            
+            # Auto-activate if we have consecutive good evaluations
+            if self.good_eval_count >= self.consecutive_good_evals:
+                self.shadow_mode = False
+                logger.info("🎉 ML AUTO-ACTIVATED! Shadow testing proved successful. "
+                           f"Win rate improved by {improvement:.1f}%. "
+                           "Now using ML optimizations in LIVE mode!")
+                
+                # Save activation details
+                self.current_adaptations['auto_activation'] = {
+                    'timestamp': datetime.now().isoformat(),
+                    'shadow_win_rate': eval_result['shadow_win_rate'],
+                    'baseline_win_rate': eval_result['baseline_win_rate'],
+                    'improvement': improvement,
+                    'trades_evaluated': eval_result['shadow_trades']
+                }
+                self._save_adaptations()
+        else:
+            # Reset count if performance drops
+            if self.good_eval_count > 0:
+                logger.info(f"ML Shadow Performance dropped. Resetting count. "
+                           f"Current: {eval_result['shadow_win_rate']:.1f}% "
+                           f"Need: {eval_result['baseline_win_rate'] + self.auto_activate_threshold:.1f}%")
+            self.good_eval_count = 0
     
     def enable_live_mode(self) -> bool:
         """Enable live adaptations if shadow performance is good"""

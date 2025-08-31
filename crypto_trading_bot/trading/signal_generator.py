@@ -56,8 +56,8 @@ class SignalGenerator:
                     max_positions = self.config.max_positions
                     logger.info(f"Scanning complete - Positions: {open_positions}/{max_positions}")
                     
-                    # Adjusted interval for 100 symbols (45 seconds to prevent overwhelming)
-                    scan_interval = min(self.config.scan_interval, 45)  # Max 45 seconds for 100 symbols
+                    # SCALPING: Fast scanning for quick opportunities
+                    scan_interval = min(self.config.scan_interval, 30)  # Max 30 seconds for scalping
                     await asyncio.sleep(scan_interval)
                     
                 except Exception as e:

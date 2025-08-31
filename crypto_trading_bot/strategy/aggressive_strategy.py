@@ -36,19 +36,19 @@ class AggressiveStrategy:
     def __init__(self, config: dict):
         self.config = config
         
-        # Configurable RSI settings from environment
-        self.rsi_oversold = config.get('rsi_oversold', 35)
-        self.rsi_overbought = config.get('rsi_overbought', 65)
+        # SCALPING CONFIGURATION - Quick in/out trades
+        self.rsi_oversold = config.get('rsi_oversold', 30)  # More extreme for scalping
+        self.rsi_overbought = config.get('rsi_overbought', 70)  # More extreme for scalping
         
         # Volume filter - higher = fewer but better signals
-        self.min_volume_multiplier = config.get('min_volume_multiplier', 1.2)
+        self.min_volume_multiplier = config.get('min_volume_multiplier', 1.5)  # Higher volume for liquidity
         
-        # Minimum score for signal quality (3-5 recommended)
-        self.min_score = config.get('min_signal_score', 3)
+        # Minimum score for signal quality (lower for more trades)
+        self.min_score = config.get('min_signal_score', 3)  # Reduced for more scalping opportunities
         
-        # Risk settings from config
-        self.rr_sl_multiplier = config.get('rr_sl_multiplier', 1.5)
-        self.rr_tp_multiplier = config.get('rr_tp_multiplier', 2.5)
+        # SCALPING Risk settings - TIGHT stops, QUICK profits
+        self.rr_sl_multiplier = config.get('rr_sl_multiplier', 0.5)  # Tight 0.5x ATR stop
+        self.rr_tp_multiplier = config.get('rr_tp_multiplier', 1.0)  # Quick 1.0x ATR profit
         
         # Removed scalping - using unified R/R multipliers
         
@@ -236,13 +236,13 @@ class AggressiveStrategy:
                 buy_score += 2
                 buy_reasons.append("Near BB lower")
             
-            # 3. NEAR SUPPORT LEVEL - High priority
-            if dist_to_support < 0.5:  # Within 0.5% of support
+            # 3. NEAR SUPPORT LEVEL - CRITICAL for scalping
+            if dist_to_support < 0.3:  # Within 0.3% - VERY close for scalping
+                buy_score += 3  # Higher weight for scalping
+                buy_reasons.append(f"At strong support ${nearest_support:.2f}")
+            elif dist_to_support < 0.5:  # Within 0.5% of support
                 buy_score += 2
-                buy_reasons.append(f"At support ${nearest_support:.2f}")
-            elif dist_to_support < 1.0:  # Within 1% of support
-                buy_score += 1
-                buy_reasons.append("Near support")
+                buy_reasons.append("At support zone")
             
             # 4. MACD turning bullish
             if 'macd' in current and 'macd_signal' in current:
@@ -265,8 +265,11 @@ class AggressiveStrategy:
                 buy_score += 1
                 buy_reasons.append("Bullish trend")
             
-            # 8. MOMENTUM CONFIRMATION
-            if market_structure['momentum'] > 0.5:
+            # 8. MOMENTUM CONFIRMATION - KEY for scalping
+            if market_structure['momentum'] > 1.0:  # Strong momentum for scalps
+                buy_score += 2
+                buy_reasons.append("Strong momentum")
+            elif market_structure['momentum'] > 0.5:
                 buy_score += 1
                 buy_reasons.append("Positive momentum")
             
@@ -284,13 +287,13 @@ class AggressiveStrategy:
                 sell_score += 2
                 sell_reasons.append("Near BB upper")
             
-            # 3. NEAR RESISTANCE LEVEL - High priority
-            if dist_to_resistance < 0.5:  # Within 0.5% of resistance
+            # 3. NEAR RESISTANCE LEVEL - CRITICAL for scalping
+            if dist_to_resistance < 0.3:  # Within 0.3% - VERY close for scalping
+                sell_score += 3  # Higher weight for scalping
+                sell_reasons.append(f"At strong resistance ${nearest_resistance:.2f}")
+            elif dist_to_resistance < 0.5:  # Within 0.5% of resistance
                 sell_score += 2
-                sell_reasons.append(f"At resistance ${nearest_resistance:.2f}")
-            elif dist_to_resistance < 1.0:  # Within 1% of resistance
-                sell_score += 1
-                sell_reasons.append("Near resistance")
+                sell_reasons.append("At resistance zone")
             
             # 4. MACD turning bearish
             if 'macd' in current and 'macd_signal' in current:
@@ -334,9 +337,9 @@ class AggressiveStrategy:
                 else:
                     take_profit = price + (atr * self.rr_tp_multiplier)
                 
-                # Ensure minimum R:R ratio
-                if (take_profit - price) / (price - stop_loss) < 1.5:
-                    take_profit = price + ((price - stop_loss) * 2.0)
+                # SCALPING: Accept lower R:R for quick trades
+                if (take_profit - price) / (price - stop_loss) < 1.0:
+                    take_profit = price + ((price - stop_loss) * 1.2)  # 1.2 R:R minimum for scalps
                 
                 confidence = min(buy_score / 8, 1.0)  # Adjusted for more conditions
                 
@@ -365,9 +368,9 @@ class AggressiveStrategy:
                 else:
                     take_profit = price - (atr * self.rr_tp_multiplier)
                 
-                # Ensure minimum R:R ratio
-                if (price - take_profit) / (stop_loss - price) < 1.5:
-                    take_profit = price - ((stop_loss - price) * 2.0)
+                # SCALPING: Accept lower R:R for quick trades
+                if (price - take_profit) / (stop_loss - price) < 1.0:
+                    take_profit = price - ((stop_loss - price) * 1.2)  # 1.2 R:R minimum for scalps
                 
                 confidence = min(sell_score / 8, 1.0)  # Adjusted for more conditions
                 

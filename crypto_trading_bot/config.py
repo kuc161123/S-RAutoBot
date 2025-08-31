@@ -119,36 +119,36 @@ class Settings(BaseSettings):
     leverage: int = Field(..., env="LEVERAGE", ge=1, le=125, description="Trading leverage")
     max_position_value_multiplier: float = Field(..., env="MAX_POSITION_VALUE_MULTIPLIER", ge=0.5, le=5.0, description="Max position value as multiple of balance")
     
-    # Strategy Parameters - HARDCODED OPTIMAL VALUES
+    # SCALPING Strategy Parameters - OPTIMIZED FOR QUICK TRADES
     rsi_period: int = Field(default=14, description="RSI period (standard)")
-    rsi_oversold: float = Field(default=35, description="RSI oversold level")
-    rsi_overbought: float = Field(default=65, description="RSI overbought level")
+    rsi_oversold: float = Field(default=30, description="RSI oversold for scalping")
+    rsi_overbought: float = Field(default=70, description="RSI overbought for scalping")
     macd_fast: int = Field(default=12, description="MACD fast period")
     macd_slow: int = Field(default=26, description="MACD slow period")
     macd_signal: int = Field(default=9, description="MACD signal period")
     
-    # System Configuration - HARDCODED OPTIMAL VALUES
-    scan_interval: int = Field(default=60, description="Scan interval in seconds")
-    min_volume_24h: float = Field(default=1000000, description="Minimum 24h volume in USDT")
+    # System Configuration - FASTER FOR SCALPING
+    scan_interval: int = Field(default=30, description="Fast scan for scalping")
+    min_volume_24h: float = Field(default=2000000, description="Higher volume for scalping liquidity")
     startup_delay: int = Field(default=5, description="Startup delay in seconds")
     
-    # Signal Requirements - HARDCODED OPTIMAL VALUES
-    min_risk_reward: float = Field(default=1.0, description="Minimum risk/reward ratio")
-    min_confirmations: int = Field(default=1, description="Minimum confirmations for signal")
+    # Signal Requirements - SCALPING FOCUSED
+    min_risk_reward: float = Field(default=1.0, description="Minimum risk/reward for scalps")
+    min_confirmations: int = Field(default=1, description="Quick entry on signals")
     
-    # Risk/Reward multipliers - HARDCODED OPTIMAL VALUES
-    rr_sl_multiplier: float = Field(default=1.5, description="Stop loss ATR multiplier")
-    rr_tp_multiplier: float = Field(default=3.0, description="Take profit ATR multiplier")
+    # SCALPING Risk/Reward - TIGHT STOPS, QUICK PROFITS
+    rr_sl_multiplier: float = Field(default=0.5, description="Tight stop loss for scalping")
+    rr_tp_multiplier: float = Field(default=1.0, description="Quick take profit for scalping")
     
     # Logging - HARDCODED
     log_level: str = Field(default="INFO", description="Logging level")
     
     # Strategy removed - using enhanced aggressive only
     
-    # Signal quality control - HARDCODED OPTIMAL VALUES
-    min_signal_score: int = Field(default=4, ge=2, le=6, description="Minimum score for signal (2-6, higher = fewer signals)")
-    min_volume_multiplier: float = Field(default=1.5, ge=0.5, le=3.0, description="Volume filter (higher = fewer signals)")
-    signal_cooldown_minutes: int = Field(default=10, ge=1, le=60, description="Minutes to wait between signals per symbol")
+    # SCALPING Signal control - OPTIMIZED FOR FREQUENCY
+    min_signal_score: int = Field(default=3, ge=2, le=6, description="Lower score for more scalping signals")
+    min_volume_multiplier: float = Field(default=1.5, ge=0.5, le=3.0, description="Volume filter for liquidity")
+    signal_cooldown_minutes: int = Field(default=2, ge=1, le=60, description="Quick re-entry for scalping")
     
     class Config:
         env_file = ".env"

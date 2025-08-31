@@ -254,20 +254,21 @@ class BybitClient:
                     for coin in coins:
                         if coin.get('coin') == 'USDT':
                             # Try different balance fields
-                            balance_str = (
-                                coin.get('availableToWithdraw') or 
-                                coin.get('walletBalance') or 
-                                coin.get('free') or 
-                                coin.get('equity') or 
-                                '0'
-                            )
-                            # Handle empty string or None
-                            if not balance_str or balance_str == '':
-                                balance = 0.0
-                            else:
-                                balance = float(balance_str)
-                            logger.info(f"Account balance (USDT): ${balance:.2f}")
-                            return balance
+                            for field in ['availableToWithdraw', 'walletBalance', 'free', 'equity', 'availableBalanceWithoutConvert']:
+                                balance_str = coin.get(field)
+                                if balance_str and balance_str != '' and balance_str != '0':
+                                    try:
+                                        balance = float(balance_str)
+                                        if balance > 0:
+                                            logger.info(f"Account balance (USDT from {field}): ${balance:.2f}")
+                                            return balance
+                                    except (ValueError, TypeError) as e:
+                                        logger.debug(f"Could not convert {field}={balance_str} to float: {e}")
+                                        continue
+                            
+                            # If no valid balance found in any field
+                            logger.warning("USDT found but all balance fields are empty or zero")
+                            return 0.0
                 
                 logger.warning("Could not find USDT balance in response")
                 return 0.0

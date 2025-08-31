@@ -68,27 +68,75 @@ class AggressiveStrategy:
         logger.info(f"Enhanced aggressive strategy with S/R - RSI: {self.rsi_oversold}/{self.rsi_overbought}, Min score: {self.min_score}")
     
     def _find_support_resistance(self, df: pd.DataFrame) -> tuple:
-        """Find support and resistance levels"""
+        """Find support and resistance levels with strength scoring"""
         recent_df = df.tail(self.sr_lookback)
-        highs = []
-        lows = []
+        highs = {}
+        lows = {}
         
         for i in range(1, len(recent_df) - 1):
-            # Find local highs (resistance)
+            # Find local highs (resistance) with touch count
             if recent_df.iloc[i]['high'] > recent_df.iloc[i-1]['high'] and \
                recent_df.iloc[i]['high'] > recent_df.iloc[i+1]['high']:
-                highs.append(recent_df.iloc[i]['high'])
+                level = recent_df.iloc[i]['high']
+                # Count touches at this level
+                touches = self._count_touches(df, level, is_resistance=True)
+                highs[level] = touches
             
-            # Find local lows (support)
+            # Find local lows (support) with touch count
             if recent_df.iloc[i]['low'] < recent_df.iloc[i-1]['low'] and \
                recent_df.iloc[i]['low'] < recent_df.iloc[i+1]['low']:
-                lows.append(recent_df.iloc[i]['low'])
+                level = recent_df.iloc[i]['low']
+                # Count touches at this level
+                touches = self._count_touches(df, level, is_resistance=False)
+                lows[level] = touches
         
-        # Cluster similar levels
-        support_levels = self._cluster_levels(lows) if lows else []
-        resistance_levels = self._cluster_levels(highs) if highs else []
+        # Cluster similar levels with strength
+        support_levels = self._cluster_levels_with_strength(lows) if lows else []
+        resistance_levels = self._cluster_levels_with_strength(highs) if highs else []
         
         return support_levels, resistance_levels
+    
+    def _count_touches(self, df: pd.DataFrame, level: float, is_resistance: bool) -> int:
+        """Count how many times price touched a level"""
+        touches = 0
+        tolerance = level * self.sr_tolerance
+        
+        for _, row in df.iterrows():
+            if is_resistance:
+                if abs(row['high'] - level) < tolerance:
+                    touches += 1
+            else:
+                if abs(row['low'] - level) < tolerance:
+                    touches += 1
+        
+        return touches
+    
+    def _cluster_levels_with_strength(self, levels_dict: dict) -> List[tuple]:
+        """Cluster similar levels and track their strength"""
+        if not levels_dict:
+            return []
+        
+        # Sort levels by price
+        sorted_levels = sorted(levels_dict.items())
+        clustered = []
+        current_cluster = [sorted_levels[0]]
+        
+        for level, touches in sorted_levels[1:]:
+            if abs(level - current_cluster[-1][0]) / current_cluster[-1][0] < self.sr_tolerance:
+                current_cluster.append((level, touches))
+            else:
+                # Average the cluster and sum touches
+                avg_level = sum(l for l, _ in current_cluster) / len(current_cluster)
+                total_touches = sum(t for _, t in current_cluster)
+                clustered.append((avg_level, total_touches))
+                current_cluster = [(level, touches)]
+        
+        if current_cluster:
+            avg_level = sum(l for l, _ in current_cluster) / len(current_cluster)
+            total_touches = sum(t for _, t in current_cluster)
+            clustered.append((avg_level, total_touches))
+        
+        return clustered
     
     def _cluster_levels(self, levels: List[float]) -> List[float]:
         """Cluster similar price levels"""
@@ -144,14 +192,67 @@ class AggressiveStrategy:
             'momentum': momentum
         }
     
+    def _detect_divergence(self, df: pd.DataFrame) -> dict:
+        """Detect RSI and MACD divergences"""
+        if len(df) < 20:
+            return {'rsi_bullish_div': False, 'rsi_bearish_div': False, 
+                   'macd_bullish_div': False, 'macd_bearish_div': False}
+        
+        recent = df.tail(20)
+        divergences = {}
+        
+        # Find recent swing highs and lows
+        price_highs = []
+        price_lows = []
+        
+        for i in range(1, len(recent) - 1):
+            if recent.iloc[i]['high'] > recent.iloc[i-1]['high'] and recent.iloc[i]['high'] > recent.iloc[i+1]['high']:
+                price_highs.append(i)
+            if recent.iloc[i]['low'] < recent.iloc[i-1]['low'] and recent.iloc[i]['low'] < recent.iloc[i+1]['low']:
+                price_lows.append(i)
+        
+        # Check RSI divergence
+        if 'rsi' in recent.columns and len(price_lows) >= 2:
+            # Bullish divergence: price makes lower low, RSI makes higher low
+            if recent.iloc[price_lows[-1]]['low'] < recent.iloc[price_lows[-2]]['low']:
+                if recent.iloc[price_lows[-1]]['rsi'] > recent.iloc[price_lows[-2]]['rsi']:
+                    divergences['rsi_bullish_div'] = True
+                else:
+                    divergences['rsi_bullish_div'] = False
+            else:
+                divergences['rsi_bullish_div'] = False
+        else:
+            divergences['rsi_bullish_div'] = False
+        
+        if 'rsi' in recent.columns and len(price_highs) >= 2:
+            # Bearish divergence: price makes higher high, RSI makes lower high
+            if recent.iloc[price_highs[-1]]['high'] > recent.iloc[price_highs[-2]]['high']:
+                if recent.iloc[price_highs[-1]]['rsi'] < recent.iloc[price_highs[-2]]['rsi']:
+                    divergences['rsi_bearish_div'] = True
+                else:
+                    divergences['rsi_bearish_div'] = False
+            else:
+                divergences['rsi_bearish_div'] = False
+        else:
+            divergences['rsi_bearish_div'] = False
+        
+        # MACD divergence
+        divergences['macd_bullish_div'] = False
+        divergences['macd_bearish_div'] = False
+        
+        return divergences
+    
     def _detect_price_patterns(self, df: pd.DataFrame) -> dict:
-        """Detect price action patterns"""
+        """Detect enhanced price action patterns"""
         current = df.iloc[-1]
         prev = df.iloc[-2]
         
-        patterns = {'hammer': False, 'shooting_star': False, 'doji': False}
+        patterns = {'hammer': False, 'shooting_star': False, 'doji': False,
+                   'bullish_engulfing': False, 'bearish_engulfing': False,
+                   'pin_bar': False}
         
         body = abs(current['close'] - current['open'])
+        prev_body = abs(prev['close'] - prev['open'])
         lower_wick = min(current['open'], current['close']) - current['low']
         upper_wick = current['high'] - max(current['open'], current['close'])
         
@@ -166,6 +267,20 @@ class AggressiveStrategy:
         # Doji: very small body
         if body < (current['high'] - current['low']) * 0.1:
             patterns['doji'] = True
+        
+        # Bullish engulfing
+        if prev['close'] < prev['open'] and current['close'] > current['open']:
+            if current['close'] > prev['open'] and current['open'] < prev['close']:
+                patterns['bullish_engulfing'] = True
+        
+        # Bearish engulfing
+        if prev['close'] > prev['open'] and current['close'] < current['open']:
+            if current['close'] < prev['open'] and current['open'] > prev['close']:
+                patterns['bearish_engulfing'] = True
+        
+        # Pin bar (rejection candle)
+        if (upper_wick > body * 3 or lower_wick > body * 3) and body < (current['high'] - current['low']) * 0.3:
+            patterns['pin_bar'] = True
         
         return patterns
     
@@ -196,9 +311,25 @@ class AggressiveStrategy:
             # Detect price patterns
             patterns = self._detect_price_patterns(df)
             
-            # Find nearest S/R levels
-            nearest_support = min(support_levels, key=lambda x: abs(x - price)) if support_levels else 0
-            nearest_resistance = min(resistance_levels, key=lambda x: abs(x - price)) if resistance_levels else float('inf')
+            # Detect divergences
+            divergences = self._detect_divergence(df)
+            
+            # Find nearest S/R levels with strength
+            nearest_support = None
+            nearest_support_strength = 0
+            if support_levels:
+                # Find closest support with its strength
+                closest = min(support_levels, key=lambda x: abs(x[0] - price))
+                nearest_support = closest[0]
+                nearest_support_strength = closest[1]
+            
+            nearest_resistance = None
+            nearest_resistance_strength = 0
+            if resistance_levels:
+                # Find closest resistance with its strength
+                closest = min(resistance_levels, key=lambda x: abs(x[0] - price))
+                nearest_resistance = closest[0]
+                nearest_resistance_strength = closest[1]
             
             # Distance to S/R as percentage
             dist_to_support = abs(price - nearest_support) / price * 100 if nearest_support else float('inf')
@@ -214,8 +345,23 @@ class AggressiveStrategy:
             elif ema_fast < ema_slow and price < ema_fast:
                 trend = "BEARISH"
             
-            # Simple ATR for stops
+            # Calculate ATR and volatility state
             atr = current.get('atr', price * 0.015)
+            atr_percentage = (atr / price) * 100
+            
+            # Determine volatility state for adaptive stops
+            if atr_percentage < 0.5:
+                volatility_state = "LOW"
+                sl_multiplier = 0.3  # Tighter stops in low volatility
+                tp_multiplier = 0.8  # Smaller targets
+            elif atr_percentage < 1.0:
+                volatility_state = "NORMAL"
+                sl_multiplier = 0.5  # Normal scalping stops
+                tp_multiplier = 1.0  # Normal targets
+            else:
+                volatility_state = "HIGH"
+                sl_multiplier = 0.7  # Wider stops in high volatility
+                tp_multiplier = 1.3  # Larger targets
             
             # Volume check - much looser
             volume_ok = True  # Always pass volume check
@@ -236,13 +382,18 @@ class AggressiveStrategy:
                 buy_score += 2
                 buy_reasons.append("Near BB lower")
             
-            # 3. NEAR SUPPORT LEVEL - CRITICAL for scalping
+            # 3. NEAR SUPPORT LEVEL - With strength scoring
             if dist_to_support < 0.3:  # Within 0.3% - VERY close for scalping
-                buy_score += 3  # Higher weight for scalping
-                buy_reasons.append(f"At strong support ${nearest_support:.2f}")
+                # Add more points for stronger levels
+                if nearest_support_strength >= 3:
+                    buy_score += 4  # Strong level (3+ touches)
+                    buy_reasons.append(f"At strong support ${nearest_support:.2f} ({nearest_support_strength} touches)")
+                else:
+                    buy_score += 3
+                    buy_reasons.append(f"At support ${nearest_support:.2f}")
             elif dist_to_support < 0.5:  # Within 0.5% of support
                 buy_score += 2
-                buy_reasons.append("At support zone")
+                buy_reasons.append("Near support zone")
             
             # 4. MACD turning bullish
             if 'macd' in current and 'macd_signal' in current:
@@ -255,10 +406,17 @@ class AggressiveStrategy:
                 buy_score += 1
                 buy_reasons.append(f"Bullish structure ({market_structure['strength']:.1%})")
             
-            # 6. BULLISH PRICE PATTERN
-            if patterns['hammer']:
+            # 6. BULLISH PRICE PATTERNS - Enhanced
+            if patterns['bullish_engulfing']:
+                buy_score += 2  # Stronger pattern
+                buy_reasons.append("Bullish engulfing")
+            elif patterns['hammer']:
                 buy_score += 1
                 buy_reasons.append("Hammer pattern")
+            
+            if patterns['pin_bar'] and dist_to_support < 1.0:
+                buy_score += 1
+                buy_reasons.append("Pin bar at support")
             
             # 7. TREND BONUS - Trade with trend for better win rate
             if trend == "BULLISH" and buy_score > 0:
@@ -272,6 +430,11 @@ class AggressiveStrategy:
             elif market_structure['momentum'] > 0.5:
                 buy_score += 1
                 buy_reasons.append("Positive momentum")
+            
+            # 9. DIVERGENCE BONUS - High probability reversal
+            if divergences['rsi_bullish_div'] and dist_to_support < 1.0:
+                buy_score += 2
+                buy_reasons.append("RSI bullish divergence")
             
             # ADVANCED SELL CONDITIONS with S/R and market structure
             sell_score = 0
@@ -287,13 +450,18 @@ class AggressiveStrategy:
                 sell_score += 2
                 sell_reasons.append("Near BB upper")
             
-            # 3. NEAR RESISTANCE LEVEL - CRITICAL for scalping
+            # 3. NEAR RESISTANCE LEVEL - With strength scoring
             if dist_to_resistance < 0.3:  # Within 0.3% - VERY close for scalping
-                sell_score += 3  # Higher weight for scalping
-                sell_reasons.append(f"At strong resistance ${nearest_resistance:.2f}")
+                # Add more points for stronger levels
+                if nearest_resistance_strength >= 3:
+                    sell_score += 4  # Strong level (3+ touches)
+                    sell_reasons.append(f"At strong resistance ${nearest_resistance:.2f} ({nearest_resistance_strength} touches)")
+                else:
+                    sell_score += 3
+                    sell_reasons.append(f"At resistance ${nearest_resistance:.2f}")
             elif dist_to_resistance < 0.5:  # Within 0.5% of resistance
                 sell_score += 2
-                sell_reasons.append("At resistance zone")
+                sell_reasons.append("Near resistance zone")
             
             # 4. MACD turning bearish
             if 'macd' in current and 'macd_signal' in current:
@@ -306,10 +474,17 @@ class AggressiveStrategy:
                 sell_score += 1
                 sell_reasons.append(f"Bearish structure ({market_structure['strength']:.1%})")
             
-            # 6. BEARISH PRICE PATTERN
-            if patterns['shooting_star']:
+            # 6. BEARISH PRICE PATTERNS - Enhanced
+            if patterns['bearish_engulfing']:
+                sell_score += 2  # Stronger pattern
+                sell_reasons.append("Bearish engulfing")
+            elif patterns['shooting_star']:
                 sell_score += 1
                 sell_reasons.append("Shooting star pattern")
+            
+            if patterns['pin_bar'] and dist_to_resistance < 1.0:
+                sell_score += 1
+                sell_reasons.append("Pin bar at resistance")
             
             # 7. TREND BONUS - Trade with trend for better win rate
             if trend == "BEARISH" and sell_score > 0:
@@ -317,25 +492,33 @@ class AggressiveStrategy:
                 sell_reasons.append("Bearish trend")
             
             # 8. MOMENTUM CONFIRMATION
-            if market_structure['momentum'] < -0.5:
+            if market_structure['momentum'] < -1.0:  # Strong negative momentum
+                sell_score += 2
+                sell_reasons.append("Strong negative momentum")
+            elif market_structure['momentum'] < -0.5:
                 sell_score += 1
                 sell_reasons.append("Negative momentum")
+            
+            # 9. DIVERGENCE BONUS - High probability reversal
+            if divergences['rsi_bearish_div'] and dist_to_resistance < 1.0:
+                sell_score += 2
+                sell_reasons.append("RSI bearish divergence")
             
             # Generate signal with BALANCED requirements
             # Require higher score for better quality signals
             min_score = self.min_score if hasattr(self, 'min_score') else 3
             if buy_score >= min_score and buy_score > sell_score and volume_ok:
-                # Smart stop loss placement using support
+                # Smart stop loss placement using support with volatility adaptation
                 if nearest_support and dist_to_support < 2.0:
                     stop_loss = nearest_support * 0.998  # Just below support
                 else:
-                    stop_loss = price - (atr * self.rr_sl_multiplier)
+                    stop_loss = price - (atr * sl_multiplier)  # Adaptive based on volatility
                 
-                # Smart take profit using resistance
+                # Smart take profit using resistance with volatility adaptation
                 if nearest_resistance and dist_to_resistance < 5.0:
                     take_profit = nearest_resistance * 0.998  # Just below resistance
                 else:
-                    take_profit = price + (atr * self.rr_tp_multiplier)
+                    take_profit = price + (atr * tp_multiplier)  # Adaptive based on volatility
                 
                 # SCALPING: Accept lower R:R for quick trades
                 if (take_profit - price) / (price - stop_loss) < 1.0:
@@ -356,17 +539,17 @@ class AggressiveStrategy:
                 )
             
             elif sell_score >= min_score and sell_score > buy_score and volume_ok:
-                # Smart stop loss placement using resistance
+                # Smart stop loss placement using resistance with volatility adaptation
                 if nearest_resistance and dist_to_resistance < 2.0:
                     stop_loss = nearest_resistance * 1.002  # Just above resistance
                 else:
-                    stop_loss = price + (atr * self.rr_sl_multiplier)
+                    stop_loss = price + (atr * sl_multiplier)  # Adaptive based on volatility
                 
-                # Smart take profit using support
+                # Smart take profit using support with volatility adaptation
                 if nearest_support and dist_to_support < 5.0:
                     take_profit = nearest_support * 1.002  # Just above support
                 else:
-                    take_profit = price - (atr * self.rr_tp_multiplier)
+                    take_profit = price - (atr * tp_multiplier)  # Adaptive based on volatility
                 
                 # SCALPING: Accept lower R:R for quick trades
                 if (price - take_profit) / (stop_loss - price) < 1.0:

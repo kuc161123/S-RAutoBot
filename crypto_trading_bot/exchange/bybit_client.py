@@ -312,6 +312,7 @@ class BybitClient:
                 order_params["takeProfit"] = str(take_profit)
                 order_params["tpOrderType"] = "Limit"  # Take profit as limit order
                 order_params["tpTriggerBy"] = "LastPrice"
+                order_params["tpLimitPrice"] = str(take_profit)  # REQUIRED for limit TP
             
             response = self.client.place_order(**order_params)
             
@@ -472,6 +473,7 @@ class BybitClient:
                 params["takeProfit"] = str(take_profit)
                 params["tpOrderType"] = "Limit"
                 params["tpTriggerBy"] = "LastPrice"
+                params["tpLimitPrice"] = str(take_profit)  # REQUIRED for limit TP
                 params["tpslMode"] = "Partial"
                 params["tpSize"] = "0"  # 0 means full position
                 

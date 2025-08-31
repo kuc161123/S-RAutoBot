@@ -91,7 +91,7 @@ class Settings(BaseSettings):
             "CRVUSDT", "LDOUSDT", "1INCHUSDT", "SUSHIUSDT", "GMXUSDT",
             "FXSUSDT", "BALUSDT", "KNCUSDT", "UMAUSDT", "RADUSDT",
             "BONDUSDT", "BICOUSDT", "QUICKUSDT", "OSMOUSDT", "CAKEUSDT",
-            "JOEUSDT", "ALPACAUSDT", "BADGERUSDT", "ALCXUSDT", "FARMAUSDT",
+            "JOEUSDT", "ALPACAUSDT", "BADGERUSDT", "VOXELUSDT", "BAKEUSDT",
             
             # AI and compute (20)
             "RENDERUSDT", "FETUSDT", "AGIXUSDT", "OCEANUSDT", "TAOUSDT",
@@ -103,7 +103,7 @@ class Settings(BaseSettings):
             "SANDUSDT", "AXSUSDT", "MANAUSDT", "ENJUSDT", "GALAUSDT",
             "GMTUSDT", "MAGICUSDT", "APEUSDT", "HIGHUSDT", "ALICEUSDT",
             "YGGUSDT", "GALUSDT", "BEAMUSDT", "PIXELUSDT", "TLMUSDT",
-            "SLPUSDT", "MOVRUSDT", "DOSEUSDT", "LOKAUSDT", "SFUNDUSDT",
+            "SLPUSDT", "MOVRUSDT", "VICUSDT", "ILVUSDT", "MBOXUSDT",
             
             # Infrastructure (25)
             "ATOMUSDT", "FILUSDT", "HBARUSDT", "ALGOUSDT", "VETUSDT",
@@ -115,13 +115,13 @@ class Settings(BaseSettings):
             # Meme coins (20)
             "1000PEPEUSDT", "1000BONKUSDT", "1000FLOKIUSDT", "WIFUSDT",
             "MEMEUSDT", "DOGSUSDT", "1000LUNCUSDT", "1000XECUSDT", "SPELLUSDT",
-            "SHIB1000USDT", "1000SATSUSDT", "1000RATSUSDT", "ORDIUSDT", "NOTUSDT",
+            "SHIB1000USDT", "1000000MOGUSDT", "1000RATSUSDT", "ORDIUSDT", "NOTUSDT",
             "HMSTRUSDT", "DOGUSDT", "GOATUSDT", "PONKEUSDT", "SAFEUSDT",
-            "NEIROUSDT",
+            "BOMEUSDT",
             
             # Exchange tokens (10)
             "CROUSDT", "BNXUSDT", "TRBUSDT", "BIGTIMEUSDT", "USTUSDT",
-            "COCOSUSDT", "SNTUSDT", "WOOUSDT", "MXCUSDT", "TOKENUSDT",
+            "COCOSUSDT", "SNTUSDT", "WOOUSDT", "IDEXUSDT", "TOKENUSDT",
             
             # More DeFi (10)
             "USDCUSDT", "COTIUSDT", "KEYUSDT", "COMBOUSDT", "TRUUSDT",

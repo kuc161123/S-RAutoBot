@@ -56,8 +56,9 @@ class TradingBot:
                 config=settings
             )
             
-            # Initialize scalping strategy
-            self.strategy = ScalpingStrategy(vars(settings))
+            # Initialize scalping strategy with ML enabled
+            ml_enabled = settings.__dict__.get('ml_enabled', True)  # Default to True
+            self.strategy = ScalpingStrategy(vars(settings), ml_enabled=ml_enabled)
             
             # Initialize position manager
             self.position_manager = PositionManager(

@@ -484,3 +484,28 @@ class ScalpingStrategy:
         logger.info(f"Scan complete: {len(scalp_signals)} scalps, {len(swing_signals)} swings found")
         
         return final_signals
+    
+    def _get_market_snapshot(self, df: pd.DataFrame) -> Dict:
+        """Get current market conditions for ML"""
+        current = df.iloc[-1]
+        return {
+            'rsi': current.get('rsi', 50),
+            'macd': current.get('macd', 0),
+            'volume_ratio': current.get('volume') / df['volume'].rolling(20).mean().iloc[-1] if 'volume' in df.columns else 1,
+            'volatility': current.get('atr', 0) / current['close'] * 100 if 'atr' in current else 1,
+            'trend': 'BULLISH' if current['close'] > df['close'].rolling(50).mean().iloc[-1] else 'BEARISH'
+        }
+    
+    def get_ml_report(self) -> Optional[Dict]:
+        """Get ML optimization report"""
+        if not self.ml_enabled or not self.optimizer:
+            return None
+        
+        return self.optimizer.get_adaptation_report()
+    
+    def enable_ml_live_mode(self) -> bool:
+        """Enable live ML adaptations if performance is good"""
+        if not self.ml_enabled or not self.optimizer:
+            return False
+        
+        return self.optimizer.enable_live_mode()

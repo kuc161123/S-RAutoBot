@@ -74,6 +74,13 @@ class PositionManager:
             # Position value = risk_amount / stop_distance
             position_value = risk_amount / stop_distance
             
+            # IMMEDIATE CAP: Position value should never be more than 20x risk
+            # For 0.5% risk on $250 = $1.25 risk, max position = $25
+            initial_max_position = risk_amount * 20
+            if position_value > initial_max_position:
+                logger.warning(f"Initial position ${position_value:.2f} exceeds 20x risk ${initial_max_position:.2f}, capping")
+                position_value = initial_max_position
+            
             # Calculate margin required
             margin_required = position_value / leverage
             
@@ -104,8 +111,9 @@ class PositionManager:
             position_size_in_coins = position_value / entry_price
             
             # 4. HARD CAP: Never let position value exceed a safe maximum
-            # For $250 balance with 0.5% risk, max reasonable position should be ~$125
-            absolute_max_position_value = balance * 0.5  # HARD CAP at 50% of balance
+            # STRICT LIMIT: Max position should be 10x the risk amount for safety
+            # For $250 balance with 0.5% risk ($1.25), max position = $12.50
+            absolute_max_position_value = risk_amount * 10  # 10x risk amount max
             if position_value > absolute_max_position_value:
                 logger.error(f"SAFETY OVERRIDE: Position value ${position_value:.2f} exceeds hard cap ${absolute_max_position_value:.2f}")
                 position_value = absolute_max_position_value

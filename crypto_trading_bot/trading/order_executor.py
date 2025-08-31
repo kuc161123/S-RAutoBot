@@ -62,9 +62,11 @@ class OrderExecutor:
             logger.info(f"Potential loss: ${potential_loss:.2f}")
             logger.info(f"Balance: ${balance:.2f}")
             
-            # HARD SAFETY LIMITS
-            max_position_value = balance * 0.5  # Never more than 50% of balance
-            max_risk = balance * 0.01  # Never risk more than 1%
+            # ULTRA STRICT SAFETY LIMITS - HARDCODED
+            # For $250 balance with 0.5% risk = $1.25 risk
+            # Max position should be small to prevent blowouts
+            max_position_value = balance * 0.1  # MAX 10% of balance (e.g., $25 on $250)
+            max_risk = balance * 0.005  # Never risk more than 0.5% (matches RISK_PER_TRADE)
             
             if position_value_usd > max_position_value:
                 logger.error(f"BLOCKED: Position value ${position_value_usd:.2f} exceeds safety limit ${max_position_value:.2f}")
@@ -75,6 +77,16 @@ class OrderExecutor:
                 logger.error(f"BLOCKED: Risk ${potential_loss:.2f} exceeds safety limit ${max_risk:.2f}")
                 await self._notify(f"❌ Order blocked for {symbol}: Risk too high (${potential_loss:.2f})")
                 return False
+            
+            # FINAL CHECK: Ensure position size in USD makes sense
+            # Recalculate to be absolutely sure
+            final_position_value = position_size * signal.price
+            if final_position_value > balance * 0.15:  # Absolute max 15% of balance
+                logger.error(f"FINAL BLOCK: Position value ${final_position_value:.2f} still too large")
+                # Force reduce position size
+                max_safe_position_size = (balance * 0.1) / signal.price
+                logger.info(f"Forcing position size from {position_size:.8f} to {max_safe_position_size:.8f}")
+                position_size = max_safe_position_size
             
             # Set leverage for the symbol
             self.exchange.set_leverage(symbol, leverage)

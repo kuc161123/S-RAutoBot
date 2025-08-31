@@ -52,14 +52,20 @@ class PositionManager:
                                stop_loss: float, leverage: int = 10) -> float:
         """Calculate position size based on risk management"""
         try:
+            # CRITICAL: Log all inputs for debugging
+            logger.info(f"=== POSITION SIZE CALCULATION ===")
+            logger.info(f"Inputs: Balance=${balance:.2f}, Entry=${entry_price:.4f}, Stop=${stop_loss:.4f}, Leverage={leverage}x")
+            logger.info(f"Config: Risk={self.risk_per_trade*100:.2f}%, Max multiplier={self.max_position_multiplier}")
+            
             # Risk amount in USDT (what we're willing to lose)
             risk_amount = balance * self.risk_per_trade
+            logger.info(f"Target risk amount: ${risk_amount:.2f}")
             
             # Stop loss distance as percentage
             stop_distance = abs(entry_price - stop_loss) / entry_price
             
-            # Minimum stop distance to prevent huge positions (0.1% minimum)
-            min_stop_distance = 0.001
+            # Minimum stop distance to prevent huge positions (0.2% minimum - MORE CONSERVATIVE)
+            min_stop_distance = 0.002  # Increased from 0.001 to 0.002
             if stop_distance < min_stop_distance:
                 logger.warning(f"Stop distance {stop_distance*100:.3f}% too small, using minimum {min_stop_distance*100}%")
                 stop_distance = min_stop_distance
@@ -97,17 +103,43 @@ class PositionManager:
             # Calculate final position size in coins
             position_size_in_coins = position_value / entry_price
             
-            # 4. Final safety check on actual risk
+            # 4. HARD CAP: Never let position value exceed a safe maximum
+            # For $250 balance with 0.5% risk, max reasonable position should be ~$125
+            absolute_max_position_value = balance * 0.5  # HARD CAP at 50% of balance
+            if position_value > absolute_max_position_value:
+                logger.error(f"SAFETY OVERRIDE: Position value ${position_value:.2f} exceeds hard cap ${absolute_max_position_value:.2f}")
+                position_value = absolute_max_position_value
+                position_size_in_coins = position_value / entry_price
+                margin_required = position_value / leverage
+            
+            # 5. Final safety check on actual risk
             final_risk = position_size_in_coins * abs(entry_price - stop_loss)
             
-            logger.info(f"Position calc: Balance ${balance:.2f} | Risk target ${risk_amount:.2f} | "
-                       f"Stop {stop_distance*100:.2f}% | Leverage {leverage}x")
-            logger.info(f"  → Position value ${position_value:.2f} | Margin ${margin_required:.2f} | "
-                       f"Size {position_size_in_coins:.6f} coins | Actual risk ${final_risk:.2f}")
+            # 6. ABSOLUTE MAXIMUM RISK CHECK
+            absolute_max_risk = balance * 0.01  # Never risk more than 1% absolute
+            if final_risk > absolute_max_risk:
+                logger.error(f"RISK TOO HIGH: ${final_risk:.2f} exceeds absolute max ${absolute_max_risk:.2f}")
+                # Reduce position to meet risk limit
+                safe_position_size = absolute_max_risk / abs(entry_price - stop_loss)
+                logger.info(f"Reducing position from {position_size_in_coins:.6f} to {safe_position_size:.6f}")
+                position_size_in_coins = safe_position_size
+                position_value = position_size_in_coins * entry_price
+                final_risk = position_size_in_coins * abs(entry_price - stop_loss)
+            
+            logger.info(f"=== FINAL POSITION ===")
+            logger.info(f"Position value: ${position_value:.2f} (max allowed: ${balance * self.max_position_multiplier:.2f})")
+            logger.info(f"Margin required: ${margin_required:.2f}")
+            logger.info(f"Position size: {position_size_in_coins:.8f} coins")
+            logger.info(f"Actual risk: ${final_risk:.2f} (target: ${risk_amount:.2f})")
             
             # Validate final risk is acceptable
-            if final_risk > risk_amount * 1.5:  # Never risk more than 150% of intended
-                logger.error(f"Final risk ${final_risk:.2f} is too high (target ${risk_amount:.2f}), rejecting")
+            if final_risk > risk_amount * 2:  # Absolutely never risk more than 2x intended
+                logger.error(f"REJECTED: Final risk ${final_risk:.2f} is more than 2x target ${risk_amount:.2f}")
+                return 0
+            
+            # FINAL SANITY CHECK: Position value should never exceed balance
+            if position_value > balance:
+                logger.error(f"REJECTED: Position value ${position_value:.2f} exceeds balance ${balance:.2f}")
                 return 0
             
             return position_size_in_coins

@@ -52,11 +52,37 @@ class OrderExecutor:
                 logger.error(f"Invalid position size calculated for {symbol}")
                 return False
             
+            # CRITICAL SAFETY CHECK: Log and validate position size
+            position_value_usd = position_size * signal.price
+            potential_loss = position_size * abs(signal.price - signal.stop_loss)
+            
+            logger.info(f"=== ORDER VALIDATION for {symbol} ===")
+            logger.info(f"Position size: {position_size:.8f} coins")
+            logger.info(f"Position value: ${position_value_usd:.2f}")
+            logger.info(f"Potential loss: ${potential_loss:.2f}")
+            logger.info(f"Balance: ${balance:.2f}")
+            
+            # HARD SAFETY LIMITS
+            max_position_value = balance * 0.5  # Never more than 50% of balance
+            max_risk = balance * 0.01  # Never risk more than 1%
+            
+            if position_value_usd > max_position_value:
+                logger.error(f"BLOCKED: Position value ${position_value_usd:.2f} exceeds safety limit ${max_position_value:.2f}")
+                await self._notify(f"❌ Order blocked for {symbol}: Position too large (${position_value_usd:.2f})")
+                return False
+            
+            if potential_loss > max_risk:
+                logger.error(f"BLOCKED: Risk ${potential_loss:.2f} exceeds safety limit ${max_risk:.2f}")
+                await self._notify(f"❌ Order blocked for {symbol}: Risk too high (${potential_loss:.2f})")
+                return False
+            
             # Set leverage for the symbol
             self.exchange.set_leverage(symbol, leverage)
             
             # Place the order
             side = "Buy" if signal.action == "BUY" else "Sell"
+            
+            logger.info(f"Placing order: {side} {position_size:.8f} {symbol}")
             
             order_result = self.exchange.place_order(
                 symbol=symbol,

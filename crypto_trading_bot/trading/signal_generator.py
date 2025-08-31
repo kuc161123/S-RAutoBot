@@ -33,6 +33,9 @@ class SignalGenerator:
             # Initialize exchange with symbols
             await self.exchange.initialize(symbols)
             
+            # Recover existing positions from exchange
+            await self._recover_positions()
+            
             # Set up WebSocket callbacks
             self.exchange.on_kline_update = self.on_kline_update
             
@@ -49,6 +52,31 @@ class SignalGenerator:
                     
         except Exception as e:
             logger.error(f"Failed to start signal generator: {e}")
+    
+    async def _recover_positions(self):
+        """Recover existing positions from exchange on startup"""
+        try:
+            logger.info("Checking for existing positions...")
+            positions = self.exchange.get_positions()
+            
+            if positions:
+                logger.info(f"Found {len(positions)} existing positions to recover")
+                for pos in positions:
+                    # Add to position manager
+                    self.executor.position_manager.add_position(
+                        symbol=pos['symbol'],
+                        side="BUY" if pos['side'] == "Buy" else "SELL",
+                        entry_price=pos['entry_price'],
+                        size=pos['size'],
+                        stop_loss=0,  # Will be managed by exchange
+                        take_profit=0  # Will be managed by exchange
+                    )
+                    logger.info(f"Recovered position: {pos['symbol']} {pos['side']} Size: {pos['size']}")
+            else:
+                logger.info("No existing positions to recover")
+                
+        except Exception as e:
+            logger.error(f"Error recovering positions: {e}")
     
     async def on_kline_update(self, symbol: str, df: pd.DataFrame):
         """Handle real-time kline updates"""
@@ -114,13 +142,22 @@ class SignalGenerator:
     async def stop(self):
         """Stop signal generator"""
         try:
-            # Close all positions
-            await self.executor.close_all_positions()
+            # DO NOT close positions on shutdown - keep them running
+            # await self.executor.close_all_positions()  # REMOVED - keeps trades active
+            
+            logger.info("Keeping all positions open during shutdown")
+            
+            # Show current positions before stopping
+            positions = self.executor.position_manager.get_open_positions()
+            if positions:
+                logger.info(f"Active positions that will remain open: {len(positions)}")
+                for pos in positions:
+                    logger.info(f"  - {pos.symbol}: {pos.side} ${pos.pnl:.2f}")
             
             # Clean up exchange connections
             await self.exchange.cleanup()
             
-            logger.info("Signal generator stopped")
+            logger.info("Signal generator stopped - positions remain active")
             
         except Exception as e:
             logger.error(f"Error stopping signal generator: {e}")

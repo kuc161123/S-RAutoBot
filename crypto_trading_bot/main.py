@@ -163,10 +163,10 @@ class TradingBot:
             return
         
         self.is_running = False
-        logger.info("Shutting down trading bot...")
+        logger.info("Shutting down trading bot (keeping positions open)...")
         
         try:
-            # Stop signal generator (closes positions)
+            # Stop signal generator (does NOT close positions)
             if self.signal_generator:
                 await self.signal_generator.stop()
             

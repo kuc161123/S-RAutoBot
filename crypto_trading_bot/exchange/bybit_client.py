@@ -422,7 +422,9 @@ class BybitClient:
             "SEIUSDT": 0, "SPELLUSDT": 0, "SUIUSDT": 0, "TRXUSDT": 0,
             "VETUSDT": 0, "WIFUSDT": 0, "XRPUSDT": 0, "ZRXUSDT": 0,
             "MATICUSDT": 0, "FETUSDT": 0, "STMXUSDT": 0, "ARKMUSDT": 0,
-            "1INCHUSDT": 0, "ENJUSDT": 0,
+            "1INCHUSDT": 0, "ENJUSDT": 0, "TLMUSDT": 0, "PIXELUSDT": 0,
+            "BEAMUSDT": 0, "STEEMUSDT": 0, "JTOUSDT": 0, "XLMUSDT": 0,
+            "ONEUSDT": 0, "KAVAUSDT": 0,
             
             # 1 decimal
             "ACEUSDT": 1, "AIUSDT": 1, "ALGOUSDT": 1,
@@ -439,7 +441,10 @@ class BybitClient:
             "SOLUSDT": 1, "STXUSDT": 1, "SUSHIUSDT": 1, "SXPUSDT": 1,
             "THETAUSDT": 1, "TIAUSDT": 1, "TONUSDT": 1, "UMAUSDT": 1,
             "UNIUSDT": 1, "WLDUSDT": 1, "XTZUSDT": 1, "FTMUSDT": 1,
-            "AGIXUSDT": 1, "OCEANUSDT": 1, "EOSUSDT": 1,
+            "AGIXUSDT": 1, "OCEANUSDT": 1, "EOSUSDT": 1, "NFPUSDT": 1,
+            "XAIUSDT": 1, "DYMUSDT": 1, "ALTUSDT": 1, "BALUSDT": 1,
+            "SUPERUSDT": 1, "ILVUSDT": 1, "ARKUSDT": 1, "GLMUSDT": 1,
+            "STRKUSDT": 1, "ZKUSDT": 1, "RNDRUSDT": 1,
             
             # 2 decimals
             "AAVEUSDT": 2, "APTUSDT": 2, "BCHUSDT": 2, "BNBUSDT": 2,

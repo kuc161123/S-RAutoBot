@@ -271,19 +271,24 @@ class BybitClient:
             
             logger.debug(f"Placing order: {symbol} {side} qty={qty}")
             
-            # Add stop loss if provided
+            # Add stop loss if provided (market order for immediate execution)
             if stop_loss:
                 order_params["stopLoss"] = str(stop_loss)
+                order_params["slOrderType"] = "Market"  # Stop loss as market order
+                order_params["slTriggerBy"] = "LastPrice"
             
-            # Add take profit if provided
+            # Add take profit if provided (limit order for better fill)
             if take_profit:
                 order_params["takeProfit"] = str(take_profit)
+                order_params["tpOrderType"] = "Limit"  # Take profit as limit order
+                order_params["tpTriggerBy"] = "LastPrice"
             
             response = self.client.place_order(**order_params)
             
             if response['retCode'] == 0:
                 order_id = response['result']['orderId']
                 logger.info(f"Order placed: {symbol} {side} {qty} - ID: {order_id}")
+                logger.info(f"TP: {take_profit} (Limit), SL: {stop_loss} (Market)")
                 return response['result']
             else:
                 logger.error(f"Failed to place order: {response['retMsg']}")
@@ -423,6 +428,42 @@ class BybitClient:
         
         # For decimal quantities
         return round(qty, precision)
+    
+    def set_position_tp_sl(self, symbol: str, take_profit: float = None, stop_loss: float = None) -> bool:
+        """Set or update TP/SL for an existing position"""
+        try:
+            params = {
+                "category": "linear",
+                "symbol": symbol,
+                "positionIdx": 0
+            }
+            
+            if take_profit:
+                params["takeProfit"] = str(take_profit)
+                params["tpOrderType"] = "Limit"
+                params["tpTriggerBy"] = "LastPrice"
+                params["tpslMode"] = "Partial"
+                params["tpSize"] = "0"  # 0 means full position
+                
+            if stop_loss:
+                params["stopLoss"] = str(stop_loss)
+                params["slOrderType"] = "Market"
+                params["slTriggerBy"] = "LastPrice"
+                params["tpslMode"] = "Partial"
+                params["slSize"] = "0"  # 0 means full position
+            
+            response = self.client.set_trading_stop(**params)
+            
+            if response['retCode'] == 0:
+                logger.info(f"Updated TP/SL for {symbol} - TP: {take_profit} (Limit), SL: {stop_loss} (Market)")
+                return True
+            else:
+                logger.error(f"Failed to set TP/SL: {response['retMsg']}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error setting TP/SL: {e}")
+            return False
     
     def set_leverage(self, symbol: str, leverage: int) -> bool:
         """Set leverage for a symbol"""

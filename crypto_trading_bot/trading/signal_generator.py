@@ -20,8 +20,11 @@ class SignalGenerator:
         
         self.market_data: Dict[str, pd.DataFrame] = {}
         self.last_signal_time: Dict[str, datetime] = {}
-        self.signal_cooldown = timedelta(minutes=5)  # Shorter cooldown for scalping
-        self.scalp_cooldown = timedelta(minutes=2)  # Even shorter for pure scalps
+        
+        # Configurable cooldown from environment
+        cooldown_minutes = config.signal_cooldown_minutes if hasattr(config, 'signal_cooldown_minutes') else 5
+        self.signal_cooldown = timedelta(minutes=cooldown_minutes)
+        self.scalp_cooldown = timedelta(minutes=max(cooldown_minutes // 2, 1))  # Half for scalps, minimum 1 minute
         
         logger.info("Signal generator initialized")
     

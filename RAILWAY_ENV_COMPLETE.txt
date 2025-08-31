@@ -41,6 +41,11 @@ MAX_POSITION_VALUE_MULTIPLIER=1.0  # Max position value: 0.5x to 5x balance (1.0
 # Strategy Selection
 STRATEGY_TYPE=aggressive
 
+# Signal Quality Control (KEY SETTINGS TO REDUCE SIGNALS)
+MIN_SIGNAL_SCORE=4          # 2=Many signals, 4=Balanced, 6=Very selective
+MIN_VOLUME_MULTIPLIER=1.5   # 0.5=All signals, 1.5=Normal, 3.0=High volume only
+SIGNAL_COOLDOWN_MINUTES=10  # Wait time between signals per symbol
+
 # Signal Generation
 MIN_CONFIRMATIONS=1
 MIN_RISK_REWARD=1.0

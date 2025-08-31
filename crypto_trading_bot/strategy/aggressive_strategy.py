@@ -35,16 +35,21 @@ class AggressiveStrategy:
     def __init__(self, config: dict):
         self.config = config
         
-        # Much looser settings for more signals
-        self.rsi_oversold = 35  # Was 30
-        self.rsi_overbought = 65  # Was 70
-        self.min_volume_multiplier = 0.8  # Was 1.5
+        # Configurable RSI settings from environment
+        self.rsi_oversold = config.get('rsi_oversold', 35)
+        self.rsi_overbought = config.get('rsi_overbought', 65)
+        
+        # Volume filter - higher = fewer but better signals
+        self.min_volume_multiplier = config.get('min_volume_multiplier', 1.2)
+        
+        # Minimum score for signal quality (3-5 recommended)
+        self.min_score = config.get('min_signal_score', 3)
         
         # Risk settings from config
         self.rr_sl_multiplier = config.get('rr_sl_multiplier', 1.5)
         self.rr_tp_multiplier = config.get('rr_tp_multiplier', 2.5)
         
-        logger.info(f"Aggressive strategy initialized - RSI: {self.rsi_oversold}/{self.rsi_overbought}")
+        logger.info(f"Aggressive strategy initialized - RSI: {self.rsi_oversold}/{self.rsi_overbought}, Min score: {self.min_score}")
     
     def analyze(self, symbol: str, df: pd.DataFrame) -> Optional[TradingSignal]:
         """Analyze with simplified conditions for more signals"""
@@ -118,8 +123,10 @@ class AggressiveStrategy:
                 sell_score += 1
                 sell_reasons.append("Below recent high")
             
-            # Generate signal with VERY LOW requirements
-            if buy_score >= 2 and buy_score > sell_score:  # Just need score of 2!
+            # Generate signal with BALANCED requirements
+            # Require higher score for better quality signals
+            min_score = self.min_score if hasattr(self, 'min_score') else 3
+            if buy_score >= min_score and buy_score > sell_score and volume_ok:
                 stop_loss = price - (atr * self.rr_sl_multiplier)
                 take_profit = price + (atr * self.rr_tp_multiplier)
                 
@@ -137,7 +144,7 @@ class AggressiveStrategy:
                     take_profit=take_profit
                 )
             
-            elif sell_score >= 2 and sell_score > buy_score:
+            elif sell_score >= min_score and sell_score > buy_score and volume_ok:
                 stop_loss = price + (atr * self.rr_sl_multiplier)
                 take_profit = price - (atr * self.rr_tp_multiplier)
                 

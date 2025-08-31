@@ -131,6 +131,11 @@ class Settings(BaseSettings):
     # Strategy selection - REQUIRED FROM ENV VARS
     strategy_type: str = Field(..., env="STRATEGY_TYPE", description="Strategy type: scalping or aggressive")
     
+    # Signal quality control - REQUIRED FROM ENV VARS
+    min_signal_score: int = Field(..., env="MIN_SIGNAL_SCORE", ge=2, le=6, description="Minimum score for signal (2-6, higher = fewer signals)")
+    min_volume_multiplier: float = Field(..., env="MIN_VOLUME_MULTIPLIER", ge=0.5, le=3.0, description="Volume filter (higher = fewer signals)")
+    signal_cooldown_minutes: int = Field(..., env="SIGNAL_COOLDOWN_MINUTES", ge=1, le=60, description="Minutes to wait between signals per symbol")
+    
     class Config:
         env_file = ".env"
         case_sensitive = False

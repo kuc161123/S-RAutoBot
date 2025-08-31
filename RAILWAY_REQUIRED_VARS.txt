@@ -16,6 +16,12 @@ MAX_POSITION_VALUE_MULTIPLIER=1.0
 
 # === STRATEGY CONFIGURATION ===
 STRATEGY_TYPE=aggressive
+
+# === SIGNAL QUALITY CONTROL (Adjust to reduce signals) ===
+MIN_SIGNAL_SCORE=4          # Higher = fewer, better signals
+MIN_VOLUME_MULTIPLIER=1.5   # Higher = only high volume trades
+SIGNAL_COOLDOWN_MINUTES=10  # Time between signals per symbol
+
 MIN_CONFIRMATIONS=1
 MIN_RISK_REWARD=1.0
 

@@ -25,9 +25,10 @@ class Position:
 class PositionManager:
     """Manage trading positions"""
     
-    def __init__(self, max_positions: int, risk_per_trade: float):
+    def __init__(self, max_positions: int, risk_per_trade: float, max_position_multiplier: float = 1.0):
         self.max_positions = max_positions
         self.risk_per_trade = risk_per_trade
+        self.max_position_multiplier = max_position_multiplier  # Max position value as multiple of balance
         self.positions: Dict[str, Position] = {}
         self.closed_positions: List[Position] = []
         
@@ -57,37 +58,59 @@ class PositionManager:
             # Stop loss distance as percentage
             stop_distance = abs(entry_price - stop_loss) / entry_price
             
-            # CORRECTED FORMULA:
-            # Position value in USDT = risk_amount / stop_distance
-            # This gives us the NOTIONAL value of the position
+            # Minimum stop distance to prevent huge positions (0.1% minimum)
+            min_stop_distance = 0.001
+            if stop_distance < min_stop_distance:
+                logger.warning(f"Stop distance {stop_distance*100:.3f}% too small, using minimum {min_stop_distance*100}%")
+                stop_distance = min_stop_distance
+            
+            # Calculate position value based on risk
+            # Position value = risk_amount / stop_distance
             position_value = risk_amount / stop_distance
             
-            # Position size in coins = position_value / entry_price
-            # This is already leveraged (leverage is applied by exchange)
-            position_size_in_coins = position_value / entry_price
-            
-            # IMPORTANT: The position size should be based on the MARGIN used
-            # Not multiplied by leverage (leverage is applied by exchange)
-            # Margin required = position_value / leverage
+            # Calculate margin required
             margin_required = position_value / leverage
             
-            # Check if we have enough balance for margin
-            if margin_required > balance:
-                # Reduce position size to fit available balance
-                position_value = balance * leverage
-                position_size_in_coins = position_value / entry_price
-                margin_required = balance
-                logger.warning(f"Position size limited by balance. Margin: ${margin_required:.2f}")
+            # IMPORTANT SAFETY CHECKS:
             
-            # The actual quantity to order (in coins, not USD)
-            position_size = position_size_in_coins
+            # 1. Never use more margin than available balance
+            max_margin = balance * 0.95  # Use max 95% of balance for safety
+            if margin_required > max_margin:
+                logger.warning(f"Margin ${margin_required:.2f} exceeds max ${max_margin:.2f}, reducing position")
+                margin_required = max_margin
+                position_value = margin_required * leverage
             
-            logger.info(f"Position calculation: Risk ${risk_amount:.2f} | "
-                       f"Stop {stop_distance*100:.2f}% | Leverage {leverage}x | "
-                       f"Position value ${position_value:.2f} | Margin ${margin_required:.2f} | "
-                       f"Size {position_size:.6f} coins")
+            # 2. Never risk more than intended
+            actual_risk = position_value * stop_distance
+            if actual_risk > risk_amount * 1.1:  # Allow 10% tolerance
+                logger.warning(f"Actual risk ${actual_risk:.2f} exceeds intended ${risk_amount:.2f}, reducing position")
+                position_value = risk_amount / stop_distance
+                margin_required = position_value / leverage
             
-            return position_size
+            # 3. Apply maximum position value cap (configurable multiplier)
+            max_position_value = balance * self.max_position_multiplier
+            if position_value > max_position_value:
+                logger.warning(f"Position value ${position_value:.2f} exceeds max ${max_position_value:.2f} ({self.max_position_multiplier}x balance), capping")
+                position_value = max_position_value
+                margin_required = position_value / leverage
+            
+            # Calculate final position size in coins
+            position_size_in_coins = position_value / entry_price
+            
+            # 4. Final safety check on actual risk
+            final_risk = position_size_in_coins * abs(entry_price - stop_loss)
+            
+            logger.info(f"Position calc: Balance ${balance:.2f} | Risk target ${risk_amount:.2f} | "
+                       f"Stop {stop_distance*100:.2f}% | Leverage {leverage}x")
+            logger.info(f"  → Position value ${position_value:.2f} | Margin ${margin_required:.2f} | "
+                       f"Size {position_size_in_coins:.6f} coins | Actual risk ${final_risk:.2f}")
+            
+            # Validate final risk is acceptable
+            if final_risk > risk_amount * 1.5:  # Never risk more than 150% of intended
+                logger.error(f"Final risk ${final_risk:.2f} is too high (target ${risk_amount:.2f}), rejecting")
+                return 0
+            
+            return position_size_in_coins
             
         except Exception as e:
             logger.error(f"Error calculating position size: {e}")

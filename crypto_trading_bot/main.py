@@ -71,7 +71,8 @@ class TradingBot:
             # Initialize position manager
             self.position_manager = PositionManager(
                 max_positions=settings.max_positions,
-                risk_per_trade=settings.risk_per_trade
+                risk_per_trade=settings.risk_per_trade,
+                max_position_multiplier=settings.max_position_value_multiplier
             )
             
             # Initialize Telegram bot if configured (optional)

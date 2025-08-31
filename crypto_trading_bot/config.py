@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     risk_per_trade: float = Field(..., env="RISK_PER_TRADE", ge=0.001, le=1.0, description="Risk per trade")
     max_positions: int = Field(..., env="MAX_POSITIONS", ge=1, le=200, description="Maximum concurrent positions")
     leverage: int = Field(..., env="LEVERAGE", ge=1, le=125, description="Trading leverage")
+    max_position_value_multiplier: float = Field(..., env="MAX_POSITION_VALUE_MULTIPLIER", ge=0.5, le=5.0, description="Max position value as multiple of balance")
     
     # Strategy Parameters - ALL REQUIRED FROM ENV VARS
     rsi_period: int = Field(..., env="RSI_PERIOD", description="RSI period")

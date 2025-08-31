@@ -34,6 +34,7 @@ BYBIT_TESTNET=false
 RISK_PER_TRADE=0.005     # Risk per trade: 0.001 (0.1%) to 1.0 (100%)
 MAX_POSITIONS=10         # Max open positions: 1 to 200
 LEVERAGE=10              # Default leverage: 1 to 125
+MAX_POSITION_VALUE_MULTIPLIER=1.0  # Max position value: 0.5x to 5x balance (1.0 = conservative)
 
 # === HIGHLY RECOMMENDED - For better trading ===
 

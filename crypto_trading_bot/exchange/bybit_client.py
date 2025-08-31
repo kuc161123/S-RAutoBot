@@ -301,19 +301,22 @@ class BybitClient:
             
             logger.debug(f"Placing order: {symbol} {side} qty={qty}")
             
-            # Add stop loss if provided (market order for immediate execution)
+            # Add TP/SL using Partial mode for better price control
+            if stop_loss or take_profit:
+                order_params["tpslMode"] = "Partial"  # Partial allows Limit orders
+                
             if stop_loss:
                 order_params["stopLoss"] = str(stop_loss)
-                order_params["slOrderType"] = "Market"  # Stop loss as market order
+                order_params["slOrderType"] = "Market"  # Market for immediate stop
                 order_params["slTriggerBy"] = "LastPrice"
+                order_params["slSize"] = str(qty)  # Full position size
             
-            # Add take profit if provided (limit order for better fill)
             if take_profit:
                 order_params["takeProfit"] = str(take_profit)
-                order_params["tpOrderType"] = "Limit"  # Take profit as limit order
+                order_params["tpOrderType"] = "Limit"  # Limit for better fill
                 order_params["tpTriggerBy"] = "LastPrice"
-                order_params["tpLimitPrice"] = str(take_profit)  # REQUIRED for limit TP
-                order_params["tpslMode"] = "Full"  # REQUIRED when using tpLimitPrice
+                order_params["tpLimitPrice"] = str(take_profit)
+                order_params["tpSize"] = str(qty)  # Full position size
             
             response = self.client.place_order(**order_params)
             
@@ -470,20 +473,22 @@ class BybitClient:
                 "positionIdx": 0
             }
             
-            # Set tpslMode if either TP or SL is set
+            # Use Partial mode to allow Limit TP orders
             if take_profit or stop_loss:
-                params["tpslMode"] = "Full"  # Use full position for both TP and SL
+                params["tpslMode"] = "Partial"  # Partial allows Limit orders
                 
             if take_profit:
                 params["takeProfit"] = str(take_profit)
-                params["tpOrderType"] = "Limit"
+                params["tpOrderType"] = "Limit"  # Limit for better fill
                 params["tpTriggerBy"] = "LastPrice"
-                params["tpLimitPrice"] = str(take_profit)  # REQUIRED for limit TP
+                params["tpLimitPrice"] = str(take_profit)
+                params["tpSize"] = "0"  # 0 means full position
                 
             if stop_loss:
                 params["stopLoss"] = str(stop_loss)
-                params["slOrderType"] = "Market"
+                params["slOrderType"] = "Market"  # Market for immediate stop
                 params["slTriggerBy"] = "LastPrice"
+                params["slSize"] = "0"  # 0 means full position
             
             response = self.client.set_trading_stop(**params)
             
@@ -520,6 +525,10 @@ class BybitClient:
                 return False
                 
         except Exception as e:
+            # Check if it's the "already set" error
+            if "110043" in str(e):
+                logger.debug(f"Leverage already set for {symbol}")
+                return True
             logger.error(f"Error setting leverage: {e}")
             return False
     

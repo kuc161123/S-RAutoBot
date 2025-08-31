@@ -25,7 +25,7 @@ class Position:
 class PositionManager:
     """Manage trading positions"""
     
-    def __init__(self, max_positions: int = 10, risk_per_trade: float = 0.01):
+    def __init__(self, max_positions: int, risk_per_trade: float):
         self.max_positions = max_positions
         self.risk_per_trade = risk_per_trade
         self.positions: Dict[str, Position] = {}

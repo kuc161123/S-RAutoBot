@@ -57,7 +57,7 @@ RR_TP_MULTIPLIER=3.0
 SCALP_RR_SL_MULTIPLIER=1.0
 SCALP_RR_TP_MULTIPLIER=2.0
 
-# === OPTIONAL - Have good defaults ===
+# === ALL REQUIRED - Bot won't start without these ===
 
 # System Configuration (increased interval to prevent rate limiting)
 SCAN_INTERVAL=60

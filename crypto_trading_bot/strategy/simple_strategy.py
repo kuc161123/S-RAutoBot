@@ -34,6 +34,10 @@ class SimpleStrategy:
         self.rsi_overbought = config.get('rsi_overbought', 70)
         self.min_volume_multiplier = 1.5  # Volume should be 1.5x average
         
+        # R:R multipliers from config ONLY
+        self.rr_sl_multiplier = config.get('rr_sl_multiplier', 2.0)
+        self.rr_tp_multiplier = config.get('rr_tp_multiplier', 4.0)
+        
         logger.info(f"Strategy initialized - RSI: {self.rsi_oversold}/{self.rsi_overbought}")
     
     def analyze(self, symbol: str, df: pd.DataFrame) -> Optional[TradingSignal]:
@@ -117,9 +121,9 @@ class SimpleStrategy:
         
         # Generate signal if conditions are met
         if len(buy_conditions) >= 2 and volume_ok:
-            # Calculate stop loss and take profit
-            stop_loss = price - (atr * 2)  # 2 ATR stop loss
-            take_profit = price + (atr * 4)  # 4 ATR take profit (2:1 RR)
+            # Calculate stop loss and take profit using config multipliers
+            stop_loss = price - (atr * self.rr_sl_multiplier)
+            take_profit = price + (atr * self.rr_tp_multiplier)
             
             confidence = min(len(buy_conditions) / 4, 1.0)  # More conditions = higher confidence
             
@@ -134,9 +138,9 @@ class SimpleStrategy:
             )
         
         elif len(sell_conditions) >= 2 and volume_ok:
-            # For short positions
-            stop_loss = price + (atr * 2)  # 2 ATR stop loss
-            take_profit = price - (atr * 4)  # 4 ATR take profit (2:1 RR)
+            # For short positions using config multipliers
+            stop_loss = price + (atr * self.rr_sl_multiplier)
+            take_profit = price - (atr * self.rr_tp_multiplier)
             
             confidence = min(len(sell_conditions) / 4, 1.0)
             

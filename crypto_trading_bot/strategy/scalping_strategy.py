@@ -53,8 +53,14 @@ class ScalpingStrategy:
         self.trend_ema_slow = 21
         self.structure_lookback = 20
         
-        # Risk reward from config
+        # Risk reward from config ONLY
         self.min_risk_reward = config.get('min_risk_reward', 1.2)
+        
+        # R:R multipliers from config ONLY (no hardcoded values)
+        self.rr_sl_multiplier = config.get('rr_sl_multiplier', 1.0)
+        self.rr_tp_multiplier = config.get('rr_tp_multiplier', 2.0)
+        self.scalp_rr_sl_multiplier = config.get('scalp_rr_sl_multiplier', 1.0)
+        self.scalp_rr_tp_multiplier = config.get('scalp_rr_tp_multiplier', 1.5)
         
         logger.info(f"Scalping strategy initialized - RSI: {self.rsi_oversold}/{self.rsi_overbought}")
     
@@ -351,13 +357,13 @@ class ScalpingStrategy:
         # Determine signal type based on volatility and timeframe
         if market_structure['volatility'] < 1.5:
             signal_type = "SCALP"
-            sl_multiplier = 1.0  # Tight stop for scalping
-            tp_multiplier = 1.5  # Quick profit target
+            sl_multiplier = self.scalp_rr_sl_multiplier  # From config only
+            tp_multiplier = self.scalp_rr_tp_multiplier  # From config only
             min_score = 5  # Need good confluence for scalps
         else:
             signal_type = "SWING"
-            sl_multiplier = 2.0
-            tp_multiplier = 3.0
+            sl_multiplier = self.rr_sl_multiplier  # From config only
+            tp_multiplier = self.rr_tp_multiplier  # From config only
             min_score = 4
         
         # Generate BUY signal

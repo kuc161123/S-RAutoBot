@@ -141,6 +141,12 @@ class Settings(BaseSettings):
     scalp_stop_loss: float = Field(0.002, env="SCALP_STOP_LOSS", description="Tight stop loss")
     min_risk_reward: float = Field(1.2, env="MIN_RISK_REWARD", description="Minimum risk/reward ratio")
     
+    # Risk/Reward multipliers - FROM ENV VARS ONLY
+    rr_sl_multiplier: float = Field(1.0, env="RR_SL_MULTIPLIER", description="Stop loss ATR multiplier")
+    rr_tp_multiplier: float = Field(2.0, env="RR_TP_MULTIPLIER", description="Take profit ATR multiplier")
+    scalp_rr_sl_multiplier: float = Field(1.0, env="SCALP_RR_SL_MULTIPLIER", description="Scalp SL multiplier")
+    scalp_rr_tp_multiplier: float = Field(1.5, env="SCALP_RR_TP_MULTIPLIER", description="Scalp TP multiplier")
+    
     # Scalping leverage settings - FROM ENV VARS
     scalp_leverage: int = Field(5, env="SCALP_LEVERAGE", description="Leverage for scalp trades")
     swing_leverage: int = Field(10, env="SWING_LEVERAGE", description="Leverage for swing trades")

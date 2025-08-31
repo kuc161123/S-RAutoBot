@@ -51,24 +51,41 @@ class PositionManager:
                                stop_loss: float, leverage: int = 10) -> float:
         """Calculate position size based on risk management"""
         try:
-            # Risk amount in USDT
+            # Risk amount in USDT (what we're willing to lose)
             risk_amount = balance * self.risk_per_trade
             
             # Stop loss distance as percentage
             stop_distance = abs(entry_price - stop_loss) / entry_price
             
-            # Position value
+            # CORRECTED FORMULA:
+            # Position value in USDT = risk_amount / stop_distance
+            # This gives us the NOTIONAL value of the position
             position_value = risk_amount / stop_distance
             
-            # Actual position size with leverage
-            position_size = position_value / entry_price
+            # Position size in coins = position_value / entry_price
+            # This is already leveraged (leverage is applied by exchange)
+            position_size_in_coins = position_value / entry_price
             
-            # Apply leverage limit
-            max_size_with_leverage = (balance * leverage) / entry_price
-            position_size = min(position_size, max_size_with_leverage)
+            # IMPORTANT: The position size should be based on the MARGIN used
+            # Not multiplied by leverage (leverage is applied by exchange)
+            # Margin required = position_value / leverage
+            margin_required = position_value / leverage
             
-            logger.info(f"Position size calculated: {position_size:.4f} "
-                       f"(Risk: ${risk_amount:.2f}, Stop distance: {stop_distance*100:.2f}%)")
+            # Check if we have enough balance for margin
+            if margin_required > balance:
+                # Reduce position size to fit available balance
+                position_value = balance * leverage
+                position_size_in_coins = position_value / entry_price
+                margin_required = balance
+                logger.warning(f"Position size limited by balance. Margin: ${margin_required:.2f}")
+            
+            # The actual quantity to order (in coins, not USD)
+            position_size = position_size_in_coins
+            
+            logger.info(f"Position calculation: Risk ${risk_amount:.2f} | "
+                       f"Stop {stop_distance*100:.2f}% | Leverage {leverage}x | "
+                       f"Position value ${position_value:.2f} | Margin ${margin_required:.2f} | "
+                       f"Size {position_size:.6f} coins")
             
             return position_size
             

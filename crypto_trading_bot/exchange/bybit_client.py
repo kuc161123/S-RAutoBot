@@ -313,6 +313,7 @@ class BybitClient:
                 order_params["tpOrderType"] = "Limit"  # Take profit as limit order
                 order_params["tpTriggerBy"] = "LastPrice"
                 order_params["tpLimitPrice"] = str(take_profit)  # REQUIRED for limit TP
+                order_params["tpslMode"] = "Full"  # REQUIRED when using tpLimitPrice
             
             response = self.client.place_order(**order_params)
             
@@ -469,20 +470,20 @@ class BybitClient:
                 "positionIdx": 0
             }
             
+            # Set tpslMode if either TP or SL is set
+            if take_profit or stop_loss:
+                params["tpslMode"] = "Full"  # Use full position for both TP and SL
+                
             if take_profit:
                 params["takeProfit"] = str(take_profit)
                 params["tpOrderType"] = "Limit"
                 params["tpTriggerBy"] = "LastPrice"
                 params["tpLimitPrice"] = str(take_profit)  # REQUIRED for limit TP
-                params["tpslMode"] = "Partial"
-                params["tpSize"] = "0"  # 0 means full position
                 
             if stop_loss:
                 params["stopLoss"] = str(stop_loss)
                 params["slOrderType"] = "Market"
                 params["slTriggerBy"] = "LastPrice"
-                params["tpslMode"] = "Partial"
-                params["slSize"] = "0"  # 0 means full position
             
             response = self.client.set_trading_stop(**params)
             

@@ -18,7 +18,7 @@ if sys.platform == 'linux':
 # Import our modules
 from config import settings
 from exchange.bybit_client import BybitClient
-from strategy.scalping_strategy import ScalpingStrategy
+# Scalping strategy removed - using enhanced aggressive only
 from trading.position_manager import PositionManager
 from trading.order_executor import OrderExecutor
 from trading.signal_generator import SignalGenerator
@@ -56,17 +56,10 @@ class TradingBot:
                 config=settings
             )
             
-            # Initialize strategy based on config
-            strategy_type = settings.__dict__.get('strategy_type', 'aggressive')
-            
-            if strategy_type == 'aggressive':
-                from strategy.aggressive_strategy import AggressiveStrategy
-                self.strategy = AggressiveStrategy(vars(settings))
-                logger.info("Using AGGRESSIVE strategy for more signals")
-            else:
-                ml_enabled = settings.__dict__.get('ml_enabled', True)
-                self.strategy = ScalpingStrategy(vars(settings), ml_enabled=ml_enabled)
-                logger.info("Using SCALPING strategy with ML")
+            # Initialize enhanced aggressive strategy (only strategy now)
+            from strategy.aggressive_strategy import AggressiveStrategy
+            self.strategy = AggressiveStrategy(vars(settings))
+            logger.info("Using ENHANCED AGGRESSIVE strategy with trend analysis")
             
             # Initialize position manager
             self.position_manager = PositionManager(

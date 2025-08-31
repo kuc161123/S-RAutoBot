@@ -1,9 +1,10 @@
 """
-Aggressive Strategy - More signals for active trading
-Simplified conditions to ensure trades happen
+Enhanced Aggressive Strategy - Combines best of scalping and aggressive approaches
+Includes trend analysis, market structure, and dynamic R:R
 """
 import pandas as pd
-from typing import Optional
+import numpy as np
+from typing import Optional, List, Dict
 from dataclasses import dataclass
 from datetime import datetime
 import structlog
@@ -30,7 +31,7 @@ class TradingSignal:
             self.timestamp = datetime.now()
 
 class AggressiveStrategy:
-    """Aggressive strategy for more frequent trading"""
+    """Enhanced aggressive strategy with trend and structure analysis"""
     
     def __init__(self, config: dict):
         self.config = config
@@ -49,19 +50,44 @@ class AggressiveStrategy:
         self.rr_sl_multiplier = config.get('rr_sl_multiplier', 1.5)
         self.rr_tp_multiplier = config.get('rr_tp_multiplier', 2.5)
         
-        logger.info(f"Aggressive strategy initialized - RSI: {self.rsi_oversold}/{self.rsi_overbought}, Min score: {self.min_score}")
+        # Scalping features for better accuracy
+        self.scalp_rr_sl_multiplier = config.get('scalp_rr_sl_multiplier', 1.0)
+        self.scalp_rr_tp_multiplier = config.get('scalp_rr_tp_multiplier', 1.5)
+        
+        # Trend analysis (from scalping)
+        self.trend_ema_fast = 9
+        self.trend_ema_slow = 21
+        self.use_trend_filter = True
+        
+        logger.info(f"Enhanced aggressive strategy initialized - RSI: {self.rsi_oversold}/{self.rsi_overbought}, Min score: {self.min_score}")
     
     def analyze(self, symbol: str, df: pd.DataFrame) -> Optional[TradingSignal]:
-        """Analyze with simplified conditions for more signals"""
+        """Enhanced analysis with trend and market structure"""
         try:
             if len(df) < 50:  # Need less data
                 return None
+            
+            # Calculate EMAs for trend if not present
+            if 'ema_9' not in df.columns:
+                df['ema_9'] = df['close'].ewm(span=self.trend_ema_fast, adjust=False).mean()
+            if 'ema_21' not in df.columns:
+                df['ema_21'] = df['close'].ewm(span=self.trend_ema_slow, adjust=False).mean()
             
             current = df.iloc[-1]
             prev = df.iloc[-2]
             
             # Get current price
             price = current['close']
+            
+            # Analyze market trend
+            ema_fast = current['ema_9']
+            ema_slow = current['ema_21']
+            trend = "NEUTRAL"
+            
+            if ema_fast > ema_slow and price > ema_fast:
+                trend = "BULLISH"
+            elif ema_fast < ema_slow and price < ema_fast:
+                trend = "BEARISH"
             
             # Simple ATR for stops
             atr = current.get('atr', price * 0.015)
@@ -71,7 +97,7 @@ class AggressiveStrategy:
             if 'volume' in current and 'volume_ma' in current:
                 volume_ok = current['volume'] > (current.get('volume_ma', current['volume']) * self.min_volume_multiplier)
             
-            # SIMPLIFIED BUY CONDITIONS - Just need 2
+            # ENHANCED BUY CONDITIONS with trend
             buy_score = 0
             buy_reasons = []
             
@@ -97,7 +123,12 @@ class AggressiveStrategy:
                 buy_score += 1
                 buy_reasons.append("Above recent low")
             
-            # SIMPLIFIED SELL CONDITIONS
+            # 5. TREND BONUS - Trade with trend for better win rate
+            if trend == "BULLISH" and buy_score > 0:
+                buy_score += 1
+                buy_reasons.append("Bullish trend")
+            
+            # ENHANCED SELL CONDITIONS with trend
             sell_score = 0
             sell_reasons = []
             
@@ -122,6 +153,11 @@ class AggressiveStrategy:
             if price < recent_high * 0.999:
                 sell_score += 1
                 sell_reasons.append("Below recent high")
+            
+            # 5. TREND BONUS - Trade with trend for better win rate
+            if trend == "BEARISH" and sell_score > 0:
+                sell_score += 1
+                sell_reasons.append("Bearish trend")
             
             # Generate signal with BALANCED requirements
             # Require higher score for better quality signals

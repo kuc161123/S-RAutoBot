@@ -128,8 +128,7 @@ class Settings(BaseSettings):
     # Logging - REQUIRED FROM ENV VARS
     log_level: str = Field(..., env="LOG_LEVEL", description="Logging level")
     
-    # Strategy selection - REQUIRED FROM ENV VARS
-    strategy_type: str = Field(..., env="STRATEGY_TYPE", description="Strategy type: scalping or aggressive")
+    # Strategy removed - using enhanced aggressive only
     
     # Signal quality control - HARDCODED OPTIMAL VALUES
     min_signal_score: int = Field(default=4, ge=2, le=6, description="Minimum score for signal (2-6, higher = fewer signals)")

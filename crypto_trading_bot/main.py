@@ -56,9 +56,17 @@ class TradingBot:
                 config=settings
             )
             
-            # Initialize scalping strategy with ML enabled
-            ml_enabled = settings.__dict__.get('ml_enabled', True)  # Default to True
-            self.strategy = ScalpingStrategy(vars(settings), ml_enabled=ml_enabled)
+            # Initialize strategy based on config
+            strategy_type = settings.__dict__.get('strategy_type', 'aggressive')
+            
+            if strategy_type == 'aggressive':
+                from strategy.aggressive_strategy import AggressiveStrategy
+                self.strategy = AggressiveStrategy(vars(settings))
+                logger.info("Using AGGRESSIVE strategy for more signals")
+            else:
+                ml_enabled = settings.__dict__.get('ml_enabled', True)
+                self.strategy = ScalpingStrategy(vars(settings), ml_enabled=ml_enabled)
+                logger.info("Using SCALPING strategy with ML")
             
             # Initialize position manager
             self.position_manager = PositionManager(
@@ -138,10 +146,14 @@ class TradingBot:
             balance = self.exchange.get_account_balance()
             logger.info(f"Starting trading bot...")
             logger.info(f"Mode: {'TESTNET' if settings.is_testnet else 'MAINNET'}")
-            if balance is not None:
+            
+            # If balance check fails, assume we have funds and continue
+            if balance is not None and balance > 0:
                 logger.info(f"Balance: ${balance:.2f}")
             else:
-                logger.warning("Could not retrieve balance, continuing anyway...")
+                logger.warning("Could not retrieve balance - assuming $250 and continuing")
+                # Set a default balance so trading can proceed
+                self.exchange.default_balance = 250.0
             logger.info(f"Symbols: {', '.join(settings.initial_symbols)}")
             logger.info(f"Risk per trade: {settings.risk_per_trade*100:.1f}%")
             logger.info(f"Max positions: {settings.max_positions}")

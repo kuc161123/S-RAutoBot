@@ -16,16 +16,13 @@ logger = structlog.get_logger(__name__)
 @dataclass
 class TradeRecord:
     """Record of a single trade for learning"""
+    # Required fields first
     timestamp: datetime
     symbol: str
     action: str  # BUY or SELL
     entry_price: float
-    exit_price: Optional[float] = None
-    pnl: Optional[float] = None
-    pnl_percentage: Optional[float] = None
-    win: Optional[bool] = None
     
-    # Market conditions at entry
+    # Market conditions at entry (required)
     rsi: float
     macd: float
     macd_signal: float
@@ -36,16 +33,22 @@ class TradeRecord:
     trend: str  # BULLISH, BEARISH, RANGING
     volatility: float
     
-    # Which confirmations triggered
+    # Which confirmations triggered (required)
     confirmations: List[str]
     confirmation_count: int
     signal_score: float
     confidence: float
     
-    # Strategy parameters used
+    # Strategy parameters used (required)
     rsi_threshold: float
     min_confirmations: int
     min_score: float
+    
+    # Optional fields (with defaults) at the end
+    exit_price: Optional[float] = None
+    pnl: Optional[float] = None
+    pnl_percentage: Optional[float] = None
+    win: Optional[bool] = None
     
     def to_dict(self):
         data = asdict(self)

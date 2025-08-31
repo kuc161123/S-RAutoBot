@@ -176,6 +176,9 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field("DEBUG", env="LOG_LEVEL", description="Logging level")
     
+    # Strategy selection
+    strategy_type: str = Field("aggressive", env="STRATEGY_TYPE", description="Strategy type: scalping or aggressive")
+    
     class Config:
         env_file = ".env"
         case_sensitive = False

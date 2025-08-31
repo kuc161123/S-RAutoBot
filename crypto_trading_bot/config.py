@@ -73,69 +73,20 @@ class Settings(BaseSettings):
     initial_symbols: List[str] = Field(
         env="INITIAL_SYMBOLS",
         default=[
-            # Top 200 most liquid crypto pairs on Bybit (expanded list)
-            # Core majors (20)
+            # TOP 30 MOST LIQUID PAIRS ONLY - Prevents rate limiting
+            # Majors (10)
             "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-            "ADAUSDT", "AVAXUSDT", "DOGEUSDT", "MATICUSDT", "LINKUSDT",
+            "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "MATICUSDT", "LINKUSDT",
+            
+            # High volume alts (10)
             "DOTUSDT", "TONUSDT", "TRXUSDT", "NEARUSDT", "UNIUSDT",
-            "LTCUSDT", "BCHUSDT", "APTUSDT", "ICPUSDT", "ETCUSDT",
+            "LTCUSDT", "APTUSDT", "ARBUSDT", "OPUSDT", "INJUSDT",
             
-            # Layer 2s and scaling (20)
-            "ARBUSDT", "OPUSDT", "INJUSDT", "STXUSDT", "MANTAUSDT",
-            "IMXUSDT", "SEIUSDT", "SUIUSDT", "CELOUSDT", "ROSEUSDT",
-            "STRKUSDT", "TIAUSDT", "PYTHUSDT", "JUPUSDT", "DYMUSDT",
-            "ALTUSDT", "ZETAUSDT", "METISUSDT", "MNTUSDT", "POLYXUSDT",
-            
-            # DeFi tokens (25)
-            "MKRUSDT", "AAVEUSDT", "SNXUSDT", "COMPUSDT", "YFIUSDT",
-            "CRVUSDT", "LDOUSDT", "1INCHUSDT", "SUSHIUSDT", "GMXUSDT",
-            "FXSUSDT", "BALUSDT", "KNCUSDT", "UMAUSDT", "RADUSDT",
-            "BONDUSDT", "BICOUSDT", "QUICKUSDT", "OSMOUSDT", "CAKEUSDT",
-            "JOEUSDT", "ALPACAUSDT", "BADGERUSDT", "VOXELUSDT", "BAKEUSDT",
-            
-            # AI and compute (20)
-            "RENDERUSDT", "FETUSDT", "AGIXUSDT", "OCEANUSDT", "TAOUSDT",
-            "GRTUSDT", "ARKMUSDT", "AIUSDT", "PHBUSDT", "CTSIUSDT",
-            "NMRUSDT", "RLCUSDT", "GLMUSDT", "MDTUSDT", "ANCUSDT",
-            "MLNUSDT", "NKNUSDT", "DATAUSDT", "BNTUSDT", "CKBUSDT",
-            
-            # Gaming and metaverse (20)
-            "SANDUSDT", "AXSUSDT", "MANAUSDT", "ENJUSDT", "GALAUSDT",
-            "GMTUSDT", "MAGICUSDT", "APEUSDT", "HIGHUSDT", "ALICEUSDT",
-            "YGGUSDT", "GALUSDT", "BEAMUSDT", "PIXELUSDT", "TLMUSDT",
-            "SLPUSDT", "MOVRUSDT", "VICUSDT", "ILVUSDT", "MBOXUSDT",
-            
-            # Infrastructure (25)
-            "ATOMUSDT", "FILUSDT", "HBARUSDT", "ALGOUSDT", "VETUSDT",
-            "THETAUSDT", "FTMUSDT", "XTZUSDT", "EGLDUSDT", "FLOWUSDT",
-            "QNTUSDT", "KASUSDT", "HNTUSDT", "MINAUSDT", "ARUSDT",
-            "KLAYUSDT", "EOSUSDT", "WAVESUSDT", "NEOUSDT", "XLMUSDT",
-            "IOTAUSDT", "DASHUSDT", "XMRUSDT", "ZECUSDT", "ZENUSDT",
-            
-            # Meme coins (20)
-            "1000PEPEUSDT", "1000BONKUSDT", "1000FLOKIUSDT", "WIFUSDT",
-            "MEMEUSDT", "DOGSUSDT", "1000LUNCUSDT", "1000XECUSDT", "SPELLUSDT",
-            "SHIB1000USDT", "1000000MOGUSDT", "1000RATSUSDT", "ORDIUSDT", "NOTUSDT",
-            "HMSTRUSDT", "DOGUSDT", "GOATUSDT", "PONKEUSDT", "SAFEUSDT",
-            "BOMEUSDT",
-            
-            # Exchange tokens (10)
-            "CROUSDT", "BNXUSDT", "TRBUSDT", "BIGTIMEUSDT", "USTUSDT",
-            "COCOSUSDT", "SNTUSDT", "WOOUSDT", "IDEXUSDT", "TOKENUSDT",
-            
-            # More DeFi (10)
-            "USDCUSDT", "COTIUSDT", "KEYUSDT", "COMBOUSDT", "TRUUSDT",
-            "FORMUSDT", "DEXEUSDT", "REEFUSDT", "RAREUSDT", "SUPERUSDT",
-            
-            # Others high volume (30) - trimmed to reach exactly 200
-            "RUNEUSDT", "CFXUSDT", "CHZUSDT", "PENDLEUSDT", "WLDUSDT",
-            "BLURUSDT", "PEOPLEUSDT", "LRCUSDT", "ENSUSDT", "DYDXUSDT",
-            "ZRXUSDT", "BATUSDT", "JASMYUSDT", "STMXUSDT", "ACHUSDT",
-            "RSRUSDT", "SXPUSDT", "IOTXUSDT", "CYBERUSDT", "NTRNUSDT",
-            "MAVUSDT", "MASKUSDT", "C98USDT", "RNDRUSDT", "ARPAUSDT",
-            "MTLUSDT", "ANKRUSDT", "LPTUSDT", "SKLUSDT", "STORJUSDT"
+            # Popular memes & trending (10)
+            "1000PEPEUSDT", "WIFUSDT", "1000BONKUSDT", "1000FLOKIUSDT",
+            "MEMEUSDT", "ORDIUSDT", "SEIUSDT", "SUIUSDT", "TIAUSDT", "JUPUSDT"
         ],
-        description="Top 200 liquid trading pairs"
+        description="Top 30 liquid pairs to prevent rate limiting"
     )
     
     # Risk Management - ALL FROM ENV VARS
@@ -152,7 +103,7 @@ class Settings(BaseSettings):
     macd_signal: int = Field(9, env="MACD_SIGNAL", description="MACD signal period")
     
     # System Configuration - FROM ENV VARS
-    scan_interval: int = Field(30, env="SCAN_INTERVAL", description="Scan interval in seconds")
+    scan_interval: int = Field(60, env="SCAN_INTERVAL", description="Scan interval in seconds")
     min_volume_24h: float = Field(1000000, env="MIN_VOLUME_24H", description="Minimum 24h volume in USDT")
     startup_delay: int = Field(5, env="STARTUP_DELAY", description="Startup delay in seconds")
     

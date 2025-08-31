@@ -95,20 +95,34 @@ class SignalGenerator:
     async def scan_for_signals(self):
         """Scan all symbols for trading signals"""
         try:
-            # Update market data with indicators
-            for symbol in list(self.exchange.kline_data.keys()):
-                df = self.exchange.kline_data.get(symbol)
-                if df is not None and len(df) > 0:
-                    from utils.indicators import add_all_indicators
-                    df_with_indicators = add_all_indicators(df, vars(self.config))
-                    self.market_data[symbol] = df_with_indicators
+            # Batch symbols to avoid rate limiting (5 symbols at a time)
+            symbols = list(self.exchange.kline_data.keys())
+            batch_size = 5
+            
+            for i in range(0, len(symbols), batch_size):
+                batch = symbols[i:i+batch_size]
+                
+                # Update market data with indicators for this batch
+                for symbol in batch:
+                    df = self.exchange.kline_data.get(symbol)
+                    if df is not None and len(df) > 0:
+                        from utils.indicators import add_all_indicators
+                        df_with_indicators = add_all_indicators(df, vars(self.config))
+                        self.market_data[symbol] = df_with_indicators
+                
+                # Small delay between batches to avoid rate limiting
+                if i + batch_size < len(symbols):
+                    await asyncio.sleep(0.5)
             
             # Get signals from strategy
             signals = self.strategy.scan_symbols(self.market_data)
             
-            # Process signals
-            for signal in signals:
+            # Process signals with rate limiting
+            for i, signal in enumerate(signals):
                 await self.process_signal(signal)
+                # Small delay between signal processing to avoid order rate limits
+                if i < len(signals) - 1:
+                    await asyncio.sleep(0.2)
                 
         except Exception as e:
             logger.error(f"Error scanning for signals: {e}")

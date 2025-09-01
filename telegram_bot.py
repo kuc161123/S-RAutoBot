@@ -1,5 +1,6 @@
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.constants import UpdateType
 import asyncio
 import logging
 
@@ -29,8 +30,11 @@ class TGBot:
             await self.app.start()
             self.running = True
             logger.info("Telegram bot started polling")
-            # Start polling in background
-            await self.app.updater.start_polling(drop_pending_updates=True)
+            # Start polling in background, drop any pending updates to avoid conflicts
+            await self.app.updater.start_polling(
+                drop_pending_updates=True,
+                allowed_updates=list(UpdateType)
+            )
 
     async def stop(self):
         """Stop the bot"""

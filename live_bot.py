@@ -170,20 +170,29 @@ class TradingBot:
             "broker": bybit
         }
         
-        # Initialize Telegram bot
-        try:
-            self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), shared)
-            await self.tg.start_polling()
-            await self.tg.send_message(
-                "🚀 *Trading Bot Started*\n\n"
-                f"Symbols: {', '.join(symbols)}\n"
-                f"Timeframe: {tf}m\n"
-                f"Risk per trade: ${risk.risk_usd}\n"
-                f"R:R Ratio: 1:{settings.rr}"
-            )
-        except Exception as e:
-            logger.error(f"Telegram bot failed to start: {e}")
-            self.tg = None
+        # Initialize Telegram bot with retry on conflict
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), shared)
+                await self.tg.start_polling()
+                await self.tg.send_message(
+                    "🚀 *Trading Bot Started*\n\n"
+                    f"Symbols: {', '.join(symbols)}\n"
+                    f"Timeframe: {tf}m\n"
+                    f"Risk per trade: ${risk.risk_usd}\n"
+                    f"R:R Ratio: 1:{settings.rr}"
+                )
+                break  # Success
+            except Exception as e:
+                if "Conflict" in str(e) and attempt < max_retries - 1:
+                    logger.warning(f"Telegram conflict detected, retrying in 5 seconds...")
+                    await asyncio.sleep(5)
+                    continue
+                else:
+                    logger.error(f"Telegram bot failed to start: {e}")
+                    self.tg = None
+                    break
         
         # Signal tracking
         last_signal_time = {}

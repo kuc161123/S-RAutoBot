@@ -81,22 +81,20 @@ class Bybit:
     def get_balance(self) -> Optional[float]:
         """Get USDT balance"""
         try:
-            # Try CONTRACT account type for derivatives
-            resp = self._request("GET", "/v5/account/wallet-balance", {"accountType": "CONTRACT"})
+            # Use UNIFIED account type (most common for retail)
+            resp = self._request("GET", "/v5/account/wallet-balance", {"accountType": "UNIFIED"})
             if resp and resp.get("result"):
                 for item in resp["result"]["list"]:
                     for coin in item.get("coin", []):
                         if coin["coin"] == "USDT":
-                            return float(coin["walletBalance"])
+                            # Try to get available balance for trading
+                            balance = float(coin.get("availableToWithdraw", coin.get("walletBalance", 0)))
+                            return balance
             return None
         except Exception as e:
             logger.error(f"Failed to get balance: {e}")
-            # Try to get position value as fallback
-            try:
-                resp = self._request("GET", "/v5/position/list", {"category": "linear", "settleCoin": "USDT"})
-                return None  # Can't determine balance, but API is working
-            except:
-                return None
+            # Not critical - bot can continue
+            return None
 
     def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False) -> Dict[str, Any]:
         """Place market order"""

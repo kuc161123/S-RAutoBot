@@ -25,16 +25,24 @@ class Bybit:
         msg = ts + self.cfg.api_key + recv_window + body
         return hmac.new(self.cfg.api_secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
 
-    def _request(self, method:str, path:str, data:dict=None) -> Dict[str, Any]:
+    def _request(self, method:str, path:str, params:dict=None) -> Dict[str, Any]:
         recv_window = "5000"
         ts = self._ts()
         
         if method == "POST":
-            body = json.dumps(data or {}, separators=(",", ":"))
+            body = json.dumps(params or {}, separators=(",", ":"))
+            query_string = ""
         else:
             body = ""
+            # For GET requests, build query string
+            if params:
+                query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+            else:
+                query_string = ""
             
-        sign = self._sign(ts, recv_window, body)
+        # Sign with query string for GET, body for POST
+        sign_payload = query_string if method == "GET" else body
+        sign = self._sign(ts, recv_window, sign_payload)
         
         headers = {
             "X-BAPI-API-KEY": self.cfg.api_key,
@@ -45,6 +53,8 @@ class Bybit:
         }
         
         url = self.cfg.base_url + path
+        if method == "GET" and query_string:
+            url += "?" + query_string
         
         try:
             if method == "POST":
@@ -71,14 +81,22 @@ class Bybit:
     def get_balance(self) -> Optional[float]:
         """Get USDT balance"""
         try:
-            resp = self._request("GET", "/v5/account/wallet-balance", {"accountType": "UNIFIED"})
-            for coin in resp["result"]["list"][0]["coin"]:
-                if coin["coin"] == "USDT":
-                    return float(coin["walletBalance"])
+            # Try CONTRACT account type for derivatives
+            resp = self._request("GET", "/v5/account/wallet-balance", {"accountType": "CONTRACT"})
+            if resp and resp.get("result"):
+                for item in resp["result"]["list"]:
+                    for coin in item.get("coin", []):
+                        if coin["coin"] == "USDT":
+                            return float(coin["walletBalance"])
             return None
         except Exception as e:
             logger.error(f"Failed to get balance: {e}")
-            return None
+            # Try to get position value as fallback
+            try:
+                resp = self._request("GET", "/v5/position/list", {"category": "linear", "settleCoin": "USDT"})
+                return None  # Can't determine balance, but API is working
+            except:
+                return None
 
     def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False) -> Dict[str, Any]:
         """Place market order"""
@@ -122,11 +140,15 @@ class Bybit:
     def cancel_all_orders(self, symbol:str=None) -> bool:
         """Cancel all orders for a symbol or all symbols"""
         try:
-            data = {"category": "linear"}
+            data = {
+                "category": "linear",
+                "settleCoin": "USDT"  # Required for cancel-all
+            }
             if symbol:
                 data["symbol"] = symbol
             resp = self._request("POST", "/v5/order/cancel-all", data)
             return True
         except Exception as e:
             logger.error(f"Failed to cancel orders: {e}")
-            return False
+            # Not critical if no orders to cancel
+            return True

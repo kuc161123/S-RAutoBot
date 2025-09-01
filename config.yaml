@@ -1,0 +1,52 @@
+bybit:
+  base_url: "https://api.bybit.com"
+  ws_public: "wss://stream.bybit.com/v5/public/linear"
+  api_key: "${BYBIT_API_KEY}"
+  api_secret: "${BYBIT_API_SECRET}"
+
+trade:
+  # symbols must be Bybit linear swap symbols, e.g., BTCUSDT, ETHUSDT
+  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
+  timeframe: "15"        # minutes: 1,3,5,15,60,240,1440
+  risk_usd: 10           # risk per trade (R) - start small
+  max_leverage: 5
+  use_ema: false
+  ema_len: 200
+  use_vol: false
+  vol_len: 20
+  vol_mult: 1.2
+  atr_len: 14
+  sl_buf_atr: 0.5
+  rr: 2.0
+  both_hit_rule: "SL_FIRST"   # or "TP_FIRST"
+
+telegram:
+  token: "${TELEGRAM_BOT_TOKEN}"
+  chat_id: "${TELEGRAM_CHAT_ID}"
+
+# Optional: per-symbol size rounding (defaults applied if missing)
+symbol_meta:
+  default:
+    qty_step: 0.001
+    min_qty: 0.001
+    tick_size: 0.1
+  BTCUSDT:
+    qty_step: 0.001
+    min_qty: 0.001
+    tick_size: 0.1
+  ETHUSDT:
+    qty_step: 0.01
+    min_qty: 0.01
+    tick_size: 0.01
+  SOLUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.01
+  BNBUSDT:
+    qty_step: 0.01
+    min_qty: 0.01
+    tick_size: 0.01
+  XRPUSDT:
+    qty_step: 1
+    min_qty: 1
+    tick_size: 0.0001

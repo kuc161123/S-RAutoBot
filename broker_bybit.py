@@ -87,13 +87,23 @@ class Bybit:
                 for item in resp["result"]["list"]:
                     for coin in item.get("coin", []):
                         if coin["coin"] == "USDT":
-                            # Try to get available balance for trading
-                            balance = float(coin.get("availableToWithdraw", coin.get("walletBalance", 0)))
-                            return balance
+                            # Try multiple balance fields
+                            balance_str = coin.get("availableToWithdraw") or coin.get("walletBalance") or coin.get("equity") or "0"
+                            
+                            # Handle empty strings and convert to float
+                            try:
+                                if balance_str and balance_str != "":
+                                    return float(balance_str)
+                            except (ValueError, TypeError):
+                                logger.debug(f"Could not parse balance: {balance_str}")
+                                continue
+            
+            # If no USDT found, return None (non-critical)
             return None
+            
         except Exception as e:
             logger.error(f"Failed to get balance: {e}")
-            # Not critical - bot can continue
+            # Not critical - bot can continue without balance display
             return None
 
     def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False) -> Dict[str, Any]:

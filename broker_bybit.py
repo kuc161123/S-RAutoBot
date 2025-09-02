@@ -141,13 +141,14 @@ class Bybit:
             "symbol": symbol,
             "takeProfit": str(take_profit),
             "stopLoss": str(stop_loss),
+            "tpSize": "0",               # 0 means entire position size for TP
+            "slSize": "0",               # 0 means entire position size for SL
             "tpTriggerBy": "LastPrice",
             "slTriggerBy": "LastPrice",
             "tpslMode": "Partial",       # Partial mode allows Limit TP orders
             "tpOrderType": "Limit",      # Limit order for Take Profit (better fill price)
             "slOrderType": "Market",     # Market order for Stop Loss (guaranteed fill)
             "positionIdx": 0
-            # Note: Not including tpSize/slSize - when omitted, defaults to entire position
         }
         return self._request("POST", "/v5/position/trading-stop", data)
     

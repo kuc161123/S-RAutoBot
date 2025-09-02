@@ -92,31 +92,47 @@ class TGBot:
 /help - This help menu
 
 📈 *Current Settings:*
-• Risk per trade: ${}
+• Risk per trade: {}
 • Max leverage: {}x
 • Timeframe: 15 minutes
 • Strategy: S/R + Market Structure
 """.format(
-            self.shared["risk"].risk_usd,
+            f"{self.shared['risk'].risk_percent}%" if self.shared["risk"].use_percent_risk else f"${self.shared['risk'].risk_usd}",
             self.shared["risk"].max_leverage
         )
         await update.message.reply_text(help_text, parse_mode='Markdown')
 
     async def set_risk(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
-        """Set risk amount per trade"""
+        """Set risk amount per trade - percentage (1%) or fixed USD (50)"""
         try:
             if not ctx.args:
-                await update.message.reply_text("Usage: /set_risk 50")
+                await update.message.reply_text("Usage: /set_risk 1% or /set_risk 50")
                 return
+            
+            risk_str = ctx.args[0]
+            
+            if risk_str.endswith('%'):
+                # Percentage-based risk
+                v = float(risk_str.rstrip('%'))
+                if v <= 0 or v > 10:
+                    await update.message.reply_text("Risk percentage must be between 0% and 10%")
+                    return
                 
-            v = float(ctx.args[0])
-            if v <= 0 or v > 1000:
-                await update.message.reply_text("Risk must be between $0 and $1000")
-                return
+                self.shared["risk"].risk_percent = v
+                self.shared["risk"].use_percent_risk = True
+                await update.message.reply_text(f"✅ Risk set to {v}% of account per trade")
+                logger.info(f"Risk updated to {v}%")
+            else:
+                # Fixed USD risk
+                v = float(risk_str)
+                if v <= 0 or v > 1000:
+                    await update.message.reply_text("Risk must be between $0 and $1000")
+                    return
                 
-            self.shared["risk"].risk_usd = v
-            await update.message.reply_text(f"✅ Risk per trade set to ${v}")
-            logger.info(f"Risk updated to ${v}")
+                self.shared["risk"].risk_usd = v
+                self.shared["risk"].use_percent_risk = False
+                await update.message.reply_text(f"✅ Risk set to ${v} per trade")
+                logger.info(f"Risk updated to ${v} fixed")
         except ValueError:
             await update.message.reply_text("Invalid amount. Usage: /set_risk 50")
         except Exception as e:

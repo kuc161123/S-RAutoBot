@@ -21,7 +21,9 @@ def round_step(x:float, step:float) -> float:
 
 @dataclass
 class RiskConfig:
-    risk_usd:float=50.0
+    risk_usd:float=50.0  # Fixed USD risk (will be overridden by percentage)
+    risk_percent:float=1.0  # Risk as percentage of account (default 1%)
+    use_percent_risk:bool=True  # Use percentage-based risk instead of fixed USD
     max_leverage:int=5
     # defaults overridden per symbol via config.yaml.symbol_meta
     qty_step:float=0.001

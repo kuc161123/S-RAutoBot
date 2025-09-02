@@ -557,18 +557,28 @@ class TradingBot:
                 # Get symbol metadata
                 m = meta_for(sym, shared["meta"])
                 
-                # Check account balance
-                balance = bybit.get_balance()
-                if balance:
+                # Check account balance and update risk calculation
+                current_balance = bybit.get_balance()
+                if current_balance:
+                    balance = current_balance
+                    # Update sizer with current balance for percentage-based risk
+                    sizer.account_balance = balance
+                    
+                    # Calculate actual risk amount for this trade
+                    if risk.use_percent_risk:
+                        risk_amount = balance * (risk.risk_percent / 100.0)
+                    else:
+                        risk_amount = risk.risk_usd
+                    
                     # Calculate required margin with max leverage
-                    required_margin = (cfg['trade']['risk_usd'] * 100) / m.get("max_leverage", 50)  # Rough estimate
+                    required_margin = (risk_amount * 100) / m.get("max_leverage", 50)  # Rough estimate
                     
                     # Check if we have enough for margin + buffer
                     if balance < required_margin * 1.5:  # 1.5x for safety
                         logger.warning(f"[{sym}] Insufficient balance (${balance:.2f}, need ~${required_margin:.2f}), skipping signal")
                         continue
                     
-                    logger.debug(f"[{sym}] Balance check passed: ${balance:.2f} available")
+                    logger.debug(f"[{sym}] Balance check passed: ${balance:.2f} available, risking ${risk_amount:.2f}")
                 
                 # Calculate position size
                 qty = sizer.qty_for(sig.entry, sig.sl, m.get("qty_step",0.001), m.get("min_qty",0.001))
@@ -605,7 +615,7 @@ class TradingBot:
                             f"Stop Loss: {sig.sl:.4f}\n"
                             f"Take Profit: {sig.tp:.4f}\n"
                             f"Quantity: {qty}\n"
-                            f"Risk: ${risk.risk_usd}\n"
+                            f"Risk: {risk.risk_percent}% (${risk_amount:.2f})\n"
                             f"Reason: {sig.reason}"
                         )
                         await self.tg.send_message(msg)

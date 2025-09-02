@@ -106,7 +106,9 @@ trade:
   - SFPUSDT
   - ENSUSDT
   timeframe: '15'
-  risk_usd: 2
+  risk_usd: 2  # Fallback if percentage risk fails
+  risk_percent: 1.0  # Risk 1% of account per trade
+  use_percent_risk: true  # Use percentage-based risk management
   use_ema: true
   ema_len: 200
   use_vol: false

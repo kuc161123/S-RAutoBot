@@ -146,7 +146,7 @@ class TradingBot:
             logger.error(f"Failed to auto-save candles: {e}")
     
     async def recover_positions(self, book:Book, sizer:Sizer):
-        """Recover existing positions from exchange"""
+        """Recover existing positions from exchange - preserves all existing orders"""
         logger.info("Checking for existing positions to recover...")
         
         try:
@@ -164,7 +164,7 @@ class TradingBot:
                     qty = float(pos['size'])
                     entry = float(pos['avgPrice'])
                     
-                    # Get current TP/SL if set
+                    # Get current TP/SL if set - PRESERVE THESE
                     tp = float(pos.get('takeProfit', 0))
                     sl = float(pos.get('stopLoss', 0))
                     
@@ -179,14 +179,17 @@ class TradingBot:
                     )
                     
                     recovered += 1
-                    logger.info(f"Recovered {side} position: {symbol} qty={qty} entry={entry:.4f}")
+                    logger.info(f"Recovered {side} position: {symbol} qty={qty} entry={entry:.4f} TP={tp:.4f} SL={sl:.4f}")
                 
                 if recovered > 0:
-                    logger.info(f"Successfully recovered {recovered} position(s)")
+                    logger.info(f"Successfully recovered {recovered} position(s) - WILL NOT MODIFY THEM")
+                    logger.info("Existing positions and their TP/SL orders will run their course without interference")
                     
                     # Send Telegram notification
                     if self.tg:
-                        msg = f"📊 *Recovered {recovered} existing position(s)*\n\n"
+                        msg = f"📊 *Recovered {recovered} existing position(s)*\n"
+                        msg += "⚠️ *These positions will NOT be modified*\n"
+                        msg += "✅ *TP/SL orders preserved as-is*\n\n"
                         for sym, pos in book.positions.items():
                             emoji = "🟢" if pos.side == "long" else "🔴"
                             msg += f"{emoji} {sym}: {pos.side} qty={pos.qty:.4f}\n"
@@ -251,6 +254,7 @@ class TradingBot:
         
         logger.info(f"Trading symbols: {symbols}")
         logger.info(f"Timeframe: {tf} minutes")
+        logger.info("📌 Bot Policy: Existing positions and orders will NOT be modified - they will run their course")
         
         # Initialize strategy settings
         settings = Settings(
@@ -288,12 +292,27 @@ class TradingBot:
         # Fetch historical data for all symbols
         await self.load_or_fetch_initial_data(symbols, tf)
         
-        # Recover existing positions
+        # Recover existing positions - PRESERVE THEIR ORDERS
         await self.recover_positions(book, sizer)
         
-        # Cancel any existing orders (after recovery to not affect existing positions)
-        logger.info("Cancelling any existing orders...")
-        bybit.cancel_all_orders()
+        # DO NOT cancel orders for symbols with existing positions
+        # Only cancel orphaned orders (orders without positions)
+        logger.info("Checking for orphaned orders to cancel...")
+        try:
+            # Get all open orders
+            resp = bybit._request("GET", "/v5/order/realtime", {"category": "linear", "settleCoin": "USDT"})
+            orders = resp.get("result", {}).get("list", [])
+            
+            for order in orders:
+                symbol = order.get("symbol")
+                # Only cancel if we don't have a position for this symbol
+                if symbol not in book.positions:
+                    logger.info(f"Cancelling orphaned order for {symbol}")
+                    bybit.cancel_all_orders(symbol)
+                else:
+                    logger.info(f"Preserving orders for existing position: {symbol}")
+        except Exception as e:
+            logger.warning(f"Could not check orders: {e}")
         
         # Track analysis times
         last_analysis = {}

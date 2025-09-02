@@ -124,7 +124,7 @@ class TGBot:
                 msg += "No open positions\n\n"
                 msg += f"Risk per trade: ${self.shared['risk'].risk_usd}\n"
                 msg += f"Max positions: Unlimited\n"
-                msg += "\n_Bot is actively scanning {len(self.shared.get('frames', {}))} symbols_"
+                msg += f"\n_Bot is actively scanning {len(self.shared.get('frames', {}))} symbols_"
                 await update.message.reply_text(msg, parse_mode='Markdown')
                 return
                 

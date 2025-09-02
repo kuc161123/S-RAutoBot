@@ -468,7 +468,7 @@ class TradingBot:
                     bybit.place_market(sym, side, qty, reduce_only=False)
                     
                     # Set TP/SL
-                    logger.info(f"[{sym}] Setting TP={sig.tp:.4f}, SL={sig.sl:.4f}")
+                    logger.info(f"[{sym}] Setting TP={sig.tp:.4f} (Limit), SL={sig.sl:.4f} (Market)")
                     bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl)
                     
                     # Update book

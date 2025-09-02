@@ -121,7 +121,7 @@ class Bybit:
         return self._request("POST", "/v5/order/create", data)
 
     def set_tpsl(self, symbol:str, take_profit:float, stop_loss:float) -> Dict[str, Any]:
-        """Set position TP/SL"""
+        """Set position TP/SL with Limit TP and Market SL"""
         data = {
             "category": "linear",
             "symbol": symbol,
@@ -130,8 +130,8 @@ class Bybit:
             "tpTriggerBy": "LastPrice",
             "slTriggerBy": "LastPrice",
             "tpslMode": "Full",
-            "tpOrderType": "Market",
-            "slOrderType": "Market",
+            "tpOrderType": "Limit",     # Limit order for Take Profit (better fill)
+            "slOrderType": "Market",     # Market order for Stop Loss (guaranteed fill)
             "positionIdx": 0
         }
         return self._request("POST", "/v5/position/trading-stop", data)

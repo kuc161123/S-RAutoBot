@@ -57,7 +57,7 @@ trade:
   - CYBERUSDT
   timeframe: '15'
   risk_usd: 2
-  use_ema: false
+  use_ema: true
   ema_len: 200
   use_vol: false
   vol_len: 20

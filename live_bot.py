@@ -275,12 +275,14 @@ class TradingBot:
             try:
                 self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), shared)
                 await self.tg.start_polling()
+                # Send shorter startup message for 20 symbols
                 await self.tg.send_message(
                     "🚀 *Trading Bot Started*\n\n"
-                    f"Symbols: {', '.join(symbols)}\n"
-                    f"Timeframe: {tf}m\n"
-                    f"Risk per trade: ${risk.risk_usd}\n"
-                    f"R:R Ratio: 1:{settings.rr}"
+                    f"📊 Monitoring: {len(symbols)} symbols\n"
+                    f"⏰ Timeframe: {tf} minutes\n"
+                    f"💰 Risk per trade: ${risk.risk_usd}\n"
+                    f"📈 R:R Ratio: 1:{settings.rr}\n\n"
+                    "_Use /dashboard for full status_"
                 )
                 break  # Success
             except Exception as e:

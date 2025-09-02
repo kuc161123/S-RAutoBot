@@ -21,6 +21,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("panic_close", self.panic_close))
         self.app.add_handler(CommandHandler("balance", self.balance))
         self.app.add_handler(CommandHandler("health", self.health))
+        self.app.add_handler(CommandHandler("symbols", self.symbols))
+        self.app.add_handler(CommandHandler("dashboard", self.dashboard))
         
         self.running = False
 
@@ -64,17 +66,28 @@ class TGBot:
     async def help(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Help command handler"""
         help_text = """
-*Available Commands:*
+📚 *Bot Commands*
 
-/status - Show open positions
-/balance - Show account balance
-/set\_risk [amount] - Set risk per trade
-/panic\_close [symbol] - Emergency close position
-/help - Show this message
+📊 *Monitoring:*
+/dashboard - Complete bot overview
+/health - Bot status & analysis activity
+/status - Open positions
+/balance - Account balance
+/symbols - List active trading pairs
 
-*Current Settings:*
-Risk per trade: ${}
-Max leverage: {}x
+⚙️ *Controls:*
+/set\_risk [amount] - Adjust risk per trade
+/panic\_close [symbol] - Emergency close
+
+ℹ️ *Info:*
+/start - Welcome message
+/help - This help menu
+
+📈 *Current Settings:*
+• Risk per trade: ${}
+• Max leverage: {}x
+• Timeframe: 15 minutes
+• Strategy: S/R + Market Structure
 """.format(
             self.shared["risk"].risk_usd,
             self.shared["risk"].max_leverage
@@ -107,26 +120,45 @@ Max leverage: {}x
         try:
             bk = self.shared["book"].positions
             if not bk:
-                await update.message.reply_text("📊 No open positions")
+                msg = "📊 *Position Status*\n\n"
+                msg += "No open positions\n\n"
+                msg += f"Risk per trade: ${self.shared['risk'].risk_usd}\n"
+                msg += f"Max positions: Unlimited\n"
+                msg += "\n_Bot is actively scanning {len(self.shared.get('frames', {}))} symbols_"
+                await update.message.reply_text(msg, parse_mode='Markdown')
                 return
                 
-            lines = ["*Open Positions:*\n"]
-            total_qty = 0
+            msg = "📊 *Open Positions*\n"
+            msg += "━" * 20 + "\n\n"
             
             for sym, p in bk.items():
                 emoji = "🟢" if p.side == "long" else "🔴"
-                lines.append(
-                    f"{emoji} *{sym}*\n"
-                    f"  Side: {p.side.upper()}\n"
-                    f"  Qty: {p.qty}\n"
-                    f"  Entry: {p.entry:.4f}\n"
-                    f"  SL: {p.sl:.4f}\n"
-                    f"  TP: {p.tp:.4f}\n"
-                )
-                total_qty += 1
                 
-            lines.append(f"\n*Total positions:* {total_qty}")
-            await update.message.reply_text("\n".join(lines), parse_mode='Markdown')
+                # Calculate current P&L if we have price data
+                frames = self.shared.get("frames", {})
+                pnl_str = ""
+                if sym in frames and len(frames[sym]) > 0:
+                    current_price = frames[sym]['close'].iloc[-1]
+                    if p.side == "long":
+                        pnl = (current_price - p.entry) * p.qty
+                        pnl_pct = ((current_price - p.entry) / p.entry) * 100
+                    else:
+                        pnl = (p.entry - current_price) * p.qty
+                        pnl_pct = ((p.entry - current_price) / p.entry) * 100
+                    
+                    pnl_emoji = "🟢" if pnl > 0 else "🔴"
+                    pnl_str = f"\n  P&L: {pnl_emoji} ${pnl:.2f} ({pnl_pct:+.2f}%)"
+                
+                msg += f"{emoji} *{sym}* ({p.side.upper()})\n"
+                msg += f"  Entry: {p.entry:.4f}\n"
+                msg += f"  Size: {p.qty}\n"
+                msg += f"  SL: {p.sl:.4f} | TP: {p.tp:.4f}"
+                msg += pnl_str + "\n\n"
+                
+            msg += f"*Total positions:* {len(bk)}\n"
+            msg += f"*Risk exposure:* ${len(bk) * self.shared['risk'].risk_usd}"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
             
         except Exception as e:
             logger.error(f"Error in status: {e}")
@@ -217,3 +249,117 @@ Max leverage: {}x
         except Exception as e:
             logger.error(f"Error in health: {e}")
             await update.message.reply_text("Error getting health status")
+    
+    async def symbols(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Show list of active trading symbols"""
+        try:
+            frames = self.shared.get("frames", {})
+            
+            if not frames:
+                await update.message.reply_text("No symbols loaded yet")
+                return
+            
+            msg = "📈 *Active Trading Pairs*\n\n"
+            
+            # Group symbols for better display
+            symbols_list = list(frames.keys())
+            
+            # Show in groups of 5
+            for i in range(0, len(symbols_list), 5):
+                group = symbols_list[i:i+5]
+                msg += " • ".join(group) + "\n"
+            
+            msg += f"\n*Total:* {len(symbols_list)} symbols"
+            msg += "\n*Timeframe:* 15 minutes"
+            msg += "\n*Strategy:* Support/Resistance Breakout"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in symbols: {e}")
+            await update.message.reply_text("Error getting symbols")
+    
+    async def dashboard(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Show complete bot dashboard"""
+        try:
+            import datetime
+            
+            # Gather all data
+            frames = self.shared.get("frames", {})
+            book = self.shared.get("book")
+            risk = self.shared.get("risk")
+            last_analysis = self.shared.get("last_analysis", {})
+            
+            msg = "🎯 *Trading Bot Dashboard*\n"
+            msg += "━" * 25 + "\n\n"
+            
+            # System Status
+            msg += "⚡ *System Status*\n"
+            if frames:
+                msg += "• Status: ✅ Online\n"
+                msg += f"• Symbols: {len(frames)} active\n"
+            else:
+                msg += "• Status: ⏳ Starting up\n"
+            
+            # Get balance
+            broker = self.shared.get("broker")
+            if broker:
+                balance = broker.get_balance()
+                if balance:
+                    msg += f"• Balance: ${balance:.2f} USDT\n"
+            
+            msg += "\n"
+            
+            # Trading Settings
+            msg += "⚙️ *Trading Settings*\n"
+            msg += f"• Risk per trade: ${risk.risk_usd}\n"
+            msg += f"• Max leverage: {risk.max_leverage}x\n"
+            msg += f"• Timeframe: 15 minutes\n"
+            msg += "\n"
+            
+            # Positions
+            msg += "📊 *Positions*\n"
+            if book and book.positions:
+                for sym, pos in book.positions.items():
+                    emoji = "🟢" if pos.side == "long" else "🔴"
+                    msg += f"{emoji} {sym}: {pos.side.upper()}\n"
+                    msg += f"  Entry: {pos.entry:.4f}\n"
+                    msg += f"  Qty: {pos.qty}\n"
+            else:
+                msg += "• No open positions\n"
+            msg += "\n"
+            
+            # Recent Analysis
+            msg += "🔍 *Recent Analysis*\n"
+            if last_analysis:
+                now = datetime.datetime.now()
+                recent = sorted(last_analysis.items(), key=lambda x: x[1], reverse=True)[:3]
+                for sym, timestamp in recent:
+                    time_ago = (now - timestamp).total_seconds()
+                    if time_ago < 60:
+                        msg += f"• {sym}: {int(time_ago)}s ago\n"
+                    else:
+                        msg += f"• {sym}: {int(time_ago/60)}m ago\n"
+            else:
+                msg += "• Waiting for data...\n"
+            
+            msg += "\n"
+            
+            # Next Analysis
+            now = datetime.datetime.now()
+            next_15 = (now.minute // 15 + 1) * 15
+            if next_15 >= 60:
+                next_time = now.replace(minute=0, second=0) + datetime.timedelta(hours=1)
+            else:
+                next_time = now.replace(minute=next_15, second=0)
+            
+            time_until = (next_time - now).total_seconds()
+            msg += f"⏰ *Next Analysis:* {int(time_until/60)}m {int(time_until%60)}s\n"
+            
+            msg += "\n_Use /help for all commands_"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in dashboard: {e}")
+            await update.message.reply_text("Error generating dashboard")

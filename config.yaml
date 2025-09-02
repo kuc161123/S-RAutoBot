@@ -5,8 +5,13 @@ bybit:
   api_secret: "${BYBIT_API_SECRET}"
 
 trade:
-  # symbols must be Bybit linear swap symbols, e.g., BTCUSDT, ETHUSDT
-  symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
+  # Top 20 liquid symbols for more opportunities
+  symbols: [
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "MATICUSDT", "LINKUSDT",
+    "DOTUSDT", "LTCUSDT", "UNIUSDT", "ATOMUSDT", "NEARUSDT",
+    "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT", "SEIUSDT"
+  ]
   timeframe: "15"        # minutes: 1,3,5,15,60,240,1440
   risk_usd: 10           # risk per trade (R) - start small
   max_leverage: 5
@@ -47,6 +52,66 @@ symbol_meta:
     min_qty: 0.01
     tick_size: 0.01
   XRPUSDT:
+    qty_step: 1
+    min_qty: 1
+    tick_size: 0.0001
+  DOGEUSDT:
+    qty_step: 1
+    min_qty: 1
+    tick_size: 0.00001
+  ADAUSDT:
+    qty_step: 1
+    min_qty: 1
+    tick_size: 0.0001
+  AVAXUSDT:
+    qty_step: 0.01
+    min_qty: 0.01
+    tick_size: 0.001
+  MATICUSDT:
+    qty_step: 1
+    min_qty: 1
+    tick_size: 0.0001
+  LINKUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.001
+  DOTUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.001
+  LTCUSDT:
+    qty_step: 0.01
+    min_qty: 0.01
+    tick_size: 0.01
+  UNIUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.001
+  ATOMUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.001
+  NEARUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.001
+  ARBUSDT:
+    qty_step: 1
+    min_qty: 1
+    tick_size: 0.0001
+  OPUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.001
+  INJUSDT:
+    qty_step: 0.01
+    min_qty: 0.01
+    tick_size: 0.001
+  SUIUSDT:
+    qty_step: 1
+    min_qty: 1
+    tick_size: 0.0001
+  SEIUSDT:
     qty_step: 1
     min_qty: 1
     tick_size: 0.0001

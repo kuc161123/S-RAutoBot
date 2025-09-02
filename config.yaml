@@ -27,7 +27,7 @@ trade:
   - SEIUSDT
   timeframe: '15'
   risk_usd: 2  # Fixed risk per trade
-  max_positions: 5  # Max concurrent positions
+  # max_positions: unlimited - controlled by balance only
   # Leverage is set per symbol (see symbol_meta below)
   use_ema: false
   ema_len: 200

@@ -417,12 +417,6 @@ class TradingBot:
                 
                 logger.info(f"[{sym}] Signal detected: {sig.side} @ {sig.entry:.4f}")
                 
-                # Check position limits (total across all symbols)
-                max_positions = cfg['trade'].get('max_positions', 5)
-                if len(book.positions) >= max_positions:
-                    logger.warning(f"[{sym}] Max positions ({max_positions}) reached, skipping signal")
-                    continue
-                
                 # One position per symbol rule - wait for current position to close
                 # This prevents overexposure to a single symbol and allows clean entry/exit
                 if sym in book.positions:
@@ -432,14 +426,15 @@ class TradingBot:
                 # Check account balance
                 balance = bybit.get_balance()
                 if balance:
-                    # Reserve some balance for fees and safety
-                    available = balance * 0.9
-                    positions_value = len(book.positions) * cfg['trade']['risk_usd'] * 2  # Estimate current exposure
-                    remaining = available - positions_value
+                    # Calculate required margin with max leverage
+                    required_margin = (cfg['trade']['risk_usd'] * 100) / m.get("max_leverage", 50)  # Rough estimate
                     
-                    if remaining < cfg['trade']['risk_usd'] * 2:
-                        logger.warning(f"[{sym}] Insufficient balance (${balance:.2f}), skipping signal")
+                    # Check if we have enough for margin + buffer
+                    if balance < required_margin * 1.5:  # 1.5x for safety
+                        logger.warning(f"[{sym}] Insufficient balance (${balance:.2f}, need ~${required_margin:.2f}), skipping signal")
                         continue
+                    
+                    logger.debug(f"[{sym}] Balance check passed: ${balance:.2f} available")
                 
                 # Calculate position size
                 m = meta_for(sym, shared["meta"])

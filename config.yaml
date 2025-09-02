@@ -8,7 +8,7 @@ trade:
   # Top 20 liquid symbols for more opportunities
   symbols: [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "MATICUSDT", "LINKUSDT",
+    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "POLUSDT", "LINKUSDT",
     "DOTUSDT", "LTCUSDT", "UNIUSDT", "ATOMUSDT", "NEARUSDT",
     "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT", "SEIUSDT"
   ]
@@ -67,7 +67,7 @@ symbol_meta:
     qty_step: 0.01
     min_qty: 0.01
     tick_size: 0.001
-  MATICUSDT:
+  POLUSDT:
     qty_step: 1
     min_qty: 1
     tick_size: 0.0001

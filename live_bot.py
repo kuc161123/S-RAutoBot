@@ -89,6 +89,12 @@ class TradingBot:
                 try:
                     logger.info(f"[{symbol}] Fetching from API (not enough in database)")
                     klines = self.bybit.get_klines(symbol, timeframe, limit=200)
+                    
+                    # Retry once if no data
+                    if not klines:
+                        logger.info(f"[{symbol}] Retrying API fetch...")
+                        await asyncio.sleep(1)
+                        klines = self.bybit.get_klines(symbol, timeframe, limit=200)
                 
                     if klines:
                         # Convert to DataFrame

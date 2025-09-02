@@ -1,19 +1,32 @@
 bybit:
-  base_url: "https://api.bybit.com"
-  ws_public: "wss://stream.bybit.com/v5/public/linear"
-  api_key: "${BYBIT_API_KEY}"
-  api_secret: "${BYBIT_API_SECRET}"
-
+  base_url: https://api.bybit.com
+  ws_public: wss://stream.bybit.com/v5/public/linear
+  api_key: ${BYBIT_API_KEY}
+  api_secret: ${BYBIT_API_SECRET}
 trade:
-  # Top 20 liquid symbols for more opportunities
-  symbols: [
-    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "POLUSDT", "LINKUSDT",
-    "DOTUSDT", "LTCUSDT", "UNIUSDT", "ATOMUSDT", "NEARUSDT",
-    "ARBUSDT", "OPUSDT", "INJUSDT", "SUIUSDT", "SEIUSDT"
-  ]
-  timeframe: "15"        # minutes: 1,3,5,15,60,240,1440
-  risk_usd: 10           # risk per trade (R) - start small
+  symbols:
+  - BTCUSDT
+  - ETHUSDT
+  - SOLUSDT
+  - BNBUSDT
+  - XRPUSDT
+  - DOGEUSDT
+  - ADAUSDT
+  - AVAXUSDT
+  - POLUSDT
+  - LINKUSDT
+  - DOTUSDT
+  - LTCUSDT
+  - UNIUSDT
+  - ATOMUSDT
+  - NEARUSDT
+  - ARBUSDT
+  - OPUSDT
+  - INJUSDT
+  - SUIUSDT
+  - SEIUSDT
+  timeframe: '15'
+  risk_usd: 10
   max_leverage: 5
   use_ema: false
   ema_len: 200
@@ -23,13 +36,10 @@ trade:
   atr_len: 14
   sl_buf_atr: 0.5
   rr: 2.0
-  both_hit_rule: "SL_FIRST"   # or "TP_FIRST"
-
+  both_hit_rule: SL_FIRST
 telegram:
-  token: "${TELEGRAM_BOT_TOKEN}"
-  chat_id: "${TELEGRAM_CHAT_ID}"
-
-# Optional: per-symbol size rounding (defaults applied if missing)
+  token: ${TELEGRAM_BOT_TOKEN}
+  chat_id: ${TELEGRAM_CHAT_ID}
 symbol_meta:
   default:
     qty_step: 0.001
@@ -50,26 +60,26 @@ symbol_meta:
   BNBUSDT:
     qty_step: 0.01
     min_qty: 0.01
-    tick_size: 0.01
+    tick_size: 0.1
   XRPUSDT:
-    qty_step: 1
-    min_qty: 1
+    qty_step: 1.0
+    min_qty: 1.0
     tick_size: 0.0001
   DOGEUSDT:
-    qty_step: 1
-    min_qty: 1
-    tick_size: 0.00001
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
   ADAUSDT:
-    qty_step: 1
-    min_qty: 1
+    qty_step: 1.0
+    min_qty: 1.0
     tick_size: 0.0001
   AVAXUSDT:
-    qty_step: 0.01
-    min_qty: 0.01
+    qty_step: 0.1
+    min_qty: 0.1
     tick_size: 0.001
   POLUSDT:
-    qty_step: 1
-    min_qty: 1
+    qty_step: 1.0
+    min_qty: 1.0
     tick_size: 0.0001
   LINKUSDT:
     qty_step: 0.1
@@ -78,10 +88,10 @@ symbol_meta:
   DOTUSDT:
     qty_step: 0.1
     min_qty: 0.1
-    tick_size: 0.001
+    tick_size: 0.0001
   LTCUSDT:
-    qty_step: 0.01
-    min_qty: 0.01
+    qty_step: 0.1
+    min_qty: 0.1
     tick_size: 0.01
   UNIUSDT:
     qty_step: 0.1
@@ -96,22 +106,22 @@ symbol_meta:
     min_qty: 0.1
     tick_size: 0.001
   ARBUSDT:
-    qty_step: 1
-    min_qty: 1
+    qty_step: 0.1
+    min_qty: 0.1
     tick_size: 0.0001
   OPUSDT:
     qty_step: 0.1
     min_qty: 0.1
-    tick_size: 0.001
+    tick_size: 0.0001
   INJUSDT:
-    qty_step: 0.01
-    min_qty: 0.01
+    qty_step: 0.1
+    min_qty: 0.1
     tick_size: 0.001
   SUIUSDT:
-    qty_step: 1
-    min_qty: 1
+    qty_step: 1.0
+    min_qty: 1.0
     tick_size: 0.0001
   SEIUSDT:
-    qty_step: 1
-    min_qty: 1
+    qty_step: 1.0
+    min_qty: 1.0
     tick_size: 0.0001

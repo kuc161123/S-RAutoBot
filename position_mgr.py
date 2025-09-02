@@ -2,8 +2,22 @@ from dataclasses import dataclass, field
 from typing import Dict
 
 def round_step(x:float, step:float) -> float:
+    """Round to nearest step value with proper decimal handling"""
     if step <= 0: return x
-    return round(x / step) * step
+    
+    # Determine decimal places from step
+    import decimal
+    step_str = str(step)
+    if '.' in step_str:
+        decimal_places = len(step_str.split('.')[1].rstrip('0'))
+    else:
+        decimal_places = 0
+    
+    # Round to step
+    rounded = round(x / step) * step
+    
+    # Format to avoid floating point issues
+    return round(rounded, decimal_places)
 
 @dataclass
 class RiskConfig:

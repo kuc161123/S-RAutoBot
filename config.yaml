@@ -26,9 +26,9 @@ trade:
   - SUIUSDT
   - SEIUSDT
   timeframe: '15'
-  risk_usd: 5  # Reduced for $50 balance
-  max_leverage: 5
-  max_positions: 3  # Limit concurrent positions
+  risk_usd: 2  # Ultra-conservative for $50 balance
+  max_leverage: 10  # Higher leverage for smaller account
+  max_positions: 5  # Can have more positions with lower risk
   use_ema: false
   ema_len: 200
   use_vol: false

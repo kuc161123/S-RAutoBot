@@ -19,6 +19,7 @@ from sizer import Sizer
 from broker_bybit import Bybit, BybitConfig
 from telegram_bot import TGBot
 from candle_storage_postgres import CandleStorage
+from trade_tracker import TradeTracker, Trade
 
 # Setup logging
 logging.basicConfig(
@@ -71,6 +72,7 @@ class TradingBot:
         self.bybit = None
         self.storage = CandleStorage()  # Will use DATABASE_URL from environment
         self.last_save_time = datetime.now()
+        self.trade_tracker = TradeTracker()  # Initialize trade tracker
         
     async def load_or_fetch_initial_data(self, symbols:list[str], timeframe:str):
         """Load candles from database or fetch from API if not available"""
@@ -144,6 +146,88 @@ class TradingBot:
                 logger.info("Auto-saved all candles to database")
         except Exception as e:
             logger.error(f"Failed to auto-save candles: {e}")
+    
+    def record_closed_trade(self, symbol: str, pos: Position, exit_price: float, exit_reason: str, leverage: float = 1.0):
+        """Record a closed trade to history"""
+        try:
+            # Calculate PnL
+            pnl_usd, pnl_percent = self.trade_tracker.calculate_pnl(
+                symbol, pos.side, pos.entry, exit_price, pos.qty, leverage
+            )
+            
+            # Create trade record
+            trade = Trade(
+                symbol=symbol,
+                side=pos.side,
+                entry_price=pos.entry,
+                exit_price=exit_price,
+                quantity=pos.qty,
+                entry_time=datetime.now() - pd.Timedelta(hours=1),  # Approximate
+                exit_time=datetime.now(),
+                pnl_usd=pnl_usd,
+                pnl_percent=pnl_percent,
+                exit_reason=exit_reason,
+                leverage=leverage
+            )
+            
+            # Add to tracker
+            self.trade_tracker.add_trade(trade)
+            logger.info(f"Trade recorded: {symbol} {exit_reason} PnL: ${pnl_usd:.2f}")
+            
+        except Exception as e:
+            logger.error(f"Failed to record trade: {e}")
+    
+    async def check_closed_positions(self, book: Book, meta: dict = None):
+        """Check for positions that have been closed and record them"""
+        try:
+            # Get current positions from exchange
+            current_positions = self.bybit.get_positions()
+            current_symbols = {p['symbol'] for p in current_positions if float(p.get('size', 0)) > 0}
+            
+            # Check each tracked position
+            closed_positions = []
+            for symbol, pos in list(book.positions.items()):
+                if symbol not in current_symbols:
+                    # Position has been closed
+                    closed_positions.append((symbol, pos))
+            
+            # Record and remove closed positions
+            for symbol, pos in closed_positions:
+                # Get latest price for PnL calculation
+                if symbol in self.frames and len(self.frames[symbol]) > 0:
+                    exit_price = float(self.frames[symbol]['close'].iloc[-1])
+                    
+                    # Determine exit reason based on price
+                    if pos.side == "long":
+                        if exit_price >= pos.tp * 0.99:  # Near TP
+                            exit_reason = "tp"
+                        elif exit_price <= pos.sl * 1.01:  # Near SL
+                            exit_reason = "sl"
+                        else:
+                            exit_reason = "manual"
+                    else:  # short
+                        if exit_price <= pos.tp * 1.01:  # Near TP
+                            exit_reason = "tp"
+                        elif exit_price >= pos.sl * 0.99:  # Near SL
+                            exit_reason = "sl"
+                        else:
+                            exit_reason = "manual"
+                    
+                    # Get leverage from metadata
+                    if meta:
+                        leverage = meta.get(symbol, {}).get("max_leverage", 1.0)
+                    else:
+                        leverage = 1.0
+                    
+                    # Record the trade
+                    self.record_closed_trade(symbol, pos, exit_price, exit_reason, leverage)
+                
+                # Remove from book
+                book.positions.pop(symbol)
+                logger.info(f"Position closed and removed from tracking: {symbol}")
+                
+        except Exception as e:
+            logger.error(f"Error checking closed positions: {e}")
     
     async def recover_positions(self, book:Book, sizer:Sizer):
         """Recover existing positions from exchange - preserves all existing orders"""
@@ -331,7 +415,8 @@ class TradingBot:
             "meta": cfg.get("symbol_meta",{}),
             "broker": bybit,
             "frames": self.frames,
-            "last_analysis": last_analysis
+            "last_analysis": last_analysis,
+            "trade_tracker": self.trade_tracker
         }
         
         # Initialize Telegram bot with retry on conflict
@@ -363,6 +448,8 @@ class TradingBot:
         # Signal tracking
         last_signal_time = {}
         signal_cooldown = 60  # Seconds between signals per symbol
+        last_position_check = datetime.now()
+        position_check_interval = 30  # Check for closed positions every 30 seconds
         
         try:
             # Start streaming
@@ -401,6 +488,11 @@ class TradingBot:
                 if (datetime.now() - self.last_save_time).total_seconds() > 120:
                     await self.save_all_candles()
                     self.last_save_time = datetime.now()
+                
+                # Check for closed positions periodically
+                if (datetime.now() - last_position_check).total_seconds() > position_check_interval:
+                    await self.check_closed_positions(book, shared.get("meta"))
+                    last_position_check = datetime.now()
                 
                 # Handle panic close requests
                 if sym in panic_list and sym in book.positions:

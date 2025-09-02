@@ -24,6 +24,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("symbols", self.symbols))
         self.app.add_handler(CommandHandler("dashboard", self.dashboard))
         self.app.add_handler(CommandHandler("analysis", self.analysis))
+        self.app.add_handler(CommandHandler("stats", self.stats))
+        self.app.add_handler(CommandHandler("recent", self.recent_trades))
         
         self.running = False
 
@@ -76,6 +78,10 @@ class TGBot:
 /balance - Account balance
 /symbols - List active trading pairs
 /analysis [symbol] - Show analysis details
+
+📈 *Statistics:*
+/stats [days] - Trading statistics
+/recent [limit] - Recent trades history
 
 ⚙️ *Controls:*
 /set\_risk [amount] - Adjust risk per trade
@@ -428,3 +434,53 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in analysis: {e}")
             await update.message.reply_text("Error getting analysis")
+    
+    async def stats(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Show trading statistics"""
+        try:
+            # Get trade tracker from shared
+            tracker = self.shared.get("trade_tracker")
+            if not tracker:
+                await update.message.reply_text("Statistics tracking not initialized yet")
+                return
+            
+            # Parse arguments for time period
+            days = None
+            if ctx.args:
+                try:
+                    days = int(ctx.args[0])
+                except ValueError:
+                    pass
+            
+            # Get formatted statistics
+            msg = tracker.format_stats_message(days)
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in stats: {e}")
+            await update.message.reply_text("Error getting statistics")
+    
+    async def recent_trades(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Show recent trades"""
+        try:
+            # Get trade tracker from shared
+            tracker = self.shared.get("trade_tracker")
+            if not tracker:
+                await update.message.reply_text("Trade tracking not initialized yet")
+                return
+            
+            # Parse arguments for limit
+            limit = 5
+            if ctx.args:
+                try:
+                    limit = min(20, int(ctx.args[0]))  # Max 20 recent trades
+                except ValueError:
+                    pass
+            
+            # Get formatted recent trades
+            msg = tracker.format_recent_trades(limit)
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in recent_trades: {e}")
+            await update.message.reply_text("Error getting recent trades")

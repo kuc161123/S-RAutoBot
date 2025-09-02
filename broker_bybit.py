@@ -146,9 +146,8 @@ class Bybit:
             "tpslMode": "Partial",       # Partial mode allows Limit TP orders
             "tpOrderType": "Limit",      # Limit order for Take Profit (better fill price)
             "slOrderType": "Market",     # Market order for Stop Loss (guaranteed fill)
-            "tpSize": "0",              # 0 means close entire position
-            "slSize": "0",              # 0 means close entire position
             "positionIdx": 0
+            # Note: Not including tpSize/slSize - when omitted, defaults to entire position
         }
         return self._request("POST", "/v5/position/trading-stop", data)
     

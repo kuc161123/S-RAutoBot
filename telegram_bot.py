@@ -20,6 +20,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("status", self.status))
         self.app.add_handler(CommandHandler("panic_close", self.panic_close))
         self.app.add_handler(CommandHandler("balance", self.balance))
+        self.app.add_handler(CommandHandler("health", self.health))
         
         self.running = False
 
@@ -171,3 +172,48 @@ Max leverage: {}x
         except Exception as e:
             logger.error(f"Error in panic_close: {e}")
             await update.message.reply_text("Error processing panic close")
+    
+    async def health(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Show bot health and analysis status"""
+        try:
+            import datetime
+            
+            # Get shared data
+            frames = self.shared.get("frames", {})
+            last_analysis = self.shared.get("last_analysis", {})
+            
+            msg = "*🤖 Bot Health Status*\n\n"
+            
+            # Check if bot is receiving data
+            if frames:
+                msg += "✅ *Data Reception:* Active\n"
+                msg += f"📊 *Symbols Tracked:* {len(frames)}\n\n"
+                
+                msg += "*Candle Data:*\n"
+                for symbol, df in list(frames.items())[:5]:  # Show first 5
+                    if df is not None and len(df) > 0:
+                        last_time = df.index[-1]
+                        candle_count = len(df)
+                        msg += f"• {symbol}: {candle_count} candles, last: {last_time.strftime('%H:%M:%S')}\n"
+                
+                # Show last analysis times
+                if last_analysis:
+                    msg += "\n*Last Analysis:*\n"
+                    now = datetime.datetime.now()
+                    for sym, timestamp in list(last_analysis.items())[:5]:
+                        time_ago = (now - timestamp).total_seconds()
+                        if time_ago < 60:
+                            msg += f"• {sym}: {int(time_ago)}s ago\n"
+                        else:
+                            msg += f"• {sym}: {int(time_ago/60)}m ago\n"
+                else:
+                    msg += "\n⏳ *Waiting for first candle close to analyze*"
+            else:
+                msg += "⚠️ *Data Reception:* No data yet\n"
+                msg += "Bot is starting up..."
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in health: {e}")
+            await update.message.reply_text("Error getting health status")

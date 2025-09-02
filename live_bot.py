@@ -255,13 +255,18 @@ class TradingBot:
         logger.info("Cancelling any existing orders...")
         bybit.cancel_all_orders()
         
+        # Track analysis times
+        last_analysis = {}
+        
         # Setup shared data for Telegram
         shared = {
             "risk": risk, 
             "book": book, 
             "panic": panic_list, 
             "meta": cfg.get("symbol_meta",{}),
-            "broker": bybit
+            "broker": bybit,
+            "frames": self.frames,
+            "last_analysis": last_analysis
         }
         
         # Initialize Telegram bot with retry on conflict
@@ -336,15 +341,23 @@ class TradingBot:
                 if not k.get("confirm", False):
                     continue
                 
+                # Log analysis activity
+                logger.info(f"[{sym}] Analyzing completed candle - Close: {k['close']}, Volume: {k['volume']}")
+                
+                # Track analysis time
+                last_analysis[sym] = datetime.now()
+                
                 # Check signal cooldown
                 now = time.time()
                 if sym in last_signal_time:
                     if now - last_signal_time[sym] < signal_cooldown:
+                        logger.debug(f"[{sym}] In cooldown period, skipping analysis")
                         continue
                 
                 # Detect signal
                 sig = detect_signal(df.copy(), settings)
                 if sig is None:
+                    logger.debug(f"[{sym}] No signal detected - waiting for setup")
                     continue
                 
                 logger.info(f"[{sym}] Signal detected: {sig.side} @ {sig.entry:.4f}")

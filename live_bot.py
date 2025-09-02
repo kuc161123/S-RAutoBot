@@ -423,6 +423,9 @@ class TradingBot:
                     logger.info(f"[{sym}] Already have position, waiting for it to close before taking new signal")
                     continue
                 
+                # Get symbol metadata
+                m = meta_for(sym, shared["meta"])
+                
                 # Check account balance
                 balance = bybit.get_balance()
                 if balance:
@@ -437,7 +440,6 @@ class TradingBot:
                     logger.debug(f"[{sym}] Balance check passed: ${balance:.2f} available")
                 
                 # Calculate position size
-                m = meta_for(sym, shared["meta"])
                 qty = sizer.qty_for(sig.entry, sig.sl, m.get("qty_step",0.001), m.get("min_qty",0.001))
                 
                 if qty <= 0:

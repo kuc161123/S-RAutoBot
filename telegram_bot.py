@@ -23,6 +23,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("health", self.health))
         self.app.add_handler(CommandHandler("symbols", self.symbols))
         self.app.add_handler(CommandHandler("dashboard", self.dashboard))
+        self.app.add_handler(CommandHandler("analysis", self.analysis))
         
         self.running = False
 
@@ -74,6 +75,7 @@ class TGBot:
 /status - Open positions
 /balance - Account balance
 /symbols - List active trading pairs
+/analysis [symbol] - Show analysis details
 
 ⚙️ *Controls:*
 /set\_risk [amount] - Adjust risk per trade
@@ -363,3 +365,66 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in dashboard: {e}")
             await update.message.reply_text("Error generating dashboard")
+    
+    async def analysis(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Show recent analysis details for symbols"""
+        try:
+            frames = self.shared.get("frames", {})
+            analysis_log = self.shared.get("analysis_log", {})
+            
+            if not frames:
+                await update.message.reply_text("No data available yet")
+                return
+            
+            msg = "🔍 *Recent Analysis Details*\n"
+            msg += "━" * 20 + "\n\n"
+            
+            # Get symbol from args or show first 5
+            if ctx.args:
+                symbols = [ctx.args[0].upper()]
+            else:
+                symbols = list(frames.keys())[:5]
+            
+            for symbol in symbols:
+                if symbol not in frames:
+                    continue
+                    
+                df = frames[symbol]
+                if df is None or len(df) < 50:
+                    msg += f"*{symbol}*: Insufficient data\n\n"
+                    continue
+                
+                # Get last price and check for recent highs/lows
+                last_price = df['close'].iloc[-1]
+                recent_high = df['high'].iloc[-20:].max()
+                recent_low = df['low'].iloc[-20:].min()
+                
+                msg += f"*{symbol}*\n"
+                msg += f"• Price: {last_price:.4f}\n"
+                msg += f"• 20-bar High: {recent_high:.4f}\n"
+                msg += f"• 20-bar Low: {recent_low:.4f}\n"
+                
+                # Check if we have analysis logs
+                if symbol in analysis_log:
+                    log_entry = analysis_log[symbol]
+                    msg += f"• Structure: {log_entry.get('structure', 'Unknown')}\n"
+                    msg += f"• Signal: {log_entry.get('signal', 'None')}\n"
+                else:
+                    # Simple trend detection
+                    sma20 = df['close'].iloc[-20:].mean()
+                    if last_price > sma20 * 1.01:
+                        msg += f"• Trend: Bullish (above SMA20: {sma20:.4f})\n"
+                    elif last_price < sma20 * 0.99:
+                        msg += f"• Trend: Bearish (below SMA20: {sma20:.4f})\n"
+                    else:
+                        msg += f"• Trend: Neutral (near SMA20: {sma20:.4f})\n"
+                
+                msg += "\n"
+            
+            msg += "_Use /analysis SYMBOL for specific pair_"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in analysis: {e}")
+            await update.message.reply_text("Error getting analysis")

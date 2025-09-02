@@ -55,6 +55,7 @@ def detect_signal(df:pd.DataFrame, s:Settings, symbol:str="") -> Signal|None:
     """
     need = max(200, s.atr_len) + s.left + s.right + 3
     if len(df) < need:
+        logger.info(f"[{symbol}] Need {need} candles, have {len(df)} - waiting for more data")
         return None
 
     high, low, close, vol = df["high"], df["low"], df["close"], df["volume"]

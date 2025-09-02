@@ -39,12 +39,14 @@ def fetch_symbol_specs():
                 specs[symbol] = {
                     'qty_step': float(item['lotSizeFilter']['qtyStep']),
                     'min_qty': float(item['lotSizeFilter']['minOrderQty']),
-                    'tick_size': float(item['priceFilter']['tickSize'])
+                    'tick_size': float(item['priceFilter']['tickSize']),
+                    'max_leverage': float(item['leverageFilter']['maxLeverage'])
                 }
                 print(f"{symbol}:")
                 print(f"  qty_step: {specs[symbol]['qty_step']}")
                 print(f"  min_qty: {specs[symbol]['min_qty']}")
                 print(f"  tick_size: {specs[symbol]['tick_size']}")
+                print(f"  max_leverage: {specs[symbol]['max_leverage']}x")
         
         return specs
         

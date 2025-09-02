@@ -106,6 +106,20 @@ class Bybit:
             # Not critical - bot can continue without balance display
             return None
 
+    def set_leverage(self, symbol:str, leverage:int) -> Dict[str, Any]:
+        """Set leverage for a symbol"""
+        try:
+            data = {
+                "category": "linear",
+                "symbol": symbol,
+                "buyLeverage": str(leverage),
+                "sellLeverage": str(leverage)
+            }
+            return self._request("POST", "/v5/position/set-leverage", data)
+        except Exception as e:
+            logger.warning(f"Failed to set leverage for {symbol}: {e}")
+            return None
+    
     def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False) -> Dict[str, Any]:
         """Place market order"""
         data = {

@@ -26,9 +26,9 @@ trade:
   - SUIUSDT
   - SEIUSDT
   timeframe: '15'
-  risk_usd: 2  # Ultra-conservative for $50 balance
-  max_leverage: 10  # Higher leverage for smaller account
-  max_positions: 5  # Can have more positions with lower risk
+  risk_usd: 2  # Fixed risk per trade
+  max_positions: 5  # Max concurrent positions
+  # Leverage is set per symbol (see symbol_meta below)
   use_ema: false
   ema_len: 200
   use_vol: false
@@ -50,79 +50,99 @@ symbol_meta:
     qty_step: 0.001
     min_qty: 0.001
     tick_size: 0.1
+    max_leverage: 100.0
   ETHUSDT:
     qty_step: 0.01
     min_qty: 0.01
     tick_size: 0.01
+    max_leverage: 100.0
   SOLUSDT:
     qty_step: 0.1
     min_qty: 0.1
     tick_size: 0.01
+    max_leverage: 50.0
   BNBUSDT:
     qty_step: 0.01
     min_qty: 0.01
     tick_size: 0.1
+    max_leverage: 50.0
   XRPUSDT:
     qty_step: 1.0
     min_qty: 1.0
     tick_size: 0.0001
+    max_leverage: 50.0
   DOGEUSDT:
     qty_step: 1.0
     min_qty: 1.0
     tick_size: 1.0e-05
+    max_leverage: 75.0
   ADAUSDT:
     qty_step: 1.0
     min_qty: 1.0
     tick_size: 0.0001
+    max_leverage: 75.0
   AVAXUSDT:
     qty_step: 0.1
     min_qty: 0.1
     tick_size: 0.001
+    max_leverage: 50.0
   POLUSDT:
     qty_step: 1.0
     min_qty: 1.0
     tick_size: 0.0001
+    max_leverage: 75.0
   LINKUSDT:
     qty_step: 0.1
     min_qty: 0.1
     tick_size: 0.001
+    max_leverage: 50.0
   DOTUSDT:
     qty_step: 0.1
     min_qty: 0.1
     tick_size: 0.0001
+    max_leverage: 50.0
   LTCUSDT:
     qty_step: 0.1
     min_qty: 0.1
     tick_size: 0.01
+    max_leverage: 50.0
   UNIUSDT:
     qty_step: 0.1
     min_qty: 0.1
     tick_size: 0.001
+    max_leverage: 50.0
   ATOMUSDT:
     qty_step: 0.1
     min_qty: 0.1
     tick_size: 0.001
+    max_leverage: 75.0
   NEARUSDT:
     qty_step: 0.1
     min_qty: 0.1
     tick_size: 0.001
+    max_leverage: 50.0
   ARBUSDT:
     qty_step: 0.1
     min_qty: 0.1
     tick_size: 0.0001
+    max_leverage: 50.0
   OPUSDT:
     qty_step: 0.1
     min_qty: 0.1
     tick_size: 0.0001
+    max_leverage: 50.0
   INJUSDT:
     qty_step: 0.1
     min_qty: 0.1
     tick_size: 0.001
+    max_leverage: 50.0
   SUIUSDT:
     qty_step: 1.0
     min_qty: 1.0
     tick_size: 0.0001
+    max_leverage: 50.0
   SEIUSDT:
     qty_step: 1.0
     min_qty: 1.0
     tick_size: 0.0001
+    max_leverage: 50.0

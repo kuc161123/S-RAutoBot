@@ -449,6 +449,11 @@ class TradingBot:
                     logger.warning(f"[{sym}] Quantity too small, skipping")
                     continue
                 
+                # Set maximum leverage for this symbol
+                max_lev = int(m.get("max_leverage", 10))
+                logger.info(f"[{sym}] Setting leverage to {max_lev}x (maximum available)")
+                bybit.set_leverage(sym, max_lev)
+                
                 # Place market order
                 side = "Buy" if sig.side == "long" else "Sell"
                 try:

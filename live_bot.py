@@ -156,17 +156,23 @@ class TradingBot:
                 recovered = 0
                 for pos in positions:
                     # Skip if no position size
-                    if float(pos.get('size', 0)) == 0:
+                    size_str = pos.get('size', '0')
+                    if not size_str or size_str == '' or float(size_str) == 0:
                         continue
                         
                     symbol = pos['symbol']
                     side = "long" if pos['side'] == "Buy" else "short"
-                    qty = float(pos['size'])
-                    entry = float(pos['avgPrice'])
+                    
+                    # Safe conversion with empty string handling
+                    qty = float(size_str)
+                    entry = float(pos.get('avgPrice') or 0)
                     
                     # Get current TP/SL if set - PRESERVE THESE
-                    tp = float(pos.get('takeProfit', 0))
-                    sl = float(pos.get('stopLoss', 0))
+                    # Handle empty strings by converting to 0
+                    tp_str = pos.get('takeProfit', '0')
+                    sl_str = pos.get('stopLoss', '0')
+                    tp = float(tp_str) if tp_str and tp_str != '' else 0
+                    sl = float(sl_str) if sl_str and sl_str != '' else 0
                     
                     # Add to book
                     from position_mgr import Position

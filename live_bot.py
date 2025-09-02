@@ -111,7 +111,7 @@ class TradingBot:
                         
                         df = pd.DataFrame(data)
                         # Set index to timestamp
-                        df.index = pd.to_datetime([int(k[0]) for k in klines], unit='ms')
+                        df.index = pd.to_datetime([int(k[0]) for k in klines], unit='ms', utc=True)
                         df.sort_index(inplace=True)
                         
                         self.frames[symbol] = df
@@ -349,7 +349,7 @@ class TradingBot:
                 ts = int(k["start"])
                 row = pd.DataFrame(
                     [[float(k["open"]), float(k["high"]), float(k["low"]), float(k["close"]), float(k["volume"])]],
-                    index=[pd.to_datetime(ts, unit="ms")],
+                    index=[pd.to_datetime(ts, unit="ms", utc=True)],
                     columns=["open","high","low","close","volume"]
                 )
                 
@@ -358,6 +358,14 @@ class TradingBot:
                     df = self.frames[sym]
                 else:
                     df = new_frame()
+                
+                # Ensure both dataframes have consistent timezone handling
+                if df.index.tz is None and row.index.tz is not None:
+                    # Convert existing df to UTC if it's timezone-naive
+                    df.index = df.index.tz_localize('UTC')
+                elif df.index.tz is not None and row.index.tz is None:
+                    # Convert new row to UTC if it's timezone-naive
+                    row.index = row.index.tz_localize('UTC')
                     
                 df.loc[row.index[0]] = row.iloc[0]
                 df.sort_index(inplace=True)

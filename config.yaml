@@ -55,6 +55,56 @@ trade:
   - ENJUSDT
   - BLURUSDT
   - CYBERUSDT
+  - ARKMUSDT
+  - PENDLEUSDT
+  - ETCUSDT
+  - MNTUSDT
+  - CROUSDT
+  - IPUSDT
+  - HYPEUSDT
+  - PENGUUSDT
+  - SKYUSDT
+  - 1000BONKUSDT
+  - MUSDT
+  - FARTCOINUSDT
+  - PUMPFUNUSDT
+  - LRCUSDT
+  - MAVUSDT
+  - AI16ZUSDT
+  - DOLOUSDT
+  - JELLYJELLYUSDT
+  - POPCATUSDT
+  - EGLDUSDT
+  - CFXUSDT
+  - COMPUSDT
+  - DASHUSDT
+  - GMXUSDT
+  - 1INCHUSDT
+  - KSMUSDT
+  - LPTUSDT
+  - ANKRUSDT
+  - BATUSDT
+  - CTCUSDT
+  - KNCUSDT
+  - BANDUSDT
+  - IOSTUSDT
+  - CELOUSDT
+  - HOTUSDT
+  - SCUSDT
+  - ONTUSDT
+  - RSRUSDT
+  - CKBUSDT
+  - HNTUSDT
+  - SKLUSDT
+  - COTIUSDT
+  - ALICEUSDT
+  - DYDXUSDT
+  - C98USDT
+  - AXLUSDT
+  - QTUMUSDT
+  - ICXUSDT
+  - SFPUSDT
+  - ENSUSDT
   timeframe: '15'
   risk_usd: 2
   use_ema: true
@@ -409,3 +459,168 @@ symbol_meta:
     min_qty: 0.1
     tick_size: 0.001
     max_leverage: 25.0
+  ARKMUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 50.0
+  PENDLEUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 25.0
+  EGLDUSDT:
+    qty_step: 0.01
+    min_qty: 0.01
+    tick_size: 0.01
+    max_leverage: 25.0
+  CFXUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  COMPUSDT:
+    qty_step: 0.01
+    min_qty: 0.01
+    tick_size: 0.01
+    max_leverage: 25.0
+  DASHUSDT:
+    qty_step: 0.01
+    min_qty: 0.01
+    tick_size: 0.01
+    max_leverage: 25.0
+  GMXUSDT:
+    qty_step: 0.01
+    min_qty: 0.01
+    tick_size: 0.001
+    max_leverage: 25.0
+  1INCHUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  KSMUSDT:
+    qty_step: 0.01
+    min_qty: 0.01
+    tick_size: 0.01
+    max_leverage: 25.0
+  LPTUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.001
+    max_leverage: 25.0
+  ANKRUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  BATUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  CTCUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 25.0
+  KNCUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  BANDUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  IOSTUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-06
+    max_leverage: 16.67
+  CELOUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  HOTUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-06
+    max_leverage: 25.0
+  SCUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 25.0
+  ONTUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 25.0
+  RSRUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 25.0
+  CKBUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 25.0
+  HNTUSDT:
+    qty_step: 0.01
+    min_qty: 0.01
+    tick_size: 0.001
+    max_leverage: 25.0
+  SKLUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  COTIUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  ALICEUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  DYDXUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 50.0
+  C98USDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  AXLUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 50.0
+  QTUMUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.001
+    max_leverage: 25.0
+  ICXUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  SFPUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 12.5
+  ENSUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.001
+    max_leverage: 50.0

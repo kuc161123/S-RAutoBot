@@ -417,29 +417,17 @@ class TradingBot:
                 
                 logger.info(f"[{sym}] Signal detected: {sig.side} @ {sig.entry:.4f}")
                 
-                # Check position limits
+                # Check position limits (total across all symbols)
                 max_positions = cfg['trade'].get('max_positions', 5)
                 if len(book.positions) >= max_positions:
                     logger.warning(f"[{sym}] Max positions ({max_positions}) reached, skipping signal")
                     continue
                 
-                # Check if we have a position
+                # One position per symbol rule - wait for current position to close
+                # This prevents overexposure to a single symbol and allows clean entry/exit
                 if sym in book.positions:
-                    cur = book.positions[sym]
-                    if cur.side == sig.side:
-                        logger.info(f"[{sym}] Already have {cur.side} position, skipping")
-                        continue
-                    
-                    # Close opposite position first
-                    logger.info(f"[{sym}] Closing opposite {cur.side} position")
-                    try:
-                        bybit.place_market(sym, "Sell" if cur.side=="long" else "Buy", cur.qty, reduce_only=True)
-                        book.positions.pop(sym, None)
-                        if self.tg:
-                            await self.tg.send_message(f"🔄 Closed {sym} {cur.side} to flip position")
-                    except Exception as e:
-                        logger.error(f"Close error: {e}")
-                        continue
+                    logger.info(f"[{sym}] Already have position, waiting for it to close before taking new signal")
+                    continue
                 
                 # Check account balance
                 balance = bybit.get_balance()

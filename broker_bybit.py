@@ -154,6 +154,7 @@ class Bybit:
                     "stopLoss": str(stop_loss),
                     "tpSize": str(position_qty),     # Full position size
                     "slSize": str(position_qty),     # Full position size
+                    "tpLimitPrice": str(take_profit), # Limit price same as trigger for TP
                     "tpTriggerBy": "LastPrice",
                     "slTriggerBy": "LastPrice",
                     "tpslMode": "Partial",           # Partial mode allows different order types
@@ -168,6 +169,7 @@ class Bybit:
                     "symbol": symbol,
                     "takeProfit": str(take_profit),
                     "stopLoss": str(stop_loss),
+                    "tpLimitPrice": str(take_profit), # Limit price same as trigger for TP
                     "tpTriggerBy": "LastPrice",
                     "slTriggerBy": "LastPrice",
                     "tpslMode": "Full",              # Full mode for entire position
@@ -183,6 +185,7 @@ class Bybit:
                 "symbol": symbol,
                 "takeProfit": str(take_profit),
                 "stopLoss": str(stop_loss),
+                "tpLimitPrice": str(take_profit),    # Limit price same as trigger for TP
                 "tpTriggerBy": "LastPrice",
                 "slTriggerBy": "LastPrice",
                 "tpslMode": "Full",                  # Full mode for entire position

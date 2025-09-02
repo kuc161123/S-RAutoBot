@@ -53,10 +53,24 @@ def detect_signal(df:pd.DataFrame, s:Settings, symbol:str="") -> Signal|None:
     df: DataFrame with columns ['open','high','low','close','volume'] indexed by datetime
     Returns a Signal at bar close (last row), or None.
     """
-    need = max(200, s.atr_len) + s.left + s.right + 3
-    if len(df) < need:
-        logger.info(f"[{symbol}] Need {need} candles, have {len(df)} - waiting for more data")
+    # Progressive requirements - start analyzing with fewer candles
+    min_candles = 50  # Minimum to start basic analysis
+    ideal_candles = 200  # Ideal for best accuracy
+    
+    # Minimum needed for pivot detection and ATR
+    need_for_pivots = (s.left + s.right + 1) * 4  # Need at least 4 pivot points
+    need_for_atr = s.atr_len + 1
+    absolute_min = max(min_candles, need_for_pivots, need_for_atr)
+    
+    if len(df) < absolute_min:
+        logger.info(f"[{symbol}] Need minimum {absolute_min} candles, have {len(df)} - waiting for more data")
         return None
+    
+    # Log analysis quality based on available data
+    if len(df) < ideal_candles:
+        logger.info(f"[{symbol}] Analyzing with {len(df)} candles (limited accuracy, ideal: {ideal_candles})")
+    else:
+        logger.debug(f"[{symbol}] Analyzing with {len(df)} candles (full accuracy)")
 
     high, low, close, vol = df["high"], df["low"], df["close"], df["volume"]
 
@@ -90,10 +104,12 @@ def detect_signal(df:pd.DataFrame, s:Settings, symbol:str="") -> Signal|None:
     atr = float(_atr(df, s.atr_len)[-1])
     ema_ok_long = True
     ema_ok_short = True
-    if s.use_ema:
+    if s.use_ema and len(df) >= s.ema_len:  # Only use EMA if we have enough data
         ema_val = float(_ema(close, s.ema_len)[-1])
         ema_ok_long = close.iloc[-1] > ema_val
         ema_ok_short= close.iloc[-1] < ema_val
+    elif s.use_ema:
+        logger.debug(f"[{symbol}] Skipping EMA filter - need {s.ema_len} candles, have {len(df)}")
 
     vol_ok = True
     if s.use_vol:
@@ -103,8 +119,11 @@ def detect_signal(df:pd.DataFrame, s:Settings, symbol:str="") -> Signal|None:
     crossRes = (c > nearestRes)
     crossSup = (c < nearestSup)
     
-    # Log price position relative to S/R
-    logger.info(f"[{symbol}] Current Price: {c:.4f} | Above Resistance: {crossRes} | Below Support: {crossSup}")
+    # Calculate confidence based on available data
+    confidence = min(100, (len(df) / ideal_candles) * 100)
+    
+    # Log price position relative to S/R with confidence
+    logger.info(f"[{symbol}] Price: {c:.4f} | Above Res: {crossRes} | Below Sup: {crossSup} | Confidence: {confidence:.0f}%")
 
     if trendUp and crossRes and vol_ok and ema_ok_long:
         entry = c

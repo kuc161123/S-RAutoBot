@@ -80,10 +80,10 @@ class TradingBot:
         stored_frames = self.storage.load_all_frames(symbols)
         
         for symbol in symbols:
-            if symbol in stored_frames and len(stored_frames[symbol]) >= 200:
-                # Use stored data if we have enough candles
+            if symbol in stored_frames and len(stored_frames[symbol]) >= 50:  # Start with just 50 candles
+                # Use stored data if we have enough candles for basic analysis
                 self.frames[symbol] = stored_frames[symbol]
-                logger.info(f"[{symbol}] Loaded {len(stored_frames[symbol])} candles from database")
+                logger.info(f"[{symbol}] Loaded {len(stored_frames[symbol])} candles from database (will analyze with available data)")
             else:
                 # Fetch from API if not in database or insufficient data
                 try:

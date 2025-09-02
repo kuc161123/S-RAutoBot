@@ -67,7 +67,96 @@ class TradingBot:
         self.ws = None
         self.frames: Dict[str, pd.DataFrame] = {}
         self.tg: Optional[TGBot] = None
+        self.bybit = None
         
+    async def fetch_initial_data(self, symbols:list[str], timeframe:str):
+        """Fetch historical klines for all symbols on startup"""
+        logger.info("Fetching historical data for faster startup...")
+        
+        for symbol in symbols:
+            try:
+                klines = self.bybit.get_klines(symbol, timeframe, limit=200)
+                
+                if klines:
+                    # Convert to DataFrame
+                    data = []
+                    for k in klines:
+                        # k = [timestamp, open, high, low, close, volume, turnover]
+                        data.append({
+                            'open': float(k[1]),
+                            'high': float(k[2]),
+                            'low': float(k[3]),
+                            'close': float(k[4]),
+                            'volume': float(k[5])
+                        })
+                    
+                    df = pd.DataFrame(data)
+                    # Set index to timestamp
+                    df.index = pd.to_datetime([int(k[0]) for k in klines], unit='ms')
+                    df.sort_index(inplace=True)
+                    
+                    self.frames[symbol] = df
+                    logger.info(f"Loaded {len(df)} historical candles for {symbol}")
+                else:
+                    self.frames[symbol] = new_frame()
+                    logger.warning(f"No historical data available for {symbol}")
+                    
+            except Exception as e:
+                logger.error(f"Failed to fetch historical data for {symbol}: {e}")
+                self.frames[symbol] = new_frame()
+    
+    async def recover_positions(self, book:Book, sizer:Sizer):
+        """Recover existing positions from exchange"""
+        logger.info("Checking for existing positions to recover...")
+        
+        try:
+            positions = self.bybit.get_positions()
+            
+            if positions:
+                recovered = 0
+                for pos in positions:
+                    # Skip if no position size
+                    if float(pos.get('size', 0)) == 0:
+                        continue
+                        
+                    symbol = pos['symbol']
+                    side = "long" if pos['side'] == "Buy" else "short"
+                    qty = float(pos['size'])
+                    entry = float(pos['avgPrice'])
+                    
+                    # Get current TP/SL if set
+                    tp = float(pos.get('takeProfit', 0))
+                    sl = float(pos.get('stopLoss', 0))
+                    
+                    # Add to book
+                    from position_mgr import Position
+                    book.positions[symbol] = Position(
+                        side=side,
+                        qty=qty,
+                        entry=entry,
+                        sl=sl if sl > 0 else entry * 0.95,  # Default 5% stop if not set
+                        tp=tp if tp > 0 else entry * 1.1     # Default 10% target if not set
+                    )
+                    
+                    recovered += 1
+                    logger.info(f"Recovered {side} position: {symbol} qty={qty} entry={entry:.4f}")
+                
+                if recovered > 0:
+                    logger.info(f"Successfully recovered {recovered} position(s)")
+                    
+                    # Send Telegram notification
+                    if self.tg:
+                        msg = f"📊 *Recovered {recovered} existing position(s)*\n\n"
+                        for sym, pos in book.positions.items():
+                            emoji = "🟢" if pos.side == "long" else "🔴"
+                            msg += f"{emoji} {sym}: {pos.side} qty={pos.qty:.4f}\n"
+                        await self.tg.send_message(msg)
+            else:
+                logger.info("No existing positions to recover")
+                
+        except Exception as e:
+            logger.error(f"Failed to recover positions: {e}")
+    
     async def kline_stream(self, ws_url:str, topics:list[str]):
         """Stream klines from Bybit WebSocket"""
         sub = {"op":"subscribe","args":[f"kline.{t}" for t in topics]}
@@ -137,14 +226,13 @@ class TradingBot:
         )
         
         # Initialize components
-        self.frames = {s:new_frame() for s in symbols}
         risk = RiskConfig(risk_usd=cfg["trade"]["risk_usd"])
         sizer = Sizer(risk)
         book = Book()
         panic_list:list[str] = []
         
         # Initialize Bybit client
-        bybit = Bybit(BybitConfig(
+        self.bybit = bybit = Bybit(BybitConfig(
             cfg["bybit"]["base_url"], 
             cfg["bybit"]["api_key"], 
             cfg["bybit"]["api_secret"]
@@ -157,7 +245,13 @@ class TradingBot:
         else:
             logger.warning("Could not fetch balance, continuing anyway...")
         
-        # Cancel any existing orders
+        # Fetch historical data for all symbols
+        await self.fetch_initial_data(symbols, tf)
+        
+        # Recover existing positions
+        await self.recover_positions(book, sizer)
+        
+        # Cancel any existing orders (after recovery to not affect existing positions)
         logger.info("Cancelling any existing orders...")
         bybit.cancel_all_orders()
         
@@ -212,7 +306,12 @@ class TradingBot:
                     columns=["open","high","low","close","volume"]
                 )
                 
-                df = self.frames[sym]
+                # Get existing frame or create new if not exists
+                if sym in self.frames:
+                    df = self.frames[sym]
+                else:
+                    df = new_frame()
+                    
                 df.loc[row.index[0]] = row.iloc[0]
                 df.sort_index(inplace=True)
                 df = df.tail(500)  # Keep only last 500 candles

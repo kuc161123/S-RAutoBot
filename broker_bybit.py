@@ -160,3 +160,24 @@ class Bybit:
             logger.error(f"Failed to cancel orders: {e}")
             # Not critical if no orders to cancel
             return True
+    
+    def get_klines(self, symbol:str, interval:str, limit:int=200) -> list:
+        """Get historical kline/candlestick data"""
+        try:
+            params = {
+                "category": "linear",
+                "symbol": symbol,
+                "interval": interval,  # 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M
+                "limit": str(min(limit, 200))  # Max 200 per request
+            }
+            resp = self._request("GET", "/v5/market/kline", params)
+            
+            if resp and resp.get("result"):
+                klines = resp["result"]["list"]
+                # Bybit returns newest first, reverse for chronological order
+                return list(reversed(klines))
+            return []
+            
+        except Exception as e:
+            logger.error(f"Failed to get klines for {symbol}: {e}")
+            return []

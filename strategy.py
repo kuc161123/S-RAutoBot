@@ -53,24 +53,20 @@ def detect_signal(df:pd.DataFrame, s:Settings, symbol:str="") -> Signal|None:
     df: DataFrame with columns ['open','high','low','close','volume'] indexed by datetime
     Returns a Signal at bar close (last row), or None.
     """
-    # Progressive requirements - start analyzing with fewer candles
-    min_candles = 50  # Minimum to start basic analysis
-    ideal_candles = 200  # Ideal for best accuracy
+    # Require 200 candles minimum for reliable S/R detection
+    min_candles = 200  # Minimum for good S/R and trend detection
     
-    # Minimum needed for pivot detection and ATR
-    need_for_pivots = (s.left + s.right + 1) * 4  # Need at least 4 pivot points
-    need_for_atr = s.atr_len + 1
-    absolute_min = max(min_candles, need_for_pivots, need_for_atr)
-    
-    if len(df) < absolute_min:
-        logger.info(f"[{symbol}] Need minimum {absolute_min} candles, have {len(df)} - waiting for more data")
+    if len(df) < min_candles:
+        logger.info(f"[{symbol}] Need minimum {min_candles} candles, have {len(df)} - waiting for more data")
         return None
     
-    # Log analysis quality based on available data
-    if len(df) < ideal_candles:
-        logger.info(f"[{symbol}] Analyzing with {len(df)} candles (limited accuracy, ideal: {ideal_candles})")
+    # Log analysis quality - improves with more data
+    if len(df) < 300:
+        logger.info(f"[{symbol}] Analyzing with {len(df)} candles (standard accuracy)")
+    elif len(df) < 500:
+        logger.info(f"[{symbol}] Analyzing with {len(df)} candles (improved accuracy)")
     else:
-        logger.debug(f"[{symbol}] Analyzing with {len(df)} candles (full accuracy)")
+        logger.info(f"[{symbol}] Analyzing with {len(df)} candles (maximum accuracy)")
 
     high, low, close, vol = df["high"], df["low"], df["close"], df["volume"]
 
@@ -119,11 +115,15 @@ def detect_signal(df:pd.DataFrame, s:Settings, symbol:str="") -> Signal|None:
     crossRes = (c > nearestRes)
     crossSup = (c < nearestSup)
     
-    # Calculate confidence based on available data
-    confidence = min(100, (len(df) / ideal_candles) * 100)
+    # Calculate analysis strength based on available data (200-500+ candles)
+    analysis_strength = "Standard"
+    if len(df) >= 500:
+        analysis_strength = "Maximum"
+    elif len(df) >= 300:
+        analysis_strength = "Enhanced"
     
-    # Log price position relative to S/R with confidence
-    logger.info(f"[{symbol}] Price: {c:.4f} | Above Res: {crossRes} | Below Sup: {crossSup} | Confidence: {confidence:.0f}%")
+    # Log price position relative to S/R with analysis strength
+    logger.info(f"[{symbol}] Price: {c:.4f} | Above Res: {crossRes} | Below Sup: {crossSup} | Analysis: {analysis_strength}")
 
     if trendUp and crossRes and vol_ok and ema_ok_long:
         entry = c

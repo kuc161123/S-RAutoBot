@@ -18,6 +18,7 @@ from position_mgr import RiskConfig, Book, Position
 from sizer import Sizer
 from broker_bybit import Bybit, BybitConfig
 from telegram_bot import TGBot
+from candle_storage import CandleStorage
 
 # Setup logging
 logging.basicConfig(
@@ -68,42 +69,70 @@ class TradingBot:
         self.frames: Dict[str, pd.DataFrame] = {}
         self.tg: Optional[TGBot] = None
         self.bybit = None
+        self.storage = CandleStorage("candles.db")
+        self.last_save_time = datetime.now()
         
-    async def fetch_initial_data(self, symbols:list[str], timeframe:str):
-        """Fetch historical klines for all symbols on startup"""
-        logger.info("Fetching historical data for faster startup...")
+    async def load_or_fetch_initial_data(self, symbols:list[str], timeframe:str):
+        """Load candles from database or fetch from API if not available"""
+        logger.info("Loading historical data from database...")
+        
+        # First, try to load from database
+        stored_frames = self.storage.load_all_frames(symbols)
         
         for symbol in symbols:
-            try:
-                klines = self.bybit.get_klines(symbol, timeframe, limit=200)
+            if symbol in stored_frames and len(stored_frames[symbol]) >= 200:
+                # Use stored data if we have enough candles
+                self.frames[symbol] = stored_frames[symbol]
+                logger.info(f"[{symbol}] Loaded {len(stored_frames[symbol])} candles from database")
+            else:
+                # Fetch from API if not in database or insufficient data
+                try:
+                    logger.info(f"[{symbol}] Fetching from API (not enough in database)")
+                    klines = self.bybit.get_klines(symbol, timeframe, limit=200)
                 
-                if klines:
-                    # Convert to DataFrame
-                    data = []
-                    for k in klines:
-                        # k = [timestamp, open, high, low, close, volume, turnover]
-                        data.append({
-                            'open': float(k[1]),
-                            'high': float(k[2]),
-                            'low': float(k[3]),
-                            'close': float(k[4]),
-                            'volume': float(k[5])
-                        })
-                    
-                    df = pd.DataFrame(data)
-                    # Set index to timestamp
-                    df.index = pd.to_datetime([int(k[0]) for k in klines], unit='ms')
-                    df.sort_index(inplace=True)
-                    
-                    self.frames[symbol] = df
-                    logger.info(f"Loaded {len(df)} historical candles for {symbol}")
-                else:
+                    if klines:
+                        # Convert to DataFrame
+                        data = []
+                        for k in klines:
+                            # k = [timestamp, open, high, low, close, volume, turnover]
+                            data.append({
+                                'open': float(k[1]),
+                                'high': float(k[2]),
+                                'low': float(k[3]),
+                                'close': float(k[4]),
+                                'volume': float(k[5])
+                            })
+                        
+                        df = pd.DataFrame(data)
+                        # Set index to timestamp
+                        df.index = pd.to_datetime([int(k[0]) for k in klines], unit='ms')
+                        df.sort_index(inplace=True)
+                        
+                        self.frames[symbol] = df
+                        logger.info(f"[{symbol}] Fetched {len(df)} candles from API")
+                        
+                        # Save to database for next time
+                        self.storage.save_candles(symbol, df)
+                    else:
+                        self.frames[symbol] = new_frame()
+                        logger.warning(f"[{symbol}] No data available from API")
+                        
+                except Exception as e:
+                    logger.error(f"[{symbol}] Failed to fetch data: {e}")
                     self.frames[symbol] = new_frame()
-                    logger.warning(f"No historical data available for {symbol}")
-                    
-            except Exception as e:
-                logger.error(f"Failed to fetch historical data for {symbol}: {e}")
-                self.frames[symbol] = new_frame()
+        
+        # Show database stats
+        stats = self.storage.get_stats()
+        logger.info(f"Database: {stats.get('total_candles', 0)} candles, {stats.get('symbols', 0)} symbols, {stats.get('db_size_mb', 0):.2f} MB")
+    
+    async def save_all_candles(self):
+        """Save all candles to database"""
+        try:
+            if self.frames:
+                self.storage.save_all_frames(self.frames)
+                logger.info("Auto-saved all candles to database")
+        except Exception as e:
+            logger.error(f"Failed to auto-save candles: {e}")
     
     async def recover_positions(self, book:Book, sizer:Sizer):
         """Recover existing positions from exchange"""
@@ -246,7 +275,7 @@ class TradingBot:
             logger.warning("Could not fetch balance, continuing anyway...")
         
         # Fetch historical data for all symbols
-        await self.fetch_initial_data(symbols, tf)
+        await self.load_or_fetch_initial_data(symbols, tf)
         
         # Recover existing positions
         await self.recover_positions(book, sizer)
@@ -323,6 +352,11 @@ class TradingBot:
                 df.sort_index(inplace=True)
                 df = df.tail(500)  # Keep only last 500 candles
                 self.frames[sym] = df
+                
+                # Auto-save to database every 5 minutes
+                if (datetime.now() - self.last_save_time).seconds > 300:
+                    await self.save_all_candles()
+                    self.last_save_time = datetime.now()
                 
                 # Handle panic close requests
                 if sym in panic_list and sym in book.positions:
@@ -468,7 +502,14 @@ if __name__ == "__main__":
         asyncio.run(bot.start())
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
+        # Save candles before shutdown
+        if bot.frames:
+            logger.info("Saving candles to database before shutdown...")
+            bot.storage.save_all_frames(bot.frames)
     except Exception as e:
         logger.error(f"Fatal error: {e}")
     finally:
+        # Final cleanup
+        if hasattr(bot, 'storage'):
+            bot.storage.close()
         logger.info("Bot terminated")

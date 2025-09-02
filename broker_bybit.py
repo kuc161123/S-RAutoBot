@@ -136,20 +136,61 @@ class Bybit:
 
     def set_tpsl(self, symbol:str, take_profit:float, stop_loss:float) -> Dict[str, Any]:
         """Set position TP/SL - Limit TP for better fills, Market SL for guaranteed execution"""
-        data = {
-            "category": "linear",
-            "symbol": symbol,
-            "takeProfit": str(take_profit),
-            "stopLoss": str(stop_loss),
-            "tpSize": "0",               # 0 means entire position size for TP
-            "slSize": "0",               # 0 means entire position size for SL
-            "tpTriggerBy": "LastPrice",
-            "slTriggerBy": "LastPrice",
-            "tpslMode": "Partial",       # Partial mode allows Limit TP orders
-            "tpOrderType": "Limit",      # Limit order for Take Profit (better fill price)
-            "slOrderType": "Market",     # Market order for Stop Loss (guaranteed fill)
-            "positionIdx": 0
-        }
+        # First try to get the current position size to use Partial mode with proper sizes
+        try:
+            positions = self.get_positions()
+            position_qty = None
+            for pos in positions:
+                if pos.get("symbol") == symbol and float(pos.get("size", 0)) > 0:
+                    position_qty = pos.get("size")
+                    break
+            
+            if position_qty:
+                # Use Partial mode with actual position size for Limit TP / Market SL
+                data = {
+                    "category": "linear",
+                    "symbol": symbol,
+                    "takeProfit": str(take_profit),
+                    "stopLoss": str(stop_loss),
+                    "tpSize": str(position_qty),     # Full position size
+                    "slSize": str(position_qty),     # Full position size
+                    "tpTriggerBy": "LastPrice",
+                    "slTriggerBy": "LastPrice",
+                    "tpslMode": "Partial",           # Partial mode allows different order types
+                    "tpOrderType": "Limit",          # Limit order for Take Profit
+                    "slOrderType": "Market",         # Market order for Stop Loss
+                    "positionIdx": 0
+                }
+            else:
+                # Fallback to Full mode if position not found
+                data = {
+                    "category": "linear",
+                    "symbol": symbol,
+                    "takeProfit": str(take_profit),
+                    "stopLoss": str(stop_loss),
+                    "tpTriggerBy": "LastPrice",
+                    "slTriggerBy": "LastPrice",
+                    "tpslMode": "Full",              # Full mode for entire position
+                    "tpOrderType": "Limit",          # Limit order for Take Profit
+                    "slOrderType": "Market",         # Market order for Stop Loss
+                    "positionIdx": 0
+                }
+        except Exception as e:
+            logger.warning(f"Could not get position size, using Full mode: {e}")
+            # Use Full mode as fallback
+            data = {
+                "category": "linear",
+                "symbol": symbol,
+                "takeProfit": str(take_profit),
+                "stopLoss": str(stop_loss),
+                "tpTriggerBy": "LastPrice",
+                "slTriggerBy": "LastPrice",
+                "tpslMode": "Full",                  # Full mode for entire position
+                "tpOrderType": "Limit",              # Limit order for Take Profit
+                "slOrderType": "Market",             # Market order for Stop Loss
+                "positionIdx": 0
+            }
+        
         return self._request("POST", "/v5/position/trading-stop", data)
     
     def get_positions(self) -> list:

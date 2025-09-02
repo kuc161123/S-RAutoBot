@@ -451,6 +451,12 @@ class TradingBot:
         last_position_check = datetime.now()
         position_check_interval = 30  # Check for closed positions every 30 seconds
         
+        # Add periodic logging summary to reduce log spam
+        last_summary_log = datetime.now()
+        summary_log_interval = 300  # Log summary every 5 minutes
+        candles_processed = 0
+        signals_detected = 0
+        
         try:
             # Start streaming
             async for sym, k in self.kline_stream(cfg["bybit"]["ws_public"], topics):
@@ -513,26 +519,34 @@ class TradingBot:
                 if not k.get("confirm", False):
                     continue
                 
-                # Log analysis activity
-                logger.info(f"[{sym}] Analyzing completed candle - Close: {k['close']}, Volume: {k['volume']}")
+                # Increment candle counter for summary
+                candles_processed += 1
                 
                 # Track analysis time
                 last_analysis[sym] = datetime.now()
+                
+                # Log summary periodically instead of every candle
+                if (datetime.now() - last_summary_log).total_seconds() > summary_log_interval:
+                    logger.info(f"📊 5-min Summary: {candles_processed} candles processed, {signals_detected} signals, {len(book.positions)} positions open")
+                    last_summary_log = datetime.now()
+                    candles_processed = 0
+                    signals_detected = 0
                 
                 # Check signal cooldown
                 now = time.time()
                 if sym in last_signal_time:
                     if now - last_signal_time[sym] < signal_cooldown:
-                        logger.debug(f"[{sym}] In cooldown period, skipping analysis")
+                        # Skip silently - no need to log every cooldown
                         continue
                 
                 # Detect signal
                 sig = detect_signal(df.copy(), settings, sym)
                 if sig is None:
-                    logger.debug(f"[{sym}] No signal detected - waiting for setup")
+                    # Don't log every non-signal to reduce log spam
                     continue
                 
                 logger.info(f"[{sym}] Signal detected: {sig.side} @ {sig.entry:.4f}")
+                signals_detected += 1
                 
                 # One position per symbol rule - wait for current position to close
                 # This prevents overexposure to a single symbol and allows clean entry/exit

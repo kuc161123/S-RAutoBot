@@ -57,16 +57,10 @@ def detect_signal(df:pd.DataFrame, s:Settings, symbol:str="") -> Signal|None:
     min_candles = 200  # Minimum for good S/R and trend detection
     
     if len(df) < min_candles:
-        logger.info(f"[{symbol}] Need minimum {min_candles} candles, have {len(df)} - waiting for more data")
+        # Not enough data - return silently to reduce logs
         return None
     
-    # Log analysis quality - improves with more data
-    if len(df) < 300:
-        logger.info(f"[{symbol}] Analyzing with {len(df)} candles (standard accuracy)")
-    elif len(df) < 500:
-        logger.info(f"[{symbol}] Analyzing with {len(df)} candles (improved accuracy)")
-    else:
-        logger.info(f"[{symbol}] Analyzing with {len(df)} candles (maximum accuracy)")
+    # Analysis quality improves with more data (logging removed to reduce spam)
 
     high, low, close, vol = df["high"], df["low"], df["close"], df["volume"]
 
@@ -82,18 +76,12 @@ def detect_signal(df:pd.DataFrame, s:Settings, symbol:str="") -> Signal|None:
     lastLow,  prevLow  = float(dl.iloc[-1]), float(dl.iloc[-2])
     
     # Log S/R levels detected
-    logger.info(f"[{symbol}] S/R Levels - Resistance: {lastHigh:.4f} (prev: {prevHigh:.4f}), Support: {lastLow:.4f} (prev: {prevLow:.4f})")
+    # S/R levels calculated (logging removed to reduce spam)
 
     trendUp = (lastHigh > prevHigh) and (lastLow > prevLow)
     trendDn = (lastHigh < prevHigh) and (lastLow < prevLow)
     
-    # Log market structure
-    if trendUp:
-        logger.info(f"[{symbol}] Market Structure: UPTREND (HH: {lastHigh:.4f} > {prevHigh:.4f}, HL: {lastLow:.4f} > {prevLow:.4f})")
-    elif trendDn:
-        logger.info(f"[{symbol}] Market Structure: DOWNTREND (LH: {lastHigh:.4f} < {prevHigh:.4f}, LL: {lastLow:.4f} < {prevLow:.4f})")
-    else:
-        logger.info(f"[{symbol}] Market Structure: RANGING (no clear HH/HL or LH/LL pattern)")
+    # Market structure analyzed (logging removed to reduce spam)
 
     nearestRes, nearestSup = lastHigh, lastLow
 
@@ -123,7 +111,7 @@ def detect_signal(df:pd.DataFrame, s:Settings, symbol:str="") -> Signal|None:
         analysis_strength = "Enhanced"
     
     # Log price position relative to S/R with analysis strength
-    logger.info(f"[{symbol}] Price: {c:.4f} | Above Res: {crossRes} | Below Sup: {crossSup} | Analysis: {analysis_strength}")
+    # Price levels checked (logging removed to reduce spam)
 
     if trendUp and crossRes and vol_ok and ema_ok_long:
         entry = c

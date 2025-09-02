@@ -357,7 +357,7 @@ class TradingBot:
                         continue
                 
                 # Detect signal
-                sig = detect_signal(df.copy(), settings)
+                sig = detect_signal(df.copy(), settings, symbol)
                 if sig is None:
                     logger.debug(f"[{sym}] No signal detected - waiting for setup")
                     continue

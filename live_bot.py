@@ -18,7 +18,7 @@ from position_mgr import RiskConfig, Book, Position
 from sizer import Sizer
 from broker_bybit import Bybit, BybitConfig
 from telegram_bot import TGBot
-from candle_storage import CandleStorage
+from candle_storage_postgres import CandleStorage
 
 # Setup logging
 logging.basicConfig(
@@ -69,7 +69,7 @@ class TradingBot:
         self.frames: Dict[str, pd.DataFrame] = {}
         self.tg: Optional[TGBot] = None
         self.bybit = None
-        self.storage = CandleStorage("candles.db")
+        self.storage = CandleStorage()  # Will use DATABASE_URL from environment
         self.last_save_time = datetime.now()
         
     async def load_or_fetch_initial_data(self, symbols:list[str], timeframe:str):
@@ -126,6 +126,11 @@ class TradingBot:
                 except Exception as e:
                     logger.error(f"[{symbol}] Failed to fetch data: {e}")
                     self.frames[symbol] = new_frame()
+        
+        # Save all fetched data immediately
+        if self.frames:
+            logger.info("Saving initial data to database...")
+            self.storage.save_all_frames(self.frames)
         
         # Show database stats
         stats = self.storage.get_stats()
@@ -359,8 +364,8 @@ class TradingBot:
                 df = df.tail(500)  # Keep only last 500 candles
                 self.frames[sym] = df
                 
-                # Auto-save to database every 5 minutes
-                if (datetime.now() - self.last_save_time).seconds > 300:
+                # Auto-save to database every 2 minutes (more aggressive)
+                if (datetime.now() - self.last_save_time).total_seconds() > 120:
                     await self.save_all_candles()
                     self.last_save_time = datetime.now()
                 

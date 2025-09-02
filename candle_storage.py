@@ -15,7 +15,12 @@ logger = logging.getLogger(__name__)
 class CandleStorage:
     def __init__(self, db_path: str = "candles.db"):
         """Initialize SQLite storage for candles"""
-        self.db_path = db_path
+        import os
+        # Use absolute path to ensure consistent location
+        if not os.path.isabs(db_path):
+            self.db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), db_path)
+        else:
+            self.db_path = db_path
         self.conn = None
         self._init_db()
         

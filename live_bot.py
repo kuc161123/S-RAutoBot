@@ -417,6 +417,12 @@ class TradingBot:
                 
                 logger.info(f"[{sym}] Signal detected: {sig.side} @ {sig.entry:.4f}")
                 
+                # Check position limits
+                max_positions = cfg.get('max_positions', 5)
+                if len(book.positions) >= max_positions:
+                    logger.warning(f"[{sym}] Max positions ({max_positions}) reached, skipping signal")
+                    continue
+                
                 # Check if we have a position
                 if sym in book.positions:
                     cur = book.positions[sym]
@@ -433,6 +439,18 @@ class TradingBot:
                             await self.tg.send_message(f"🔄 Closed {sym} {cur.side} to flip position")
                     except Exception as e:
                         logger.error(f"Close error: {e}")
+                        continue
+                
+                # Check account balance
+                balance = bybit.get_balance()
+                if balance:
+                    # Reserve some balance for fees and safety
+                    available = balance * 0.9
+                    positions_value = len(book.positions) * cfg['risk_usd'] * 2  # Estimate current exposure
+                    remaining = available - positions_value
+                    
+                    if remaining < cfg['risk_usd'] * 2:
+                        logger.warning(f"[{sym}] Insufficient balance (${balance:.2f}), skipping signal")
                         continue
                 
                 # Calculate position size

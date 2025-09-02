@@ -26,8 +26,9 @@ trade:
   - SUIUSDT
   - SEIUSDT
   timeframe: '15'
-  risk_usd: 10
+  risk_usd: 5  # Reduced for $50 balance
   max_leverage: 5
+  max_positions: 3  # Limit concurrent positions
   use_ema: false
   ema_len: 200
   use_vol: false

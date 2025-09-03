@@ -26,7 +26,15 @@ from multi_websocket_handler import MultiWebSocketHandler
 
 # Import ML scorer (safe - has fallbacks)
 try:
-    from ml_signal_scorer import get_scorer
+    # Try ensemble scorer first, fallback to basic scorer
+    try:
+        from ml_ensemble_scorer import get_ensemble_scorer as get_scorer
+        logger = logging.getLogger(__name__)
+        logger.info("Using Enhanced Ensemble ML Scorer")
+    except ImportError:
+        from ml_signal_scorer import get_scorer
+        logger = logging.getLogger(__name__)
+        logger.info("Using Basic ML Scorer")
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False

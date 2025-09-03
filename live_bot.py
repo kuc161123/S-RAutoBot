@@ -13,7 +13,9 @@ import pandas as pd
 import websockets
 from dotenv import load_dotenv
 
-from strategy import Settings, detect_signal
+# Import strategy based on configuration
+from strategy_pullback import Settings  # Settings are the same for both strategies
+from live_bot_selector import get_strategy_module
 from position_mgr import RiskConfig, Book, Position
 from sizer import Sizer
 from broker_bybit import Bybit, BybitConfig
@@ -226,6 +228,10 @@ class TradingBot:
                 book.positions.pop(symbol)
                 logger.info(f"Position closed and removed from tracking: {symbol}")
                 
+                # Reset the pullback strategy state for this symbol
+                reset_symbol_state(symbol)
+                logger.info(f"[{symbol}] Strategy state reset - ready for new signals")
+                
         except Exception as e:
             logger.error(f"Error checking closed positions: {e}")
     
@@ -346,6 +352,13 @@ class TradingBot:
         logger.info(f"Timeframe: {tf} minutes")
         logger.info("📌 Bot Policy: Existing positions and orders will NOT be modified - they will run their course")
         
+        # Get the appropriate strategy functions
+        use_pullback = cfg["trade"].get("use_pullback_strategy", True)
+        detect_signal, reset_symbol_state = get_strategy_module(use_pullback)
+        
+        strategy_type = "Pullback (HL/LH + Confirmation)" if use_pullback else "Immediate Breakout"
+        logger.info(f"📊 Strategy: {strategy_type}")
+        
         # Initialize strategy settings
         settings = Settings(
             atr_len=cfg["trade"]["atr_len"],
@@ -356,7 +369,8 @@ class TradingBot:
             use_vol=cfg["trade"]["use_vol"],
             vol_len=cfg["trade"]["vol_len"],
             vol_mult=cfg["trade"]["vol_mult"],
-            both_hit_rule=cfg["trade"]["both_hit_rule"]
+            both_hit_rule=cfg["trade"]["both_hit_rule"],
+            confirmation_candles=cfg["trade"].get("confirmation_candles", 2)
         )
         
         # Initialize components

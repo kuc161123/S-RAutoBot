@@ -118,6 +118,8 @@ trade:
   sl_buf_atr: 0.5
   rr: 2.0
   both_hit_rule: SL_FIRST
+  use_pullback_strategy: true  # Use pullback strategy (wait for HL/LH + confirmation)
+  confirmation_candles: 2  # Number of confirmation candles after pullback
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}

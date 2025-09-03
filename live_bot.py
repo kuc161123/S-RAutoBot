@@ -209,83 +209,141 @@ class TradingBot:
         try:
             # Get current positions from exchange
             current_positions = self.bybit.get_positions()
-            current_symbols = {p['symbol'] for p in current_positions if float(p.get('size', 0)) > 0}
+            if current_positions is None:
+                logger.warning("Could not get positions from exchange, skipping closed position check")
+                return
             
-            # Check each tracked position
-            closed_positions = []
+            # Build set of symbols with CONFIRMED open positions
+            current_symbols = set()
+            for p in current_positions:
+                symbol = p.get('symbol')
+                size = float(p.get('size', 0))
+                # Only add if we're SURE there's an open position
+                if symbol and size > 0:
+                    current_symbols.add(symbol)
+            
+            # Find positions that might be closed
+            potentially_closed = []
             for symbol, pos in list(book.positions.items()):
                 if symbol not in current_symbols:
-                    # Position has been closed
-                    closed_positions.append((symbol, pos))
+                    potentially_closed.append((symbol, pos))
             
-            # Record and remove closed positions
-            for symbol, pos in closed_positions:
-                # Get latest price for PnL calculation
-                if symbol in self.frames and len(self.frames[symbol]) > 0:
-                    exit_price = float(self.frames[symbol]['close'].iloc[-1])
+            # Verify each potentially closed position
+            confirmed_closed = []
+            for symbol, pos in potentially_closed:
+                try:
+                    # Try to get recent order history to confirm close
+                    resp = self.bybit._request("GET", "/v5/order/history", {
+                        "category": "linear",
+                        "symbol": symbol,
+                        "limit": 20
+                    })
+                    orders = resp.get("result", {}).get("list", [])
                     
-                    # Determine exit reason based on price
-                    if pos.side == "long":
-                        if exit_price >= pos.tp * 0.99:  # Near TP
-                            exit_reason = "tp"
-                        elif exit_price <= pos.sl * 1.01:  # Near SL
-                            exit_reason = "sl"
-                        else:
-                            exit_reason = "manual"
-                    else:  # short
-                        if exit_price <= pos.tp * 1.01:  # Near TP
-                            exit_reason = "tp"
-                        elif exit_price >= pos.sl * 0.99:  # Near SL
-                            exit_reason = "sl"
-                        else:
-                            exit_reason = "manual"
+                    # Look for a FILLED reduce-only order (closing order)
+                    found_close = False
+                    exit_price = 0
+                    exit_reason = "unknown"
                     
-                    # Get leverage from metadata
-                    if meta:
-                        leverage = meta.get(symbol, {}).get("max_leverage", 1.0)
+                    for order in orders:
+                        # Check if this is a closing order
+                        if (order.get("reduceOnly") == True and 
+                            order.get("orderStatus") == "Filled"):
+                            
+                            found_close = True
+                            exit_price = float(order.get("avgPrice", 0))
+                            
+                            # Determine if it was TP or SL based on trigger price
+                            trigger_price = float(order.get("triggerPrice", 0))
+                            if trigger_price > 0:
+                                if pos.side == "long":
+                                    if trigger_price >= pos.tp * 0.98:  # Within 2% of TP
+                                        exit_reason = "tp"
+                                    elif trigger_price <= pos.sl * 1.02:  # Within 2% of SL
+                                        exit_reason = "sl"
+                                else:  # short
+                                    if trigger_price <= pos.tp * 1.02:
+                                        exit_reason = "tp"
+                                    elif trigger_price >= pos.sl * 0.98:
+                                        exit_reason = "sl"
+                            
+                            # If no trigger price, check exit price vs targets
+                            if exit_reason == "unknown" and exit_price > 0:
+                                if pos.side == "long":
+                                    if exit_price >= pos.tp * 0.98:
+                                        exit_reason = "tp"
+                                    elif exit_price <= pos.sl * 1.02:
+                                        exit_reason = "sl"
+                                    else:
+                                        exit_reason = "manual"
+                                else:  # short
+                                    if exit_price <= pos.tp * 1.02:
+                                        exit_reason = "tp"
+                                    elif exit_price >= pos.sl * 0.98:
+                                        exit_reason = "sl"
+                                    else:
+                                        exit_reason = "manual"
+                            break
+                    
+                    # Only add to confirmed closed if we found evidence
+                    if found_close and exit_price > 0:
+                        logger.info(f"[{symbol}] Position CONFIRMED closed at {exit_price:.4f} ({exit_reason})")
+                        confirmed_closed.append((symbol, pos, exit_price, exit_reason))
                     else:
-                        leverage = 1.0
+                        # Can't confirm it's closed - might be API lag
+                        logger.debug(f"[{symbol}] Not in positions but can't confirm close - keeping in book")
+                        
+                except Exception as e:
+                    logger.warning(f"Could not verify {symbol} close status: {e}")
+                    # Don't process if we can't verify
+            
+            # Process only CONFIRMED closed positions
+            for symbol, pos, exit_price, exit_reason in confirmed_closed:
+                try:
+                    # Get leverage
+                    leverage = meta.get(symbol, {}).get("max_leverage", 1.0) if meta else 1.0
                     
                     # Record the trade
                     self.record_closed_trade(symbol, pos, exit_price, exit_reason, leverage)
                     
-                    # Update ML scorer with trade outcome if enabled
+                    # Update ML scorer ONLY for clear TP/SL hits
                     if ml_scorer is not None and hasattr(pos, 'entry_time'):
-                        try:
-                            # Calculate PnL in R-multiples
-                            risk = abs(pos.entry - pos.sl)
-                            if pos.side == "long":
-                                pnl = exit_price - pos.entry
-                            else:
-                                pnl = pos.entry - exit_price
-                            
-                            pnl_r = pnl / risk if risk > 0 else 0
-                            
-                            # Determine outcome
-                            if pnl_r > 0.5:
-                                outcome = "win"
-                            elif pnl_r > -0.1:
-                                outcome = "breakeven"
-                            else:
-                                outcome = "loss"
-                            
-                            # Update ML with outcome
-                            ml_scorer.update_signal_outcome(symbol, pos.entry_time, outcome, pnl_r)
-                            logger.info(f"[{symbol}] ML updated: {outcome} ({pnl_r:.2f}R)")
-                        except Exception as e:
-                            logger.error(f"Failed to update ML outcome: {e}")
-                
-                # Remove from book
-                book.positions.pop(symbol)
-                logger.info(f"Position closed and removed from tracking: {symbol}")
-                
-                # Reset the pullback strategy state for this symbol
-                if reset_symbol_state:
-                    reset_symbol_state(symbol)
-                    logger.info(f"[{symbol}] Strategy state reset - ready for new signals")
-                
+                        if exit_reason in ["tp", "sl"]:  # Only train on clear outcomes
+                            try:
+                                # Calculate PnL in R-multiples
+                                risk = abs(pos.entry - pos.sl)
+                                if pos.side == "long":
+                                    pnl = exit_price - pos.entry
+                                else:
+                                    pnl = pos.entry - exit_price
+                                
+                                pnl_r = pnl / risk if risk > 0 else 0
+                                
+                                # Clear win or loss only
+                                outcome = "win" if exit_reason == "tp" else "loss"
+                                
+                                # Update ML with VERIFIED outcome
+                                ml_scorer.update_signal_outcome(symbol, pos.entry_time, outcome, pnl_r)
+                                logger.info(f"[{symbol}] ML updated: {outcome} ({pnl_r:.2f}R) - VERIFIED {exit_reason.upper()} hit")
+                            except Exception as e:
+                                logger.error(f"Failed to update ML outcome: {e}")
+                        else:
+                            logger.info(f"[{symbol}] Closed {exit_reason} - not updating ML (unclear outcome)")
+                    
+                    # Remove from book
+                    book.positions.pop(symbol)
+                    logger.info(f"[{symbol}] Position removed from tracking")
+                    
+                    # Reset the strategy state
+                    if reset_symbol_state:
+                        reset_symbol_state(symbol)
+                        logger.info(f"[{symbol}] Strategy state reset - ready for new signals")
+                        
+                except Exception as e:
+                    logger.error(f"Error processing confirmed closed position {symbol}: {e}")
+                    
         except Exception as e:
-            logger.error(f"Error checking closed positions: {e}")
+            logger.error(f"Error in check_closed_positions: {e}")
     
     async def recover_positions(self, book:Book, sizer:Sizer):
         """Recover existing positions from exchange - preserves all existing orders"""

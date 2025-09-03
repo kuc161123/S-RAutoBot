@@ -22,6 +22,7 @@ from broker_bybit import Bybit, BybitConfig
 from telegram_bot import TGBot
 from candle_storage_postgres import CandleStorage
 from trade_tracker import TradeTracker, Trade
+from multi_websocket_handler import MultiWebSocketHandler
 
 # Setup logging
 logging.basicConfig(
@@ -83,7 +84,10 @@ class TradingBot:
         # First, try to load from database
         stored_frames = self.storage.load_all_frames(symbols)
         
-        for symbol in symbols:
+        # Add rate limiting for large symbol lists
+        api_delay = 0.1 if len(symbols) > 100 else 0  # 100ms delay for >100 symbols
+        
+        for idx, symbol in enumerate(symbols):
             if symbol in stored_frames and len(stored_frames[symbol]) >= 200:  # Need 200 for reliable analysis
                 # Use stored data if we have enough candles
                 self.frames[symbol] = stored_frames[symbol]
@@ -91,6 +95,10 @@ class TradingBot:
             else:
                 # Fetch from API if not in database or insufficient data
                 try:
+                    # Rate limit API calls
+                    if api_delay > 0 and idx > 0:
+                        await asyncio.sleep(api_delay)
+                    
                     logger.info(f"[{symbol}] Fetching from API (not enough in database)")
                     klines = self.bybit.get_klines(symbol, timeframe, limit=200)
                     
@@ -472,8 +480,17 @@ class TradingBot:
         signals_detected = 0
         
         try:
+            # Use multi-websocket handler if >190 topics
+            if len(topics) > 190:
+                logger.info(f"Using multi-websocket handler for {len(topics)} topics")
+                ws_handler = MultiWebSocketHandler(cfg["bybit"]["ws_public"], self)
+                stream = ws_handler.multi_kline_stream(topics)
+            else:
+                logger.info(f"Using single websocket for {len(topics)} topics")
+                stream = self.kline_stream(cfg["bybit"]["ws_public"], topics)
+            
             # Start streaming
-            async for sym, k in self.kline_stream(cfg["bybit"]["ws_public"], topics):
+            async for sym, k in stream:
                 if not self.running:
                     break
                     

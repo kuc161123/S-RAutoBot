@@ -80,35 +80,185 @@ trade:
   - DASHUSDT
   - GMXUSDT
   - 1INCHUSDT
-  - KSMUSDT
-  - LPTUSDT
-  - ANKRUSDT
-  - BATUSDT
-  - CTCUSDT
-  - KNCUSDT
-  - BANDUSDT
-  - IOSTUSDT
-  - CELOUSDT
-  - HOTUSDT
-  - SCUSDT
-  - ONTUSDT
-  - RSRUSDT
-  - CKBUSDT
-  - HNTUSDT
+  - DOGSUSDT
+  - 10000SATSUSDT
+  - 10000WHYUSDT
+  - BOMEUSDT
+  - MEMEUSDT
+  - A2ZUSDT
+  - HMSTRUSDT
+  - SHIB1000USDT
+  - BEAMUSDT
+  - MEWUSDT
+  - 1000000BABYDOGEUSDT
+  - DOGUSDT
+  - GORKUSDT
+  - MYRIAUSDT
+  - MERLUSDT
+  - 10000LADYSUSDT
+  - HIPPOUSDT
+  - 1000RATSUSDT
+  - JASMYUSDT
+  - BAKEUSDT
+  - FUELUSDT
   - SKLUSDT
-  - COTIUSDT
-  - ALICEUSDT
-  - DYDXUSDT
+  - DEGENUSDT
+  - PEOPLEUSDT
+  - RSRUSDT
+  - SAPIENUSDT
+  - LAUNCHCOINUSDT
+  - HUSDT
+  - BIOUSDT
+  - GIGAUSDT
+  - CTSIUSDT
+  - 10000ELONUSDT
+  - IDEXUSDT
+  - ARCUSDT
+  - SLFUSDT
+  - AERGOUSDT
+  - CAMPUSDT
+  - MOODENGUSDT
+  - ALUUSDT
+  - HUMAUSDT
+  - BANANAS31USDT
+  - MBLUSDT
+  - RVNUSDT
+  - FUSDT
+  - HIFIUSDT
+  - B3USDT
+  - DOODUSDT
+  - REZUSDT
+  - REXUSDT
+  - ETHBTCUSDT
+  - BTRUSDT
+  - PIPPINUSDT
+  - AVAAIUSDT
+  - SLPUSDT
+  - MITOUSDT
+  - SCUSDT
+  - GRIFFAINUSDT
+  - HOMEUSDT
+  - FLOCKUSDT
+  - COOKUSDT
+  - 10000COQUSDT
+  - RHEAUSDT
+  - QIUSDT
+  - DMCUSDT
+  - RFCUSDT
+  - DAMUSDT
+  - BIGTIMEUSDT
+  - ESPORTSUSDT
+  - ANIMEUSDT
+  - GPSUSDT
+  - MYROUSDT
+  - DUCKUSDT
+  - SAHARAUSDT
+  - PLUMEUSDT
+  - CHILLGUYUSDT
+  - ONEUSDT
+  - MASAUSDT
+  - NTRNUSDT
+  - L3USDT
+  - OMUSDT
+  - MVLUSDT
+  - DEEPUSDT
+  - ATHUSDT
+  - FLRUSDT
+  - NEIROETHUSDT
+  - COSUSDT
+  - ACHUSDT
+  - AIOUSDT
+  - CATIUSDT
+  - BANKUSDT
+  - ALCHUSDT
+  - DBRUSDT
+  - MOVEUSDT
+  - 10000QUBICUSDT
+  - ROSEUSDT
+  - BABYUSDT
+  - MUBARAKUSDT
+  - ALPHAUSDT
+  - PORTALUSDT
+  - FWOGUSDT
+  - QUICKUSDT
+  - ANKRUSDT
+  - MAGICUSDT
+  - PONKEUSDT
+  - BSWUSDT
+  - BDXNUSDT
+  - CELRUSDT
+  - MYXUSDT
+  - RESOLVUSDT
+  - COOKIEUSDT
+  - ETHFIUSDT
+  - AVAILUSDT
   - C98USDT
-  - AXLUSDT
-  - QTUMUSDT
-  - ICXUSDT
-  - SFPUSDT
-  - ENSUSDT
+  - INUSDT
+  - DYDXUSDT
+  - FHEUSDT
+  - ROAMUSDT
+  - MOCAUSDT
+  - GUNUSDT
+  - OLUSDT
+  - PUMPBTCUSDT
+  - PROVEUSDT
+  - KAIAUSDT
+  - BANUSDT
+  - PIXELUSDT
+  - OGNUSDT
+  - KMNOUSDT
+  - ASTRUSDT
+  - RAREUSDT
+  - SIRENUSDT
+  - 1000NEIROCTOUSDT
+  - NAORISUSDT
+  - RSS3USDT
+  - AEROUSDT
+  - FLMUSDT
+  - IOTXUSDT
+  - PRCLUSDT
+  - SIGNUSDT
+  - 1000000MOGUSDT
+  - CUSDT
+  - HOOKUSDT
+  - PARTIUSDT
+  - COTIUSDT
+  - CPOOLUSDT
+  - REDUSDT
+  - LOOKSUSDT
+  - AINUSDT
+  - CLOUDUSDT
+  - ORBSUSDT
+  - 1000LUNCUSDT
+  - HYPERUSDT
+  - EIGENUSDT
+  - CUDISUSDT
+  - BROCCOLIUSDT
+  - FIDAUSDT
+  - MELANIAUSDT
+  - KUSDT
+  - 1000TOSHIUSDT
+  - 1000XECUSDT
+  - FRAGUSDT
+  - AEVOUSDT
+  - OBOLUSDT
+  - GLMRUSDT
+  - HEIUSDT
+  - BERAUSDT
+  - IDUSDT
+  - AIUSDT
+  - SKYAIUSDT
+  - MILKUSDT
+  - ARPAUSDT
+  - IOTAUSDT
+  - BSUUSDT
+  - SERAPHUSDT
+  - API3USDT
+  - GUSDT
   timeframe: '15'
-  risk_usd: 2  # Fallback if percentage risk fails
-  risk_percent: 1.0  # Risk 1% of account per trade
-  use_percent_risk: true  # Use percentage-based risk management
+  risk_usd: 2
+  risk_percent: 1.0
+  use_percent_risk: true
   use_ema: true
   ema_len: 200
   use_vol: true
@@ -118,8 +268,8 @@ trade:
   sl_buf_atr: 0.5
   rr: 2.0
   both_hit_rule: SL_FIRST
-  use_pullback_strategy: true  # Use pullback strategy (wait for HL/LH + confirmation)
-  confirmation_candles: 2  # Number of confirmation candles after pullback
+  use_pullback_strategy: true
+  confirmation_candles: 2
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}
@@ -628,3 +778,843 @@ symbol_meta:
     min_qty: 0.1
     tick_size: 0.001
     max_leverage: 50.0
+  DOGSUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-07
+    max_leverage: 50.0
+  10000SATSUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-07
+    max_leverage: 25.0
+  10000WHYUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-07
+    max_leverage: 20.0
+  BOMEUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-06
+    max_leverage: 50.0
+  MEMEUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 50.0
+  A2ZUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-06
+    max_leverage: 25.0
+  HMSTRUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-07
+    max_leverage: 50.0
+  SHIB1000USDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 50.0
+  BEAMUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-06
+    max_leverage: 25.0
+  MEWUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-06
+    max_leverage: 50.0
+  1000000BABYDOGEUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-07
+    max_leverage: 25.0
+  DOGUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-06
+    max_leverage: 25.0
+  GORKUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  MYRIAUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-07
+    max_leverage: 12.5
+  MERLUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  10000LADYSUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-07
+    max_leverage: 20.0
+  HIPPOUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 20.0
+  1000RATSUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  JASMYUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-06
+    max_leverage: 50.0
+  BAKEUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  FUELUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  DEGENUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 16.67
+  PEOPLEUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 50.0
+  SAPIENUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  LAUNCHCOINUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  HUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 20.0
+  BIOUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 75.0
+  GIGAUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 50.0
+  CTSIUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  10000ELONUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-06
+    max_leverage: 20.0
+  IDEXUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  ARCUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  SLFUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 12.5
+  AERGOUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 16.67
+  CAMPUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  MOODENGUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 50.0
+  ALUUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-06
+    max_leverage: 12.5
+  HUMAUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 50.0
+  BANANAS31USDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-06
+    max_leverage: 25.0
+  MBLUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-06
+    max_leverage: 20.0
+  RVNUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  FUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 50.0
+  HIFIUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  B3USDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-06
+    max_leverage: 50.0
+  DOODUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 12.5
+  REZUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  REXUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  ETHBTCUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 25.0
+  BTRUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  PIPPINUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  AVAAIUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  SLPUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 20.0
+  MITOUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  GRIFFAINUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  HOMEUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  FLOCKUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  COOKUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 12.5
+  10000COQUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 12.5
+  RHEAUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  QIUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 12.5
+  DMCUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-07
+    max_leverage: 12.5
+  RFCUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  DAMUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  BIGTIMEUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  ESPORTSUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  ANIMEUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 75.0
+  GPSUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  MYROUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  DUCKUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 25.0
+  SAHARAUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  PLUMEUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 50.0
+  CHILLGUYUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-06
+    max_leverage: 25.0
+  ONEUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 16.67
+  MASAUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  NTRNUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 12.5
+  L3USDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  OMUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 50.0
+  MVLUSDT:
+    qty_step: 100.0
+    min_qty: 100.0
+    tick_size: 1.0e-06
+    max_leverage: 12.5
+  DEEPUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  ATHUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  FLRUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  NEIROETHUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  COSUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 12.5
+  ACHUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 25.0
+  AIOUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  CATIUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 50.0
+  BANKUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 50.0
+  ALCHUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  DBRUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  MOVEUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 75.0
+  10000QUBICUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-06
+    max_leverage: 12.5
+  ROSEUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 50.0
+  BABYUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 50.0
+  MUBARAKUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  ALPHAUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  PORTALUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  FWOGUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  QUICKUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  MAGICUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 25.0
+  PONKEUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  BSWUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  BDXNUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  CELRUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-06
+    max_leverage: 12.5
+  MYXUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  RESOLVUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 25.0
+  COOKIEUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 75.0
+  ETHFIUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  AVAILUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  INUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  FHEUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  ROAMUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 20.0
+  MOCAUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  GUNUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  OLUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  PUMPBTCUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  PROVEUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 25.0
+  KAIAUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 50.0
+  BANUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  PIXELUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  OGNUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  KMNOUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  ASTRUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  RAREUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  SIRENUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  1000NEIROCTOUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 50.0
+  NAORISUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  RSS3USDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  AEROUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 25.0
+  FLMUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  IOTXUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  PRCLUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  SIGNUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 75.0
+  1000000MOGUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 50.0
+  CUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  HOOKUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  PARTIUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 75.0
+  CPOOLUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  REDUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 50.0
+  LOOKSUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  AINUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  CLOUDUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  ORBSUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  1000LUNCUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  HYPERUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 50.0
+  EIGENUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 50.0
+  CUDISUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  BROCCOLIUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  FIDAUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  MELANIAUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 50.0
+  KUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 25.0
+  1000TOSHIUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 50.0
+  1000XECUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  FRAGUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  AEVOUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  OBOLUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 12.5
+  GLMRUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  HEIUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  BERAUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.001
+    max_leverage: 75.0
+  IDUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 0.0001
+    max_leverage: 25.0
+  AIUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  SKYAIUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  MILKUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 12.5
+  ARPAUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0
+  IOTAUSDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  BSUUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  SERAPHUSDT:
+    qty_step: 1.0
+    min_qty: 1.0
+    tick_size: 1.0e-05
+    max_leverage: 20.0
+  API3USDT:
+    qty_step: 0.1
+    min_qty: 0.1
+    tick_size: 0.0001
+    max_leverage: 25.0
+  GUSDT:
+    qty_step: 10.0
+    min_qty: 10.0
+    tick_size: 1.0e-05
+    max_leverage: 25.0

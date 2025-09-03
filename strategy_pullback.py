@@ -151,7 +151,7 @@ def count_confirmation_candles(df:pd.DataFrame, direction:str, count_needed:int=
     
     return confirmation_count
 
-def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Signal|None:
+def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Optional[Signal]:
     """
     Enhanced signal detection with pullback strategy:
     1. Wait for S/R breakout

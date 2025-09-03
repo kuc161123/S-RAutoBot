@@ -257,7 +257,7 @@ trade:
   - GUSDT
   timeframe: '15'
   risk_usd: 2
-  risk_percent: 1.0
+  risk_percent: 3.0
   use_percent_risk: true
   use_ema: true
   ema_len: 200

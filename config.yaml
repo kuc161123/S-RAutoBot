@@ -270,7 +270,7 @@ trade:
   both_hit_rule: SL_FIRST
   use_pullback_strategy: true
   confirmation_candles: 2
-  use_ml_scoring: false  # ML Signal Quality Scoring (learns after 200 trades)
+  use_ml_scoring: true  # ML Signal Quality Scoring (learns after 200 trades)
   ml_min_score: 70.0  # Minimum ML score to take signal (0-100)
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}

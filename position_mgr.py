@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
-from typing import Dict
+from typing import Dict, Optional
+from datetime import datetime
 
 def round_step(x:float, step:float) -> float:
     """Round to nearest step value with proper decimal handling"""
@@ -36,6 +37,7 @@ class Position:
     entry:float
     sl:float
     tp:float
+    entry_time:Optional[datetime] = None
 
 @dataclass
 class Book:

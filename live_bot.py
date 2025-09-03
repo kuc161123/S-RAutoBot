@@ -24,6 +24,15 @@ from candle_storage_postgres import CandleStorage
 from trade_tracker import TradeTracker, Trade
 from multi_websocket_handler import MultiWebSocketHandler
 
+# Import ML scorer (safe - has fallbacks)
+try:
+    from ml_signal_scorer import get_scorer
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("ML Signal Scorer not available, running without ML filtering")
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -187,7 +196,7 @@ class TradingBot:
         except Exception as e:
             logger.error(f"Failed to record trade: {e}")
     
-    async def check_closed_positions(self, book: Book, meta: dict = None):
+    async def check_closed_positions(self, book: Book, meta: dict = None, ml_scorer=None, reset_symbol_state=None):
         """Check for positions that have been closed and record them"""
         try:
             # Get current positions from exchange
@@ -231,14 +240,41 @@ class TradingBot:
                     
                     # Record the trade
                     self.record_closed_trade(symbol, pos, exit_price, exit_reason, leverage)
+                    
+                    # Update ML scorer with trade outcome if enabled
+                    if ml_scorer is not None and hasattr(pos, 'entry_time'):
+                        try:
+                            # Calculate PnL in R-multiples
+                            risk = abs(pos.entry - pos.sl)
+                            if pos.side == "long":
+                                pnl = exit_price - pos.entry
+                            else:
+                                pnl = pos.entry - exit_price
+                            
+                            pnl_r = pnl / risk if risk > 0 else 0
+                            
+                            # Determine outcome
+                            if pnl_r > 0.5:
+                                outcome = "win"
+                            elif pnl_r > -0.1:
+                                outcome = "breakeven"
+                            else:
+                                outcome = "loss"
+                            
+                            # Update ML with outcome
+                            ml_scorer.update_signal_outcome(symbol, pos.entry_time, outcome, pnl_r)
+                            logger.info(f"[{symbol}] ML updated: {outcome} ({pnl_r:.2f}R)")
+                        except Exception as e:
+                            logger.error(f"Failed to update ML outcome: {e}")
                 
                 # Remove from book
                 book.positions.pop(symbol)
                 logger.info(f"Position closed and removed from tracking: {symbol}")
                 
                 # Reset the pullback strategy state for this symbol
-                reset_symbol_state(symbol)
-                logger.info(f"[{symbol}] Strategy state reset - ready for new signals")
+                if reset_symbol_state:
+                    reset_symbol_state(symbol)
+                    logger.info(f"[{symbol}] Strategy state reset - ready for new signals")
                 
         except Exception as e:
             logger.error(f"Error checking closed positions: {e}")
@@ -279,7 +315,8 @@ class TradingBot:
                         qty=qty,
                         entry=entry,
                         sl=sl if sl > 0 else entry * 0.95,  # Default 5% stop if not set
-                        tp=tp if tp > 0 else entry * 1.1     # Default 10% target if not set
+                        tp=tp if tp > 0 else entry * 1.1,    # Default 10% target if not set
+                        entry_time=datetime.now() - pd.Timedelta(hours=1)  # Approximate for recovered positions
                     )
                     
                     recovered += 1
@@ -386,6 +423,29 @@ class TradingBot:
         sizer = Sizer(risk)
         book = Book()
         panic_list:list[str] = []
+        
+        # Initialize ML Scorer if available and enabled
+        ml_scorer = None
+        use_ml = cfg["trade"].get("use_ml_scoring", False)  # Opt-in feature
+        ml_min_score = cfg["trade"].get("ml_min_score", 70.0)
+        
+        if ML_AVAILABLE and use_ml:
+            try:
+                ml_scorer = get_scorer(enabled=True, min_score=ml_min_score)
+                logger.info(f"✅ ML Signal Scorer initialized (min score: {ml_min_score})")
+                
+                # Log ML stats
+                ml_stats = ml_scorer.get_ml_stats()
+                logger.info(f"   ML Status: {ml_stats['completed_trades']} completed trades")
+                if ml_stats['is_trained']:
+                    logger.info(f"   Model trained and active")
+                else:
+                    logger.info(f"   Collecting data: {ml_stats['trades_needed']} more trades needed")
+            except Exception as e:
+                logger.warning(f"Failed to initialize ML scorer: {e}. Running without ML.")
+                ml_scorer = None
+        elif use_ml:
+            logger.warning("ML scoring requested but ML module not available")
         
         # Initialize Bybit client
         self.bybit = bybit = Bybit(BybitConfig(
@@ -528,7 +588,7 @@ class TradingBot:
                 
                 # Check for closed positions periodically
                 if (datetime.now() - last_position_check).total_seconds() > position_check_interval:
-                    await self.check_closed_positions(book, shared.get("meta"))
+                    await self.check_closed_positions(book, shared.get("meta"), ml_scorer, reset_symbol_state)
                     last_position_check = datetime.now()
                 
                 # Handle panic close requests
@@ -578,6 +638,23 @@ class TradingBot:
                 
                 logger.info(f"[{sym}] Signal detected: {sig.side} @ {sig.entry:.4f}")
                 signals_detected += 1
+                
+                # Apply ML scoring if enabled
+                if ml_scorer is not None:
+                    try:
+                        should_take, score, reason = ml_scorer.should_take_signal(
+                            df, sig.side, sig.entry, sig.sl, sig.tp, sym, sig.meta
+                        )
+                        
+                        if not should_take:
+                            logger.info(f"[{sym}] Signal filtered by ML: {reason}")
+                            continue
+                        else:
+                            logger.info(f"[{sym}] Signal approved by ML: {reason}")
+                    except Exception as e:
+                        # Safety: Always allow signal if ML fails
+                        logger.warning(f"[{sym}] ML scoring error: {e}. Allowing signal.")
+                        pass
                 
                 # One position per symbol rule - wait for current position to close
                 # This prevents overexposure to a single symbol and allows clean entry/exit
@@ -634,7 +711,7 @@ class TradingBot:
                     bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl)
                     
                     # Update book
-                    book.positions[sym] = Position(sig.side, qty, sig.entry, sig.sl, sig.tp)
+                    book.positions[sym] = Position(sig.side, qty, sig.entry, sig.sl, sig.tp, datetime.now())
                     last_signal_time[sym] = now
                     
                     # Send notification

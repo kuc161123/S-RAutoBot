@@ -590,7 +590,22 @@ class EnsembleMLScorer(MLSignalScorer):
         except Exception as e:
             logger.error(f"Failed to update ensemble performance: {e}")
 
+# Singleton instance
+_ml_scorer_instance = None
+
 # Factory function for backward compatibility
-def get_ensemble_scorer(enabled: bool = True, min_score: float = 70.0) -> EnsembleMLScorer:
+def get_ensemble_scorer(enabled: bool = True, min_score: float = 70.0, force_reset: bool = False) -> EnsembleMLScorer:
     """Get or create the singleton ensemble scorer instance"""
-    return EnsembleMLScorer(min_score=min_score, enabled=enabled)
+    global _ml_scorer_instance
+    
+    # Force reset if requested or if starting fresh
+    if force_reset or _ml_scorer_instance is None:
+        _ml_scorer_instance = EnsembleMLScorer(min_score=min_score, enabled=enabled)
+        # Force clear any residual data
+        _ml_scorer_instance.completed_trades_count = 0
+        _ml_scorer_instance.last_train_count = 0
+        if hasattr(_ml_scorer_instance, 'local_storage'):
+            _ml_scorer_instance.local_storage = {'signals': [], 'completed_trades': []}
+        logger.info("ML Scorer initialized fresh with 0 completed trades")
+    
+    return _ml_scorer_instance

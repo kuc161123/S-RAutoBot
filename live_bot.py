@@ -497,8 +497,9 @@ class TradingBot:
         
         if ML_AVAILABLE and use_ml:
             try:
-                ml_scorer = get_scorer(enabled=True, min_score=ml_min_score)
-                logger.info(f"✅ ML Signal Scorer initialized (min score: {ml_min_score})")
+                # Force reset ML scorer on startup to ensure clean state
+                ml_scorer = get_scorer(enabled=True, min_score=ml_min_score, force_reset=True)
+                logger.info(f"✅ ML Signal Scorer initialized fresh (min score: {ml_min_score})")
                 
                 # Log ML stats
                 ml_stats = ml_scorer.get_ml_stats()

@@ -111,7 +111,7 @@ trade:
   use_percent_risk: true  # Use percentage-based risk management
   use_ema: true
   ema_len: 200
-  use_vol: false
+  use_vol: true
   vol_len: 20
   vol_mult: 1.2
   atr_len: 14

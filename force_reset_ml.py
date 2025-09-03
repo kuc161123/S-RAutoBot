@@ -2,9 +2,36 @@
 """
 Force reset ML scorer singleton and clear the 7 false trades
 """
+import os
+import redis
+import json
 
 def force_reset_ml_scorer():
     """Force reset all ML scorer singletons"""
+    
+    # First, clear Redis storage if available
+    try:
+        redis_url = os.getenv('REDIS_URL')
+        if redis_url:
+            r = redis.from_url(redis_url, decode_responses=True)
+            r.ping()
+            
+            # Get current data before clearing
+            ml_data = r.get('ml_scorer_data')
+            if ml_data:
+                data = json.loads(ml_data)
+                print(f"📊 Found {len(data.get('completed_trades', []))} trades in Redis")
+            
+            # Clear all ML-related keys
+            r.delete('ml_scorer_data')
+            r.delete('ml_scorer_trades')
+            r.delete('ml_completed_trades')
+            r.delete('ml_signals')
+            print("✅ Cleared Redis ML storage")
+        else:
+            print("⚠️  No REDIS_URL found, skipping Redis clear")
+    except Exception as e:
+        print(f"⚠️  Redis clear failed: {e}")
     
     # Reset ml_ensemble_scorer singleton
     try:

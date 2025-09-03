@@ -29,6 +29,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("analysis", self.analysis))
         self.app.add_handler(CommandHandler("stats", self.stats))
         self.app.add_handler(CommandHandler("recent", self.recent_trades))
+        self.app.add_handler(CommandHandler("ml", self.ml_stats))
+        self.app.add_handler(CommandHandler("ml_stats", self.ml_stats))
         
         self.running = False
 
@@ -85,6 +87,7 @@ class TGBot:
 📈 *Statistics:*
 /stats [days] - Trading statistics
 /recent [limit] - Recent trades history
+/ml or /ml\_stats - ML system status
 
 ⚙️ *Risk Management:*
 /risk - Show current risk settings
@@ -488,9 +491,30 @@ class TGBot:
             
             # Trading Settings
             msg += "⚙️ *Trading Settings*\n"
-            msg += f"• Risk per trade: ${risk.risk_usd}\n"
+            if risk.use_percent_risk:
+                msg += f"• Risk per trade: {risk.risk_percent}%\n"
+            else:
+                msg += f"• Risk per trade: ${risk.risk_usd}\n"
             msg += f"• Max leverage: {risk.max_leverage}x\n"
             msg += f"• Timeframe: 15 minutes\n"
+            msg += "\n"
+            
+            # ML Status (Brief)
+            ml_scorer = self.shared.get("ml_scorer")
+            if ml_scorer:
+                try:
+                    ml_stats = ml_scorer.get_ml_stats()
+                    msg += "🤖 *ML System*\n"
+                    if ml_stats['is_trained']:
+                        msg += f"• Status: ✅ Active\n"
+                        msg += f"• Trained on: {ml_stats['completed_trades']} trades\n"
+                    else:
+                        progress = (ml_stats['completed_trades'] / 200) * 100
+                        msg += f"• Status: 📊 Learning ({progress:.0f}%)\n"
+                        msg += f"• Trades: {ml_stats['completed_trades']}/200\n"
+                    msg += "• Use /ml for details\n"
+                except:
+                    pass
             msg += "\n"
             
             # Positions
@@ -652,3 +676,87 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in recent_trades: {e}")
             await update.message.reply_text("Error getting recent trades")
+    
+    async def ml_stats(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Show ML system statistics and status"""
+        try:
+            msg = "🤖 *ML Signal Scoring System*\n"
+            msg += "━" * 25 + "\n\n"
+            
+            # Check if ML scorer is available
+            ml_scorer = self.shared.get("ml_scorer")
+            
+            if not ml_scorer:
+                msg += "❌ *ML System: Not Available*\n\n"
+                msg += "ML scoring is either:\n"
+                msg += "• Disabled in config\n"
+                msg += "• Not initialized yet\n\n"
+                msg += "To enable: Set `use_ml_scoring: true` in config"
+            else:
+                # Get ML stats
+                try:
+                    stats = ml_scorer.get_ml_stats()
+                    
+                    # Status
+                    if stats['is_trained']:
+                        msg += "✅ *Status: Active & Learning*\n\n"
+                    else:
+                        msg += "📊 *Status: Collecting Data*\n\n"
+                    
+                    # Progress
+                    msg += "📈 *Learning Progress*\n"
+                    msg += f"• Completed trades: {stats['completed_trades']}\n"
+                    
+                    if not stats['is_trained']:
+                        trades_needed = stats.get('trades_needed', 200)
+                        progress_pct = (stats['completed_trades'] / 200) * 100
+                        msg += f"• Progress: {progress_pct:.1f}%\n"
+                        msg += f"• Trades needed: {trades_needed}\n"
+                        msg += "\n⏳ ML will activate after 200 trades\n\n"
+                    else:
+                        msg += f"• Model trained on: {stats['last_train_count']} trades\n"
+                        msg += f"• Model type: {stats['model_type']}\n"
+                        if 'recent_accuracy' in stats:
+                            msg += f"• Recent accuracy: {stats['recent_accuracy']*100:.1f}%\n"
+                        msg += "\n"
+                    
+                    # Settings
+                    msg += "⚙️ *Configuration*\n"
+                    msg += f"• Enabled: {'Yes' if stats['enabled'] else 'No'}\n"
+                    msg += f"• Min score threshold: {stats['min_score_threshold']}/100\n"
+                    msg += f"• Ensemble models: 3 (RF, GB, NN)\n"
+                    msg += "\n"
+                    
+                    # Features analyzed
+                    msg += "🔍 *Features Analyzed*\n"
+                    msg += "• Trend strength & alignment\n"
+                    msg += "• Volume patterns\n"
+                    msg += "• Support/Resistance strength\n"
+                    msg += "• Pullback quality\n"
+                    msg += "• Market volatility\n"
+                    msg += "• Time of day patterns\n"
+                    msg += "\n"
+                    
+                    # How it works
+                    if stats['is_trained']:
+                        msg += "💡 *How It's Working*\n"
+                        msg += "• Scoring every signal 0-100\n"
+                        msg += f"• Filtering signals below {stats['min_score_threshold']}\n"
+                        msg += "• Learning from trade outcomes\n"
+                        msg += "• Adapting to market changes\n"
+                    else:
+                        msg += "💡 *What's Happening*\n"
+                        msg += "• Collecting data from all signals\n"
+                        msg += "• Recording trade outcomes\n"
+                        msg += "• Building pattern database\n"
+                        msg += f"• {200 - stats['completed_trades']} more trades to activate\n"
+                    
+                except Exception as e:
+                    logger.error(f"Error getting ML stats: {e}")
+                    msg += "⚠️ Error retrieving ML statistics\n"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in ml_stats: {e}")
+            await update.message.reply_text("Error getting ML statistics")

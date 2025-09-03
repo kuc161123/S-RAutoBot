@@ -506,7 +506,8 @@ class TradingBot:
             "broker": bybit,
             "frames": self.frames,
             "last_analysis": last_analysis,
-            "trade_tracker": self.trade_tracker
+            "trade_tracker": self.trade_tracker,
+            "ml_scorer": ml_scorer  # Add ML scorer for telegram access
         }
         
         # Initialize Telegram bot with retry on conflict

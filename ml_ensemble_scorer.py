@@ -598,14 +598,14 @@ def get_ensemble_scorer(enabled: bool = True, min_score: float = 70.0, force_res
     """Get or create the singleton ensemble scorer instance"""
     global _ml_scorer_instance
     
-    # Force reset if requested or if starting fresh
-    if force_reset or _ml_scorer_instance is None:
+    # Only reset if explicitly requested
+    if force_reset:
+        _ml_scorer_instance = None
+        logger.info("ML Scorer force reset requested - clearing all data")
+    
+    # Create instance if doesn't exist
+    if _ml_scorer_instance is None:
         _ml_scorer_instance = EnsembleMLScorer(min_score=min_score, enabled=enabled)
-        # Force clear any residual data
-        _ml_scorer_instance.completed_trades_count = 0
-        _ml_scorer_instance.last_train_count = 0
-        if hasattr(_ml_scorer_instance, 'local_storage'):
-            _ml_scorer_instance.local_storage = {'signals': [], 'completed_trades': []}
-        logger.info("ML Scorer initialized fresh with 0 completed trades")
+        logger.info(f"ML Scorer created - starting with {_ml_scorer_instance.completed_trades_count} completed trades")
     
     return _ml_scorer_instance

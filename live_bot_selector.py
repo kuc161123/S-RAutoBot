@@ -14,8 +14,15 @@ def get_strategy_module(use_pullback: bool):
         Tuple of (detect_signal_function, reset_function)
     """
     if use_pullback:
-        from strategy_pullback import detect_signal_pullback, reset_symbol_state
-        return detect_signal_pullback, reset_symbol_state
+        # Using ML learning-friendly strategy for better data collection
+        from strategy_pullback_ml_learning import get_ml_learning_signals, reset_symbol_state
+        
+        # Wrapper to return single signal (live_bot expects single signal or None)
+        def detect_signal_wrapper(df, settings, symbol):
+            signals = get_ml_learning_signals(df, settings, None, symbol)
+            return signals[0] if signals else None
+        
+        return detect_signal_wrapper, reset_symbol_state
     else:
         from strategy import detect_signal
         # Original strategy doesn't need state reset

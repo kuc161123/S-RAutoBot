@@ -516,12 +516,19 @@ class TradingBot:
                 self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), shared)
                 await self.tg.start_polling()
                 # Send shorter startup message for 20 symbols
+                # Format risk display
+                if risk.use_percent_risk:
+                    risk_display = f"{risk.risk_percent}%"
+                else:
+                    risk_display = f"${risk.risk_usd}"
+                
                 await self.tg.send_message(
                     "🚀 *Trading Bot Started*\n\n"
                     f"📊 Monitoring: {len(symbols)} symbols\n"
                     f"⏰ Timeframe: {tf} minutes\n"
-                    f"💰 Risk per trade: ${risk.risk_usd}\n"
+                    f"💰 Risk per trade: {risk_display}\n"
                     f"📈 R:R Ratio: 1:{settings.rr}\n\n"
+                    "_Use /risk to manage risk settings_\n"
                     "_Use /dashboard for full status_"
                 )
                 break  # Success

@@ -16,7 +16,10 @@ class TGBot:
         # Add command handlers
         self.app.add_handler(CommandHandler("start", self.start))
         self.app.add_handler(CommandHandler("help", self.help))
+        self.app.add_handler(CommandHandler("risk", self.show_risk))
         self.app.add_handler(CommandHandler("set_risk", self.set_risk))
+        self.app.add_handler(CommandHandler("risk_percent", self.set_risk_percent))
+        self.app.add_handler(CommandHandler("risk_usd", self.set_risk_usd))
         self.app.add_handler(CommandHandler("status", self.status))
         self.app.add_handler(CommandHandler("panic_close", self.panic_close))
         self.app.add_handler(CommandHandler("balance", self.balance))
@@ -83,9 +86,14 @@ class TGBot:
 /stats [days] - Trading statistics
 /recent [limit] - Recent trades history
 
+⚙️ *Risk Management:*
+/risk - Show current risk settings
+/risk\_percent [value] - Set % risk (e.g., 2.5)
+/risk\_usd [value] - Set USD risk (e.g., 100)
+/set\_risk [amount] - Flexible (3% or 50)
+
 ⚙️ *Controls:*
-/set\_risk [amount] - Adjust risk per trade
-/panic\_close [symbol] - Emergency close
+/panic\_close [symbol] - Emergency close position
 
 ℹ️ *Info:*
 /start - Welcome message
@@ -102,11 +110,155 @@ class TGBot:
         )
         await update.message.reply_text(help_text, parse_mode='Markdown')
 
+    async def show_risk(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Show current risk settings"""
+        try:
+            risk = self.shared["risk"]
+            
+            # Get current balance if available
+            balance_text = ""
+            balance = None
+            if "broker" in self.shared and hasattr(self.shared["broker"], "get_balance"):
+                balance = self.shared["broker"].get_balance()
+                if balance:
+                    balance_text = f"💰 *Account Balance:* ${balance:.2f}\n"
+            
+            if risk.use_percent_risk:
+                risk_amount = f"{risk.risk_percent}%"
+                if balance_text and balance:
+                    usd_amount = balance * (risk.risk_percent / 100)
+                    risk_amount += f" (≈${usd_amount:.2f})"
+                mode = "Percentage"
+            else:
+                risk_amount = f"${risk.risk_usd}"
+                if balance_text and balance:
+                    percent = (risk.risk_usd / balance) * 100
+                    risk_amount += f" (≈{percent:.2f}%)"
+                mode = "Fixed USD"
+            
+            msg = f"""📊 *Risk Management Settings*
+            
+{balance_text}⚙️ *Mode:* {mode}
+💸 *Risk per trade:* {risk_amount}
+📈 *Risk/Reward Ratio:* 1:{risk.rr if hasattr(risk, 'rr') else 2}
+
+*Commands:*
+`/risk_percent 2.5` - Set to 2.5%
+`/risk_usd 100` - Set to $100
+`/set_risk 3%` or `/set_risk 50` - Flexible"""
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in show_risk: {e}")
+            await update.message.reply_text("Error fetching risk settings")
+    
+    async def set_risk_percent(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Set risk as percentage of account"""
+        try:
+            if not ctx.args:
+                await update.message.reply_text("Usage: /risk_percent 2.5")
+                return
+            
+            value = float(ctx.args[0])
+            
+            # Validate
+            if value <= 0:
+                await update.message.reply_text("❌ Risk must be greater than 0%")
+                return
+            elif value > 10:
+                await update.message.reply_text("⚠️ Risk cannot exceed 10% per trade")
+                return
+            elif value > 5:
+                # Warning for high risk
+                await update.message.reply_text(
+                    f"⚠️ *High Risk Warning*\n\n"
+                    f"Setting risk to {value}% is aggressive.\n"
+                    f"Confirm with: `/set_risk {value}%`",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # Apply the change
+            self.shared["risk"].risk_percent = value
+            self.shared["risk"].use_percent_risk = True
+            
+            # Calculate USD amount if balance available
+            usd_info = ""
+            if "broker" in self.shared and hasattr(self.shared["broker"], "get_balance"):
+                balance = self.shared["broker"].get_balance()
+                if balance:
+                    usd_amount = balance * (value / 100)
+                    usd_info = f" (≈${usd_amount:.2f} per trade)"
+            
+            await update.message.reply_text(
+                f"✅ Risk updated to {value}% of account{usd_info}\n"
+                f"Use `/risk` to view full settings"
+            )
+            logger.info(f"Risk updated to {value}% via Telegram")
+            
+        except ValueError:
+            await update.message.reply_text("❌ Invalid number. Example: /risk_percent 2.5")
+        except Exception as e:
+            logger.error(f"Error in set_risk_percent: {e}")
+            await update.message.reply_text("Error updating risk percentage")
+    
+    async def set_risk_usd(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Set risk as fixed USD amount"""
+        try:
+            if not ctx.args:
+                await update.message.reply_text("Usage: /risk_usd 100")
+                return
+            
+            value = float(ctx.args[0])
+            
+            # Validate
+            if value <= 0:
+                await update.message.reply_text("❌ Risk must be greater than $0")
+                return
+            elif value > 1000:
+                await update.message.reply_text("⚠️ Risk cannot exceed $1000 per trade")
+                return
+            
+            # Check if this is too high relative to balance
+            percent_info = ""
+            if "broker" in self.shared and hasattr(self.shared["broker"], "get_balance"):
+                balance = self.shared["broker"].get_balance()
+                if balance:
+                    percent = (value / balance) * 100
+                    percent_info = f" (≈{percent:.2f}% of account)"
+                    
+                    if percent > 5:
+                        await update.message.reply_text(
+                            f"⚠️ *High Risk Warning*\n\n"
+                            f"${value} is {percent:.1f}% of your ${balance:.0f} account.\n"
+                            f"Confirm with: `/set_risk {value}`",
+                            parse_mode='Markdown'
+                        )
+                        return
+            
+            # Apply the change
+            self.shared["risk"].risk_usd = value
+            self.shared["risk"].use_percent_risk = False
+            
+            await update.message.reply_text(
+                f"✅ Risk updated to ${value} per trade{percent_info}\n"
+                f"Use `/risk` to view full settings"
+            )
+            logger.info(f"Risk updated to ${value} fixed via Telegram")
+            
+        except ValueError:
+            await update.message.reply_text("❌ Invalid number. Example: /risk_usd 100")
+        except Exception as e:
+            logger.error(f"Error in set_risk_usd: {e}")
+            await update.message.reply_text("Error updating risk amount")
+    
     async def set_risk(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Set risk amount per trade - percentage (1%) or fixed USD (50)"""
         try:
             if not ctx.args:
-                await update.message.reply_text("Usage: /set_risk 1% or /set_risk 50")
+                # Show current settings if no args
+                await self.show_risk(update, ctx)
                 return
             
             risk_str = ctx.args[0]

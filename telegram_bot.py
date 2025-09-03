@@ -31,6 +31,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("recent", self.recent_trades))
         self.app.add_handler(CommandHandler("ml", self.ml_stats))
         self.app.add_handler(CommandHandler("ml_stats", self.ml_stats))
+        self.app.add_handler(CommandHandler("reset_stats", self.reset_stats))
         
         self.running = False
 
@@ -760,3 +761,109 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in ml_stats: {e}")
             await update.message.reply_text("Error getting ML statistics")
+    
+    async def reset_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Reset trade statistics"""
+        try:
+            import os
+            import json
+            from datetime import datetime
+            
+            # Check if user is authorized
+            if update.effective_user.id != self.chat_id:
+                await update.message.reply_text("❌ Unauthorized")
+                return
+            
+            reset_count = 0
+            backups = []
+            
+            # 1. Reset TradeTracker history
+            if os.path.exists("trade_history.json"):
+                try:
+                    # Read existing data
+                    with open("trade_history.json", 'r') as f:
+                        data = json.load(f)
+                        trade_count = len(data)
+                    
+                    if trade_count > 0:
+                        # Create backup
+                        backup_name = f"trade_history_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                        with open(backup_name, 'w') as f:
+                            json.dump(data, f, indent=2)
+                        backups.append(f"• {trade_count} trades → {backup_name}")
+                        reset_count += trade_count
+                        
+                        # Create empty file
+                        with open("trade_history.json", 'w') as f:
+                            json.dump([], f)
+                except Exception as e:
+                    logger.error(f"Error backing up trade history: {e}")
+            
+            # 2. Reset any cached stats in shared tracker
+            if "tracker" in self.shared and self.shared["tracker"]:
+                try:
+                    self.shared["tracker"].trades = []
+                    self.shared["tracker"].save_trades()
+                    backups.append("• Tracker cache cleared")
+                except:
+                    pass
+            
+            # 3. Reset ML trade count (keep model but reset counter)
+            ml_reset_info = ""
+            if "ml_scorer" in self.shared and self.shared["ml_scorer"]:
+                try:
+                    ml_scorer = self.shared["ml_scorer"]
+                    old_count = ml_scorer.completed_trades_count if hasattr(ml_scorer, 'completed_trades_count') else 0
+                    
+                    # Reset counters
+                    if hasattr(ml_scorer, 'completed_trades_count'):
+                        ml_scorer.completed_trades_count = 0
+                    if hasattr(ml_scorer, 'last_train_count'):
+                        ml_scorer.last_train_count = 0
+                    
+                    # Clear Redis data if available
+                    if hasattr(ml_scorer, 'redis_client') and ml_scorer.redis_client:
+                        try:
+                            ml_scorer.redis_client.delete('ml_completed_trades')
+                            ml_scorer.redis_client.delete('ml_enhanced_completed_trades')
+                            ml_scorer.redis_client.delete('ml_v2_completed_trades')
+                            ml_scorer.redis_client.set('ml_trades_count', 0)
+                            ml_scorer.redis_client.set('ml_enhanced_trades_count', 0)
+                            ml_scorer.redis_client.set('ml_v2_trades_count', 0)
+                        except:
+                            pass
+                    
+                    ml_reset_info = f"\n🤖 **ML Status:**\n"
+                    ml_reset_info += f"• Reset {old_count} trade counter\n"
+                    ml_reset_info += f"• Model kept (if trained)\n"
+                    ml_reset_info += f"• Will retrain after 200 new trades"
+                except Exception as e:
+                    logger.error(f"Error resetting ML stats: {e}")
+            
+            # Build response
+            if reset_count > 0 or backups:
+                response = "✅ **Statistics Reset Complete!**\n\n"
+                
+                if backups:
+                    response += "**Backed up:**\n"
+                    response += "\n".join(backups) + "\n"
+                
+                response += ml_reset_info + "\n"
+                
+                response += "\n**What happens now:**\n"
+                response += "• Trade history: Starting fresh at 0\n"
+                response += "• Win rate: Will recalculate from new trades\n"
+                response += "• P&L: Reset to $0.00\n"
+                response += "• New trades will build fresh statistics\n\n"
+                response += "📊 Use /stats to see fresh statistics\n"
+                response += "🤖 Use /ml to check ML status"
+            else:
+                response = "ℹ️ No statistics to reset - already clean\n\n"
+                response += "📊 /stats - View statistics\n"
+                response += "🤖 /ml - Check ML status"
+            
+            await update.message.reply_text(response, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error resetting stats: {e}")
+            await update.message.reply_text(f"❌ Error resetting stats: {str(e)[:200]}")

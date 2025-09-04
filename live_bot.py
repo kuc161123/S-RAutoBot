@@ -782,18 +782,18 @@ class TradingBot:
                     logger.warning(f"[{sym}] Quantity too small, skipping")
                     continue
                 
-                # Set maximum leverage for this symbol
+                # IMPORTANT: Set leverage BEFORE opening position to prevent TP/SL cancellation
                 max_lev = int(m.get("max_leverage", 10))
-                logger.info(f"[{sym}] Setting leverage to {max_lev}x (maximum available)")
+                logger.info(f"[{sym}] Setting leverage to {max_lev}x (before position to preserve TP/SL)")
                 bybit.set_leverage(sym, max_lev)
                 
-                # Place market order
+                # Place market order AFTER leverage is set
                 side = "Buy" if sig.side == "long" else "Sell"
                 try:
                     logger.info(f"[{sym}] Placing {side} order for {qty} units")
                     bybit.place_market(sym, side, qty, reduce_only=False)
                     
-                    # Set TP/SL with quantity for better reliability
+                    # Set TP/SL - these will not be cancelled since leverage was set before position
                     logger.info(f"[{sym}] Setting TP={sig.tp:.4f} (Limit), SL={sig.sl:.4f} (Market)")
                     bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl, qty=qty)
                     

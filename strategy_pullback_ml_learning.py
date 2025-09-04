@@ -167,44 +167,144 @@ def detect_simple_lower_high(df:pd.DataFrame, below_level:float,
 def calculate_ml_features(df: pd.DataFrame, state: BreakoutState, 
                          side: str, retracement: float) -> dict:
     """
-    Calculate features for ML to learn from
+    Calculate ENHANCED features for ML to learn from
     These are NOT used for filtering, just for ML learning
     """
     # Current price data
     close = df["close"].iloc[-1]
+    open_price = df["open"].iloc[-1]
+    high = df["high"].iloc[-1]
+    low = df["low"].iloc[-1]
     volume = df["volume"].iloc[-1]
     
-    # Volume ratio (ML will learn if this matters)
-    avg_volume = df["volume"].rolling(20).mean().iloc[-1]
-    volume_ratio = volume / avg_volume if avg_volume > 0 else 1.0
+    # Volume patterns (CRITICAL for crypto)
+    avg_volume_20 = df["volume"].rolling(20).mean().iloc[-1]
+    avg_volume_5 = df["volume"].rolling(5).mean().iloc[-1]
+    volume_ratio = volume / avg_volume_20 if avg_volume_20 > 0 else 1.0
     
-    # ATR percentile (ML will learn volatility patterns)
+    # Breakout characteristics (if we can identify it)
+    breakout_volume_spike = 1.0
+    if state.breakout_time and len(df) > 20:
+        # Find approximate breakout candle (within last 20 bars)
+        time_since_breakout = (datetime.now() - state.breakout_time).total_seconds() / 60  # minutes
+        bars_since_breakout = int(time_since_breakout / 15)  # Assuming 15m timeframe
+        if bars_since_breakout < 20:
+            breakout_idx = -(bars_since_breakout + 1)
+            if abs(breakout_idx) <= len(df):
+                breakout_volume = df["volume"].iloc[breakout_idx]
+                breakout_volume_spike = breakout_volume / avg_volume_20 if avg_volume_20 > 0 else 1.0
+    
+    # Pullback characteristics
+    pullback_bars = state.confirmation_count if state.pullback_time else 0
+    pullback_speed = min(pullback_bars, 10) / 10.0  # Normalize 0-1, faster is better
+    
+    # Recent volume during pullback vs breakout
+    pullback_volume = df["volume"].iloc[-5:].mean() if len(df) >= 5 else volume
+    volume_decline = pullback_volume / avg_volume_20 if avg_volume_20 > 0 else 1.0
+    
+    # Candle quality metrics (entry strength)
+    candle_range = high - low if high > low else 0.0001
+    candle_body = abs(close - open_price)
+    candle_body_ratio = candle_body / candle_range if candle_range > 0 else 0.0
+    
+    # Wick analysis (rejection/acceptance)
+    upper_wick = high - max(open_price, close)
+    lower_wick = min(open_price, close) - low
+    upper_wick_ratio = upper_wick / candle_range if candle_range > 0 else 0.0
+    lower_wick_ratio = lower_wick / candle_range if candle_range > 0 else 0.0
+    
+    # Momentum metrics
+    is_bullish_candle = 1 if close > open_price else 0
+    consecutive_bulls = 0
+    consecutive_bears = 0
+    for i in range(1, min(6, len(df))):
+        if df["close"].iloc[-i] > df["open"].iloc[-i]:
+            consecutive_bulls += 1
+        else:
+            break
+    for i in range(1, min(6, len(df))):
+        if df["close"].iloc[-i] < df["open"].iloc[-i]:
+            consecutive_bears += 1
+        else:
+            break
+    
+    # ATR and volatility
     atr_current = _atr(df, 14)[-1]
+    atr_percentile = 0.5  # Default
+    if len(df) >= 100:
+        atr_history = _atr(df, 14)[-100:]
+        atr_percentile = (atr_current > atr_history).mean()
     
-    # Trend strength (ML will learn importance)
+    # Trend strength
     close_prices = df['close'].values[-20:]
     trend_strength = abs(np.polyfit(range(len(close_prices)), close_prices, 1)[0])
     
-    # Time features
+    # Zone strength
+    zone_touches = count_zone_touches(state.breakout_level, df)
+    zone_strength = min(zone_touches / 5.0, 1.0)  # Normalize 0-1
+    
+    # Market session detection
     now = datetime.now()
+    hour = now.hour
+    if 0 <= hour < 8:
+        session = 'asian'
+        session_strength = 0.7  # Moderate volatility
+    elif 8 <= hour < 12:
+        session = 'london_open'
+        session_strength = 1.0  # High volatility
+    elif 12 <= hour < 16:
+        session = 'london'
+        session_strength = 0.9
+    elif 16 <= hour < 20:
+        session = 'ny_open'
+        session_strength = 1.0  # High volatility
+    elif 20 <= hour < 24:
+        session = 'ny'
+        session_strength = 0.8
+    else:
+        session = 'off_hours'
+        session_strength = 0.5
     
     return {
-        # Pullback characteristics (ML will learn optimal levels)
+        # Pullback characteristics
         "retracement_pct": retracement,
         "is_golden_zone": 1 if 38.2 <= retracement <= 61.8 else 0,
         "is_shallow": 1 if retracement < 38.2 else 0,
         "is_deep": 1 if retracement > 78.6 else 0,
+        "pullback_speed": pullback_speed,
+        "pullback_bars": pullback_bars,
         
-        # Market conditions (ML will learn when these matter)
+        # Volume patterns (CRITICAL)
         "volume_ratio": volume_ratio,
+        "breakout_volume_spike": breakout_volume_spike,
+        "volume_decline": volume_decline,
+        "volume_trend": avg_volume_5 / avg_volume_20 if avg_volume_20 > 0 else 1.0,
+        
+        # Candle patterns (entry quality)
+        "candle_body_ratio": candle_body_ratio,
+        "upper_wick_ratio": upper_wick_ratio,
+        "lower_wick_ratio": lower_wick_ratio,
+        "is_bullish_candle": is_bullish_candle,
+        "consecutive_bulls": consecutive_bulls if side == "long" else consecutive_bears,
+        
+        # Market conditions
         "trend_strength": trend_strength,
         "atr_value": atr_current,
+        "atr_percentile": atr_percentile,
+        "volatility_high": 1 if atr_percentile > 0.75 else 0,
         
-        # Time (ML will learn best trading times)
-        "hour": now.hour,
+        # Zone quality
+        "zone_touches": zone_touches,
+        "zone_strength": zone_strength,
+        
+        # Time features
+        "hour": hour,
         "day_of_week": now.weekday(),
+        "session": session,
+        "session_strength": session_strength,
+        "is_weekend": 1 if now.weekday() >= 5 else 0,
         
-        # Side
+        # Setup info
         "side": side,
         "breakout_level": state.breakout_level
     }

@@ -726,9 +726,10 @@ class TGBot:
                         if stats.get('models_active'):
                             msg += f"• Active models: {', '.join(stats['models_active'])}\n"
                         msg += "\n"
-                    elif not stats.get('is_trained'):
+                    elif not stats.get('is_trained', False):
                         trades_needed = stats.get('trades_needed', 200)
-                        progress_pct = (stats['completed_trades'] / 200) * 100
+                        completed = stats.get('completed_trades', 0)
+                        progress_pct = (completed / 200) * 100 if completed > 0 else 0
                         msg += f"• Progress: {progress_pct:.1f}%\n"
                         msg += f"• Trades needed: {trades_needed}\n"
                         msg += "\n⏳ ML will activate after 200 trades\n\n"
@@ -760,10 +761,11 @@ class TGBot:
                     msg += "\n"
                     
                     # How it works
-                    if stats['is_trained']:
+                    if stats.get('is_trained', False) or stats.get('is_ml_ready', False):
                         msg += "💡 *How It's Working*\n"
                         msg += "• Scoring every signal 0-100\n"
-                        msg += f"• Filtering signals below {stats['min_score_threshold']}\n"
+                        threshold = stats.get('current_threshold') or stats.get('min_score_threshold', 70)
+                        msg += f"• Filtering signals below {threshold}\n"
                         msg += "• Learning from trade outcomes\n"
                         msg += "• Adapting to market changes\n"
                     else:
@@ -771,7 +773,9 @@ class TGBot:
                         msg += "• Collecting data from all signals\n"
                         msg += "• Recording trade outcomes\n"
                         msg += "• Building pattern database\n"
-                        msg += f"• {200 - stats['completed_trades']} more trades to activate\n"
+                        completed = stats.get('completed_trades', 0)
+                        if completed < 200:
+                            msg += f"• {200 - completed} more trades to activate\n"
                     
                 except Exception as e:
                     logger.error(f"Error getting ML stats: {e}")

@@ -39,6 +39,11 @@ class Trade:
     @classmethod
     def from_dict(cls, d):
         """Create from dictionary"""
+        # Remove database-specific fields that aren't part of the Trade class
+        d = d.copy()  # Don't modify original
+        d.pop('id', None)  # Remove 'id' if it exists
+        
+        # Convert timestamps
         d['entry_time'] = datetime.fromisoformat(d['entry_time']) if isinstance(d['entry_time'], str) else d['entry_time']
         d['exit_time'] = datetime.fromisoformat(d['exit_time']) if isinstance(d['exit_time'], str) else d['exit_time']
         return cls(**d)

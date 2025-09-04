@@ -134,23 +134,58 @@ class Bybit:
         }
         return self._request("POST", "/v5/order/create", data)
 
-    def set_tpsl(self, symbol:str, take_profit:float, stop_loss:float) -> Dict[str, Any]:
-        """Set position TP/SL - Always use Partial mode with Limit TP for better fills"""
-        # Always use Partial mode - Bybit will apply to the full position automatically
-        # No need to specify sizes - it will use the entire position
-        data = {
-            "category": "linear",
-            "symbol": symbol,
-            "takeProfit": str(take_profit),
-            "stopLoss": str(stop_loss),
-            "tpLimitPrice": str(take_profit),  # Limit price for TP (better fills)
-            "tpTriggerBy": "LastPrice",
-            "slTriggerBy": "LastPrice",
-            "tpslMode": "Partial",             # Always use Partial mode
-            "tpOrderType": "Limit",            # Limit order for Take Profit
-            "slOrderType": "Market",           # Market order for Stop Loss
-            "positionIdx": 0
-        }
+    def set_tpsl(self, symbol:str, take_profit:float, stop_loss:float, qty:float=None) -> Dict[str, Any]:
+        """Set position TP/SL - Use Partial mode with Limit TP for better fills"""
+        
+        # If qty not provided, try to get current position size
+        position_qty = qty
+        if not position_qty:
+            try:
+                # Add small delay to ensure position is registered
+                import time
+                time.sleep(0.5)
+                
+                positions = self.get_positions()
+                for pos in positions:
+                    if pos.get("symbol") == symbol and float(pos.get("size", 0)) > 0:
+                        position_qty = pos.get("size")
+                        logger.info(f"Found position size for {symbol}: {position_qty}")
+                        break
+            except Exception as e:
+                logger.warning(f"Could not get position size: {e}")
+        
+        # Use Partial mode with sizes if we have them
+        if position_qty:
+            data = {
+                "category": "linear",
+                "symbol": symbol,
+                "takeProfit": str(take_profit),
+                "stopLoss": str(stop_loss),
+                "tpSize": str(position_qty),       # Required for Partial mode
+                "slSize": str(position_qty),       # Required for Partial mode
+                "tpLimitPrice": str(take_profit),  # Limit price for TP
+                "tpTriggerBy": "LastPrice",
+                "slTriggerBy": "LastPrice",
+                "tpslMode": "Partial",             # Partial mode for better fills
+                "tpOrderType": "Limit",            # Limit order for Take Profit
+                "slOrderType": "Market",           # Market order for Stop Loss
+                "positionIdx": 0
+            }
+        else:
+            # Fallback: Use Full mode without sizes (simpler API)
+            logger.warning(f"Using Full mode for {symbol} - no position size available")
+            data = {
+                "category": "linear",
+                "symbol": symbol,
+                "takeProfit": str(take_profit),
+                "stopLoss": str(stop_loss),
+                "tpTriggerBy": "LastPrice",
+                "slTriggerBy": "LastPrice",
+                "tpslMode": "Full",                # Full mode doesn't need sizes
+                "tpOrderType": "Market",           # Market for both in Full mode
+                "slOrderType": "Market",           # Market for both in Full mode
+                "positionIdx": 0
+            }
         
         return self._request("POST", "/v5/position/trading-stop", data)
     

@@ -24,10 +24,10 @@ from candle_storage_postgres import CandleStorage
 # Use enhanced PostgreSQL trade tracker for persistence
 try:
     from trade_tracker_postgres import TradeTrackerPostgres as TradeTracker, Trade
-    logger.info("Using PostgreSQL trade tracker")
+    USING_POSTGRES_TRACKER = True
 except ImportError:
     from trade_tracker import TradeTracker, Trade
-    logger.warning("Using JSON trade tracker (PostgreSQL not available)")
+    USING_POSTGRES_TRACKER = False
 from multi_websocket_handler import MultiWebSocketHandler
 
 # Import ML scorer (safe - has fallbacks)
@@ -53,6 +53,12 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Log which trade tracker we're using
+if USING_POSTGRES_TRACKER:
+    logger.info("Using PostgreSQL trade tracker for persistence")
+else:
+    logger.info("Using JSON trade tracker")
 
 # Load environment variables
 load_dotenv()

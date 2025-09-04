@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 class MinimalSettings:
     """Minimal settings - let ML learn what matters"""
     # Basic structure requirements (KEEP THESE)
-    left:int=2
-    right:int=2
+    left:int=3      # Increased from 2 for stronger pivot confirmation
+    right:int=2     # Keep at 2 for faster detection
     atr_len:int=14
     sl_buf_atr:float=0.5
     rr:float=2.0
@@ -309,7 +309,7 @@ def calculate_ml_features(df: pd.DataFrame, state: BreakoutState,
         "breakout_level": state.breakout_level
     }
 
-def count_zone_touches(level:float, df:pd.DataFrame, zone_pct:float=0.003, lookback:int=50) -> int:
+def count_zone_touches(level:float, df:pd.DataFrame, zone_pct:float=0.003, lookback:int=75) -> int:
     """
     Count how many times price touched a zone (stronger zones have more touches)
     """
@@ -365,12 +365,13 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
     # Zone width: 0.3% on each side (0.6% total zone)
     zone_width = 0.003
     
-    for ph in reversed(pivots_high[-20:]):
+    # Increased from -20 to -30 for better S/R coverage (captures full trading day)
+    for ph in reversed(pivots_high[-30:]):
         if not np.isnan(ph):
             recent_resistance = ph
             break
     
-    for pl in reversed(pivots_low[-20:]):
+    for pl in reversed(pivots_low[-30:]):
         if not np.isnan(pl):
             recent_support = pl
             break

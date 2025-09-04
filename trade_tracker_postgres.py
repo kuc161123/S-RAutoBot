@@ -107,14 +107,14 @@ class TradeTrackerPostgres:
                         pnl_percent DECIMAL(20, 8) NOT NULL,
                         exit_reason VARCHAR(20) NOT NULL,
                         leverage DECIMAL(10, 2) DEFAULT 1.0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        
-                        -- Indexes for faster queries
-                        INDEX idx_symbol (symbol),
-                        INDEX idx_exit_time (exit_time),
-                        INDEX idx_pnl_usd (pnl_usd)
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
+                
+                # Create indexes separately (PostgreSQL syntax)
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_symbol ON trades (symbol)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_exit_time ON trades (exit_time)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_pnl_usd ON trades (pnl_usd)")
                 
                 # Create statistics cache table for fast dashboard queries
                 cur.execute("""

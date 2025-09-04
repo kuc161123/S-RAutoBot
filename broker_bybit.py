@@ -135,62 +135,22 @@ class Bybit:
         return self._request("POST", "/v5/order/create", data)
 
     def set_tpsl(self, symbol:str, take_profit:float, stop_loss:float) -> Dict[str, Any]:
-        """Set position TP/SL - Limit TP for better fills, Market SL for guaranteed execution"""
-        # First try to get the current position size to use Partial mode with proper sizes
-        try:
-            positions = self.get_positions()
-            position_qty = None
-            for pos in positions:
-                if pos.get("symbol") == symbol and float(pos.get("size", 0)) > 0:
-                    position_qty = pos.get("size")
-                    break
-            
-            if position_qty:
-                # Use Partial mode with actual position size for Limit TP / Market SL
-                data = {
-                    "category": "linear",
-                    "symbol": symbol,
-                    "takeProfit": str(take_profit),
-                    "stopLoss": str(stop_loss),
-                    "tpSize": str(position_qty),     # Full position size
-                    "slSize": str(position_qty),     # Full position size
-                    "tpLimitPrice": str(take_profit), # Limit price same as trigger for TP
-                    "tpTriggerBy": "LastPrice",
-                    "slTriggerBy": "LastPrice",
-                    "tpslMode": "Partial",           # Partial mode allows different order types
-                    "tpOrderType": "Limit",          # Limit order for Take Profit
-                    "slOrderType": "Market",         # Market order for Stop Loss
-                    "positionIdx": 0
-                }
-            else:
-                # Fallback to Full mode if position not found
-                data = {
-                    "category": "linear",
-                    "symbol": symbol,
-                    "takeProfit": str(take_profit),
-                    "stopLoss": str(stop_loss),
-                    "tpTriggerBy": "LastPrice",
-                    "slTriggerBy": "LastPrice",
-                    "tpslMode": "Full",              # Full mode for entire position
-                    "tpOrderType": "Market",         # Market order for TP (required for Full mode)
-                    "slOrderType": "Market",         # Market order for Stop Loss
-                    "positionIdx": 0
-                }
-        except Exception as e:
-            logger.warning(f"Could not get position size, using Full mode: {e}")
-            # Use Full mode as fallback
-            data = {
-                "category": "linear",
-                "symbol": symbol,
-                "takeProfit": str(take_profit),
-                "stopLoss": str(stop_loss),
-                "tpTriggerBy": "LastPrice",
-                "slTriggerBy": "LastPrice",
-                "tpslMode": "Full",                  # Full mode for entire position
-                "tpOrderType": "Market",             # Market order for TP (required for Full mode)
-                "slOrderType": "Market",             # Market order for Stop Loss
-                "positionIdx": 0
-            }
+        """Set position TP/SL - Always use Partial mode with Limit TP for better fills"""
+        # Always use Partial mode - Bybit will apply to the full position automatically
+        # No need to specify sizes - it will use the entire position
+        data = {
+            "category": "linear",
+            "symbol": symbol,
+            "takeProfit": str(take_profit),
+            "stopLoss": str(stop_loss),
+            "tpLimitPrice": str(take_profit),  # Limit price for TP (better fills)
+            "tpTriggerBy": "LastPrice",
+            "slTriggerBy": "LastPrice",
+            "tpslMode": "Partial",             # Always use Partial mode
+            "tpOrderType": "Limit",            # Limit order for Take Profit
+            "slOrderType": "Market",           # Market order for Stop Loss
+            "positionIdx": 0
+        }
         
         return self._request("POST", "/v5/position/trading-stop", data)
     

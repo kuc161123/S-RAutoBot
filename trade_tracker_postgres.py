@@ -42,6 +42,7 @@ class Trade:
         # Remove database-specific fields that aren't part of the Trade class
         d = d.copy()  # Don't modify original
         d.pop('id', None)  # Remove 'id' if it exists
+        d.pop('created_at', None)  # Remove 'created_at' if it exists
         
         # Convert timestamps
         d['entry_time'] = datetime.fromisoformat(d['entry_time']) if isinstance(d['entry_time'], str) else d['entry_time']

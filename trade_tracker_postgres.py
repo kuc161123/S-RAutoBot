@@ -34,6 +34,13 @@ class Trade:
         d = asdict(self)
         d['entry_time'] = self.entry_time.isoformat()
         d['exit_time'] = self.exit_time.isoformat()
+        # Convert Decimal to float for JSON serialization
+        d['pnl_usd'] = float(d['pnl_usd'])
+        d['pnl_percent'] = float(d['pnl_percent'])
+        d['entry_price'] = float(d['entry_price'])
+        d['exit_price'] = float(d['exit_price'])
+        d['quantity'] = float(d['quantity'])
+        d['leverage'] = float(d['leverage'])
         return d
     
     @classmethod
@@ -320,18 +327,19 @@ class TradeTrackerPostgres:
                 'by_symbol': {}
             }
         
-        # Calculate metrics
+        # Calculate metrics - ensure all are float
         wins = [t for t in trades if t.pnl_usd > 0]
         losses = [t for t in trades if t.pnl_usd <= 0]
         
-        total_pnl = sum(t.pnl_usd for t in trades)
+        # Convert Decimal to float for calculations
+        total_pnl = float(sum(float(t.pnl_usd) for t in trades))
         win_rate = (len(wins) / len(trades)) * 100 if trades else 0
         
-        avg_win = sum(t.pnl_usd for t in wins) / len(wins) if wins else 0
-        avg_loss = sum(t.pnl_usd for t in losses) / len(losses) if losses else 0
+        avg_win = float(sum(float(t.pnl_usd) for t in wins)) / len(wins) if wins else 0
+        avg_loss = float(sum(float(t.pnl_usd) for t in losses)) / len(losses) if losses else 0
         
-        gross_profit = sum(t.pnl_usd for t in wins)
-        gross_loss = abs(sum(t.pnl_usd for t in losses))
+        gross_profit = float(sum(float(t.pnl_usd) for t in wins))
+        gross_loss = abs(float(sum(float(t.pnl_usd) for t in losses)))
         profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
         
         best_trade = max(trades, key=lambda t: t.pnl_usd) if trades else None

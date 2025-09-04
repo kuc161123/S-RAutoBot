@@ -933,17 +933,20 @@ class TGBot:
                 stats = symbol_stats[symbol]
                 stats['trades'] += 1
                 
-                if trade.pnl_usd > 0:
+                # Convert Decimal to float for calculations
+                pnl = float(trade.pnl_usd)
+                
+                if pnl > 0:
                     stats['wins'] += 1
                 else:
                     stats['losses'] += 1
                 
-                stats['total_pnl'] += trade.pnl_usd
-                stats['best_trade'] = max(stats['best_trade'], trade.pnl_usd)
-                stats['worst_trade'] = min(stats['worst_trade'], trade.pnl_usd)
+                stats['total_pnl'] += pnl
+                stats['best_trade'] = max(stats['best_trade'], pnl)
+                stats['worst_trade'] = min(stats['worst_trade'], pnl)
                 
                 # Track last 5 trades for trend
-                stats['last_5_trades'].append(1 if trade.pnl_usd > 0 else 0)
+                stats['last_5_trades'].append(1 if pnl > 0 else 0)
                 if len(stats['last_5_trades']) > 5:
                     stats['last_5_trades'].pop(0)
             

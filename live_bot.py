@@ -743,10 +743,14 @@ class TradingBot:
                         state = breakout_states[sym]
                         
                         # Calculate ML features
-                        features = calculate_ml_features(
-                            df, state, sig.side, sig.entry, sig.sl, sig.tp, 
-                            df_1h=None, symbol=sym  # 1H data would be better but not available here
-                        )
+                        # Note: calculate_ml_features expects (df, state, side, retracement)
+                        # Calculate retracement from entry price
+                        if sig.side == "long":
+                            retracement = sig.entry  # Use entry as proxy for retracement level
+                        else:
+                            retracement = sig.entry
+                        
+                        features = calculate_ml_features(df, state, sig.side, retracement)
                         
                         # Get ML score
                         ml_score, ml_reason = ml_scorer.score_signal(

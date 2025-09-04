@@ -21,7 +21,13 @@ from sizer import Sizer
 from broker_bybit import Bybit, BybitConfig
 from telegram_bot import TGBot
 from candle_storage_postgres import CandleStorage
-from trade_tracker import TradeTracker, Trade
+# Use enhanced PostgreSQL trade tracker for persistence
+try:
+    from trade_tracker_postgres import TradeTrackerPostgres as TradeTracker, Trade
+    logger.info("Using PostgreSQL trade tracker")
+except ImportError:
+    from trade_tracker import TradeTracker, Trade
+    logger.warning("Using JSON trade tracker (PostgreSQL not available)")
 from multi_websocket_handler import MultiWebSocketHandler
 
 # Import ML scorer (safe - has fallbacks)

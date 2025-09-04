@@ -259,11 +259,11 @@ trade:
   risk_usd: 2
   risk_percent: 3.0
   use_percent_risk: true
-  use_ema: true
-  ema_len: 200
-  use_vol: true
-  vol_len: 20
-  vol_mult: 1.2
+  use_ema: false  # Disabled to let ML learn when EMA matters
+  ema_len: 200    # ML will learn if trend alignment helps
+  use_vol: false  # Disabled to let ML learn volume importance
+  vol_len: 20     # ML will track volume patterns
+  vol_mult: 1.2   # ML will determine optimal volume thresholds
   atr_len: 14
   sl_buf_atr: 1.5  # Increased from 0.5 to reduce stop-outs
   rr: 2.0  # Risk:Reward ratio (adjusted for fees in strategy)

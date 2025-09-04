@@ -333,8 +333,11 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
                 sl = entry - min_stop_distance
                 logger.info(f"{symbol}: Adjusted stop to minimum distance (1% from entry)")
             
-            # Adjust TP based on new stop distance
-            tp = entry + ((entry - sl) * settings.rr)
+            # Adjust TP based on new stop distance + fees
+            # Bybit fees: 0.055% taker fee per side (entry + exit) = 0.11% total
+            # Add 0.2% buffer to cover fees and ensure profit
+            fee_adjustment = 1.002  # 0.2% to cover fees
+            tp = entry + ((entry - sl) * settings.rr * fee_adjustment)
             
             # Calculate retracement for ML
             if state.breakout_high > state.breakout_level:
@@ -400,8 +403,11 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
                 sl = entry + min_stop_distance
                 logger.info(f"{symbol}: Adjusted stop to minimum distance (1% from entry)")
             
-            # Adjust TP based on new stop distance
-            tp = entry - ((sl - entry) * settings.rr)
+            # Adjust TP based on new stop distance + fees
+            # Bybit fees: 0.055% taker fee per side (entry + exit) = 0.11% total
+            # Add 0.2% buffer to cover fees and ensure profit
+            fee_adjustment = 1.002  # 0.2% to cover fees
+            tp = entry - ((sl - entry) * settings.rr * fee_adjustment)
             
             # Calculate retracement
             if state.breakout_level > state.breakout_low:

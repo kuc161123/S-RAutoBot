@@ -169,11 +169,10 @@ class Bybit:
                     "symbol": symbol,
                     "takeProfit": str(take_profit),
                     "stopLoss": str(stop_loss),
-                    "tpLimitPrice": str(take_profit), # Limit price same as trigger for TP
                     "tpTriggerBy": "LastPrice",
                     "slTriggerBy": "LastPrice",
                     "tpslMode": "Full",              # Full mode for entire position
-                    "tpOrderType": "Limit",          # Limit order for Take Profit
+                    "tpOrderType": "Market",         # Market order for TP (required for Full mode)
                     "slOrderType": "Market",         # Market order for Stop Loss
                     "positionIdx": 0
                 }
@@ -185,11 +184,10 @@ class Bybit:
                 "symbol": symbol,
                 "takeProfit": str(take_profit),
                 "stopLoss": str(stop_loss),
-                "tpLimitPrice": str(take_profit),    # Limit price same as trigger for TP
                 "tpTriggerBy": "LastPrice",
                 "slTriggerBy": "LastPrice",
                 "tpslMode": "Full",                  # Full mode for entire position
-                "tpOrderType": "Limit",              # Limit order for Take Profit
+                "tpOrderType": "Market",             # Market order for TP (required for Full mode)
                 "slOrderType": "Market",             # Market order for Stop Loss
                 "positionIdx": 0
             }

@@ -258,10 +258,13 @@ class TradingBot:
                             order.get("orderStatus") == "Filled"):
                             
                             found_close = True
-                            exit_price = float(order.get("avgPrice", 0))
+                            # Handle empty strings and None values
+                            avg_price_str = order.get("avgPrice", 0)
+                            exit_price = float(avg_price_str) if avg_price_str and avg_price_str != "" else 0
                             
                             # Determine if it was TP or SL based on trigger price
-                            trigger_price = float(order.get("triggerPrice", 0))
+                            trigger_price_str = order.get("triggerPrice", 0)
+                            trigger_price = float(trigger_price_str) if trigger_price_str and trigger_price_str != "" else 0
                             if trigger_price > 0:
                                 if pos.side == "long":
                                     if trigger_price >= pos.tp * 0.98:  # Within 2% of TP

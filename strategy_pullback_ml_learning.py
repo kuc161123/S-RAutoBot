@@ -309,7 +309,31 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
         if state.confirmation_count >= settings.confirmation_candles:
             # Generate LONG signal - no filtering!
             entry = close
-            sl = state.pullback_extreme - (current_atr * settings.sl_buf_atr)
+            
+            # Dynamic stop loss based on volatility
+            # Calculate ATR percentile for volatility adjustment
+            atr_history = pd.Series(atr[-100:]) if len(atr) >= 100 else pd.Series(atr)
+            atr_percentile = (current_atr > atr_history).mean() * 100
+            
+            # Increase stop buffer in high volatility (>75th percentile)
+            volatility_multiplier = 1.0
+            if atr_percentile > 75:
+                volatility_multiplier = 1.3  # 30% wider stop in high volatility
+                logger.info(f"{symbol}: High volatility detected ({atr_percentile:.0f}th percentile), widening stop")
+            elif atr_percentile > 90:
+                volatility_multiplier = 1.5  # 50% wider stop in extreme volatility
+                logger.info(f"{symbol}: Extreme volatility detected ({atr_percentile:.0f}th percentile), widening stop further")
+            
+            adjusted_sl_buffer = settings.sl_buf_atr * volatility_multiplier
+            sl = state.pullback_extreme - (current_atr * adjusted_sl_buffer)
+            
+            # Ensure minimum stop distance (at least 1% from entry)
+            min_stop_distance = entry * 0.01
+            if abs(entry - sl) < min_stop_distance:
+                sl = entry - min_stop_distance
+                logger.info(f"{symbol}: Adjusted stop to minimum distance (1% from entry)")
+            
+            # Adjust TP based on new stop distance
             tp = entry + ((entry - sl) * settings.rr)
             
             # Calculate retracement for ML
@@ -352,7 +376,31 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
         if state.confirmation_count >= settings.confirmation_candles:
             # Generate SHORT signal - no filtering!
             entry = close
-            sl = state.pullback_extreme + (current_atr * settings.sl_buf_atr)
+            
+            # Dynamic stop loss based on volatility
+            # Calculate ATR percentile for volatility adjustment
+            atr_history = pd.Series(atr[-100:]) if len(atr) >= 100 else pd.Series(atr)
+            atr_percentile = (current_atr > atr_history).mean() * 100
+            
+            # Increase stop buffer in high volatility (>75th percentile)
+            volatility_multiplier = 1.0
+            if atr_percentile > 75:
+                volatility_multiplier = 1.3  # 30% wider stop in high volatility
+                logger.info(f"{symbol}: High volatility detected ({atr_percentile:.0f}th percentile), widening stop")
+            elif atr_percentile > 90:
+                volatility_multiplier = 1.5  # 50% wider stop in extreme volatility
+                logger.info(f"{symbol}: Extreme volatility detected ({atr_percentile:.0f}th percentile), widening stop further")
+            
+            adjusted_sl_buffer = settings.sl_buf_atr * volatility_multiplier
+            sl = state.pullback_extreme + (current_atr * adjusted_sl_buffer)
+            
+            # Ensure minimum stop distance (at least 1% from entry)
+            min_stop_distance = entry * 0.01
+            if abs(sl - entry) < min_stop_distance:
+                sl = entry + min_stop_distance
+                logger.info(f"{symbol}: Adjusted stop to minimum distance (1% from entry)")
+            
+            # Adjust TP based on new stop distance
             tp = entry - ((sl - entry) * settings.rr)
             
             # Calculate retracement

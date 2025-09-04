@@ -265,8 +265,8 @@ trade:
   vol_len: 20
   vol_mult: 1.2
   atr_len: 14
-  sl_buf_atr: 0.5
-  rr: 2.0
+  sl_buf_atr: 1.5  # Increased from 0.5 to reduce stop-outs
+  rr: 1.5  # Reduced from 2.0 for better win rate with wider stops
   both_hit_rule: SL_FIRST
   use_pullback_strategy: true
   confirmation_candles: 2

@@ -49,7 +49,7 @@ class Signal:
 
 @dataclass
 class BreakoutState:
-    """Simple state tracking"""
+    """Simple state tracking with zone support"""
     state:str = "NEUTRAL"
     breakout_level:float = 0.0
     breakout_time:Optional[datetime] = None
@@ -59,6 +59,12 @@ class BreakoutState:
     last_signal_time:Optional[datetime] = None
     last_resistance:float = 0.0
     last_support:float = 0.0
+    
+    # Zone tracking (0.3% zones around S/R levels)
+    resistance_zone_upper:float = 0.0
+    resistance_zone_lower:float = 0.0
+    support_zone_upper:float = 0.0
+    support_zone_lower:float = 0.0
     
     # Track for ML learning (but don't filter)
     breakout_high:float = 0.0
@@ -87,9 +93,9 @@ def _atr(df:pd.DataFrame, n:int):
     return pd.Series(tr, index=df.index).rolling(n).mean().values
 
 def detect_simple_higher_low(df:pd.DataFrame, above_level:float, 
-                            lookback:int=10) -> tuple:
+                            lookback:int=10, zone_lower:float=None) -> tuple:
     """
-    Simple HL detection - just check if pullback stayed above breakout
+    Simple HL detection - check if pullback stayed above breakout zone
     Returns: (is_hl, pullback_low, retracement_pct)
     """
     recent_lows = df["low"].iloc[-lookback:]
@@ -98,8 +104,11 @@ def detect_simple_higher_low(df:pd.DataFrame, above_level:float,
     min_idx = recent_lows.idxmin()
     min_low = recent_lows.loc[min_idx]
     
-    # Basic requirement: stayed above breakout level
-    if min_low <= above_level:
+    # Use zone lower boundary if provided, otherwise use level
+    check_level = zone_lower if zone_lower else above_level
+    
+    # Basic requirement: stayed above breakout zone
+    if min_low <= check_level:
         return False, min_low, 0.0
     
     # Check if bouncing
@@ -120,9 +129,9 @@ def detect_simple_higher_low(df:pd.DataFrame, above_level:float,
     return False, min_low, 0.0
 
 def detect_simple_lower_high(df:pd.DataFrame, below_level:float,
-                            lookback:int=10) -> tuple:
+                            lookback:int=10, zone_upper:float=None) -> tuple:
     """
-    Simple LH detection - just check if pullback stayed below breakout
+    Simple LH detection - check if pullback stayed below breakout zone
     Returns: (is_lh, pullback_high, retracement_pct)
     """
     recent_highs = df["high"].iloc[-lookback:]
@@ -131,8 +140,11 @@ def detect_simple_lower_high(df:pd.DataFrame, below_level:float,
     max_idx = recent_highs.idxmax()
     max_high = recent_highs.loc[max_idx]
     
-    # Basic requirement: stayed below breakout level
-    if max_high >= below_level:
+    # Use zone upper boundary if provided, otherwise use level
+    check_level = zone_upper if zone_upper else below_level
+    
+    # Basic requirement: stayed below breakout zone
+    if max_high >= check_level:
         return False, max_high, 0.0
     
     # Check if bouncing
@@ -197,6 +209,29 @@ def calculate_ml_features(df: pd.DataFrame, state: BreakoutState,
         "breakout_level": state.breakout_level
     }
 
+def count_zone_touches(level:float, df:pd.DataFrame, zone_pct:float=0.003, lookback:int=50) -> int:
+    """
+    Count how many times price touched a zone (stronger zones have more touches)
+    """
+    if np.isnan(level):
+        return 0
+        
+    zone_upper = level * (1 + zone_pct)
+    zone_lower = level * (1 - zone_pct)
+    
+    # Look at recent candles
+    recent = df.tail(lookback)
+    touches = 0
+    
+    for _, row in recent.iterrows():
+        # Check if candle wicked into or touched the zone
+        if (zone_lower <= row['high'] <= zone_upper) or \
+           (zone_lower <= row['low'] <= zone_upper) or \
+           (row['low'] < zone_lower and row['high'] > zone_upper):
+            touches += 1
+    
+    return touches
+
 def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
                            df_1h:pd.DataFrame = None, symbol:str = "UNKNOWN") -> list:
     """
@@ -223,9 +258,12 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
     low = df["low"].iloc[-1]
     current_atr = atr[-1]
     
-    # Find recent S/R
+    # Find recent S/R and create zones
     recent_resistance = np.nan
     recent_support = np.nan
+    
+    # Zone width: 0.3% on each side (0.6% total zone)
+    zone_width = 0.003
     
     for ph in reversed(pivots_high[-20:]):
         if not np.isnan(ph):
@@ -237,39 +275,56 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
             recent_support = pl
             break
     
-    # Update tracked levels
+    # Update tracked levels and zones with strength scoring
     if not np.isnan(recent_resistance):
         state.last_resistance = recent_resistance
+        state.resistance_zone_upper = recent_resistance * (1 + zone_width)
+        state.resistance_zone_lower = recent_resistance * (1 - zone_width)
+        
+        # Count zone touches for strength
+        touches = count_zone_touches(recent_resistance, df, zone_width)
+        strength = "Strong" if touches >= 3 else "Moderate" if touches >= 2 else "Weak"
+        logger.debug(f"{symbol}: {strength} resistance zone ({touches} touches): {state.resistance_zone_lower:.2f} - {state.resistance_zone_upper:.2f}")
+        
     if not np.isnan(recent_support):
         state.last_support = recent_support
+        state.support_zone_upper = recent_support * (1 + zone_width)
+        state.support_zone_lower = recent_support * (1 - zone_width)
+        
+        # Count zone touches for strength  
+        touches = count_zone_touches(recent_support, df, zone_width)
+        strength = "Strong" if touches >= 3 else "Moderate" if touches >= 2 else "Weak"
+        logger.debug(f"{symbol}: {strength} support zone ({touches} touches): {state.support_zone_lower:.2f} - {state.support_zone_upper:.2f}")
     
     signals = []
     
-    # SIMPLE STATE MACHINE - Minimal requirements
+    # SIMPLE STATE MACHINE - Zone-based breakout detection
     if state.state == "NEUTRAL":
-        # Check for breakouts
-        if not np.isnan(recent_resistance) and close > recent_resistance:
+        # Check for zone breakouts (must close outside the zone)
+        if state.resistance_zone_upper > 0 and close > state.resistance_zone_upper:
+            # Confirmed breakout above resistance zone
             state.state = "RESISTANCE_BROKEN"
-            state.breakout_level = recent_resistance
+            state.breakout_level = state.last_resistance  # Use center of zone
             state.breakout_time = datetime.now()
             state.breakout_high = high
-            logger.info(f"{symbol}: Resistance broken at {recent_resistance:.2f}")
+            logger.info(f"{symbol}: Resistance zone broken at {state.last_resistance:.2f} (closed above {state.resistance_zone_upper:.2f})")
         
-        elif not np.isnan(recent_support) and close < recent_support:
+        elif state.support_zone_lower > 0 and close < state.support_zone_lower:
+            # Confirmed breakout below support zone
             state.state = "SUPPORT_BROKEN"
-            state.breakout_level = recent_support
+            state.breakout_level = state.last_support  # Use center of zone
             state.breakout_time = datetime.now()
             state.breakout_low = low
-            logger.info(f"{symbol}: Support broken at {recent_support:.2f}")
+            logger.info(f"{symbol}: Support zone broken at {state.last_support:.2f} (closed below {state.support_zone_lower:.2f})")
     
     elif state.state == "RESISTANCE_BROKEN":
         # Update swing high
         if high > state.breakout_high:
             state.breakout_high = high
         
-        # Simple HL check - no filtering!
+        # Simple HL check using zone - no filtering!
         is_hl, pullback_low, retracement = detect_simple_higher_low(
-            df, state.breakout_level
+            df, state.breakout_level, zone_lower=state.resistance_zone_lower
         )
         
         if is_hl:
@@ -287,9 +342,9 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
         if low < state.breakout_low:
             state.breakout_low = low
         
-        # Simple LH check - no filtering!
+        # Simple LH check using zone - no filtering!
         is_lh, pullback_high, retracement = detect_simple_lower_high(
-            df, state.breakout_level
+            df, state.breakout_level, zone_upper=state.support_zone_upper
         )
         
         if is_lh:

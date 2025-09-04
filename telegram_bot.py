@@ -696,37 +696,56 @@ class TGBot:
                 msg += "• Not initialized yet\n\n"
                 msg += "To enable: Set `use_ml_scoring: true` in config"
             else:
-                # Get ML stats
+                # Get ML stats - handle both immediate and old scorer
                 try:
-                    stats = ml_scorer.get_ml_stats()
+                    if hasattr(ml_scorer, 'get_stats'):
+                        # New immediate ML scorer
+                        stats = ml_scorer.get_stats()
+                    else:
+                        # Old ML scorer
+                        stats = ml_scorer.get_ml_stats()
                     
-                    # Status
-                    if stats['is_trained']:
+                    # Status - handle both old and new format
+                    if 'status' in stats:
+                        # New immediate ML format
+                        msg += f"📊 *Status:* {stats['status']}\n\n"
+                    elif stats.get('is_trained'):
                         msg += "✅ *Status: Active & Learning*\n\n"
                     else:
                         msg += "📊 *Status: Collecting Data*\n\n"
                     
                     # Progress
                     msg += "📈 *Learning Progress*\n"
-                    msg += f"• Completed trades: {stats['completed_trades']}\n"
+                    msg += f"• Completed trades: {stats.get('completed_trades', 0)}\n"
                     
-                    if not stats['is_trained']:
+                    # Handle new immediate ML format
+                    if 'current_threshold' in stats:
+                        msg += f"• Current threshold: {stats['current_threshold']:.0f}\n"
+                        if stats.get('recent_win_rate', 0) > 0:
+                            msg += f"• Recent win rate: {stats['recent_win_rate']:.1f}%\n"
+                        if stats.get('models_active'):
+                            msg += f"• Active models: {', '.join(stats['models_active'])}\n"
+                        msg += "\n"
+                    elif not stats.get('is_trained'):
                         trades_needed = stats.get('trades_needed', 200)
                         progress_pct = (stats['completed_trades'] / 200) * 100
                         msg += f"• Progress: {progress_pct:.1f}%\n"
                         msg += f"• Trades needed: {trades_needed}\n"
                         msg += "\n⏳ ML will activate after 200 trades\n\n"
                     else:
-                        msg += f"• Model trained on: {stats['last_train_count']} trades\n"
-                        msg += f"• Model type: {stats['model_type']}\n"
+                        msg += f"• Model trained on: {stats.get('last_train_count', 0)} trades\n"
+                        msg += f"• Model type: {stats.get('model_type', 'Unknown')}\n"
                         if 'recent_accuracy' in stats:
                             msg += f"• Recent accuracy: {stats['recent_accuracy']*100:.1f}%\n"
                         msg += "\n"
                     
                     # Settings
                     msg += "⚙️ *Configuration*\n"
-                    msg += f"• Enabled: {'Yes' if stats['enabled'] else 'No'}\n"
-                    msg += f"• Min score threshold: {stats['min_score_threshold']}/100\n"
+                    msg += f"• Enabled: {'Yes' if stats.get('enabled', False) else 'No'}\n"
+                    if 'current_threshold' in stats:
+                        msg += f"• Min score threshold: {stats['current_threshold']}/100\n"
+                    else:
+                        msg += f"• Min score threshold: {stats.get('min_score_threshold', 70)}/100\n"
                     msg += f"• Ensemble models: 3 (RF, GB, NN)\n"
                     msg += "\n"
                     

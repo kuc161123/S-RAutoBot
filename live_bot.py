@@ -30,22 +30,17 @@ except ImportError:
     USING_POSTGRES_TRACKER = False
 from multi_websocket_handler import MultiWebSocketHandler
 
-# Import ML scorer (safe - has fallbacks)
+# Import ML scorer with immediate activation
 try:
-    # Try ensemble scorer first, fallback to basic scorer
-    try:
-        from ml_ensemble_scorer import get_ensemble_scorer as get_scorer
-        logger = logging.getLogger(__name__)
-        logger.info("Using Enhanced Ensemble ML Scorer")
-    except ImportError:
-        from ml_signal_scorer import get_scorer
-        logger = logging.getLogger(__name__)
-        logger.info("Using Basic ML Scorer")
+    from ml_signal_scorer_immediate import get_immediate_scorer
+    from phantom_trade_tracker import get_phantom_tracker
+    logger = logging.getLogger(__name__)
+    logger.info("Using Immediate ML Scorer with Phantom Tracking")
     ML_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     ML_AVAILABLE = False
     logger = logging.getLogger(__name__)
-    logger.warning("ML Signal Scorer not available, running without ML filtering")
+    logger.warning(f"ML not available: {e}")
 
 # Setup logging
 logging.basicConfig(
@@ -318,29 +313,33 @@ class TradingBot:
                     # Record the trade
                     self.record_closed_trade(symbol, pos, exit_price, exit_reason, leverage)
                     
-                    # Update ML scorer ONLY for clear TP/SL hits
-                    if ml_scorer is not None and hasattr(pos, 'entry_time'):
-                        if exit_reason in ["tp", "sl"]:  # Only train on clear outcomes
+                    # Update ML scorer for all closed positions
+                    if ml_scorer is not None:
+                        if exit_reason in ["tp", "sl"]:  # Clear TP/SL hits
                             try:
-                                # Calculate PnL in R-multiples
-                                risk = abs(pos.entry - pos.sl)
+                                # Calculate P&L percentage
                                 if pos.side == "long":
-                                    pnl = exit_price - pos.entry
+                                    pnl_pct = ((exit_price - pos.entry) / pos.entry) * 100
                                 else:
-                                    pnl = pos.entry - exit_price
+                                    pnl_pct = ((pos.entry - exit_price) / pos.entry) * 100
                                 
-                                pnl_r = pnl / risk if risk > 0 else 0
-                                
-                                # Clear win or loss only
                                 outcome = "win" if exit_reason == "tp" else "loss"
                                 
-                                # Update ML with VERIFIED outcome
-                                ml_scorer.update_signal_outcome(symbol, pos.entry_time, outcome, pnl_r)
-                                logger.info(f"[{symbol}] ML updated: {outcome} ({pnl_r:.2f}R) - VERIFIED {exit_reason.upper()} hit")
+                                # Create signal data for ML recording
+                                signal_data = {
+                                    'symbol': symbol,
+                                    'features': {},  # Features were stored during signal detection
+                                    'score': 0  # Will be filled from phantom tracker if available
+                                }
+                                
+                                # Record outcome in ML scorer
+                                ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                logger.info(f"[{symbol}] ML updated: {outcome} ({pnl_pct:.2f}%) - VERIFIED {exit_reason.upper()}")
+                                
                             except Exception as e:
                                 logger.error(f"Failed to update ML outcome: {e}")
                         else:
-                            logger.info(f"[{symbol}] Closed {exit_reason} - not updating ML (unclear outcome)")
+                            logger.info(f"[{symbol}] Closed {exit_reason} - recording as neutral for ML")
                     
                     # Remove from book
                     book.positions.pop(symbol)
@@ -502,27 +501,35 @@ class TradingBot:
         book = Book()
         panic_list:list[str] = []
         
-        # Initialize ML Scorer if available and enabled
+        # Initialize Immediate ML Scorer and Phantom Tracker
         ml_scorer = None
-        use_ml = cfg["trade"].get("use_ml_scoring", False)  # Opt-in feature
-        ml_min_score = cfg["trade"].get("ml_min_score", 70.0)
+        phantom_tracker = None
+        use_ml = cfg["trade"].get("use_ml_scoring", True)  # Default to True for immediate learning
         
         if ML_AVAILABLE and use_ml:
             try:
-                # Initialize ML scorer (preserves existing data unless explicitly reset)
-                ml_scorer = get_scorer(enabled=True, min_score=ml_min_score)
-                logger.info(f"✅ ML Signal Scorer initialized (min score: {ml_min_score})")
+                # Initialize immediate ML scorer that works from day 1
+                ml_scorer = get_immediate_scorer()
+                phantom_tracker = get_phantom_tracker()
                 
-                # Log ML stats
-                ml_stats = ml_scorer.get_ml_stats()
-                logger.info(f"   ML Status: {ml_stats['completed_trades']} completed trades")
-                if ml_stats['is_trained']:
-                    logger.info(f"   Model trained and active")
-                else:
-                    logger.info(f"   Collecting data: {ml_stats['trades_needed']} more trades needed")
+                # Get and log ML stats
+                ml_stats = ml_scorer.get_stats()
+                logger.info(f"✅ Immediate ML Scorer initialized")
+                logger.info(f"   Status: {ml_stats['status']}")
+                logger.info(f"   Threshold: {ml_stats['current_threshold']:.0f}")
+                logger.info(f"   Completed trades: {ml_stats['completed_trades']}")
+                if ml_stats['recent_win_rate'] > 0:
+                    logger.info(f"   Recent win rate: {ml_stats['recent_win_rate']:.1f}%")
+                if ml_stats['models_active']:
+                    logger.info(f"   Active models: {', '.join(ml_stats['models_active'])}")
+                    
+                # Clean up old phantom trades
+                phantom_tracker.cleanup_old_phantoms(24)
+                
             except Exception as e:
-                logger.warning(f"Failed to initialize ML scorer: {e}. Running without ML.")
+                logger.warning(f"Failed to initialize ML/Phantom system: {e}. Running without ML.")
                 ml_scorer = None
+                phantom_tracker = None
         elif use_ml:
             logger.warning("ML scoring requested but ML module not available")
         
@@ -693,6 +700,11 @@ class TradingBot:
                 df = df.tail(500)  # Keep only last 500 candles
                 self.frames[sym] = df
                 
+                # Update phantom trades with current price
+                if phantom_tracker is not None:
+                    current_price = df['close'].iloc[-1]
+                    phantom_tracker.update_phantom_prices(sym, current_price)
+                
                 # Auto-save to database every 2 minutes (more aggressive)
                 if (datetime.now() - self.last_save_time).total_seconds() > 120:
                     await self.save_all_candles()
@@ -751,22 +763,55 @@ class TradingBot:
                 logger.info(f"[{sym}] Signal detected: {sig.side} @ {sig.entry:.4f}")
                 signals_detected += 1
                 
-                # Apply ML scoring if enabled
-                if ml_scorer is not None:
+                # Apply ML scoring and phantom tracking
+                ml_score = 100.0  # Default if no ML
+                ml_reason = "No ML"
+                should_take_trade = True
+                
+                if ml_scorer is not None and phantom_tracker is not None:
                     try:
-                        should_take, score, reason = ml_scorer.should_take_signal(
-                            df, sig.side, sig.entry, sig.sl, sig.tp, sym, sig.meta
+                        # Extract features for ML (from the strategy's calculate_ml_features if available)
+                        from strategy_pullback_ml_learning import calculate_ml_features, breakout_states, BreakoutState
+                        
+                        # Get or create state for this symbol
+                        if sym not in breakout_states:
+                            breakout_states[sym] = BreakoutState()
+                        state = breakout_states[sym]
+                        
+                        # Calculate ML features
+                        features = calculate_ml_features(
+                            df, state, sig.side, sig.entry, sig.sl, sig.tp, 
+                            df_1h=None, symbol=sym  # 1H data would be better but not available here
                         )
                         
-                        if not should_take:
-                            logger.info(f"[{sym}] Signal filtered by ML: {reason}")
+                        # Get ML score
+                        ml_score, ml_reason = ml_scorer.score_signal(
+                            {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                            features
+                        )
+                        
+                        # Decide if we should take the trade
+                        should_take_trade = ml_score >= ml_scorer.min_score
+                        
+                        # Record the signal in phantom tracker (both taken and rejected)
+                        phantom_tracker.record_signal(
+                            symbol=sym,
+                            signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                            ml_score=ml_score,
+                            was_executed=should_take_trade,
+                            features=features
+                        )
+                        
+                        if not should_take_trade:
+                            logger.info(f"[{sym}] ML REJECTED: Score {ml_score:.1f} < {ml_scorer.min_score} | {ml_reason}")
                             continue
                         else:
-                            logger.info(f"[{sym}] Signal approved by ML: {reason}")
+                            logger.info(f"[{sym}] ML APPROVED: Score {ml_score:.1f} | {ml_reason}")
+                            
                     except Exception as e:
-                        # Safety: Always allow signal if ML fails
-                        logger.warning(f"[{sym}] ML scoring error: {e}. Allowing signal.")
-                        pass
+                        # Safety: Allow signal if ML fails but log the error
+                        logger.warning(f"[{sym}] ML scoring error: {e}. Allowing signal for safety.")
+                        should_take_trade = True
                 
                 # One position per symbol rule - wait for current position to close
                 # This prevents overexposure to a single symbol and allows clean entry/exit

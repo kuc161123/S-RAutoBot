@@ -553,49 +553,10 @@ class TradingBot:
         # Recover existing positions - PRESERVE THEIR ORDERS
         await self.recover_positions(book, sizer)
         
-        # DO NOT cancel orders for symbols with existing positions
-        # Only cancel orphaned orders (orders without positions)
-        logger.info("Checking for orphaned orders to cancel...")
-        try:
-            # CRITICAL: Get actual positions from exchange, not just book.positions
-            # The book might not have all positions loaded yet
-            exchange_positions = bybit.get_positions()
-            position_symbols = set()
-            for pos in exchange_positions:
-                if float(pos.get("size", 0)) > 0:
-                    position_symbols.add(pos.get("symbol"))
-            
-            if position_symbols:
-                logger.info(f"Found {len(position_symbols)} active positions on exchange: {position_symbols}")
-            
-            # Get all open orders
-            resp = bybit._request("GET", "/v5/order/realtime", {"category": "linear", "settleCoin": "USDT"})
-            orders = resp.get("result", {}).get("list", [])
-            
-            # Also get all conditional orders (TP/SL orders)
-            resp_cond = bybit._request("GET", "/v5/order/realtime", {"category": "linear", "settleCoin": "USDT", "orderFilter": "StopOrder"})
-            cond_orders = resp_cond.get("result", {}).get("list", [])
-            
-            all_orders = orders + cond_orders
-            logger.info(f"Found {len(all_orders)} total orders ({len(orders)} regular, {len(cond_orders)} conditional)")
-            
-            for order in all_orders:
-                symbol = order.get("symbol")
-                order_type = order.get("orderType", "")
-                
-                # Check against actual exchange positions, not just book
-                if symbol in position_symbols:
-                    logger.info(f"Preserving {order_type} order for active position: {symbol}")
-                elif symbol in book.positions:
-                    # Double-check: position in book but not on exchange?
-                    logger.warning(f"Position {symbol} in book but not on exchange - preserving orders for safety")
-                else:
-                    # Only cancel if truly orphaned (no position anywhere)
-                    logger.info(f"Cancelling orphaned {order_type} order for {symbol} (no position found)")
-                    bybit.cancel_all_orders(symbol)
-                    
-        except Exception as e:
-            logger.warning(f"Could not check orders: {e}")
+        # DISABLED: Not cancelling ANY orders to prevent accidental TP/SL removal
+        # Orders will naturally cancel when positions close
+        logger.info("Order cancellation DISABLED - all orders will be preserved")
+        logger.info("TP/SL orders will close naturally with their positions")
         
         # Track analysis times
         last_analysis = {}

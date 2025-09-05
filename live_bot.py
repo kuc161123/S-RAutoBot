@@ -632,6 +632,9 @@ class TradingBot:
         candles_processed = 0
         signals_detected = 0
         
+        # Initialize ML breakout states dictionary
+        ml_breakout_states = {}
+        
         try:
             # Use multi-websocket handler if >190 topics
             if len(topics) > 190:
@@ -646,6 +649,10 @@ class TradingBot:
             async for sym, k in stream:
                 if not self.running:
                     break
+                
+                # Skip symbols not in our configured list
+                if sym not in symbols:
+                    continue
                 
                 try:
                     # Parse kline
@@ -746,12 +753,12 @@ class TradingBot:
                     if ml_scorer is not None and phantom_tracker is not None:
                         try:
                             # Extract features for ML (from the strategy's calculate_ml_features if available)
-                            from strategy_pullback_ml_learning import calculate_ml_features, breakout_states, BreakoutState
+                            from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
                         
                             # Get or create state for this symbol
-                            if sym not in breakout_states:
-                                breakout_states[sym] = BreakoutState()
-                            state = breakout_states[sym]
+                            if sym not in ml_breakout_states:
+                                ml_breakout_states[sym] = BreakoutState()
+                            state = ml_breakout_states[sym]
                         
                             # Calculate ML features
                             # Note: calculate_ml_features expects (df, state, side, retracement)
@@ -871,9 +878,18 @@ class TradingBot:
                         if self.tg:
                             await self.tg.send_message(f"❌ Failed to open {sym} {sig.side}: {str(e)[:100]}")
                 
+                except KeyError as e:
+                    # KeyError likely means symbol not in config or metadata
+                    if str(e).strip("'") == sym:
+                        logger.debug(f"[{sym}] Not found in metadata/config - skipping")
+                    else:
+                        logger.error(f"[{sym}] KeyError accessing: {e}")
+                    continue
                 except Exception as e:
-                    # Individual symbol processing error - continue with other symbols  
-                    logger.error(f"Error processing symbol {sym}: {e}")
+                    # Other errors - log with more detail
+                    import traceback
+                    logger.error(f"[{sym}] Processing error: {type(e).__name__}: {e}")
+                    logger.debug(f"[{sym}] Traceback: {traceback.format_exc()}")
                     # Don't crash the whole bot for one symbol's error
                     continue
         

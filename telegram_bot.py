@@ -1153,7 +1153,7 @@ class TGBot:
                     msg += f"  _...and {active_count - 5} more_\n"
                 msg += "\n"
             
-            msg += "_Use /phantom_detail [symbol] for symbol-specific stats_"
+            msg += "_Use /phantom\\_detail [symbol] for symbol-specific stats_"
             
             await update.message.reply_text(msg, parse_mode='Markdown')
             
@@ -1170,7 +1170,7 @@ class TGBot:
             if not ctx.args:
                 await update.message.reply_text(
                     "Please specify a symbol\n"
-                    "Usage: `/phantom_detail BTCUSDT`",
+                    "Usage: `/phantom\\_detail BTCUSDT`",
                     parse_mode='Markdown'
                 )
                 return

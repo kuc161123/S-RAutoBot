@@ -42,6 +42,15 @@ except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"ML not available: {e}")
 
+# Import symbol data collector for future ML
+try:
+    from symbol_data_collector import get_symbol_collector
+    SYMBOL_COLLECTOR_AVAILABLE = True
+    logger.info("Symbol data collector initialized for future ML")
+except ImportError as e:
+    SYMBOL_COLLECTOR_AVAILABLE = False
+    logger.warning(f"Symbol data collector not available: {e}")
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -211,7 +220,7 @@ class TradingBot:
         except Exception as e:
             logger.error(f"Failed to record trade: {e}")
     
-    async def check_closed_positions(self, book: Book, meta: dict = None, ml_scorer=None, reset_symbol_state=None):
+    async def check_closed_positions(self, book: Book, meta: dict = None, ml_scorer=None, reset_symbol_state=None, symbol_collector=None):
         """Check for positions that have been closed and record them"""
         try:
             # Get current positions from exchange
@@ -315,6 +324,35 @@ class TradingBot:
                     
                     # Record the trade
                     self.record_closed_trade(symbol, pos, exit_price, exit_reason, leverage)
+                    
+                    # Update symbol data collector with session performance
+                    if symbol_collector:
+                        try:
+                            # Calculate hold time
+                            hold_minutes = (datetime.now() - pos.entry_time).total_seconds() / 60
+                            
+                            # Calculate P&L for this position
+                            if pos.side == "long":
+                                pnl = (exit_price - pos.entry) * pos.qty
+                            else:
+                                pnl = (pos.entry - exit_price) * pos.qty
+                            
+                            # Determine session
+                            session = symbol_collector.get_trading_session(datetime.now().hour)
+                            
+                            # Update session performance
+                            symbol_collector.update_session_performance(
+                                symbol=symbol,
+                                session=session,
+                                won=pnl > 0,
+                                pnl=pnl,
+                                hold_minutes=int(hold_minutes)
+                            )
+                            
+                            logger.debug(f"[{symbol}] Updated session stats: {session}, PnL={pnl:.2f}, Hold={hold_minutes:.0f}min")
+                            
+                        except Exception as e:
+                            logger.debug(f"Failed to update session performance: {e}")
                     
                     # Update ML scorer for all closed positions
                     if ml_scorer is not None:
@@ -542,6 +580,15 @@ class TradingBot:
         phantom_tracker = None
         use_ml = cfg["trade"].get("use_ml_scoring", True)  # Default to True for immediate learning
         
+        # Initialize symbol data collector
+        symbol_collector = None
+        if SYMBOL_COLLECTOR_AVAILABLE:
+            try:
+                symbol_collector = get_symbol_collector()
+                logger.info("📊 Symbol data collector active - tracking for future ML")
+            except Exception as e:
+                logger.warning(f"Could not initialize symbol collector: {e}")
+        
         if ML_AVAILABLE and use_ml:
             try:
                 # Initialize immediate ML scorer that works from day 1
@@ -717,7 +764,7 @@ class TradingBot:
                 
                     # Check for closed positions periodically
                     if (datetime.now() - last_position_check).total_seconds() > position_check_interval:
-                        await self.check_closed_positions(book, shared.get("meta"), ml_scorer, reset_symbol_state)
+                        await self.check_closed_positions(book, shared.get("meta"), ml_scorer, reset_symbol_state, symbol_collector)
                         last_position_check = datetime.now()
                 
                     # Handle panic close requests
@@ -882,6 +929,28 @@ class TradingBot:
                         
                         # Debug log the position details
                         logger.debug(f"[{sym}] Stored position: side={sig.side}, entry={sig.entry:.4f}, TP={sig.tp:.4f}, SL={sig.sl:.4f}")
+                        
+                        # Record comprehensive trade context for future ML
+                        if symbol_collector:
+                            try:
+                                # Get current BTC price for market context
+                                btc_price = None
+                                if 'BTCUSDT' in self.frames:
+                                    btc_price = self.frames['BTCUSDT']['close'].iloc[-1]
+                                
+                                # Record the context
+                                trade_context = symbol_collector.record_trade_context(
+                                    symbol=sym,
+                                    df=df,
+                                    btc_price=btc_price
+                                )
+                                logger.debug(f"[{sym}] Recorded trade context: session={trade_context.session}, vol_ratio={trade_context.volume_vs_avg:.2f}")
+                                
+                                # Update symbol profile
+                                symbol_collector.update_symbol_profile(sym)
+                                
+                            except Exception as e:
+                                logger.debug(f"Failed to record trade context: {e}")
                     
                         # Send notification
                         if self.tg:

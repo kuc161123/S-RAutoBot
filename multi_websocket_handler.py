@@ -25,13 +25,24 @@ class MultiWebSocketHandler:
         Stream klines from multiple WebSocket connections
         Splits topics across connections if >190 topics
         """
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_topics = []
+        for topic in topics:
+            if topic not in seen:
+                seen.add(topic)
+                unique_topics.append(topic)
+        
+        if len(unique_topics) != len(topics):
+            logger.info(f"Removed {len(topics) - len(unique_topics)} duplicate topics")
+        
         # Split topics into chunks
         topic_chunks = []
-        for i in range(0, len(topics), self.MAX_SUBS_PER_CONNECTION):
-            chunk = topics[i:i + self.MAX_SUBS_PER_CONNECTION]
+        for i in range(0, len(unique_topics), self.MAX_SUBS_PER_CONNECTION):
+            chunk = unique_topics[i:i + self.MAX_SUBS_PER_CONNECTION]
             topic_chunks.append(chunk)
         
-        logger.info(f"Splitting {len(topics)} topics across {len(topic_chunks)} WebSocket connections")
+        logger.info(f"Splitting {len(unique_topics)} unique topics across {len(topic_chunks)} WebSocket connections")
         
         # Create queues for each connection
         queues = [asyncio.Queue() for _ in topic_chunks]
@@ -89,7 +100,11 @@ class MultiWebSocketHandler:
                             msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=30))
                             
                             if msg.get("success") == False:
-                                logger.error(f"[WS-{conn_id}] Subscription failed: {msg}")
+                                # Check if it's a duplicate subscription error
+                                if "already subscribed" in msg.get("ret_msg", ""):
+                                    logger.debug(f"[WS-{conn_id}] Already subscribed to topic, continuing...")
+                                else:
+                                    logger.error(f"[WS-{conn_id}] Subscription failed: {msg}")
                                 continue
                             
                             topic = msg.get("topic", "")

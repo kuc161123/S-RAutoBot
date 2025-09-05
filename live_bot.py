@@ -755,7 +755,17 @@ class TradingBot:
                     # Update phantom trades with current price
                     if phantom_tracker is not None:
                         current_price = df['close'].iloc[-1]
-                        phantom_tracker.update_phantom_prices(sym, current_price)
+                        # Get BTC price for context
+                        btc_price = None
+                        if 'BTCUSDT' in self.frames and not self.frames['BTCUSDT'].empty:
+                            btc_price = self.frames['BTCUSDT']['close'].iloc[-1]
+                        # Pass df and symbol_collector for comprehensive data tracking
+                        phantom_tracker.update_phantom_prices(
+                            sym, current_price, 
+                            df=df, 
+                            btc_price=btc_price, 
+                            symbol_collector=symbol_collector
+                        )
                 
                     # Auto-save to database every 2 minutes (more aggressive)
                     if (datetime.now() - self.last_save_time).total_seconds() > 120:

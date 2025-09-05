@@ -218,7 +218,8 @@ class PhantomTradeTracker:
         
         return phantom
     
-    def update_phantom_prices(self, symbol: str, current_price: float):
+    def update_phantom_prices(self, symbol: str, current_price: float, 
+                             df=None, btc_price: float = None, symbol_collector=None):
         """
         Update phantom trade tracking with current price
         Check if phantom would have hit TP or SL
@@ -237,9 +238,9 @@ class PhantomTradeTracker:
                 
             # Check if hit TP or SL
             if current_price >= phantom.take_profit:
-                self._close_phantom(symbol, current_price, "win")
+                self._close_phantom(symbol, current_price, "win", df, btc_price, symbol_collector)
             elif current_price <= phantom.stop_loss:
-                self._close_phantom(symbol, current_price, "loss")
+                self._close_phantom(symbol, current_price, "loss", df, btc_price, symbol_collector)
                 
         else:  # short
             if phantom.max_favorable is None or current_price < phantom.max_favorable:
@@ -249,11 +250,12 @@ class PhantomTradeTracker:
                 
             # Check if hit TP or SL
             if current_price <= phantom.take_profit:
-                self._close_phantom(symbol, current_price, "win")
+                self._close_phantom(symbol, current_price, "win", df, btc_price, symbol_collector)
             elif current_price >= phantom.stop_loss:
-                self._close_phantom(symbol, current_price, "loss")
+                self._close_phantom(symbol, current_price, "loss", df, btc_price, symbol_collector)
     
-    def _close_phantom(self, symbol: str, exit_price: float, outcome: str):
+    def _close_phantom(self, symbol: str, exit_price: float, outcome: str, 
+                       df=None, btc_price: float = None, symbol_collector=None):
         """Close a phantom trade and record its outcome"""
         if symbol not in self.active_phantoms:
             return
@@ -270,6 +272,8 @@ class PhantomTradeTracker:
             phantom.pnl_percent = ((phantom.entry_price - exit_price) / phantom.entry_price) * 100
         
         # Move to completed list
+        if symbol not in self.phantom_trades:
+            self.phantom_trades[symbol] = []
         self.phantom_trades[symbol].append(phantom)
         del self.active_phantoms[symbol]
         
@@ -284,6 +288,25 @@ class PhantomTradeTracker:
                 logger.warning(f"[{symbol}] ML rejected a winning trade! Score was {phantom.ml_score:.1f}")
             elif phantom.ml_score >= 65 and outcome == "loss":
                 logger.warning(f"[{symbol}] ML approved a losing trade! Score was {phantom.ml_score:.1f}")
+        
+        # Record phantom trade data for symbol-specific learning
+        if symbol_collector and not phantom.was_executed:
+            try:
+                # Record phantom trade context
+                symbol_collector.record_phantom_trade(
+                    symbol=symbol,
+                    df=df,
+                    btc_price=btc_price,
+                    ml_score=phantom.ml_score,
+                    features=phantom.features,
+                    outcome=outcome,
+                    pnl_percent=phantom.pnl_percent,
+                    signal_time=phantom.signal_time,
+                    exit_time=phantom.exit_time
+                )
+                logger.debug(f"[{symbol}] Recorded phantom trade data for future ML")
+            except Exception as e:
+                logger.warning(f"[{symbol}] Failed to record phantom data: {e}")
         
         # Save to Redis
         self._save_to_redis()

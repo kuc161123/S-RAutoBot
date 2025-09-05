@@ -97,14 +97,24 @@ class SymbolDataCollector:
     
     def __init__(self):
         self.conn = self._init_database()
-        self._create_tables()
+        if self.conn:
+            self._create_tables()
         self.symbol_categories = self._load_symbol_categories()
         self.btc_price_cache = None
         self.btc_price_cache_time = None
+        self.enabled = (self.conn is not None)
         
     def _init_database(self):
         """Initialize PostgreSQL connection"""
         try:
+            # First try DATABASE_URL (Railway format)
+            database_url = os.getenv('DATABASE_URL')
+            if database_url:
+                conn = psycopg2.connect(database_url)
+                logger.info("Connected to Railway PostgreSQL for symbol data collection")
+                return conn
+            
+            # Fallback to individual parameters
             conn = psycopg2.connect(
                 host=os.getenv('DB_HOST', 'localhost'),
                 port=os.getenv('DB_PORT', '5432'),
@@ -116,6 +126,7 @@ class SymbolDataCollector:
             return conn
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
+            logger.info("Symbol data collector will run without database - data won't be saved")
             return None
     
     def _create_tables(self):
@@ -568,6 +579,147 @@ class SymbolDataCollector:
                 
         except Exception as e:
             logger.error(f"Failed to get symbol stats: {e}")
+            return {}
+    
+    def record_phantom_trade(self, symbol: str, df, btc_price: float,
+                           ml_score: float, features: dict, outcome: str,
+                           pnl_percent: float, signal_time, exit_time):
+        """
+        Record phantom trade data for future symbol-specific ML
+        
+        Args:
+            symbol: Trading symbol
+            df: Dataframe with market data (optional)
+            btc_price: Current BTC price
+            ml_score: ML score that was assigned
+            features: ML features used
+            outcome: 'win' or 'loss'
+            pnl_percent: P&L percentage
+            signal_time: When signal was generated
+            exit_time: When trade would have closed
+        """
+        try:
+            # Create phantom trades table if doesn't exist
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS phantom_trades (
+                        id SERIAL PRIMARY KEY,
+                        symbol VARCHAR(20),
+                        signal_time TIMESTAMP,
+                        exit_time TIMESTAMP,
+                        ml_score DECIMAL(5,2),
+                        outcome VARCHAR(10),
+                        pnl_percent DECIMAL(10,2),
+                        
+                        -- Market context at signal
+                        btc_price DECIMAL(10,2),
+                        session VARCHAR(10),
+                        hour_utc INT,
+                        
+                        -- Key features
+                        trend_strength DECIMAL(5,2),
+                        volume_ratio DECIMAL(10,2),
+                        risk_reward_ratio DECIMAL(5,2),
+                        support_resistance_strength INT,
+                        
+                        -- Why it was rejected
+                        rejection_reason VARCHAR(50),
+                        
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                
+                # Create index if not exists
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_phantom_symbol_outcome 
+                    ON phantom_trades(symbol, outcome)
+                """)
+                
+                # Determine session
+                hour = signal_time.hour
+                if 0 <= hour < 8:
+                    session = 'asian'
+                elif 8 <= hour < 13:
+                    session = 'european'
+                elif 13 <= hour < 21:
+                    session = 'us'
+                else:
+                    session = 'off_hours'
+                
+                # Extract key features
+                trend_strength = features.get('trend_strength', 50)
+                volume_ratio = features.get('volume_ratio', 1.0)
+                rr_ratio = features.get('risk_reward_ratio', 2.0)
+                sr_strength = features.get('support_resistance_strength', 0)
+                
+                # Determine rejection reason
+                rejection_reason = 'low_ml_score' if ml_score < 65 else 'other'
+                
+                # Insert phantom trade record
+                cur.execute("""
+                    INSERT INTO phantom_trades (
+                        symbol, signal_time, exit_time, ml_score, outcome, pnl_percent,
+                        btc_price, session, hour_utc,
+                        trend_strength, volume_ratio, risk_reward_ratio, support_resistance_strength,
+                        rejection_reason
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    symbol, signal_time, exit_time, ml_score, outcome, pnl_percent,
+                    btc_price, session, hour,
+                    trend_strength, volume_ratio, rr_ratio, sr_strength,
+                    rejection_reason
+                ))
+                
+                self.conn.commit()
+                logger.debug(f"[{symbol}] Recorded phantom trade: {outcome} ({pnl_percent:.2f}%)")
+                
+        except Exception as e:
+            logger.error(f"Failed to record phantom trade: {e}")
+            self.conn.rollback()
+    
+    def get_phantom_stats(self, symbol: str = None) -> dict:
+        """Get phantom trade statistics"""
+        try:
+            with self.conn.cursor() as cur:
+                if symbol:
+                    # Stats for specific symbol
+                    cur.execute("""
+                        SELECT 
+                            COUNT(*) as total_phantoms,
+                            SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END) as would_have_won,
+                            SUM(CASE WHEN outcome = 'loss' THEN 1 ELSE 0 END) as would_have_lost,
+                            AVG(pnl_percent) as avg_phantom_pnl,
+                            SUM(CASE WHEN outcome = 'win' THEN pnl_percent ELSE 0 END) as missed_profits
+                        FROM phantom_trades
+                        WHERE symbol = %s
+                        AND signal_time > NOW() - INTERVAL '30 days'
+                    """, (symbol,))
+                else:
+                    # Overall stats
+                    cur.execute("""
+                        SELECT 
+                            COUNT(*) as total_phantoms,
+                            SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END) as would_have_won,
+                            SUM(CASE WHEN outcome = 'loss' THEN 1 ELSE 0 END) as would_have_lost,
+                            AVG(pnl_percent) as avg_phantom_pnl,
+                            SUM(CASE WHEN outcome = 'win' THEN pnl_percent ELSE 0 END) as missed_profits
+                        FROM phantom_trades
+                        WHERE signal_time > NOW() - INTERVAL '30 days'
+                    """)
+                
+                result = cur.fetchone()
+                if result:
+                    return {
+                        'total_phantoms': result[0] or 0,
+                        'would_have_won': result[1] or 0,
+                        'would_have_lost': result[2] or 0,
+                        'avg_phantom_pnl': float(result[3]) if result[3] else 0,
+                        'missed_profits': float(result[4]) if result[4] else 0
+                    }
+                return {}
+                
+        except Exception as e:
+            logger.error(f"Failed to get phantom stats: {e}")
             return {}
     
     def close(self):

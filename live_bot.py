@@ -326,7 +326,15 @@ class TradingBot:
                                 else:
                                     pnl_pct = ((pos.entry - exit_price) / pos.entry) * 100
                                 
-                                outcome = "win" if exit_reason == "tp" else "loss"
+                                # CRITICAL FIX: Use actual P&L to determine win/loss, not exit_reason
+                                # Negative P&L is ALWAYS a loss, positive is ALWAYS a win
+                                outcome = "win" if pnl_pct > 0 else "loss"
+                                
+                                # Log warning if exit_reason doesn't match P&L
+                                if (exit_reason == "tp" and pnl_pct < 0):
+                                    logger.warning(f"[{symbol}] TP hit but negative P&L! Exit: {exit_price:.4f}, Entry: {pos.entry:.4f}, P&L: {pnl_pct:.2f}%")
+                                elif (exit_reason == "sl" and pnl_pct > 0):
+                                    logger.warning(f"[{symbol}] SL hit but positive P&L! Exit: {exit_price:.4f}, Entry: {pos.entry:.4f}, P&L: {pnl_pct:.2f}%")
                                 
                                 # Create signal data for ML recording
                                 signal_data = {
@@ -337,7 +345,9 @@ class TradingBot:
                                 
                                 # Record outcome in ML scorer
                                 ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                logger.info(f"[{symbol}] ML updated: {outcome} ({pnl_pct:.2f}%) - VERIFIED {exit_reason.upper()}")
+                                # Log with clear outcome based on actual P&L
+                                actual_result = "WIN" if pnl_pct > 0 else "LOSS"
+                                logger.info(f"[{symbol}] ML updated: {actual_result} ({pnl_pct:.2f}%) - Exit trigger: {exit_reason.upper()}")
                                 
                             except Exception as e:
                                 logger.error(f"Failed to update ML outcome: {e}")

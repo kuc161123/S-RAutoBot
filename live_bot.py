@@ -323,8 +323,14 @@ class TradingBot:
                                 # Calculate P&L percentage
                                 if pos.side == "long":
                                     pnl_pct = ((exit_price - pos.entry) / pos.entry) * 100
+                                    # Debug logging for incorrect P&L
+                                    if exit_price > pos.entry and pnl_pct < 0:
+                                        logger.error(f"[{symbol}] CALCULATION ERROR: Long position exit {exit_price:.4f} > entry {pos.entry:.4f} but P&L is {pnl_pct:.2f}%")
                                 else:
                                     pnl_pct = ((pos.entry - exit_price) / pos.entry) * 100
+                                    # Debug logging for incorrect P&L
+                                    if exit_price < pos.entry and pnl_pct < 0:
+                                        logger.error(f"[{symbol}] CALCULATION ERROR: Short position exit {exit_price:.4f} < entry {pos.entry:.4f} but P&L is {pnl_pct:.2f}%")
                                 
                                 # CRITICAL FIX: Use actual P&L to determine win/loss, not exit_reason
                                 # Negative P&L is ALWAYS a loss, positive is ALWAYS a win
@@ -332,7 +338,7 @@ class TradingBot:
                                 
                                 # Log warning if exit_reason doesn't match P&L
                                 if (exit_reason == "tp" and pnl_pct < 0):
-                                    logger.warning(f"[{symbol}] TP hit but negative P&L! Exit: {exit_price:.4f}, Entry: {pos.entry:.4f}, P&L: {pnl_pct:.2f}%")
+                                    logger.warning(f"[{symbol}] TP hit but negative P&L! Side: {pos.side}, Exit: {exit_price:.4f}, Entry: {pos.entry:.4f}, P&L: {pnl_pct:.2f}%")
                                 elif (exit_reason == "sl" and pnl_pct > 0):
                                     logger.warning(f"[{symbol}] SL hit but positive P&L! Exit: {exit_price:.4f}, Entry: {pos.entry:.4f}, P&L: {pnl_pct:.2f}%")
                                 
@@ -353,6 +359,9 @@ class TradingBot:
                                 logger.error(f"Failed to update ML outcome: {e}")
                         else:
                             logger.info(f"[{symbol}] Closed {exit_reason} - recording as neutral for ML")
+                    
+                    # Log position details for debugging
+                    logger.debug(f"[{symbol}] Closed position details: side={pos.side}, entry={pos.entry:.4f}, exit={exit_price:.4f}, TP={pos.tp:.4f}, SL={pos.sl:.4f}, exit_reason={exit_reason}")
                     
                     # Remove from book
                     book.positions.pop(symbol)
@@ -398,14 +407,28 @@ class TradingBot:
                     tp = float(tp_str) if tp_str and tp_str != '' else 0
                     sl = float(sl_str) if sl_str and sl_str != '' else 0
                     
+                    # For recovered positions, validate TP/SL make sense
+                    if side == "long":
+                        # For long: TP should be > entry, SL should be < entry
+                        if tp > 0 and sl > 0 and tp < sl:
+                            logger.warning(f"[{symbol}] TP/SL appear swapped for long position! TP={tp:.4f} SL={sl:.4f} Entry={entry:.4f}")
+                            # Swap them
+                            tp, sl = sl, tp
+                    else:  # short
+                        # For short: TP should be < entry, SL should be > entry
+                        if tp > 0 and sl > 0 and tp > sl:
+                            logger.warning(f"[{symbol}] TP/SL appear swapped for short position! TP={tp:.4f} SL={sl:.4f} Entry={entry:.4f}")
+                            # Swap them
+                            tp, sl = sl, tp
+                    
                     # Add to book
                     from position_mgr import Position
                     book.positions[symbol] = Position(
                         side=side,
                         qty=qty,
                         entry=entry,
-                        sl=sl if sl > 0 else entry * 0.95,  # Default 5% stop if not set
-                        tp=tp if tp > 0 else entry * 1.1,    # Default 10% target if not set
+                        sl=sl if sl > 0 else (entry * 0.95 if side == "long" else entry * 1.05),
+                        tp=tp if tp > 0 else (entry * 1.1 if side == "long" else entry * 0.9),
                         entry_time=datetime.now() - pd.Timedelta(hours=1)  # Approximate for recovered positions
                     )
                     
@@ -856,6 +879,9 @@ class TradingBot:
                         # Update book
                         book.positions[sym] = Position(sig.side, qty, sig.entry, sig.sl, sig.tp, datetime.now())
                         last_signal_time[sym] = now
+                        
+                        # Debug log the position details
+                        logger.debug(f"[{sym}] Stored position: side={sig.side}, entry={sig.entry:.4f}, TP={sig.tp:.4f}, SL={sig.sl:.4f}")
                     
                         # Send notification
                         if self.tg:

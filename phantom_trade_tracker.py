@@ -11,8 +11,25 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Tuple
 import time
+import numpy as np
 
 logger = logging.getLogger(__name__)
+
+class NumpyJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles numpy types"""
+    def default(self, obj):
+        if isinstance(obj, (np.bool_, np.bool8)):
+            return bool(obj)
+        elif isinstance(obj, (np.integer, np.int_, np.intc, np.intp, 
+                            np.int8, np.int16, np.int32, np.int64,
+                            np.uint8, np.uint16, np.uint32, np.uint64)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float_, np.float16, 
+                            np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
 
 @dataclass
 class PhantomTrade:
@@ -37,7 +54,28 @@ class PhantomTrade:
     
     def to_dict(self):
         """Convert to dictionary for storage"""
+        import numpy as np
         d = asdict(self)
+        
+        # Convert numpy types to Python native types for JSON serialization
+        for key, value in d.items():
+            if isinstance(value, (np.bool_, np.bool8)):
+                d[key] = bool(value)
+            elif isinstance(value, (np.integer, np.floating)):
+                d[key] = float(value)
+            elif isinstance(value, dict):
+                # Also check nested dictionaries (like features)
+                cleaned_dict = {}
+                for k, v in value.items():
+                    if isinstance(v, (np.bool_, np.bool8)):
+                        cleaned_dict[k] = bool(v)
+                    elif isinstance(v, (np.integer, np.floating)):
+                        cleaned_dict[k] = float(v)
+                    else:
+                        cleaned_dict[k] = v
+                d[key] = cleaned_dict
+        
+        # Convert datetime fields
         d['signal_time'] = self.signal_time.isoformat()
         if self.exit_time:
             d['exit_time'] = self.exit_time.isoformat()
@@ -121,7 +159,7 @@ class PhantomTradeTracker:
                 symbol: trade.to_dict() 
                 for symbol, trade in self.active_phantoms.items()
             }
-            self.redis_client.set('phantom:active', json.dumps(active_dict))
+            self.redis_client.set('phantom:active', json.dumps(active_dict, cls=NumpyJSONEncoder))
             
             # Save completed phantoms (keep last 1000)
             all_completed = []
@@ -132,7 +170,7 @@ class PhantomTradeTracker:
             
             # Keep only last 1000 for storage efficiency
             all_completed = all_completed[-1000:]
-            self.redis_client.set('phantom:completed', json.dumps(all_completed))
+            self.redis_client.set('phantom:completed', json.dumps(all_completed, cls=NumpyJSONEncoder))
             
             logger.debug(f"Saved {len(self.active_phantoms)} active and {len(all_completed)} completed phantoms")
             

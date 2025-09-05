@@ -359,10 +359,11 @@ class TradeTrackerPostgres:
         by_symbol = {}
         for trade in trades:
             if trade.symbol not in by_symbol:
-                by_symbol[trade.symbol] = {'trades': 0, 'pnl': 0, 'wins': 0}
+                by_symbol[trade.symbol] = {'trades': 0, 'pnl': 0.0, 'wins': 0}
             by_symbol[trade.symbol]['trades'] += 1
-            by_symbol[trade.symbol]['pnl'] += trade.pnl_usd
-            if trade.pnl_usd > 0:
+            # Convert Decimal to float for arithmetic operations
+            by_symbol[trade.symbol]['pnl'] += float(trade.pnl_usd)
+            if float(trade.pnl_usd) > 0:
                 by_symbol[trade.symbol]['wins'] += 1
         
         # Calculate win rate for each symbol

@@ -1,6 +1,7 @@
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import UpdateType
+import telegram.error
 import asyncio
 import logging
 
@@ -1150,13 +1151,28 @@ class TGBot:
                     msg += f"• {symbol}: {phantom.side.upper()} @ {phantom.entry_price:.4f} "
                     msg += f"(score: {phantom.ml_score:.1f})\n"
                 if active_count > 5:
-                    msg += f"  _...and {active_count - 5} more_\n"
+                    msg += f"  ...and {active_count - 5} more\n"
                 msg += "\n"
             
             msg += "_Use /phantom\\_detail [symbol] for symbol-specific stats_"
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            # Send message with proper escaping
+            try:
+                await update.message.reply_text(msg, parse_mode='Markdown')
+            except Exception as parse_error:
+                # If markdown fails, send without formatting
+                logger.warning(f"Markdown parsing failed: {parse_error}")
+                msg_plain = msg.replace('*', '').replace('_', '').replace('`', '')
+                await update.message.reply_text(msg_plain)
             
+        except telegram.error.BadRequest as e:
+            logger.error(f"Telegram markdown error in phantom_stats: {e}")
+            # Try sending without markdown
+            try:
+                plain_msg = msg.replace('*', '').replace('_', '').replace('`', '')
+                await update.message.reply_text(plain_msg)
+            except Exception as e2:
+                await update.message.reply_text(f"Error: {str(e2)[:50]}")
         except Exception as e:
             logger.error(f"Error in phantom_stats: {e}")
             import traceback

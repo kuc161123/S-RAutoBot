@@ -646,229 +646,236 @@ class TradingBot:
             async for sym, k in stream:
                 if not self.running:
                     break
-                    
-                # Parse kline
-                ts = int(k["start"])
-                row = pd.DataFrame(
-                    [[float(k["open"]), float(k["high"]), float(k["low"]), float(k["close"]), float(k["volume"])]],
-                    index=[pd.to_datetime(ts, unit="ms", utc=True)],
-                    columns=["open","high","low","close","volume"]
-                )
                 
-                # Get existing frame or create new if not exists
-                if sym in self.frames:
-                    df = self.frames[sym]
-                else:
-                    df = new_frame()
-                
-                # Ensure both dataframes have consistent timezone handling
-                if df.index.tz is None and row.index.tz is not None:
-                    # Convert existing df to UTC if it's timezone-naive
-                    df.index = df.index.tz_localize('UTC')
-                elif df.index.tz is not None and row.index.tz is None:
-                    # Convert new row to UTC if it's timezone-naive
-                    row.index = row.index.tz_localize('UTC')
-                    
-                df.loc[row.index[0]] = row.iloc[0]
-                df.sort_index(inplace=True)
-                df = df.tail(500)  # Keep only last 500 candles
-                self.frames[sym] = df
-                
-                # Update phantom trades with current price
-                if phantom_tracker is not None:
-                    current_price = df['close'].iloc[-1]
-                    phantom_tracker.update_phantom_prices(sym, current_price)
-                
-                # Auto-save to database every 2 minutes (more aggressive)
-                if (datetime.now() - self.last_save_time).total_seconds() > 120:
-                    await self.save_all_candles()
-                    self.last_save_time = datetime.now()
-                
-                # Check for closed positions periodically
-                if (datetime.now() - last_position_check).total_seconds() > position_check_interval:
-                    await self.check_closed_positions(book, shared.get("meta"), ml_scorer, reset_symbol_state)
-                    last_position_check = datetime.now()
-                
-                # Handle panic close requests
-                if sym in panic_list and sym in book.positions:
-                    logger.warning(f"Executing panic close for {sym}")
-                    pos = book.positions.pop(sym)
-                    side = "Sell" if pos.side == "long" else "Buy"
-                    try:
-                        bybit.place_market(sym, side, pos.qty, reduce_only=True)
-                        if self.tg:
-                            await self.tg.send_message(f"✅ Panic closed {sym}")
-                    except Exception as e:
-                        logger.error(f"Panic close error: {e}")
-                        if self.tg:
-                            await self.tg.send_message(f"❌ Failed to panic close {sym}: {e}")
-                    panic_list.remove(sym)
-                
-                # Only act on bar close
-                if not k.get("confirm", False):
-                    continue
-                
-                # Increment candle counter for summary
-                candles_processed += 1
-                
-                # Track analysis time
-                last_analysis[sym] = datetime.now()
-                
-                # Log summary periodically instead of every candle
-                if (datetime.now() - last_summary_log).total_seconds() > summary_log_interval:
-                    logger.info(f"📊 5-min Summary: {candles_processed} candles processed, {signals_detected} signals, {len(book.positions)} positions open")
-                    last_summary_log = datetime.now()
-                    candles_processed = 0
-                    signals_detected = 0
-                
-                # Check signal cooldown
-                now = time.time()
-                if sym in last_signal_time:
-                    if now - last_signal_time[sym] < signal_cooldown:
-                        # Skip silently - no need to log every cooldown
-                        continue
-                
-                # Detect signal
-                sig = detect_signal(df.copy(), settings, sym)
-                if sig is None:
-                    # Don't log every non-signal to reduce log spam
-                    continue
-                
-                logger.info(f"[{sym}] Signal detected: {sig.side} @ {sig.entry:.4f}")
-                signals_detected += 1
-                
-                # Apply ML scoring and phantom tracking
-                ml_score = 100.0  # Default if no ML
-                ml_reason = "No ML"
-                should_take_trade = True
-                
-                if ml_scorer is not None and phantom_tracker is not None:
-                    try:
-                        # Extract features for ML (from the strategy's calculate_ml_features if available)
-                        from strategy_pullback_ml_learning import calculate_ml_features, breakout_states, BreakoutState
-                        
-                        # Get or create state for this symbol
-                        if sym not in breakout_states:
-                            breakout_states[sym] = BreakoutState()
-                        state = breakout_states[sym]
-                        
-                        # Calculate ML features
-                        # Note: calculate_ml_features expects (df, state, side, retracement)
-                        # Calculate retracement from entry price
-                        if sig.side == "long":
-                            retracement = sig.entry  # Use entry as proxy for retracement level
-                        else:
-                            retracement = sig.entry
-                        
-                        features = calculate_ml_features(df, state, sig.side, retracement)
-                        
-                        # Get ML score
-                        ml_score, ml_reason = ml_scorer.score_signal(
-                            {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                            features
-                        )
-                        
-                        # Decide if we should take the trade
-                        should_take_trade = ml_score >= ml_scorer.min_score
-                        
-                        # Record the signal in phantom tracker (both taken and rejected)
-                        phantom_tracker.record_signal(
-                            symbol=sym,
-                            signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                            ml_score=ml_score,
-                            was_executed=should_take_trade,
-                            features=features
-                        )
-                        
-                        if not should_take_trade:
-                            logger.info(f"[{sym}] ML REJECTED: Score {ml_score:.1f} < {ml_scorer.min_score} | {ml_reason}")
-                            continue
-                        else:
-                            logger.info(f"[{sym}] ML APPROVED: Score {ml_score:.1f} | {ml_reason}")
-                            
-                    except Exception as e:
-                        # Safety: Allow signal if ML fails but log the error
-                        logger.warning(f"[{sym}] ML scoring error: {e}. Allowing signal for safety.")
-                        should_take_trade = True
-                
-                # One position per symbol rule - wait for current position to close
-                # This prevents overexposure to a single symbol and allows clean entry/exit
-                if sym in book.positions:
-                    logger.info(f"[{sym}] Already have position, waiting for it to close before taking new signal")
-                    continue
-                
-                # Get symbol metadata
-                m = meta_for(sym, shared["meta"])
-                
-                # Check account balance and update risk calculation
-                current_balance = bybit.get_balance()
-                if current_balance:
-                    balance = current_balance
-                    # Update sizer with current balance for percentage-based risk
-                    sizer.account_balance = balance
-                    
-                    # Calculate actual risk amount for this trade
-                    if risk.use_percent_risk:
-                        risk_amount = balance * (risk.risk_percent / 100.0)
-                    else:
-                        risk_amount = risk.risk_usd
-                    
-                    # Calculate required margin with max leverage
-                    required_margin = (risk_amount * 100) / m.get("max_leverage", 50)  # Rough estimate
-                    
-                    # Check if we have enough for margin + buffer
-                    if balance < required_margin * 1.5:  # 1.5x for safety
-                        logger.warning(f"[{sym}] Insufficient balance (${balance:.2f}, need ~${required_margin:.2f}), skipping signal")
-                        continue
-                    
-                    logger.debug(f"[{sym}] Balance check passed: ${balance:.2f} available, risking ${risk_amount:.2f}")
-                
-                # Calculate position size
-                qty = sizer.qty_for(sig.entry, sig.sl, m.get("qty_step",0.001), m.get("min_qty",0.001))
-                
-                if qty <= 0:
-                    logger.warning(f"[{sym}] Quantity too small, skipping")
-                    continue
-                
-                # IMPORTANT: Set leverage BEFORE opening position to prevent TP/SL cancellation
-                max_lev = int(m.get("max_leverage", 10))
-                logger.info(f"[{sym}] Setting leverage to {max_lev}x (before position to preserve TP/SL)")
-                bybit.set_leverage(sym, max_lev)
-                
-                # Place market order AFTER leverage is set
-                side = "Buy" if sig.side == "long" else "Sell"
                 try:
-                    logger.info(f"[{sym}] Placing {side} order for {qty} units")
-                    bybit.place_market(sym, side, qty, reduce_only=False)
+                    # Parse kline
+                    ts = int(k["start"])
+                    row = pd.DataFrame(
+                        [[float(k["open"]), float(k["high"]), float(k["low"]), float(k["close"]), float(k["volume"])]],
+                        index=[pd.to_datetime(ts, unit="ms", utc=True)],
+                        columns=["open","high","low","close","volume"]
+                    )
                     
-                    # Set TP/SL - these will not be cancelled since leverage was set before position
-                    logger.info(f"[{sym}] Setting TP={sig.tp:.4f} (Limit), SL={sig.sl:.4f} (Market)")
-                    bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl, qty=qty)
+                    # Get existing frame or create new if not exists
+                    if sym in self.frames:
+                        df = self.frames[sym]
+                    else:
+                        df = new_frame()
                     
-                    # Update book
-                    book.positions[sym] = Position(sig.side, qty, sig.entry, sig.sl, sig.tp, datetime.now())
-                    last_signal_time[sym] = now
+                    # Ensure both dataframes have consistent timezone handling
+                    if df.index.tz is None and row.index.tz is not None:
+                        # Convert existing df to UTC if it's timezone-naive
+                        df.index = df.index.tz_localize('UTC')
+                    elif df.index.tz is not None and row.index.tz is None:
+                        # Convert new row to UTC if it's timezone-naive
+                        row.index = row.index.tz_localize('UTC')
+                        
+                    df.loc[row.index[0]] = row.iloc[0]
+                    df.sort_index(inplace=True)
+                    df = df.tail(500)  # Keep only last 500 candles
+                    self.frames[sym] = df
                     
-                    # Send notification
-                    if self.tg:
-                        emoji = "🟢" if sig.side == "long" else "🔴"
-                        msg = (
-                            f"{emoji} *{sym} {sig.side.upper()}*\n\n"
-                            f"Entry: {sig.entry:.4f}\n"
-                            f"Stop Loss: {sig.sl:.4f}\n"
-                            f"Take Profit: {sig.tp:.4f}\n"
-                            f"Quantity: {qty}\n"
-                            f"Risk: {risk.risk_percent}% (${risk_amount:.2f})\n"
-                            f"Reason: {sig.reason}"
-                        )
-                        await self.tg.send_message(msg)
+                    # Update phantom trades with current price
+                    if phantom_tracker is not None:
+                        current_price = df['close'].iloc[-1]
+                        phantom_tracker.update_phantom_prices(sym, current_price)
+                
+                    # Auto-save to database every 2 minutes (more aggressive)
+                    if (datetime.now() - self.last_save_time).total_seconds() > 120:
+                        await self.save_all_candles()
+                        self.last_save_time = datetime.now()
+                
+                    # Check for closed positions periodically
+                    if (datetime.now() - last_position_check).total_seconds() > position_check_interval:
+                        await self.check_closed_positions(book, shared.get("meta"), ml_scorer, reset_symbol_state)
+                        last_position_check = datetime.now()
+                
+                    # Handle panic close requests
+                    if sym in panic_list and sym in book.positions:
+                        logger.warning(f"Executing panic close for {sym}")
+                        pos = book.positions.pop(sym)
+                        side = "Sell" if pos.side == "long" else "Buy"
+                        try:
+                            bybit.place_market(sym, side, pos.qty, reduce_only=True)
+                            if self.tg:
+                                await self.tg.send_message(f"✅ Panic closed {sym}")
+                        except Exception as e:
+                            logger.error(f"Panic close error: {e}")
+                            if self.tg:
+                                await self.tg.send_message(f"❌ Failed to panic close {sym}: {e}")
+                        panic_list.remove(sym)
+                
+                    # Only act on bar close
+                    if not k.get("confirm", False):
+                        continue
+                
+                    # Increment candle counter for summary
+                    candles_processed += 1
                     
-                    logger.info(f"[{sym}] {sig.side} position opened successfully")
+                    # Track analysis time
+                    last_analysis[sym] = datetime.now()
+                
+                    # Log summary periodically instead of every candle
+                    if (datetime.now() - last_summary_log).total_seconds() > summary_log_interval:
+                        logger.info(f"📊 5-min Summary: {candles_processed} candles processed, {signals_detected} signals, {len(book.positions)} positions open")
+                        last_summary_log = datetime.now()
+                        candles_processed = 0
+                        signals_detected = 0
                     
+                    # Check signal cooldown
+                    now = time.time()
+                    if sym in last_signal_time:
+                        if now - last_signal_time[sym] < signal_cooldown:
+                            # Skip silently - no need to log every cooldown
+                            continue
+                
+                    # Detect signal
+                    sig = detect_signal(df.copy(), settings, sym)
+                    if sig is None:
+                        # Don't log every non-signal to reduce log spam
+                        continue
+                
+                    logger.info(f"[{sym}] Signal detected: {sig.side} @ {sig.entry:.4f}")
+                    signals_detected += 1
+                
+                    # Apply ML scoring and phantom tracking
+                    ml_score = 100.0  # Default if no ML
+                    ml_reason = "No ML"
+                    should_take_trade = True
+                
+                    if ml_scorer is not None and phantom_tracker is not None:
+                        try:
+                            # Extract features for ML (from the strategy's calculate_ml_features if available)
+                            from strategy_pullback_ml_learning import calculate_ml_features, breakout_states, BreakoutState
+                        
+                            # Get or create state for this symbol
+                            if sym not in breakout_states:
+                                breakout_states[sym] = BreakoutState()
+                            state = breakout_states[sym]
+                        
+                            # Calculate ML features
+                            # Note: calculate_ml_features expects (df, state, side, retracement)
+                            # Calculate retracement from entry price
+                            if sig.side == "long":
+                                retracement = sig.entry  # Use entry as proxy for retracement level
+                            else:
+                                retracement = sig.entry
+                        
+                            features = calculate_ml_features(df, state, sig.side, retracement)
+                        
+                            # Get ML score
+                            ml_score, ml_reason = ml_scorer.score_signal(
+                                {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                features
+                            )
+                        
+                            # Decide if we should take the trade
+                            should_take_trade = ml_score >= ml_scorer.min_score
+                        
+                            # Record the signal in phantom tracker (both taken and rejected)
+                            phantom_tracker.record_signal(
+                                symbol=sym,
+                                signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                ml_score=ml_score,
+                                was_executed=should_take_trade,
+                                features=features
+                            )
+                        
+                            if not should_take_trade:
+                                logger.info(f"[{sym}] ML REJECTED: Score {ml_score:.1f} < {ml_scorer.min_score} | {ml_reason}")
+                                continue
+                            else:
+                                logger.info(f"[{sym}] ML APPROVED: Score {ml_score:.1f} | {ml_reason}")
+                            
+                        except Exception as e:
+                            # Safety: Allow signal if ML fails but log the error
+                            logger.warning(f"[{sym}] ML scoring error: {e}. Allowing signal for safety.")
+                            should_take_trade = True
+                
+                    # One position per symbol rule - wait for current position to close
+                    # This prevents overexposure to a single symbol and allows clean entry/exit
+                    if sym in book.positions:
+                        logger.info(f"[{sym}] Already have position, waiting for it to close before taking new signal")
+                        continue
+                
+                    # Get symbol metadata
+                    m = meta_for(sym, shared["meta"])
+                
+                    # Check account balance and update risk calculation
+                    current_balance = bybit.get_balance()
+                    if current_balance:
+                        balance = current_balance
+                        # Update sizer with current balance for percentage-based risk
+                        sizer.account_balance = balance
+                    
+                        # Calculate actual risk amount for this trade
+                        if risk.use_percent_risk:
+                            risk_amount = balance * (risk.risk_percent / 100.0)
+                        else:
+                            risk_amount = risk.risk_usd
+                    
+                        # Calculate required margin with max leverage
+                        required_margin = (risk_amount * 100) / m.get("max_leverage", 50)  # Rough estimate
+                    
+                        # Check if we have enough for margin + buffer
+                        if balance < required_margin * 1.5:  # 1.5x for safety
+                            logger.warning(f"[{sym}] Insufficient balance (${balance:.2f}, need ~${required_margin:.2f}), skipping signal")
+                            continue
+                    
+                        logger.debug(f"[{sym}] Balance check passed: ${balance:.2f} available, risking ${risk_amount:.2f}")
+                
+                    # Calculate position size
+                    qty = sizer.qty_for(sig.entry, sig.sl, m.get("qty_step",0.001), m.get("min_qty",0.001))
+                
+                    if qty <= 0:
+                        logger.warning(f"[{sym}] Quantity too small, skipping")
+                        continue
+                
+                    # IMPORTANT: Set leverage BEFORE opening position to prevent TP/SL cancellation
+                    max_lev = int(m.get("max_leverage", 10))
+                    logger.info(f"[{sym}] Setting leverage to {max_lev}x (before position to preserve TP/SL)")
+                    bybit.set_leverage(sym, max_lev)
+                
+                    # Place market order AFTER leverage is set
+                    side = "Buy" if sig.side == "long" else "Sell"
+                    try:
+                        logger.info(f"[{sym}] Placing {side} order for {qty} units")
+                        bybit.place_market(sym, side, qty, reduce_only=False)
+                        
+                        # Set TP/SL - these will not be cancelled since leverage was set before position
+                        logger.info(f"[{sym}] Setting TP={sig.tp:.4f} (Limit), SL={sig.sl:.4f} (Market)")
+                        bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl, qty=qty)
+                    
+                        # Update book
+                        book.positions[sym] = Position(sig.side, qty, sig.entry, sig.sl, sig.tp, datetime.now())
+                        last_signal_time[sym] = now
+                    
+                        # Send notification
+                        if self.tg:
+                            emoji = "🟢" if sig.side == "long" else "🔴"
+                            msg = (
+                                f"{emoji} *{sym} {sig.side.upper()}*\n\n"
+                                f"Entry: {sig.entry:.4f}\n"
+                                f"Stop Loss: {sig.sl:.4f}\n"
+                                f"Take Profit: {sig.tp:.4f}\n"
+                                f"Quantity: {qty}\n"
+                                f"Risk: {risk.risk_percent}% (${risk_amount:.2f})\n"
+                                f"Reason: {sig.reason}"
+                            )
+                            await self.tg.send_message(msg)
+                    
+                        logger.info(f"[{sym}] {sig.side} position opened successfully")
+                        
+                    except Exception as e:
+                        logger.error(f"Order error: {e}")
+                        if self.tg:
+                            await self.tg.send_message(f"❌ Failed to open {sym} {sig.side}: {str(e)[:100]}")
+                
                 except Exception as e:
-                    logger.error(f"Order error: {e}")
-                    if self.tg:
-                        await self.tg.send_message(f"❌ Failed to open {sym} {sig.side}: {str(e)[:100]}")
+                    # Individual symbol processing error - continue with other symbols  
+                    logger.error(f"Error processing symbol {sym}: {e}")
+                    # Don't crash the whole bot for one symbol's error
+                    continue
         
         except Exception as e:
             logger.error(f"Bot error: {e}")

@@ -33,6 +33,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("ml_stats", self.ml_stats))
         self.app.add_handler(CommandHandler("mlrankings", self.ml_rankings))
         self.app.add_handler(CommandHandler("reset_stats", self.reset_stats))
+        self.app.add_handler(CommandHandler("phantom", self.phantom_stats))
+        self.app.add_handler(CommandHandler("phantom_detail", self.phantom_detail))
         
         self.running = False
 
@@ -91,6 +93,8 @@ class TGBot:
 /recent [limit] - Recent trades history
 /ml or /ml\_stats - ML system status
 /mlrankings - Symbol performance rankings
+/phantom - Phantom trade statistics
+/phantom\_detail [symbol] - Symbol phantom stats
 
 ⚙️ *Risk Management:*
 /risk - Show current risk settings
@@ -1078,3 +1082,196 @@ class TGBot:
             import traceback
             logger.error(traceback.format_exc())
             await update.message.reply_text(f"Error generating rankings: {str(e)[:100]}")
+    
+    async def phantom_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show phantom trade statistics"""
+        try:
+            msg = "👻 *Phantom Trade Statistics*\n"
+            msg += "━" * 25 + "\n\n"
+            
+            # Get phantom tracker
+            try:
+                from phantom_trade_tracker import get_phantom_tracker
+                phantom_tracker = get_phantom_tracker()
+            except Exception as e:
+                logger.error(f"Error importing phantom tracker: {e}")
+                await update.message.reply_text("⚠️ Phantom tracker not available")
+                return
+            
+            # Get overall statistics
+            stats = phantom_tracker.get_phantom_stats()
+            
+            # Overview
+            msg += "📊 *Overview*\n"
+            msg += f"• Total signals tracked: {stats['total']}\n"
+            msg += f"• Executed trades: {stats['executed']}\n"
+            msg += f"• Phantom trades: {stats['rejected']}\n"
+            
+            if stats['total'] > 0:
+                execution_rate = (stats['executed'] / stats['total']) * 100
+                msg += f"• Execution rate: {execution_rate:.1f}%\n"
+            msg += "\n"
+            
+            # Rejection analysis
+            rejection_stats = stats['rejection_stats']
+            if rejection_stats['total_rejected'] > 0:
+                msg += "🚫 *Rejected Trade Analysis*\n"
+                msg += f"• Total rejected: {rejection_stats['total_rejected']}\n"
+                msg += f"• Would have won: {rejection_stats['would_have_won']} "
+                if rejection_stats['would_have_won'] > 0:
+                    win_rate = (rejection_stats['would_have_won'] / rejection_stats['total_rejected']) * 100
+                    msg += f"({win_rate:.1f}%)\n"
+                else:
+                    msg += "\n"
+                msg += f"• Would have lost: {rejection_stats['would_have_lost']}\n"
+                
+                if rejection_stats['missed_profit_pct'] > 0:
+                    msg += f"• Missed profit: {rejection_stats['missed_profit_pct']:.2f}%\n"
+                if rejection_stats['avoided_loss_pct'] > 0:
+                    msg += f"• Avoided loss: {rejection_stats['avoided_loss_pct']:.2f}%\n"
+                msg += "\n"
+            
+            # ML accuracy
+            ml_accuracy = stats['ml_accuracy']
+            if stats['total'] > 0:
+                msg += "🤖 *ML Decision Accuracy*\n"
+                msg += f"• Correct rejections: {ml_accuracy['correct_rejections']}\n"
+                msg += f"• Wrong rejections: {ml_accuracy['wrong_rejections']}\n"
+                msg += f"• Correct approvals: {ml_accuracy['correct_approvals']}\n"
+                msg += f"• Wrong approvals: {ml_accuracy['wrong_approvals']}\n"
+                msg += f"• Overall accuracy: {ml_accuracy['accuracy_pct']:.1f}%\n"
+                msg += "\n"
+            
+            # Active phantoms
+            active_count = len(phantom_tracker.active_phantoms)
+            if active_count > 0:
+                msg += f"👀 *Active Phantoms: {active_count}*\n"
+                for symbol, phantom in list(phantom_tracker.active_phantoms.items())[:5]:
+                    msg += f"• {symbol}: {phantom.side.upper()} @ {phantom.entry_price:.4f} "
+                    msg += f"(score: {phantom.ml_score:.1f})\n"
+                if active_count > 5:
+                    msg += f"  _...and {active_count - 5} more_\n"
+                msg += "\n"
+            
+            msg += "_Use /phantom_detail [symbol] for symbol-specific stats_"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in phantom_stats: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            await update.message.reply_text(f"Error getting phantom statistics: {str(e)[:100]}")
+    
+    async def phantom_detail(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show detailed phantom statistics for a symbol"""
+        try:
+            # Get symbol from command
+            if not ctx.args:
+                await update.message.reply_text(
+                    "Please specify a symbol\n"
+                    "Usage: `/phantom_detail BTCUSDT`",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            symbol = ctx.args[0].upper()
+            
+            msg = f"👻 *Phantom Stats: {symbol}*\n"
+            msg += "━" * 25 + "\n\n"
+            
+            # Get phantom tracker
+            try:
+                from phantom_trade_tracker import get_phantom_tracker
+                phantom_tracker = get_phantom_tracker()
+            except Exception as e:
+                logger.error(f"Error importing phantom tracker: {e}")
+                await update.message.reply_text("⚠️ Phantom tracker not available")
+                return
+            
+            # Get symbol-specific statistics
+            stats = phantom_tracker.get_phantom_stats(symbol)
+            
+            if stats['total'] == 0:
+                msg += f"No phantom trades recorded for {symbol}\n"
+                msg += "\n_Try another symbol or wait for more signals_"
+                await update.message.reply_text(msg, parse_mode='Markdown')
+                return
+            
+            # Overview for this symbol
+            msg += "📊 *Overview*\n"
+            msg += f"• Total signals: {stats['total']}\n"
+            msg += f"• Executed: {stats['executed']}\n"
+            msg += f"• Phantoms: {stats['rejected']}\n"
+            if stats['total'] > 0:
+                execution_rate = (stats['executed'] / stats['total']) * 100
+                msg += f"• Execution rate: {execution_rate:.1f}%\n"
+            msg += "\n"
+            
+            # Rejection analysis
+            rejection_stats = stats['rejection_stats']
+            if rejection_stats['total_rejected'] > 0:
+                msg += "🚫 *Rejection Analysis*\n"
+                msg += f"• Rejected trades: {rejection_stats['total_rejected']}\n"
+                msg += f"• Would have won: {rejection_stats['would_have_won']}\n"
+                msg += f"• Would have lost: {rejection_stats['would_have_lost']}\n"
+                
+                # Win rate of rejected trades
+                if rejection_stats['total_rejected'] > 0:
+                    rejected_wr = (rejection_stats['would_have_won'] / rejection_stats['total_rejected']) * 100
+                    msg += f"• Rejected win rate: {rejected_wr:.1f}%\n"
+                
+                # Financial impact
+                if rejection_stats['missed_profit_pct'] > 0:
+                    msg += f"• Missed profit: +{rejection_stats['missed_profit_pct']:.2f}%\n"
+                if rejection_stats['avoided_loss_pct'] > 0:
+                    msg += f"• Avoided loss: -{rejection_stats['avoided_loss_pct']:.2f}%\n"
+                
+                # Net impact
+                net_impact = rejection_stats['missed_profit_pct'] - rejection_stats['avoided_loss_pct']
+                if net_impact != 0:
+                    msg += f"• Net impact: {net_impact:+.2f}%\n"
+                msg += "\n"
+            
+            # Recent phantom trades for this symbol
+            if symbol in phantom_tracker.phantom_trades:
+                recent_phantoms = phantom_tracker.phantom_trades[symbol][-5:]
+                if recent_phantoms:
+                    msg += "📜 *Recent Phantoms*\n"
+                    for phantom in recent_phantoms:
+                        if phantom.outcome:
+                            outcome_emoji = "✅" if phantom.outcome == "win" else "❌"
+                            msg += f"• Score {phantom.ml_score:.0f}: {outcome_emoji} "
+                            msg += f"{phantom.side.upper()} {phantom.pnl_percent:+.2f}%\n"
+                    msg += "\n"
+            
+            # Active phantom for this symbol
+            if symbol in phantom_tracker.active_phantoms:
+                phantom = phantom_tracker.active_phantoms[symbol]
+                msg += "👀 *Currently Tracking*\n"
+                msg += f"• {phantom.side.upper()} position\n"
+                msg += f"• Entry: {phantom.entry_price:.4f}\n"
+                msg += f"• ML Score: {phantom.ml_score:.1f}\n"
+                msg += f"• Target: {phantom.take_profit:.4f}\n"
+                msg += f"• Stop: {phantom.stop_loss:.4f}\n"
+                msg += "\n"
+            
+            # ML insights
+            msg += "💡 *ML Insights*\n"
+            if rejection_stats['total_rejected'] > 0 and rejection_stats['would_have_won'] > rejection_stats['would_have_lost']:
+                msg += "• ML may be too conservative\n"
+                msg += "• Consider threshold adjustment\n"
+            elif rejection_stats['total_rejected'] > 0 and rejection_stats['would_have_lost'] > rejection_stats['would_have_won']:
+                msg += "• ML filtering effectively\n"
+                msg += "• Avoiding losing trades\n"
+            else:
+                msg += "• Gathering more data\n"
+                msg += "• Patterns emerging\n"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in phantom_detail: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            await update.message.reply_text(f"Error getting phantom details: {str(e)[:100]}")

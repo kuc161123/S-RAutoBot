@@ -678,7 +678,49 @@ class TGBot:
                     pass
             
             # Get formatted recent trades
-            msg = tracker.format_recent_trades(limit)
+            if hasattr(tracker, 'format_recent_trades'):
+                msg = tracker.format_recent_trades(limit)
+            else:
+                # Fallback for TradeTrackerPostgres without format_recent_trades
+                msg = "📜 *Recent Trades*\n"
+                msg += "━" * 20 + "\n\n"
+                
+                # Get trades
+                trades = []
+                if hasattr(tracker, 'trades'):
+                    trades = tracker.trades[-limit:] if tracker.trades else []
+                elif hasattr(tracker, 'get_recent_trades'):
+                    trades = tracker.get_recent_trades(limit)
+                
+                if not trades:
+                    msg += "_No trades recorded yet_"
+                else:
+                    for i, trade in enumerate(reversed(trades[-limit:]), 1):
+                        # Format each trade
+                        symbol = getattr(trade, 'symbol', 'N/A')
+                        side = getattr(trade, 'side', 'N/A').upper()
+                        pnl = float(getattr(trade, 'pnl_usd', 0))
+                        pnl_pct = float(getattr(trade, 'pnl_percent', 0))
+                        exit_time = getattr(trade, 'exit_time', None)
+                        
+                        # Format time
+                        time_str = ""
+                        if exit_time:
+                            if isinstance(exit_time, str):
+                                time_str = exit_time[:16]  # Keep YYYY-MM-DD HH:MM
+                            else:
+                                time_str = exit_time.strftime("%Y-%m-%d %H:%M")
+                        
+                        # Build trade line
+                        result_emoji = "✅" if pnl > 0 else "❌"
+                        msg += f"{i}. {result_emoji} *{symbol}* {side}\n"
+                        msg += f"   P&L: ${pnl:.2f} ({pnl_pct:+.2f}%)\n"
+                        if time_str:
+                            msg += f"   Time: {time_str}\n"
+                        msg += "\n"
+                
+                msg += f"\n_Showing last {min(limit, len(trades))} trades_"
+                
             await update.message.reply_text(msg, parse_mode='Markdown')
             
         except Exception as e:

@@ -102,6 +102,12 @@ class ImmediateMLScorer:
                     self.is_ml_ready = True
                     logger.info(f"Loaded ML models (trained on {self.completed_trades} trades)")
                     
+                # Also load scaler if exists
+                scaler_data = self.redis_client.get('iml:scaler')
+                if scaler_data:
+                    self.scaler = pickle.loads(base64.b64decode(scaler_data))
+                    logger.info("Loaded fitted scaler")
+                    
         except Exception as e:
             logger.error(f"Error loading state: {e}")
     
@@ -121,8 +127,13 @@ class ImmediateMLScorer:
                 feature_vector = self._prepare_features(features)
                 X = np.array([feature_vector]).reshape(1, -1)
                 
-                # Scale features
-                X_scaled = self.scaler.transform(X)
+                # Scale features - check if scaler is fitted
+                if hasattr(self.scaler, 'mean_') and self.scaler.mean_ is not None:
+                    X_scaled = self.scaler.transform(X)
+                else:
+                    # If scaler not fitted, use unscaled features
+                    logger.warning("Scaler not fitted, using unscaled features")
+                    X_scaled = X
                 
                 # Get predictions from ensemble
                 predictions = []
@@ -470,11 +481,15 @@ class ImmediateMLScorer:
             
             self.is_ml_ready = True
             
-            # Save models
+            # Save models and scaler
             if self.redis_client:
                 import base64
                 model_data = base64.b64encode(pickle.dumps(self.models)).decode('ascii')
                 self.redis_client.set('iml:models', model_data)
+                
+                # Save fitted scaler
+                scaler_data = base64.b64encode(pickle.dumps(self.scaler)).decode('ascii')
+                self.redis_client.set('iml:scaler', scaler_data)
                 
             # Calculate win rates
             overall_wr = np.mean(y) * 100

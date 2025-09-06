@@ -164,11 +164,31 @@ def detect_simple_lower_high(df:pd.DataFrame, below_level:float,
     
     return False, max_high, 0.0
 
+def _ema(series: pd.Series, period: int) -> pd.Series:
+    """Calculate Exponential Moving Average"""
+    return series.ewm(span=period, adjust=False).mean()
+
+def _rsi(series: pd.Series, period: int = 14) -> pd.Series:
+    """Calculate RSI"""
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def _bollinger_bands(series: pd.Series, period: int = 20, std_dev: int = 2):
+    """Calculate Bollinger Bands"""
+    sma = series.rolling(window=period).mean()
+    std = series.rolling(window=period).std()
+    upper = sma + (std * std_dev)
+    lower = sma - (std * std_dev)
+    return upper, sma, lower
+
 def calculate_ml_features(df: pd.DataFrame, state: BreakoutState, 
                          side: str, retracement: float) -> dict:
     """
-    Calculate ENHANCED features for ML to learn from
-    These are NOT used for filtering, just for ML learning
+    Calculate all 22 features expected by ML scorer
     """
     # Current price data
     close = df["close"].iloc[-1]
@@ -177,136 +197,171 @@ def calculate_ml_features(df: pd.DataFrame, state: BreakoutState,
     low = df["low"].iloc[-1]
     volume = df["volume"].iloc[-1]
     
-    # Volume patterns (CRITICAL for crypto)
-    avg_volume_20 = df["volume"].rolling(20).mean().iloc[-1]
-    avg_volume_5 = df["volume"].rolling(5).mean().iloc[-1]
+    # Calculate technical indicators
+    ema_200 = _ema(df["close"], 200).iloc[-1] if len(df) >= 200 else close
+    rsi_values = _rsi(df["close"], 14)
+    rsi_current = rsi_values.iloc[-1] if len(rsi_values) > 0 else 50.0
+    
+    # Bollinger Bands
+    if len(df) >= 20:
+        bb_upper, bb_middle, bb_lower = _bollinger_bands(df["close"], 20, 2)
+        bb_upper_val = bb_upper.iloc[-1]
+        bb_lower_val = bb_lower.iloc[-1]
+        bb_width = bb_upper_val - bb_lower_val
+        if bb_width > 0:
+            bb_position = (close - bb_lower_val) / bb_width
+        else:
+            bb_position = 0.5
+    else:
+        bb_position = 0.5
+    
+    # Volume calculations
+    avg_volume_20 = df["volume"].rolling(20).mean().iloc[-1] if len(df) >= 20 else volume
+    avg_volume_5 = df["volume"].rolling(5).mean().iloc[-1] if len(df) >= 5 else volume
     volume_ratio = volume / avg_volume_20 if avg_volume_20 > 0 else 1.0
+    volume_ma_ratio = avg_volume_5 / avg_volume_20 if avg_volume_20 > 0 else 1.0
     
-    # Breakout characteristics (if we can identify it)
-    breakout_volume_spike = 1.0
-    if state.breakout_time and len(df) > 20:
-        # Find approximate breakout candle (within last 20 bars)
-        time_since_breakout = (datetime.now() - state.breakout_time).total_seconds() / 60  # minutes
-        bars_since_breakout = int(time_since_breakout / 15)  # Assuming 15m timeframe
-        if bars_since_breakout < 20:
-            breakout_idx = -(bars_since_breakout + 1)
-            if abs(breakout_idx) <= len(df):
-                breakout_volume = df["volume"].iloc[breakout_idx]
-                breakout_volume_spike = breakout_volume / avg_volume_20 if avg_volume_20 > 0 else 1.0
+    # Volume percentile
+    if len(df) >= 100:
+        volume_history = df["volume"].iloc[-100:]
+        volume_percentile = (volume > volume_history).mean() * 100
+    else:
+        volume_percentile = 50.0
     
-    # Pullback characteristics
-    pullback_bars = state.confirmation_count if state.pullback_time else 0
-    pullback_speed = min(pullback_bars, 10) / 10.0  # Normalize 0-1, faster is better
+    # ATR calculations
+    atr_14 = _atr(df, 14)
+    atr_current = atr_14[-1]
+    candle_range = high - low
+    candle_range_atr = candle_range / atr_current if atr_current > 0 else 1.0
     
-    # Recent volume during pullback vs breakout
-    pullback_volume = df["volume"].iloc[-5:].mean() if len(df) >= 5 else volume
-    volume_decline = pullback_volume / avg_volume_20 if avg_volume_20 > 0 else 1.0
+    # ATR percentile
+    if len(atr_14) >= 100:
+        atr_history = atr_14[-100:]
+        atr_percentile = (atr_current > atr_history).mean() * 100
+    else:
+        atr_percentile = 50.0
     
-    # Candle quality metrics (entry strength)
-    candle_range = high - low if high > low else 0.0001
+    # Trend calculations
+    if len(df) >= 20:
+        close_prices = df['close'].values[-20:]
+        # Simple linear regression slope
+        x = np.arange(len(close_prices))
+        slope = np.polyfit(x, close_prices, 1)[0]
+        avg_price = close_prices.mean()
+        trend_strength = (slope / avg_price) * 100  # Percentage trend strength
+    else:
+        trend_strength = 0.0
+    
+    # Higher timeframe alignment (simulated with longer MA)
+    if len(df) >= 50:
+        ma_50 = df['close'].rolling(50).mean().iloc[-1]
+        ma_20 = df['close'].rolling(20).mean().iloc[-1]
+        if ma_20 > ma_50 and close > ma_20:
+            higher_tf_alignment = 100.0  # Bullish alignment
+        elif ma_20 < ma_50 and close < ma_20:
+            higher_tf_alignment = 0.0  # Bearish alignment
+        else:
+            higher_tf_alignment = 50.0  # Neutral
+    else:
+        higher_tf_alignment = 50.0
+    
+    # EMA distance ratio
+    if abs(ema_200) > 0:
+        ema_distance_ratio = ((close - ema_200) / ema_200) * 100
+    else:
+        ema_distance_ratio = 0.0
+    
+    # Volume trend (5 bar vs 20 bar average)
+    volume_trend = volume_ma_ratio
+    
+    # Breakout volume (current vs average)
+    breakout_volume = volume_ratio
+    
+    # Support/Resistance strength
+    if state.breakout_level > 0:
+        touches = count_zone_touches(state.breakout_level, df)
+        support_resistance_strength = min(touches, 5)  # Cap at 5
+    else:
+        support_resistance_strength = 0
+    
+    # Pullback depth (use retracement)
+    pullback_depth = retracement
+    
+    # Confirmation candle strength
+    confirmation_candle_strength = 0.0
+    if state.confirmation_count > 0:
+        # Check strength of confirmation candles
+        if side == "long" and close > open_price:
+            body = close - open_price
+            confirmation_candle_strength = (body / candle_range) * 100 if candle_range > 0 else 0
+        elif side == "short" and close < open_price:
+            body = open_price - close
+            confirmation_candle_strength = (body / candle_range) * 100 if candle_range > 0 else 0
+    
+    # Risk/Reward calculation (simplified - using ATR)
+    if side == "long":
+        potential_risk = atr_current * 1.5  # 1.5 ATR stop
+        potential_reward = atr_current * 3.0  # 3 ATR target
+    else:
+        potential_risk = atr_current * 1.5
+        potential_reward = atr_current * 3.0
+    risk_reward_ratio = potential_reward / potential_risk if potential_risk > 0 else 2.0
+    
+    # ATR stop distance
+    atr_stop_distance = 1.5  # Default 1.5 ATR for stop
+    
+    # Candle patterns
     candle_body = abs(close - open_price)
-    candle_body_ratio = candle_body / candle_range if candle_range > 0 else 0.0
+    candle_body_ratio = (candle_body / candle_range) * 100 if candle_range > 0 else 0.0
     
-    # Wick analysis (rejection/acceptance)
+    # Wick analysis
     upper_wick = high - max(open_price, close)
     lower_wick = min(open_price, close) - low
-    upper_wick_ratio = upper_wick / candle_range if candle_range > 0 else 0.0
-    lower_wick_ratio = lower_wick / candle_range if candle_range > 0 else 0.0
+    upper_wick_ratio = (upper_wick / candle_range) * 100 if candle_range > 0 else 0.0
+    lower_wick_ratio = (lower_wick / candle_range) * 100 if candle_range > 0 else 0.0
     
-    # Momentum metrics
-    is_bullish_candle = 1 if close > open_price else 0
-    consecutive_bulls = 0
-    consecutive_bears = 0
-    for i in range(1, min(6, len(df))):
-        if df["close"].iloc[-i] > df["open"].iloc[-i]:
-            consecutive_bulls += 1
-        else:
-            break
-    for i in range(1, min(6, len(df))):
-        if df["close"].iloc[-i] < df["open"].iloc[-i]:
-            consecutive_bears += 1
-        else:
-            break
-    
-    # ATR and volatility
-    atr_current = _atr(df, 14)[-1]
-    atr_percentile = 0.5  # Default
-    if len(df) >= 100:
-        atr_history = _atr(df, 14)[-100:]
-        atr_percentile = (atr_current > atr_history).mean()
-    
-    # Trend strength
-    close_prices = df['close'].values[-20:]
-    trend_strength = abs(np.polyfit(range(len(close_prices)), close_prices, 1)[0])
-    
-    # Zone strength
-    zone_touches = count_zone_touches(state.breakout_level, df)
-    zone_strength = min(zone_touches / 5.0, 1.0)  # Normalize 0-1
-    
-    # Market session detection
+    # Time features
     now = datetime.now()
-    hour = now.hour
-    if 0 <= hour < 8:
-        session = 'asian'
-        session_strength = 0.7  # Moderate volatility
-    elif 8 <= hour < 12:
-        session = 'london_open'
-        session_strength = 1.0  # High volatility
-    elif 12 <= hour < 16:
-        session = 'london'
-        session_strength = 0.9
-    elif 16 <= hour < 20:
-        session = 'ny_open'
-        session_strength = 1.0  # High volatility
-    elif 20 <= hour < 24:
-        session = 'ny'
-        session_strength = 0.8
-    else:
-        session = 'off_hours'
-        session_strength = 0.5
+    hour_of_day = now.hour
+    day_of_week = now.weekday()
     
+    # Return all 22 features expected by ML scorer
     return {
-        # Pullback characteristics
-        "retracement_pct": retracement,
-        "is_golden_zone": 1 if 38.2 <= retracement <= 61.8 else 0,
-        "is_shallow": 1 if retracement < 38.2 else 0,
-        "is_deep": 1 if retracement > 78.6 else 0,
-        "pullback_speed": pullback_speed,
-        "pullback_bars": pullback_bars,
+        # Core trend features
+        'trend_strength': trend_strength,
+        'higher_tf_alignment': higher_tf_alignment,
+        'ema_distance_ratio': ema_distance_ratio,
         
-        # Volume patterns (CRITICAL)
-        "volume_ratio": volume_ratio,
-        "breakout_volume_spike": breakout_volume_spike,
-        "volume_decline": volume_decline,
-        "volume_trend": avg_volume_5 / avg_volume_20 if avg_volume_20 > 0 else 1.0,
+        # Volume features
+        'volume_ratio': volume_ratio,
+        'volume_trend': volume_trend,
+        'breakout_volume': breakout_volume,
         
-        # Candle patterns (entry quality)
-        "candle_body_ratio": candle_body_ratio,
-        "upper_wick_ratio": upper_wick_ratio,
-        "lower_wick_ratio": lower_wick_ratio,
-        "is_bullish_candle": is_bullish_candle,
-        "consecutive_bulls": consecutive_bulls if side == "long" else consecutive_bears,
+        # Structure features
+        'support_resistance_strength': support_resistance_strength,
+        'pullback_depth': pullback_depth,
+        'confirmation_candle_strength': confirmation_candle_strength,
         
-        # Market conditions
-        "trend_strength": trend_strength,
-        "atr_value": atr_current,
-        "atr_percentile": atr_percentile,
-        "volatility_high": 1 if atr_percentile > 0.75 else 0,
-        
-        # Zone quality
-        "zone_touches": zone_touches,
-        "zone_strength": zone_strength,
+        # Risk/volatility features
+        'atr_percentile': atr_percentile,
+        'risk_reward_ratio': risk_reward_ratio,
+        'atr_stop_distance': atr_stop_distance,
         
         # Time features
-        "hour": hour,
-        "day_of_week": now.weekday(),
-        "session": session,
-        "session_strength": session_strength,
-        "is_weekend": 1 if now.weekday() >= 5 else 0,
+        'hour_of_day': hour_of_day,
+        'day_of_week': day_of_week,
         
-        # Setup info
-        "side": side,
-        "breakout_level": state.breakout_level
+        # Candle pattern features
+        'candle_body_ratio': candle_body_ratio,
+        'upper_wick_ratio': upper_wick_ratio,
+        'lower_wick_ratio': lower_wick_ratio,
+        'candle_range_atr': candle_range_atr,
+        
+        # Additional indicators
+        'volume_ma_ratio': volume_ma_ratio,
+        'rsi': rsi_current,
+        'bb_position': bb_position,
+        'volume_percentile': volume_percentile
     }
 
 def count_zone_touches(level:float, df:pd.DataFrame, zone_pct:float=0.003, lookback:int=75) -> int:

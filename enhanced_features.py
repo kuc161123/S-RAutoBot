@@ -81,7 +81,7 @@ class EnhancedFeatureEngine:
             enhanced.update(micro_features)
             
             # 4. Temporal Patterns
-            temporal_features = self._calculate_temporal_patterns(symbol, datetime.now())
+            temporal_features = self._calculate_temporal_patterns(symbol, datetime.now(), df)
             enhanced.update(temporal_features)
             
             # 5. Volatility Regime
@@ -91,6 +91,10 @@ class EnhancedFeatureEngine:
             # 6. Failed Signal Context
             failed_signal_features = self._get_failed_signal_context(symbol, df['close'].iloc[-1])
             enhanced.update(failed_signal_features)
+            
+            # 7. Historical RSI win rate
+            rsi_win_features = self._get_historical_rsi_winrate(symbol, current_features.get('rsi', 50))
+            enhanced.update(rsi_win_features)
             
             return enhanced
             
@@ -221,7 +225,7 @@ class EnhancedFeatureEngine:
         
         return features
     
-    def _calculate_temporal_patterns(self, symbol: str, current_time: datetime) -> Dict:
+    def _calculate_temporal_patterns(self, symbol: str, current_time: datetime, df: pd.DataFrame) -> Dict:
         """Calculate time-based pattern features"""
         features = {}
         
@@ -259,6 +263,28 @@ class EnhancedFeatureEngine:
                         result = cur.fetchone()
                         if result and result['win_rate'] is not None:
                             features['historical_hour_day_winrate'] = float(result['win_rate'])
+                        
+                        # Historical volume for this hour
+                        cur.execute("""
+                            SELECT AVG(volume) as avg_volume
+                            FROM candles
+                            WHERE symbol = %s
+                            AND EXTRACT(hour FROM timestamp) = %s
+                            AND timestamp > NOW() - INTERVAL '30 days'
+                        """, (symbol, current_time.hour))
+                        
+                        result = cur.fetchone()
+                        if result and result['avg_volume']:
+                            features['historical_hour_volume'] = float(result['avg_volume'])
+                            # Compare current volume to historical
+                            current_vol = df['volume'].iloc[-1] if len(df) > 0 else 0
+                            if features['historical_hour_volume'] > 0:
+                                features['volume_vs_historical'] = current_vol / features['historical_hour_volume']
+                            else:
+                                features['volume_vs_historical'] = 1.0
+                        else:
+                            features['historical_hour_volume'] = 0.0
+                            features['volume_vs_historical'] = 1.0
                         
                 except Exception as e:
                     logger.debug(f"Temporal pattern DB query error: {e}")
@@ -387,6 +413,40 @@ class EnhancedFeatureEngine:
             logger.debug(f"Error fetching BTC data: {e}")
         
         return []
+    
+    def _get_historical_rsi_winrate(self, symbol: str, current_rsi: float) -> Dict:
+        """Get historical win rate at similar RSI levels"""
+        features = {}
+        
+        try:
+            if self.db_conn and current_rsi is not None:
+                with self.db_conn.cursor() as cur:
+                    # Win rate within 5 RSI points
+                    rsi_range = 5
+                    cur.execute("""
+                        SELECT 
+                            COUNT(CASE WHEN pnl_percent > 0 THEN 1 END)::float / 
+                            NULLIF(COUNT(*), 0) as win_rate
+                        FROM trades
+                        WHERE symbol = %s
+                        AND features->>'rsi' IS NOT NULL
+                        AND ABS((features->>'rsi')::float - %s) < %s
+                        AND exit_time IS NOT NULL
+                    """, (symbol, current_rsi, rsi_range))
+                    
+                    result = cur.fetchone()
+                    if result and result['win_rate'] is not None:
+                        features['historical_rsi_win_rate'] = float(result['win_rate'])
+                    else:
+                        features['historical_rsi_win_rate'] = 0.5  # Default 50%
+            else:
+                features['historical_rsi_win_rate'] = 0.5
+                
+        except Exception as e:
+            logger.debug(f"Historical RSI win rate error: {e}")
+            features['historical_rsi_win_rate'] = 0.5
+        
+        return features
     
     def record_failed_signal(self, symbol: str, price: float, reason: str):
         """Record a signal that almost triggered but didn't"""

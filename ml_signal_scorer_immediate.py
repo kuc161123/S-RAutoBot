@@ -629,6 +629,82 @@ class ImmediateMLScorer:
         self.force_retrain = True
         logger.info("ML models cleared. Will retrain with available features on next trade outcome.")
     
+    def startup_retrain(self) -> bool:
+        """Retrain models on startup with all available data"""
+        logger.info("Checking if startup retrain is needed...")
+        
+        # Count available data
+        executed_count = 0
+        phantom_count = 0
+        
+        # Get executed trades from Redis/memory
+        try:
+            if self.redis_client:
+                trade_data = self.redis_client.lrange('iml:trades', 0, -1)
+                executed_count = len(trade_data)
+            else:
+                executed_count = len(self.memory_storage.get('trades', []))
+        except Exception as e:
+            logger.warning(f"Error counting executed trades: {e}")
+        
+        # Get phantom trades
+        try:
+            from phantom_trade_tracker import get_phantom_tracker
+            phantom_tracker = get_phantom_tracker()
+            phantom_count = sum(len(trades) for trades in phantom_tracker.phantom_trades.values())
+        except Exception as e:
+            logger.warning(f"Error counting phantom trades: {e}")
+        
+        total_available = executed_count + phantom_count
+        logger.info(f"Startup data available: {executed_count} executed, {phantom_count} phantom, {total_available} total")
+        
+        # Decide if we should retrain
+        should_retrain = False
+        
+        if not self.is_ml_ready and total_available >= self.MIN_TRADES_FOR_ML:
+            # No models but enough data - definitely train
+            logger.info("No models loaded but sufficient data available - will train")
+            should_retrain = True
+        elif self.is_ml_ready:
+            # Models exist - check if we have significantly more data
+            new_trades = total_available - self.last_train_count
+            if new_trades >= self.RETRAIN_INTERVAL:
+                logger.info(f"Found {new_trades} new trades since last training - will retrain")
+                should_retrain = True
+            elif not self.models:
+                # Models flagged as ready but not actually loaded
+                logger.warning("ML marked as ready but no models found - will retrain")
+                should_retrain = True
+            else:
+                logger.info(f"Models are up to date ({new_trades} new trades, need {self.RETRAIN_INTERVAL})")
+        else:
+            logger.info(f"Insufficient data for training ({total_available} trades, need {self.MIN_TRADES_FOR_ML})")
+        
+        # Perform retrain if needed
+        if should_retrain:
+            logger.info("Starting startup model retraining...")
+            try:
+                # Update counts to match actual data
+                self.completed_trades = executed_count
+                if self.redis_client:
+                    self.redis_client.set('iml:completed_trades', str(self.completed_trades))
+                
+                # Force retrain with all available data
+                self._retrain_models()
+                
+                # Update last train count to current total
+                self.last_train_count = total_available
+                if self.redis_client:
+                    self.redis_client.set('iml:last_train_count', str(self.last_train_count))
+                
+                logger.info("✅ Startup retrain completed successfully")
+                return True
+            except Exception as e:
+                logger.error(f"Startup retrain failed: {e}")
+                return False
+        
+        return False
+    
     def get_learned_patterns(self) -> dict:
         """Extract learned patterns and insights from trained models"""
         patterns = {

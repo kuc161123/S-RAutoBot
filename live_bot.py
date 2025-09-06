@@ -670,6 +670,18 @@ class TradingBot:
                 # Clean up old phantom trades
                 phantom_tracker.cleanup_old_phantoms(24)
                 
+                # Perform startup retrain with all available data
+                logger.info("🔄 Checking for ML startup retrain...")
+                startup_result = ml_scorer.startup_retrain()
+                if startup_result:
+                    # Get updated stats after retrain
+                    ml_stats = ml_scorer.get_stats()
+                    logger.info(f"✅ ML models retrained on startup")
+                    logger.info(f"   Status: {ml_stats['status']}")
+                    logger.info(f"   Threshold: {ml_stats['current_threshold']:.0f}")
+                    if ml_stats.get('models_active'):
+                        logger.info(f"   Active models: {', '.join(ml_stats['models_active'])}")
+                
                 # Initialize ML Evolution (always initialize for shadow learning)
                 try:
                     from ml_evolution_system import get_evolution_system

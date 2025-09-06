@@ -277,7 +277,7 @@ trade:
   confirmation_candles: 2
   use_ml_scoring: true  # ML Signal Quality Scoring (learns after 200 trades)
   ml_min_score: 70.0  # Minimum ML score to take signal (0-100)
-  enable_ml_evolution: true  # Symbol-specific ML evolution (ACTIVE)
+  enable_ml_evolution: false  # Symbol-specific ML evolution (SHADOW MODE - learning only)
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}

@@ -618,24 +618,27 @@ class TradingBot:
                 # Clean up old phantom trades
                 phantom_tracker.cleanup_old_phantoms(24)
                 
-                # Initialize ML Evolution if enabled
-                if enable_ml_evolution:
-                    try:
-                        from ml_evolution_system import get_evolution_system
-                        from symbol_ml_trainer import get_symbol_trainer
-                        
-                        ml_evolution = get_evolution_system(enabled=enable_ml_evolution)
-                        evolution_trainer = get_symbol_trainer()
-                        
-                        if enable_ml_evolution:
-                            logger.info("🚀 ML Evolution System ACTIVE - Symbol-specific models enabled")
-                            # Start background training
-                            asyncio.create_task(evolution_trainer.start_background_training())
-                        else:
-                            logger.info("👁️ ML Evolution System in SHADOW MODE - Monitoring only")
-                    except Exception as e:
-                        logger.warning(f"Failed to initialize ML Evolution: {e}")
-                        ml_evolution = None
+                # Initialize ML Evolution (always initialize for shadow learning)
+                try:
+                    from ml_evolution_system import get_evolution_system
+                    from symbol_ml_trainer import get_symbol_trainer
+                    
+                    # Always create evolution system (enabled flag controls if it affects decisions)
+                    ml_evolution = get_evolution_system(enabled=enable_ml_evolution)
+                    evolution_trainer = get_symbol_trainer()
+                    
+                    if enable_ml_evolution:
+                        logger.info("🚀 ML Evolution System ACTIVE - Symbol-specific models enabled")
+                    else:
+                        logger.info("👁️ ML Evolution System in SHADOW MODE - Learning but not affecting trades")
+                    
+                    # Always start background training for data collection
+                    asyncio.create_task(evolution_trainer.start_background_training())
+                    logger.info("📊 Background ML training started - Building symbol knowledge base")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to initialize ML Evolution: {e}")
+                    ml_evolution = None
                 
             except Exception as e:
                 logger.warning(f"Failed to initialize ML/Phantom system: {e}. Running without ML.")
@@ -892,9 +895,22 @@ class TradingBot:
                                     features
                                 )
                                 
-                                # Log evolution performance
+                                # Track evolution performance
                                 if breakdown['symbol_score'] is not None:
                                     logger.info(f"[{sym}] Evolution: {evolution_reason}")
+                                    
+                                    # Track performance comparison
+                                    try:
+                                        from ml_evolution_tracker import get_evolution_tracker
+                                        evolution_tracker = get_evolution_tracker()
+                                        evolution_tracker.record_decision_comparison(
+                                            symbol=sym,
+                                            general_score=ml_score,  # Original general score
+                                            evolution_score=evolution_score,
+                                            threshold=ml_scorer.min_score
+                                        )
+                                    except Exception as e:
+                                        logger.debug(f"Evolution tracking error: {e}")
                                 
                                 # Use evolution score if active
                                 if ml_evolution.enabled:

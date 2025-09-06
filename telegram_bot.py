@@ -36,6 +36,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("reset_stats", self.reset_stats))
         self.app.add_handler(CommandHandler("phantom", self.phantom_stats))
         self.app.add_handler(CommandHandler("phantom_detail", self.phantom_detail))
+        self.app.add_handler(CommandHandler("evolution", self.evolution_performance))
         
         self.running = False
 
@@ -96,6 +97,7 @@ class TGBot:
 /mlrankings - Symbol performance rankings
 /phantom - Phantom trade statistics
 /phantom\_detail [symbol] - Symbol phantom stats
+/evolution - ML Evolution shadow performance
 
 ⚙️ *Risk Management:*
 /risk - Show current risk settings
@@ -1333,3 +1335,73 @@ class TGBot:
             import traceback
             logger.error(traceback.format_exc())
             await update.message.reply_text(f"Error getting phantom details: {str(e)[:100]}")
+    
+    async def evolution_performance(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show ML Evolution shadow performance"""
+        try:
+            msg = "🧬 *ML Evolution Performance*\n"
+            msg += "━" * 25 + "\n\n"
+            
+            try:
+                from ml_evolution_tracker import get_evolution_tracker
+                tracker = get_evolution_tracker()
+                summary = tracker.get_performance_summary()
+            except Exception as e:
+                logger.error(f"Error getting evolution tracker: {e}")
+                await update.message.reply_text("Evolution tracking not available")
+                return
+            
+            if 'status' in summary:
+                msg += summary['status']
+            else:
+                # Overview
+                msg += "📊 *Shadow Mode Performance*\n"
+                msg += f"• Total signals analyzed: {summary['total_signals']}\n"
+                msg += f"• Agreement rate: {summary['agreement_rate']:.1f}%\n"
+                msg += f"• Completed comparisons: {summary['completed_comparisons']}\n"
+                msg += "\n"
+                
+                # Performance comparison
+                if summary['completed_comparisons'] > 0:
+                    msg += "🎯 *Win Rate Comparison*\n"
+                    msg += f"• General model: {summary['general_win_rate']:.1f}%\n"
+                    msg += f"• Evolution model: {summary['evolution_win_rate']:.1f}%\n"
+                    
+                    diff = summary['evolution_win_rate'] - summary['general_win_rate']
+                    if diff > 0:
+                        msg += f"• Evolution advantage: +{diff:.1f}%\n"
+                    else:
+                        msg += f"• General advantage: {abs(diff):.1f}%\n"
+                    msg += "\n"
+                
+                # Symbol insights
+                insights = summary.get('symbol_insights', {})
+                if insights:
+                    msg += "🔍 *Top Symbol Benefits*\n"
+                    sorted_symbols = sorted(insights.items(), 
+                                          key=lambda x: x[1]['evolution_advantage'], 
+                                          reverse=True)[:5]
+                    
+                    for symbol, data in sorted_symbols:
+                        advantage = data['evolution_advantage']
+                        if advantage != 0:
+                            msg += f"• {symbol}: "
+                            if advantage > 0:
+                                msg += f"+{advantage} better decisions\n"
+                            else:
+                                msg += f"{advantage} worse decisions\n"
+                    msg += "\n"
+                
+                # Recommendation
+                msg += "💡 *Recommendation*\n"
+                msg += f"{summary['recommendation']}\n\n"
+                
+                msg += "_Shadow mode continues learning..._"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in evolution_performance: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            await update.message.reply_text(f"Error getting evolution performance: {str(e)[:100]}")

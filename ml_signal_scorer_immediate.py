@@ -633,6 +633,20 @@ class ImmediateMLScorer:
         """Retrain models on startup with all available data"""
         logger.info("Checking if startup retrain is needed...")
         
+        # Check for feature update marker
+        feature_version_key = 'iml:feature_calculations_version'
+        current_feature_version = 'v2_complete'  # Version with all 22 features properly calculated
+        
+        stored_version = None
+        if self.redis_client:
+            stored_version = self.redis_client.get(feature_version_key)
+        
+        # Force retrain if feature calculations have been updated
+        force_due_to_features = False
+        if stored_version != current_feature_version:
+            logger.info(f"Feature calculations updated from {stored_version} to {current_feature_version} - forcing retrain")
+            force_due_to_features = True
+        
         # Count available data
         executed_count = 0
         phantom_count = 0
@@ -659,7 +673,7 @@ class ImmediateMLScorer:
         logger.info(f"Startup data available: {executed_count} executed, {phantom_count} phantom, {total_available} total")
         
         # Decide if we should retrain
-        should_retrain = False
+        should_retrain = force_due_to_features
         
         if not self.is_ml_ready and total_available >= self.MIN_TRADES_FOR_ML:
             # No models but enough data - definitely train
@@ -696,6 +710,10 @@ class ImmediateMLScorer:
                 self.last_train_count = total_available
                 if self.redis_client:
                     self.redis_client.set('iml:last_train_count', str(self.last_train_count))
+                
+                # Save feature version marker
+                if self.redis_client:
+                    self.redis_client.set(feature_version_key, current_feature_version)
                 
                 logger.info("✅ Startup retrain completed successfully")
                 return True

@@ -879,32 +879,37 @@ class TradingBot:
                             else:
                                 retracement = sig.entry
                         
-                            features = calculate_ml_features(df, state, sig.side, retracement)
-                        
-                            # Enhance features if available
+                            # Calculate basic features (22 features for original ML)
+                            basic_features = calculate_ml_features(df, state, sig.side, retracement)
+                            
+                            # Create enhanced features copy for ML Evolution (48 features)
+                            enhanced_features = basic_features.copy()
+                            
+                            # Only enhance features for ML Evolution, not original ML
+                            feature_engine = None
+                            btc_price = None
                             try:
                                 from enhanced_features import get_feature_engine
                                 feature_engine = get_feature_engine()
                                 
-                                btc_price = None
                                 if 'BTCUSDT' in self.frames and not self.frames['BTCUSDT'].empty:
                                     btc_price = self.frames['BTCUSDT']['close'].iloc[-1]
                                 
-                                # Enhance features with all the advanced metrics
-                                features = feature_engine.enhance_features(
+                                # Enhance features ONLY for evolution system
+                                enhanced_features = feature_engine.enhance_features(
                                     symbol=sym,
                                     df=df,
-                                    current_features=features,
+                                    current_features=enhanced_features,
                                     btc_price=btc_price
                                 )
-                                logger.debug(f"[{sym}] Enhanced features added: {len(features)} total features")
+                                logger.debug(f"[{sym}] Enhanced features prepared for evolution: {len(enhanced_features)} features")
                             except Exception as e:
-                                logger.debug(f"[{sym}] Enhanced features not applied: {e}")
+                                logger.debug(f"[{sym}] Enhanced features not available for evolution: {e}")
+                                enhanced_features = basic_features  # Fall back to basic if enhancement fails
                         
                             # Cache DataFrame and BTC price for ML evolution
                             if hasattr(ml_scorer, 'last_data_cache'):
-                                btc_price = None
-                                if 'BTCUSDT' in self.frames and not self.frames['BTCUSDT'].empty:
+                                if btc_price is None and 'BTCUSDT' in self.frames and not self.frames['BTCUSDT'].empty:
                                     btc_price = self.frames['BTCUSDT']['close'].iloc[-1]
                                 
                                 ml_scorer.last_data_cache[sym] = {
@@ -912,18 +917,18 @@ class TradingBot:
                                     'btc_price': btc_price
                                 }
                             
-                            # Get ML score
+                            # Get ML score using BASIC features only (22 features)
                             ml_score, ml_reason = ml_scorer.score_signal(
                                 {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                                features
+                                basic_features  # Use basic features for original ML
                             )
                             
-                            # If ML Evolution is enabled, use its score instead
+                            # If ML Evolution is enabled, use ENHANCED features (48 features)
                             if ml_evolution is not None:
                                 evolution_score, evolution_reason, breakdown = ml_evolution.score_signal(
                                     sym,
                                     {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                                    features
+                                    enhanced_features  # Use enhanced features for evolution
                                 )
                                 
                                 # Track evolution performance
@@ -951,13 +956,14 @@ class TradingBot:
                             # Decide if we should take the trade
                             should_take_trade = ml_score >= ml_scorer.min_score
                         
-                            # Record the signal in phantom tracker (both taken and rejected)
+                            # Record the signal in phantom tracker with basic features
+                            # Phantom tracker uses basic features for consistency
                             phantom_tracker.record_signal(
                                 symbol=sym,
                                 signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
                                 ml_score=ml_score,
                                 was_executed=should_take_trade,
-                                features=features
+                                features=basic_features  # Always use basic features for phantom tracking
                             )
                             
                             # Update ML evolution stats

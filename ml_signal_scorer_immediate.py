@@ -2,6 +2,10 @@
 Enhanced ML Signal Scorer with Immediate Activation
 Works from day 1 with continuous learning from both real and phantom trades
 Progressively improves as it gathers more data
+
+IMPORTANT: This scorer ALWAYS uses only the original 22 features for stability.
+The enhanced 48-feature set is reserved for the ML Evolution system in shadow mode.
+This separation ensures the live trading system remains stable while evolution learns.
 """
 import numpy as np
 import pandas as pd
@@ -270,8 +274,9 @@ class ImmediateMLScorer:
         return score, reasoning
     
     def _prepare_features(self, features: dict) -> list:
-        """Convert feature dict to vector for ML - adaptive based on model version"""
-        # Original features (always used)
+        """Convert feature dict to vector for ML - ALWAYS use original 22 features only"""
+        # Original features ONLY for main ML system
+        # Enhanced features are reserved for ML Evolution shadow mode
         original_features = [
             'trend_strength', 'higher_tf_alignment', 'ema_distance_ratio',
             'volume_ratio', 'volume_trend', 'breakout_volume',
@@ -282,28 +287,8 @@ class ImmediateMLScorer:
             'rsi', 'bb_position', 'volume_percentile'
         ]
         
-        # Enhanced features (only used if model was trained with them)
-        enhanced_features = [
-            # BTC correlation
-            'btc_corr_20', 'btc_corr_60', 'relative_strength_btc', 'btc_trend_up', 'btc_momentum_5',
-            # Volume profile
-            'distance_from_hvn', 'above_hvn', 'volume_concentration', 'vwap_distance', 'above_vwap',
-            # Market microstructure
-            'buy_pressure', 'volume_weighted_direction', 'price_acceleration', 'spread_ratio',
-            # Temporal patterns
-            'is_weekend', 'month_end', 'near_expiry', 'historical_hour_day_winrate',
-            # Volatility regime
-            'volatility_percentile_30', 'volatility_percentile_100', 'volatility_expanding', 
-            'volatility_ratio', 'volatility_spike', 'volatility_zscore',
-            # Failed signal context
-            'failed_signals_1h', 'rejections_at_level'
-        ]
-        
-        # Choose feature set based on model version
-        if self.model_feature_version == 'enhanced':
-            feature_order = original_features + enhanced_features
-        else:
-            feature_order = original_features
+        # ALWAYS use only original features for stability
+        feature_order = original_features
         
         vector = []
         for feat in feature_order:
@@ -466,17 +451,11 @@ class ImmediateMLScorer:
                 logger.info(f"Not enough data yet: {total_data}/{self.MIN_TRADES_FOR_ML}")
                 return
                 
-            # Detect if we have enhanced features available
-            sample_features = all_training_data[0]['features'] if all_training_data else {}
-            has_enhanced = any(feat in sample_features for feat in [
-                'btc_corr_20', 'distance_from_hvn', 'buy_pressure', 'volatility_percentile_30'
-            ])
-            
-            # Update feature version if enhanced features detected
-            if has_enhanced and self.model_feature_version == 'original':
-                logger.info("Enhanced features detected! Switching to enhanced model training")
-                self.model_feature_version = 'enhanced'
-                self.feature_count = 48
+            # ALWAYS use original features for the main ML system
+            # This ensures stability and prevents feature mismatches
+            self.model_feature_version = 'original'
+            self.feature_count = 22
+            logger.info("Training original ML with 22 core features (enhanced features reserved for evolution)")
             
             # Prepare training data
             X = []

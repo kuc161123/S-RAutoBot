@@ -37,6 +37,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("phantom", self.phantom_stats))
         self.app.add_handler(CommandHandler("phantom_detail", self.phantom_detail))
         self.app.add_handler(CommandHandler("evolution", self.evolution_performance))
+        self.app.add_handler(CommandHandler("force_retrain", self.force_retrain_ml))
         
         self.running = False
 
@@ -122,6 +123,7 @@ class TGBot:
 
 ⚙️ *Controls:*
 /panic_close [symbol] - Emergency close position
+/force_retrain - Force ML model retrain
 
 ℹ️ *Info:*
 /start - Welcome message
@@ -1430,3 +1432,49 @@ class TGBot:
             import traceback
             logger.error(traceback.format_exc())
             await update.message.reply_text(f"Error getting evolution performance: {str(e)[:100]}")
+    
+    async def force_retrain_ml(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Force retrain ML models to reset feature expectations"""
+        try:
+            msg = "🔧 *ML Force Retrain*\n"
+            msg += "━" * 25 + "\n\n"
+            
+            # Get ML scorer
+            ml_scorer = self.shared.get("ml_scorer")
+            if not ml_scorer:
+                await update.message.reply_text("⚠️ ML scorer not available")
+                return
+            
+            # Get current status before reset
+            stats_before = ml_scorer.get_stats()
+            
+            msg += "📊 *Current Status*\n"
+            msg += f"• Models: {', '.join(stats_before['models_active']) if stats_before['models_active'] else 'None'}\n"
+            msg += f"• Feature version: {stats_before.get('model_feature_version', 'unknown')}\n"
+            msg += f"• Feature count: {stats_before.get('feature_count', 'unknown')}\n"
+            msg += f"• Completed trades: {stats_before['completed_trades']}\n\n"
+            
+            # Force retrain
+            ml_scorer.force_retrain_models()
+            
+            msg += "✅ *Actions Taken*\n"
+            msg += "• Cleared existing models\n"
+            msg += "• Reset scaler\n"
+            msg += "• Cleared Redis cache\n"
+            msg += "• Reset to original features (22)\n\n"
+            
+            msg += "📝 *What Happens Next*\n"
+            msg += "• Models will use rule-based scoring\n"
+            msg += "• Will retrain on next trade completion\n"
+            msg += "• Will detect available features automatically\n"
+            msg += "• No interruption to trading\n\n"
+            
+            msg += "⚡ *Commands*\n"
+            msg += "• `/ml` - Check ML status\n"
+            msg += "• `/stats` - View trading stats"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in force_retrain_ml: {e}")
+            await update.message.reply_text(f"Error forcing ML retrain: {str(e)[:100]}")

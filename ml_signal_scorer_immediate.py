@@ -54,6 +54,9 @@ class ImmediateMLScorer:
         self.model_feature_version = 'original'  # 'original' or 'enhanced'
         self.feature_count = 22  # Default to original feature count
         
+        # Flag to force retrain
+        self.force_retrain = False
+        
         # Initialize Redis
         self.redis_client = None
         if enabled:
@@ -361,9 +364,13 @@ class ImmediateMLScorer:
             except:
                 pass  # Use executed trades only if phantom tracker not available
             
-            # Retrain if we've had RETRAIN_INTERVAL new trades since last training
-            if total_combined - self.last_train_count >= self.RETRAIN_INTERVAL:
-                logger.info(f"Retraining triggered: {total_combined - self.last_train_count} new trades since last training")
+            # Retrain if we've had RETRAIN_INTERVAL new trades since last training OR force retrain
+            if (total_combined - self.last_train_count >= self.RETRAIN_INTERVAL) or self.force_retrain:
+                if self.force_retrain:
+                    logger.info(f"Force retraining ML models to reset feature expectations")
+                    self.force_retrain = False
+                else:
+                    logger.info(f"Retraining triggered: {total_combined - self.last_train_count} new trades since last training")
                 self._retrain_models()
                 self.last_train_count = total_combined
                 
@@ -569,8 +576,35 @@ class ImmediateMLScorer:
             'current_threshold': self.min_score,
             'recent_win_rate': win_rate,
             'models_active': list(self.models.keys()) if self.models else [],
-            'status': 'ML Active' if self.is_ml_ready else f'Learning ({self.completed_trades}/{self.MIN_TRADES_FOR_ML})'
+            'status': 'ML Active' if self.is_ml_ready else f'Learning ({self.completed_trades}/{self.MIN_TRADES_FOR_ML})',
+            'model_feature_version': self.model_feature_version,
+            'feature_count': self.feature_count
         }
+    
+    def force_retrain_models(self):
+        """Force clear and retrain models to reset feature expectations"""
+        logger.info("Force clearing ML models and scaler for clean retrain")
+        
+        # Clear existing models
+        self.models = {}
+        self.scaler = StandardScaler()
+        self.is_ml_ready = False
+        self.model_feature_version = 'original'  # Reset to original features
+        self.feature_count = 22
+        
+        # Clear from Redis
+        if self.redis_client:
+            try:
+                self.redis_client.delete('iml:models')
+                self.redis_client.delete('iml:scaler')
+                self.redis_client.delete('iml:feature_version')
+                logger.info("Cleared ML models from Redis")
+            except Exception as e:
+                logger.error(f"Error clearing Redis: {e}")
+        
+        # Trigger retrain on next trade
+        self.force_retrain = True
+        logger.info("ML models cleared. Will retrain with available features on next trade outcome.")
 
 # Global instance
 _immediate_scorer = None

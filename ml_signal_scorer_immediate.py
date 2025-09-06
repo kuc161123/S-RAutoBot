@@ -548,7 +548,7 @@ class ImmediateMLScorer:
         if self.recent_performance:
             win_rate = sum(self.recent_performance) / len(self.recent_performance) * 100
             
-        return {
+        stats = {
             'enabled': self.enabled,
             'completed_trades': self.completed_trades,
             'is_ml_ready': self.is_ml_ready,
@@ -559,6 +559,13 @@ class ImmediateMLScorer:
             'model_feature_version': self.model_feature_version,
             'feature_count': self.feature_count
         }
+        
+        # Add patterns if ML is ready
+        if self.is_ml_ready:
+            patterns = self.get_learned_patterns()
+            stats['patterns'] = patterns
+            
+        return stats
     
     def force_retrain_models(self):
         """Force clear and retrain models to reset feature expectations"""
@@ -584,6 +591,247 @@ class ImmediateMLScorer:
         # Trigger retrain on next trade
         self.force_retrain = True
         logger.info("ML models cleared. Will retrain with available features on next trade outcome.")
+    
+    def get_learned_patterns(self) -> dict:
+        """Extract learned patterns and insights from trained models"""
+        patterns = {
+            'feature_importance': {},
+            'winning_patterns': [],
+            'losing_patterns': [],
+            'time_patterns': {},
+            'market_conditions': {}
+        }
+        
+        if not self.is_ml_ready or not self.models:
+            return patterns
+        
+        try:
+            # Get feature importance from Random Forest
+            if 'rf' in self.models:
+                feature_names = [
+                    'trend_strength', 'higher_tf_alignment', 'ema_distance_ratio',
+                    'volume_ratio', 'volume_trend', 'breakout_volume',
+                    'support_resistance_strength', 'pullback_depth', 'confirmation_candle_strength',
+                    'atr_percentile', 'risk_reward_ratio', 'atr_stop_distance',
+                    'hour_of_day', 'day_of_week', 'candle_body_ratio', 'upper_wick_ratio',
+                    'lower_wick_ratio', 'candle_range_atr', 'volume_ma_ratio',
+                    'rsi', 'bb_position', 'volume_percentile'
+                ]
+                
+                importances = self.models['rf'].feature_importances_
+                # Get top 10 most important features
+                feature_importance = list(zip(feature_names, importances))
+                feature_importance.sort(key=lambda x: x[1], reverse=True)
+                
+                for feat, imp in feature_importance[:10]:
+                    patterns['feature_importance'][feat] = round(imp * 100, 1)
+            
+            # Analyze recent trades for patterns
+            trades = self._get_recent_trades()
+            if trades:
+                wins = [t for t in trades if t.get('outcome') == 'win']
+                losses = [t for t in trades if t.get('outcome') == 'loss']
+                
+                # Find common patterns in winning trades
+                if wins:
+                    win_patterns = self._analyze_trade_patterns(wins, 'winning')
+                    patterns['winning_patterns'] = win_patterns
+                
+                # Find common patterns in losing trades
+                if losses:
+                    loss_patterns = self._analyze_trade_patterns(losses, 'losing')
+                    patterns['losing_patterns'] = loss_patterns
+                
+                # Time-based patterns
+                patterns['time_patterns'] = self._analyze_time_patterns(trades)
+                
+                # Market condition patterns
+                patterns['market_conditions'] = self._analyze_market_conditions(trades)
+                
+        except Exception as e:
+            logger.error(f"Error extracting patterns: {e}")
+            
+        return patterns
+    
+    def _get_recent_trades(self) -> list:
+        """Get recent trade data for analysis"""
+        trades = []
+        try:
+            if self.redis_client:
+                trade_data = self.redis_client.lrange('iml:trades', -50, -1)  # Last 50 trades
+                trades = [json.loads(t) for t in trade_data]
+            else:
+                trades = self.memory_storage.get('trades', [])[-50:]
+        except Exception as e:
+            logger.error(f"Error getting recent trades: {e}")
+        return trades
+    
+    def _analyze_trade_patterns(self, trades: list, trade_type: str) -> list:
+        """Analyze common patterns in winning or losing trades"""
+        patterns = []
+        
+        if not trades:
+            return patterns
+        
+        # Aggregate feature values
+        feature_sums = {}
+        feature_counts = {}
+        
+        for trade in trades:
+            features = trade.get('features', {})
+            for feat, val in features.items():
+                if isinstance(val, (int, float)):
+                    if feat not in feature_sums:
+                        feature_sums[feat] = 0
+                        feature_counts[feat] = 0
+                    feature_sums[feat] += val
+                    feature_counts[feat] += 1
+        
+        # Calculate averages and identify significant patterns
+        for feat, sum_val in feature_sums.items():
+            if feature_counts[feat] > 0:
+                avg = sum_val / feature_counts[feat]
+                
+                # Identify significant patterns based on feature type
+                if feat == 'volume_ratio' and avg > 1.5:
+                    patterns.append(f"High volume ({avg:.1f}x average)")
+                elif feat == 'trend_strength' and avg > 70:
+                    patterns.append(f"Strong trend alignment ({avg:.0f}%)")
+                elif feat == 'support_resistance_strength' and avg >= 3:
+                    patterns.append(f"Strong S/R levels ({avg:.1f} touches)")
+                elif feat == 'risk_reward_ratio':
+                    patterns.append(f"Average R:R ratio: {avg:.2f}")
+                elif feat == 'rsi':
+                    if trade_type == 'winning':
+                        if avg < 40:
+                            patterns.append(f"Oversold conditions (RSI ~{avg:.0f})")
+                        elif avg > 60:
+                            patterns.append(f"Overbought conditions (RSI ~{avg:.0f})")
+                    else:  # losing
+                        if avg < 30 or avg > 70:
+                            patterns.append(f"Extreme RSI levels (~{avg:.0f})")
+                elif feat == 'hour_of_day':
+                    patterns.append(f"Most active hour: {int(avg)}:00 UTC")
+        
+        # Limit to top 5 patterns
+        return patterns[:5]
+    
+    def _analyze_time_patterns(self, trades: list) -> dict:
+        """Analyze time-based trading patterns"""
+        time_stats = {
+            'best_hours': {},
+            'worst_hours': {},
+            'best_days': {},
+            'session_performance': {}
+        }
+        
+        # Group by hour
+        hour_performance = {}
+        for trade in trades:
+            features = trade.get('features', {})
+            hour = int(features.get('hour_of_day', 0))
+            outcome = trade.get('outcome')
+            
+            if hour not in hour_performance:
+                hour_performance[hour] = {'wins': 0, 'losses': 0}
+            
+            if outcome == 'win':
+                hour_performance[hour]['wins'] += 1
+            else:
+                hour_performance[hour]['losses'] += 1
+        
+        # Calculate win rates by hour
+        for hour, stats in hour_performance.items():
+            total = stats['wins'] + stats['losses']
+            if total >= 3:  # Minimum trades to be significant
+                win_rate = (stats['wins'] / total) * 100
+                if win_rate >= 60:
+                    time_stats['best_hours'][f"{hour}:00 UTC"] = f"{win_rate:.0f}% WR ({total} trades)"
+                elif win_rate <= 30:
+                    time_stats['worst_hours'][f"{hour}:00 UTC"] = f"{win_rate:.0f}% WR ({total} trades)"
+        
+        # Trading sessions
+        session_map = {
+            'Asian': list(range(0, 8)),
+            'European': list(range(8, 16)),
+            'US': list(range(16, 24))
+        }
+        
+        for session, hours in session_map.items():
+            wins = sum(hour_performance.get(h, {}).get('wins', 0) for h in hours)
+            losses = sum(hour_performance.get(h, {}).get('losses', 0) for h in hours)
+            total = wins + losses
+            if total > 0:
+                win_rate = (wins / total) * 100
+                time_stats['session_performance'][session] = f"{win_rate:.0f}% WR ({total} trades)"
+        
+        return time_stats
+    
+    def _analyze_market_conditions(self, trades: list) -> dict:
+        """Analyze market condition patterns"""
+        conditions = {
+            'volatility_impact': {},
+            'volume_impact': {},
+            'trend_impact': {}
+        }
+        
+        # Volatility analysis
+        vol_groups = {'low': [], 'normal': [], 'high': []}
+        for trade in trades:
+            features = trade.get('features', {})
+            vol = features.get('volatility_regime', 'normal')
+            outcome = 1 if trade.get('outcome') == 'win' else 0
+            if vol in vol_groups:
+                vol_groups[vol].append(outcome)
+        
+        for vol_type, outcomes in vol_groups.items():
+            if outcomes:
+                win_rate = (sum(outcomes) / len(outcomes)) * 100
+                conditions['volatility_impact'][vol_type] = f"{win_rate:.0f}% WR ({len(outcomes)} trades)"
+        
+        # Volume analysis
+        high_vol_trades = []
+        low_vol_trades = []
+        for trade in trades:
+            features = trade.get('features', {})
+            vol_ratio = features.get('volume_ratio', 1.0)
+            outcome = 1 if trade.get('outcome') == 'win' else 0
+            
+            if vol_ratio > 1.5:
+                high_vol_trades.append(outcome)
+            elif vol_ratio < 0.7:
+                low_vol_trades.append(outcome)
+        
+        if high_vol_trades:
+            win_rate = (sum(high_vol_trades) / len(high_vol_trades)) * 100
+            conditions['volume_impact']['high_volume'] = f"{win_rate:.0f}% WR ({len(high_vol_trades)} trades)"
+        
+        if low_vol_trades:
+            win_rate = (sum(low_vol_trades) / len(low_vol_trades)) * 100
+            conditions['volume_impact']['low_volume'] = f"{win_rate:.0f}% WR ({len(low_vol_trades)} trades)"
+        
+        # Trend analysis
+        strong_trend = []
+        weak_trend = []
+        for trade in trades:
+            features = trade.get('features', {})
+            trend = features.get('trend_strength', 50)
+            outcome = 1 if trade.get('outcome') == 'win' else 0
+            
+            if trend > 65:
+                strong_trend.append(outcome)
+            elif trend < 35:
+                weak_trend.append(outcome)
+        
+        if strong_trend:
+            win_rate = (sum(strong_trend) / len(strong_trend)) * 100
+            conditions['trend_impact']['strong_trend'] = f"{win_rate:.0f}% WR ({len(strong_trend)} trades)"
+        
+        if weak_trend:
+            win_rate = (sum(weak_trend) / len(weak_trend)) * 100
+            conditions['trend_impact']['counter_trend'] = f"{win_rate:.0f}% WR ({len(weak_trend)} trades)"
+        
+        return conditions
 
 # Global instance
 _immediate_scorer = None

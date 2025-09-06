@@ -667,8 +667,7 @@ class TradingBot:
                 if ml_stats['models_active']:
                     logger.info(f"   Active models: {', '.join(ml_stats['models_active'])}")
                     
-                # Clean up old phantom trades
-                phantom_tracker.cleanup_old_phantoms(24)
+                # Phantom trades now expire naturally on TP/SL - no timeout needed
                 
                 # Perform startup retrain with all available data
                 logger.info("🔄 Checking for ML startup retrain...")

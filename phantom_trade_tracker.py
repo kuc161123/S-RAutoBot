@@ -399,16 +399,9 @@ class PhantomTradeTracker:
     
     def cleanup_old_phantoms(self, hours: int = 24):
         """Remove phantom trades older than specified hours"""
-        cutoff = datetime.now() - timedelta(hours=hours)
-        
-        for symbol in list(self.active_phantoms.keys()):
-            phantom = self.active_phantoms[symbol]
-            if phantom.signal_time < cutoff:
-                # Force close as timeout
-                logger.info(f"[{symbol}] Phantom trade timed out after {hours} hours")
-                del self.active_phantoms[symbol]
-        
-        self._save_to_redis()
+        # This method is now deprecated - phantom trades will only close on TP/SL
+        # Keeping the method signature for backwards compatibility
+        pass
 
 # Global instance
 _phantom_tracker = None

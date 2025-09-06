@@ -65,7 +65,22 @@ class TGBot:
     async def send_message(self, text:str):
         """Send message to configured chat"""
         try:
+            # Try with Markdown first
             await self.app.bot.send_message(chat_id=self.chat_id, text=text, parse_mode='Markdown')
+        except telegram.error.BadRequest as e:
+            if "can't parse entities" in str(e).lower():
+                # Markdown parsing failed, try with better escaping
+                logger.warning("Markdown parsing failed, trying with escaped text")
+                try:
+                    # Escape common problematic characters
+                    escaped_text = text.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('`', '\\`')
+                    await self.app.bot.send_message(chat_id=self.chat_id, text=escaped_text, parse_mode='Markdown')
+                except:
+                    # If still fails, send as plain text
+                    logger.warning("Escaped markdown also failed, sending as plain text")
+                    await self.app.bot.send_message(chat_id=self.chat_id, text=text)
+            else:
+                logger.error(f"Failed to send message: {e}")
         except Exception as e:
             logger.error(f"Failed to send message: {e}")
 
@@ -93,20 +108,20 @@ class TGBot:
 📈 *Statistics:*
 /stats [days] - Trading statistics
 /recent [limit] - Recent trades history
-/ml or /ml\_stats - ML system status
+/ml or /ml_stats - ML system status
 /mlrankings - Symbol performance rankings
 /phantom - Phantom trade statistics
-/phantom\_detail [symbol] - Symbol phantom stats
+/phantom_detail [symbol] - Symbol phantom stats
 /evolution - ML Evolution shadow performance
 
 ⚙️ *Risk Management:*
 /risk - Show current risk settings
-/risk\_percent [value] - Set % risk (e.g., 2.5)
-/risk\_usd [value] - Set USD risk (e.g., 100)
-/set\_risk [amount] - Flexible (3% or 50)
+/risk_percent [value] - Set % risk (e.g., 2.5)
+/risk_usd [value] - Set USD risk (e.g., 100)
+/set_risk [amount] - Flexible (3% or 50)
 
 ⚙️ *Controls:*
-/panic\_close [symbol] - Emergency close position
+/panic_close [symbol] - Emergency close position
 
 ℹ️ *Info:*
 /start - Welcome message

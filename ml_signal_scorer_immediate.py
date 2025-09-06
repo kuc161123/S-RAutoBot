@@ -50,6 +50,10 @@ class ImmediateMLScorer:
         # Data cache for enhanced features (used by evolution system)
         self.last_data_cache = {}  # symbol -> {df, btc_price}
         
+        # Track which feature set the models were trained with
+        self.model_feature_version = 'original'  # 'original' or 'enhanced'
+        self.feature_count = 22  # Default to original feature count
+        
         # Initialize Redis
         self.redis_client = None
         if enabled:
@@ -110,6 +114,13 @@ class ImmediateMLScorer:
                 if scaler_data:
                     self.scaler = pickle.loads(base64.b64decode(scaler_data))
                     logger.info("Loaded fitted scaler")
+                
+                # Load feature version info
+                feature_version = self.redis_client.get('iml:feature_version')
+                if feature_version:
+                    self.model_feature_version = feature_version
+                    self.feature_count = 48 if feature_version == 'enhanced' else 22
+                    logger.info(f"Models use {self.model_feature_version} features ({self.feature_count} total)")
                     
         except Exception as e:
             logger.error(f"Error loading state: {e}")
@@ -256,18 +267,20 @@ class ImmediateMLScorer:
         return score, reasoning
     
     def _prepare_features(self, features: dict) -> list:
-        """Convert feature dict to vector for ML"""
-        # Standard feature order - now includes enhanced features
-        feature_order = [
-            # Original features
+        """Convert feature dict to vector for ML - adaptive based on model version"""
+        # Original features (always used)
+        original_features = [
             'trend_strength', 'higher_tf_alignment', 'ema_distance_ratio',
             'volume_ratio', 'volume_trend', 'breakout_volume',
             'support_resistance_strength', 'pullback_depth', 'confirmation_candle_strength',
             'atr_percentile', 'risk_reward_ratio', 'atr_stop_distance',
             'hour_of_day', 'day_of_week', 'candle_body_ratio', 'upper_wick_ratio',
             'lower_wick_ratio', 'candle_range_atr', 'volume_ma_ratio',
-            'rsi', 'bb_position', 'volume_percentile',
-            # Enhanced features (added when available)
+            'rsi', 'bb_position', 'volume_percentile'
+        ]
+        
+        # Enhanced features (only used if model was trained with them)
+        enhanced_features = [
             # BTC correlation
             'btc_corr_20', 'btc_corr_60', 'relative_strength_btc', 'btc_trend_up', 'btc_momentum_5',
             # Volume profile
@@ -282,6 +295,12 @@ class ImmediateMLScorer:
             # Failed signal context
             'failed_signals_1h', 'rejections_at_level'
         ]
+        
+        # Choose feature set based on model version
+        if self.model_feature_version == 'enhanced':
+            feature_order = original_features + enhanced_features
+        else:
+            feature_order = original_features
         
         vector = []
         for feat in feature_order:
@@ -440,6 +459,18 @@ class ImmediateMLScorer:
                 logger.info(f"Not enough data yet: {total_data}/{self.MIN_TRADES_FOR_ML}")
                 return
                 
+            # Detect if we have enhanced features available
+            sample_features = all_training_data[0]['features'] if all_training_data else {}
+            has_enhanced = any(feat in sample_features for feat in [
+                'btc_corr_20', 'distance_from_hvn', 'buy_pressure', 'volatility_percentile_30'
+            ])
+            
+            # Update feature version if enhanced features detected
+            if has_enhanced and self.model_feature_version == 'original':
+                logger.info("Enhanced features detected! Switching to enhanced model training")
+                self.model_feature_version = 'enhanced'
+                self.feature_count = 48
+            
             # Prepare training data
             X = []
             y = []
@@ -510,6 +541,10 @@ class ImmediateMLScorer:
                 # Save fitted scaler
                 scaler_data = base64.b64encode(pickle.dumps(self.scaler)).decode('ascii')
                 self.redis_client.set('iml:scaler', scaler_data)
+                
+                # Save feature version info
+                self.redis_client.set('iml:feature_version', self.model_feature_version)
+                logger.info(f"Saved models trained with {self.model_feature_version} features")
                 
             # Calculate win rates
             overall_wr = np.mean(y) * 100

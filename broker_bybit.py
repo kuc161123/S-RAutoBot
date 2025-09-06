@@ -116,6 +116,14 @@ class Bybit:
                 "sellLeverage": str(leverage)
             }
             return self._request("POST", "/v5/position/set-leverage", data)
+        except RuntimeError as e:
+            # Check if it's the "leverage not modified" error (already set to requested value)
+            if "leverage not modified" in str(e).lower():
+                logger.debug(f"{symbol}: Leverage already set to {leverage}x")
+                return {"result": "already_set"}  # Return success-like response
+            else:
+                logger.warning(f"Failed to set leverage for {symbol}: {e}")
+                return None
         except Exception as e:
             logger.warning(f"Failed to set leverage for {symbol}: {e}")
             return None

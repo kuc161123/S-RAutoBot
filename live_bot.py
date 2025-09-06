@@ -220,7 +220,7 @@ class TradingBot:
         except Exception as e:
             logger.error(f"Failed to record trade: {e}")
     
-    async def check_closed_positions(self, book: Book, meta: dict = None, ml_scorer=None, reset_symbol_state=None, symbol_collector=None):
+    async def check_closed_positions(self, book: Book, meta: dict = None, ml_scorer=None, reset_symbol_state=None, symbol_collector=None, ml_evolution=None):
         """Check for positions that have been closed and record them"""
         try:
             # Get current positions from exchange
@@ -389,6 +389,10 @@ class TradingBot:
                                 
                                 # Record outcome in ML scorer
                                 ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                
+                                # Also record in ML evolution if available
+                                if ml_evolution is not None:
+                                    ml_evolution.record_outcome(symbol, outcome == "win", pnl_pct)
                                 # Log with clear outcome based on actual P&L
                                 actual_result = "WIN" if pnl_pct > 0 else "LOSS"
                                 logger.info(f"[{symbol}] ML updated: {actual_result} ({pnl_pct:.2f}%) - Exit trigger: {exit_reason.upper()}")
@@ -580,6 +584,11 @@ class TradingBot:
         phantom_tracker = None
         use_ml = cfg["trade"].get("use_ml_scoring", True)  # Default to True for immediate learning
         
+        # Initialize ML Evolution System (optional)
+        ml_evolution = None
+        evolution_trainer = None
+        enable_ml_evolution = cfg["trade"].get("enable_ml_evolution", False)
+        
         # Initialize symbol data collector
         symbol_collector = None
         if SYMBOL_COLLECTOR_AVAILABLE:
@@ -608,6 +617,25 @@ class TradingBot:
                     
                 # Clean up old phantom trades
                 phantom_tracker.cleanup_old_phantoms(24)
+                
+                # Initialize ML Evolution if enabled
+                if enable_ml_evolution:
+                    try:
+                        from ml_evolution_system import get_evolution_system
+                        from symbol_ml_trainer import get_symbol_trainer
+                        
+                        ml_evolution = get_evolution_system(enabled=enable_ml_evolution)
+                        evolution_trainer = get_symbol_trainer()
+                        
+                        if enable_ml_evolution:
+                            logger.info("🚀 ML Evolution System ACTIVE - Symbol-specific models enabled")
+                            # Start background training
+                            asyncio.create_task(evolution_trainer.start_background_training())
+                        else:
+                            logger.info("👁️ ML Evolution System in SHADOW MODE - Monitoring only")
+                    except Exception as e:
+                        logger.warning(f"Failed to initialize ML Evolution: {e}")
+                        ml_evolution = None
                 
             except Exception as e:
                 logger.warning(f"Failed to initialize ML/Phantom system: {e}. Running without ML.")
@@ -774,7 +802,7 @@ class TradingBot:
                 
                     # Check for closed positions periodically
                     if (datetime.now() - last_position_check).total_seconds() > position_check_interval:
-                        await self.check_closed_positions(book, shared.get("meta"), ml_scorer, reset_symbol_state, symbol_collector)
+                        await self.check_closed_positions(book, shared.get("meta"), ml_scorer, reset_symbol_state, symbol_collector, ml_evolution)
                         last_position_check = datetime.now()
                 
                     # Handle panic close requests
@@ -855,6 +883,23 @@ class TradingBot:
                                 {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
                                 features
                             )
+                            
+                            # If ML Evolution is enabled, use its score instead
+                            if ml_evolution is not None:
+                                evolution_score, evolution_reason, breakdown = ml_evolution.score_signal(
+                                    sym,
+                                    {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                    features
+                                )
+                                
+                                # Log evolution performance
+                                if breakdown['symbol_score'] is not None:
+                                    logger.info(f"[{sym}] Evolution: {evolution_reason}")
+                                
+                                # Use evolution score if active
+                                if ml_evolution.enabled:
+                                    ml_score = evolution_score
+                                    ml_reason = evolution_reason
                         
                             # Decide if we should take the trade
                             should_take_trade = ml_score >= ml_scorer.min_score
@@ -867,6 +912,10 @@ class TradingBot:
                                 was_executed=should_take_trade,
                                 features=features
                             )
+                            
+                            # Update ML evolution stats
+                            if ml_evolution is not None:
+                                ml_evolution.update_stats(sym, is_phantom=not should_take_trade)
                         
                             if not should_take_trade:
                                 logger.info(f"[{sym}] ML REJECTED: Score {ml_score:.1f} < {ml_scorer.min_score} | {ml_reason}")

@@ -47,6 +47,9 @@ class ImmediateMLScorer:
         # Performance tracking for threshold adaptation
         self.recent_performance = []  # Track last 20 trade outcomes
         
+        # Data cache for enhanced features (used by evolution system)
+        self.last_data_cache = {}  # symbol -> {df, btc_price}
+        
         # Initialize Redis
         self.redis_client = None
         if enabled:
@@ -254,15 +257,30 @@ class ImmediateMLScorer:
     
     def _prepare_features(self, features: dict) -> list:
         """Convert feature dict to vector for ML"""
-        # Standard feature order
+        # Standard feature order - now includes enhanced features
         feature_order = [
+            # Original features
             'trend_strength', 'higher_tf_alignment', 'ema_distance_ratio',
             'volume_ratio', 'volume_trend', 'breakout_volume',
             'support_resistance_strength', 'pullback_depth', 'confirmation_candle_strength',
             'atr_percentile', 'risk_reward_ratio', 'atr_stop_distance',
             'hour_of_day', 'day_of_week', 'candle_body_ratio', 'upper_wick_ratio',
             'lower_wick_ratio', 'candle_range_atr', 'volume_ma_ratio',
-            'rsi', 'bb_position', 'volume_percentile'
+            'rsi', 'bb_position', 'volume_percentile',
+            # Enhanced features (added when available)
+            # BTC correlation
+            'btc_corr_20', 'btc_corr_60', 'relative_strength_btc', 'btc_trend_up', 'btc_momentum_5',
+            # Volume profile
+            'distance_from_hvn', 'above_hvn', 'volume_concentration', 'vwap_distance', 'above_vwap',
+            # Market microstructure
+            'buy_pressure', 'volume_weighted_direction', 'price_acceleration', 'spread_ratio',
+            # Temporal patterns
+            'is_weekend', 'month_end', 'near_expiry', 'historical_hour_day_winrate',
+            # Volatility regime
+            'volatility_percentile_30', 'volatility_percentile_100', 'volatility_expanding', 
+            'volatility_ratio', 'volatility_spike', 'volatility_zscore',
+            # Failed signal context
+            'failed_signals_1h', 'rejections_at_level'
         ]
         
         vector = []
@@ -274,6 +292,8 @@ class ImmediateMLScorer:
                     val = {'low': 0, 'normal': 1, 'high': 2}.get(val, 1)
                 elif feat == 'session':
                     val = {'asian': 0, 'european': 1, 'us': 2, 'off_hours': 3}.get(val, 3)
+                elif isinstance(val, bool):
+                    val = 1.0 if val else 0.0
                 vector.append(float(val) if val is not None else 0)
             else:
                 vector.append(0)

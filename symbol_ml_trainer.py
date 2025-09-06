@@ -284,6 +284,17 @@ class SymbolMLTrainer:
         """Gather all available data for training"""
         all_data = []
         
+        # Initialize enhanced feature engine
+        enhanced_features_available = False
+        feature_engine = None
+        try:
+            from enhanced_features import get_feature_engine
+            feature_engine = get_feature_engine()
+            enhanced_features_available = True
+            logger.info(f"[{symbol}] Enhanced features available for training")
+        except Exception as e:
+            logger.debug(f"Enhanced features not available: {e}")
+        
         # 1. Get executed trades from database
         if self.db_conn:
             try:
@@ -308,6 +319,23 @@ class SymbolMLTrainer:
                             if isinstance(features, str):
                                 features = json.loads(features)
                             
+                            # Enhance features if available
+                            if enhanced_features_available and feature_engine:
+                                try:
+                                    # Get historical candles around trade time
+                                    trade_time = row['exit_time']
+                                    df = self._get_candles_for_time(symbol, trade_time)
+                                    if df is not None and len(df) > 0:
+                                        btc_price = self._get_btc_price_at_time(trade_time)
+                                        features = feature_engine.enhance_features(
+                                            symbol=symbol,
+                                            df=df,
+                                            current_features=features,
+                                            btc_price=btc_price
+                                        )
+                                except Exception as e:
+                                    logger.debug(f"Could not enhance historical features: {e}")
+                            
                             all_data.append({
                                 'features': features,
                                 'outcome': row['outcome'],
@@ -322,6 +350,7 @@ class SymbolMLTrainer:
         phantom_learning_data = self.phantom_tracker.get_learning_data()
         for phantom in phantom_learning_data:
             if phantom['symbol'] == symbol:
+                # Phantom features may already be enhanced if recorded recently
                 all_data.append({
                     'features': phantom['features'],
                     'outcome': phantom['outcome'],
@@ -339,6 +368,60 @@ class SymbolMLTrainer:
         all_data.sort(key=lambda x: x.get('timestamp', datetime.min), reverse=True)
         
         return all_data
+    
+    def _get_candles_for_time(self, symbol: str, trade_time: datetime, candles_before: int = 200):
+        """Get candle data around a specific time for feature enhancement"""
+        if not self.db_conn:
+            return None
+        
+        try:
+            with self.db_conn.cursor() as cur:
+                # Get candles before the trade time
+                cur.execute("""
+                    SELECT timestamp, open, high, low, close, volume
+                    FROM candles
+                    WHERE symbol = %s
+                    AND timestamp <= %s
+                    ORDER BY timestamp DESC
+                    LIMIT %s
+                """, (symbol, trade_time, candles_before))
+                
+                rows = cur.fetchall()
+                if rows:
+                    # Convert to DataFrame
+                    import pandas as pd
+                    df = pd.DataFrame(rows)
+                    df.set_index('timestamp', inplace=True)
+                    df = df.sort_index()
+                    return df
+        except Exception as e:
+            logger.debug(f"Error getting historical candles: {e}")
+        
+        return None
+    
+    def _get_btc_price_at_time(self, trade_time: datetime):
+        """Get BTC price at a specific time"""
+        if not self.db_conn:
+            return None
+        
+        try:
+            with self.db_conn.cursor() as cur:
+                cur.execute("""
+                    SELECT close
+                    FROM candles
+                    WHERE symbol = 'BTCUSDT'
+                    AND timestamp <= %s
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                """, (trade_time,))
+                
+                result = cur.fetchone()
+                if result:
+                    return float(result['close'])
+        except Exception as e:
+            logger.debug(f"Error getting BTC price: {e}")
+        
+        return None
 
 # Create trainer instance
 _symbol_trainer = None

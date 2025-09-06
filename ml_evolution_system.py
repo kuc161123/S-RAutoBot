@@ -227,54 +227,82 @@ class MLEvolutionSystem:
         return confidence
     
     def _enhance_features_with_history(self, symbol: str, features: dict) -> dict:
-        """Add historical context from PostgreSQL"""
+        """Add historical context from PostgreSQL and enhanced features"""
         enhanced = features.copy()
         
-        if not self.db_conn:
-            return enhanced
+        # First, add the original historical features
+        if self.db_conn:
+            try:
+                with self.db_conn.cursor() as cur:
+                    # Get average volume for this hour
+                    hour = datetime.now().hour
+                    cur.execute("""
+                        SELECT AVG(volume) as avg_vol
+                        FROM candles
+                        WHERE symbol = %s 
+                        AND EXTRACT(hour FROM timestamp) = %s
+                        AND timestamp > NOW() - INTERVAL '30 days'
+                    """, (symbol, hour))
+                    
+                    result = cur.fetchone()
+                    if result and result['avg_vol']:
+                        enhanced['historical_hour_volume'] = float(result['avg_vol'])
+                        enhanced['volume_vs_historical'] = features.get('volume', 0) / float(result['avg_vol'])
+                    
+                    # Get win rate at similar RSI levels
+                    current_rsi = features.get('rsi', 50)
+                    rsi_range = 5
+                    cur.execute("""
+                        SELECT 
+                            COUNT(CASE WHEN pnl_percent > 0 THEN 1 END)::float / 
+                            NULLIF(COUNT(*), 0) as win_rate
+                        FROM trades
+                        WHERE symbol = %s
+                        AND features->>'rsi' IS NOT NULL
+                        AND ABS((features->>'rsi')::float - %s) < %s
+                    """, (symbol, current_rsi, rsi_range))
+                    
+                    result = cur.fetchone()
+                    if result and result['win_rate'] is not None:
+                        enhanced['historical_rsi_win_rate'] = float(result['win_rate'])
+                    
+            except Exception as e:
+                logger.warning(f"Error enhancing features for {symbol}: {e}")
         
+        # Now add the comprehensive enhanced features
         try:
-            with self.db_conn.cursor() as cur:
-                # Get average volume for this hour
-                hour = datetime.now().hour
-                cur.execute("""
-                    SELECT AVG(volume) as avg_vol
-                    FROM candles
-                    WHERE symbol = %s 
-                    AND EXTRACT(hour FROM timestamp) = %s
-                    AND timestamp > NOW() - INTERVAL '30 days'
-                """, (symbol, hour))
-                
-                result = cur.fetchone()
-                if result and result['avg_vol']:
-                    enhanced['historical_hour_volume'] = float(result['avg_vol'])
-                    enhanced['volume_vs_historical'] = features.get('volume', 0) / float(result['avg_vol'])
-                
-                # Get win rate at similar RSI levels
-                current_rsi = features.get('rsi', 50)
-                rsi_range = 5
-                cur.execute("""
-                    SELECT 
-                        COUNT(CASE WHEN pnl_percent > 0 THEN 1 END)::float / 
-                        NULLIF(COUNT(*), 0) as win_rate
-                    FROM trades
-                    WHERE symbol = %s
-                    AND features->>'rsi' IS NOT NULL
-                    AND ABS((features->>'rsi')::float - %s) < %s
-                """, (symbol, current_rsi, rsi_range))
-                
-                result = cur.fetchone()
-                if result and result['win_rate'] is not None:
-                    enhanced['historical_rsi_win_rate'] = float(result['win_rate'])
-                
+            from enhanced_features import get_feature_engine
+            feature_engine = get_feature_engine()
+            
+            # Need DataFrame context for enhanced features
+            # Get it from the scorer's stored data if available
+            df = None
+            btc_price = None
+            
+            if hasattr(self.general_scorer, 'last_data_cache'):
+                cache = self.general_scorer.last_data_cache.get(symbol)
+                if cache:
+                    df = cache.get('df')
+                    btc_price = cache.get('btc_price')
+            
+            if df is not None:
+                # Get all enhanced features
+                enhanced = feature_engine.enhance_features(
+                    symbol=symbol,
+                    df=df,
+                    current_features=enhanced,
+                    btc_price=btc_price
+                )
+                logger.debug(f"[{symbol}] Added enhanced features: {len(enhanced)} total features")
+            
         except Exception as e:
-            logger.warning(f"Error enhancing features for {symbol}: {e}")
+            logger.debug(f"Enhanced features not applied for {symbol}: {e}")
         
         return enhanced
     
     def _prepare_features(self, features: dict) -> list:
-        """Convert features to vector (same format as general model)"""
-        # This should match the feature order in ml_signal_scorer_immediate.py
+        """Convert features to vector (same format as general model + enhanced features)"""
+        # Original features from general model
         feature_order = [
             'trend_strength', 'higher_tf_alignment', 'ema_distance_ratio',
             'volume_ratio', 'volume_trend', 'breakout_volume',
@@ -283,8 +311,21 @@ class MLEvolutionSystem:
             'hour_of_day', 'day_of_week', 'candle_body_ratio', 'upper_wick_ratio',
             'lower_wick_ratio', 'candle_range_atr', 'volume_ma_ratio',
             'rsi', 'bb_position', 'volume_percentile',
-            # New historical features
-            'historical_hour_volume', 'volume_vs_historical', 'historical_rsi_win_rate'
+            # Historical features
+            'historical_hour_volume', 'volume_vs_historical', 'historical_rsi_win_rate',
+            # BTC correlation features
+            'btc_corr_20', 'btc_corr_60', 'relative_strength_btc', 'btc_trend_up', 'btc_momentum_5',
+            # Volume profile features
+            'distance_from_hvn', 'above_hvn', 'volume_concentration', 'vwap_distance', 'above_vwap',
+            # Market microstructure
+            'buy_pressure', 'volume_weighted_direction', 'price_acceleration', 'spread_ratio',
+            # Temporal patterns
+            'is_weekend', 'month_end', 'near_expiry', 'historical_hour_day_winrate',
+            # Volatility regime
+            'volatility_percentile_30', 'volatility_percentile_100', 'volatility_expanding', 
+            'volatility_ratio', 'volatility_spike', 'volatility_zscore',
+            # Failed signal context
+            'failed_signals_1h', 'rejections_at_level'
         ]
         
         vector = []
@@ -296,6 +337,8 @@ class MLEvolutionSystem:
                     val = {'low': 0, 'normal': 1, 'high': 2}.get(val, 1)
                 elif feat == 'session':
                     val = {'asian': 0, 'european': 1, 'us': 2, 'off_hours': 3}.get(val, 3)
+                elif isinstance(val, bool):
+                    val = 1.0 if val else 0.0
                 vector.append(float(val) if val is not None else 0)
             else:
                 vector.append(0)

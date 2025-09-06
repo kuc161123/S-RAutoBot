@@ -881,6 +881,37 @@ class TradingBot:
                         
                             features = calculate_ml_features(df, state, sig.side, retracement)
                         
+                            # Enhance features if available
+                            try:
+                                from enhanced_features import get_feature_engine
+                                feature_engine = get_feature_engine()
+                                
+                                btc_price = None
+                                if 'BTCUSDT' in self.frames and not self.frames['BTCUSDT'].empty:
+                                    btc_price = self.frames['BTCUSDT']['close'].iloc[-1]
+                                
+                                # Enhance features with all the advanced metrics
+                                features = feature_engine.enhance_features(
+                                    symbol=sym,
+                                    df=df,
+                                    current_features=features,
+                                    btc_price=btc_price
+                                )
+                                logger.debug(f"[{sym}] Enhanced features added: {len(features)} total features")
+                            except Exception as e:
+                                logger.debug(f"[{sym}] Enhanced features not applied: {e}")
+                        
+                            # Cache DataFrame and BTC price for ML evolution
+                            if hasattr(ml_scorer, 'last_data_cache'):
+                                btc_price = None
+                                if 'BTCUSDT' in self.frames and not self.frames['BTCUSDT'].empty:
+                                    btc_price = self.frames['BTCUSDT']['close'].iloc[-1]
+                                
+                                ml_scorer.last_data_cache[sym] = {
+                                    'df': df,
+                                    'btc_price': btc_price
+                                }
+                            
                             # Get ML score
                             ml_score, ml_reason = ml_scorer.score_signal(
                                 {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
@@ -935,6 +966,16 @@ class TradingBot:
                         
                             if not should_take_trade:
                                 logger.info(f"[{sym}] ML REJECTED: Score {ml_score:.1f} < {ml_scorer.min_score} | {ml_reason}")
+                                # Record failed signal for enhanced features context
+                                try:
+                                    if 'feature_engine' in locals():
+                                        feature_engine.record_failed_signal(
+                                            symbol=sym,
+                                            price=sig.entry,
+                                            reason=f"ML Score {ml_score:.1f}"
+                                        )
+                                except Exception as e:
+                                    logger.debug(f"Failed to record signal rejection: {e}")
                                 continue
                             else:
                                 logger.info(f"[{sym}] ML APPROVED: Score {ml_score:.1f} | {ml_reason}")

@@ -743,7 +743,7 @@ class TGBot:
                 msg += "ML scoring is either:\n"
                 msg += "• Disabled in config\n"
                 msg += "• Not initialized yet\n\n"
-                msg += "To enable: Set `use_ml_scoring: true` in config"
+                msg += "To enable: Set `use\\_ml\\_scoring: true` in config"
             else:
                 # Get ML stats - handle both immediate and old scorer
                 try:
@@ -830,7 +830,17 @@ class TGBot:
                     logger.error(f"Error getting ML stats: {e}")
                     msg += "⚠️ Error retrieving ML statistics\n"
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            # Try to send with markdown, fallback to plain text if fails
+            try:
+                await update.message.reply_text(msg, parse_mode='Markdown')
+            except telegram.error.BadRequest as e:
+                if "can't parse entities" in str(e).lower():
+                    logger.warning(f"ML stats markdown parsing failed, sending plain text")
+                    # Remove markdown formatting
+                    plain_msg = msg.replace('*', '').replace('_', '').replace('`', '')
+                    await update.message.reply_text(plain_msg)
+                else:
+                    raise
             
         except Exception as e:
             logger.error(f"Error in ml_stats: {e}")

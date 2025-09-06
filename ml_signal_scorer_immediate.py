@@ -32,13 +32,14 @@ class ImmediateMLScorer:
     
     # Learning parameters
     MIN_TRADES_FOR_ML = 10  # Start using ML models after just 10 trades
-    RETRAIN_INTERVAL = 5   # Retrain every 5 new trades for rapid learning
+    RETRAIN_INTERVAL = 20  # Retrain every 20 combined trades to prevent whipsaws
     INITIAL_THRESHOLD = 55  # Start lenient, will adapt based on performance
     
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
         self.min_score = self.INITIAL_THRESHOLD  # Start lenient
         self.completed_trades = 0
+        self.last_train_count = 0  # Track total trades at last training
         self.models = {}  # Will hold ensemble models
         self.scaler = StandardScaler()
         self.is_ml_ready = False
@@ -77,6 +78,10 @@ class ImmediateMLScorer:
             # Load completed trades count
             count = self.redis_client.get('iml:completed_trades')
             self.completed_trades = int(count) if count else 0
+            
+            # Load last train count
+            last_train = self.redis_client.get('iml:last_train_count')
+            self.last_train_count = int(last_train) if last_train else 0
             
             # Load threshold
             threshold = self.redis_client.get('iml:threshold')
@@ -294,10 +299,23 @@ class ImmediateMLScorer:
         
         self._store_trade(trade_record)
         
-        # Retrain if interval reached
+        # Check if we should retrain based on combined trades
         if self.completed_trades >= self.MIN_TRADES_FOR_ML:
-            if self.completed_trades % self.RETRAIN_INTERVAL == 0:
+            # Get total combined trade count (executed + phantom)
+            total_combined = self.completed_trades
+            try:
+                from phantom_trade_tracker import get_phantom_tracker
+                phantom_tracker = get_phantom_tracker()
+                phantom_count = sum(len(trades) for trades in phantom_tracker.phantom_trades.values())
+                total_combined = self.completed_trades + phantom_count
+            except:
+                pass  # Use executed trades only if phantom tracker not available
+            
+            # Retrain if we've had RETRAIN_INTERVAL new trades since last training
+            if total_combined - self.last_train_count >= self.RETRAIN_INTERVAL:
+                logger.info(f"Retraining triggered: {total_combined - self.last_train_count} new trades since last training")
                 self._retrain_models()
+                self.last_train_count = total_combined
                 
     def _adapt_threshold(self):
         """Adapt scoring threshold based on recent performance"""
@@ -330,6 +348,9 @@ class ImmediateMLScorer:
                 self.redis_client.set('iml:completed_trades', str(self.completed_trades))
                 # Update recent performance
                 self.redis_client.set('iml:recent_performance', json.dumps(self.recent_performance))
+                # Save last train count when it changes
+                if hasattr(self, 'last_train_count'):
+                    self.redis_client.set('iml:last_train_count', str(self.last_train_count))
             else:
                 # Use memory storage
                 if 'trades' not in self.memory_storage:
@@ -346,24 +367,55 @@ class ImmediateMLScorer:
         try:
             logger.info(f"Retraining ML models with {self.completed_trades} trades...")
             
-            # Get trade data
+            # Get executed trade data
             trades = []
             if self.redis_client:
                 trade_data = self.redis_client.lrange('iml:trades', 0, -1)
                 trades = [json.loads(t) for t in trade_data]
             else:
                 trades = self.memory_storage.get('trades', [])
-                
-            if len(trades) < self.MIN_TRADES_FOR_ML:
+            
+            # Get phantom trade data
+            phantom_data = []
+            try:
+                from phantom_trade_tracker import get_phantom_tracker
+                phantom_tracker = get_phantom_tracker()
+                phantom_data = phantom_tracker.get_learning_data()
+                logger.info(f"Including {len(phantom_data)} phantom trades in training")
+            except Exception as e:
+                logger.warning(f"Could not get phantom data: {e}")
+            
+            # Combine all data
+            all_training_data = []
+            
+            # Add executed trades
+            for trade in trades:
+                all_training_data.append({
+                    'features': trade['features'],
+                    'outcome': 1 if trade.get('outcome') == 'win' else 0,
+                    'was_executed': True
+                })
+            
+            # Add phantom trades
+            for phantom in phantom_data:
+                all_training_data.append({
+                    'features': phantom['features'],
+                    'outcome': phantom['outcome'],
+                    'was_executed': phantom['was_executed']
+                })
+            
+            total_data = len(all_training_data)
+            if total_data < self.MIN_TRADES_FOR_ML:
+                logger.info(f"Not enough data yet: {total_data}/{self.MIN_TRADES_FOR_ML}")
                 return
                 
             # Prepare training data
             X = []
             y = []
             
-            for trade in trades:
-                features = trade['features']
-                outcome = 1 if trade.get('outcome') == 'win' else 0
+            for data in all_training_data:
+                features = data['features']
+                outcome = data['outcome']
                 
                 feature_vector = self._prepare_features(features)
                 X.append(feature_vector)
@@ -371,6 +423,11 @@ class ImmediateMLScorer:
                 
             X = np.array(X)
             y = np.array(y)
+            
+            # Log data composition
+            executed_count = sum(1 for d in all_training_data if d['was_executed'])
+            phantom_count = total_data - executed_count
+            logger.info(f"Training on {total_data} total trades: {executed_count} executed, {phantom_count} phantom")
             
             # Fit scaler
             self.scaler.fit(X)
@@ -419,7 +476,12 @@ class ImmediateMLScorer:
                 model_data = base64.b64encode(pickle.dumps(self.models)).decode('ascii')
                 self.redis_client.set('iml:models', model_data)
                 
-            logger.info(f"ML models trained successfully! Win rate: {np.mean(y)*100:.1f}%")
+            # Calculate win rates
+            overall_wr = np.mean(y) * 100
+            executed_wr = np.mean([all_training_data[i]['outcome'] for i in range(len(all_training_data)) if all_training_data[i]['was_executed']])
+            phantom_wr = np.mean([all_training_data[i]['outcome'] for i in range(len(all_training_data)) if not all_training_data[i]['was_executed']])
+            
+            logger.info(f"ML models trained successfully! Overall WR: {overall_wr:.1f}% | Executed: {executed_wr*100:.1f}% | Phantom: {phantom_wr*100:.1f}%")
             
         except Exception as e:
             logger.error(f"Model training failed: {e}")

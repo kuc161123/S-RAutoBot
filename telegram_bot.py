@@ -34,6 +34,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("ml_stats", self.ml_stats))
         self.app.add_handler(CommandHandler("mlrankings", self.ml_rankings))
         self.app.add_handler(CommandHandler("mlpatterns", self.ml_patterns))
+        self.app.add_handler(CommandHandler("mlretrain", self.ml_retrain_info))
         self.app.add_handler(CommandHandler("reset_stats", self.reset_stats))
         self.app.add_handler(CommandHandler("phantom", self.phantom_stats))
         self.app.add_handler(CommandHandler("phantom_detail", self.phantom_detail))
@@ -137,6 +138,7 @@ class TGBot:
 /recent [limit] - Recent trades history
 /ml or /ml_stats - ML system status
 /mlpatterns - Detailed ML pattern analysis
+/mlretrain - ML retrain countdown
 /mlrankings - Symbol performance rankings
 /phantom - Phantom trade statistics
 /phantom_detail [symbol] - Symbol phantom stats
@@ -1730,3 +1732,86 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in ml_patterns: {e}")
             await update.message.reply_text("Error getting ML patterns")
+    
+    async def ml_retrain_info(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show ML retrain countdown information"""
+        try:
+            msg = "🔄 *ML Retrain Status*\n"
+            msg += "━" * 25 + "\n\n"
+            
+            # Check if ML scorer is available
+            ml_scorer = self.shared.get("ml_scorer")
+            
+            if not ml_scorer or not hasattr(ml_scorer, 'get_retrain_info'):
+                msg += "❌ *ML System Not Available*\n\n"
+                msg += "ML retraining info requires:\n"
+                msg += "• ML system enabled\n"
+                msg += "• Bot running with ML\n"
+                await self.safe_reply(update, msg)
+                return
+            
+            # Get retrain info
+            info = ml_scorer.get_retrain_info()
+            
+            # Current status
+            msg += "📊 *Current Status*\n"
+            msg += f"• ML Ready: {'✅ Yes' if info['is_ml_ready'] else '❌ No'}\n"
+            msg += f"• Executed trades: {info['completed_trades']}\n"
+            msg += f"• Phantom trades: {info['phantom_count']}\n"
+            msg += f"• Combined total: {info['total_combined']}\n"
+            msg += "\n"
+            
+            # Training history
+            if info['is_ml_ready']:
+                msg += "📈 *Training History*\n"
+                msg += f"• Last trained at: {info['last_train_count']} trades\n"
+                trades_since = info['total_combined'] - info['last_train_count']
+                msg += f"• Trades since last: {trades_since}\n"
+                msg += "\n"
+            
+            # Next retrain countdown
+            msg += "⏳ *Next Retrain*\n"
+            if info['trades_until_next_retrain'] == 0:
+                if info['is_ml_ready']:
+                    msg += "🟢 **Ready to retrain!**\n"
+                    msg += "Will retrain on next trade completion\n"
+                else:
+                    msg += "🟢 **Ready for initial training!**\n"
+                    msg += "Will train on next trade completion\n"
+            else:
+                msg += f"• Trades needed: **{info['trades_until_next_retrain']}**\n"
+                msg += f"• Will retrain at: {info['next_retrain_at']} total trades\n"
+                
+                # Progress bar
+                if info['is_ml_ready']:
+                    progress = (20 - info['trades_until_next_retrain']) / 20 * 100
+                else:
+                    progress = (10 - info['trades_until_next_retrain']) / 10 * 100
+                
+                progress = max(0, min(100, progress))
+                filled = int(progress / 10)
+                bar = '█' * filled + '░' * (10 - filled)
+                msg += f"• Progress: {bar} {progress:.0f}%\n"
+            
+            msg += "\n"
+            
+            # Info about retraining
+            msg += "ℹ️ *Retrain Info*\n"
+            if not info['is_ml_ready']:
+                msg += f"• Initial training after {ml_scorer.MIN_TRADES_FOR_ML} trades\n"
+            msg += f"• Retrain interval: Every {ml_scorer.RETRAIN_INTERVAL} trades\n"
+            msg += "• Both executed and phantom trades count\n"
+            msg += "• Models improve with each retrain\n"
+            msg += "\n"
+            
+            # Commands
+            msg += "⚡ *Commands*\n"
+            msg += "• `/force_retrain` - Force immediate retrain\n"
+            msg += "• `/ml` - View ML status\n"
+            msg += "• `/phantom` - View phantom trades"
+            
+            await self.safe_reply(update, msg)
+            
+        except Exception as e:
+            logger.error(f"Error in ml_retrain_info: {e}")
+            await update.message.reply_text("Error getting ML retrain info")

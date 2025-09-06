@@ -567,6 +567,43 @@ class ImmediateMLScorer:
             
         return stats
     
+    def get_retrain_info(self) -> dict:
+        """Get information about next retrain"""
+        info = {
+            'is_ml_ready': self.is_ml_ready,
+            'completed_trades': self.completed_trades,
+            'last_train_count': self.last_train_count,
+            'phantom_count': 0,
+            'total_combined': self.completed_trades,
+            'trades_until_next_retrain': 0,
+            'next_retrain_at': 0,
+            'can_train': False
+        }
+        
+        # Get phantom trade count
+        try:
+            from phantom_trade_tracker import get_phantom_tracker
+            phantom_tracker = get_phantom_tracker()
+            phantom_count = sum(len(trades) for trades in phantom_tracker.phantom_trades.values())
+            info['phantom_count'] = phantom_count
+            info['total_combined'] = self.completed_trades + phantom_count
+        except:
+            pass
+        
+        # Calculate retrain info
+        if not self.is_ml_ready:
+            # Not trained yet
+            info['can_train'] = info['total_combined'] >= self.MIN_TRADES_FOR_ML
+            info['trades_until_next_retrain'] = max(0, self.MIN_TRADES_FOR_ML - info['total_combined'])
+            info['next_retrain_at'] = self.MIN_TRADES_FOR_ML
+        else:
+            # Already trained, calculate next retrain
+            trades_since_last = info['total_combined'] - self.last_train_count
+            info['trades_until_next_retrain'] = max(0, self.RETRAIN_INTERVAL - trades_since_last)
+            info['next_retrain_at'] = self.last_train_count + self.RETRAIN_INTERVAL
+        
+        return info
+    
     def force_retrain_models(self):
         """Force clear and retrain models to reset feature expectations"""
         logger.info("Force clearing ML models and scaler for clean retrain")

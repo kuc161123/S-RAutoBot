@@ -84,13 +84,38 @@ class TGBot:
                 logger.error(f"Failed to send message: {e}")
         except Exception as e:
             logger.error(f"Failed to send message: {e}")
+    
+    async def safe_reply(self, update: Update, text: str, parse_mode: str = 'Markdown'):
+        """Safely reply to a message with automatic fallback"""
+        try:
+            await update.message.reply_text(text, parse_mode=parse_mode)
+        except telegram.error.BadRequest as e:
+            if "can't parse entities" in str(e).lower():
+                logger.warning(f"Markdown parsing failed in reply, trying escaped")
+                try:
+                    # More comprehensive escaping
+                    escaped_text = text
+                    # Escape special markdown characters
+                    for char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
+                        escaped_text = escaped_text.replace(char, f'\\{char}')
+                    await update.message.reply_text(escaped_text, parse_mode=parse_mode)
+                except Exception as e2:
+                    # Final fallback to plain text
+                    logger.warning(f"Escaped markdown also failed ({e2}), replying as plain text")
+                    # Remove all markdown formatting
+                    plain_text = text
+                    for char in ['*', '_', '`', '~']:
+                        plain_text = plain_text.replace(char, '')
+                    await update.message.reply_text(plain_text, parse_mode=None)
+            else:
+                # Re-raise other errors
+                raise
 
     async def start(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Start command handler"""
-        await update.message.reply_text(
+        await self.safe_reply(update,
             "🤖 *Trading Bot Active*\n\n"
-            "Use /help to see available commands.",
-            parse_mode='Markdown'
+            "Use /help to see available commands."
         )
 
     async def help(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
@@ -138,7 +163,7 @@ class TGBot:
             f"{self.shared['risk'].risk_percent}%" if self.shared["risk"].use_percent_risk else f"${self.shared['risk'].risk_usd}",
             self.shared["risk"].max_leverage
         )
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        await self.safe_reply(update, help_text)
 
     async def show_risk(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show current risk settings"""
@@ -177,7 +202,7 @@ class TGBot:
 `/risk_usd 100` - Set to $100
 `/set_risk 3%` or `/set_risk 50` - Flexible"""
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            await self.safe_reply(update, msg)
             
         except Exception as e:
             logger.error(f"Error in show_risk: {e}")
@@ -331,7 +356,7 @@ class TGBot:
                 msg += f"Risk per trade: ${self.shared['risk'].risk_usd}\n"
                 msg += f"Max positions: Unlimited\n"
                 msg += f"\n_Bot is actively scanning {len(self.shared.get('frames', {}))} symbols_"
-                await update.message.reply_text(msg, parse_mode='Markdown')
+                await self.safe_reply(update, msg)
                 return
                 
             msg = "📊 *Open Positions*\n"
@@ -364,7 +389,7 @@ class TGBot:
             msg += f"*Total positions:* {len(bk)}\n"
             msg += f"*Risk exposure:* ${len(bk) * self.shared['risk'].risk_usd}"
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            await self.safe_reply(update, msg)
             
         except Exception as e:
             logger.error(f"Error in status: {e}")
@@ -377,7 +402,7 @@ class TGBot:
             if broker:
                 balance = broker.get_balance()
                 if balance:
-                    await update.message.reply_text(f"💰 *Balance:* ${balance:.2f} USDT", parse_mode='Markdown')
+                    await self.safe_reply(update, f"💰 *Balance:* ${balance:.2f} USDT")
                 else:
                     await update.message.reply_text("Unable to fetch balance")
             else:
@@ -450,7 +475,7 @@ class TGBot:
                 msg += "⚠️ *Data Reception:* No data yet\n"
                 msg += "Bot is starting up..."
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            await self.safe_reply(update, msg)
             
         except Exception as e:
             logger.error(f"Error in health: {e}")
@@ -479,7 +504,7 @@ class TGBot:
             msg += "\n*Timeframe:* 15 minutes"
             msg += "\n*Strategy:* Support/Resistance Breakout"
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            await self.safe_reply(update, msg)
             
         except Exception as e:
             logger.error(f"Error in symbols: {e}")
@@ -585,7 +610,7 @@ class TGBot:
             
             msg += "\n_Use /help for all commands_"
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            await self.safe_reply(update, msg)
             
         except Exception as e:
             logger.error(f"Error in dashboard: {e}")
@@ -648,7 +673,7 @@ class TGBot:
             
             msg += "_Use /analysis SYMBOL for specific pair_"
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            await self.safe_reply(update, msg)
             
         except Exception as e:
             logger.error(f"Error in analysis: {e}")
@@ -673,7 +698,7 @@ class TGBot:
             
             # Get formatted statistics
             msg = tracker.format_stats_message(days)
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            await self.safe_reply(update, msg)
             
         except Exception as e:
             logger.error(f"Error in stats: {e}")
@@ -740,7 +765,7 @@ class TGBot:
                 
                 msg += f"\n_Showing last {min(limit, len(trades))} trades_"
                 
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            await self.safe_reply(update, msg)
             
         except Exception as e:
             logger.error(f"Error in recent_trades: {e}")
@@ -849,7 +874,7 @@ class TGBot:
             
             # Try to send with markdown, fallback to plain text if fails
             try:
-                await update.message.reply_text(msg, parse_mode='Markdown')
+                await self.safe_reply(update, msg)
             except telegram.error.BadRequest as e:
                 if "can't parse entities" in str(e).lower():
                     logger.warning(f"ML stats markdown parsing failed, sending plain text")
@@ -963,7 +988,7 @@ class TGBot:
                 response += "📊 /stats - View statistics\n"
                 response += "🤖 /ml - Check ML status"
             
-            await update.message.reply_text(response, parse_mode='Markdown')
+            await self.safe_reply(update, response)
             
         except Exception as e:
             logger.error(f"Error resetting stats: {e}")
@@ -1147,7 +1172,7 @@ class TGBot:
             
             msg += "\n_Refresh with /mlrankings_"
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            await self.safe_reply(update, msg)
             
         except Exception as e:
             logger.error(f"Error in ml_rankings: {e}")
@@ -1229,7 +1254,7 @@ class TGBot:
             
             # Send message with proper escaping
             try:
-                await update.message.reply_text(msg, parse_mode='Markdown')
+                await self.safe_reply(update, msg)
             except Exception as parse_error:
                 # If markdown fails, send without formatting
                 logger.warning(f"Markdown parsing failed: {parse_error}")
@@ -1282,7 +1307,7 @@ class TGBot:
             if stats['total'] == 0:
                 msg += f"No phantom trades recorded for {symbol}\n"
                 msg += "\n_Try another symbol or wait for more signals_"
-                await update.message.reply_text(msg, parse_mode='Markdown')
+                await self.safe_reply(update, msg)
                 return
             
             # Overview for this symbol
@@ -1355,7 +1380,7 @@ class TGBot:
                 msg += "• Gathering more data\n"
                 msg += "• Patterns emerging\n"
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            await self.safe_reply(update, msg)
             
         except Exception as e:
             logger.error(f"Error in phantom_detail: {e}")
@@ -1425,7 +1450,7 @@ class TGBot:
                 
                 msg += "_Shadow mode continues learning..._"
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            await self.safe_reply(update, msg)
             
         except Exception as e:
             logger.error(f"Error in evolution_performance: {e}")
@@ -1473,7 +1498,7 @@ class TGBot:
             msg += "• `/ml` - Check ML status\n"
             msg += "• `/stats` - View trading stats"
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            await self.safe_reply(update, msg)
             
         except Exception as e:
             logger.error(f"Error in force_retrain_ml: {e}")

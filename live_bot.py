@@ -271,9 +271,16 @@ class TradingBot:
                             avg_price_str = order.get("avgPrice", 0)
                             exit_price = float(avg_price_str) if avg_price_str and avg_price_str != "" else 0
                             
+                            # Log order details for debugging
+                            logger.debug(f"[{symbol}] Found filled reduceOnly order: avgPrice={avg_price_str}, triggerPrice={order.get('triggerPrice')}, orderType={order.get('orderType')}")
+                            
                             # Determine if it was TP or SL based on trigger price
                             trigger_price_str = order.get("triggerPrice", 0)
                             trigger_price = float(trigger_price_str) if trigger_price_str and trigger_price_str != "" else 0
+                            
+                            # Also check orderType for better detection
+                            order_type = order.get("orderType", "")
+                            
                             if trigger_price > 0:
                                 if pos.side == "long":
                                     if trigger_price >= pos.tp * 0.98:  # Within 2% of TP
@@ -286,22 +293,38 @@ class TradingBot:
                                     elif trigger_price >= pos.sl * 0.98:
                                         exit_reason = "sl"
                             
+                            # Check orderType as fallback
+                            if exit_reason == "unknown":
+                                if "TakeProfit" in order_type:
+                                    exit_reason = "tp"
+                                elif "StopLoss" in order_type:
+                                    exit_reason = "sl"
+                            
                             # If no trigger price, check exit price vs targets
                             if exit_reason == "unknown" and exit_price > 0:
+                                # Log position targets for debugging
+                                logger.debug(f"[{symbol}] Checking exit price {exit_price:.4f} vs targets - TP: {pos.tp:.4f}, SL: {pos.sl:.4f}, Side: {pos.side}")
+                                
                                 if pos.side == "long":
                                     if exit_price >= pos.tp * 0.98:
                                         exit_reason = "tp"
+                                        logger.debug(f"[{symbol}] Long TP hit: exit {exit_price:.4f} >= TP {pos.tp:.4f} * 0.98")
                                     elif exit_price <= pos.sl * 1.02:
                                         exit_reason = "sl"
+                                        logger.debug(f"[{symbol}] Long SL hit: exit {exit_price:.4f} <= SL {pos.sl:.4f} * 1.02")
                                     else:
                                         exit_reason = "manual"
+                                        logger.debug(f"[{symbol}] Long manual close: exit {exit_price:.4f} between SL {pos.sl:.4f} and TP {pos.tp:.4f}")
                                 else:  # short
                                     if exit_price <= pos.tp * 1.02:
                                         exit_reason = "tp"
+                                        logger.debug(f"[{symbol}] Short TP hit: exit {exit_price:.4f} <= TP {pos.tp:.4f} * 1.02")
                                     elif exit_price >= pos.sl * 0.98:
                                         exit_reason = "sl"
+                                        logger.debug(f"[{symbol}] Short SL hit: exit {exit_price:.4f} >= SL {pos.sl:.4f} * 0.98")
                                     else:
                                         exit_reason = "manual"
+                                        logger.debug(f"[{symbol}] Short manual close: exit {exit_price:.4f} between TP {pos.tp:.4f} and SL {pos.sl:.4f}")
                             break
                     
                     # Only add to confirmed closed if we found evidence
@@ -356,51 +379,80 @@ class TradingBot:
                     
                     # Update ML scorer for all closed positions
                     if ml_scorer is not None:
-                        if exit_reason in ["tp", "sl"]:  # Clear TP/SL hits
-                            try:
-                                # Calculate P&L percentage
-                                if pos.side == "long":
-                                    pnl_pct = ((exit_price - pos.entry) / pos.entry) * 100
-                                    # Debug logging for incorrect P&L
-                                    if exit_price > pos.entry and pnl_pct < 0:
-                                        logger.error(f"[{symbol}] CALCULATION ERROR: Long position exit {exit_price:.4f} > entry {pos.entry:.4f} but P&L is {pnl_pct:.2f}%")
-                                else:
-                                    pnl_pct = ((pos.entry - exit_price) / pos.entry) * 100
-                                    # Debug logging for incorrect P&L
-                                    if exit_price < pos.entry and pnl_pct < 0:
-                                        logger.error(f"[{symbol}] CALCULATION ERROR: Short position exit {exit_price:.4f} < entry {pos.entry:.4f} but P&L is {pnl_pct:.2f}%")
-                                
-                                # CRITICAL FIX: Use actual P&L to determine win/loss, not exit_reason
-                                # Negative P&L is ALWAYS a loss, positive is ALWAYS a win
-                                outcome = "win" if pnl_pct > 0 else "loss"
-                                
-                                # Log warning if exit_reason doesn't match P&L
-                                if (exit_reason == "tp" and pnl_pct < 0):
+                        # Always record outcome for ML learning (not just TP/SL)
+                        # This ensures we learn from ALL trades including manual closes
+                        try:
+                            # Calculate P&L percentage
+                            if pos.side == "long":
+                                pnl_pct = ((exit_price - pos.entry) / pos.entry) * 100
+                                # Debug logging for incorrect P&L
+                                if exit_price > pos.entry and pnl_pct < 0:
+                                    logger.error(f"[{symbol}] CALCULATION ERROR: Long position exit {exit_price:.4f} > entry {pos.entry:.4f} but P&L is {pnl_pct:.2f}%")
+                            else:
+                                pnl_pct = ((pos.entry - exit_price) / pos.entry) * 100
+                                # Debug logging for incorrect P&L
+                                if exit_price < pos.entry and pnl_pct < 0:
+                                    logger.error(f"[{symbol}] CALCULATION ERROR: Short position exit {exit_price:.4f} < entry {pos.entry:.4f} but P&L is {pnl_pct:.2f}%")
+                            
+                            # CRITICAL FIX: Use actual P&L to determine win/loss, not exit_reason
+                            # Negative P&L is ALWAYS a loss, positive is ALWAYS a win
+                            outcome = "win" if pnl_pct > 0 else "loss"
+                            
+                            # Log warning if exit_reason doesn't match P&L for TP/SL
+                            if exit_reason == "tp":
+                                if pnl_pct < 0:
                                     logger.warning(f"[{symbol}] TP hit but negative P&L! Side: {pos.side}, Exit: {exit_price:.4f}, Entry: {pos.entry:.4f}, P&L: {pnl_pct:.2f}%")
-                                elif (exit_reason == "sl" and pnl_pct > 0):
+                                    exit_reason = "sl"  # Correct the exit reason based on actual P&L
+                            elif exit_reason == "sl":
+                                if pnl_pct > 0:
                                     logger.warning(f"[{symbol}] SL hit but positive P&L! Exit: {exit_price:.4f}, Entry: {pos.entry:.4f}, P&L: {pnl_pct:.2f}%")
-                                
-                                # Create signal data for ML recording
-                                signal_data = {
-                                    'symbol': symbol,
-                                    'features': {},  # Features were stored during signal detection
-                                    'score': 0  # Will be filled from phantom tracker if available
-                                }
-                                
-                                # Record outcome in ML scorer
-                                ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                
-                                # Also record in ML evolution if available
-                                if ml_evolution is not None:
-                                    ml_evolution.record_outcome(symbol, outcome == "win", pnl_pct)
-                                # Log with clear outcome based on actual P&L
-                                actual_result = "WIN" if pnl_pct > 0 else "LOSS"
-                                logger.info(f"[{symbol}] ML updated: {actual_result} ({pnl_pct:.2f}%) - Exit trigger: {exit_reason.upper()}")
-                                
-                            except Exception as e:
-                                logger.error(f"Failed to update ML outcome: {e}")
-                        else:
-                            logger.info(f"[{symbol}] Closed {exit_reason} - recording as neutral for ML")
+                                    exit_reason = "tp"  # Correct the exit reason based on actual P&L
+                            
+                            # For manual closes, try to determine if it was more like TP or SL based on P&L
+                            if exit_reason == "manual":
+                                # Check if the position's SL/TP values are valid
+                                if pos.sl > 0 and pos.tp > 0:
+                                    # For manual, still check proximity to targets
+                                    if pos.side == "long":
+                                        # If closer to TP than SL and profitable, likely a partial TP
+                                        tp_distance = abs(exit_price - pos.tp)
+                                        sl_distance = abs(exit_price - pos.sl)
+                                        if tp_distance < sl_distance and pnl_pct > 0:
+                                            logger.info(f"[{symbol}] Manual close near TP with profit - treating as TP for ML")
+                                            exit_reason = "tp"
+                                        elif sl_distance < tp_distance and pnl_pct < 0:
+                                            logger.info(f"[{symbol}] Manual close near SL with loss - treating as SL for ML")
+                                            exit_reason = "sl"
+                                    else:  # short
+                                        tp_distance = abs(exit_price - pos.tp)
+                                        sl_distance = abs(exit_price - pos.sl)
+                                        if tp_distance < sl_distance and pnl_pct > 0:
+                                            logger.info(f"[{symbol}] Manual close near TP with profit - treating as TP for ML")
+                                            exit_reason = "tp"
+                                        elif sl_distance < tp_distance and pnl_pct < 0:
+                                            logger.info(f"[{symbol}] Manual close near SL with loss - treating as SL for ML")
+                                            exit_reason = "sl"
+                            
+                            # Create signal data for ML recording
+                            signal_data = {
+                                'symbol': symbol,
+                                'features': {},  # Features were stored during signal detection
+                                'score': 0  # Will be filled from phantom tracker if available
+                            }
+                            
+                            # Record outcome in ML scorer - now for ALL trades
+                            ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                            
+                            # Also record in ML evolution if available
+                            if ml_evolution is not None:
+                                ml_evolution.record_outcome(symbol, outcome == "win", pnl_pct)
+                            
+                            # Log with clear outcome based on actual P&L and corrected exit reason
+                            actual_result = "WIN" if pnl_pct > 0 else "LOSS"
+                            logger.info(f"[{symbol}] ML updated: {actual_result} ({pnl_pct:.2f}%) - Exit trigger: {exit_reason.upper()}")
+                            
+                        except Exception as e:
+                            logger.error(f"Failed to update ML outcome: {e}")
                     
                     # Log position details for debugging
                     logger.debug(f"[{symbol}] Closed position details: side={pos.side}, entry={pos.entry:.4f}, exit={exit_price:.4f}, TP={pos.tp:.4f}, SL={pos.sl:.4f}, exit_reason={exit_reason}")

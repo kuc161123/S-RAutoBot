@@ -310,6 +310,9 @@ class PhantomTradeTracker:
         
         # Save to Redis
         self._save_to_redis()
+        
+        # Check if ML needs retraining after this trade completes
+        self._check_ml_retrain()
     
     def get_phantom_stats(self, symbol: Optional[str] = None) -> dict:
         """
@@ -402,6 +405,32 @@ class PhantomTradeTracker:
         # This method is now deprecated - phantom trades will only close on TP/SL
         # Keeping the method signature for backwards compatibility
         pass
+    
+    def _check_ml_retrain(self):
+        """Check if ML needs retraining after a trade completes"""
+        try:
+            from ml_signal_scorer_immediate import get_ml_scorer
+            ml_scorer = get_ml_scorer()
+            
+            # Get retrain info
+            retrain_info = ml_scorer.get_retrain_info()
+            
+            # Check if ready to retrain
+            if retrain_info['can_train'] and retrain_info['trades_until_next_retrain'] == 0:
+                logger.info(f"🔄 ML retrain triggered after trade completion - "
+                           f"{retrain_info['total_combined']} total trades available")
+                
+                # Trigger retrain
+                retrain_result = ml_scorer.startup_retrain()
+                if retrain_result:
+                    logger.info("✅ ML models successfully retrained after trade completion")
+                else:
+                    logger.warning("⚠️ ML retrain attempt failed")
+            else:
+                logger.debug(f"ML retrain check: {retrain_info['trades_until_next_retrain']} trades until next retrain")
+                
+        except Exception as e:
+            logger.error(f"Error checking ML retrain: {e}")
 
 # Global instance
 _phantom_tracker = None

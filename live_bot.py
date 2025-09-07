@@ -451,6 +451,9 @@ class TradingBot:
                             actual_result = "WIN" if pnl_pct > 0 else "LOSS"
                             logger.info(f"[{symbol}] ML updated: {actual_result} ({pnl_pct:.2f}%) - Exit trigger: {exit_reason.upper()}")
                             
+                            # Check if ML needs retraining after this trade completes
+                            self._check_ml_retrain(ml_scorer)
+                            
                         except Exception as e:
                             logger.error(f"Failed to update ML outcome: {e}")
                     
@@ -471,6 +474,32 @@ class TradingBot:
                     
         except Exception as e:
             logger.error(f"Error in check_closed_positions: {e}")
+    
+    def _check_ml_retrain(self, ml_scorer):
+        """Check if ML needs retraining after a trade completes"""
+        if not ml_scorer:
+            return
+            
+        try:
+            # Get retrain info
+            retrain_info = ml_scorer.get_retrain_info()
+            
+            # Check if ready to retrain
+            if retrain_info['can_train'] and retrain_info['trades_until_next_retrain'] == 0:
+                logger.info(f"🔄 ML retrain triggered after real trade completion - "
+                           f"{retrain_info['total_combined']} total trades available")
+                
+                # Trigger retrain
+                retrain_result = ml_scorer.startup_retrain()
+                if retrain_result:
+                    logger.info("✅ ML models successfully retrained after trade completion")
+                else:
+                    logger.warning("⚠️ ML retrain attempt failed")
+            else:
+                logger.debug(f"ML retrain check: {retrain_info['trades_until_next_retrain']} trades until next retrain")
+                
+        except Exception as e:
+            logger.error(f"Error checking ML retrain: {e}")
     
     async def recover_positions(self, book:Book, sizer:Sizer):
         """Recover existing positions from exchange - preserves all existing orders"""

@@ -409,8 +409,8 @@ class PhantomTradeTracker:
     def _check_ml_retrain(self):
         """Check if ML needs retraining after a trade completes"""
         try:
-            from ml_signal_scorer_immediate import get_ml_scorer
-            ml_scorer = get_ml_scorer()
+            from ml_signal_scorer_immediate import get_immediate_scorer
+            ml_scorer = get_immediate_scorer()
             
             # Get retrain info
             retrain_info = ml_scorer.get_retrain_info()

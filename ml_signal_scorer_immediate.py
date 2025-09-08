@@ -601,6 +601,7 @@ class ImmediateMLScorer:
             trades_since_last = info['total_combined'] - self.last_train_count
             info['trades_until_next_retrain'] = max(0, self.RETRAIN_INTERVAL - trades_since_last)
             info['next_retrain_at'] = self.last_train_count + self.RETRAIN_INTERVAL
+            info['can_train'] = True  # We can always retrain if models exist
         
         return info
     

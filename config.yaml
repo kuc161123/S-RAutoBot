@@ -271,7 +271,7 @@ trade:
   vol_mult: 1.2   # ML will determine optimal volume thresholds
   atr_len: 14
   sl_buf_atr: 1.5  # Increased from 0.5 to reduce stop-outs
-  rr: 2.0  # Risk:Reward ratio (adjusted for fees in strategy)
+  rr: 2.5  # Risk:Reward ratio (adjusted for fees in strategy)
   both_hit_rule: SL_FIRST
   use_pullback_strategy: true
   confirmation_candles: 2

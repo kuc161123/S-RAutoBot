@@ -23,7 +23,7 @@ class MinimalSettings:
     right:int=2     # Keep at 2 for faster detection
     atr_len:int=14
     sl_buf_atr:float=0.5
-    rr:float=2.0
+    rr:float=2.5
     both_hit_rule:str="SL_FIRST"
     confirmation_candles:int=2  # Basic confirmation
     
@@ -305,7 +305,7 @@ def calculate_ml_features(df: pd.DataFrame, state: BreakoutState,
     else:
         potential_risk = atr_current * 1.5
         potential_reward = atr_current * 3.0
-    risk_reward_ratio = potential_reward / potential_risk if potential_risk > 0 else 2.0
+    risk_reward_ratio = potential_reward / potential_risk if potential_risk > 0 else 2.5
     
     # ATR stop distance
     atr_stop_distance = 1.5  # Default 1.5 ATR for stop

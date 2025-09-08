@@ -199,7 +199,7 @@ class TGBot:
             
 {balance_text}⚙️ *Mode:* {mode}
 💸 *Risk per trade:* {risk_amount}
-📈 *Risk/Reward Ratio:* 1:{risk.rr if hasattr(risk, 'rr') else 2}
+📈 *Risk/Reward Ratio:* 1:{risk.rr if hasattr(risk, 'rr') else 2.5}
 
 *Commands:*
 `/risk_percent 2.5` - Set to 2.5%

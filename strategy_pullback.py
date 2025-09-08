@@ -13,7 +13,7 @@ class Settings:
     right:int=2
     atr_len:int=14
     sl_buf_atr:float=0.5
-    rr:float=2.0
+    rr:float=2.5
     use_ema:bool=False
     ema_len:int=200
     use_vol:bool=False
@@ -275,7 +275,12 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 return None
             
             R = entry - sl
-            tp = entry + s.rr * R
+            # Account for fees and slippage in TP calculation
+            # Bybit fees: 0.06% entry + 0.055% exit (limit) = 0.115% total
+            # Add 0.05% for slippage = 0.165% total cost
+            # To get 2.5:1 after fees, we need to target slightly higher
+            fee_adjustment = 1.00165  # Compensate for 0.165% total costs
+            tp = entry + (s.rr * R * fee_adjustment)
             
             state.state = "SIGNAL_SENT"
             state.last_signal_time = current_time
@@ -308,7 +313,12 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 return None
             
             R = sl - entry
-            tp = entry - s.rr * R
+            # Account for fees and slippage in TP calculation
+            # Bybit fees: 0.06% entry + 0.055% exit (limit) = 0.115% total
+            # Add 0.05% for slippage = 0.165% total cost
+            # To get 2.5:1 after fees, we need to target slightly higher
+            fee_adjustment = 1.00165  # Compensate for 0.165% total costs
+            tp = entry - (s.rr * R * fee_adjustment)
             
             state.state = "SIGNAL_SENT"
             state.last_signal_time = current_time

@@ -11,7 +11,7 @@ class Settings:
     right:int=2
     atr_len:int=14
     sl_buf_atr:float=0.5
-    rr:float=2.0
+    rr:float=2.5
     use_ema:bool=False
     ema_len:int=200
     use_vol:bool=False
@@ -120,7 +120,12 @@ def detect_signal(df:pd.DataFrame, s:Settings, symbol:str="") -> Signal|None:
             logger.info(f"[{symbol}] Long signal rejected - invalid SL placement")
             return None
         R = entry - sl
-        tp = entry + s.rr * R
+        # Account for fees and slippage in TP calculation
+        # Bybit fees: 0.06% entry + 0.055% exit (limit) = 0.115% total
+        # Add 0.05% for slippage = 0.165% total cost
+        # To get 2.5:1 after fees, we need to target slightly higher
+        fee_adjustment = 1.00165  # Compensate for 0.165% total costs
+        tp = entry + (s.rr * R * fee_adjustment)
         logger.info(f"[{symbol}] 🟢 LONG SIGNAL - Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}, R:R = 1:{s.rr}")
         return Signal("long", entry, sl, tp, "Up-structure breakout over resistance",
                       {"atr":atr, "res":nearestRes, "sup":nearestSup})
@@ -132,7 +137,12 @@ def detect_signal(df:pd.DataFrame, s:Settings, symbol:str="") -> Signal|None:
             logger.info(f"[{symbol}] Short signal rejected - invalid SL placement")
             return None
         R = sl - entry
-        tp = entry - s.rr * R
+        # Account for fees and slippage in TP calculation
+        # Bybit fees: 0.06% entry + 0.055% exit (limit) = 0.115% total
+        # Add 0.05% for slippage = 0.165% total cost
+        # To get 2.5:1 after fees, we need to target slightly higher
+        fee_adjustment = 1.00165  # Compensate for 0.165% total costs
+        tp = entry - (s.rr * R * fee_adjustment)
         logger.info(f"[{symbol}] 🔴 SHORT SIGNAL - Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}, R:R = 1:{s.rr}")
         return Signal("short", entry, sl, tp, "Down-structure breakdown under support",
                       {"atr":atr, "res":nearestRes, "sup":nearestSup})

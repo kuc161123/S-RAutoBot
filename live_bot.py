@@ -655,7 +655,11 @@ class TradingBot:
         )
         
         # Initialize components
-        risk = RiskConfig(risk_usd=cfg["trade"]["risk_usd"])
+        risk = RiskConfig(
+            risk_usd=cfg["trade"]["risk_usd"],
+            risk_percent=cfg["trade"]["risk_percent"],
+            use_percent_risk=cfg["trade"]["use_percent_risk"]
+        )
         sizer = Sizer(risk)
         book = Book()
         panic_list:list[str] = []

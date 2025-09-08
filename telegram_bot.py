@@ -66,52 +66,124 @@ class TGBot:
             logger.info("Telegram bot stopped")
 
     async def send_message(self, text:str):
-        """Send message to configured chat"""
-        try:
-            # Try with Markdown first
-            await self.app.bot.send_message(chat_id=self.chat_id, text=text, parse_mode='Markdown')
-        except telegram.error.BadRequest as e:
-            if "can't parse entities" in str(e).lower():
-                # Markdown parsing failed, try with better escaping
-                logger.warning("Markdown parsing failed, trying with escaped text")
-                try:
-                    # Escape common problematic characters
-                    escaped_text = text.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('`', '\\`')
-                    await self.app.bot.send_message(chat_id=self.chat_id, text=escaped_text, parse_mode='Markdown')
-                except:
-                    # If still fails, send as plain text
-                    logger.warning("Escaped markdown also failed, sending as plain text")
-                    await self.app.bot.send_message(chat_id=self.chat_id, text=text)
-            else:
-                logger.error(f"Failed to send message: {e}")
-        except Exception as e:
-            logger.error(f"Failed to send message: {e}")
+        """Send message to configured chat with retry on network errors"""
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                # Try with Markdown first
+                await self.app.bot.send_message(chat_id=self.chat_id, text=text, parse_mode='Markdown')
+                return  # Success, exit
+            except telegram.error.BadRequest as e:
+                if "can't parse entities" in str(e).lower():
+                    # Markdown parsing failed, try with better escaping
+                    logger.warning("Markdown parsing failed, trying with escaped text")
+                    try:
+                        # Escape common problematic characters
+                        escaped_text = text.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('`', '\\`')
+                        await self.app.bot.send_message(chat_id=self.chat_id, text=escaped_text, parse_mode='Markdown')
+                        return  # Success, exit
+                    except:
+                        # If still fails, send as plain text
+                        logger.warning("Escaped markdown also failed, sending as plain text")
+                        try:
+                            await self.app.bot.send_message(chat_id=self.chat_id, text=text)
+                            return  # Success, exit
+                        except Exception as plain_e:
+                            if attempt < max_retries - 1:
+                                logger.warning(f"Plain text send failed (attempt {attempt + 1}/{max_retries}): {plain_e}")
+                                await asyncio.sleep(retry_delay)
+                                continue
+                            else:
+                                logger.error(f"Failed to send message after {max_retries} attempts: {plain_e}")
+                else:
+                    logger.error(f"Failed to send message: {e}")
+                    return  # Don't retry on non-network errors
+            except (telegram.error.NetworkError, telegram.error.TimedOut) as e:
+                # Network-related errors, retry
+                if attempt < max_retries - 1:
+                    logger.warning(f"Network error (attempt {attempt + 1}/{max_retries}): {e}")
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error(f"Failed to send message after {max_retries} attempts: {e}")
+            except Exception as e:
+                # Check if it's a network-related error
+                error_str = str(e).lower()
+                if any(x in error_str for x in ['httpx.readerror', 'network', 'timeout', 'connection']):
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Network error (attempt {attempt + 1}/{max_retries}): {e}")
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    else:
+                        logger.error(f"Failed to send message after {max_retries} attempts: {e}")
+                else:
+                    logger.error(f"Failed to send message: {e}")
+                    return  # Don't retry on non-network errors
     
     async def safe_reply(self, update: Update, text: str, parse_mode: str = 'Markdown'):
-        """Safely reply to a message with automatic fallback"""
-        try:
-            await update.message.reply_text(text, parse_mode=parse_mode)
-        except telegram.error.BadRequest as e:
-            if "can't parse entities" in str(e).lower():
-                logger.warning(f"Markdown parsing failed in reply, trying escaped")
-                try:
-                    # More comprehensive escaping
-                    escaped_text = text
-                    # Escape special markdown characters
-                    for char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
-                        escaped_text = escaped_text.replace(char, f'\\{char}')
-                    await update.message.reply_text(escaped_text, parse_mode=parse_mode)
-                except Exception as e2:
-                    # Final fallback to plain text
-                    logger.warning(f"Escaped markdown also failed ({e2}), replying as plain text")
-                    # Remove all markdown formatting
-                    plain_text = text
-                    for char in ['*', '_', '`', '~']:
-                        plain_text = plain_text.replace(char, '')
-                    await update.message.reply_text(plain_text, parse_mode=None)
-            else:
-                # Re-raise other errors
-                raise
+        """Safely reply to a message with automatic fallback and retry"""
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                await update.message.reply_text(text, parse_mode=parse_mode)
+                return  # Success, exit
+            except telegram.error.BadRequest as e:
+                if "can't parse entities" in str(e).lower():
+                    logger.warning(f"Markdown parsing failed in reply, trying escaped")
+                    try:
+                        # More comprehensive escaping
+                        escaped_text = text
+                        # Escape special markdown characters
+                        for char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
+                            escaped_text = escaped_text.replace(char, f'\\{char}')
+                        await update.message.reply_text(escaped_text, parse_mode=parse_mode)
+                        return  # Success, exit
+                    except Exception as e2:
+                        # Final fallback to plain text
+                        logger.warning(f"Escaped markdown also failed ({e2}), replying as plain text")
+                        # Remove all markdown formatting
+                        plain_text = text
+                        for char in ['*', '_', '`', '~']:
+                            plain_text = plain_text.replace(char, '')
+                        try:
+                            await update.message.reply_text(plain_text, parse_mode=None)
+                            return  # Success, exit
+                        except Exception as plain_e:
+                            if attempt < max_retries - 1:
+                                logger.warning(f"Plain text reply failed (attempt {attempt + 1}/{max_retries}): {plain_e}")
+                                await asyncio.sleep(retry_delay)
+                                continue
+                            else:
+                                logger.error(f"Failed to reply after {max_retries} attempts: {plain_e}")
+                else:
+                    # Re-raise other BadRequest errors
+                    logger.error(f"BadRequest error: {e}")
+                    return
+            except (telegram.error.NetworkError, telegram.error.TimedOut) as e:
+                # Network-related errors, retry
+                if attempt < max_retries - 1:
+                    logger.warning(f"Network error in reply (attempt {attempt + 1}/{max_retries}): {e}")
+                    await asyncio.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error(f"Failed to reply after {max_retries} attempts: {e}")
+            except Exception as e:
+                # Check if it's a network-related error
+                error_str = str(e).lower()
+                if any(x in error_str for x in ['httpx.readerror', 'network', 'timeout', 'connection']):
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Network error in reply (attempt {attempt + 1}/{max_retries}): {e}")
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    else:
+                        logger.error(f"Failed to reply after {max_retries} attempts: {e}")
+                else:
+                    logger.error(f"Failed to reply: {e}")
+                    return  # Don't retry on non-network errors
 
     async def start(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Start command handler"""
@@ -799,6 +871,11 @@ class TGBot:
                     else:
                         # Old ML scorer
                         stats = ml_scorer.get_ml_stats()
+                    
+                    # Ensure stats is a dictionary
+                    if not isinstance(stats, dict):
+                        logger.error(f"ML stats returned unexpected type: {type(stats).__name__}")
+                        stats = {'enabled': False, 'completed_trades': 0, 'status': 'Error retrieving stats'}
                     
                     # Status - handle both old and new format
                     if 'status' in stats:

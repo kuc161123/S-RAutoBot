@@ -545,9 +545,10 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
                 logger.info(f"{symbol}: Adjusted stop to minimum distance (1% from entry)")
             
             # Adjust TP based on new stop distance + fees
-            # Bybit fees: 0.055% taker fee per side (entry + exit) = 0.11% total
-            # Add 0.2% buffer to cover fees and ensure profit
-            fee_adjustment = 1.002  # 0.2% to cover fees
+            # Bybit fees: 0.06% entry (market) + 0.055% exit (limit) = 0.115% total
+            # Add 0.05% for slippage = 0.165% total cost
+            # To get 2.5:1 after fees, we need to target slightly higher
+            fee_adjustment = 1.00165  # Compensate for 0.165% total costs
             tp = entry + ((entry - sl) * settings.rr * fee_adjustment)
             
             # Calculate retracement for ML
@@ -615,9 +616,10 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
                 logger.info(f"{symbol}: Adjusted stop to minimum distance (1% from entry)")
             
             # Adjust TP based on new stop distance + fees
-            # Bybit fees: 0.055% taker fee per side (entry + exit) = 0.11% total
-            # Add 0.2% buffer to cover fees and ensure profit
-            fee_adjustment = 1.002  # 0.2% to cover fees
+            # Bybit fees: 0.06% entry (market) + 0.055% exit (limit) = 0.115% total
+            # Add 0.05% for slippage = 0.165% total cost
+            # To get 2.5:1 after fees, we need to target slightly higher
+            fee_adjustment = 1.00165  # Compensate for 0.165% total costs
             tp = entry - ((sl - entry) * settings.rr * fee_adjustment)
             
             # Calculate retracement

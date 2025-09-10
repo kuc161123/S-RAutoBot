@@ -1126,6 +1126,26 @@ class TradingBot:
                         logger.warning(f"[{sym}] Quantity too small, skipping")
                         continue
                 
+                    # Get current market price for stop loss validation
+                    current_price = df['close'].iloc[-1]
+                    
+                    # Validate stop loss is on correct side of market price
+                    sl_valid = True
+                    if sig.side == "long":
+                        if sig.sl >= current_price:
+                            logger.warning(f"[{sym}] INVALID SL: Long SL {sig.sl:.4f} >= current price {current_price:.4f}")
+                            sl_valid = False
+                    else:  # short
+                        if sig.sl <= current_price:
+                            logger.warning(f"[{sym}] INVALID SL: Short SL {sig.sl:.4f} <= current price {current_price:.4f}")
+                            sl_valid = False
+                    
+                    if not sl_valid:
+                        price_moved_pct = abs((current_price - sig.entry) / sig.entry) * 100
+                        logger.warning(f"[{sym}] Price moved {price_moved_pct:.2f}% from signal entry {sig.entry:.4f} to {current_price:.4f}")
+                        logger.warning(f"[{sym}] Skipping trade - stop loss would be invalid on Bybit")
+                        continue
+                    
                     # IMPORTANT: Set leverage BEFORE opening position to prevent TP/SL cancellation
                     max_lev = int(m.get("max_leverage", 10))
                     logger.info(f"[{sym}] Setting leverage to {max_lev}x (before position to preserve TP/SL)")
@@ -1135,6 +1155,7 @@ class TradingBot:
                     side = "Buy" if sig.side == "long" else "Sell"
                     try:
                         logger.info(f"[{sym}] Placing {side} order for {qty} units")
+                        logger.debug(f"[{sym}] Order details: current_price={current_price:.4f}, sig.entry={sig.entry:.4f}, sig.sl={sig.sl:.4f}, sig.tp={sig.tp:.4f}")
                         bybit.place_market(sym, side, qty, reduce_only=False)
                         
                         # Set TP/SL - these will not be cancelled since leverage was set before position

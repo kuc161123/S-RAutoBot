@@ -29,6 +29,12 @@ class RiskConfig:
     # defaults overridden per symbol via config.yaml.symbol_meta
     qty_step:float=0.001
     min_qty:float=0.001
+    # ML dynamic risk fields
+    use_ml_dynamic_risk:bool=False  # Enable ML-based dynamic risk
+    ml_risk_min_score:float=70.0    # ML score for minimum risk
+    ml_risk_max_score:float=100.0   # ML score for maximum risk
+    ml_risk_min_percent:float=1.0   # Minimum risk percentage
+    ml_risk_max_percent:float=5.0   # Maximum risk percentage
 
 @dataclass
 class Position:

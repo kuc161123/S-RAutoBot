@@ -21,6 +21,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("set_risk", self.set_risk))
         self.app.add_handler(CommandHandler("risk_percent", self.set_risk_percent))
         self.app.add_handler(CommandHandler("risk_usd", self.set_risk_usd))
+        self.app.add_handler(CommandHandler("ml_risk", self.ml_risk))
+        self.app.add_handler(CommandHandler("ml_risk_range", self.ml_risk_range))
         self.app.add_handler(CommandHandler("status", self.status))
         self.app.add_handler(CommandHandler("panic_close", self.panic_close))
         self.app.add_handler(CommandHandler("balance", self.balance))
@@ -221,6 +223,8 @@ class TGBot:
 /risk_percent [value] - Set % risk (e.g., 2.5)
 /risk_usd [value] - Set USD risk (e.g., 100)
 /set_risk [amount] - Flexible (3% or 50)
+/ml_risk - ML dynamic risk status/control
+/ml_risk_range [min] [max] - Set ML risk range
 
 ⚙️ *Controls:*
 /panic_close [symbol] - Emergency close position
@@ -421,6 +425,127 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in set_risk: {e}")
             await update.message.reply_text("Error updating risk")
+
+    async def ml_risk(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Enable/disable ML dynamic risk"""
+        try:
+            risk = self.shared["risk"]
+            
+            if not ctx.args:
+                # Show current ML risk status
+                msg = "🤖 *ML Dynamic Risk Status*\n"
+                msg += "━" * 20 + "\n\n"
+                
+                if risk.use_ml_dynamic_risk:
+                    msg += "• Status: ✅ *ENABLED*\n"
+                    msg += f"• ML Score Range: {risk.ml_risk_min_score} - {risk.ml_risk_max_score}\n"
+                    msg += f"• Risk Range: {risk.ml_risk_min_percent}% - {risk.ml_risk_max_percent}%\n\n"
+                    
+                    # Show example scaling
+                    msg += "📊 *Risk Scaling Examples:*\n"
+                    for score in [70, 75, 80, 85, 90, 95, 100]:
+                        if score < risk.ml_risk_min_score:
+                            continue
+                        if score > risk.ml_risk_max_score:
+                            score = risk.ml_risk_max_score
+                        
+                        # Calculate risk using same logic as sizer
+                        score_range = risk.ml_risk_max_score - risk.ml_risk_min_score
+                        risk_range = risk.ml_risk_max_percent - risk.ml_risk_min_percent
+                        if score_range > 0:
+                            score_position = (score - risk.ml_risk_min_score) / score_range
+                            risk_pct = risk.ml_risk_min_percent + (score_position * risk_range)
+                        else:
+                            risk_pct = risk.ml_risk_min_percent
+                            
+                        msg += f"• ML Score {score}: {risk_pct:.2f}% risk\n"
+                else:
+                    msg += "• Status: ❌ *DISABLED*\n"
+                    msg += f"• Fixed Risk: {risk.risk_percent}%\n"
+                
+                msg += "\nUsage:\n"
+                msg += "`/ml_risk on` - Enable ML dynamic risk\n"
+                msg += "`/ml_risk off` - Disable ML dynamic risk\n"
+                msg += "`/ml_risk_range 1 5` - Set risk range"
+                
+                await self.safe_reply(update, msg)
+                return
+            
+            action = ctx.args[0].lower()
+            
+            if action == "on":
+                risk.use_ml_dynamic_risk = True
+                msg = "✅ ML Dynamic Risk *ENABLED*\n\n"
+                msg += f"Risk will scale from {risk.ml_risk_min_percent}% to {risk.ml_risk_max_percent}%\n"
+                msg += f"Based on ML scores {risk.ml_risk_min_score} to {risk.ml_risk_max_score}\n\n"
+                msg += "_Higher ML confidence = Higher position size_"
+                await self.safe_reply(update, msg)
+                logger.info("ML dynamic risk enabled")
+                
+            elif action == "off":
+                risk.use_ml_dynamic_risk = False
+                msg = "❌ ML Dynamic Risk *DISABLED*\n\n"
+                msg += f"All trades will use fixed {risk.risk_percent}% risk"
+                await self.safe_reply(update, msg)
+                logger.info("ML dynamic risk disabled")
+                
+            else:
+                await update.message.reply_text("Usage: /ml_risk on|off")
+                
+        except Exception as e:
+            logger.error(f"Error in ml_risk: {e}")
+            await update.message.reply_text("Error updating ML risk settings")
+
+    async def ml_risk_range(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Set ML dynamic risk range"""
+        try:
+            if len(ctx.args) != 2:
+                await update.message.reply_text(
+                    "Usage: `/ml_risk_range 1 5`\n"
+                    "Sets risk range from 1% to 5%",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            min_risk = float(ctx.args[0])
+            max_risk = float(ctx.args[1])
+            
+            # Validate
+            if min_risk <= 0 or min_risk > 10:
+                await update.message.reply_text("Minimum risk must be between 0% and 10%")
+                return
+            
+            if max_risk <= min_risk:
+                await update.message.reply_text("Maximum risk must be greater than minimum risk")
+                return
+                
+            if max_risk > 10:
+                await update.message.reply_text("Maximum risk must not exceed 10%")
+                return
+            
+            # Update
+            risk = self.shared["risk"]
+            risk.ml_risk_min_percent = min_risk
+            risk.ml_risk_max_percent = max_risk
+            
+            msg = f"✅ ML Risk Range Updated\n\n"
+            msg += f"• Minimum Risk: {min_risk}%\n"
+            msg += f"• Maximum Risk: {max_risk}%\n\n"
+            
+            if risk.use_ml_dynamic_risk:
+                msg += "_ML Dynamic Risk is currently ENABLED_"
+            else:
+                msg += "_ML Dynamic Risk is currently DISABLED_\n"
+                msg += "Use `/ml_risk on` to enable"
+            
+            await self.safe_reply(update, msg)
+            logger.info(f"ML risk range updated: {min_risk}% - {max_risk}%")
+            
+        except ValueError:
+            await update.message.reply_text("Invalid values. Use numbers only.")
+        except Exception as e:
+            logger.error(f"Error in ml_risk_range: {e}")
+            await update.message.reply_text("Error updating ML risk range")
 
     async def status(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show current positions"""

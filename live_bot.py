@@ -658,7 +658,12 @@ class TradingBot:
         risk = RiskConfig(
             risk_usd=cfg["trade"]["risk_usd"],
             risk_percent=cfg["trade"]["risk_percent"],
-            use_percent_risk=cfg["trade"]["use_percent_risk"]
+            use_percent_risk=cfg["trade"]["use_percent_risk"],
+            use_ml_dynamic_risk=True,  # Enable ML dynamic risk
+            ml_risk_min_score=70.0,
+            ml_risk_max_score=100.0,
+            ml_risk_min_percent=1.0,
+            ml_risk_max_percent=5.0
         )
         sizer = Sizer(risk)
         book = Book()
@@ -1120,7 +1125,7 @@ class TradingBot:
                         logger.debug(f"[{sym}] Balance check passed: ${balance:.2f} available, risking ${risk_amount:.2f}")
                 
                     # Calculate position size
-                    qty = sizer.qty_for(sig.entry, sig.sl, m.get("qty_step",0.001), m.get("min_qty",0.001))
+                    qty = sizer.qty_for(sig.entry, sig.sl, m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
                 
                     if qty <= 0:
                         logger.warning(f"[{sym}] Quantity too small, skipping")
@@ -1194,13 +1199,28 @@ class TradingBot:
                         # Send notification
                         if self.tg:
                             emoji = "🟢" if sig.side == "long" else "🔴"
+                            # Calculate actual risk used
+                            if risk.use_ml_dynamic_risk:
+                                score_range = risk.ml_risk_max_score - risk.ml_risk_min_score
+                                risk_range = risk.ml_risk_max_percent - risk.ml_risk_min_percent
+                                clamped_score = max(risk.ml_risk_min_score, min(risk.ml_risk_max_score, ml_score))
+                                if score_range > 0:
+                                    score_position = (clamped_score - risk.ml_risk_min_score) / score_range
+                                    actual_risk_pct = risk.ml_risk_min_percent + (score_position * risk_range)
+                                else:
+                                    actual_risk_pct = risk.ml_risk_min_percent
+                                risk_display = f"{actual_risk_pct:.2f}% (ML: {ml_score:.1f})"
+                            else:
+                                actual_risk_pct = risk.risk_percent
+                                risk_display = f"{actual_risk_pct}%"
+                            
                             msg = (
                                 f"{emoji} *{sym} {sig.side.upper()}*\n\n"
                                 f"Entry: {sig.entry:.4f}\n"
                                 f"Stop Loss: {sig.sl:.4f}\n"
                                 f"Take Profit: {sig.tp:.4f}\n"
                                 f"Quantity: {qty}\n"
-                                f"Risk: {risk.risk_percent}% (${risk_amount:.2f})\n"
+                                f"Risk: {risk_display} (${risk_amount:.2f})\n"
                                 f"Reason: {sig.reason}"
                             )
                             await self.tg.send_message(msg)

@@ -1161,18 +1161,47 @@ class TradingBot:
                     try:
                         logger.info(f"[{sym}] Placing {side} order for {qty} units")
                         logger.debug(f"[{sym}] Order details: current_price={current_price:.4f}, sig.entry={sig.entry:.4f}, sig.sl={sig.sl:.4f}, sig.tp={sig.tp:.4f}")
-                        bybit.place_market(sym, side, qty, reduce_only=False)
+                        order_result = bybit.place_market(sym, side, qty, reduce_only=False)
+                        
+                        # Get actual entry price from position
+                        actual_entry = sig.entry  # Default to signal entry
+                        try:
+                            # Small delay to ensure position is updated
+                            import time
+                            time.sleep(0.5)
+                            
+                            position = bybit.get_position(sym)
+                            if position and position.get("avgPrice"):
+                                actual_entry = float(position["avgPrice"])
+                                logger.info(f"[{sym}] Actual entry price: {actual_entry:.4f} (signal was {sig.entry:.4f})")
+                                
+                                # Recalculate TP based on actual entry to maintain R:R ratio
+                                if actual_entry != sig.entry:
+                                    risk_distance = abs(actual_entry - sig.sl)
+                                    # Apply same R:R ratio and fee adjustment
+                                    fee_adjustment = 1.00165  # Same as in strategy
+                                    if sig.side == "long":
+                                        new_tp = actual_entry + (risk_distance * strat.settings.rr * fee_adjustment)
+                                    else:
+                                        new_tp = actual_entry - (risk_distance * strat.settings.rr * fee_adjustment)
+                                    
+                                    # Log the adjustment
+                                    tp_adjustment_pct = ((new_tp - sig.tp) / sig.tp) * 100
+                                    logger.info(f"[{sym}] Adjusting TP from {sig.tp:.4f} to {new_tp:.4f} ({tp_adjustment_pct:+.2f}%) to maintain {strat.settings.rr}:1 R:R")
+                                    sig.tp = new_tp
+                        except Exception as e:
+                            logger.warning(f"[{sym}] Could not get actual entry price: {e}. Using signal entry.")
                         
                         # Set TP/SL - these will not be cancelled since leverage was set before position
                         logger.info(f"[{sym}] Setting TP={sig.tp:.4f} (Limit), SL={sig.sl:.4f} (Market)")
                         bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl, qty=qty)
                     
-                        # Update book
-                        book.positions[sym] = Position(sig.side, qty, sig.entry, sig.sl, sig.tp, datetime.now())
+                        # Update book with actual entry price
+                        book.positions[sym] = Position(sig.side, qty, actual_entry, sig.sl, sig.tp, datetime.now())
                         last_signal_time[sym] = now
                         
                         # Debug log the position details
-                        logger.debug(f"[{sym}] Stored position: side={sig.side}, entry={sig.entry:.4f}, TP={sig.tp:.4f}, SL={sig.sl:.4f}")
+                        logger.debug(f"[{sym}] Stored position: side={sig.side}, entry={actual_entry:.4f}, TP={sig.tp:.4f}, SL={sig.sl:.4f}")
                         
                         # Record comprehensive trade context for future ML
                         if symbol_collector:
@@ -1214,9 +1243,15 @@ class TradingBot:
                                 actual_risk_pct = risk.risk_percent
                                 risk_display = f"{actual_risk_pct}%"
                             
+                            # Add TP adjustment info if applicable
+                            entry_info = f"Entry: {actual_entry:.4f}"
+                            if actual_entry != sig.entry:
+                                price_diff_pct = ((actual_entry - sig.entry) / sig.entry) * 100
+                                entry_info += f" (signal: {sig.entry:.4f}, {price_diff_pct:+.2f}%)"
+                            
                             msg = (
                                 f"{emoji} *{sym} {sig.side.upper()}*\n\n"
-                                f"Entry: {sig.entry:.4f}\n"
+                                f"{entry_info}\n"
                                 f"Stop Loss: {sig.sl:.4f}\n"
                                 f"Take Profit: {sig.tp:.4f}\n"
                                 f"Quantity: {qty}\n"

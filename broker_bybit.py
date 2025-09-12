@@ -141,6 +141,22 @@ class Bybit:
             "positionIdx": 0  # One-way mode
         }
         return self._request("POST", "/v5/order/create", data)
+    
+    def get_position(self, symbol:str) -> Optional[Dict[str, Any]]:
+        """Get current position for a symbol"""
+        try:
+            resp = self._request("GET", "/v5/position/list", {
+                "category": "linear",
+                "symbol": symbol
+            })
+            if resp and resp.get("result"):
+                positions = resp["result"].get("list", [])
+                if positions:
+                    return positions[0]  # Return first position
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get position for {symbol}: {e}")
+            return None
 
     def set_tpsl(self, symbol:str, take_profit:float, stop_loss:float, qty:float=None) -> Dict[str, Any]:
         """Set position TP/SL - Use Partial mode with Limit TP for better fills"""

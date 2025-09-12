@@ -748,6 +748,16 @@ class TradingBot:
         elif use_ml:
             logger.warning("ML scoring requested but ML module not available")
         
+        # Initialize symbol clustering (if enabled)
+        try:
+            from symbol_clustering import update_symbol_clusters, load_symbol_clusters
+            # Load existing clusters or use defaults
+            symbol_clusters = load_symbol_clusters()
+            logger.info(f"Loaded symbol clusters for {len(symbol_clusters)} symbols")
+        except Exception as e:
+            logger.warning(f"Could not load symbol clusters: {e}. Features will use defaults.")
+            symbol_clusters = {}
+        
         # Initialize Bybit client
         self.bybit = bybit = Bybit(BybitConfig(
             cfg["bybit"]["base_url"], 
@@ -982,6 +992,23 @@ class TradingBot:
                         
                             # Calculate basic features (22 features for original ML)
                             basic_features = calculate_ml_features(df, state, sig.side, retracement)
+                            
+                            # Add symbol cluster features
+                            cluster_id = symbol_clusters.get(sym, 3)  # Default to cluster 3
+                            basic_features['symbol_cluster'] = cluster_id
+                            
+                            # Add price tier based on current price
+                            current_price = df['close'].iloc[-1]
+                            if current_price < 0.01:
+                                basic_features['price_tier'] = 1
+                            elif current_price < 0.1:
+                                basic_features['price_tier'] = 2
+                            elif current_price < 1:
+                                basic_features['price_tier'] = 3
+                            elif current_price < 10:
+                                basic_features['price_tier'] = 4
+                            else:
+                                basic_features['price_tier'] = 5
                             
                             # Create enhanced features copy for ML Evolution (48 features)
                             enhanced_features = basic_features.copy()

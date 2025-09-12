@@ -56,7 +56,7 @@ class ImmediateMLScorer:
         
         # Track which feature set the models were trained with
         self.model_feature_version = 'original'  # 'original' or 'enhanced'
-        self.feature_count = 22  # Default to original feature count
+        self.feature_count = 27  # 22 original + 5 cluster features
         
         # Flag to force retrain
         self.force_retrain = False
@@ -274,9 +274,8 @@ class ImmediateMLScorer:
         return score, reasoning
     
     def _prepare_features(self, features: dict) -> list:
-        """Convert feature dict to vector for ML - ALWAYS use original 22 features only"""
-        # Original features ONLY for main ML system
-        # Enhanced features are reserved for ML Evolution shadow mode
+        """Convert feature dict to vector for ML - includes cluster features"""
+        # Core original features
         original_features = [
             'trend_strength', 'higher_tf_alignment', 'ema_distance_ratio',
             'volume_ratio', 'volume_trend', 'breakout_volume',
@@ -287,8 +286,14 @@ class ImmediateMLScorer:
             'rsi', 'bb_position', 'volume_percentile'
         ]
         
-        # ALWAYS use only original features for stability
-        feature_order = original_features
+        # New cluster features
+        cluster_features = [
+            'symbol_cluster', 'cluster_volatility_norm', 'cluster_volume_norm',
+            'btc_correlation_bucket', 'price_tier'
+        ]
+        
+        # Use all features including clusters
+        feature_order = original_features + cluster_features
         
         vector = []
         for feat in feature_order:
@@ -454,7 +459,7 @@ class ImmediateMLScorer:
             # ALWAYS use original features for the main ML system
             # This ensures stability and prevents feature mismatches
             self.model_feature_version = 'original'
-            self.feature_count = 22
+            self.feature_count = 27
             logger.info("Training original ML with 22 core features (enhanced features reserved for evolution)")
             
             # Prepare training data

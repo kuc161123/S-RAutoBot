@@ -361,7 +361,14 @@ def calculate_ml_features(df: pd.DataFrame, state: BreakoutState,
         'volume_ma_ratio': volume_ma_ratio,
         'rsi': rsi_current,
         'bb_position': bb_position,
-        'volume_percentile': volume_percentile
+        'volume_percentile': volume_percentile,
+        
+        # Symbol cluster features
+        'symbol_cluster': 3,  # Default to cluster 3 (will be overridden)
+        'cluster_volatility_norm': 1.0,  # Normalized volatility within cluster
+        'cluster_volume_norm': 1.0,  # Normalized volume within cluster
+        'btc_correlation_bucket': 2,  # 0=negative, 1=low, 2=medium, 3=high
+        'price_tier': 3  # 1=micro, 2=small, 3=mid, 4=large, 5=mega
     }
 
 def count_zone_touches(level:float, df:pd.DataFrame, zone_pct:float=0.003, lookback:int=75) -> int:

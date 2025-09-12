@@ -1167,8 +1167,7 @@ class TradingBot:
                         actual_entry = sig.entry  # Default to signal entry
                         try:
                             # Small delay to ensure position is updated
-                            import time
-                            time.sleep(0.5)
+                            await asyncio.sleep(0.5)
                             
                             position = bybit.get_position(sym)
                             if position and position.get("avgPrice"):

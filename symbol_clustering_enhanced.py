@@ -382,11 +382,23 @@ def load_enhanced_clusters(filepath: str = "symbol_clusters_enhanced.json") -> T
     - enhanced_data: dict of symbol -> enhanced cluster info
     """
     try:
-        with open(filepath, 'r') as f:
-            data = json.load(f)
+        # Try current directory first
+        if os.path.exists(filepath):
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+        # Try script directory
+        elif os.path.exists(os.path.join(os.path.dirname(__file__), filepath)):
+            filepath = os.path.join(os.path.dirname(__file__), filepath)
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+        else:
+            raise FileNotFoundError(f"Could not find {filepath}")
             
         simple_clusters = data.get("symbol_clusters", {})
         enhanced_data = data.get("enhanced_clusters", {})
+        
+        logger.info(f"Successfully loaded enhanced clusters from {filepath}")
+        logger.info(f"Found {len(simple_clusters)} simple clusters and {len(enhanced_data)} enhanced entries")
         
         return simple_clusters, enhanced_data
         

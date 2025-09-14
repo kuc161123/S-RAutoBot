@@ -13,11 +13,11 @@ _enhanced_clusters_cache = None
 _simple_clusters_cache = None
 _cache_loaded = False
 
-def load_cluster_data():
+def load_cluster_data(force_reload=False):
     """Load enhanced cluster data once and cache it"""
     global _enhanced_clusters_cache, _simple_clusters_cache, _cache_loaded
     
-    if not _cache_loaded:
+    if not _cache_loaded or force_reload:
         try:
             simple, enhanced = load_enhanced_clusters()
             _simple_clusters_cache = simple
@@ -31,6 +31,12 @@ def load_cluster_data():
             _cache_loaded = True
     
     return _simple_clusters_cache, _enhanced_clusters_cache
+
+def reload_cluster_cache():
+    """Force reload the cluster cache"""
+    global _cache_loaded
+    _cache_loaded = False
+    return load_cluster_data(force_reload=True)
 
 def enhance_ml_features(features: Dict, symbol: str) -> Dict:
     """

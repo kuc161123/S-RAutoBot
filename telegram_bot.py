@@ -2026,10 +2026,11 @@ class TGBot:
             msg = "🎯 *Symbol Cluster Status*\n"
             msg += "━" * 25 + "\n\n"
             
-            # Try to load enhanced clusters
+            # Try to load enhanced clusters (force reload to get latest)
             try:
-                from cluster_feature_enhancer import load_cluster_data, get_cluster_description
-                simple_clusters, enhanced_clusters = load_cluster_data()
+                from cluster_feature_enhancer import load_cluster_data, get_cluster_description, reload_cluster_cache
+                # Force reload to ensure we have the latest data
+                simple_clusters, enhanced_clusters = reload_cluster_cache()
                 
                 if enhanced_clusters:
                     # Show cluster summary

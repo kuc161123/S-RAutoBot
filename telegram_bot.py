@@ -42,6 +42,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("phantom_detail", self.phantom_detail))
         self.app.add_handler(CommandHandler("evolution", self.evolution_performance))
         self.app.add_handler(CommandHandler("force_retrain", self.force_retrain_ml))
+        self.app.add_handler(CommandHandler("clusters", self.cluster_status))
+        self.app.add_handler(CommandHandler("update_clusters", self.update_clusters))
         
         self.running = False
 
@@ -2017,3 +2019,132 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in ml_retrain_info: {e}")
             await update.message.reply_text("Error getting ML retrain info")
+    
+    async def cluster_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show symbol cluster status with confidence scores"""
+        try:
+            msg = "🎯 *Symbol Cluster Status*\n"
+            msg += "━" * 25 + "\n\n"
+            
+            # Try to load enhanced clusters
+            try:
+                from cluster_feature_enhancer import load_cluster_data, get_cluster_description
+                simple_clusters, enhanced_clusters = load_cluster_data()
+                
+                if enhanced_clusters:
+                    # Show cluster summary
+                    cluster_names = {
+                        1: "Blue Chip",
+                        2: "Stable",
+                        3: "Meme/Volatile",
+                        4: "Mid-Cap Alt",
+                        5: "Small Cap"
+                    }
+                    
+                    # Count symbols per cluster
+                    cluster_counts = {i: 0 for i in range(1, 6)}
+                    borderline_counts = {i: 0 for i in range(1, 6)}
+                    
+                    for symbol, data in enhanced_clusters.items():
+                        primary = data.get('primary_cluster', 3)
+                        cluster_counts[primary] += 1
+                        if data.get('is_borderline', False):
+                            borderline_counts[primary] += 1
+                    
+                    msg += "📊 *Cluster Distribution*\n"
+                    for i in range(1, 6):
+                        if cluster_counts[i] > 0:
+                            name = cluster_names[i]
+                            count = cluster_counts[i]
+                            borderline = borderline_counts[i]
+                            msg += f"• {name}: {count} symbols"
+                            if borderline > 0:
+                                msg += f" ({borderline} borderline)"
+                            msg += "\n"
+                    
+                    msg += "\n🔍 *Sample Symbols*\n"
+                    # Show a few examples from current positions or recent trades
+                    positions = self.shared.get("book", {}).positions
+                    if positions:
+                        msg += "_From open positions:_\n"
+                        for symbol in list(positions.keys())[:5]:
+                            desc = get_cluster_description(symbol)
+                            msg += f"• {symbol}: {desc}\n"
+                    
+                    # Show borderline symbols
+                    borderline_symbols = [(s, d) for s, d in enhanced_clusters.items() 
+                                        if d.get('is_borderline', False)]
+                    if borderline_symbols:
+                        msg += "\n⚠️ *Borderline Symbols*\n"
+                        for symbol, data in borderline_symbols[:5]:
+                            primary = cluster_names.get(data['primary_cluster'], 'Unknown')
+                            conf = data.get('primary_confidence', 0)
+                            msg += f"• {symbol}: {primary} ({conf:.0%})\n"
+                    
+                    # Show last update time
+                    try:
+                        import json
+                        with open('symbol_clusters_enhanced.json', 'r') as f:
+                            cluster_data = json.load(f)
+                            if 'generated_at' in cluster_data:
+                                from datetime import datetime
+                                gen_time = datetime.fromisoformat(cluster_data['generated_at'])
+                                days_old = (datetime.now() - gen_time).days
+                                msg += f"\n📅 *Last Updated*: {days_old} days ago\n"
+                                if days_old > 7:
+                                    msg += "⚠️ _Consider running /update_clusters_\n"
+                    except:
+                        pass
+                    
+                else:
+                    msg += "❌ No enhanced clusters found\n"
+                    msg += "Run `/update_clusters` to generate\n"
+                    
+            except Exception as e:
+                logger.error(f"Error loading clusters: {e}")
+                msg += "❌ Error loading cluster data\n"
+                msg += "Basic clustering may still be active\n"
+            
+            msg += "\n💡 *Commands*\n"
+            msg += "• `/update_clusters` - Update clusters\n"
+            msg += "• `/ml` - View ML status"
+            
+            await self.safe_reply(update, msg)
+            
+        except Exception as e:
+            logger.error(f"Error in cluster_status: {e}")
+            await update.message.reply_text("Error getting cluster status")
+    
+    async def update_clusters(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Manually trigger cluster update"""
+        try:
+            await update.message.reply_text("🔄 Starting cluster update...")
+            
+            # Check if we have the necessary modules
+            try:
+                from dynamic_cluster_updater import run_cluster_update
+                import yaml
+                
+                # Load symbols from config
+                with open('config.yaml', 'r') as f:
+                    config = yaml.safe_load(f)
+                    symbols = config['trade']['symbols']
+                
+                # Run the update (this will notify via telegram when done)
+                await run_cluster_update(symbols, self)
+                
+            except ImportError as e:
+                await update.message.reply_text(
+                    "❌ Cluster update modules not available\n"
+                    f"Error: {str(e)[:100]}"
+                )
+            except Exception as e:
+                logger.error(f"Cluster update failed: {e}")
+                await update.message.reply_text(
+                    f"❌ Cluster update failed\n"
+                    f"Error: {str(e)[:100]}"
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in update_clusters: {e}")
+            await update.message.reply_text("Error triggering cluster update")

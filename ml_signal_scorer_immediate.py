@@ -56,7 +56,7 @@ class ImmediateMLScorer:
         
         # Track which feature set the models were trained with
         self.model_feature_version = 'original'  # 'original' or 'enhanced'
-        self.feature_count = 27  # 22 original + 5 cluster features
+        self.feature_count = 31  # 22 original + 5 basic cluster + 4 enhanced cluster features
         
         # Flag to force retrain
         self.force_retrain = False
@@ -286,14 +286,19 @@ class ImmediateMLScorer:
             'rsi', 'bb_position', 'volume_percentile'
         ]
         
-        # New cluster features
-        cluster_features = [
+        # Basic cluster features
+        basic_cluster_features = [
             'symbol_cluster', 'cluster_volatility_norm', 'cluster_volume_norm',
             'btc_correlation_bucket', 'price_tier'
         ]
         
-        # Use all features including clusters
-        feature_order = original_features + cluster_features
+        # Enhanced cluster features (added by cluster_feature_enhancer)
+        enhanced_cluster_features = [
+            'cluster_confidence', 'cluster_secondary', 'cluster_mixed', 'cluster_conf_ratio'
+        ]
+        
+        # Use all features including enhanced clusters
+        feature_order = original_features + basic_cluster_features + enhanced_cluster_features
         
         vector = []
         for feat in feature_order:
@@ -752,7 +757,12 @@ class ImmediateMLScorer:
                     'atr_percentile', 'risk_reward_ratio', 'atr_stop_distance',
                     'hour_of_day', 'day_of_week', 'candle_body_ratio', 'upper_wick_ratio',
                     'lower_wick_ratio', 'candle_range_atr', 'volume_ma_ratio',
-                    'rsi', 'bb_position', 'volume_percentile'
+                    'rsi', 'bb_position', 'volume_percentile',
+                    # Cluster features
+                    'symbol_cluster', 'cluster_volatility_norm', 'cluster_volume_norm',
+                    'btc_correlation_bucket', 'price_tier',
+                    # Enhanced cluster features
+                    'cluster_confidence', 'cluster_secondary', 'cluster_mixed', 'cluster_conf_ratio'
                 ]
                 
                 importances = self.models['rf'].feature_importances_

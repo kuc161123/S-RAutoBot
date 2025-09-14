@@ -615,6 +615,75 @@ class TradingBot:
                 if self.running:
                     await asyncio.sleep(5)  # Wait before reconnecting
 
+    async def auto_generate_enhanced_clusters(self):
+        """Auto-generate or update enhanced clusters if needed"""
+        try:
+            # First try to load existing enhanced clusters
+            from cluster_feature_enhancer import load_cluster_data
+            simple_clusters, enhanced_clusters = load_cluster_data()
+            
+            # Check if we need to generate or update
+            needs_generation = False
+            if not enhanced_clusters:
+                logger.info("🆕 No enhanced clusters found, auto-generating...")
+                needs_generation = True
+            else:
+                # Check age of clusters
+                try:
+                    import json
+                    from datetime import datetime
+                    with open('symbol_clusters_enhanced.json', 'r') as f:
+                        cluster_data = json.load(f)
+                        if 'generated_at' in cluster_data:
+                            gen_time = datetime.fromisoformat(cluster_data['generated_at'])
+                            days_old = (datetime.now() - gen_time).days
+                            if days_old > 7:  # Update weekly
+                                logger.info(f"🔄 Enhanced clusters are {days_old} days old, updating...")
+                                needs_generation = True
+                            else:
+                                logger.info(f"✅ Enhanced clusters are {days_old} days old, still fresh")
+                except:
+                    needs_generation = True
+            
+            # Generate if needed
+            if needs_generation:
+                logger.info("🎯 Generating enhanced clusters from historical data...")
+                try:
+                    from symbol_clustering_enhanced import EnhancedSymbolClusterer
+                    
+                    # Use loaded frames data
+                    if self.frames and len(self.frames) > 0:
+                        # Only use symbols with enough data
+                        valid_frames = {sym: df for sym, df in self.frames.items() 
+                                      if len(df) >= 500}
+                        
+                        if len(valid_frames) >= 20:  # Need at least 20 symbols
+                            clusterer = EnhancedSymbolClusterer(valid_frames)
+                            metrics = clusterer.calculate_enhanced_metrics(min_candles=500)
+                            confidence_clusters = clusterer.cluster_with_confidence()
+                            clusterer.save_enhanced_clusters()
+                            logger.info(f"✅ Generated enhanced clusters for {len(confidence_clusters)} symbols")
+                            
+                            # Notify via Telegram if available
+                            if hasattr(self, 'tg') and self.tg:
+                                await self.tg.send_message(
+                                    f"✅ *Auto-generated enhanced clusters*\n"
+                                    f"Analyzed {len(confidence_clusters)} symbols\n"
+                                    f"Use /clusters to view status"
+                                )
+                        else:
+                            logger.warning(f"Only {len(valid_frames)} symbols have enough data, skipping generation")
+                    else:
+                        logger.warning("No frame data available for cluster generation")
+                        
+                except Exception as e:
+                    logger.error(f"Failed to auto-generate clusters: {e}")
+                    # Don't fail the bot startup
+            
+        except Exception as e:
+            logger.error(f"Error in auto cluster generation: {e}")
+            # Don't fail the bot startup
+
     async def run(self):
         """Main bot loop"""
         # Load config
@@ -748,12 +817,12 @@ class TradingBot:
         elif use_ml:
             logger.warning("ML scoring requested but ML module not available")
         
-        # Initialize symbol clustering (if enabled)
+        # Initialize basic symbol clustering (enhanced will be done after data load)
+        symbol_clusters = {}
         try:
-            from symbol_clustering import update_symbol_clusters, load_symbol_clusters
-            # Load existing clusters or use defaults
+            from symbol_clustering import load_symbol_clusters
             symbol_clusters = load_symbol_clusters()
-            logger.info(f"Loaded symbol clusters for {len(symbol_clusters)} symbols")
+            logger.info(f"Loaded basic symbol clusters for {len(symbol_clusters)} symbols")
         except Exception as e:
             logger.warning(f"Could not load symbol clusters: {e}. Features will use defaults.")
             symbol_clusters = {}
@@ -774,6 +843,9 @@ class TradingBot:
         
         # Fetch historical data for all symbols
         await self.load_or_fetch_initial_data(symbols, tf)
+        
+        # Auto-generate enhanced clusters after data is loaded
+        await self.auto_generate_enhanced_clusters()
         
         # Recover existing positions - PRESERVE THEIR ORDERS
         await self.recover_positions(book, sizer)
@@ -846,6 +918,30 @@ class TradingBot:
         
         # Initialize ML breakout states dictionary
         ml_breakout_states = {}
+        
+        # Schedule weekly cluster updates
+        last_cluster_update = datetime.now()
+        cluster_update_interval = 7 * 24 * 60 * 60  # 7 days in seconds
+        
+        # Create background task for cluster updates
+        async def weekly_cluster_updater():
+            """Background task to update clusters weekly"""
+            while self.running:
+                try:
+                    # Wait for next update time
+                    await asyncio.sleep(cluster_update_interval)
+                    
+                    if self.running:  # Check if still running
+                        logger.info("🔄 Running scheduled weekly cluster update...")
+                        await self.auto_generate_enhanced_clusters()
+                        
+                except Exception as e:
+                    logger.error(f"Error in weekly cluster updater: {e}")
+                    # Continue running even if update fails
+        
+        # Start the weekly updater task
+        cluster_updater_task = asyncio.create_task(weekly_cluster_updater())
+        logger.info("📅 Started weekly cluster update scheduler")
         
         try:
             # Use multi-websocket handler if >190 topics

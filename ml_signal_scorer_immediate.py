@@ -37,7 +37,7 @@ class ImmediateMLScorer:
     # Learning parameters
     MIN_TRADES_FOR_ML = 10  # Start using ML models after just 10 trades
     RETRAIN_INTERVAL = 20  # Retrain every 20 combined trades to prevent whipsaws
-    INITIAL_THRESHOLD = 55  # Start lenient, will adapt based on performance
+    INITIAL_THRESHOLD = 70  # Start at 70, minimum threshold for quality control
     
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
@@ -100,7 +100,7 @@ class ImmediateMLScorer:
             # Load threshold
             threshold = self.redis_client.get('iml:threshold')
             if threshold:
-                self.min_score = float(threshold)
+                self.min_score = max(70.0, float(threshold))  # Enforce minimum of 70
                 
             # Load recent performance
             perf = self.redis_client.get('iml:recent_performance')
@@ -371,13 +371,13 @@ class ImmediateMLScorer:
             
             # If winning too much (>70%), raise threshold to be more selective
             if win_rate > 0.70:
-                self.min_score = min(75, self.min_score + 2)
+                self.min_score = min(85, self.min_score + 2)  # Can go up to 85
                 logger.info(f"Raising threshold to {self.min_score} (WR: {win_rate*100:.1f}%)")
                 
-            # If losing too much (<30%), lower threshold to be less selective
+            # If losing too much (<30%), lower threshold but never below 70
             elif win_rate < 0.30:
-                self.min_score = max(45, self.min_score - 2)
-                logger.info(f"Lowering threshold to {self.min_score} (WR: {win_rate*100:.1f}%)")
+                self.min_score = max(70, self.min_score - 2)  # Never go below 70
+                logger.info(f"Threshold would lower but keeping at {self.min_score} minimum (WR: {win_rate*100:.1f}%)")
                 
             # Save new threshold
             if self.redis_client:

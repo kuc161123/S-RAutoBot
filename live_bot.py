@@ -1084,13 +1084,13 @@ class TradingBot:
                             # Decide if we should take the trade
                             should_take_trade = ml_score >= ml_scorer.min_score
                         
-                            # Record the signal in phantom tracker with basic features
-                            # Phantom tracker uses basic features for consistency
+                            # ALWAYS record the signal in phantom tracker for learning, regardless of score
+                            # This allows ML to learn from all signals, even those below threshold
                             phantom_tracker.record_signal(
                                 symbol=sym,
                                 signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
                                 ml_score=ml_score,
-                                was_executed=should_take_trade,
+                                was_executed=should_take_trade,  # Real execution only if score >= threshold
                                 features=basic_features  # Always use basic features for phantom tracking
                             )
                             
@@ -1100,6 +1100,7 @@ class TradingBot:
                         
                             if not should_take_trade:
                                 logger.info(f"[{sym}] ML REJECTED: Score {ml_score:.1f} < {ml_scorer.min_score} | {ml_reason}")
+                                logger.info(f"[{sym}] ⚡ PHANTOM TRADE tracked for learning (not executed)")
                                 # Record failed signal for enhanced features context
                                 try:
                                     if 'feature_engine' in locals():

@@ -148,6 +148,13 @@ class ImmediateMLScorer:
                 feature_vector = self._prepare_features(features)
                 X = np.array([feature_vector]).reshape(1, -1)
                 
+                # Check if feature count matches what models expect
+                if hasattr(self.scaler, 'n_features_in_') and self.scaler.n_features_in_ != len(feature_vector):
+                    logger.warning(f"Feature count mismatch: models expect {self.scaler.n_features_in_}, got {len(feature_vector)}")
+                    logger.warning("Forcing retrain on next trade completion")
+                    self.force_retrain = True
+                    raise ValueError("Feature count mismatch - need to retrain")
+                
                 # Scale features - check if scaler is fitted
                 if hasattr(self.scaler, 'mean_') and self.scaler.mean_ is not None:
                     X_scaled = self.scaler.transform(X)
@@ -538,9 +545,10 @@ class ImmediateMLScorer:
                 scaler_data = base64.b64encode(pickle.dumps(self.scaler)).decode('ascii')
                 self.redis_client.set('iml:scaler', scaler_data)
                 
-                # Save feature version info
+                # Save feature version info and count
                 self.redis_client.set('iml:feature_version', self.model_feature_version)
-                logger.info(f"Saved models trained with {self.model_feature_version} features")
+                self.redis_client.set('iml:feature_count', str(X.shape[1]))
+                logger.info(f"Saved models trained with {self.model_feature_version} features (count: {X.shape[1]})")
                 
             # Calculate win rates
             overall_wr = np.mean(y) * 100

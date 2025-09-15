@@ -36,7 +36,7 @@ class ImmediateMLScorer:
     
     # Learning parameters
     MIN_TRADES_FOR_ML = 10  # Start using ML models after just 10 trades
-    RETRAIN_INTERVAL = 20  # Retrain every 20 combined trades to prevent whipsaws
+    RETRAIN_INTERVAL = 100  # Retrain every 100 combined trades for stability
     INITIAL_THRESHOLD = 70  # Start at 70, minimum threshold for quality control
     
     def __init__(self, enabled: bool = True):

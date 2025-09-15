@@ -774,6 +774,13 @@ class ImmediateMLScorer:
                 ]
                 
                 importances = self.models['rf'].feature_importances_
+                
+                # Handle feature count mismatch gracefully
+                if len(importances) != len(feature_names):
+                    logger.warning(f"Feature count mismatch in patterns: {len(importances)} importances vs {len(feature_names)} names")
+                    # Use only the features we have importances for
+                    feature_names = feature_names[:len(importances)]
+                
                 # Get top 10 most important features
                 feature_importance = list(zip(feature_names, importances))
                 feature_importance.sort(key=lambda x: x[1], reverse=True)

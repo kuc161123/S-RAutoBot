@@ -52,34 +52,12 @@ def enhance_ml_features(features: Dict, symbol: str) -> Dict:
     else:
         features['symbol_cluster'] = 3  # Default to volatile cluster
     
-    # Add enhanced features if available
-    if symbol in enhanced_clusters:
-        enhanced = enhanced_clusters[symbol]
-        
-        # Primary cluster confidence
-        features['cluster_confidence'] = enhanced.get('primary_confidence', 1.0)
-        
-        # Secondary cluster (0 if none)
-        features['cluster_secondary'] = enhanced.get('secondary_cluster', 0) or 0
-        
-        # Mixed behavior flag
-        features['cluster_mixed'] = 1 if enhanced.get('is_borderline', False) else 0
-        
-        # Confidence ratio (primary vs secondary)
-        if enhanced.get('secondary_confidence'):
-            features['cluster_conf_ratio'] = enhanced['primary_confidence'] / (enhanced['secondary_confidence'] + 0.001)
-        else:
-            features['cluster_conf_ratio'] = 10.0  # High ratio = very confident
-            
-        logger.debug(f"{symbol}: Cluster {features['symbol_cluster']} "
-                    f"(conf: {features['cluster_confidence']:.2f}, "
-                    f"mixed: {features['cluster_mixed']})")
-    else:
-        # Default enhanced features
-        features['cluster_confidence'] = 1.0
-        features['cluster_secondary'] = 0
-        features['cluster_mixed'] = 0
-        features['cluster_conf_ratio'] = 10.0
+    # Keep features for compatibility but set to neutral values
+    # This prevents the broken borderline detection from confusing ML
+    features['cluster_confidence'] = 1.0  # Always confident
+    features['cluster_secondary'] = 0     # No secondary cluster
+    features['cluster_mixed'] = 0         # Never mixed/borderline
+    features['cluster_conf_ratio'] = 10.0 # High confidence ratio
     
     # Normalize cluster features based on primary cluster
     # This helps ML understand relative behavior within cluster

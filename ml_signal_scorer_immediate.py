@@ -58,8 +58,8 @@ class ImmediateMLScorer:
         self.model_feature_version = 'original'  # 'original' or 'enhanced'
         self.feature_count = 31  # 22 original + 5 basic cluster + 4 enhanced cluster features
         
-        # Flag to force retrain
-        self.force_retrain = False
+        # Flag to force retrain - SET TO TRUE FOR STARTUP RETRAIN
+        self.force_retrain = True  # Force retrain on startup to handle feature changes
         
         # Initialize Redis
         self.redis_client = None

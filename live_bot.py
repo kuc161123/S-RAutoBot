@@ -9,6 +9,7 @@ import sys
 from datetime import datetime
 from typing import Dict, Optional
 
+import numpy as np
 import pandas as pd
 import websockets
 from dotenv import load_dotenv
@@ -671,7 +672,7 @@ class TradingBot:
             if needs_generation:
                 logger.info("🎯 Generating enhanced clusters from historical data...")
                 try:
-                    from symbol_clustering_enhanced import EnhancedSymbolClusterer
+                    from symbol_clustering import SymbolClusterer
                     
                     # Use loaded frames data
                     if self.frames and len(self.frames) > 0:
@@ -680,17 +681,54 @@ class TradingBot:
                                       if len(df) >= 500}
                         
                         if len(valid_frames) >= 20:  # Need at least 20 symbols
-                            clusterer = EnhancedSymbolClusterer(valid_frames)
-                            metrics = clusterer.calculate_enhanced_metrics(min_candles=500)
-                            confidence_clusters = clusterer.cluster_with_confidence()
-                            clusterer.save_enhanced_clusters()
-                            logger.info(f"✅ Generated enhanced clusters for {len(confidence_clusters)} symbols")
+                            clusterer = SymbolClusterer(valid_frames)
+                            metrics = clusterer.calculate_metrics(min_candles=500)
+                            clusters = clusterer.cluster_symbols()
+                            
+                            # Convert simple clusters to enhanced format for compatibility
+                            enhanced_data = {}
+                            for symbol, cluster_id in clusters.items():
+                                enhanced_data[symbol] = {
+                                    "primary_cluster": cluster_id,
+                                    "confidence": 0.95,  # High confidence for rule-based clustering
+                                    "is_borderline": False,  # No borderline in simple clustering
+                                    "secondary_cluster": None,
+                                    "secondary_confidence": 0.0
+                                }
+                            
+                            # Create enhanced format output
+                            output = {
+                                "generated_at": datetime.now().isoformat(),
+                                "cluster_descriptions": clusterer.get_cluster_descriptions(),
+                                "symbol_clusters": clusters,  # Backward compatible key name
+                                "enhanced_clusters": enhanced_data,
+                                "metrics_summary": {}
+                            }
+                            
+                            # Add metrics summary per cluster
+                            for cluster_id in range(1, 6):
+                                cluster_symbols = [s for s, c in clusters.items() if c == cluster_id]
+                                if cluster_symbols:
+                                    cluster_metrics = [metrics[s] for s in cluster_symbols if s in metrics]
+                                    
+                                    output["metrics_summary"][cluster_id] = {
+                                        "count": len(cluster_symbols),
+                                        "symbols": cluster_symbols[:5],  # Show first 5 as examples
+                                        "avg_volatility": np.mean([m.avg_volatility for m in cluster_metrics]) if cluster_metrics else 0,
+                                        "avg_btc_correlation": np.mean([m.btc_correlation for m in cluster_metrics]) if cluster_metrics else 0
+                                    }
+                            
+                            # Save to enhanced clusters file for compatibility
+                            with open('symbol_clusters_enhanced.json', 'w') as f:
+                                json.dump(output, f, indent=2)
+                            
+                            logger.info(f"✅ Generated enhanced clusters for {len(clusters)} symbols")
                             
                             # Notify via Telegram if available
                             if hasattr(self, 'tg') and self.tg:
                                 await self.tg.send_message(
                                     f"✅ *Auto-generated enhanced clusters*\n"
-                                    f"Analyzed {len(confidence_clusters)} symbols\n"
+                                    f"Analyzed {len(clusters)} symbols\n"
                                     f"Use /clusters to view status"
                                 )
                         else:

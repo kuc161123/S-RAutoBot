@@ -40,17 +40,20 @@ def reload_cluster_cache():
 
 def enhance_ml_features(features: Dict, symbol: str) -> Dict:
     """
-    Enhance ML features with cluster confidence data
+    Enhance ML features with cluster data using hardcoded clusters
     This is backward compatible - adds new features without breaking existing ones
     """
-    # Load cluster data
-    simple_clusters, enhanced_clusters = load_cluster_data()
-    
-    # Get simple cluster (backward compatible)
-    if symbol in simple_clusters:
-        features['symbol_cluster'] = simple_clusters[symbol]
-    else:
-        features['symbol_cluster'] = 3  # Default to volatile cluster
+    # Use hardcoded clusters
+    try:
+        from hardcoded_clusters import get_symbol_cluster
+        features['symbol_cluster'] = get_symbol_cluster(symbol)
+    except ImportError:
+        # Fallback to old method if hardcoded_clusters not available
+        simple_clusters, enhanced_clusters = load_cluster_data()
+        if symbol in simple_clusters:
+            features['symbol_cluster'] = simple_clusters[symbol]
+        else:
+            features['symbol_cluster'] = 3  # Default to volatile cluster
     
     # Keep features for compatibility but set to neutral values
     # This prevents the broken borderline detection from confusing ML
@@ -87,65 +90,55 @@ def enhance_ml_features(features: Dict, symbol: str) -> Dict:
     return features
 
 def get_cluster_description(symbol: str) -> str:
-    """Get human-readable cluster description for a symbol"""
-    simple_clusters, enhanced_clusters = load_cluster_data()
-    
-    cluster_names = {
-        1: "Blue Chip",
-        2: "Stable",
-        3: "Meme/Volatile",
-        4: "Mid-Cap Alt",
-        5: "Small Cap"
-    }
-    
-    if symbol in enhanced_clusters:
-        enhanced = enhanced_clusters[symbol]
-        primary = enhanced.get('primary_cluster', 3)
-        confidence = enhanced.get('primary_confidence', 1.0)
-        secondary = enhanced.get('secondary_cluster')
+    """Get human-readable cluster description for a symbol using hardcoded clusters"""
+    try:
+        from hardcoded_clusters import get_symbol_cluster, get_cluster_name
+        cluster_id = get_symbol_cluster(symbol)
+        return get_cluster_name(cluster_id)
+    except ImportError:
+        # Fallback to old method
+        simple_clusters, enhanced_clusters = load_cluster_data()
         
-        desc = f"{cluster_names.get(primary, 'Unknown')} ({confidence:.0%})"
+        cluster_names = {
+            1: "Blue Chip",
+            2: "Stable",
+            3: "Meme/Volatile",
+            4: "Mid-Cap Alt",
+            5: "Small Cap"
+        }
         
-        if secondary and enhanced.get('secondary_confidence', 0) > 0.2:
-            sec_conf = enhanced.get('secondary_confidence', 0)
-            desc += f" / {cluster_names.get(secondary, 'Unknown')} ({sec_conf:.0%})"
-            
-        if enhanced.get('is_borderline'):
-            desc += " [Borderline]"
-            
-        return desc
-    elif symbol in simple_clusters:
-        cluster = simple_clusters[symbol]
-        return cluster_names.get(cluster, 'Unknown')
-    else:
-        return "Unclustered"
+        if symbol in enhanced_clusters:
+            enhanced = enhanced_clusters[symbol]
+            primary = enhanced.get('primary_cluster', 3)
+            return cluster_names.get(primary, 'Unknown')
+        elif symbol in simple_clusters:
+            cluster = simple_clusters[symbol]
+            return cluster_names.get(cluster, 'Unknown')
+        else:
+            return "Small Cap"  # Default for unknown symbols
 
 def should_adjust_risk_for_cluster(symbol: str) -> Tuple[bool, float, str]:
     """
-    Determine if risk should be adjusted based on cluster confidence
+    Determine if risk should be adjusted based on hardcoded cluster
     Returns: (should_adjust, multiplier, reason)
     """
-    _, enhanced_clusters = load_cluster_data()
-    
-    if symbol not in enhanced_clusters:
-        return False, 1.0, "No cluster data"
-    
-    enhanced = enhanced_clusters[symbol]
-    confidence = enhanced.get('primary_confidence', 1.0)
-    is_borderline = enhanced.get('is_borderline', False)
-    
-    # Borderline symbols = more uncertainty = lower risk
-    if is_borderline:
-        return True, 0.8, f"Borderline cluster (conf: {confidence:.0%})"
-    
-    # Very low confidence = high uncertainty
-    if confidence < 0.6:
-        return True, 0.7, f"Low cluster confidence ({confidence:.0%})"
-    
-    # High confidence in volatile cluster = normal risk
-    # High confidence in stable cluster = can increase risk slightly
-    primary_cluster = enhanced.get('primary_cluster', 3)
-    if primary_cluster in [1, 2] and confidence > 0.9:  # Blue chip or stable
-        return True, 1.2, f"High confidence stable asset ({confidence:.0%})"
-    
-    return False, 1.0, "Normal confidence"
+    try:
+        from hardcoded_clusters import get_symbol_cluster, get_cluster_name
+        cluster_id = get_symbol_cluster(symbol)
+        cluster_name = get_cluster_name(cluster_id)
+        
+        # Risk adjustments based on cluster type
+        if cluster_id == 1:  # Blue Chip
+            return True, 1.2, f"Blue Chip asset - stable and liquid"
+        elif cluster_id == 2:  # Stable
+            return True, 0.5, f"Stablecoin - minimal volatility"
+        elif cluster_id == 3:  # Meme/Volatile
+            return True, 0.8, f"Meme/Volatile - high risk"
+        elif cluster_id == 4:  # Mid-Cap
+            return False, 1.0, f"Mid-Cap Alt - standard risk"
+        else:  # Small Cap
+            return True, 0.7, f"Small Cap - higher uncertainty"
+            
+    except ImportError:
+        # Fallback to no adjustment if hardcoded clusters not available
+        return False, 1.0, "Using default risk"

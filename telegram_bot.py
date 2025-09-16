@@ -2025,85 +2025,68 @@ class TGBot:
             await update.message.reply_text("Error getting ML retrain info")
     
     async def cluster_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Show symbol cluster status with confidence scores"""
+        """Show symbol cluster status using hardcoded clusters"""
         try:
             msg = "🎯 *Symbol Cluster Status*\n"
             msg += "━" * 25 + "\n\n"
             
-            # Try to load enhanced clusters (force reload to get latest)
+            # Use hardcoded clusters
             try:
-                from cluster_feature_enhancer import load_cluster_data, get_cluster_description, reload_cluster_cache
-                # Force reload to ensure we have the latest data
-                simple_clusters, enhanced_clusters = reload_cluster_cache()
+                from hardcoded_clusters import (get_hardcoded_clusters, get_cluster_name, 
+                                               get_symbol_cluster, get_cluster_description,
+                                               BLUE_CHIP, STABLE, MEME_VOLATILE, MID_CAP)
                 
-                if enhanced_clusters:
-                    # Show cluster summary
-                    cluster_names = {
-                        1: "Blue Chip",
-                        2: "Stable",
-                        3: "Meme/Volatile",
-                        4: "Mid-Cap Alt",
-                        5: "Small Cap"
-                    }
+                # Get all hardcoded clusters
+                all_clusters = get_hardcoded_clusters()
+                
+                # Count hardcoded symbols
+                cluster_counts = {
+                    1: len(BLUE_CHIP),
+                    2: len(STABLE),
+                    3: len(MEME_VOLATILE),
+                    4: len(MID_CAP),
+                    5: 0  # Will be calculated from active symbols
+                }
+                
+                # Count small cap symbols from trading symbols
+                trading_symbols = self.shared.get("frames", {}).keys()
+                known_symbols = set(all_clusters.keys())
+                small_cap_count = len([s for s in trading_symbols if s not in known_symbols])
+                cluster_counts[5] = small_cap_count
+                
+                msg += "📊 *Hardcoded Cluster Distribution*\n"
+                for i in range(1, 6):
+                    name = get_cluster_name(i)
+                    count = cluster_counts[i]
+                    if count > 0:
+                        msg += f"• {name}: {count} symbols\n"
+                
+                msg += "\n🔍 *Sample Symbols by Cluster*\n"
+                
+                # Show examples from each cluster
+                msg += f"\n*{get_cluster_name(1)}:*\n"
+                for symbol in BLUE_CHIP[:5]:
+                    msg += f"• {symbol}\n"
                     
-                    # Count symbols per cluster
-                    cluster_counts = {i: 0 for i in range(1, 6)}
-                    borderline_counts = {i: 0 for i in range(1, 6)}
+                msg += f"\n*{get_cluster_name(3)}:*\n"
+                for symbol in MEME_VOLATILE[:5]:
+                    msg += f"• {symbol}\n"
                     
-                    for symbol, data in enhanced_clusters.items():
-                        primary = data.get('primary_cluster', 3)
-                        cluster_counts[primary] += 1
-                        if data.get('is_borderline', False):
-                            borderline_counts[primary] += 1
-                    
-                    msg += "📊 *Cluster Distribution*\n"
-                    for i in range(1, 6):
-                        if cluster_counts[i] > 0:
-                            name = cluster_names[i]
-                            count = cluster_counts[i]
-                            borderline = borderline_counts[i]
-                            msg += f"• {name}: {count} symbols"
-                            if borderline > 0:
-                                msg += f" ({borderline} borderline)"
-                            msg += "\n"
-                    
-                    msg += "\n🔍 *Sample Symbols*\n"
-                    # Show a few examples from current positions or recent trades
-                    positions = self.shared.get("book", {}).positions
-                    if positions:
-                        msg += "_From open positions:_\n"
-                        for symbol in list(positions.keys())[:5]:
-                            desc = get_cluster_description(symbol)
-                            msg += f"• {symbol}: {desc}\n"
-                    
-                    # Show borderline symbols
-                    borderline_symbols = [(s, d) for s, d in enhanced_clusters.items() 
-                                        if d.get('is_borderline', False)]
-                    if borderline_symbols:
-                        msg += "\n⚠️ *Borderline Symbols*\n"
-                        for symbol, data in borderline_symbols[:5]:
-                            primary = cluster_names.get(data['primary_cluster'], 'Unknown')
-                            conf = data.get('primary_confidence', 0)
-                            msg += f"• {symbol}: {primary} ({conf:.0%})\n"
-                    
-                    # Show last update time
-                    try:
-                        import json
-                        with open('symbol_clusters_enhanced.json', 'r') as f:
-                            cluster_data = json.load(f)
-                            if 'generated_at' in cluster_data:
-                                from datetime import datetime
-                                gen_time = datetime.fromisoformat(cluster_data['generated_at'])
-                                days_old = (datetime.now() - gen_time).days
-                                msg += f"\n📅 *Last Updated*: {days_old} days ago\n"
-                                if days_old > 7:
-                                    msg += "⚠️ _Consider running /update_clusters_\n"
-                    except:
-                        pass
-                    
-                else:
-                    msg += "❌ No enhanced clusters found\n"
-                    msg += "Run `/update_clusters` to generate\n"
+                msg += f"\n*{get_cluster_name(4)}:*\n"  
+                for symbol in MID_CAP[:5]:
+                    msg += f"• {symbol}\n"
+                
+                # Show current positions with clusters
+                positions = self.shared.get("book", {}).positions
+                if positions:
+                    msg += "\n📈 *Your Open Positions:*\n"
+                    for symbol in list(positions.keys())[:10]:
+                        cluster_id = get_symbol_cluster(symbol)
+                        cluster_name = get_cluster_name(cluster_id)
+                        msg += f"• {symbol}: {cluster_name}\n"
+                
+                msg += "\n✅ *Using hardcoded clusters*\n"
+                msg += "_No generation needed - always available_"
                     
             except Exception as e:
                 logger.error(f"Error loading clusters: {e}")
@@ -2121,55 +2104,31 @@ class TGBot:
             await update.message.reply_text("Error getting cluster status")
     
     async def update_clusters(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Manually trigger cluster update"""
+        """Inform user that hardcoded clusters are always up to date"""
         try:
-            await update.message.reply_text("🔄 Starting cluster generation...")
+            from hardcoded_clusters import get_hardcoded_clusters, BLUE_CHIP, STABLE, MEME_VOLATILE, MID_CAP
             
-            # Get the bot instance from shared
-            bot_instance = self.shared.get("bot_instance")
-            if not bot_instance:
-                await update.message.reply_text("❌ Bot instance not available")
-                return
+            msg = "✅ *Cluster Update Status*\n"
+            msg += "━" * 25 + "\n\n"
+            msg += "📌 *Using Hardcoded Clusters*\n"
+            msg += "No update needed - clusters are hardcoded!\n\n"
             
-            # Check if frames data is available
-            frames = self.shared.get("frames", {})
-            frame_count = len(frames)
-            valid_frame_count = sum(1 for df in frames.values() if len(df) >= 500)
+            msg += "📊 *Current Distribution:*\n"
+            msg += f"• Blue Chip: {len(BLUE_CHIP)} symbols\n"
+            msg += f"• Stable: {len(STABLE)} symbols\n"
+            msg += f"• Meme/Volatile: {len(MEME_VOLATILE)} symbols\n"
+            msg += f"• Mid-Cap: {len(MID_CAP)} symbols\n"
+            msg += f"• Small Cap: All others\n\n"
             
-            await update.message.reply_text(
-                f"📊 Found {frame_count} symbols, {valid_frame_count} with enough data (500+ candles)"
-            )
-                
-            # Call the auto-generation function
-            try:
-                await bot_instance.auto_generate_enhanced_clusters()
-                
-                # Force reload the cache after generation
-                from cluster_feature_enhancer import reload_cluster_cache
-                reload_cluster_cache()
-                
-                # Check if file was created
-                import os
-                if os.path.exists('symbol_clusters_enhanced.json'):
-                    file_size = os.path.getsize('symbol_clusters_enhanced.json')
-                    await update.message.reply_text(
-                        f"✅ Cluster generation completed!\n"
-                        f"📁 File created: {file_size} bytes\n"
-                        f"Use /clusters to view the updated clusters"
-                    )
-                else:
-                    await update.message.reply_text(
-                        "⚠️ Generation completed but file not found\n"
-                        "Check bot logs for details"
-                    )
-            except Exception as e:
-                logger.error(f"Cluster generation failed: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                await update.message.reply_text(
-                    f"❌ Cluster generation failed\n"
-                    f"Error: {str(e)[:100]}"
-                )
+            msg += "💡 *Benefits:*\n"
+            msg += "• Always available\n"
+            msg += "• No generation needed\n"
+            msg += "• Consistent classification\n"
+            msg += "• Based on market research\n\n"
+            
+            msg += "Use `/clusters` to view full details"
+            
+            await update.message.reply_text(msg)
                 
         except Exception as e:
             logger.error(f"Error in update_clusters: {e}")

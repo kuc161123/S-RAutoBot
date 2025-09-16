@@ -694,7 +694,11 @@ class ImmediateMLScorer:
         # Decide if we should retrain
         should_retrain = force_due_to_features
         
-        if not self.is_ml_ready and total_available >= self.MIN_TRADES_FOR_ML:
+        # ALWAYS retrain on startup if force_retrain is True
+        if self.force_retrain and total_available >= self.MIN_TRADES_FOR_ML:
+            logger.info(f"Force retrain on startup with {total_available} trades")
+            should_retrain = True
+        elif not self.is_ml_ready and total_available >= self.MIN_TRADES_FOR_ML:
             # No models but enough data - definitely train
             logger.info("No models loaded but sufficient data available - will train")
             should_retrain = True
@@ -733,6 +737,9 @@ class ImmediateMLScorer:
                 # Save feature version marker
                 if self.redis_client:
                     self.redis_client.set(feature_version_key, current_feature_version)
+                
+                # Reset force_retrain flag after successful retrain
+                self.force_retrain = False
                 
                 logger.info("✅ Startup retrain completed successfully")
                 return True

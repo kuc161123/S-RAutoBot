@@ -2130,16 +2130,42 @@ class TGBot:
             if not bot_instance:
                 await update.message.reply_text("❌ Bot instance not available")
                 return
+            
+            # Check if frames data is available
+            frames = self.shared.get("frames", {})
+            frame_count = len(frames)
+            valid_frame_count = sum(1 for df in frames.values() if len(df) >= 500)
+            
+            await update.message.reply_text(
+                f"📊 Found {frame_count} symbols, {valid_frame_count} with enough data (500+ candles)"
+            )
                 
             # Call the auto-generation function
             try:
                 await bot_instance.auto_generate_enhanced_clusters()
-                await update.message.reply_text(
-                    "✅ Cluster generation completed!\n"
-                    "Use /clusters to view the updated clusters"
-                )
+                
+                # Force reload the cache after generation
+                from cluster_feature_enhancer import reload_cluster_cache
+                reload_cluster_cache()
+                
+                # Check if file was created
+                import os
+                if os.path.exists('symbol_clusters_enhanced.json'):
+                    file_size = os.path.getsize('symbol_clusters_enhanced.json')
+                    await update.message.reply_text(
+                        f"✅ Cluster generation completed!\n"
+                        f"📁 File created: {file_size} bytes\n"
+                        f"Use /clusters to view the updated clusters"
+                    )
+                else:
+                    await update.message.reply_text(
+                        "⚠️ Generation completed but file not found\n"
+                        "Check bot logs for details"
+                    )
             except Exception as e:
                 logger.error(f"Cluster generation failed: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
                 await update.message.reply_text(
                     f"❌ Cluster generation failed\n"
                     f"Error: {str(e)[:100]}"

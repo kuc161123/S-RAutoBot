@@ -1986,11 +1986,15 @@ class TGBot:
                 msg += f"• Trades needed: **{info['trades_until_next_retrain']}**\n"
                 msg += f"• Will retrain at: {info['next_retrain_at']} total trades\n"
                 
-                # Progress bar
+                # Progress bar - calculate based on actual retrain interval
                 if info['is_ml_ready']:
-                    progress = (20 - info['trades_until_next_retrain']) / 20 * 100
+                    # For retrain: how far through the 100-trade cycle
+                    trades_in_cycle = ml_scorer.RETRAIN_INTERVAL - info['trades_until_next_retrain']
+                    progress = (trades_in_cycle / ml_scorer.RETRAIN_INTERVAL) * 100
                 else:
-                    progress = (10 - info['trades_until_next_retrain']) / 10 * 100
+                    # For initial training: progress toward MIN_TRADES_FOR_ML
+                    trades_so_far = ml_scorer.MIN_TRADES_FOR_ML - info['trades_until_next_retrain']
+                    progress = (trades_so_far / ml_scorer.MIN_TRADES_FOR_ML) * 100
                 
                 progress = max(0, min(100, progress))
                 filled = int(progress / 10)

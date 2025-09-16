@@ -673,6 +673,9 @@ class TradingBot:
                 logger.info("🎯 Generating enhanced clusters from historical data...")
                 try:
                     from symbol_clustering import SymbolClusterer
+                    from datetime import datetime
+                    import json
+                    import numpy as np
                     
                     # Use loaded frames data
                     if self.frames and len(self.frames) > 0:

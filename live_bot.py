@@ -628,21 +628,43 @@ class TradingBot:
                 logger.info("🆕 No enhanced clusters found, auto-generating...")
                 needs_generation = True
             else:
-                # Check age of clusters
+                # Check for broken clustering (too many borderline symbols)
                 try:
                     import json
                     from datetime import datetime
                     with open('symbol_clusters_enhanced.json', 'r') as f:
                         cluster_data = json.load(f)
-                        if 'generated_at' in cluster_data:
-                            gen_time = datetime.fromisoformat(cluster_data['generated_at'])
-                            days_old = (datetime.now() - gen_time).days
-                            if days_old > 7:  # Update weekly
-                                logger.info(f"🔄 Enhanced clusters are {days_old} days old, updating...")
-                                needs_generation = True
-                            else:
-                                logger.info(f"✅ Enhanced clusters are {days_old} days old, still fresh")
-                except:
+                        
+                        # Count borderline symbols
+                        enhanced_data = cluster_data.get('enhanced_clusters', {})
+                        total_symbols = len(enhanced_data)
+                        borderline_count = sum(1 for data in enhanced_data.values() 
+                                             if data.get('is_borderline', False))
+                        
+                        # If more than 50% are borderline, clustering is broken
+                        if total_symbols > 0 and borderline_count / total_symbols > 0.5:
+                            logger.warning(f"🚨 Broken clustering detected: {borderline_count}/{total_symbols} symbols are borderline!")
+                            logger.info("Deleting and regenerating clusters...")
+                            import os
+                            os.remove('symbol_clusters_enhanced.json')
+                            needs_generation = True
+                        # Also check for obviously wrong assignments
+                        elif enhanced_data.get('BTCUSDT', {}).get('primary_cluster') != 1:
+                            logger.warning("🚨 BTCUSDT not in Blue Chip cluster - clustering is broken!")
+                            os.remove('symbol_clusters_enhanced.json')
+                            needs_generation = True
+                        else:
+                            # Check age
+                            if 'generated_at' in cluster_data:
+                                gen_time = datetime.fromisoformat(cluster_data['generated_at'])
+                                days_old = (datetime.now() - gen_time).days
+                                if days_old > 7:  # Update weekly
+                                    logger.info(f"🔄 Enhanced clusters are {days_old} days old, updating...")
+                                    needs_generation = True
+                                else:
+                                    logger.info(f"✅ Enhanced clusters are {days_old} days old, still fresh")
+                except Exception as e:
+                    logger.warning(f"Error checking clusters: {e}")
                     needs_generation = True
             
             # Generate if needed

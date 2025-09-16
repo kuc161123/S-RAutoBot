@@ -126,19 +126,29 @@ class SymbolClusterer:
             
         clusters = {}
         
+        # Hardcoded lists to ensure correct classification
+        major_cryptos = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 
+                        'ADAUSDT', 'AVAXUSDT', 'DOTUSDT', 'MATICUSDT', 'LINKUSDT']
+        
+        stablecoins = ['USDTUSDT', 'USDCUSDT', 'BUSDUSDT', 'DAIUSDT', 'TUSDUSDT']
+        
+        meme_coins = ['DOGEUSDT', 'SHIBUSDT', '1000SHIBUSDT', 'PEPEUSDT', '1000PEPEUSDT',
+                     'FLOKIUSDT', '1000FLOKIUSDT', 'BONKUSDT', '1000BONKUSDT', 
+                     'MEMEUSDT', 'BOMEUSDT', 'WIFUSDT']
+        
         for symbol, m in self.metrics.items():
             # Rule-based clustering for interpretability
             
-            # Cluster 1: Major cryptocurrencies (high price, low volatility, high BTC correlation)
-            if m.price_level >= 4 and m.avg_volatility < 3 and abs(m.btc_correlation) > 0.6:
+            # Cluster 1: Major cryptocurrencies
+            if symbol in major_cryptos:
                 clusters[symbol] = 1
                 
-            # Cluster 2: Stablecoins and low volatility (extremely low volatility)
-            elif m.avg_volatility < 1:
+            # Cluster 2: Stablecoins
+            elif symbol in stablecoins or m.avg_volatility < 1:
                 clusters[symbol] = 2
                 
-            # Cluster 3: Meme/High volatility coins (high volatility, low correlation)
-            elif m.avg_volatility > 5 and abs(m.btc_correlation) < 0.3:
+            # Cluster 3: Meme/High volatility coins
+            elif symbol in meme_coins or (m.avg_volatility > 5 and abs(m.btc_correlation) < 0.3):
                 clusters[symbol] = 3
                 
             # Cluster 4: Mid-cap alts (moderate everything, follows BTC)

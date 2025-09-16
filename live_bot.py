@@ -928,7 +928,8 @@ class TradingBot:
             "frames": self.frames,
             "last_analysis": last_analysis,
             "trade_tracker": self.trade_tracker,
-            "ml_scorer": ml_scorer  # Add ML scorer for telegram access
+            "ml_scorer": ml_scorer,  # Add ML scorer for telegram access
+            "bot_instance": self  # Add bot instance for cluster updates
         }
         
         # Initialize Telegram bot with retry on conflict

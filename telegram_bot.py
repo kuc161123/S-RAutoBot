@@ -2123,30 +2123,25 @@ class TGBot:
     async def update_clusters(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Manually trigger cluster update"""
         try:
-            await update.message.reply_text("🔄 Starting cluster update...")
+            await update.message.reply_text("🔄 Starting cluster generation...")
             
-            # Check if we have the necessary modules
+            # Get the bot instance from shared
+            bot_instance = self.shared.get("bot_instance")
+            if not bot_instance:
+                await update.message.reply_text("❌ Bot instance not available")
+                return
+                
+            # Call the auto-generation function
             try:
-                from dynamic_cluster_updater import run_cluster_update
-                import yaml
-                
-                # Load symbols from config
-                with open('config.yaml', 'r') as f:
-                    config = yaml.safe_load(f)
-                    symbols = config['trade']['symbols']
-                
-                # Run the update (this will notify via telegram when done)
-                await run_cluster_update(symbols, self)
-                
-            except ImportError as e:
+                await bot_instance.auto_generate_enhanced_clusters()
                 await update.message.reply_text(
-                    "❌ Cluster update modules not available\n"
-                    f"Error: {str(e)[:100]}"
+                    "✅ Cluster generation completed!\n"
+                    "Use /clusters to view the updated clusters"
                 )
             except Exception as e:
-                logger.error(f"Cluster update failed: {e}")
+                logger.error(f"Cluster generation failed: {e}")
                 await update.message.reply_text(
-                    f"❌ Cluster update failed\n"
+                    f"❌ Cluster generation failed\n"
                     f"Error: {str(e)[:100]}"
                 )
                 

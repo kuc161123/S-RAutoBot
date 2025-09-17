@@ -279,6 +279,11 @@ trade:
   ml_min_score: 70.0  # Minimum ML score to take signal (0-100)
   enable_ml_evolution: false  # Symbol-specific ML evolution (SHADOW MODE - learning only)
   use_symbol_clusters: true  # Enable symbol clustering features for ML
+  use_ml_dynamic_risk: false  # Enable ML-based dynamic risk sizing
+  ml_risk_min_score: 70.0  # ML score for minimum risk
+  ml_risk_max_score: 85.0  # ML score for maximum risk
+  ml_risk_min_percent: 2.0  # Risk % at minimum score
+  ml_risk_max_percent: 4.0  # Risk % at maximum score
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}

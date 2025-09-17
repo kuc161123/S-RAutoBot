@@ -21,6 +21,9 @@ class Settings:
     vol_mult:float=1.2
     both_hit_rule:str="SL_FIRST"
     confirmation_candles:int=2  # Number of confirmation candles required
+    use_mtf_sr:bool=True  # Enable multi-timeframe S/R
+    mtf_weight:float=2.0  # Prefer major levels 2x over minor
+    mtf_min_strength:float=3.0  # Minimum strength for major levels
 
 @dataclass
 class Signal:
@@ -159,6 +162,14 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     3. Wait for confirmation candles
     4. Then generate signal
     """
+    # Import MTF module if enabled
+    if s.use_mtf_sr:
+        try:
+            from multi_timeframe_sr import mtf_sr, should_use_mtf_level
+        except ImportError:
+            logger.warning("MTF S/R module not available, using standard pivots")
+            s.use_mtf_sr = False
+    
     # Initialize state for new symbols
     if symbol not in breakout_states:
         breakout_states[symbol] = BreakoutState()
@@ -190,7 +201,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     
     nearestRes, nearestSup = lastHigh, lastLow
     
-    # Update tracked S/R levels
+    # Update tracked S/R levels (will be updated after MTF check)
     state.last_resistance = nearestRes
     state.last_support = nearestSup
     
@@ -212,6 +223,32 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     
     c = float(close.iloc[-1])
     current_time = df.index[-1]
+    
+    # Check for MTF levels if enabled (moved here for current_time)
+    if s.use_mtf_sr:
+        try:
+            # Update MTF levels periodically
+            if len(df) % 100 == 0 or not hasattr(state, 'last_mtf_update'):
+                mtf_sr.update_sr_levels(symbol, df)
+                state.last_mtf_update = current_time
+            
+            # Check if we should use MTF levels
+            use_mtf_res, mtf_res, res_reason = should_use_mtf_level(symbol, nearestRes, c, df)
+            if use_mtf_res and mtf_res > 0:
+                logger.info(f"[{symbol}] Using MTF resistance: {mtf_res:.4f} ({res_reason})")
+                nearestRes = mtf_res
+            
+            use_mtf_sup, mtf_sup, sup_reason = should_use_mtf_level(symbol, nearestSup, c, df)
+            if use_mtf_sup and mtf_sup > 0:
+                logger.info(f"[{symbol}] Using MTF support: {mtf_sup:.4f} ({sup_reason})")
+                nearestSup = mtf_sup
+                
+        except Exception as e:
+            logger.debug(f"[{symbol}] MTF S/R check failed: {e}")
+    
+    # Update tracked S/R levels after MTF check
+    state.last_resistance = nearestRes
+    state.last_support = nearestSup
     
     # State machine for pullback strategy
     if state.state == "NEUTRAL":

@@ -368,7 +368,12 @@ def calculate_ml_features(df: pd.DataFrame, state: BreakoutState,
         'cluster_volatility_norm': 1.0,  # Normalized volatility within cluster
         'cluster_volume_norm': 1.0,  # Normalized volume within cluster
         'btc_correlation_bucket': 2,  # 0=negative, 1=low, 2=medium, 3=high
-        'price_tier': 3  # 1=micro, 2=small, 3=mid, 4=large, 5=mega
+        'price_tier': 3,  # 1=micro, 2=small, 3=mid, 4=large, 5=mega
+        
+        # Multi-timeframe S/R features (new)
+        'near_major_resistance': 0,  # 1 if near major resistance, 0 otherwise
+        'near_major_support': 0,  # 1 if near major support, 0 otherwise
+        'mtf_level_strength': 0.0  # Strength of nearest MTF level (0-10 scale)
     }
 
 def count_zone_touches(level:float, df:pd.DataFrame, zone_pct:float=0.003, lookback:int=75) -> int:

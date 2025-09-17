@@ -56,7 +56,7 @@ class ImmediateMLScorer:
         
         # Track which feature set the models were trained with
         self.model_feature_version = 'original'  # 'original' or 'enhanced'
-        self.feature_count = 31  # 22 original + 5 basic cluster + 4 enhanced cluster features
+        self.feature_count = 34  # 22 original + 5 basic cluster + 4 enhanced cluster + 3 MTF features
         
         # Flag to force retrain - SET TO TRUE FOR STARTUP RETRAIN
         self.force_retrain = True  # Force retrain on startup to handle feature changes

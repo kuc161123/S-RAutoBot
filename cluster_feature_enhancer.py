@@ -87,6 +87,39 @@ def enhance_ml_features(features: Dict, symbol: str) -> Dict:
     features['cluster_volatility_norm'] = cluster_volatility_norms.get(primary_cluster, 5.0)
     features['cluster_volume_norm'] = cluster_volume_norms.get(primary_cluster, 2.0)
     
+    # Add MTF features if available
+    try:
+        from multi_timeframe_sr import mtf_sr
+        
+        # Get current price from features if available
+        current_price = features.get('entry_price', 0)
+        if current_price > 0:
+            # Get nearest MTF levels
+            nearest = mtf_sr.get_nearest_levels(symbol, current_price, above_count=1, below_count=1)
+            
+            # Check if near resistance
+            if nearest['resistance']:
+                res_distance = abs(nearest['resistance'][0] - current_price) / current_price
+                if res_distance < 0.005:  # Within 0.5%
+                    features['near_major_resistance'] = 1
+                    features['mtf_level_strength'] = min(10.0, mtf_sr.get_level_strength(symbol, nearest['resistance'][0]))
+                else:
+                    features['near_major_resistance'] = 0
+            
+            # Check if near support
+            if nearest['support']:
+                sup_distance = abs(current_price - nearest['support'][0]) / current_price
+                if sup_distance < 0.005:  # Within 0.5%
+                    features['near_major_support'] = 1
+                    if features['mtf_level_strength'] == 0:  # Don't override resistance strength
+                        features['mtf_level_strength'] = min(10.0, mtf_sr.get_level_strength(symbol, nearest['support'][0]))
+                else:
+                    features['near_major_support'] = 0
+                    
+    except Exception as e:
+        logger.debug(f"MTF features not available: {e}")
+        # Keep default values
+    
     return features
 
 def get_cluster_description(symbol: str) -> str:

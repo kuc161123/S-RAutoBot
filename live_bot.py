@@ -1051,7 +1051,7 @@ class TradingBot:
                         
                     df.loc[row.index[0]] = row.iloc[0]
                     df.sort_index(inplace=True)
-                    df = df.tail(500)  # Keep only last 500 candles
+                    df = df.tail(4000)  # Keep last 4000 candles for extensive MTF analysis
                     self.frames[sym] = df
                     
                     # Update phantom trades with current price
@@ -1153,6 +1153,9 @@ class TradingBot:
                             # Calculate basic features (22 features for original ML)
                             basic_features = calculate_ml_features(df, state, sig.side, retracement)
                             
+                            # Add entry price for MTF feature calculation
+                            basic_features['entry_price'] = sig.entry
+                            
                             # Add symbol cluster features with enhanced confidence scores
                             try:
                                 from cluster_feature_enhancer import enhance_ml_features
@@ -1175,6 +1178,11 @@ class TradingBot:
                                     basic_features['price_tier'] = 4
                                 else:
                                     basic_features['price_tier'] = 5
+                                
+                                # Initialize MTF features to defaults in fallback
+                                basic_features['near_major_resistance'] = 0
+                                basic_features['near_major_support'] = 0
+                                basic_features['mtf_level_strength'] = 0.0
                             
                             # Create enhanced features copy for ML Evolution (48 features)
                             enhanced_features = basic_features.copy()

@@ -1051,7 +1051,7 @@ class TradingBot:
                         
                     df.loc[row.index[0]] = row.iloc[0]
                     df.sort_index(inplace=True)
-                    df = df.tail(4000)  # Keep last 4000 candles for extensive MTF analysis
+                    df = df.tail(10000)  # Keep last 10000 candles for maximum historical analysis
                     self.frames[sym] = df
                     
                     # Update phantom trades with current price
@@ -1069,8 +1069,8 @@ class TradingBot:
                             symbol_collector=symbol_collector
                         )
                 
-                    # Auto-save to database every 2 minutes (more aggressive)
-                    if (datetime.now() - self.last_save_time).total_seconds() > 120:
+                    # Auto-save to database every 15 minutes
+                    if (datetime.now() - self.last_save_time).total_seconds() > 900:
                         await self.save_all_candles()
                         self.last_save_time = datetime.now()
                 

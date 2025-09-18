@@ -46,6 +46,8 @@ class BreakoutState:
     last_signal_time:Optional[datetime] = None
     last_resistance:float = 0.0  # Track the resistance level
     last_support:float = 0.0  # Track the support level
+    previous_pivot_low:float = 0.0  # Track previous pivot low for structure-based stops
+    previous_pivot_high:float = 0.0  # Track previous pivot high for structure-based stops
 
 # Global state tracking for each symbol
 breakout_states: Dict[str, BreakoutState] = {}
@@ -72,6 +74,36 @@ def _atr(df:pd.DataFrame, n:int):
 def _ema(s:pd.Series, n:int):
     """Calculate Exponential Moving Average"""
     return s.ewm(span=n, adjust=False).mean().values
+
+def find_previous_pivot_low(df:pd.DataFrame, current_idx:int, left:int=2, right:int=2, lookback:int=50) -> float:
+    """Find the most recent pivot low before current index"""
+    start_idx = max(0, current_idx - lookback)
+    
+    # Get pivot lows
+    pivot_lows = _pivot_low(df["low"], left, right)
+    
+    # Find most recent pivot before current index
+    for i in range(current_idx - right - 1, start_idx, -1):
+        if not np.isnan(pivot_lows[i]):
+            return pivot_lows[i]
+    
+    # If no pivot found, use lowest low in lookback period
+    return df["low"].iloc[start_idx:current_idx].min()
+
+def find_previous_pivot_high(df:pd.DataFrame, current_idx:int, left:int=2, right:int=2, lookback:int=50) -> float:
+    """Find the most recent pivot high before current index"""
+    start_idx = max(0, current_idx - lookback)
+    
+    # Get pivot highs
+    pivot_highs = _pivot_high(df["high"], left, right)
+    
+    # Find most recent pivot before current index
+    for i in range(current_idx - right - 1, start_idx, -1):
+        if not np.isnan(pivot_highs[i]):
+            return pivot_highs[i]
+    
+    # If no pivot found, use highest high in lookback period
+    return df["high"].iloc[start_idx:current_idx].max()
 
 def detect_higher_low(df:pd.DataFrame, above_level:float, lookback:int=10) -> bool:
     """
@@ -259,6 +291,9 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             state.breakout_level = nearestRes
             state.breakout_time = current_time
             state.confirmation_count = 0
+            # Find and store previous pivot low for structure-based stop
+            current_idx = len(df) - 1
+            state.previous_pivot_low = find_previous_pivot_low(df, current_idx)
             logger.info(f"[{symbol}] Resistance broken at {nearestRes:.4f}, waiting for pullback and HL")
             
         elif trendDn and c < nearestSup and vol_ok and ema_ok_short:
@@ -267,6 +302,9 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             state.breakout_level = nearestSup
             state.breakout_time = current_time
             state.confirmation_count = 0
+            # Find and store previous pivot high for structure-based stop
+            current_idx = len(df) - 1
+            state.previous_pivot_high = find_previous_pivot_high(df, current_idx)
             logger.info(f"[{symbol}] Support broken at {nearestSup:.4f}, waiting for pullback and LH")
     
     elif state.state == "RESISTANCE_BROKEN":
@@ -304,7 +342,33 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         if confirmations >= s.confirmation_candles:
             # Generate LONG signal
             entry = c
-            sl = state.pullback_extreme - s.sl_buf_atr * atr  # SL below the pullback low
+            
+            # HYBRID STOP LOSS METHOD - use whichever gives more room
+            # Option 1: Previous pivot low
+            sl_option1 = state.previous_pivot_low - (s.sl_buf_atr * 0.3 * atr)  # Smaller buffer since further away
+            
+            # Option 2: Breakout level minus ATR
+            sl_option2 = state.breakout_level - (s.sl_buf_atr * 1.6 * atr)  # Larger buffer from breakout
+            
+            # Option 3: Original method (pullback extreme)
+            sl_option3 = state.pullback_extreme - (s.sl_buf_atr * atr)
+            
+            # Use the lowest SL (gives most room)
+            sl = min(sl_option1, sl_option2, sl_option3)
+            
+            # Ensure minimum stop distance (at least 1% from entry)
+            min_stop_distance = entry * 0.01
+            if abs(entry - sl) < min_stop_distance:
+                sl = entry - min_stop_distance
+                logger.info(f"[{symbol}] Adjusted stop to minimum distance (1% from entry)")
+            
+            # Log which method was used
+            if sl == sl_option1:
+                logger.info(f"[{symbol}] Using previous pivot low for stop: {state.previous_pivot_low:.4f}")
+            elif sl == sl_option2:
+                logger.info(f"[{symbol}] Using breakout level for stop: {state.breakout_level:.4f}")
+            else:
+                logger.info(f"[{symbol}] Using pullback extreme for stop: {state.pullback_extreme:.4f}")
             
             if entry <= sl:
                 logger.info(f"[{symbol}] Long signal rejected - invalid SL placement")
@@ -342,7 +406,33 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         if confirmations >= s.confirmation_candles:
             # Generate SHORT signal
             entry = c
-            sl = state.pullback_extreme + s.sl_buf_atr * atr  # SL above the pullback high
+            
+            # HYBRID STOP LOSS METHOD - use whichever gives more room
+            # Option 1: Previous pivot high
+            sl_option1 = state.previous_pivot_high + (s.sl_buf_atr * 0.3 * atr)  # Smaller buffer since further away
+            
+            # Option 2: Breakout level plus ATR
+            sl_option2 = state.breakout_level + (s.sl_buf_atr * 1.6 * atr)  # Larger buffer from breakout
+            
+            # Option 3: Original method (pullback extreme)
+            sl_option3 = state.pullback_extreme + (s.sl_buf_atr * atr)
+            
+            # Use the highest SL (gives most room)
+            sl = max(sl_option1, sl_option2, sl_option3)
+            
+            # Ensure minimum stop distance (at least 1% from entry)
+            min_stop_distance = entry * 0.01
+            if abs(sl - entry) < min_stop_distance:
+                sl = entry + min_stop_distance
+                logger.info(f"[{symbol}] Adjusted stop to minimum distance (1% from entry)")
+            
+            # Log which method was used
+            if sl == sl_option1:
+                logger.info(f"[{symbol}] Using previous pivot high for stop: {state.previous_pivot_high:.4f}")
+            elif sl == sl_option2:
+                logger.info(f"[{symbol}] Using breakout level for stop: {state.breakout_level:.4f}")
+            else:
+                logger.info(f"[{symbol}] Using pullback extreme for stop: {state.pullback_extreme:.4f}")
             
             if sl <= entry:
                 logger.info(f"[{symbol}] Short signal rejected - invalid SL placement")

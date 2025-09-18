@@ -37,6 +37,11 @@ class MinimalSettings:
     # New ML learning flags
     ml_learning_mode:bool=True  # True = accept all for learning
     ml_min_trades:int=200  # When ML takes over
+    
+    # MTF settings
+    use_mtf_sr:bool=True  # Enable multi-timeframe S/R
+    mtf_weight:float=2.0  # Prefer major levels 2x over minor
+    mtf_min_strength:float=3.0  # Minimum strength for major levels
 
 @dataclass
 class Signal:
@@ -69,6 +74,13 @@ class BreakoutState:
     # Track for ML learning (but don't filter)
     breakout_high:float = 0.0
     breakout_low:float = 0.0
+    
+    # Structure-based stop tracking
+    previous_pivot_low:float = 0.0
+    previous_pivot_high:float = 0.0
+    
+    # MTF tracking
+    last_mtf_update:Optional[datetime] = None
 
 # Global state tracking
 breakout_states: Dict[str, BreakoutState] = {}
@@ -91,6 +103,36 @@ def _atr(df:pd.DataFrame, n:int):
     tr = np.maximum(df["high"]-df["low"],
          np.maximum(abs(df["high"]-prev_close), abs(df["low"]-prev_close)))
     return pd.Series(tr, index=df.index).rolling(n).mean().values
+
+def find_previous_pivot_low(df:pd.DataFrame, current_idx:int, left:int=3, right:int=2, lookback:int=50) -> float:
+    """Find the most recent pivot low before current index"""
+    start_idx = max(0, current_idx - lookback)
+    
+    # Get pivot lows
+    pivot_lows = _pivot_low(df["low"], left, right)
+    
+    # Find most recent pivot before current index
+    for i in range(current_idx - right - 1, start_idx, -1):
+        if not np.isnan(pivot_lows[i]):
+            return pivot_lows[i]
+    
+    # If no pivot found, use lowest low in lookback period
+    return df["low"].iloc[start_idx:current_idx].min()
+
+def find_previous_pivot_high(df:pd.DataFrame, current_idx:int, left:int=3, right:int=2, lookback:int=50) -> float:
+    """Find the most recent pivot high before current index"""
+    start_idx = max(0, current_idx - lookback)
+    
+    # Get pivot highs
+    pivot_highs = _pivot_high(df["high"], left, right)
+    
+    # Find most recent pivot before current index
+    for i in range(current_idx - right - 1, start_idx, -1):
+        if not np.isnan(pivot_highs[i]):
+            return pivot_highs[i]
+    
+    # If no pivot found, use highest high in lookback period
+    return df["high"].iloc[start_idx:current_idx].max()
 
 def detect_simple_higher_low(df:pd.DataFrame, above_level:float, 
                             lookback:int=10, zone_lower:float=None) -> tuple:
@@ -443,6 +485,33 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
             recent_support = pl
             break
     
+    # Import MTF module if enabled
+    if settings.use_mtf_sr:
+        try:
+            from multi_timeframe_sr import mtf_sr, should_use_mtf_level
+            
+            # Update MTF levels periodically
+            if len(df) % 100 == 0 or not hasattr(state, 'last_mtf_update'):
+                mtf_sr.update_sr_levels(symbol, df)
+                state.last_mtf_update = datetime.now()
+            
+            # Check if we should use MTF levels
+            if not np.isnan(recent_resistance):
+                use_mtf_res, mtf_res, res_reason = should_use_mtf_level(symbol, recent_resistance, close, df)
+                if use_mtf_res and mtf_res > 0:
+                    logger.info(f"{symbol}: Using MTF resistance: {mtf_res:.4f} ({res_reason})")
+                    recent_resistance = mtf_res
+            
+            if not np.isnan(recent_support):
+                use_mtf_sup, mtf_sup, sup_reason = should_use_mtf_level(symbol, recent_support, close, df)
+                if use_mtf_sup and mtf_sup > 0:
+                    logger.info(f"{symbol}: Using MTF support: {mtf_sup:.4f} ({sup_reason})")
+                    recent_support = mtf_sup
+                    
+        except Exception as e:
+            logger.debug(f"{symbol}: MTF S/R check failed: {e}")
+            # Continue with regular S/R if MTF fails
+    
     # Update tracked levels and zones with strength scoring
     if not np.isnan(recent_resistance):
         state.last_resistance = recent_resistance
@@ -475,6 +544,9 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
             state.breakout_level = state.last_resistance  # Use center of zone
             state.breakout_time = datetime.now()
             state.breakout_high = high
+            # Find and store previous pivot low for structure-based stop
+            current_idx = len(df) - 1
+            state.previous_pivot_low = find_previous_pivot_low(df, current_idx, settings.left, settings.right)
             logger.info(f"{symbol}: Resistance zone broken at {state.last_resistance:.2f} (closed above {state.resistance_zone_upper:.2f})")
         
         elif state.support_zone_lower > 0 and close < state.support_zone_lower:
@@ -483,6 +555,9 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
             state.breakout_level = state.last_support  # Use center of zone
             state.breakout_time = datetime.now()
             state.breakout_low = low
+            # Find and store previous pivot high for structure-based stop
+            current_idx = len(df) - 1
+            state.previous_pivot_high = find_previous_pivot_high(df, current_idx, settings.left, settings.right)
             logger.info(f"{symbol}: Support zone broken at {state.last_support:.2f} (closed below {state.support_zone_lower:.2f})")
     
     elif state.state == "RESISTANCE_BROKEN":
@@ -533,7 +608,7 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
             # Generate LONG signal - no filtering!
             entry = close
             
-            # Dynamic stop loss based on volatility
+            # HYBRID STOP LOSS METHOD with volatility adjustment
             # Calculate ATR percentile for volatility adjustment
             atr_history = pd.Series(atr[-100:]) if len(atr) >= 100 else pd.Series(atr)
             atr_percentile = (current_atr > atr_history).mean() * 100
@@ -548,7 +623,27 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
                 logger.info(f"{symbol}: Extreme volatility detected ({atr_percentile:.0f}th percentile), widening stop further")
             
             adjusted_sl_buffer = settings.sl_buf_atr * volatility_multiplier
-            sl = state.pullback_extreme - (current_atr * adjusted_sl_buffer)
+            
+            # HYBRID METHOD - use whichever gives more room
+            # Option 1: Previous pivot low
+            sl_option1 = state.previous_pivot_low - (adjusted_sl_buffer * 0.3 * current_atr)  # Smaller buffer since further away
+            
+            # Option 2: Breakout level minus ATR
+            sl_option2 = state.breakout_level - (adjusted_sl_buffer * 1.6 * current_atr)  # Larger buffer from breakout
+            
+            # Option 3: Original method (pullback extreme)
+            sl_option3 = state.pullback_extreme - (current_atr * adjusted_sl_buffer)
+            
+            # Use the lowest SL (gives most room)
+            sl = min(sl_option1, sl_option2, sl_option3)
+            
+            # Log which method was used
+            if sl == sl_option1:
+                logger.info(f"{symbol}: Using previous pivot low for stop: {state.previous_pivot_low:.4f}")
+            elif sl == sl_option2:
+                logger.info(f"{symbol}: Using breakout level for stop: {state.breakout_level:.4f}")
+            else:
+                logger.info(f"{symbol}: Using pullback extreme for stop: {state.pullback_extreme:.4f}")
             
             # Ensure minimum stop distance (at least 1% from entry)
             min_stop_distance = entry * 0.01
@@ -604,7 +699,7 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
             # Generate SHORT signal - no filtering!
             entry = close
             
-            # Dynamic stop loss based on volatility
+            # HYBRID STOP LOSS METHOD with volatility adjustment
             # Calculate ATR percentile for volatility adjustment
             atr_history = pd.Series(atr[-100:]) if len(atr) >= 100 else pd.Series(atr)
             atr_percentile = (current_atr > atr_history).mean() * 100
@@ -619,7 +714,27 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
                 logger.info(f"{symbol}: Extreme volatility detected ({atr_percentile:.0f}th percentile), widening stop further")
             
             adjusted_sl_buffer = settings.sl_buf_atr * volatility_multiplier
-            sl = state.pullback_extreme + (current_atr * adjusted_sl_buffer)
+            
+            # HYBRID METHOD - use whichever gives more room
+            # Option 1: Previous pivot high
+            sl_option1 = state.previous_pivot_high + (adjusted_sl_buffer * 0.3 * current_atr)  # Smaller buffer since further away
+            
+            # Option 2: Breakout level plus ATR
+            sl_option2 = state.breakout_level + (adjusted_sl_buffer * 1.6 * current_atr)  # Larger buffer from breakout
+            
+            # Option 3: Original method (pullback extreme)
+            sl_option3 = state.pullback_extreme + (current_atr * adjusted_sl_buffer)
+            
+            # Use the highest SL (gives most room)
+            sl = max(sl_option1, sl_option2, sl_option3)
+            
+            # Log which method was used
+            if sl == sl_option1:
+                logger.info(f"{symbol}: Using previous pivot high for stop: {state.previous_pivot_high:.4f}")
+            elif sl == sl_option2:
+                logger.info(f"{symbol}: Using breakout level for stop: {state.breakout_level:.4f}")
+            else:
+                logger.info(f"{symbol}: Using pullback extreme for stop: {state.pullback_extreme:.4f}")
             
             # Ensure minimum stop distance (at least 1% from entry)
             min_stop_distance = entry * 0.01

@@ -130,15 +130,19 @@ class PostgresCandleStorage:
         finally:
             session.close()
     
-    def load_candles(self, symbol: str, limit: int = 500) -> Optional[pd.DataFrame]:
+    def load_candles(self, symbol: str, limit: int = None) -> Optional[pd.DataFrame]:
         """Load candles from database for a symbol"""
         session = self.Session()
         try:
             # Query candles
-            candles = session.query(Candle).filter_by(symbol=symbol)\
-                .order_by(Candle.timestamp.desc())\
-                .limit(limit)\
-                .all()
+            query = session.query(Candle).filter_by(symbol=symbol)\
+                .order_by(Candle.timestamp.desc())
+            
+            # Apply limit only if specified
+            if limit is not None:
+                query = query.limit(limit)
+                
+            candles = query.all()
             
             if not candles:
                 logger.info(f"[{symbol}] No historical candles found in database")

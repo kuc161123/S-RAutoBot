@@ -100,7 +100,8 @@ class ImmediateMLScorer:
             # Load threshold
             threshold = self.redis_client.get('iml:threshold')
             if threshold:
-                self.min_score = max(70.0, float(threshold))  # Enforce minimum of 70
+                self.min_score = float(threshold)  # Remove the 70 minimum enforcement
+                logger.info(f"Loaded saved ML threshold: {self.min_score}")
                 
             # Load recent performance
             perf = self.redis_client.get('iml:recent_performance')

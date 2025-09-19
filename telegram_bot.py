@@ -44,6 +44,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("force_retrain", self.force_retrain_ml))
         self.app.add_handler(CommandHandler("clusters", self.cluster_status))
         self.app.add_handler(CommandHandler("update_clusters", self.update_clusters))
+        self.app.add_handler(CommandHandler("set_ml_threshold", self.set_ml_threshold))
         
         self.running = False
 
@@ -2133,3 +2134,79 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in update_clusters: {e}")
             await update.message.reply_text("Error triggering cluster update")
+    
+    async def set_ml_threshold(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Set ML threshold for signal acceptance"""
+        try:
+            # Get ML scorer
+            ml_scorer = self.shared.get("ml_scorer")
+            if not ml_scorer:
+                await update.message.reply_text("❌ ML system not available")
+                return
+            
+            # Check if arguments provided
+            if not ctx.args:
+                # Show current threshold
+                msg = "🤖 *ML Threshold Settings*\n"
+                msg += "━" * 25 + "\n\n"
+                msg += f"Current threshold: {ml_scorer.min_score}\n\n"
+                msg += "📊 *Threshold Guide:*\n"
+                msg += "• 50-60: Very lenient (more signals)\n"
+                msg += "• 60-70: Moderate\n"
+                msg += "• 70-80: Standard (default)\n" 
+                msg += "• 80-90: Conservative\n"
+                msg += "• 90-100: Very strict (fewer signals)\n\n"
+                msg += "Usage: `/set_ml_threshold 75`"
+                await self.safe_reply(update, msg)
+                return
+            
+            try:
+                new_threshold = float(ctx.args[0])
+                
+                # Validate threshold
+                if new_threshold < 0 or new_threshold > 100:
+                    await update.message.reply_text("❌ Threshold must be between 0 and 100")
+                    return
+                
+                # Update threshold
+                old_threshold = ml_scorer.min_score
+                ml_scorer.min_score = new_threshold
+                
+                # Save to Redis if available
+                if ml_scorer.redis_client:
+                    try:
+                        ml_scorer.redis_client.set('iml:threshold', new_threshold)
+                    except:
+                        pass
+                
+                # Prepare response
+                msg = f"✅ *ML Threshold Updated*\n\n"
+                msg += f"• Old threshold: {old_threshold}\n"
+                msg += f"• New threshold: {new_threshold}\n\n"
+                
+                # Add interpretation
+                if new_threshold < 60:
+                    msg += "⚡ Very lenient - Expect more signals with higher risk\n"
+                elif new_threshold < 70:
+                    msg += "📊 Moderate - Balanced approach\n"
+                elif new_threshold < 80:
+                    msg += "✅ Standard - Good balance of quality and quantity\n"
+                elif new_threshold < 90:
+                    msg += "🛡️ Conservative - Higher quality signals only\n"
+                else:
+                    msg += "🏆 Very strict - Only the best signals\n"
+                
+                # Add stats if available
+                stats = ml_scorer.get_stats()
+                if stats.get('completed_trades', 0) > 0:
+                    msg += f"\nBased on {stats['completed_trades']} completed trades"
+                
+                await self.safe_reply(update, msg)
+                logger.info(f"ML threshold updated from {old_threshold} to {new_threshold}")
+                
+            except ValueError:
+                await update.message.reply_text("❌ Invalid threshold. Please provide a number between 0 and 100")
+            
+        except Exception as e:
+            logger.error(f"Error in set_ml_threshold: {e}")
+            await update.message.reply_text("Error updating ML threshold")

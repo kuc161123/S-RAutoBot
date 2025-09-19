@@ -265,15 +265,26 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 state.last_mtf_update = current_time
             
             # Check if we should use MTF levels
+            original_resistance = nearestRes
+            original_support = nearestSup
+            
             use_mtf_res, mtf_res, res_reason = should_use_mtf_level(symbol, nearestRes, c, df)
             if use_mtf_res and mtf_res > 0:
-                logger.info(f"[{symbol}] Using MTF resistance: {mtf_res:.4f} ({res_reason})")
-                nearestRes = mtf_res
+                # Validate resistance is above current price
+                if mtf_res > c:
+                    logger.info(f"[{symbol}] Using MTF resistance: {mtf_res:.4f} ({res_reason})")
+                    nearestRes = mtf_res
+                else:
+                    logger.warning(f"[{symbol}] MTF resistance {mtf_res:.4f} is below price {c:.4f}, keeping original")
             
             use_mtf_sup, mtf_sup, sup_reason = should_use_mtf_level(symbol, nearestSup, c, df)
             if use_mtf_sup and mtf_sup > 0:
-                logger.info(f"[{symbol}] Using MTF support: {mtf_sup:.4f} ({sup_reason})")
-                nearestSup = mtf_sup
+                # Validate support is below current price
+                if mtf_sup < c:
+                    logger.info(f"[{symbol}] Using MTF support: {mtf_sup:.4f} ({sup_reason})")
+                    nearestSup = mtf_sup
+                else:
+                    logger.warning(f"[{symbol}] MTF support {mtf_sup:.4f} is above price {c:.4f}, keeping original")
                 
         except Exception as e:
             logger.debug(f"[{symbol}] MTF S/R check failed: {e}")

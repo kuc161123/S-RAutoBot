@@ -496,17 +496,28 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
                 state.last_mtf_update = datetime.now()
             
             # Check if we should use MTF levels
+            original_resistance = recent_resistance
+            original_support = recent_support
+            
             if not np.isnan(recent_resistance):
                 use_mtf_res, mtf_res, res_reason = should_use_mtf_level(symbol, recent_resistance, close, df)
                 if use_mtf_res and mtf_res > 0:
-                    logger.info(f"{symbol}: Using MTF resistance: {mtf_res:.4f} ({res_reason})")
-                    recent_resistance = mtf_res
+                    # Validate resistance is above current price
+                    if mtf_res > close:
+                        logger.info(f"{symbol}: Using MTF resistance: {mtf_res:.4f} ({res_reason})")
+                        recent_resistance = mtf_res
+                    else:
+                        logger.warning(f"{symbol}: MTF resistance {mtf_res:.4f} is below price {close:.4f}, keeping original")
             
             if not np.isnan(recent_support):
                 use_mtf_sup, mtf_sup, sup_reason = should_use_mtf_level(symbol, recent_support, close, df)
                 if use_mtf_sup and mtf_sup > 0:
-                    logger.info(f"{symbol}: Using MTF support: {mtf_sup:.4f} ({sup_reason})")
-                    recent_support = mtf_sup
+                    # Validate support is below current price
+                    if mtf_sup < close:
+                        logger.info(f"{symbol}: Using MTF support: {mtf_sup:.4f} ({sup_reason})")
+                        recent_support = mtf_sup
+                    else:
+                        logger.warning(f"{symbol}: MTF support {mtf_sup:.4f} is above price {close:.4f}, keeping original")
                     
         except Exception as e:
             logger.debug(f"{symbol}: MTF S/R check failed: {e}")

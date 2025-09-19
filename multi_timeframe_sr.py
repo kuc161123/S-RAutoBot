@@ -125,7 +125,7 @@ class MultiTimeframeSR:
     
     def cluster_levels(self, levels: List[Tuple[float, int, str]], 
                       tolerance_pct: float) -> List[Tuple[float, int, str]]:
-        """Cluster nearby levels together"""
+        """Cluster nearby levels together - keeping support and resistance separate"""
         if not levels:
             return []
         
@@ -139,10 +139,11 @@ class MultiTimeframeSR:
             cluster_levels = [(level1, touches1)]
             cluster_type = type1
             
-            # Find all levels within tolerance
+            # Find all levels within tolerance OF THE SAME TYPE
             for j, (level2, touches2, type2) in enumerate(levels):
                 if j != i and j not in used:
-                    if abs(level2 - level1) / level1 <= tolerance_pct:
+                    # Only cluster if same type (support with support, resistance with resistance)
+                    if type1 == type2 and abs(level2 - level1) / level1 <= tolerance_pct:
                         cluster_levels.append((level2, touches2))
                         used.add(j)
             
@@ -279,15 +280,20 @@ def should_use_mtf_level(symbol: str, breakout_level: float,
     # Get nearest major levels
     nearest = mtf_sr.get_nearest_levels(symbol, current_price, above_count=1, below_count=1)
     
-    # Check if we're very close to a major level
-    if nearest['resistance'] and abs(current_price - nearest['resistance'][0]) / current_price < 0.005:
-        level = nearest['resistance'][0]
-        strength = mtf_sr.get_level_strength(symbol, level)
-        return True, level, f"Near major resistance (strength: {strength:.1f})"
+    # Check if we're very close to a major resistance (must be above current price)
+    if nearest['resistance'] and len(nearest['resistance']) > 0:
+        resistance_level = nearest['resistance'][0]
+        # Validate resistance is actually above price
+        if resistance_level > current_price and abs(current_price - resistance_level) / current_price < 0.005:
+            strength = mtf_sr.get_level_strength(symbol, resistance_level)
+            return True, resistance_level, f"Near major resistance (strength: {strength:.1f})"
     
-    if nearest['support'] and abs(current_price - nearest['support'][0]) / current_price < 0.005:
-        level = nearest['support'][0]
-        strength = mtf_sr.get_level_strength(symbol, level)
-        return True, level, f"Near major support (strength: {strength:.1f})"
+    # Check if we're very close to a major support (must be below current price)
+    if nearest['support'] and len(nearest['support']) > 0:
+        support_level = nearest['support'][0]
+        # Validate support is actually below price
+        if support_level < current_price and abs(current_price - support_level) / current_price < 0.005:
+            strength = mtf_sr.get_level_strength(symbol, support_level)
+            return True, support_level, f"Near major support (strength: {strength:.1f})"
     
     return False, 0.0, ""

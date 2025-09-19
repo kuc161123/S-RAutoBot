@@ -157,7 +157,21 @@ class MultiTimeframeSR:
             
             clustered.append((avg_level, total_touches, cluster_type))
         
-        return clustered
+        # Final cleanup: prevent same level being both support and resistance
+        final_levels = {}
+        for level, strength, level_type in clustered:
+            level_key = round(level, 4)  # Round to avoid floating point issues
+            
+            if level_key not in final_levels:
+                final_levels[level_key] = (level, strength, level_type)
+            else:
+                # Level already exists - keep the one with higher strength
+                existing_level, existing_strength, existing_type = final_levels[level_key]
+                if strength > existing_strength:
+                    final_levels[level_key] = (level, strength, level_type)
+                    logger.debug(f"Duplicate level {level:.4f}: keeping {level_type} (strength {strength:.1f}) over {existing_type} (strength {existing_strength:.1f})")
+        
+        return list(final_levels.values())
     
     def get_nearest_levels(self, symbol: str, current_price: float, 
                           above_count: int = 3, below_count: int = 3) -> Dict[str, List[float]]:

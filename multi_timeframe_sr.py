@@ -181,17 +181,20 @@ class MultiTimeframeSR:
         if symbol not in self.sr_levels:
             return {'resistance': [], 'support': []}
         
-        all_levels = self.sr_levels[symbol]
+        # Get price-validated levels first
+        validated_levels = self.get_price_validated_levels(symbol, current_price)
         
-        # Separate and filter levels
-        resistance_levels = sorted([l for l, s, t in all_levels 
-                                  if t == 'resistance' and l > current_price])
-        support_levels = sorted([l for l, s, t in all_levels 
-                               if t == 'support' and l < current_price], reverse=True)
+        # Separate into resistance (above) and support (below)
+        resistance_levels = [(l, s) for l, s, t in validated_levels if t == 'resistance']
+        support_levels = [(l, s) for l, s, t in validated_levels if t == 'support']
+        
+        # Sort by distance from current price (nearest first)
+        resistance_levels.sort(key=lambda x: x[0])  # Ascending for resistance
+        support_levels.sort(key=lambda x: x[0], reverse=True)  # Descending for support
         
         return {
-            'resistance': resistance_levels[:above_count],
-            'support': support_levels[:below_count]
+            'resistance': [l for l, s in resistance_levels[:above_count]],
+            'support': [l for l, s in support_levels[:below_count]]
         }
     
     def should_update(self, symbol: str, force: bool = False) -> bool:
@@ -282,7 +285,10 @@ class MultiTimeframeSR:
         
         tolerance = price * tolerance_pct
         
-        for level, strength, level_type in self.sr_levels[symbol]:
+        # Get price-validated levels
+        validated_levels = self.get_price_validated_levels(symbol, price)
+        
+        for level, strength, level_type in validated_levels:
             if abs(price - level) <= tolerance:
                 # Higher strength = more major level
                 if strength >= 3.0:  # Threshold for "major"
@@ -303,6 +309,31 @@ class MultiTimeframeSR:
                 return strength
         
         return 0.0
+    
+    def get_price_validated_levels(self, symbol: str, current_price: float) -> List[Tuple[float, int, str]]:
+        """
+        Get S/R levels that are logically positioned relative to current price
+        - Support levels must be below current price
+        - Resistance levels must be above current price
+        """
+        if symbol not in self.sr_levels:
+            return []
+        
+        validated_levels = []
+        
+        for level, strength, level_type in self.sr_levels[symbol]:
+            # Validate level position relative to price
+            if level_type == 'resistance' and level > current_price:
+                validated_levels.append((level, strength, level_type))
+            elif level_type == 'support' and level < current_price:
+                validated_levels.append((level, strength, level_type))
+            else:
+                # Level is on wrong side - could log for debugging
+                opposite_type = 'support' if level_type == 'resistance' else 'resistance'
+                logger.debug(f"{symbol}: Historical {level_type} at {level:.4f} is now acting as {opposite_type} (price: {current_price:.4f})")
+        
+        # Sort by strength descending
+        return sorted(validated_levels, key=lambda x: x[1], reverse=True)
 
 
 # Global instance for the strategy to use
@@ -332,10 +363,18 @@ def initialize_all_sr_levels(frames: Dict[str, pd.DataFrame]) -> Dict[str, int]:
             results[symbol] = level_count
             
             if level_count > 0:
-                # Log top 3 strongest levels
-                top_levels = mtf_sr.sr_levels[symbol][:3]
-                for level, strength, level_type in top_levels:
-                    logger.info(f"{symbol}: {level_type} at {level:.4f} (strength: {strength:.1f})")
+                # Get current price for validation
+                current_price = df['close'].iloc[-1]
+                
+                # Get price-validated levels
+                validated_levels = mtf_sr.get_price_validated_levels(symbol, current_price)
+                
+                # Log top 3 validated levels
+                if validated_levels:
+                    for level, strength, level_type in validated_levels[:3]:
+                        logger.info(f"{symbol}: {level_type} at {level:.4f} (strength: {strength:.1f})")
+                else:
+                    logger.debug(f"{symbol}: Found {level_count} historical levels, but none are valid for current price {current_price:.4f}")
                     
         except Exception as e:
             logger.error(f"Failed to initialize S/R for {symbol}: {e}")

@@ -2240,23 +2240,41 @@ class TGBot:
             if ctx.args:
                 symbol = ctx.args[0].upper()
                 if symbol in mtf_sr.sr_levels:
-                    levels = mtf_sr.sr_levels[symbol]
-                    msg += f"📍 *{symbol} Levels:*\n"
+                    # Get current price from frames
+                    frames = self.shared.get("frames", {})
+                    current_price = None
+                    if symbol in frames and not frames[symbol].empty:
+                        current_price = frames[symbol]['close'].iloc[-1]
                     
-                    # Group by type
-                    resistance_levels = [(l, s) for l, s, t in levels if t == 'resistance']
-                    support_levels = [(l, s) for l, s, t in levels if t == 'support']
-                    
-                    # Show top 5 of each
-                    if resistance_levels:
-                        msg += "\n🔴 *Resistance:*\n"
-                        for level, strength in resistance_levels[:5]:
-                            msg += f"• {level:.4f} (strength: {strength:.1f})\n"
-                    
-                    if support_levels:
-                        msg += "\n🟢 *Support:*\n"
-                        for level, strength in support_levels[:5]:
-                            msg += f"• {level:.4f} (strength: {strength:.1f})\n"
+                    if current_price:
+                        msg += f"📍 *{symbol} Levels:*\n"
+                        msg += f"Current Price: {current_price:.4f}\n"
+                        
+                        # Get price-validated levels
+                        validated_levels = mtf_sr.get_price_validated_levels(symbol, current_price)
+                        
+                        # Group by type
+                        resistance_levels = [(l, s) for l, s, t in validated_levels if t == 'resistance']
+                        support_levels = [(l, s) for l, s, t in validated_levels if t == 'support']
+                        
+                        # Show top 5 of each
+                        if resistance_levels:
+                            msg += "\n🔴 *Resistance (above price):*\n"
+                            for level, strength in resistance_levels[:5]:
+                                distance_pct = ((level - current_price) / current_price) * 100
+                                msg += f"• {level:.4f} (strength: {strength:.1f}, +{distance_pct:.2f}%)\n"
+                        else:
+                            msg += "\n🔴 *Resistance:* None above current price\n"
+                        
+                        if support_levels:
+                            msg += "\n🟢 *Support (below price):*\n"
+                            for level, strength in support_levels[:5]:
+                                distance_pct = ((current_price - level) / level) * 100
+                                msg += f"• {level:.4f} (strength: {strength:.1f}, -{distance_pct:.2f}%)\n"
+                        else:
+                            msg += "\n🟢 *Support:* None below current price\n"
+                    else:
+                        msg += f"❌ No price data available for {symbol}"
                 else:
                     msg += f"❌ No HTF levels found for {symbol}"
             else:

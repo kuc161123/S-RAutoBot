@@ -275,6 +275,10 @@ trade:
   both_hit_rule: SL_FIRST
   use_pullback_strategy: true
   confirmation_candles: 2
+  use_mtf_sr: true  # Enable multi-timeframe support/resistance
+  mtf_weight: 2.0  # Prefer major levels 2x over minor
+  mtf_min_strength: 3.0  # Minimum strength for major levels
+  mtf_update_interval: 100  # Update HTF S/R every N candles (default 100)
   use_ml_scoring: true  # ML Signal Quality Scoring (learns after 200 trades)
   ml_min_score: 70.0  # Minimum ML score to take signal (0-100)
   enable_ml_evolution: false  # Symbol-specific ML evolution (SHADOW MODE - learning only)

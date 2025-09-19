@@ -13,13 +13,17 @@ logger = logging.getLogger(__name__)
 class MultiTimeframeSR:
     """Detects support/resistance levels from multiple timeframes"""
     
-    def __init__(self, timeframes: List[int] = [240, 60]):
+    def __init__(self, timeframes: List[int] = [240, 60], update_interval: int = 100):
         """
         Initialize with higher timeframes to analyze
         Default: 4H (240) and 1H (60) for 15min base timeframe
+        update_interval: Update S/R levels every N candles (default 100)
         """
         self.timeframes = timeframes
         self.sr_levels = {}  # symbol -> list of SR levels
+        self.last_update = {}  # symbol -> last update timestamp
+        self.update_counter = {}  # symbol -> candle count since last update
+        self.update_interval = update_interval
         
     def aggregate_candles(self, df: pd.DataFrame, from_tf: int, to_tf: int) -> pd.DataFrame:
         """
@@ -176,10 +180,41 @@ class MultiTimeframeSR:
             'support': support_levels[:below_count]
         }
     
+    def should_update(self, symbol: str, force: bool = False) -> bool:
+        """
+        Check if S/R levels need updating for a symbol
+        Updates every N candles or 4 hours, whichever comes first
+        """
+        if force:
+            return True
+            
+        # Initialize counter if needed
+        if symbol not in self.update_counter:
+            self.update_counter[symbol] = 0
+            self.last_update[symbol] = datetime.now() - timedelta(hours=5)  # Force initial update
+            
+        # Increment counter
+        self.update_counter[symbol] += 1
+        
+        # Check candle count
+        if self.update_counter[symbol] >= self.update_interval:
+            return True
+            
+        # Check time (update at least every 4 hours)
+        time_since_update = datetime.now() - self.last_update[symbol]
+        if time_since_update > timedelta(hours=4):
+            return True
+            
+        return False
+    
     def update_sr_levels(self, symbol: str, df_15min: pd.DataFrame):
         """
         Update support/resistance levels for a symbol using multiple timeframes
         """
+        # Reset counter and timestamp
+        self.update_counter[symbol] = 0
+        self.last_update[symbol] = datetime.now()
+        
         all_levels = []
         
         # Get 15min pivots (minor levels)
@@ -258,6 +293,44 @@ class MultiTimeframeSR:
 
 # Global instance for the strategy to use
 mtf_sr = MultiTimeframeSR(timeframes=[240, 60])  # 4H and 1H
+
+
+def initialize_all_sr_levels(frames: Dict[str, pd.DataFrame]) -> Dict[str, int]:
+    """
+    Initialize S/R levels for all symbols from available candle data
+    Called on bot startup to analyze all historical data
+    Returns: dict of symbol -> level_count
+    """
+    logger.info("Initializing HTF support/resistance levels from historical data...")
+    results = {}
+    
+    for symbol, df in frames.items():
+        if df is None or df.empty or len(df) < 50:
+            logger.debug(f"Skipping {symbol} - insufficient data ({len(df) if df is not None else 0} candles)")
+            continue
+            
+        try:
+            # Update S/R levels for this symbol
+            mtf_sr.update_sr_levels(symbol, df)
+            
+            # Get count of levels found
+            level_count = len(mtf_sr.sr_levels.get(symbol, []))
+            results[symbol] = level_count
+            
+            if level_count > 0:
+                # Log top 3 strongest levels
+                top_levels = mtf_sr.sr_levels[symbol][:3]
+                for level, strength, level_type in top_levels:
+                    logger.info(f"{symbol}: {level_type} at {level:.4f} (strength: {strength:.1f})")
+                    
+        except Exception as e:
+            logger.error(f"Failed to initialize S/R for {symbol}: {e}")
+            results[symbol] = 0
+    
+    total_levels = sum(results.values())
+    logger.info(f"HTF S/R initialization complete: {len(results)} symbols analyzed, {total_levels} total levels found")
+    
+    return results
 
 
 def should_use_mtf_level(symbol: str, breakout_level: float, 

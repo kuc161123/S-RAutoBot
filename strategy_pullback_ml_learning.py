@@ -490,10 +490,10 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
         try:
             from multi_timeframe_sr import mtf_sr, should_use_mtf_level
             
-            # Update MTF levels periodically
-            if len(df) % 100 == 0 or not hasattr(state, 'last_mtf_update'):
+            # Update MTF levels periodically based on configured interval
+            if mtf_sr.should_update(symbol):
                 mtf_sr.update_sr_levels(symbol, df)
-                state.last_mtf_update = datetime.now()
+                logger.debug(f"{symbol}: Updated HTF S/R levels")
             
             # Check if we should use MTF levels
             original_resistance = recent_resistance

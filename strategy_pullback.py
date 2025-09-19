@@ -259,10 +259,10 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     # Check for MTF levels if enabled (moved here for current_time)
     if s.use_mtf_sr:
         try:
-            # Update MTF levels periodically
-            if len(df) % 100 == 0 or not hasattr(state, 'last_mtf_update'):
+            # Update MTF levels periodically based on configured interval
+            if mtf_sr.should_update(symbol):
                 mtf_sr.update_sr_levels(symbol, df)
-                state.last_mtf_update = current_time
+                logger.debug(f"[{symbol}] Updated HTF S/R levels")
             
             # Check if we should use MTF levels
             original_resistance = nearestRes

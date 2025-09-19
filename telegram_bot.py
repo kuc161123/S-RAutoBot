@@ -45,6 +45,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("clusters", self.cluster_status))
         self.app.add_handler(CommandHandler("update_clusters", self.update_clusters))
         self.app.add_handler(CommandHandler("set_ml_threshold", self.set_ml_threshold))
+        self.app.add_handler(CommandHandler("htf_sr", self.htf_sr_status))
+        self.app.add_handler(CommandHandler("update_htf_sr", self.update_htf_sr))
         
         self.running = False
 
@@ -2210,3 +2212,103 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in set_ml_threshold: {e}")
             await update.message.reply_text("Error updating ML threshold")
+    
+    async def htf_sr_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show HTF support/resistance status"""
+        try:
+            from multi_timeframe_sr import mtf_sr
+            
+            msg = "📊 *HTF Support/Resistance Status*\n"
+            msg += "━" * 30 + "\n\n"
+            
+            # Count symbols with levels
+            symbols_with_levels = 0
+            total_levels = 0
+            
+            for symbol, levels in mtf_sr.sr_levels.items():
+                if levels:
+                    symbols_with_levels += 1
+                    total_levels += len(levels)
+            
+            msg += f"📈 *Overview:*\n"
+            msg += f"• Symbols analyzed: {len(mtf_sr.sr_levels)}\n"
+            msg += f"• Symbols with levels: {symbols_with_levels}\n"
+            msg += f"• Total levels tracked: {total_levels}\n"
+            msg += f"• Update interval: {mtf_sr.update_interval} candles\n\n"
+            
+            # Show specific symbol if provided
+            if ctx.args:
+                symbol = ctx.args[0].upper()
+                if symbol in mtf_sr.sr_levels:
+                    levels = mtf_sr.sr_levels[symbol]
+                    msg += f"📍 *{symbol} Levels:*\n"
+                    
+                    # Group by type
+                    resistance_levels = [(l, s) for l, s, t in levels if t == 'resistance']
+                    support_levels = [(l, s) for l, s, t in levels if t == 'support']
+                    
+                    # Show top 5 of each
+                    if resistance_levels:
+                        msg += "\n🔴 *Resistance:*\n"
+                        for level, strength in resistance_levels[:5]:
+                            msg += f"• {level:.4f} (strength: {strength:.1f})\n"
+                    
+                    if support_levels:
+                        msg += "\n🟢 *Support:*\n"
+                        for level, strength in support_levels[:5]:
+                            msg += f"• {level:.4f} (strength: {strength:.1f})\n"
+                else:
+                    msg += f"❌ No HTF levels found for {symbol}"
+            else:
+                # Show example usage
+                msg += "💡 *Usage:*\n"
+                msg += "`/htf_sr BTCUSDT` - Show levels for specific symbol\n"
+                msg += "`/update_htf_sr` - Force update all HTF levels"
+            
+            await self.safe_reply(update, msg)
+            
+        except Exception as e:
+            logger.error(f"Error in htf_sr_status: {e}")
+            await update.message.reply_text("Error fetching HTF S/R status")
+    
+    async def update_htf_sr(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Force update HTF support/resistance levels"""
+        try:
+            # Get frames data
+            frames = self.shared.get("frames", {})
+            if not frames:
+                await update.message.reply_text("❌ No candle data available")
+                return
+            
+            # Send initial message
+            msg = await update.message.reply_text("🔄 Updating HTF S/R levels for all symbols...")
+            
+            # Update HTF levels
+            from multi_timeframe_sr import initialize_all_sr_levels
+            results = initialize_all_sr_levels(frames)
+            
+            # Update message with results
+            symbols_with_levels = [sym for sym, count in results.items() if count > 0]
+            
+            result_msg = "✅ *HTF S/R Update Complete*\n"
+            result_msg += "━" * 25 + "\n\n"
+            result_msg += f"📊 *Results:*\n"
+            result_msg += f"• Symbols analyzed: {len(results)}\n"
+            result_msg += f"• Found levels: {len(symbols_with_levels)} symbols\n"
+            result_msg += f"• Total levels: {sum(results.values())}\n\n"
+            
+            # Show top 5 symbols by level count
+            if symbols_with_levels:
+                top_symbols = sorted(results.items(), key=lambda x: x[1], reverse=True)[:5]
+                result_msg += "🏆 *Top Symbols by Level Count:*\n"
+                for sym, count in top_symbols:
+                    if count > 0:
+                        result_msg += f"• {sym}: {count} levels\n"
+            
+            result_msg += "\nUse `/htf_sr [symbol]` to view specific levels"
+            
+            await msg.edit_text(result_msg)
+            
+        except Exception as e:
+            logger.error(f"Error in update_htf_sr: {e}")
+            await update.message.reply_text("Error updating HTF S/R levels")

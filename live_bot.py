@@ -907,6 +907,30 @@ class TradingBot:
         # Fetch historical data for all symbols
         await self.load_or_fetch_initial_data(symbols, tf)
         
+        # Initialize HTF support/resistance levels from all available data
+        try:
+            from multi_timeframe_sr import initialize_all_sr_levels, mtf_sr
+            
+            # Configure MTF update interval from config
+            mtf_update_interval = cfg["trade"].get("mtf_update_interval", 100)
+            mtf_sr.update_interval = mtf_update_interval
+            logger.info(f"MTF S/R update interval set to {mtf_update_interval} candles")
+            
+            # Initialize all S/R levels
+            sr_results = initialize_all_sr_levels(self.frames)
+            
+            # Send summary to Telegram if available
+            if hasattr(self, 'tg') and self.tg and sr_results:
+                symbols_with_levels = [sym for sym, count in sr_results.items() if count > 0]
+                await self.tg.send_message(
+                    f"📊 *HTF S/R Analysis Complete*\n"
+                    f"Analyzed: {len(sr_results)} symbols\n" 
+                    f"Found levels: {len(symbols_with_levels)} symbols\n"
+                    f"Total levels: {sum(sr_results.values())}"
+                )
+        except Exception as e:
+            logger.error(f"Failed to initialize HTF S/R levels: {e}")
+        
         # Auto-generate enhanced clusters after data is loaded
         await self.auto_generate_enhanced_clusters()
         

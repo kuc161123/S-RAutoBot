@@ -57,9 +57,10 @@ class ImmediateMLScorer:
         # Track which feature set the models were trained with
         self.model_feature_version = 'original'  # 'original' or 'enhanced'
         self.feature_count = 34  # 22 original + 5 basic cluster + 4 enhanced cluster + 3 MTF features
-        
+
         # Flag to force retrain - SET TO TRUE FOR STARTUP RETRAIN
-        self.force_retrain = True  # Force retrain on startup to handle feature changes
+        # Force retrain to apply new class rebalancing
+        self.force_retrain = True  # Force retrain on startup with balanced classes
         
         # Initialize Redis
         self.redis_client = None
@@ -133,6 +134,26 @@ class ImmediateMLScorer:
         except Exception as e:
             logger.error(f"Error loading state: {e}")
     
+    def _calibrate_probability(self, prob: float) -> float:
+        """
+        Calibrate raw probability to better spread scores across 0-1 range
+        Uses a sigmoid-like transformation to expand the middle range
+        """
+        # Apply a softer transformation that spreads probabilities better
+        # This helps convert concentrated probabilities (0.2-0.4) to wider range (0-1)
+        if prob < 0.5:
+            # For low probabilities, apply square root to increase them
+            calibrated = prob ** 0.7  # This makes 0.2 -> 0.31, 0.3 -> 0.42
+        else:
+            # For high probabilities, apply softer scaling
+            calibrated = 1 - ((1 - prob) ** 0.7)
+
+        # Ensure we use the full range
+        # Map [0.1, 0.9] to [0, 1] for better spread
+        calibrated = max(0, min(1, (calibrated - 0.1) / 0.8))
+
+        return calibrated
+
     def score_signal(self, signal: dict, features: dict) -> Tuple[float, str]:
         """
         Score a signal from 0-100
@@ -164,26 +185,46 @@ class ImmediateMLScorer:
                     logger.warning("Scaler not fitted, using unscaled features")
                     X_scaled = X
                 
-                # Get predictions from ensemble
+                # Get predictions from ensemble with proper scaling
                 predictions = []
+                raw_predictions = {}
+
                 if 'rf' in self.models:
                     pred = self.models['rf'].predict_proba(X_scaled)[0][1]
-                    predictions.append(pred)
-                    reasoning.append(f"RF: {pred*100:.1f}")
-                    
+                    # Scale probability to 0-100 range with calibration
+                    # Use sigmoid-like transformation to spread scores better
+                    scaled_pred = self._calibrate_probability(pred) * 100
+                    predictions.append(scaled_pred)
+                    raw_predictions['rf'] = scaled_pred
+                    reasoning.append(f"RF: {scaled_pred:.1f}")
+
                 if 'gb' in self.models:
                     pred = self.models['gb'].predict_proba(X_scaled)[0][1]
-                    predictions.append(pred)
-                    reasoning.append(f"GB: {pred*100:.1f}")
-                    
+                    # Scale probability to 0-100 range with calibration
+                    scaled_pred = self._calibrate_probability(pred) * 100
+                    predictions.append(scaled_pred)
+                    raw_predictions['gb'] = scaled_pred
+                    reasoning.append(f"GB: {scaled_pred:.1f}")
+
                 if 'nn' in self.models:
                     pred = self.models['nn'].predict_proba(X_scaled)[0][1]
-                    predictions.append(pred)
-                    reasoning.append(f"NN: {pred*100:.1f}")
-                
-                # Average predictions
+                    # Scale probability to 0-100 range with calibration
+                    scaled_pred = self._calibrate_probability(pred) * 100
+                    predictions.append(scaled_pred)
+                    raw_predictions['nn'] = scaled_pred
+                    reasoning.append(f"NN: {scaled_pred:.1f}")
+
+                # Weighted average predictions (GB slightly less weight due to past issues)
                 if predictions:
-                    ml_score = np.mean(predictions) * 100
+                    if 'gb' in raw_predictions and 'rf' in raw_predictions:
+                        # Weight RF more heavily if GB was problematic
+                        if raw_predictions['gb'] < 10 and raw_predictions['rf'] > 20:
+                            ml_score = (raw_predictions['rf'] * 0.6 + raw_predictions['gb'] * 0.4)
+                        else:
+                            ml_score = np.mean(predictions)
+                    else:
+                        ml_score = np.mean(predictions)
+
                     score = ml_score
                     reasoning.insert(0, f"ML Ensemble: {score:.1f}")
                     
@@ -196,11 +237,12 @@ class ImmediateMLScorer:
             reasoning = rules_reasoning
             
         # Apply confidence adjustment based on data availability
-        if self.completed_trades < 10:
-            # Very early stage - be more conservative
-            confidence = 0.7 + (self.completed_trades * 0.03)  # 70% to 100% over 10 trades
-            score = score * confidence
-            reasoning.append(f"Early-stage confidence: {confidence*100:.0f}%")
+        # Removed - confidence adjustment was making scores too low
+        # The class rebalancing should handle this better
+        # if self.completed_trades < 10:
+        #     confidence = 0.7 + (self.completed_trades * 0.03)
+        #     score = score * confidence
+        #     reasoning.append(f"Early-stage confidence: {confidence*100:.0f}%")
         
         return score, " | ".join(reasoning)
     
@@ -495,31 +537,50 @@ class ImmediateMLScorer:
             phantom_count = total_data - executed_count
             logger.info(f"Training on {total_data} total trades: {executed_count} executed, {phantom_count} phantom")
             
+            # Calculate class weights for rebalancing
+            from sklearn.utils.class_weight import compute_class_weight
+            classes = np.unique(y)
+            class_weights_array = compute_class_weight('balanced', classes=classes, y=y)
+            class_weight_dict = dict(zip(classes, class_weights_array))
+
+            # Create sample weights for training
+            sample_weights = np.ones(len(y))
+            for i, label in enumerate(y):
+                sample_weights[i] = class_weight_dict.get(label, 1.0)
+
+            # Log class distribution
+            win_count = np.sum(y)
+            loss_count = len(y) - win_count
+            logger.info(f"Class distribution: {win_count} wins ({win_count/len(y)*100:.1f}%), {loss_count} losses ({loss_count/len(y)*100:.1f}%)")
+            logger.info(f"Class weights: Win={class_weight_dict.get(1, 1):.2f}, Loss={class_weight_dict.get(0, 1):.2f}")
+
             # Fit scaler
             self.scaler.fit(X)
             X_scaled = self.scaler.transform(X)
-            
-            # Train ensemble models
+
+            # Train ensemble models with class rebalancing
             self.models = {}
-            
-            # Random Forest
+
+            # Random Forest with class weights
             rf = RandomForestClassifier(
-                n_estimators=50,
-                max_depth=5,
+                n_estimators=100,  # Increased for better performance
+                max_depth=7,  # Slightly deeper for complex patterns
                 min_samples_split=5,
+                class_weight='balanced',  # Auto-balance classes
                 random_state=42
             )
-            rf.fit(X_scaled, y)
+            rf.fit(X_scaled, y, sample_weight=sample_weights)
             self.models['rf'] = rf
-            
-            # Gradient Boosting
+
+            # Gradient Boosting with sample weights
             gb = GradientBoostingClassifier(
-                n_estimators=50,
-                max_depth=3,
+                n_estimators=100,  # Increased for better performance
+                max_depth=4,  # Slightly deeper
                 learning_rate=0.1,
+                subsample=0.8,  # Add some randomness
                 random_state=42
             )
-            gb.fit(X_scaled, y)
+            gb.fit(X_scaled, y, sample_weight=sample_weights)
             self.models['gb'] = gb
             
             # Neural Network

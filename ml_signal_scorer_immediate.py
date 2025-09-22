@@ -137,20 +137,22 @@ class ImmediateMLScorer:
     def _calibrate_probability(self, prob: float) -> float:
         """
         Calibrate raw probability to better spread scores across 0-1 range
-        Uses a sigmoid-like transformation to expand the middle range
+        Uses a power transformation to expand compressed probabilities
         """
-        # Apply a softer transformation that spreads probabilities better
-        # This helps convert concentrated probabilities (0.2-0.4) to wider range (0-1)
+        # Apply power transformation to spread probabilities
+        # This helps convert concentrated probabilities to wider range
         if prob < 0.5:
-            # For low probabilities, apply square root to increase them
-            calibrated = prob ** 0.7  # This makes 0.2 -> 0.31, 0.3 -> 0.42
+            # For low probabilities, apply root to increase them
+            # 0.01 -> 0.032, 0.05 -> 0.107, 0.1 -> 0.178, 0.2 -> 0.308
+            calibrated = prob ** 0.7
         else:
-            # For high probabilities, apply softer scaling
+            # For high probabilities, apply symmetric transformation
             calibrated = 1 - ((1 - prob) ** 0.7)
 
-        # Ensure we use the full range
-        # Map [0.1, 0.9] to [0, 1] for better spread
-        calibrated = max(0, min(1, (calibrated - 0.1) / 0.8))
+        # Apply gentle boost to use more of the range, but don't zero out low values
+        # This ensures even very low probabilities (0.01) still get non-zero scores
+        calibrated = calibrated * 1.3  # Boost by 30% to spread across range
+        calibrated = min(1.0, calibrated)  # Cap at 1.0
 
         return calibrated
 

@@ -6,6 +6,7 @@ import os
 import pandas as pd
 from datetime import datetime, timedelta
 import logging
+import time
 from typing import Dict, Optional
 from sqlalchemy import create_engine, Column, BigInteger, Float, String, Index, text
 from sqlalchemy.ext.declarative import declarative_base
@@ -35,6 +36,10 @@ class Candle(Base):
     )
 
 class PostgresCandleStorage:
+    # Class-level tracking for summary logging
+    _save_summary = {'count': 0, 'symbols': set(), 'last_log_time': 0, 'total_candles': 0}
+    _LOG_INTERVAL = 300  # Log summary every 5 minutes
+
     def __init__(self, database_url: Optional[str] = None):
         """Initialize PostgreSQL storage for candles"""
         # Use environment variable or SQLite fallback
@@ -77,6 +82,30 @@ class PostgresCandleStorage:
             logger.error(f"Failed to initialize database: {e}")
             raise
     
+    def _update_save_summary(self, symbol: str, saved_count: int):
+        """Update save summary and log periodically"""
+        current_time = time.time()
+
+        # Update summary statistics
+        self._save_summary['count'] += 1
+        self._save_summary['symbols'].add(symbol)
+        self._save_summary['total_candles'] += saved_count
+
+        # Log summary every LOG_INTERVAL seconds
+        if current_time - self._save_summary['last_log_time'] >= self._LOG_INTERVAL:
+            if self._save_summary['count'] > 0:
+                logger.info(
+                    f"Candle Storage Summary: Saved {self._save_summary['total_candles']} candles "
+                    f"for {len(self._save_summary['symbols'])} symbols "
+                    f"({self._save_summary['count']} operations in last {self._LOG_INTERVAL//60} minutes)"
+                )
+
+            # Reset summary
+            self._save_summary['count'] = 0
+            self._save_summary['symbols'] = set()
+            self._save_summary['total_candles'] = 0
+            self._save_summary['last_log_time'] = current_time
+
     def save_candles(self, symbol: str, df: pd.DataFrame) -> bool:
         """Save DataFrame of candles to database"""
         session = self.Session()
@@ -120,9 +149,12 @@ class PostgresCandleStorage:
                 saved_count += 1
             
             session.commit()
-            logger.info(f"[{symbol}] Saved {saved_count} candles to database")
+
+            # Update summary statistics instead of logging every save
+            self._update_save_summary(symbol, saved_count)
+
             return True
-            
+
         except Exception as e:
             session.rollback()
             logger.error(f"Failed to save candles for {symbol}: {e}")

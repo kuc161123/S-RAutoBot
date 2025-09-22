@@ -885,17 +885,45 @@ class ImmediateMLScorer:
         return patterns
     
     def _get_recent_trades(self) -> list:
-        """Get recent trade data for analysis"""
-        trades = []
+        """Get recent trade data for analysis - includes both executed and phantom trades"""
+        all_trades = []
         try:
+            # Get executed trades
+            executed_trades = []
             if self.redis_client:
-                trade_data = self.redis_client.lrange('iml:trades', -50, -1)  # Last 50 trades
-                trades = [json.loads(t) for t in trade_data]
+                trade_data = self.redis_client.lrange('iml:trades', -50, -1)  # Last 50 executed
+                executed_trades = [json.loads(t) for t in trade_data]
             else:
-                trades = self.memory_storage.get('trades', [])[-50:]
+                executed_trades = self.memory_storage.get('trades', [])[-50:]
+
+            # Add executed flag
+            for trade in executed_trades:
+                trade['was_executed'] = True
+            all_trades.extend(executed_trades)
+
+            # Get phantom trades for comprehensive pattern analysis
+            try:
+                from phantom_trade_tracker import get_phantom_tracker
+                phantom_tracker = get_phantom_tracker()
+                phantom_data = phantom_tracker.get_learning_data()
+
+                # Convert phantom data to same format as executed trades
+                for phantom in phantom_data[-100:]:  # Last 100 phantom trades
+                    trade_record = {
+                        'features': phantom.get('features', {}),
+                        'outcome': 'win' if phantom.get('outcome') == 1 else 'loss',
+                        'was_executed': False
+                    }
+                    all_trades.append(trade_record)
+
+                logger.debug(f"Pattern analysis using {len(executed_trades)} executed + {len(phantom_data[-100:])} phantom trades")
+            except Exception as e:
+                logger.warning(f"Could not include phantom trades in pattern analysis: {e}")
+
         except Exception as e:
             logger.error(f"Error getting recent trades: {e}")
-        return trades
+
+        return all_trades
     
     def _analyze_trade_patterns(self, trades: list, trade_type: str) -> list:
         """Analyze common patterns in winning or losing trades"""

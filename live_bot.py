@@ -1406,13 +1406,13 @@ class TradingBot:
                                     # Apply same R:R ratio and fee adjustment
                                     fee_adjustment = 1.00165  # Same as in strategy
                                     if sig.side == "long":
-                                        new_tp = actual_entry + (risk_distance * strat.settings.rr * fee_adjustment)
+                                        new_tp = actual_entry + (risk_distance * settings.rr * fee_adjustment)
                                     else:
-                                        new_tp = actual_entry - (risk_distance * strat.settings.rr * fee_adjustment)
-                                    
+                                        new_tp = actual_entry - (risk_distance * settings.rr * fee_adjustment)
+
                                     # Log the adjustment
                                     tp_adjustment_pct = ((new_tp - sig.tp) / sig.tp) * 100
-                                    logger.info(f"[{sym}] Adjusting TP from {sig.tp:.4f} to {new_tp:.4f} ({tp_adjustment_pct:+.2f}%) to maintain {strat.settings.rr}:1 R:R")
+                                    logger.info(f"[{sym}] Adjusting TP from {sig.tp:.4f} to {new_tp:.4f} ({tp_adjustment_pct:+.2f}%) to maintain {settings.rr}:1 R:R")
                                     sig.tp = new_tp
                         except Exception as e:
                             logger.warning(f"[{sym}] Could not get actual entry price: {e}. Using signal entry.")

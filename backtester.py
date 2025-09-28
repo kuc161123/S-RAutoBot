@@ -78,7 +78,7 @@ class Backtester:
         logger.info(f"[{symbol}] Backtest complete. Found {len(results)} signals.")
         return results
 
-    def _simulate_trade(self, df: pd.DataFrame, entry_index: int, signal: Signal) -> Optional[str]:
+    def _simulate_trade(self, df: pd.DataFrame, entry_index: int, signal: Signal) -> str:
         """
         Checks future candles to determine if a trade would have been a win or loss.
         """
@@ -102,4 +102,5 @@ class Backtester:
                 if future_high >= signal.sl:
                     return "loss"
         
-        return None # No outcome within 100 candles
+        return "no_outcome" # No outcome within 100 candles
+

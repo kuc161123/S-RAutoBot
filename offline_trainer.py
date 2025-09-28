@@ -15,7 +15,8 @@ from typing import List, Dict
 
 from backtester import Backtester
 from strategy_pullback_ml_learning import get_ml_learning_signals, MinimalSettings as PullbackSettings, reset_symbol_state as reset_pullback_state
-from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion, Settings as ReversionSettings, reset_symbol_state as reset_mean_reversion_state
+from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion, reset_symbol_state as reset_mean_reversion_state
+from strategy_pullback import Settings as ReversionSettings # Import Settings from strategy_pullback
 from ml_signal_scorer_immediate import get_immediate_scorer
 from ml_scorer_mean_reversion import get_mean_reversion_scorer, MLScorerMeanReversion # New import
 

@@ -84,7 +84,7 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
             tp = upper_range # Target the top of the range
 
             if entry > sl and tp > entry:
-                logger.info(f"[{symbol}] MEAN REVERSION LONG: Bouncing off support {lower_range:.4f}")
+                logger.info(f"[{symbol}] MEAN REVERSION LONG: Bouncing off support {lower_range:.4f}. Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}, R: {(entry - sl):.4f}, RR: {s.rr}")
                 state.last_signal_candle_time = df.index[-1]
                 return Signal(
                     side="long",
@@ -105,7 +105,7 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
             tp = lower_range # Target the bottom of the range
 
             if sl > entry and entry > tp:
-                logger.info(f"[{symbol}] MEAN REVERSION SHORT: Rejecting from resistance {upper_range:.4f}")
+                logger.info(f"[{symbol}] MEAN REVERSION SHORT: Rejecting from resistance {upper_range:.4f}. Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}, R: {(sl - entry):.4f}, RR: {s.rr}")
                 state.last_signal_candle_time = df.index[-1]
                 return Signal(
                     side="short",

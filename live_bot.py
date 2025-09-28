@@ -856,6 +856,10 @@ class TradingBot:
                     logger.info(f"   Threshold: {ml_stats['current_threshold']:.0f}")
                     if ml_stats.get('models_active'):
                         logger.info(f"   Active models: {', '.join(ml_stats['models_active'])}")
+                elif ml_scorer.is_ml_ready:
+                    logger.info("✅ Pre-trained Pullback ML Model loaded successfully.")
+                else:
+                    logger.warning("⚠️ No pre-trained Pullback model found. Starting in online learning mode.")
                 
                 # Initialize ML Evolution (always initialize for shadow learning)
                 try:

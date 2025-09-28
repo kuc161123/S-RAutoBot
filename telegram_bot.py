@@ -990,195 +990,47 @@ class TGBot:
             await update.message.reply_text("Error getting recent trades")
     
     async def ml_stats(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
-        """Show ML system statistics and status"""
+        """Show ML system statistics and status for a specific strategy."""
         try:
-            msg = "🤖 *ML Signal Scoring System*\n"
+            strategy_arg = 'pullback' # Default strategy
+            if ctx.args:
+                strategy_arg = ctx.args[0].lower()
+                if strategy_arg not in ['pullback', 'reversion']:
+                    await self.safe_reply(update, "Invalid strategy. Choose `pullback` or `reversion`.")
+                    return
+
+            msg = f"🤖 *ML Status: {strategy_arg.title()} Strategy*\n"
             msg += "━" * 25 + "\n\n"
-            
-            # Check if ML scorer is available
-            ml_scorer = self.shared.get("ml_scorer")
-            
-            if not ml_scorer:
-                msg += "❌ *ML System: Not Available*\n\n"
-                msg += "ML scoring is either:\n"
-                msg += "• Disabled in config\n"
-                msg += "• Not initialized yet\n\n"
-                msg += "To enable: Set `use\\_ml\\_scoring: true` in config"
+
+            if strategy_arg == 'pullback':
+                ml_scorer = self.shared.get("ml_scorer")
             else:
-                # Get ML stats - handle both immediate and old scorer
-                try:
-                    if hasattr(ml_scorer, 'get_stats'):
-                        # New immediate ML scorer
-                        stats = ml_scorer.get_stats()
-                    else:
-                        # Old ML scorer
-                        stats = ml_scorer.get_ml_stats()
-                    
-                    # Ensure stats is a dictionary
-                    if not isinstance(stats, dict):
-                        logger.error(f"ML stats returned unexpected type: {type(stats).__name__}")
-                        stats = {'enabled': False, 'completed_trades': 0, 'status': 'Error retrieving stats'}
-                    
-                    # Status - handle both old and new format
-                    if 'status' in stats:
-                        # New immediate ML format
-                        msg += f"📊 *Status:* {stats['status']}\n\n"
-                    elif stats.get('is_trained'):
-                        msg += "✅ *Status: Active & Learning*\n\n"
-                    else:
-                        msg += "📊 *Status: Collecting Data*\n\n"
-                    
-                    # Progress
-                    msg += "📈 *Learning Progress*\n"
-                    msg += f"• Completed trades: {stats.get('completed_trades', 0)}\n"
-                    
-                    # Handle new immediate ML format
-                    if 'current_threshold' in stats:
-                        msg += f"• Current threshold: {stats['current_threshold']:.0f}\n"
-                        if stats.get('recent_win_rate', 0) > 0:
-                            msg += f"• Recent win rate: {stats['recent_win_rate']:.1f}%\n"
-                        if stats.get('models_active'):
-                            msg += f"• Active models: {', '.join(stats['models_active'])}\n"
-                        msg += "\n"
-                    elif not stats.get('is_trained', False):
-                        trades_needed = stats.get('trades_needed', 200)
-                        completed = stats.get('completed_trades', 0)
-                        progress_pct = (completed / 200) * 100 if completed > 0 else 0
-                        msg += f"• Progress: {progress_pct:.1f}%\n"
-                        msg += f"• Trades needed: {trades_needed}\n"
-                        msg += "\n⏳ ML will activate after 200 trades\n\n"
-                    else:
-                        msg += f"• Model trained on: {stats.get('last_train_count', 0)} trades\n"
-                        msg += f"• Model type: {stats.get('model_type', 'Unknown')}\n"
-                        if 'recent_accuracy' in stats:
-                            msg += f"• Recent accuracy: {stats['recent_accuracy']*100:.1f}%\n"
-                        msg += "\n"
-                    
-                    # Settings
-                    msg += "⚙️ *Configuration*\n"
-                    msg += f"• Enabled: {'Yes' if stats.get('enabled', False) else 'No'}\n"
-                    if 'current_threshold' in stats:
-                        msg += f"• Min score threshold: {stats['current_threshold']}/100\n"
-                    else:
-                        msg += f"• Min score threshold: {stats.get('min_score_threshold', 70)}/100\n"
-                    msg += f"• Ensemble models: 3 (RF, GB, NN)\n"
-                    msg += "\n"
-                    
-                    # Features analyzed
-                    msg += "🔍 *Features Analyzed*\n"
-                    msg += "• Trend strength & alignment\n"
-                    msg += "• Volume patterns\n"
-                    msg += "• Support/Resistance strength\n"
-                    msg += "• Pullback quality\n"
-                    msg += "• Market volatility\n"
-                    msg += "• Time of day patterns\n"
-                    msg += "\n"
-                    
-                    # Show learned patterns if available
-                    if 'patterns' in stats and stats['patterns']:
-                        patterns = stats['patterns']
-                        
-                        # Feature importance
-                        if patterns.get('feature_importance'):
-                            msg += "📊 *Most Important Features*\n"
-                            for feat, imp in list(patterns['feature_importance'].items())[:5]:
-                                feat_name = feat.replace('_', ' ').title()
-                                msg += f"• {feat_name}: {imp}%\n"
-                            msg += "\n"
-                        
-                        # Winning patterns
-                        if patterns.get('winning_patterns'):
-                            msg += "✅ *Winning Trade Patterns*\n"
-                            for pattern in patterns['winning_patterns']:
-                                msg += f"• {pattern}\n"
-                            msg += "\n"
-                        
-                        # Losing patterns
-                        if patterns.get('losing_patterns'):
-                            msg += "❌ *Losing Trade Patterns*\n"
-                            for pattern in patterns['losing_patterns']:
-                                msg += f"• {pattern}\n"
-                            msg += "\n"
-                        
-                        # Time patterns
-                        time_patterns = patterns.get('time_patterns', {})
-                        if time_patterns:
-                            if time_patterns.get('best_hours'):
-                                msg += "🕐 *Best Trading Hours*\n"
-                                for hour, stats in list(time_patterns['best_hours'].items())[:3]:
-                                    msg += f"• {hour}: {stats}\n"
-                                msg += "\n"
-                            
-                            if time_patterns.get('worst_hours'):
-                                msg += "⚠️ *Worst Trading Hours*\n"
-                                for hour, stats in list(time_patterns['worst_hours'].items())[:3]:
-                                    msg += f"• {hour}: {stats}\n"
-                                msg += "\n"
-                            
-                            if time_patterns.get('session_performance'):
-                                msg += "🌍 *Session Performance*\n"
-                                for session, perf in time_patterns['session_performance'].items():
-                                    msg += f"• {session}: {perf}\n"
-                                msg += "\n"
-                        
-                        # Market conditions
-                        market_conditions = patterns.get('market_conditions', {})
-                        if market_conditions:
-                            if market_conditions.get('volatility_impact'):
-                                msg += "📈 *Volatility Impact*\n"
-                                for vol_type, stats in market_conditions['volatility_impact'].items():
-                                    msg += f"• {vol_type.title()} volatility: {stats}\n"
-                                msg += "\n"
-                            
-                            if market_conditions.get('volume_impact'):
-                                msg += "📊 *Volume Impact*\n"
-                                for vol_type, stats in market_conditions['volume_impact'].items():
-                                    msg += f"• {vol_type.replace('_', ' ').title()}: {stats}\n"
-                                msg += "\n"
-                            
-                            if market_conditions.get('trend_impact'):
-                                msg += "📉 *Trend Impact*\n"
-                                for trend_type, stats in market_conditions['trend_impact'].items():
-                                    msg += f"• {trend_type.replace('_', ' ').title()}: {stats}\n"
-                                msg += "\n"
-                    
-                    # How it works
-                    if stats.get('is_trained', False) or stats.get('is_ml_ready', False):
-                        msg += "💡 *How It's Working*\n"
-                        msg += "• Scoring every signal 0-100\n"
-                        threshold = stats.get('current_threshold') or stats.get('min_score_threshold', 70)
-                        msg += f"• Filtering signals below {threshold}\n"
-                        msg += "• Learning from trade outcomes\n"
-                        msg += "• Adapting to market changes\n"
-                        if 'patterns' in stats and stats['patterns']:
-                            msg += "• Discovered patterns from data\n"
-                    else:
-                        msg += "💡 *What's Happening*\n"
-                        msg += "• Collecting data from all signals\n"
-                        msg += "• Recording trade outcomes\n"
-                        msg += "• Building pattern database\n"
-                        completed = stats.get('completed_trades', 0)
-                        # Check if using immediate ML (starts at 10 trades)
-                        min_trades = 10 if 'current_threshold' in stats else 200
-                        if completed < min_trades:
-                            msg += f"• {min_trades - completed} more trades to activate\n"
-                    
-                except Exception as e:
-                    logger.error(f"Error getting ML stats: {e}")
-                    msg += "⚠️ Error retrieving ML statistics\n"
-            
-            # Try to send with markdown, fallback to plain text if fails
-            try:
+                # Placeholder for the future mean reversion scorer
+                ml_scorer = self.shared.get("ml_scorer_reversion") 
+
+            if not ml_scorer:
+                msg += f"❌ *ML System Not Available for {strategy_arg.title()} Strategy*\n"
+                if strategy_arg == 'reversion':
+                    msg += "This model will be trained after enough data is collected from the rule-based strategy."
                 await self.safe_reply(update, msg)
-            except telegram.error.BadRequest as e:
-                if "can't parse entities" in str(e).lower():
-                    logger.warning(f"ML stats markdown parsing failed, sending plain text")
-                    # Remove markdown formatting
-                    plain_msg = msg.replace('*', '').replace('_', '').replace('`', '')
-                    await update.message.reply_text(plain_msg)
-                else:
-                    raise
-            
+                return
+
+            # Get and display stats from the selected scorer
+            stats = ml_scorer.get_stats()
+            if stats.get('is_ml_ready'):
+                msg += "✅ *Status: Active & Learning*\n"
+                msg += f"• Model trained on: {stats.get('last_train_count', stats.get('completed_trades', 0))} trades\n"
+            else:
+                msg += "📊 *Status: Collecting Data*\n"
+                trades_needed = stats.get('trades_needed', 200)
+                msg += f"• Trades needed for training: {trades_needed}\n"
+
+            msg += f"• Completed trades (live): {stats.get('completed_trades', 0)}\n"
+            msg += f"• Current threshold: {stats.get('current_threshold', 70):.0f}\n"
+            msg += f"• Active models: {len(stats.get('models_active', []))}\n"
+
+            await self.safe_reply(update, msg)
+
         except Exception as e:
             logger.error(f"Error in ml_stats: {e}")
             await update.message.reply_text("Error getting ML statistics")

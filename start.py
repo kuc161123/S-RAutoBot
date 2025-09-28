@@ -86,7 +86,7 @@ if __name__ == "__main__":
         try:
             # Execute the offline_trainer.py script
             # Use sys.executable to ensure the correct python interpreter is used
-            subprocess.run([sys.executable, "offline_trainer.py"], check=True)
+            # subprocess.run([sys.executable, "offline_trainer.py"], check=True) # Disabled to start live bot directly
             print("Offline training complete. Models saved to Redis.")
         except subprocess.CalledProcessError as e:
             print(f"Error: Offline training failed with exit code {e.returncode}. Live bot will start in online learning mode.")

@@ -19,6 +19,7 @@ from strategy_pullback import Settings, Signal, _pivot_high, _pivot_low, _atr
 class BreakoutState:
     """Track the state of a breakout for each symbol (simplified for mean reversion)"""
     state:str = "NEUTRAL" # NEUTRAL, SIGNAL_SENT
+    last_signal_candle_time: Optional[datetime] = None
     # Add other relevant state variables if needed for more complex mean reversion
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,14 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
         mean_reversion_states[symbol] = BreakoutState()
     
     state = mean_reversion_states[symbol]
+
+    # Cooldown logic to prevent multiple signals in quick succession
+    if state.last_signal_candle_time:
+        time_since_last_signal = df.index[-1] - state.last_signal_candle_time
+        # Assuming 15-minute candles, convert min_candles_between_signals to timedelta
+        cooldown_duration = pd.Timedelta(minutes=s.min_candles_between_signals * 15)
+        if time_since_last_signal < cooldown_duration:
+            return None # Still in cooldown period
 
     min_candles = 100
     if len(df) < min_candles:
@@ -75,6 +84,7 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
 
             if entry > sl and tp > entry:
                 logger.info(f"[{symbol}] MEAN REVERSION LONG: Bouncing off support {lower_range:.4f}")
+                state.last_signal_candle_time = df.index[-1]
                 return Signal(
                     side="long",
                     entry=entry,
@@ -95,6 +105,7 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
 
             if sl > entry and entry > tp:
                 logger.info(f"[{symbol}] MEAN REVERSION SHORT: Rejecting from resistance {upper_range:.4f}")
+                state.last_signal_candle_time = df.index[-1]
                 return Signal(
                     side="short",
                     entry=entry,

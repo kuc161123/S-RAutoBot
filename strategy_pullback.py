@@ -24,6 +24,7 @@ class Settings:
     use_mtf_sr:bool=True  # Enable multi-timeframe S/R
     mtf_weight:float=2.0  # Prefer major levels 2x over minor
     mtf_min_strength:float=3.0  # Minimum strength for major levels
+    min_candles_between_signals:int=5 # Minimum number of candles between signals for the same symbol
 
 @dataclass
 class Signal:

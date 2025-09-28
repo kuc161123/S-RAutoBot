@@ -206,12 +206,13 @@ class TradingBot:
                 entry_price=pos.entry,
                 exit_price=exit_price,
                 quantity=pos.qty,
-                entry_time=datetime.now() - pd.Timedelta(hours=1),  # Approximate
+                entry_time=pos.entry_time,  # Use entry time from position
                 exit_time=datetime.now(),
                 pnl_usd=pnl_usd,
                 pnl_percent=pnl_percent,
                 exit_reason=exit_reason,
-                leverage=leverage
+                leverage=leverage,
+                strategy_name=pos.strategy_name # Pass strategy name
             )
             
             # Add to tracker
@@ -1151,7 +1152,7 @@ class TradingBot:
                     # This requires a higher timeframe dataframe, which we will simulate for now
                     # In a full implementation, you would manage and pass the 4H dataframe here.
                     current_regime = get_market_regime(df) # Using 15m df as a proxy for now
-                    logger.info(f"[{sym}] Market Regime Detected: {current_regime} (Shadow Mode)")
+                    logger.info(f"[{sym}] Market Regime Detected: {current_regime}")
 
                     # --- STRATEGY SWITCHING LOGIC ---
                     sig = None
@@ -1303,15 +1304,17 @@ class TradingBot:
                         
                             # Decide if we should take the trade
                             should_take_trade = ml_score >= ml_scorer.min_score
+
+                            strategy_name = "MeanReversion" if use_regime_switching and current_regime == "Ranging" else "Pullback"
                         
-                            # ALWAYS record the signal in phantom tracker for learning, regardless of score
-                            # This allows ML to learn from all signals, even those below threshold
+                            # ALWAYS record the signal in phantom tracker for learning
                             phantom_tracker.record_signal(
                                 symbol=sym,
                                 signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
                                 ml_score=ml_score,
-                                was_executed=should_take_trade,  # Real execution only if score >= threshold
-                                features=basic_features  # Always use basic features for phantom tracking
+                                was_executed=should_take_trade,
+                                features=basic_features,
+                                strategy_name=strategy_name
                             )
                             
                             # Update ML evolution stats
@@ -1319,8 +1322,7 @@ class TradingBot:
                                 ml_evolution.update_stats(sym, is_phantom=not should_take_trade)
                         
                             if not should_take_trade:
-                                logger.info(f"[{sym}] ML REJECTED: Score {ml_score:.1f} < {ml_scorer.min_score} | {ml_reason}")
-                                logger.info(f"[{sym}] ⚡ PHANTOM TRADE tracked for learning (not executed)")
+                                logger.info(f"❌ [{sym}] {strategy_name.upper()} TRADE REJECTED: ML Score {ml_score:.1f} < {ml_scorer.min_score}. Reason: {ml_reason}")
                                 # Record failed signal for enhanced features context
                                 try:
                                     if 'feature_engine' in locals():
@@ -1333,7 +1335,7 @@ class TradingBot:
                                     logger.debug(f"Failed to record signal rejection: {e}")
                                 continue
                             else:
-                                logger.info(f"[{sym}] ML APPROVED: Score {ml_score:.1f} | {ml_reason}")
+                                logger.info(f"✅ [{sym}] {strategy_name.upper()} TRADE APPROVED: Score {ml_score:.1f}. Reason: {ml_reason}")
                             
                         except Exception as e:
                             # Safety: Allow signal if ML fails but log the error
@@ -1343,7 +1345,7 @@ class TradingBot:
                     # One position per symbol rule - wait for current position to close
                     # This prevents overexposure to a single symbol and allows clean entry/exit
                     if sym in book.positions:
-                        logger.info(f"[{sym}] Already have position, waiting for it to close before taking new signal")
+                        logger.info(f"❌ [{sym}] TRADE REJECTED: An existing position is already open.")
                         continue
                 
                     # Get symbol metadata
@@ -1380,7 +1382,7 @@ class TradingBot:
                     
                         # Check if we have enough for margin + buffer
                         if balance < required_margin * 1.5:  # 1.5x for safety
-                            logger.warning(f"[{sym}] Insufficient balance (${balance:.2f}, need ~${required_margin:.2f}), skipping signal")
+                            logger.info(f"❌ [{sym}] TRADE REJECTED: Insufficient balance (${balance:.2f}) to cover required margin (≈${required_margin:.2f}).")
                             continue
                     
                         logger.debug(f"[{sym}] Balance check passed: ${balance:.2f} available, risking ${risk_amount:.2f}")
@@ -1389,7 +1391,7 @@ class TradingBot:
                     qty = sizer.qty_for(sig.entry, sig.sl, m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
                 
                     if qty <= 0:
-                        logger.warning(f"[{sym}] Quantity too small, skipping")
+                        logger.info(f"❌ [{sym}] TRADE REJECTED: Calculated quantity is zero or too small.")
                         continue
                 
                     # Get current market price for stop loss validation
@@ -1399,17 +1401,14 @@ class TradingBot:
                     sl_valid = True
                     if sig.side == "long":
                         if sig.sl >= current_price:
-                            logger.warning(f"[{sym}] INVALID SL: Long SL {sig.sl:.4f} >= current price {current_price:.4f}")
+                            logger.info(f"❌ [{sym}] TRADE REJECTED: Invalid Stop-Loss (Long SL {sig.sl:.4f} >= current price {current_price:.4f}).")
                             sl_valid = False
                     else:  # short
                         if sig.sl <= current_price:
-                            logger.warning(f"[{sym}] INVALID SL: Short SL {sig.sl:.4f} <= current price {current_price:.4f}")
+                            logger.info(f"❌ [{sym}] TRADE REJECTED: Invalid Stop-Loss (Short SL {sig.sl:.4f} <= current price {current_price:.4f}).")
                             sl_valid = False
                     
                     if not sl_valid:
-                        price_moved_pct = abs((current_price - sig.entry) / sig.entry) * 100
-                        logger.warning(f"[{sym}] Price moved {price_moved_pct:.2f}% from signal entry {sig.entry:.4f} to {current_price:.4f}")
-                        logger.warning(f"[{sym}] Skipping trade - stop loss would be invalid on Bybit")
                         continue
                     
                     # IMPORTANT: Set leverage BEFORE opening position to prevent TP/SL cancellation
@@ -1457,7 +1456,8 @@ class TradingBot:
                         bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl, qty=qty)
                     
                         # Update book with actual entry price
-                        book.positions[sym] = Position(sig.side, qty, actual_entry, sig.sl, sig.tp, datetime.now())
+                        strategy_name = "MeanReversion" if use_regime_switching and current_regime == "Ranging" else "Pullback"
+                        book.positions[sym] = Position(sig.side, qty, actual_entry, sig.sl, sig.tp, datetime.now(), strategy_name=strategy_name)
                         last_signal_time[sym] = now
                         
                         # Debug log the position details

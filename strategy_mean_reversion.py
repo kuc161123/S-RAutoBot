@@ -15,6 +15,12 @@ import logging
 # Import base classes and utilities from existing strategy
 from strategy_pullback import Settings, Signal, _pivot_high, _pivot_low, _atr
 
+@dataclass
+class BreakoutState:
+    """Track the state of a breakout for each symbol (simplified for mean reversion)"""
+    state:str = "NEUTRAL" # NEUTRAL, SIGNAL_SENT
+    # Add other relevant state variables if needed for more complex mean reversion
+
 logger = logging.getLogger(__name__)
 
 def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[Signal]:
@@ -29,6 +35,12 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
     Returns:
         Optional[Signal]: A trading signal if conditions are met.
     """
+    # Initialize state for new symbols
+    if symbol not in mean_reversion_states:
+        mean_reversion_states[symbol] = BreakoutState()
+    
+    state = mean_reversion_states[symbol]
+
     min_candles = 100
     if len(df) < min_candles:
         return None
@@ -91,5 +103,13 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
                     reason=f"Mean Reversion: Rejection from resistance @ {upper_range:.2f}",
                     meta={"range_upper": upper_range, "range_lower": lower_range}
                 )
-
     return None
+
+# Global state tracking for each symbol
+mean_reversion_states: Dict[str, BreakoutState] = {}
+
+def reset_symbol_state(symbol: str):
+    """Reset the state for a symbol (called when position closes or before backtest)."""
+    if symbol in mean_reversion_states:
+        del mean_reversion_states[symbol]
+        logger.debug(f"[{symbol}] Mean Reversion state reset.")

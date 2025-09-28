@@ -14,8 +14,8 @@ import os
 from typing import List, Dict
 
 from backtester import Backtester
-from strategy_pullback_ml_learning import get_ml_learning_signals, MinimalSettings as PullbackSettings
-from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion, Settings as ReversionSettings
+from strategy_pullback_ml_learning import get_ml_learning_signals, MinimalSettings as PullbackSettings, reset_symbol_state as reset_pullback_state
+from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion, Settings as ReversionSettings, reset_symbol_state as reset_mean_reversion_state
 from ml_signal_scorer_immediate import get_immediate_scorer
 from ml_scorer_mean_reversion import get_mean_reversion_scorer, MLScorerMeanReversion # New import
 
@@ -77,7 +77,7 @@ def main():
 
     # 2. Backtest and Train Pullback Strategy
     logger.info("\n--- Phase 1: Processing Pullback Strategy ---")
-    pullback_backtester = Backtester(get_ml_learning_signals, PullbackSettings())
+    pullback_backtester = Backtester(get_ml_learning_signals, PullbackSettings(), reset_state_func=reset_pullback_state)
     all_pullback_data = []
     for symbol in symbols:
         results = pullback_backtester.run(symbol)
@@ -87,7 +87,7 @@ def main():
 
     # 3. Backtest and Train Mean Reversion Strategy
     logger.info("\n--- Phase 2: Processing Mean Reversion Strategy ---")
-    reversion_backtester = Backtester(detect_signal_mean_reversion, ReversionSettings())
+    reversion_backtester = Backtester(detect_signal_mean_reversion, ReversionSettings(), reset_state_func=reset_mean_reversion_state)
     all_reversion_data = []
     for symbol in symbols:
         results = reversion_backtester.run(symbol)

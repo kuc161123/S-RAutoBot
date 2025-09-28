@@ -15,16 +15,18 @@ from strategy_pullback import Settings, Signal
 logger = logging.getLogger(__name__)
 
 class Backtester:
-    def __init__(self, strategy_func: Callable, strategy_settings: Settings):
+    def __init__(self, strategy_func: Callable, strategy_settings: Settings, reset_state_func: Optional[Callable] = None):
         """
         Initializes the Backtester.
 
         Args:
             strategy_func: The function that detects signals (e.g., get_pullback_signals).
             strategy_settings: The settings for the strategy.
+            reset_state_func: An optional function to reset the strategy's state for a symbol.
         """
         self.strategy_func = strategy_func
         self.settings = strategy_settings
+        self.reset_state_func = reset_state_func
         self.candle_storage = CandleStorage()
 
     def run(self, symbol: str, history_df: Optional[pd.DataFrame] = None) -> List[Dict]:
@@ -38,6 +40,9 @@ class Backtester:
         Returns:
             A list of dictionaries, where each dict represents a signal and its outcome.
         """
+        if self.reset_state_func:
+            self.reset_state_func(symbol) # Reset state before backtesting this symbol
+
         if history_df is None:
             logger.info(f"[{symbol}] Loading historical data from database...")
             history_df = self.candle_storage.load_candles(symbol, limit=100000) # Load all available

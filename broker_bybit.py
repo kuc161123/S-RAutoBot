@@ -258,3 +258,18 @@ class Bybit:
         except Exception as e:
             logger.error(f"Failed to get klines for {symbol}: {e}")
             return []
+
+    def get_api_key_info(self) -> Optional[Dict[str, Any]]:
+        """Get information about the current API key, including expiration."""
+        try:
+            resp = self._request("GET", "/v5/user/query-api")
+            if resp and resp.get("result"):
+                api_keys = resp["result"].get("list", [])
+                # Find the key that is currently being used
+                for key_info in api_keys:
+                    if key_info.get("apiKey") == self.cfg.api_key:
+                        return key_info
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get API key info: {e}")
+            return None

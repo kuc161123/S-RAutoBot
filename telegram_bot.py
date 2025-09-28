@@ -209,18 +209,14 @@ class TGBot:
 /health - Bot status & analysis activity
 /status - Open positions
 /balance - Account balance
-/symbols - List active trading pairs
-/analysis [symbol] - Show analysis details
+/regime `[symbol]` - Check current market regime
 
 📈 *Statistics:*
-/stats [days] - Trading statistics
-/recent [limit] - Recent trades history
-/ml or /ml_stats - ML system status
-/mlpatterns - Detailed ML pattern analysis
-/mlretrain - ML retrain countdown
-/mlrankings - Symbol performance rankings
-/phantom - Phantom trade statistics
-/phantom_detail [symbol] - Symbol phantom stats
+/stats `[strategy]` - Trading statistics (all, pullback, reversion)
+/recent `[limit]` - Recent trades history
+/ml_status `[strategy]` - ML model status
+/mlpatterns `[strategy]` - ML learned patterns
+/phantom `[strategy]` - Phantom trade analysis
 /evolution - ML Evolution shadow performance
 
 ⚙️ *Risk Management:*
@@ -733,17 +729,33 @@ class TGBot:
             # System Status
             msg += "⚡ *System Status*\n"
             if frames:
-                msg += "• Status: ✅ Online\n"
+                msg += f"• Status: ✅ Online\n"
                 msg += f"• Symbols: {len(frames)} active\n"
             else:
                 msg += "• Status: ⏳ Starting up\n"
             
-            # Get balance
+            # Get balance and API key info
             broker = self.shared.get("broker")
             if broker:
                 balance = broker.get_balance()
                 if balance:
                     msg += f"• Balance: ${balance:.2f} USDT\n"
+                
+                # Get API Key expiration
+                try:
+                    api_info = broker.get_api_key_info()
+                    if api_info and api_info.get("expiredAt"):
+                        # Bybit gives timestamp in milliseconds
+                        expiry_timestamp = int(api_info["expiredAt"]) / 1000
+                        expiry_date = datetime.fromtimestamp(expiry_timestamp)
+                        days_remaining = (expiry_date - datetime.now()).days
+                        
+                        if days_remaining < 14:
+                            msg += f"⚠️ *API Key: Expires in {days_remaining} days!*\n"
+                        else:
+                            msg += f"🔑 *API Key:* Expires in {days_remaining} days\n"
+                except Exception as e:
+                    logger.warning(f"Could not fetch API key expiry: {e}")
             
             msg += "\n"
             
@@ -1464,99 +1476,61 @@ class TGBot:
             await update.message.reply_text(f"Error generating rankings: {str(e)[:100]}")
     
     async def phantom_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Show phantom trade statistics"""
+        """Show phantom trade statistics, with an optional strategy filter."""
         try:
+            strategy_filter = None
+            if ctx.args:
+                strategy_filter = ctx.args[0].lower()
+                if strategy_filter not in ['pullback', 'reversion']:
+                    await update.message.reply_text("Invalid strategy. Choose `pullback` or `reversion`.")
+                    return
+
             msg = "👻 *Phantom Trade Statistics*\n"
+            msg += f"_Strategy: {strategy_filter.title() if strategy_filter else 'All'}_\n"
             msg += "━" * 25 + "\n\n"
-            
-            # Get phantom tracker
-            try:
-                from phantom_trade_tracker import get_phantom_tracker
-                phantom_tracker = get_phantom_tracker()
-            except Exception as e:
-                logger.error(f"Error importing phantom tracker: {e}")
-                await update.message.reply_text("⚠️ Phantom tracker not available")
-                return
-            
-            # Get overall statistics
-            stats = phantom_tracker.get_phantom_stats()
-            
-            # Overview
-            msg += "📊 *Overview*\n"
-            msg += f"• Total signals tracked: {stats['total']}\n"
-            msg += f"• Executed trades: {stats['executed']}\n"
-            msg += f"• Phantom trades: {stats['rejected']}\n"
-            
-            if stats['total'] > 0:
-                execution_rate = (stats['executed'] / stats['total']) * 100
-                msg += f"• Execution rate: {execution_rate:.1f}%\n"
-            msg += "\n"
-            
-            # Rejection analysis
-            rejection_stats = stats['rejection_stats']
-            if rejection_stats['total_rejected'] > 0:
-                msg += "🚫 *Rejected Trade Analysis*\n"
-                msg += f"• Total rejected: {rejection_stats['total_rejected']}\n"
-                msg += f"• Would have won: {rejection_stats['would_have_won']} "
-                if rejection_stats['would_have_won'] > 0:
-                    win_rate = (rejection_stats['would_have_won'] / rejection_stats['total_rejected']) * 100
-                    msg += f"({win_rate:.1f}%)\n"
-                else:
-                    msg += "\n"
-                msg += f"• Would have lost: {rejection_stats['would_have_lost']}\n"
-                
-                if rejection_stats['missed_profit_pct'] > 0:
-                    msg += f"• Missed profit: {rejection_stats['missed_profit_pct']:.2f}%\n"
-                if rejection_stats['avoided_loss_pct'] > 0:
-                    msg += f"• Avoided loss: {rejection_stats['avoided_loss_pct']:.2f}%\n"
-                msg += "\n"
-            
-            # ML accuracy
-            ml_accuracy = stats['ml_accuracy']
-            if stats['total'] > 0:
-                msg += "🤖 *ML Decision Accuracy*\n"
-                msg += f"• Correct rejections: {ml_accuracy['correct_rejections']}\n"
-                msg += f"• Wrong rejections: {ml_accuracy['wrong_rejections']}\n"
-                msg += f"• Correct approvals: {ml_accuracy['correct_approvals']}\n"
-                msg += f"• Wrong approvals: {ml_accuracy['wrong_approvals']}\n"
-                msg += f"• Overall accuracy: {ml_accuracy['accuracy_pct']:.1f}%\n"
-                msg += "\n"
-            
-            # Active phantoms
-            active_count = len(phantom_tracker.active_phantoms)
-            if active_count > 0:
-                msg += f"👀 *Active Phantoms: {active_count}*\n"
-                for symbol, phantom in list(phantom_tracker.active_phantoms.items())[:5]:
-                    msg += f"• {symbol}: {phantom.side.upper()} @ {phantom.entry_price:.4f} "
-                    msg += f"(score: {phantom.ml_score:.1f})\n"
-                if active_count > 5:
-                    msg += f"  ...and {active_count - 5} more\n"
-                msg += "\n"
-            
-            msg += "_Use /phantom\\_detail [symbol] for symbol-specific stats_"
-            
-            # Send message with proper escaping
-            try:
+
+            from phantom_trade_tracker import get_phantom_tracker
+            phantom_tracker = get_phantom_tracker()
+
+            all_phantoms = []
+            for trades in phantom_tracker.phantom_trades.values():
+                all_phantoms.extend(trades)
+
+            if strategy_filter:
+                all_phantoms = [p for p in all_phantoms if p.strategy_name.lower() == strategy_filter]
+
+            if not all_phantoms:
+                msg += "No phantom trades recorded for this filter."
                 await self.safe_reply(update, msg)
-            except Exception as parse_error:
-                # If markdown fails, send without formatting
-                logger.warning(f"Markdown parsing failed: {parse_error}")
-                msg_plain = msg.replace('*', '').replace('_', '').replace('`', '')
-                await update.message.reply_text(msg_plain)
-            
-        except telegram.error.BadRequest as e:
-            logger.error(f"Telegram markdown error in phantom_stats: {e}")
-            # Try sending without markdown
-            try:
-                plain_msg = msg.replace('*', '').replace('_', '').replace('`', '')
-                await update.message.reply_text(plain_msg)
-            except Exception as e2:
-                await update.message.reply_text(f"Error: {str(e2)[:50]}")
+                return
+
+            # Calculate stats for the filtered set
+            executed = [p for p in all_phantoms if p.was_executed]
+            rejected = [p for p in all_phantoms if not p.was_executed]
+            rejected_wins = [p for p in rejected if p.outcome == 'win']
+            rejected_losses = [p for p in rejected if p.outcome == 'loss']
+            missed_profit = sum(p.pnl_percent for p in rejected_wins if p.pnl_percent)
+            avoided_loss = sum(abs(p.pnl_percent) for p in rejected_losses if p.pnl_percent)
+
+            msg += "📊 *Overview*\n"
+            msg += f"• Total signals tracked: {len(all_phantoms)}\n"
+            msg += f"• Executed trades: {len(executed)}\n"
+            msg += f"• Phantom trades: {len(rejected)}\n\n"
+
+            if rejected:
+                msg += "🚫 *Rejected Trade Analysis*\n"
+                rejected_wr = (len(rejected_wins) / len(rejected)) * 100 if rejected else 0
+                msg += f"• Rejected Win Rate: {rejected_wr:.1f}%\n"
+                msg += f"• Missed Profit: +{missed_profit:.2f}%\n"
+                msg += f"• Avoided Loss: -{avoided_loss:.2f}%\n"
+                net_impact = missed_profit - avoided_loss
+                msg += f"• *Net Impact: {net_impact:+.2f}%*\n"
+
+            await self.safe_reply(update, msg)
+
         except Exception as e:
             logger.error(f"Error in phantom_stats: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            await update.message.reply_text(f"Error getting phantom statistics: {str(e)[:100]}")
+            await update.message.reply_text("Error getting phantom statistics")
     
     async def phantom_detail(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show detailed phantom statistics for a symbol"""

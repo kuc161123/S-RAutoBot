@@ -8,6 +8,7 @@ Designed for ranging markets.
 """
 from dataclasses import dataclass
 from typing import Deque, Dict, List, Optional, Tuple
+from datetime import datetime
 import pandas as pd
 import numpy as np
 import logging
@@ -19,7 +20,7 @@ from strategy_pullback import Settings, Signal, _pivot_high, _pivot_low, _atr
 class BreakoutState:
     """Track the state of a breakout for each symbol (simplified for mean reversion)"""
     state:str = "NEUTRAL" # NEUTRAL, SIGNAL_SENT
-    last_signal_candle_time: Optional[datetime] = None
+    last_signal_candle_time: Optional['datetime.datetime'] = None
     # Add other relevant state variables if needed for more complex mean reversion
 
 logger = logging.getLogger(__name__)

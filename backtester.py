@@ -87,8 +87,8 @@ class Backtester:
         """
         Checks future candles to determine if a trade would have been a win or loss.
         """
-        # Look ahead up to 100 candles for an outcome
-        for i in range(entry_index + 1, min(entry_index + 100, len(df))):
+        # Look ahead up to 500 candles for an outcome (increased for debugging)
+        for i in range(entry_index + 1, min(entry_index + 500, len(df))):
             future_high = df['high'].iloc[i]
             future_low = df['low'].iloc[i]
 

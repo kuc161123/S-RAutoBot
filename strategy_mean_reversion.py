@@ -7,7 +7,7 @@ Designed for ranging markets.
 - Assumes the price will revert to the mean.
 """
 from dataclasses import dataclass
-from typing import Optional
+from typing import Deque, Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
 import logging

@@ -55,7 +55,8 @@ class Backtester:
             current_df_slice = history_df.iloc[i-200:i]
 
             # Run the signal detection logic
-            signal = self.strategy_func(current_df_slice, self.settings, symbol)
+            # Pass df_1h=None as backtester currently only uses 15m data
+            signal = self.strategy_func(current_df_slice, self.settings, df_1h=None, symbol=symbol)
 
             if signal:
                 # A signal was generated. Now, simulate the trade outcome.

@@ -56,17 +56,24 @@ class Backtester:
 
             # Run the signal detection logic
             # Pass df_1h=None as backtester currently only uses 15m data
-            signal = self.strategy_func(current_df_slice, self.settings, df_1h=None, symbol=symbol)
+            signal_output = self.strategy_func(current_df_slice, self.settings, df_1h=None, symbol=symbol)
 
-            if signal:
-                # A signal was generated. Now, simulate the trade outcome.
-                outcome = self._simulate_trade(history_df, i, signal)
-                if outcome:
-                    results.append({
-                        "timestamp": history_df.index[i],
-                        "features": signal.meta.get('ml_features', {}),
-                        "outcome": outcome
-                    })
+            signals_to_process = []
+            if isinstance(signal_output, list):
+                signals_to_process.extend(signal_output)
+            elif signal_output is not None:
+                signals_to_process.append(signal_output)
+
+            for signal in signals_to_process:
+                if signal:
+                    # A signal was generated. Now, simulate the trade outcome.
+                    outcome = self._simulate_trade(history_df, i, signal)
+                    if outcome:
+                        results.append({
+                            "timestamp": history_df.index[i],
+                            "features": signal.meta.get('ml_features', {}),
+                            "outcome": outcome
+                        })
         
         logger.info(f"[{symbol}] Backtest complete. Found {len(results)} signals.")
         return results

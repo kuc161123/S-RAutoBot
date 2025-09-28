@@ -767,8 +767,13 @@ class TradingBot:
         
         # Get the appropriate strategy functions
         use_pullback = cfg["trade"].get("use_pullback_strategy", True)
-        detect_signal, reset_symbol_state = get_strategy_module(use_pullback)
+        get_pullback_signals, reset_symbol_state = get_strategy_module(use_pullback)
         
+        # Import new regime-based strategies
+        from market_regime import get_market_regime
+        from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion
+        use_regime_switching = cfg["trade"].get("use_regime_switching", False)
+
         strategy_type = "Pullback (HL/LH + Confirmation)" if use_pullback else "Immediate Breakout"
         logger.info(f"📊 Strategy: {strategy_type}")
         
@@ -1142,8 +1147,25 @@ class TradingBot:
                             # Skip silently - no need to log every cooldown
                             continue
                 
-                    # Detect signal
-                    sig = detect_signal(df.copy(), settings, sym)
+                    # Detect market regime in shadow mode
+                    # This requires a higher timeframe dataframe, which we will simulate for now
+                    # In a full implementation, you would manage and pass the 4H dataframe here.
+                    current_regime = get_market_regime(df) # Using 15m df as a proxy for now
+                    logger.info(f"[{sym}] Market Regime Detected: {current_regime} (Shadow Mode)")
+
+                    # --- STRATEGY SWITCHING LOGIC ---
+                    sig = None
+                    if use_regime_switching and current_regime == "Ranging":
+                        # If enabled and ranging, use the new strategy
+                        logger.debug(f"[{sym}] In Ranging regime, using Mean Reversion strategy.")
+                        sig = detect_signal_mean_reversion(df.copy(), settings, sym)
+                    else:
+                        # Otherwise, use the default pullback strategy
+                        if use_regime_switching:
+                            logger.debug(f"[{sym}] In {current_regime} regime, using Pullback strategy.")
+                        sig = get_pullback_signals(df.copy(), settings, sym)
+                    # --- END OF STRATEGY SWITCHING LOGIC ---
+
                     if sig is None:
                         # Don't log every non-signal to reduce log spam
                         continue
@@ -1326,6 +1348,19 @@ class TradingBot:
                 
                     # Get symbol metadata
                     m = meta_for(sym, shared["meta"])
+
+                    # Round TP/SL to symbol's tick size to prevent API errors
+                    from position_mgr import round_step
+                    tick_size = m.get("tick_size", 0.000001) # Default to a small tick size
+                    
+                    original_tp = sig.tp
+                    original_sl = sig.sl
+
+                    sig.tp = round_step(sig.tp, tick_size)
+                    sig.sl = round_step(sig.sl, tick_size)
+
+                    if original_tp != sig.tp or original_sl != sig.sl:
+                        logger.info(f"[{sym}] Rounded TP/SL to tick size {tick_size}. TP: {original_tp:.6f} -> {sig.tp:.6f}, SL: {original_sl:.6f} -> {sig.sl:.6f}")
                 
                     # Check account balance and update risk calculation
                     current_balance = bybit.get_balance()

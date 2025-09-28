@@ -698,6 +698,7 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
             state.last_signal_time = datetime.now()
             
             logger.info(f"{symbol}: LONG signal (Learning Mode) | "
+                       f"Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}, R: {(entry - sl):.4f}, RR: {settings.rr} | "
                        f"Retracement: {retracement:.1f}% | "
                        f"Vol: {ml_features['volume_ratio']:.2f}x")
     
@@ -789,6 +790,7 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
             state.last_signal_time = datetime.now()
             
             logger.info(f"{symbol}: SHORT signal (Learning Mode) | "
+                       f"Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}, R: {(sl - entry):.4f}, RR: {settings.rr} | "
                        f"Retracement: {retracement:.1f}% | "
                        f"Vol: {ml_features['volume_ratio']:.2f}x")
     

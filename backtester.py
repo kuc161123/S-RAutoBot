@@ -107,5 +107,7 @@ class Backtester:
                 if future_high >= signal.sl:
                     return "loss"
         
+        logger.debug(f"[{signal.meta.get('symbol', 'UNKNOWN')}] No outcome within 100 candles for signal: "
+                     f"Side: {signal.side}, Entry: {signal.entry:.4f}, SL: {signal.sl:.4f}, TP: {signal.tp:.4f}")
         return "no_outcome" # No outcome within 100 candles
 

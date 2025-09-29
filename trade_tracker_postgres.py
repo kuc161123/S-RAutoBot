@@ -28,6 +28,7 @@ class Trade:
     pnl_percent: float
     exit_reason: str  # "tp", "sl", "manual"
     leverage: float = 1.0
+    strategy_name: str = "unknown"
     
     def to_dict(self):
         """Convert to dictionary for JSON serialization"""
@@ -120,6 +121,7 @@ class TradeTrackerPostgres:
                         pnl_percent DECIMAL(20, 8) NOT NULL,
                         exit_reason VARCHAR(20) NOT NULL,
                         leverage DECIMAL(10, 2) DEFAULT 1.0,
+                        strategy_name VARCHAR(50),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
@@ -207,12 +209,12 @@ class TradeTrackerPostgres:
                         INSERT INTO trades (
                             symbol, side, entry_price, exit_price, quantity,
                             entry_time, exit_time, pnl_usd, pnl_percent,
-                            exit_reason, leverage
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            exit_reason, leverage, strategy_name
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         trade.symbol, trade.side, trade.entry_price, trade.exit_price,
                         trade.quantity, trade.entry_time, trade.exit_time,
-                        trade.pnl_usd, trade.pnl_percent, trade.exit_reason, trade.leverage
+                        trade.pnl_usd, trade.pnl_percent, trade.exit_reason, trade.leverage, trade.strategy_name
                     ))
                     self.conn.commit()
                     

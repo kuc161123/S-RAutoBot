@@ -61,7 +61,7 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
     ph = pd.Series(_pivot_high(high, 5, 5), index=df.index).dropna()
     pl = pd.Series(_pivot_low(low, 5, 5), index=df.index).dropna()
 
-    if len(ph) < 2 or len(dl) < 2:
+    if len(ph) < 2 or len(pl) < 2:
         return None
 
     # Identify the range

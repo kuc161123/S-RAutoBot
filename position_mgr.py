@@ -44,6 +44,7 @@ class Position:
     sl:float
     tp:float
     entry_time:Optional[datetime] = None
+    strategy_name:str = "unknown"
 
 @dataclass
 class Book:

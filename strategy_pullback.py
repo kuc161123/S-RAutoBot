@@ -45,6 +45,7 @@ class BreakoutState:
     pullback_time:Optional[datetime] = None
     confirmation_count:int = 0
     last_signal_time:Optional[datetime] = None
+    last_signal_candle_time: Optional[datetime] = None
     last_resistance:float = 0.0  # Track the resistance level
     last_support:float = 0.0  # Track the support level
     previous_pivot_low:float = 0.0  # Track previous pivot low for structure-based stops
@@ -208,6 +209,14 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         breakout_states[symbol] = BreakoutState()
     
     state = breakout_states[symbol]
+
+    # Cooldown logic to prevent multiple signals in quick succession
+    if state.last_signal_candle_time:
+        time_since_last_signal = df.index[-1] - state.last_signal_candle_time
+        # Assuming 15-minute candles, convert min_candles_between_signals to timedelta
+        cooldown_duration = pd.Timedelta(minutes=s.min_candles_between_signals * 15)
+        if time_since_last_signal < cooldown_duration:
+            return None # Still in cooldown period
     
     # Require minimum candles for reliable S/R detection
     min_candles = 200
@@ -397,6 +406,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             
             state.state = "SIGNAL_SENT"
             state.last_signal_time = current_time
+            state.last_signal_candle_time = df.index[-1]
             
             logger.info(f"[{symbol}] 🟢 LONG SIGNAL (Pullback) - Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}")
             
@@ -461,6 +471,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             
             state.state = "SIGNAL_SENT"
             state.last_signal_time = current_time
+            state.last_signal_candle_time = df.index[-1]
             
             logger.info(f"[{symbol}] 🔴 SHORT SIGNAL (Pullback) - Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}")
             

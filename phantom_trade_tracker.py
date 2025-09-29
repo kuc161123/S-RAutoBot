@@ -43,6 +43,7 @@ class PhantomTrade:
     ml_score: float  # ML score assigned to this signal
     was_executed: bool  # Whether this became a real trade
     features: Dict  # All ML features for this signal
+    strategy_name: str = "unknown" # The strategy that generated the signal
     
     # Outcome tracking (filled in later)
     outcome: Optional[str] = None  # "win", "loss", or "active"
@@ -178,7 +179,7 @@ class PhantomTradeTracker:
             logger.error(f"Error saving phantom trades to Redis: {e}")
     
     def record_signal(self, symbol: str, signal: dict, ml_score: float, 
-                     was_executed: bool, features: dict) -> PhantomTrade:
+                     was_executed: bool, features: dict, strategy_name: str = "unknown") -> PhantomTrade:
         """
         Record a new signal (whether executed or not)
         
@@ -198,7 +199,8 @@ class PhantomTradeTracker:
             signal_time=datetime.now(),
             ml_score=ml_score,
             was_executed=was_executed,
-            features=features
+            features=features,
+            strategy_name=strategy_name
         )
         
         # Store as active phantom

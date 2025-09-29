@@ -8,11 +8,9 @@ def round_step(x:float, step:float) -> float:
     
     # Determine decimal places from step
     import decimal
-    step_str = str(step)
-    if '.' in step_str:
-        decimal_places = len(step_str.split('.')[1].rstrip('0'))
-    else:
-        decimal_places = 0
+    # Handle scientific notation correctly
+    d_step = decimal.Decimal(str(step))
+    decimal_places = -d_step.as_tuple().exponent if d_step.as_tuple().exponent < 0 else 0
     
     # Round to step
     rounded = round(x / step) * step

@@ -71,6 +71,22 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
     if upper_range <= lower_range:
         return None # Invalid range
 
+    # Range width filter: Only trade ranges between 2.5% and 6% wide
+    # This ensures fixed 2.5:1 R:R aligns well with natural range boundaries
+    range_width = (upper_range - lower_range) / lower_range
+    min_range_width = 0.025  # 2.5% minimum
+    max_range_width = 0.06   # 6.0% maximum
+
+    if range_width < min_range_width:
+        logger.debug(f"[{symbol}] Range too narrow: {range_width:.1%} < {min_range_width:.1%} minimum")
+        return None
+
+    if range_width > max_range_width:
+        logger.debug(f"[{symbol}] Range too wide: {range_width:.1%} > {max_range_width:.1%} maximum")
+        return None
+
+    logger.debug(f"[{symbol}] Range width {range_width:.1%} within optimal bounds ({min_range_width:.1%}-{max_range_width:.1%})")
+
     current_price = close.iloc[-1]
     current_atr = _atr(df, s.atr_len)[-1]
 

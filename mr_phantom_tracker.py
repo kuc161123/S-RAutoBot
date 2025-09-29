@@ -214,12 +214,17 @@ class MRPhantomTracker:
         range_position = None
         if range_upper and range_lower and range_upper > range_lower:
             entry_price = signal['entry']
-            range_width = range_upper - range_lower
-            range_position = (entry_price - range_lower) / range_width
+            range_height = range_upper - range_lower
+            range_position = (entry_price - range_lower) / range_height
 
             # Get confidence from enhanced features if available
             if enhanced_features:
                 range_confidence = enhanced_features.get('range_confidence', 0.5)
+
+        # Calculate range width percentage for analysis (matches strategy filter)
+        range_width_pct = 0.0
+        if range_upper > 0 and range_lower > 0:
+            range_width_pct = (range_upper - range_lower) / range_lower
 
         phantom = MRPhantomTrade(
             symbol=symbol,
@@ -250,7 +255,7 @@ class MRPhantomTracker:
         status = "EXECUTED" if was_executed else f"REJECTED (score: {ml_score:.1f})"
         range_info = ""
         if range_upper and range_lower:
-            range_info = f", Range: {range_lower:.4f}-{range_upper:.4f}"
+            range_info = f", Range: {range_lower:.4f}-{range_upper:.4f} ({range_width_pct:.1%} width)"
             if range_position:
                 range_info += f" (pos: {range_position:.2f})"
 

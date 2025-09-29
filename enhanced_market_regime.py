@@ -301,12 +301,24 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
         # ===== STRATEGY RECOMMENDATION =====
 
         if primary_regime == "ranging":
-            if range_quality in ["high", "medium"] and regime_confidence >= 0.6:
-                recommended_strategy = "enhanced_mr"
-            elif range_quality == "medium" and regime_confidence >= 0.4:
-                recommended_strategy = "enhanced_mr"  # Still try MR but with caution
+            # Apply range width filter: Only recommend enhanced MR for optimal range sizes
+            if range_analysis['upper'] and range_analysis['lower']:
+                range_width = (range_analysis['upper'] - range_analysis['lower']) / range_analysis['lower']
+                min_range_width = 0.025  # 2.5% minimum
+                max_range_width = 0.06   # 6.0% maximum
+
+                if min_range_width <= range_width <= max_range_width:
+                    if range_quality in ["high", "medium"] and regime_confidence >= 0.6:
+                        recommended_strategy = "enhanced_mr"
+                    elif range_quality == "medium" and regime_confidence >= 0.4:
+                        recommended_strategy = "enhanced_mr"  # Still try MR but with caution
+                    else:
+                        recommended_strategy = "none"  # Range too poor quality
+                else:
+                    recommended_strategy = "none"  # Range width outside optimal bounds
+                    logger.debug(f"[{symbol}] Range width {range_width:.1%} outside optimal bounds ({min_range_width:.1%}-{max_range_width:.1%})")
             else:
-                recommended_strategy = "none"  # Range too poor quality
+                recommended_strategy = "none"  # No valid range detected
 
         elif primary_regime == "trending":
             if trend_strength >= 25 and volatility_level != "high":

@@ -445,11 +445,16 @@ class TradingBot:
                             
                             # Record outcome in ML scorer - now for ALL trades
                             ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                            
+
+                            # Also record outcome in Mean Reversion ML scorer if applicable
+                            if mean_reversion_scorer and pos.strategy_name == "MeanReversion":
+                                # Assuming mean_reversion_scorer has a similar record_outcome method
+                                mean_reversion_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                logger.info(f"[{symbol}] Mean Reversion ML updated with outcome.")
+
                             # Also record in ML evolution if available
                             if ml_evolution is not None:
-                                ml_evolution.record_outcome(symbol, outcome == "win", pnl_pct)
-                            
+                                ml_evolution.record_outcome(symbol, outcome == "win", pnl_pct)                            
                             # Log with clear outcome based on actual P&L and corrected exit reason
                             actual_result = "WIN" if pnl_pct > 0 else "LOSS"
                             logger.info(f"[{symbol}] ML updated: {actual_result} ({pnl_pct:.2f}%) - Exit trigger: {exit_reason.upper()}")

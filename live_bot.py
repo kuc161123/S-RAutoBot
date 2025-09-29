@@ -1506,419 +1506,233 @@ class TradingBot:
                         sig.__dict__['ml_score'] = ml_score
                         sig.__dict__['features'] = basic_features if 'basic_features' in locals() else {}
                         sig.__dict__['enhanced_features'] = enhanced_features if 'enhanced_features' in locals() else {}
-                            
-                            # Add symbol cluster features with enhanced confidence scores
-                            try:
-                                from cluster_feature_enhancer import enhance_ml_features
-                                basic_features = enhance_ml_features(basic_features, sym)
-                            except Exception as e:
-                                logger.debug(f"[{sym}] Enhanced clustering not available: {e}")
-                                # Fallback to simple clustering
-                                cluster_id = symbol_clusters.get(sym, 3)  # Default to cluster 3
-                                basic_features['symbol_cluster'] = cluster_id
-                                
-                                # Add price tier based on current price
-                                current_price = df['close'].iloc[-1]
-                                if current_price < 0.01:
-                                    basic_features['price_tier'] = 1
-                                elif current_price < 0.1:
-                                    basic_features['price_tier'] = 2
-                                elif current_price < 1:
-                                    basic_features['price_tier'] = 3
-                                elif current_price < 10:
-                                    basic_features['price_tier'] = 4
-                                else:
-                                    basic_features['price_tier'] = 5
-                                
-                                # Initialize MTF features to defaults in fallback
-                                basic_features['near_major_resistance'] = 0
-                                basic_features['near_major_support'] = 0
-                                basic_features['mtf_level_strength'] = 0.0
-                            
-                            # Create enhanced features copy for ML Evolution (48 features)
-                            enhanced_features = basic_features.copy()
-                            
-                            # Only enhance features for ML Evolution, not original ML
-                            feature_engine = None
-                            btc_price = None
-                            try:
-                                from enhanced_features import get_feature_engine
-                                feature_engine = get_feature_engine()
-                                
-                                if 'BTCUSDT' in self.frames and not self.frames['BTCUSDT'].empty:
-                                    btc_price = self.frames['BTCUSDT']['close'].iloc[-1]
-                                
-                                # Enhance features ONLY for evolution system
-                                enhanced_features = feature_engine.enhance_features(
-                                    symbol=sym,
-                                    df=df,
-                                    current_features=enhanced_features,
-                                    btc_price=btc_price
-                                )
-                                logger.debug(f"[{sym}] Enhanced features prepared for evolution: {len(enhanced_features)} features")
-                            except Exception as e:
-                                logger.debug(f"[{sym}] Enhanced features not available for evolution: {e}")
-                                enhanced_features = basic_features  # Fall back to basic if enhancement fails
-                        
-                            # Cache DataFrame and BTC price for ML evolution
-                            if hasattr(ml_scorer, 'last_data_cache'):
-                                if btc_price is None and 'BTCUSDT' in self.frames and not self.frames['BTCUSDT'].empty:
-                                    btc_price = self.frames['BTCUSDT']['close'].iloc[-1]
-                                
-                                ml_scorer.last_data_cache[sym] = {
-                                    'df': df,
-                                    'btc_price': btc_price
-                                }
-                            
-                            # Get ML score using BASIC features only (22 features)
-                            ml_score, ml_reason = ml_scorer.score_signal(
-                                {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                                basic_features  # Use basic features for original ML
-                            )
-                            
-                            # If ML Evolution is enabled, use ENHANCED features (48 features)
-                            if ml_evolution is not None:
-                                evolution_score, evolution_reason, breakdown = ml_evolution.score_signal(
-                                    sym,
-                                    {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                                    enhanced_features  # Use enhanced features for evolution
-                                )
-                                
-                                # Track evolution performance
-                                if breakdown['symbol_score'] is not None:
-                                    logger.info(f"[{sym}] Evolution: {evolution_reason}")
-                                    
-                                    # Track performance comparison
-                                    try:
-                                        from ml_evolution_tracker import get_evolution_tracker
-                                        evolution_tracker = get_evolution_tracker()
-                                        evolution_tracker.record_decision_comparison(
-                                            symbol=sym,
-                                            general_score=ml_score,  # Original general score
-                                            evolution_score=evolution_score,
-                                            threshold=ml_scorer.min_score
-                                        )
-                                    except Exception as e:
-                                        logger.debug(f"Evolution tracking error: {e}")
-                                
-                                # Use evolution score if active
-                                if ml_evolution.enabled:
-                                    ml_score = evolution_score
-                                    ml_reason = evolution_reason
-                        
-                            # Decide if we should take the trade
-                            should_take_trade = ml_score >= ml_scorer.min_score
 
-                            strategy_name = "MeanReversion" if use_regime_switching and current_regime == "Ranging" else "Pullback"
+                except Exception as e:
+                    # Safety: Allow signal if ML fails but log the error
+                    logger.warning(f"[{sym}] ML scoring error: {e}. Allowing signal for safety.")
+                    should_take_trade = True
 
-                            # Use appropriate ML scorer based on strategy
-                            if strategy_name == "MeanReversion" and mean_reversion_scorer:
-                                # Extract mean reversion features from signal meta
-                                mr_features = sig.meta.get('mr_features', {})
-                                if mr_features:
-                                    try:
-                                        # Use mean reversion ML scorer
-                                        mr_ml_score, mr_ml_reason = mean_reversion_scorer.score_signal(
-                                            {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp, 'meta': sig.meta},
-                                            mr_features
-                                        )
+                # One position per symbol rule - wait for current position to close
+                # Final trade execution decision logging
+                logger.info(f"💯 [{sym}] FINAL TRADE DECISION:")
 
-                                        # Override with mean reversion score
-                                        ml_score = mr_ml_score
-                                        ml_reason = mr_ml_reason
-                                        should_take_trade = ml_score >= mean_reversion_scorer.min_score
+                # Check for existing positions
+                if sym in book.positions:
+                    logger.info(f"   ❌ POSITION CONFLICT: Existing position already open")
+                    logger.info(f"   📊 Current positions: {list(book.positions.keys())}")
+                    logger.info(f"   💡 One position per symbol rule prevents duplicate entries")
+                    continue
 
-                                        logger.info(f"[{sym}] Mean Reversion ML: {ml_reason}")
+                # Get symbol metadata
+                m = meta_for(sym, shared["meta"])
 
-                                        # Record in phantom tracker with mean reversion features
-                                        phantom_tracker.record_signal(
-                                            symbol=sym,
-                                            signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                                            ml_score=ml_score,
-                                            was_executed=should_take_trade,
-                                            features=mr_features,  # Use MR features
-                                            strategy_name=strategy_name
-                                        )
-                                    except Exception as e:
-                                        logger.warning(f"[{sym}] Mean Reversion ML scoring failed: {e}. Using pullback ML.")
-                                        # Fall back to standard phantom tracking
-                                        phantom_tracker.record_signal(
-                                            symbol=sym,
-                                            signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                                            ml_score=ml_score,
-                                            was_executed=should_take_trade,
-                                            features=basic_features,
-                                            strategy_name=strategy_name
-                                        )
-                                else:
-                                    logger.warning(f"[{sym}] No mean reversion features available, using pullback ML")
-                                    # Fall back to standard phantom tracking
-                                    phantom_tracker.record_signal(
-                                        symbol=sym,
-                                        signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                                        ml_score=ml_score,
-                                        was_executed=should_take_trade,
-                                        features=basic_features,
-                                        strategy_name=strategy_name
-                                    )
-                            else:
-                                # Use pullback ML scorer (existing logic)
-                                # ALWAYS record the signal in phantom tracker for learning
-                                phantom_tracker.record_signal(
-                                    symbol=sym,
-                                    signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                                    ml_score=ml_score,
-                                    was_executed=should_take_trade,
-                                    features=basic_features,
-                                    strategy_name=strategy_name
-                                )
-                            
-                            # Update ML evolution stats
-                            if ml_evolution is not None:
-                                ml_evolution.update_stats(sym, is_phantom=not should_take_trade)
-                        
-                            if not should_take_trade:
-                                logger.info(f"❌ [{sym}] {strategy_name.upper()} TRADE REJECTED: ML Score {ml_score:.1f} < {ml_scorer.min_score}. Reason: {ml_reason}")
-                                # Record failed signal for enhanced features context
-                                try:
-                                    if 'feature_engine' in locals():
-                                        feature_engine.record_failed_signal(
-                                            symbol=sym,
-                                            price=sig.entry,
-                                            reason=f"ML Score {ml_score:.1f}"
-                                        )
-                                except Exception as e:
-                                    logger.debug(f"Failed to record signal rejection: {e}")
-                                continue
-                            else:
-                                logger.info(f"✅ [{sym}] {strategy_name.upper()} TRADE APPROVED: Score {ml_score:.1f}. Reason: {ml_reason}")
-                            
-                        except Exception as e:
-                            # Safety: Allow signal if ML fails but log the error
-                            logger.warning(f"[{sym}] ML scoring error: {e}. Allowing signal for safety.")
-                            should_take_trade = True
+                # Round TP/SL to symbol's tick size to prevent API errors
+                from position_mgr import round_step
+                tick_size = m.get("tick_size", 0.000001) # Default to a small tick size
                 
-                    # One position per symbol rule - wait for current position to close
-                    # Final trade execution decision logging
-                    logger.info(f"💯 [{sym}] FINAL TRADE DECISION:")
+                original_tp = sig.tp
+                original_sl = sig.sl
 
-                    # Check for existing positions
-                    if sym in book.positions:
-                        logger.info(f"   ❌ POSITION CONFLICT: Existing position already open")
-                        logger.info(f"   📊 Current positions: {list(book.positions.keys())}")
-                        logger.info(f"   💡 One position per symbol rule prevents duplicate entries")
-                        continue
+                sig.tp = round_step(sig.tp, tick_size)
+                sig.sl = round_step(sig.sl, tick_size)
+
+                if original_tp != sig.tp or original_sl != sig.sl:
+                    logger.info(f"[{sym}] Rounded TP/SL to tick size {tick_size}. TP: {original_tp:.6f} -> {sig.tp:.6f}, SL: {original_sl:.6f} -> {sig.sl:.6f}")
                 
-                    # Get symbol metadata
-                    m = meta_for(sym, shared["meta"])
-
-                    # Round TP/SL to symbol's tick size to prevent API errors
-                    from position_mgr import round_step
-                    tick_size = m.get("tick_size", 0.000001) # Default to a small tick size
-                    
-                    original_tp = sig.tp
-                    original_sl = sig.sl
-
-                    sig.tp = round_step(sig.tp, tick_size)
-                    sig.sl = round_step(sig.sl, tick_size)
-
-                    if original_tp != sig.tp or original_sl != sig.sl:
-                        logger.info(f"[{sym}] Rounded TP/SL to tick size {tick_size}. TP: {original_tp:.6f} -> {sig.tp:.6f}, SL: {original_sl:.6f} -> {sig.sl:.6f}")
+                # Check account balance and update risk calculation
+                current_balance = bybit.get_balance()
+                if current_balance:
+                    balance = current_balance
+                    # Update sizer with current balance for percentage-based risk
+                    sizer.account_balance = balance
                 
-                    # Check account balance and update risk calculation
-                    current_balance = bybit.get_balance()
-                    if current_balance:
-                        balance = current_balance
-                        # Update sizer with current balance for percentage-based risk
-                        sizer.account_balance = balance
-                    
-                        # Calculate actual risk amount for this trade
-                        if risk.use_percent_risk:
-                            risk_amount = balance * (risk.risk_percent / 100.0)
-                        else:
-                            risk_amount = risk.risk_usd
-                    
-                        # Calculate required margin with max leverage
-                        required_margin = (risk_amount * 100) / m.get("max_leverage", 50)  # Rough estimate
-                    
-                        # Check if we have enough for margin + buffer
-                        if balance < required_margin * 1.5:  # 1.5x for safety
-                            logger.info(f"   ❌ INSUFFICIENT BALANCE:")
-                            logger.info(f"      💰 Available: ${balance:.2f}")
-                            logger.info(f"      📊 Required Margin: ≈${required_margin:.2f}")
-                            logger.info(f"      ⚠️ Safety Buffer: {1.5}x margin = ${required_margin * 1.5:.2f}")
-                            logger.info(f"      💡 Need ${(required_margin * 1.5) - balance:.2f} more to safely execute")
-                            continue
-
-                        logger.info(f"   ✅ BALANCE CHECK PASSED:")
+                    # Calculate actual risk amount for this trade
+                    if risk.use_percent_risk:
+                        risk_amount = balance * (risk.risk_percent / 100.0)
+                    else:
+                        risk_amount = risk.risk_usd
+                
+                    # Calculate required margin with max leverage
+                    required_margin = (risk_amount * 100) / m.get("max_leverage", 50)  # Rough estimate
+                
+                    # Check if we have enough for margin + buffer
+                    if balance < required_margin * 1.5:  # 1.5x for safety
+                        logger.info(f"   ❌ INSUFFICIENT BALANCE:")
                         logger.info(f"      💰 Available: ${balance:.2f}")
-                        logger.info(f"      💸 Risk Amount: ${risk_amount:.2f}")
-                        logger.info(f"      🛡️ Margin Required: ≈${required_margin:.2f}")
-
-                    # Calculate position size
-                    qty = sizer.qty_for(sig.entry, sig.sl, m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
-
-                    if qty <= 0:
-                        logger.info(f"   ❌ POSITION SIZE ERROR:")
-                        logger.info(f"      📊 Calculated Quantity: {qty}")
-                        logger.info(f"      💡 Check: Risk amount, entry price, stop loss distance")
-                        logger.info(f"      🔧 Symbol specs: min_qty={m.get('min_qty',0.001)}, qty_step={m.get('qty_step',0.001)}")
+                        logger.info(f"      📊 Required Margin: ≈${required_margin:.2f}")
+                        logger.info(f"      ⚠️ Safety Buffer: {1.5}x margin = ${required_margin * 1.5:.2f}")
+                        logger.info(f"      💡 Need ${(required_margin * 1.5) - balance:.2f} more to safely execute")
                         continue
-                
-                    # Get current market price for stop loss validation
-                    current_price = df['close'].iloc[-1]
-                    
-                    # Validate stop loss is on correct side of market price
-                    logger.info(f"   🔍 STOP LOSS VALIDATION:")
-                    logger.info(f"      📍 Current Price: {current_price:.4f}")
-                    logger.info(f"      🛑 Stop Loss: {sig.sl:.4f}")
-                    logger.info(f"      📊 Entry: {sig.entry:.4f}")
 
-                    sl_valid = True
-                    if sig.side == "long":
-                        if sig.sl >= current_price:
-                            logger.info(f"      ❌ INVALID: Long SL ({sig.sl:.4f}) must be BELOW current price ({current_price:.4f})")
-                            logger.info(f"      💡 Long stops protect against downward moves")
-                            sl_valid = False
-                        else:
-                            logger.info(f"      ✅ VALID: Long SL ({sig.sl:.4f}) is below current price")
-                    else:  # short
-                        if sig.sl <= current_price:
-                            logger.info(f"      ❌ INVALID: Short SL ({sig.sl:.4f}) must be ABOVE current price ({current_price:.4f})")
-                            logger.info(f"      💡 Short stops protect against upward moves")
-                            sl_valid = False
-                        else:
-                            logger.info(f"      ✅ VALID: Short SL ({sig.sl:.4f}) is above current price")
-
-                    if not sl_valid:
-                        continue
-                    
-                    # Final execution summary
-                    logger.info(f"   🚀 EXECUTING TRADE:")
-                    logger.info(f"      📊 Strategy: {selected_strategy.upper()}")
-                    logger.info(f"      🎯 Signal: {sig.side.upper()} @ {sig.entry:.4f}")
-                    logger.info(f"      🛑 Stop Loss: {sig.sl:.4f}")
-                    logger.info(f"      💰 Take Profit: {sig.tp:.4f}")
-                    logger.info(f"      📈 Risk:Reward: {((sig.tp-sig.entry)/(sig.entry-sig.sl) if sig.side=='long' else (sig.entry-sig.tp)/(sig.sl-sig.entry)):.2f}")
-                    logger.info(f"      🔢 Quantity: {qty}")
-                    logger.info(f"      🧠 ML Score: {ml_score:.1f}")
+                    logger.info(f"   ✅ BALANCE CHECK PASSED:")
+                    logger.info(f"      💰 Available: ${balance:.2f}")
                     logger.info(f"      💸 Risk Amount: ${risk_amount:.2f}")
+                    logger.info(f"      🛡️ Margin Required: ≈${required_margin:.2f}")
 
-                    # IMPORTANT: Set leverage BEFORE opening position to prevent TP/SL cancellation
-                    max_lev = int(m.get("max_leverage", 10))
-                    logger.info(f"   ⚙️ Setting leverage to {max_lev}x (before position to preserve TP/SL)")
-                    bybit.set_leverage(sym, max_lev)
+                # Calculate position size
+                qty = sizer.qty_for(sig.entry, sig.sl, m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
+
+                if qty <= 0:
+                    logger.info(f"   ❌ POSITION SIZE ERROR:")
+                    logger.info(f"      📊 Calculated Quantity: {qty}")
+                    logger.info(f"      💡 Check: Risk amount, entry price, stop loss distance")
+                    logger.info(f"      🔧 Symbol specs: min_qty={m.get('min_qty',0.001)}, qty_step={m.get('qty_step',0.001)}")
+                    continue
                 
-                    # Place market order AFTER leverage is set
-                    side = "Buy" if sig.side == "long" else "Sell"
-                    try:
-                        logger.info(f"[{sym}] Placing {side} order for {qty} units")
-                        logger.debug(f"[{sym}] Order details: current_price={current_price:.4f}, sig.entry={sig.entry:.4f}, sig.sl={sig.sl:.4f}, sig.tp={sig.tp:.4f}")
-                        order_result = bybit.place_market(sym, side, qty, reduce_only=False)
-                        
-                        # Get actual entry price from position
-                        actual_entry = sig.entry  # Default to signal entry
-                        try:
-                            # Small delay to ensure position is updated
-                            await asyncio.sleep(0.5)
-                            
-                            position = bybit.get_position(sym)
-                            if position and position.get("avgPrice"):
-                                actual_entry = float(position["avgPrice"])
-                                logger.info(f"[{sym}] Actual entry price: {actual_entry:.4f} (signal was {sig.entry:.4f})")
-                                
-                                # Recalculate TP based on actual entry to maintain R:R ratio
-                                if actual_entry != sig.entry:
-                                    risk_distance = abs(actual_entry - sig.sl)
-                                    # Apply same R:R ratio and fee adjustment
-                                    fee_adjustment = 1.00165  # Same as in strategy
-                                    if sig.side == "long":
-                                        new_tp = actual_entry + (risk_distance * settings.rr * fee_adjustment)
-                                    else:
-                                        new_tp = actual_entry - (risk_distance * settings.rr * fee_adjustment)
+                # Get current market price for stop loss validation
+                current_price = df['close'].iloc[-1]
+                
+                # Validate stop loss is on correct side of market price
+                logger.info(f"   🔍 STOP LOSS VALIDATION:")
+                logger.info(f"      📍 Current Price: {current_price:.4f}")
+                logger.info(f"      🛑 Stop Loss: {sig.sl:.4f}")
+                logger.info(f"      📊 Entry: {sig.entry:.4f}")
 
-                                    # Log the adjustment
-                                    tp_adjustment_pct = ((new_tp - sig.tp) / sig.tp) * 100
-                                    logger.info(f"[{sym}] Adjusting TP from {sig.tp:.4f} to {new_tp:.4f} ({tp_adjustment_pct:+.2f}%) to maintain {settings.rr}:1 R:R")
-                                    sig.tp = new_tp
-                        except Exception as e:
-                            logger.warning(f"[{sym}] Could not get actual entry price: {e}. Using signal entry.")
-                        
-                        # Set TP/SL - these will not be cancelled since leverage was set before position
-                        logger.info(f"[{sym}] Setting TP={sig.tp:.4f} (Limit), SL={sig.sl:.4f} (Market)")
-                        bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl, qty=qty)
+                sl_valid = True
+                if sig.side == "long":
+                    if sig.sl >= current_price:
+                        logger.info(f"      ❌ INVALID: Long SL ({sig.sl:.4f}) must be BELOW current price ({current_price:.4f})")
+                        logger.info(f"      💡 Long stops protect against downward moves")
+                        sl_valid = False
+                    else:
+                        logger.info(f"      ✅ VALID: Long SL ({sig.sl:.4f}) is below current price")
+                else:  # short
+                    if sig.sl <= current_price:
+                        logger.info(f"      ❌ INVALID: Short SL ({sig.sl:.4f}) must be ABOVE current price ({current_price:.4f})")
+                        logger.info(f"      💡 Short stops protect against upward moves")
+                        sl_valid = False
+                    else:
+                        logger.info(f"      ✅ VALID: Short SL ({sig.sl:.4f}) is above current price")
+
+                if not sl_valid:
+                    continue
+                
+                # Final execution summary
+                logger.info(f"   🚀 EXECUTING TRADE:")
+                logger.info(f"      📊 Strategy: {selected_strategy.upper()}")
+                logger.info(f"      🎯 Signal: {sig.side.upper()} @ {sig.entry:.4f}")
+                logger.info(f"      🛑 Stop Loss: {sig.sl:.4f}")
+                logger.info(f"      💰 Take Profit: {sig.tp:.4f}")
+                logger.info(f"      📈 Risk:Reward: {((sig.tp-sig.entry)/(sig.entry-sig.sl) if sig.side=='long' else (sig.entry-sig.tp)/(sig.sl-sig.entry)):.2f}")
+                logger.info(f"      🔢 Quantity: {qty}")
+                logger.info(f"      🧠 ML Score: {ml_score:.1f}")
+                logger.info(f"      💸 Risk Amount: ${risk_amount:.2f}")
+
+                # IMPORTANT: Set leverage BEFORE opening position to prevent TP/SL cancellation
+                max_lev = int(m.get("max_leverage", 10))
+                logger.info(f"   ⚙️ Setting leverage to {max_lev}x (before position to preserve TP/SL)")
+                bybit.set_leverage(sym, max_lev)
+                
+                # Place market order AFTER leverage is set
+                side = "Buy" if sig.side == "long" else "Sell"
+                try:
+                    logger.info(f"[{sym}] Placing {side} order for {qty} units")
+                    logger.debug(f"[{sym}] Order details: current_price={current_price:.4f}, sig.entry={sig.entry:.4f}, sig.sl={sig.sl:.4f}, sig.tp={sig.tp:.4f}")
+                    order_result = bybit.place_market(sym, side, qty, reduce_only=False)
                     
-                        # Update book with actual entry price
-                        strategy_name = "MeanReversion" if use_regime_switching and current_regime == "Ranging" else "Pullback"
-                        book.positions[sym] = Position(sig.side, qty, actual_entry, sig.sl, sig.tp, datetime.now(), strategy_name=strategy_name)
-                        last_signal_time[sym] = now
+                    # Get actual entry price from position
+                    actual_entry = sig.entry  # Default to signal entry
+                    try:
+                        # Small delay to ensure position is updated
+                        await asyncio.sleep(0.5)
                         
-                        # Debug log the position details
-                        logger.debug(f"[{sym}] Stored position: side={sig.side}, entry={actual_entry:.4f}, TP={sig.tp:.4f}, SL={sig.sl:.4f}")
-                        
-                        # Record comprehensive trade context for future ML
-                        if symbol_collector:
-                            try:
-                                # Get current BTC price for market context
-                                btc_price = None
-                                if 'BTCUSDT' in self.frames:
-                                    btc_price = self.frames['BTCUSDT']['close'].iloc[-1]
-                                
-                                # Record the context
-                                trade_context = symbol_collector.record_trade_context(
-                                    symbol=sym,
-                                    df=df,
-                                    btc_price=btc_price
-                                )
-                                logger.debug(f"[{sym}] Recorded trade context: session={trade_context.session}, vol_ratio={trade_context.volume_vs_avg:.2f}")
-                                
-                                # Update symbol profile
-                                symbol_collector.update_symbol_profile(sym)
-                                
-                            except Exception as e:
-                                logger.debug(f"Failed to record trade context: {e}")
-                    
-                        # Send notification
-                        if self.tg:
-                            emoji = "🟢" if sig.side == "long" else "🔴"
-                            # Calculate actual risk used
-                            if risk.use_ml_dynamic_risk:
-                                score_range = risk.ml_risk_max_score - risk.ml_risk_min_score
-                                risk_range = risk.ml_risk_max_percent - risk.ml_risk_min_percent
-                                clamped_score = max(risk.ml_risk_min_score, min(risk.ml_risk_max_score, ml_score))
-                                if score_range > 0:
-                                    score_position = (clamped_score - risk.ml_risk_min_score) / score_range
-                                    actual_risk_pct = risk.ml_risk_min_percent + (score_position * risk_range)
-                                else:
-                                    actual_risk_pct = risk.ml_risk_min_percent
-                                risk_display = f"{actual_risk_pct:.2f}% (ML: {ml_score:.1f})"
-                            else:
-                                actual_risk_pct = risk.risk_percent
-                                risk_display = f"{actual_risk_pct}%"
+                        position = bybit.get_position(sym)
+                        if position and position.get("avgPrice"):
+                            actual_entry = float(position["avgPrice"])
+                            logger.info(f"[{sym}] Actual entry price: {actual_entry:.4f} (signal was {sig.entry:.4f})")
                             
-                            # Add TP adjustment info if applicable
-                            entry_info = f"Entry: {actual_entry:.4f}"
+                            # Recalculate TP based on actual entry to maintain R:R ratio
                             if actual_entry != sig.entry:
-                                price_diff_pct = ((actual_entry - sig.entry) / sig.entry) * 100
-                                entry_info += f" (signal: {sig.entry:.4f}, {price_diff_pct:+.2f}%)"
-                            
-                            msg = (
-                                f"{emoji} *{sym} {sig.side.upper()}*\n\n"
-                                f"{entry_info}\n"
-                                f"Stop Loss: {sig.sl:.4f}\n"
-                                f"Take Profit: {sig.tp:.4f}\n"
-                                f"Quantity: {qty}\n"
-                                f"Risk: {risk_display} (${risk_amount:.2f})\n"
-                                f"Reason: {sig.reason}"
-                            )
-                            await self.tg.send_message(msg)
-                    
-                        logger.info(f"[{sym}] {sig.side} position opened successfully")
-                        
+                                risk_distance = abs(actual_entry - sig.sl)
+                                # Apply same R:R ratio and fee adjustment
+                                fee_adjustment = 1.00165  # Same as in strategy
+                                if sig.side == "long":
+                                    new_tp = actual_entry + (risk_distance * settings.rr * fee_adjustment)
+                                else:
+                                    new_tp = actual_entry - (risk_distance * settings.rr * fee_adjustment)
+
+                                # Log the adjustment
+                                tp_adjustment_pct = ((new_tp - sig.tp) / sig.tp) * 100
+                                logger.info(f"[{sym}] Adjusting TP from {sig.tp:.4f} to {new_tp:.4f} ({tp_adjustment_pct:+.2f}%) to maintain {settings.rr}:1 R:R")
+                                sig.tp = new_tp
                     except Exception as e:
-                        logger.error(f"Order error: {e}")
-                        if self.tg:
-                            await self.tg.send_message(f"❌ Failed to open {sym} {sig.side}: {str(e)[:100]}")
+                        logger.warning(f"[{sym}] Could not get actual entry price: {e}. Using signal entry.")
+                    
+                    # Set TP/SL - these will not be cancelled since leverage was set before position
+                    logger.info(f"[{sym}] Setting TP={sig.tp:.4f} (Limit), SL={sig.sl:.4f} (Market)")
+                    bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl, qty=qty)
+                
+                    # Update book with actual entry price
+                    strategy_name = "MeanReversion" if use_regime_switching and current_regime == "Ranging" else "Pullback"
+                    book.positions[sym] = Position(sig.side, qty, actual_entry, sig.sl, sig.tp, datetime.now(), strategy_name=strategy_name)
+                    last_signal_time[sym] = now
+                    
+                    # Debug log the position details
+                    logger.debug(f"[{sym}] Stored position: side={sig.side}, entry={actual_entry:.4f}, TP={sig.tp:.4f}, SL={sig.sl:.4f}")
+                    
+                    # Record comprehensive trade context for future ML
+                    if symbol_collector:
+                        try:
+                            # Get current BTC price for market context
+                            btc_price = None
+                            if 'BTCUSDT' in self.frames:
+                                btc_price = self.frames['BTCUSDT']['close'].iloc[-1]
+                            
+                            # Record the context
+                            trade_context = symbol_collector.record_trade_context(
+                                symbol=sym,
+                                df=df,
+                                btc_price=btc_price
+                            )
+                            logger.debug(f"[{sym}] Recorded trade context: session={trade_context.session}, vol_ratio={trade_context.volume_vs_avg:.2f}")
+                            
+                            # Update symbol profile
+                            symbol_collector.update_symbol_profile(sym)
+                            
+                        except Exception as e:
+                            logger.debug(f"Failed to record trade context: {e}")
+                
+                    # Send notification
+                    if self.tg:
+                        emoji = "🟢" if sig.side == "long" else "🔴"
+                        # Calculate actual risk used
+                        if risk.use_ml_dynamic_risk:
+                            score_range = risk.ml_risk_max_score - risk.ml_risk_min_score
+                            risk_range = risk.ml_risk_max_percent - risk.ml_risk_min_percent
+                            clamped_score = max(risk.ml_risk_min_score, min(risk.ml_risk_max_score, ml_score))
+                            if score_range > 0:
+                                score_position = (clamped_score - risk.ml_risk_min_score) / score_range
+                                actual_risk_pct = risk.ml_risk_min_percent + (score_position * risk_range)
+                            else:
+                                actual_risk_pct = risk.ml_risk_min_percent
+                            risk_display = f"{actual_risk_pct:.2f}% (ML: {ml_score:.1f})"
+                        else:
+                            actual_risk_pct = risk.risk_percent
+                            risk_display = f"{actual_risk_pct}%"
+                        
+                        # Add TP adjustment info if applicable
+                        entry_info = f"Entry: {actual_entry:.4f}"
+                        if actual_entry != sig.entry:
+                            price_diff_pct = ((actual_entry - sig.entry) / sig.entry) * 100
+                            entry_info += f" (signal: {sig.entry:.4f}, {price_diff_pct:+.2f}%)"
+                        
+                        msg = (
+                            f"{emoji} *{sym} {sig.side.upper()}*\n\n"
+                            f"{entry_info}\n"
+                            f"Stop Loss: {sig.sl:.4f}\n"
+                            f"Take Profit: {sig.tp:.4f}\n"
+                            f"Quantity: {qty}\n"
+                            f"Risk: {risk_display} (${risk_amount:.2f})\n"
+                            f"Reason: {sig.reason}"
+                        )
+                        await self.tg.send_message(msg)
+                
+                    logger.info(f"[{sym}] {sig.side} position opened successfully")
+                    
+                except Exception as e:
+                    logger.error(f"Order error: {e}")
+                    if self.tg:
+                        await self.tg.send_message(f"❌ Failed to open {sym} {sig.side}: {str(e)[:100]}")
                 
                 except KeyError as e:
                     # KeyError likely means symbol not in config or metadata

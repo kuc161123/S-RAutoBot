@@ -934,8 +934,8 @@ class TradingBot:
                     logger.info(f"   Completed trades: {ml_stats['completed_trades']}")
                     if ml_stats['recent_win_rate'] > 0:
                         logger.info(f"   Recent win rate: {ml_stats['recent_win_rate']:.1f}%")
-                if ml_stats['models_active']:
-                    logger.info(f"   Active models: {', '.join(ml_stats['models_active'])}")
+                    if ml_stats['models_active']:
+                        logger.info(f"   Active models: {', '.join(ml_stats['models_active'])}")
                     
                 # Phantom trades now expire naturally on TP/SL - no timeout needed
                 

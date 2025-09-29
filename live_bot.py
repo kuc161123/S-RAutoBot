@@ -1284,28 +1284,52 @@ class TradingBot:
                         # Use enhanced regime detection for strategy routing
                         regime_analysis = get_enhanced_market_regime(df, sym)
 
-                        logger.debug(f"[{sym}] Enhanced regime: {regime_analysis.primary_regime} "
-                                   f"(conf: {regime_analysis.regime_confidence:.2f}) → {regime_analysis.recommended_strategy}")
+                        # Enhanced regime analysis logging
+                        logger.info(f"🔍 [{sym}] MARKET ANALYSIS:")
+                        logger.info(f"   📊 Regime: {regime_analysis.primary_regime.upper()} (confidence: {regime_analysis.regime_confidence:.1%})")
+                        logger.info(f"   📈 Trend Strength: {regime_analysis.trend_strength:.1f} | Volatility: {regime_analysis.volatility_level}")
+                        if regime_analysis.primary_regime == "ranging":
+                            logger.info(f"   📦 Range Quality: {regime_analysis.range_quality} | Persistence: {regime_analysis.regime_persistence:.1%}")
+                        logger.info(f"   🎯 Recommended Strategy: {regime_analysis.recommended_strategy.upper().replace('_', ' ')}")
 
                         if regime_analysis.recommended_strategy == "enhanced_mr":
                             # Use Enhanced Mean Reversion System
+                            logger.info(f"🟢 [{sym}] ENHANCED MEAN REVERSION ANALYSIS:")
                             sig = detect_signal_mean_reversion(df.copy(), settings, sym)
                             selected_strategy = "enhanced_mr"
                             selected_ml_scorer = enhanced_mr_scorer
                             selected_phantom_tracker = mr_phantom_tracker
-                            logger.debug(f"[{sym}] Using Enhanced Mean Reversion (range quality: {regime_analysis.range_quality})")
+
+                            if sig:
+                                logger.info(f"   ✅ Range Signal Detected: {sig.side.upper()} at {sig.entry:.4f}")
+                                logger.info(f"   🎯 SL: {sig.sl:.4f} | TP: {sig.tp:.4f} | R:R: {((sig.tp-sig.entry)/(sig.entry-sig.sl) if sig.side=='long' else (sig.entry-sig.tp)/(sig.sl-sig.entry)):.2f}")
+                                logger.info(f"   📝 Reason: {sig.reason}")
+                            else:
+                                logger.info(f"   ❌ No Mean Reversion Signal: Range conditions not met")
+                                logger.info(f"   💡 Range quality: {regime_analysis.range_quality}, confidence: {regime_analysis.regime_confidence:.1%}")
 
                         elif regime_analysis.recommended_strategy == "pullback":
                             # Use Pullback System
+                            logger.info(f"🔵 [{sym}] PULLBACK STRATEGY ANALYSIS:")
                             sig = get_pullback_signals(df.copy(), settings, sym)
                             selected_strategy = "pullback"
                             selected_ml_scorer = ml_scorer
                             selected_phantom_tracker = phantom_tracker
-                            logger.debug(f"[{sym}] Using Pullback Strategy (trend strength: {regime_analysis.trend_strength:.1f})")
+
+                            if sig:
+                                logger.info(f"   ✅ Pullback Signal Detected: {sig.side.upper()} at {sig.entry:.4f}")
+                                logger.info(f"   🎯 SL: {sig.sl:.4f} | TP: {sig.tp:.4f} | R:R: {((sig.tp-sig.entry)/(sig.entry-sig.sl) if sig.side=='long' else (sig.entry-sig.tp)/(sig.sl-sig.entry)):.2f}")
+                                logger.info(f"   📝 Reason: {sig.reason}")
+                            else:
+                                logger.info(f"   ❌ No Pullback Signal: Trend structure insufficient")
+                                logger.info(f"   💡 Trend strength: {regime_analysis.trend_strength:.1f}, volatility: {regime_analysis.volatility_level}")
 
                         else:
                             # Skip this symbol for now (volatile or poor conditions)
-                            logger.debug(f"[{sym}] Skipping - {regime_analysis.primary_regime} regime with {regime_analysis.volatility_level} volatility")
+                            logger.info(f"⏭️ [{sym}] STRATEGY SELECTION:")
+                            logger.info(f"   ❌ SKIPPING - {regime_analysis.primary_regime.upper()} regime not suitable")
+                            logger.info(f"   💡 Volatility: {regime_analysis.volatility_level}, confidence: {regime_analysis.regime_confidence:.1%}")
+                            logger.info(f"   📊 Market needs: trending (>25 strength) OR ranging (>medium quality)")
                             continue
 
                     elif use_regime_switching:
@@ -1335,8 +1359,8 @@ class TradingBot:
                     signals_detected += 1
                 
                     # Apply ML scoring and phantom tracking using selected system
-                    ml_score = 100.0  # Default if no ML
-                    ml_reason = "No ML"
+                    ml_score = 0
+                    ml_reason = "No ML Scoring"
                     should_take_trade = True
 
                     if selected_ml_scorer is not None and selected_phantom_tracker is not None:
@@ -1346,22 +1370,45 @@ class TradingBot:
                                 # Use enhanced MR features
                                 from enhanced_mr_features import calculate_enhanced_mr_features
 
+                                logger.info(f"🧠 [{sym}] ENHANCED MR ML ANALYSIS:")
                                 enhanced_features = calculate_enhanced_mr_features(df, sig.__dict__, sym)
+                                logger.info(f"   📊 Features: {len(enhanced_features)} range-specific features calculated")
 
                                 # Score using Enhanced MR ML system
                                 ml_score, ml_reason = selected_ml_scorer.score_signal(sig.__dict__, enhanced_features, df)
 
+                                # Detailed ML decision logging
+                                threshold = selected_ml_scorer.min_score
+                                should_take_trade = ml_score >= threshold
+
+                                logger.info(f"   🎯 ML Score: {ml_score:.1f} / {threshold:.0f} threshold")
+                                logger.info(f"   🔍 Analysis: {ml_reason}")
+                                logger.info(f"   📈 Key Factors:")
+
+                                # Log top contributing factors if available
+                                try:
+                                    top_features = sorted(enhanced_features.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
+                                    for i, (feature, value) in enumerate(top_features):
+                                        logger.info(f"      {i+1}. {feature}: {value:.3f}")
+                                except:
+                                    logger.info(f"      Range quality, oscillator signals, market microstructure")
+
+                                if should_take_trade:
+                                    logger.info(f"   ✅ DECISION: EXECUTE TRADE - ML confidence above {threshold}")
+                                else:
+                                    logger.info(f"   ❌ DECISION: REJECT TRADE - ML score {ml_score:.1f} below threshold {threshold}")
+                                    logger.info(f"   💡 Rejection reason: {ml_reason}")
+
                                 # Record in MR phantom tracker
-                                should_take_trade = ml_score >= selected_ml_scorer.min_score
                                 selected_phantom_tracker.record_mr_signal(
                                     sym, sig.__dict__, ml_score, should_take_trade, {}, enhanced_features
                                 )
 
-                                logger.info(f"[{sym}] Enhanced MR ML: {ml_score:.1f} ({'EXECUTE' if should_take_trade else 'REJECT'}) - {ml_reason}")
-
                             else:
                                 # Use pullback features (original system)
                                 from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
+
+                                logger.info(f"🧠 [{sym}] PULLBACK ML ANALYSIS:")
 
                                 # Get or create state for this symbol
                                 if sym not in ml_breakout_states:
@@ -1376,7 +1423,8 @@ class TradingBot:
 
                                 # Calculate basic features (22 features for original ML)
                                 basic_features = calculate_ml_features(df, state, sig.side, retracement)
-                            
+                                logger.info(f"   📊 Core Features: {len(basic_features)} pullback features calculated")
+
                                 # Add entry price for MTF feature calculation
                                 basic_features['entry_price'] = sig.entry
 
@@ -1384,6 +1432,7 @@ class TradingBot:
                                 try:
                                     from cluster_feature_enhancer import enhance_ml_features
                                     basic_features = enhance_ml_features(basic_features, sym)
+                                    logger.info(f"   🎯 Enhanced with cluster features for symbol group analysis")
                                 except Exception as e:
                                     logger.debug(f"[{sym}] Enhanced clustering not available: {e}")
                                     # Fallback to simple clustering
@@ -1391,6 +1440,7 @@ class TradingBot:
                                     symbol_clusters = load_symbol_clusters()
                                     cluster_id = symbol_clusters.get(sym, 3)
                                     basic_features['symbol_cluster'] = cluster_id
+                                    logger.info(f"   🏷️ Basic cluster ID: {cluster_id}")
 
                                 # Score using pullback ML system
                                 ml_score, ml_reason = selected_ml_scorer.score_signal(
@@ -1398,8 +1448,40 @@ class TradingBot:
                                     basic_features
                                 )
 
+                                # Detailed ML decision logging
+                                threshold = selected_ml_scorer.min_score
+                                should_take_trade = ml_score >= threshold
+
+                                logger.info(f"   🎯 ML Score: {ml_score:.1f} / {threshold:.0f} threshold")
+                                logger.info(f"   🔍 Analysis: {ml_reason}")
+                                logger.info(f"   📈 Key Factors:")
+
+                                # Log important technical factors
+                                try:
+                                    key_factors = []
+                                    if 'trend_strength' in basic_features:
+                                        key_factors.append(f"Trend: {basic_features['trend_strength']:.2f}")
+                                    if 'atr_percentile' in basic_features:
+                                        key_factors.append(f"Volatility: {basic_features['atr_percentile']:.2f}")
+                                    if 'volume_ratio' in basic_features:
+                                        key_factors.append(f"Volume: {basic_features['volume_ratio']:.2f}")
+                                    if 'rsi' in basic_features:
+                                        key_factors.append(f"RSI: {basic_features['rsi']:.1f}")
+                                    if 'bb_position' in basic_features:
+                                        key_factors.append(f"BB Pos: {basic_features['bb_position']:.2f}")
+
+                                    for factor in key_factors[:4]:  # Top 4 factors
+                                        logger.info(f"      • {factor}")
+                                except:
+                                    logger.info(f"      Trend strength, volume, volatility, momentum indicators")
+
+                                if should_take_trade:
+                                    logger.info(f"   ✅ DECISION: EXECUTE TRADE - ML confidence above {threshold}")
+                                else:
+                                    logger.info(f"   ❌ DECISION: REJECT TRADE - ML score {ml_score:.1f} below threshold {threshold}")
+                                    logger.info(f"   💡 Rejection reason: {ml_reason}")
+
                                 # Record in pullback phantom tracker
-                                should_take_trade = ml_score >= selected_ml_scorer.min_score
                                 selected_phantom_tracker.record_signal(
                                     symbol=sym,
                                     signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
@@ -1408,13 +1490,12 @@ class TradingBot:
                                     features=basic_features
                                 )
 
-                                logger.info(f"[{sym}] Pullback ML: {ml_score:.1f} ({'EXECUTE' if should_take_trade else 'REJECT'}) - {ml_reason}")
-
                         except Exception as e:
-                            logger.warning(f"[{sym}] ML scoring failed: {e}")
+                            logger.warning(f"🚨 [{sym}] ML SCORING ERROR: {e}")
+                            logger.warning(f"   🛡️ FALLBACK: Allowing trade for safety (score: 75)")
                             # Fallback to default behavior
                             ml_score = 75.0
-                            ml_reason = "ML Error - Using Default"
+                            ml_reason = "ML Error - Using Default Safety Score"
                             should_take_trade = True
 
                     # Update strategy name for position tracking
@@ -1618,9 +1699,14 @@ class TradingBot:
                             should_take_trade = True
                 
                     # One position per symbol rule - wait for current position to close
-                    # This prevents overexposure to a single symbol and allows clean entry/exit
+                    # Final trade execution decision logging
+                    logger.info(f"💯 [{sym}] FINAL TRADE DECISION:")
+
+                    # Check for existing positions
                     if sym in book.positions:
-                        logger.info(f"❌ [{sym}] TRADE REJECTED: An existing position is already open.")
+                        logger.info(f"   ❌ POSITION CONFLICT: Existing position already open")
+                        logger.info(f"   📊 Current positions: {list(book.positions.keys())}")
+                        logger.info(f"   💡 One position per symbol rule prevents duplicate entries")
                         continue
                 
                     # Get symbol metadata
@@ -1657,38 +1743,70 @@ class TradingBot:
                     
                         # Check if we have enough for margin + buffer
                         if balance < required_margin * 1.5:  # 1.5x for safety
-                            logger.info(f"❌ [{sym}] TRADE REJECTED: Insufficient balance (${balance:.2f}) to cover required margin (≈${required_margin:.2f}).")
+                            logger.info(f"   ❌ INSUFFICIENT BALANCE:")
+                            logger.info(f"      💰 Available: ${balance:.2f}")
+                            logger.info(f"      📊 Required Margin: ≈${required_margin:.2f}")
+                            logger.info(f"      ⚠️ Safety Buffer: {1.5}x margin = ${required_margin * 1.5:.2f}")
+                            logger.info(f"      💡 Need ${(required_margin * 1.5) - balance:.2f} more to safely execute")
                             continue
-                    
-                        logger.debug(f"[{sym}] Balance check passed: ${balance:.2f} available, risking ${risk_amount:.2f}")
-                
+
+                        logger.info(f"   ✅ BALANCE CHECK PASSED:")
+                        logger.info(f"      💰 Available: ${balance:.2f}")
+                        logger.info(f"      💸 Risk Amount: ${risk_amount:.2f}")
+                        logger.info(f"      🛡️ Margin Required: ≈${required_margin:.2f}")
+
                     # Calculate position size
                     qty = sizer.qty_for(sig.entry, sig.sl, m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
-                
+
                     if qty <= 0:
-                        logger.info(f"❌ [{sym}] TRADE REJECTED: Calculated quantity is zero or too small.")
+                        logger.info(f"   ❌ POSITION SIZE ERROR:")
+                        logger.info(f"      📊 Calculated Quantity: {qty}")
+                        logger.info(f"      💡 Check: Risk amount, entry price, stop loss distance")
+                        logger.info(f"      🔧 Symbol specs: min_qty={m.get('min_qty',0.001)}, qty_step={m.get('qty_step',0.001)}")
                         continue
                 
                     # Get current market price for stop loss validation
                     current_price = df['close'].iloc[-1]
                     
                     # Validate stop loss is on correct side of market price
+                    logger.info(f"   🔍 STOP LOSS VALIDATION:")
+                    logger.info(f"      📍 Current Price: {current_price:.4f}")
+                    logger.info(f"      🛑 Stop Loss: {sig.sl:.4f}")
+                    logger.info(f"      📊 Entry: {sig.entry:.4f}")
+
                     sl_valid = True
                     if sig.side == "long":
                         if sig.sl >= current_price:
-                            logger.info(f"❌ [{sym}] TRADE REJECTED: Invalid Stop-Loss (Long SL {sig.sl:.4f} >= current price {current_price:.4f}).")
+                            logger.info(f"      ❌ INVALID: Long SL ({sig.sl:.4f}) must be BELOW current price ({current_price:.4f})")
+                            logger.info(f"      💡 Long stops protect against downward moves")
                             sl_valid = False
+                        else:
+                            logger.info(f"      ✅ VALID: Long SL ({sig.sl:.4f}) is below current price")
                     else:  # short
                         if sig.sl <= current_price:
-                            logger.info(f"❌ [{sym}] TRADE REJECTED: Invalid Stop-Loss (Short SL {sig.sl:.4f} <= current price {current_price:.4f}).")
+                            logger.info(f"      ❌ INVALID: Short SL ({sig.sl:.4f}) must be ABOVE current price ({current_price:.4f})")
+                            logger.info(f"      💡 Short stops protect against upward moves")
                             sl_valid = False
-                    
+                        else:
+                            logger.info(f"      ✅ VALID: Short SL ({sig.sl:.4f}) is above current price")
+
                     if not sl_valid:
                         continue
                     
+                    # Final execution summary
+                    logger.info(f"   🚀 EXECUTING TRADE:")
+                    logger.info(f"      📊 Strategy: {selected_strategy.upper()}")
+                    logger.info(f"      🎯 Signal: {sig.side.upper()} @ {sig.entry:.4f}")
+                    logger.info(f"      🛑 Stop Loss: {sig.sl:.4f}")
+                    logger.info(f"      💰 Take Profit: {sig.tp:.4f}")
+                    logger.info(f"      📈 Risk:Reward: {((sig.tp-sig.entry)/(sig.entry-sig.sl) if sig.side=='long' else (sig.entry-sig.tp)/(sig.sl-sig.entry)):.2f}")
+                    logger.info(f"      🔢 Quantity: {qty}")
+                    logger.info(f"      🧠 ML Score: {ml_score:.1f}")
+                    logger.info(f"      💸 Risk Amount: ${risk_amount:.2f}")
+
                     # IMPORTANT: Set leverage BEFORE opening position to prevent TP/SL cancellation
                     max_lev = int(m.get("max_leverage", 10))
-                    logger.info(f"[{sym}] Setting leverage to {max_lev}x (before position to preserve TP/SL)")
+                    logger.info(f"   ⚙️ Setting leverage to {max_lev}x (before position to preserve TP/SL)")
                     bybit.set_leverage(sym, max_lev)
                 
                     # Place market order AFTER leverage is set

@@ -60,6 +60,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("parallel_performance", self.parallel_performance))
         self.app.add_handler(CommandHandler("regime_analysis", self.regime_analysis))
         self.app.add_handler(CommandHandler("strategy_comparison", self.strategy_comparison))
+        self.app.add_handler(CommandHandler("system", self.system_status))
         
         self.running = False
 
@@ -231,6 +232,14 @@ class TGBot:
 /mlpatterns `[strategy]` - ML learned patterns
 /phantom `[strategy]` - Phantom trade analysis
 /evolution - ML Evolution shadow performance
+
+🚀 *Enhanced Parallel System:*
+/system - Enhanced system status & architecture
+/enhanced_mr - Enhanced Mean Reversion ML status
+/mr_phantom - Mean Reversion phantom trades
+/parallel_performance - Compare strategy performance
+/regime_analysis - Market regime analysis (top symbols)
+/strategy_comparison - Strategy performance comparison
 
 ⚙️ *Risk Management:*
 /risk - Show current risk settings
@@ -811,7 +820,34 @@ class TGBot:
             else:
                 msg += "• No open positions\n"
             msg += "\n"
-            
+
+            # Enhanced Parallel System Status
+            msg += "🚀 *Enhanced Parallel System*\n"
+            try:
+                # Check if enhanced system is available
+                enhanced_available = False
+                enhanced_mr_active = False
+
+                bot_instance = self.shared.get("bot_instance")
+                if bot_instance and hasattr(bot_instance, 'enhanced_mr_scorer'):
+                    enhanced_available = True
+                    if hasattr(bot_instance, 'enhanced_mr_scorer') and bot_instance.enhanced_mr_scorer:
+                        enhanced_mr_active = True
+
+                if enhanced_available:
+                    msg += f"• Status: {'✅ Active' if enhanced_mr_active else '⏳ Initializing'}\n"
+                    msg += f"• Mean Reversion ML: {'✅' if enhanced_mr_active else '⏳'}\n"
+                    msg += f"• Regime Detection: ✅\n"
+                    msg += f"• Parallel Routing: ✅\n"
+                else:
+                    msg += "• Status: ⏳ Loading enhanced system...\n"
+
+            except Exception as e:
+                msg += "• Status: ❓ Unknown\n"
+                logger.debug(f"Enhanced system status error: {e}")
+
+            msg += "\n"
+
             # Recent Analysis
             msg += "🔍 *Recent Analysis*\n"
             if last_analysis:
@@ -2624,3 +2660,87 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in strategy_comparison: {e}")
             await update.message.reply_text("Error comparing strategies")
+
+    async def system_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show enhanced parallel system status and configuration"""
+        try:
+            msg = "🤖 *Enhanced Parallel System Status*\n"
+            msg += "━" * 40 + "\n\n"
+
+            # System Architecture
+            msg += "🏗️ *System Architecture:*\n"
+            msg += "• 🔄 Parallel Strategy Routing\n"
+            msg += "• 🧠 Enhanced ML Scorers (Pullback + MR)\n"
+            msg += "• 👻 Independent Phantom Tracking\n"
+            msg += "• 🎯 Regime-Based Strategy Selection\n\n"
+
+            # Check system availability
+            bot_instance = self.shared.get("bot_instance")
+
+            msg += "⚡ *Component Status:*\n"
+
+            # Enhanced MR System
+            try:
+                if bot_instance and hasattr(bot_instance, 'enhanced_mr_scorer') and bot_instance.enhanced_mr_scorer:
+                    msg += "• ✅ Enhanced Mean Reversion ML\n"
+                else:
+                    msg += "• ⏳ Enhanced Mean Reversion ML (Loading)\n"
+            except:
+                msg += "• ❓ Enhanced Mean Reversion ML (Unknown)\n"
+
+            # Pullback System
+            ml_scorer = self.shared.get("ml_scorer")
+            if ml_scorer:
+                msg += "• ✅ Pullback ML System\n"
+            else:
+                msg += "• ⏳ Pullback ML System (Loading)\n"
+
+            # Market Regime Detection
+            try:
+                from enhanced_market_regime import get_enhanced_market_regime
+                msg += "• ✅ Enhanced Regime Detection\n"
+            except:
+                msg += "• ❌ Enhanced Regime Detection (Error)\n"
+
+            # Phantom Trackers
+            phantom_tracker = self.shared.get("phantom_tracker")
+            if phantom_tracker:
+                msg += "• ✅ Pullback Phantom Tracker\n"
+            else:
+                msg += "• ⏳ Pullback Phantom Tracker\n"
+
+            try:
+                if bot_instance and hasattr(bot_instance, 'mr_phantom_tracker') and bot_instance.mr_phantom_tracker:
+                    msg += "• ✅ MR Phantom Tracker\n"
+                else:
+                    msg += "• ⏳ MR Phantom Tracker\n"
+            except:
+                msg += "• ❓ MR Phantom Tracker\n"
+
+            msg += "\n🎯 *Strategy Selection Logic:*\n"
+            msg += "• 📊 Trending Markets → Pullback Strategy\n"
+            msg += "• 📦 High-Quality Ranges → Enhanced MR\n"
+            msg += "• 🌪️ Volatile Markets → Skip Trading\n"
+            msg += "• ⚖️ Independent ML Scoring Per Strategy\n\n"
+
+            msg += "📈 *Performance Features:*\n"
+            msg += "• 🎯 Consistent 2.5:1 Risk:Reward\n"
+            msg += "• 💰 Fee-Adjusted Take Profits\n"
+            msg += "• 🛡️ Hybrid Stop Loss Calculation\n"
+            msg += "• 🔄 Volatility-Adaptive Buffers\n"
+            msg += "• 📊 Real-Time Regime Analysis\n\n"
+
+            msg += "⚙️ *Quick Access Commands:*\n"
+            msg += "`/enhanced_mr` - MR ML status\n"
+            msg += "`/mr_phantom` - MR phantom trades\n"
+            msg += "`/parallel_performance` - Strategy comparison\n"
+            msg += "`/regime_analysis` - Current market regimes\n"
+            msg += "`/strategy_comparison` - Detailed performance\n\n"
+
+            msg += "_Enhanced system provides complete market coverage with specialized strategies_"
+
+            await self.safe_reply(update, msg)
+
+        except Exception as e:
+            logger.error(f"Error in system_status: {e}")
+            await update.message.reply_text("Error getting system status")

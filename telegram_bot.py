@@ -5,6 +5,12 @@ import telegram.error
 import asyncio
 import logging
 
+from ml_signal_scorer_immediate import get_immediate_scorer
+from ml_scorer_mean_reversion import get_mean_reversion_scorer
+
+from ml_signal_scorer_immediate import get_immediate_scorer
+from ml_scorer_mean_reversion import get_mean_reversion_scorer
+
 logger = logging.getLogger(__name__)
 
 class TGBot:
@@ -1349,7 +1355,7 @@ class TGBot:
                 all_phantoms.extend(trades)
 
             if strategy_filter:
-                all_phantoms = [p for p in all_phantoms if p.strategy_name.lower() == strategy_filter]
+                all_phantoms = [p for p in all_phantoms if hasattr(p, 'strategy_name') and p.strategy_name.lower() == strategy_filter]
 
             if not all_phantoms:
                 msg += "No phantom trades recorded for this filter."
@@ -1614,153 +1620,144 @@ class TGBot:
             await update.message.reply_text(f"Error forcing ML retrain: {str(e)[:100]}")
     
     async def ml_patterns(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Show detailed ML patterns and insights"""
+        """Show detailed ML patterns and insights for both strategies"""
         try:
-            msg = "🧠 *ML Pattern Analysis*\n"
-            msg += "━" * 25 + "\n\n"
-            
-            # Check if ML scorer is available
-            ml_scorer = self.shared.get("ml_scorer")
-            
-            if not ml_scorer or not hasattr(ml_scorer, 'get_learned_patterns'):
-                msg += "❌ *Pattern Analysis Not Available*\n\n"
-                msg += "Patterns will be available after:\n"
-                msg += "• ML system is trained (10+ trades)\n"
-                msg += "• Sufficient data collected\n"
-                await self.safe_reply(update, msg)
-                return
-            
-            # Get patterns
-            patterns = ml_scorer.get_learned_patterns()
-            
-            if not patterns or all(not v for v in patterns.values()):
-                msg += "📊 *Collecting Data...*\n\n"
-                stats = ml_scorer.get_stats()
-                msg += f"• Completed trades: {stats.get('completed_trades', 0)}\n"
-                msg += f"• Status: {stats.get('status', 'Learning')}\n\n"
-                msg += "Patterns will emerge after more trades\n"
-                await self.safe_reply(update, msg)
-                return
-            
-            # Feature Importance (Top 10)
-            if patterns.get('feature_importance'):
-                msg += "📊 *Feature Importance (Top 10)*\n"
-                msg += "_What drives winning trades_\n\n"
+            response_text = "🧠 *ML Pattern Analysis*\n"
+            response_text += "━" * 25 + "\n\n"
+
+            # Get ML scorers
+            pullback_scorer = get_immediate_scorer()
+            mean_reversion_scorer = get_mean_reversion_scorer()
+
+            scorers = {
+                "Pullback Strategy": pullback_scorer,
+                "Mean Reversion Strategy": mean_reversion_scorer
+            }
+
+            for strategy_name, scorer in scorers.items():
+                response_text += f"*{strategy_name}:*\n"
+                if not scorer or not hasattr(scorer, 'get_learned_patterns'):
+                    response_text += "  ❌ *Pattern Analysis Not Available*\n"
+                    response_text += "  _ML system not yet initialized or trained._\n\n"
+                    continue
+
+                patterns = scorer.get_learned_patterns()
+
+                if not patterns or all(not v for v in patterns.values()):
+                    stats = scorer.get_stats()
+                    response_text += f"  📊 *Collecting Data...*\n"
+                    response_text += f"  • Completed trades: {stats.get('completed_trades', 0)}\n"
+                    response_text += f"  • Status: {stats.get('status', 'Learning')}\n"
+                    response_text += "  _Patterns will emerge after more trades._\n\n"
+                    continue
+
+                # Feature Importance (Top 10)
+                if patterns.get('feature_importance'):
+                    response_text += "  📊 *Feature Importance (Top 10)*\n"
+                    response_text += "  _What drives winning trades_\n"
+                    
+                    for i, (feat, imp) in enumerate(list(patterns['feature_importance'].items())[:10], 1):
+                        feat_name = feat.replace('_', ' ').title()
+                        bar_length = int(imp / 10)
+                        bar = '█' * bar_length + '░' * (10 - bar_length)
+                        response_text += f"  {i}. {feat_name}\n"
+                        response_text += f"     {bar} {imp:.1f}%\n"
+                    response_text += "\n"
                 
-                for i, (feat, imp) in enumerate(list(patterns['feature_importance'].items())[:10], 1):
-                    feat_name = feat.replace('_', ' ').title()
-                    # Add bar chart visualization
-                    bar_length = int(imp / 10)  # Scale to 10 chars max
-                    bar = '█' * bar_length + '░' * (10 - bar_length)
-                    msg += f"{i}. {feat_name}\n"
-                    msg += f"   {bar} {imp}%\n\n"
-                msg += "\n"
+                # Time Analysis
+                time_patterns = patterns.get('time_patterns', {})
+                if time_patterns:
+                    response_text += "  ⏰ *Time-Based Insights*\n"
+                    
+                    if time_patterns.get('best_hours'):
+                        response_text += "  🌟 *Golden Hours*\n"
+                        for hour, stats in list(time_patterns['best_hours'].items())[:5]:
+                            response_text += f"  • {hour} → {stats}\n"
+                        response_text += "\n"
+                    
+                    if time_patterns.get('worst_hours'):
+                        response_text += "  ⚠️ *Danger Hours*\n"
+                        for hour, stats in list(time_patterns['worst_hours'].items())[:5]:
+                            response_text += f"  • {hour} → {stats}\n"
+                        response_text += "\n"
+                    
+                    if time_patterns.get('session_performance'):
+                        response_text += "  🌍 *Market Sessions*\n"
+                        for session, perf in time_patterns['session_performance'].items():
+                            if 'WR' in perf:
+                                wr = float(perf.split('%')[0].split()[-1])
+                                emoji = '🟢' if wr >= 50 else '🔴'
+                            else:
+                                emoji = '⚪'
+                            response_text += f"  {emoji} {session}: {perf}\n"
+                        response_text += "\n"
+                
+                # Market Conditions
+                market_conditions = patterns.get('market_conditions', {})
+                if market_conditions:
+                    response_text += "  📈 *Market Condition Analysis*\n"
+                    
+                    if market_conditions.get('volatility_impact'):
+                        response_text += "  🌊 *Volatility Performance*\n"
+                        for vol_type, stats in market_conditions['volatility_impact'].items():
+                            if 'WR' in stats:
+                                wr = float(stats.split('%')[0].split()[-1])
+                                emoji = '✅' if wr >= 50 else '❌'
+                            else:
+                                emoji = '➖'
+                            response_text += f"  {emoji} {vol_type.title()}: {stats}\n"
+                        response_text += "\n"
+                    
+                    if market_conditions.get('volume_impact'):
+                        response_text += "  📊 *Volume Analysis*\n"
+                        for vol_type, stats in market_conditions['volume_impact'].items():
+                            vol_name = vol_type.replace('_', ' ').title()
+                            if 'WR' in stats:
+                                wr = float(stats.split('%')[0].split()[-1])
+                                emoji = '✅' if wr >= 50 else '❌'
+                            else:
+                                emoji = '➖'
+                            response_text += f"  {emoji} {vol_name}: {stats}\n"
+                        response_text += "\n"
+                    
+                    if market_conditions.get('trend_impact'):
+                        response_text += "  📉 *Trend Analysis*\n"
+                        for trend_type, stats in market_conditions['trend_impact'].items():
+                            trend_name = trend_type.replace('_', ' ').title()
+                            if 'WR' in stats:
+                                wr = float(stats.split('%')[0].split()[-1])
+                                emoji = '✅' if wr >= 50 else '❌'
+                            else:
+                                emoji = '➖'
+                            response_text += f"  {emoji} {trend_name}: {stats}\n"
+                        response_text += "\n"
+                
+                # Winning vs Losing Patterns
+                if patterns.get('winning_patterns') or patterns.get('losing_patterns'):
+                    response_text += "  🎯 *Trade Outcome Patterns*\n"
+                    
+                    if patterns.get('winning_patterns'):
+                        response_text += "  ✅ *Common in Winners*\n"
+                        for pattern in patterns['winning_patterns']:
+                            response_text += f"  • {pattern}\n"
+                        response_text += "\n"
+                    
+                    if patterns.get('losing_patterns'):
+                        response_text += "  ❌ *Common in Losers*\n"
+                        for pattern in patterns['losing_patterns']:
+                            response_text += f"  • {pattern}\n"
+                        response_text += "\n"
+                
+                # Summary insights
+                response_text += "  💡 *Key Takeaways*\n"
+                response_text += "  • Focus on high-importance features\n"
+                response_text += "  • Trade during golden hours\n"
+                response_text += "  • Adapt to market conditions\n"
+                response_text += "  • Avoid danger patterns\n\n"
             
-            # Time Analysis
-            time_patterns = patterns.get('time_patterns', {})
-            if time_patterns:
-                msg += "⏰ *Time-Based Insights*\n"
-                msg += "━" * 20 + "\n\n"
-                
-                # Best hours
-                if time_patterns.get('best_hours'):
-                    msg += "🌟 *Golden Hours*\n"
-                    for hour, stats in list(time_patterns['best_hours'].items())[:5]:
-                        msg += f"• {hour} → {stats}\n"
-                    msg += "\n"
-                
-                # Worst hours
-                if time_patterns.get('worst_hours'):
-                    msg += "⚠️ *Danger Hours*\n"
-                    for hour, stats in list(time_patterns['worst_hours'].items())[:5]:
-                        msg += f"• {hour} → {stats}\n"
-                    msg += "\n"
-                
-                # Session performance
-                if time_patterns.get('session_performance'):
-                    msg += "🌍 *Market Sessions*\n"
-                    for session, perf in time_patterns['session_performance'].items():
-                        # Add emoji based on performance
-                        if 'WR' in perf:
-                            wr = float(perf.split('%')[0].split()[-1])
-                            emoji = '🟢' if wr >= 50 else '🔴'
-                        else:
-                            emoji = '⚪'
-                        msg += f"{emoji} {session}: {perf}\n"
-                    msg += "\n"
-            
-            # Market Conditions
-            market_conditions = patterns.get('market_conditions', {})
-            if market_conditions:
-                msg += "📈 *Market Condition Analysis*\n"
-                msg += "━" * 20 + "\n\n"
-                
-                # Volatility
-                if market_conditions.get('volatility_impact'):
-                    msg += "🌊 *Volatility Performance*\n"
-                    for vol_type, stats in market_conditions['volatility_impact'].items():
-                        # Add emoji based on win rate
-                        if 'WR' in stats:
-                            wr = float(stats.split('%')[0].split()[-1])
-                            emoji = '✅' if wr >= 50 else '❌'
-                        else:
-                            emoji = '➖'
-                        msg += f"{emoji} {vol_type.title()}: {stats}\n"
-                    msg += "\n"
-                
-                # Volume
-                if market_conditions.get('volume_impact'):
-                    msg += "📊 *Volume Analysis*\n"
-                    for vol_type, stats in market_conditions['volume_impact'].items():
-                        vol_name = vol_type.replace('_', ' ').title()
-                        if 'WR' in stats:
-                            wr = float(stats.split('%')[0].split()[-1])
-                            emoji = '✅' if wr >= 50 else '❌'
-                        else:
-                            emoji = '➖'
-                        msg += f"{emoji} {vol_name}: {stats}\n"
-                    msg += "\n"
-                
-                # Trend
-                if market_conditions.get('trend_impact'):
-                    msg += "📉 *Trend Analysis*\n"
-                    for trend_type, stats in market_conditions['trend_impact'].items():
-                        trend_name = trend_type.replace('_', ' ').title()
-                        if 'WR' in stats:
-                            wr = float(stats.split('%')[0].split()[-1])
-                            emoji = '✅' if wr >= 50 else '❌'
-                        else:
-                            emoji = '➖'
-                        msg += f"{emoji} {trend_name}: {stats}\n"
-                    msg += "\n"
-            
-            # Winning vs Losing Patterns
-            if patterns.get('winning_patterns') or patterns.get('losing_patterns'):
-                msg += "🎯 *Trade Outcome Patterns*\n"
-                msg += "━" * 20 + "\n\n"
-                
-                if patterns.get('winning_patterns'):
-                    msg += "✅ *Common in Winners*\n"
-                    for pattern in patterns['winning_patterns']:
-                        msg += f"• {pattern}\n"
-                    msg += "\n"
-                
-                if patterns.get('losing_patterns'):
-                    msg += "❌ *Common in Losers*\n"
-                    for pattern in patterns['losing_patterns']:
-                        msg += f"• {pattern}\n"
-                    msg += "\n"
-            
-            # Summary insights
-            msg += "💡 *Key Takeaways*\n"
-            msg += "• Focus on high-importance features\n"
-            msg += "• Trade during golden hours\n"
-            msg += "• Adapt to market conditions\n"
-            msg += "• Avoid danger patterns\n\n"
-            
-            msg += "_Use /ml for general ML status_"
-            
-            await self.safe_reply(update, msg)
+            response_text += "--- End of " + strategy_name + " ---\n\n"
+
+            await update.message.reply_text(response_text, parse_mode=ParseMode.MARKDOWN)
             
         except Exception as e:
             logger.error(f"Error in ml_patterns: {e}")

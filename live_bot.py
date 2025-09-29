@@ -32,17 +32,30 @@ except ImportError:
 from multi_websocket_handler import MultiWebSocketHandler
 from ml_scorer_mean_reversion import get_mean_reversion_scorer
 
-# Import ML scorer with immediate activation
+# Import ML scorers for parallel strategy system
 try:
     from ml_signal_scorer_immediate import get_immediate_scorer
     from phantom_trade_tracker import get_phantom_tracker
+    from enhanced_mr_scorer import get_enhanced_mr_scorer
+    from mr_phantom_tracker import get_mr_phantom_tracker
+    from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
     logger = logging.getLogger(__name__)
-    logger.info("Using Immediate ML Scorer with Phantom Tracking")
+    logger.info("Using Enhanced Parallel ML System (Pullback + Mean Reversion)")
     ML_AVAILABLE = True
+    ENHANCED_ML_AVAILABLE = True
 except ImportError as e:
     ML_AVAILABLE = False
+    ENHANCED_ML_AVAILABLE = False
     logger = logging.getLogger(__name__)
-    logger.warning(f"ML not available: {e}")
+    logger.warning(f"Enhanced ML not available: {e}")
+    # Fallback to original ML if available
+    try:
+        from ml_signal_scorer_immediate import get_immediate_scorer
+        from phantom_trade_tracker import get_phantom_tracker
+        ML_AVAILABLE = True
+        logger.info("Using Original ML Scorer only")
+    except ImportError as e2:
+        logger.warning(f"No ML available: {e2}")
 
 # Import symbol data collector for future ML
 try:
@@ -449,11 +462,22 @@ class TradingBot:
                             # Debugging: Log strategy name for all closed trades
                             logger.debug(f"[{symbol}] Closed trade strategy: {pos.strategy_name}")
 
-                            # Also record outcome in Mean Reversion ML scorer if applicable
-                            if mean_reversion_scorer and pos.strategy_name == "MeanReversion":
-                                # Assuming mean_reversion_scorer has a similar record_outcome method
-                                mean_reversion_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                logger.info(f"[{symbol}] Mean Reversion ML updated with outcome.")
+                            # Record outcome in appropriate ML scorer based on strategy
+                            if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
+                                # Enhanced parallel system - route to correct ML scorer
+                                if pos.strategy_name in ["MeanReversion", "enhanced_mean_reversion"]:
+                                    enhanced_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                    logger.info(f"[{symbol}] Enhanced MR ML updated with outcome.")
+                                else:
+                                    # Pullback or other strategy - note: ml_scorer is available in this scope
+                                    if 'ml_scorer' in locals() and ml_scorer is not None:
+                                        ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                        logger.debug(f"[{symbol}] Pullback ML updated with outcome.")
+                            else:
+                                # Original system - record in Mean Reversion ML scorer if applicable
+                                if mean_reversion_scorer and pos.strategy_name == "MeanReversion":
+                                    mean_reversion_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                    logger.info(f"[{symbol}] Mean Reversion ML updated with outcome.")
 
                             # Also record in ML evolution if available
                             if ml_evolution is not None:
@@ -464,6 +488,10 @@ class TradingBot:
                             
                             # Check if ML needs retraining after this trade completes
                             self._check_ml_retrain(ml_scorer)
+
+                            # Also check mean reversion ML retraining
+                            if mean_reversion_scorer and pos.strategy_name == "MeanReversion":
+                                self._check_mr_ml_retrain(mean_reversion_scorer)
                             
                         except Exception as e:
                             logger.error(f"Failed to update ML outcome: {e}")
@@ -511,7 +539,33 @@ class TradingBot:
                 
         except Exception as e:
             logger.error(f"Error checking ML retrain: {e}")
-    
+
+    def _check_mr_ml_retrain(self, mean_reversion_scorer):
+        """Check if Mean Reversion ML needs retraining after a trade completes"""
+        if not mean_reversion_scorer:
+            return
+
+        try:
+            # Get retrain info from mean reversion scorer
+            retrain_info = mean_reversion_scorer.get_retrain_info()
+
+            # Check if ready to retrain
+            if retrain_info['can_train'] and retrain_info['trades_until_next_retrain'] == 0:
+                logger.info(f"🔄 Mean Reversion ML retrain triggered after trade completion - "
+                           f"{retrain_info['total_trades']} total MR trades available")
+
+                # Trigger retrain
+                retrain_result = mean_reversion_scorer.startup_retrain()
+                if retrain_result:
+                    logger.info("✅ Mean Reversion ML models successfully retrained after trade completion")
+                else:
+                    logger.warning("⚠️ Mean Reversion ML retrain attempt failed")
+            else:
+                logger.debug(f"Mean Reversion ML retrain check: {retrain_info['trades_until_next_retrain']} trades until next retrain")
+
+        except Exception as e:
+            logger.error(f"Error checking Mean Reversion ML retrain: {e}")
+
     async def recover_positions(self, book:Book, sizer:Sizer):
         """Recover existing positions from exchange - preserves all existing orders"""
         logger.info("Checking for existing positions to recover...")
@@ -779,13 +833,18 @@ class TradingBot:
         use_pullback = cfg["trade"].get("use_pullback_strategy", True)
         get_pullback_signals, reset_symbol_state = get_strategy_module(use_pullback)
         
-        # Import new regime-based strategies
-        from market_regime import get_market_regime
+        # Import strategies for parallel system
         from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion
+        use_enhanced_parallel = cfg["trade"].get("use_enhanced_parallel", True) and ENHANCED_ML_AVAILABLE
         use_regime_switching = cfg["trade"].get("use_regime_switching", False)
 
-        strategy_type = "Pullback (HL/LH + Confirmation)" if use_pullback else "Immediate Breakout"
-        logger.info(f"📊 Strategy: {strategy_type}")
+        if use_enhanced_parallel:
+            strategy_type = "Enhanced Parallel (Pullback + Mean Reversion with ML)"
+            logger.info(f"📊 Strategy: {strategy_type}")
+            logger.info("🧠 Using Enhanced Parallel ML System with regime-based strategy routing")
+        else:
+            strategy_type = "Pullback (HL/LH + Confirmation)" if use_pullback else "Immediate Breakout"
+            logger.info(f"📊 Strategy: {strategy_type}")
         
         # Initialize strategy settings
         settings = Settings(
@@ -838,23 +897,43 @@ class TradingBot:
         
         if ML_AVAILABLE and use_ml:
             try:
-                # Initialize immediate ML scorer that works from day 1
-                ml_scorer = get_immediate_scorer()
-                phantom_tracker = get_phantom_tracker()
-                mean_reversion_scorer = get_mean_reversion_scorer() # Initialize Mean Reversion Scorer
-                if mean_reversion_scorer:
-                    logger.info("✅ Mean Reversion ML Scorer initialized.")
+                if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
+                    # Initialize Enhanced Parallel ML System
+                    ml_scorer = get_immediate_scorer()  # Pullback ML
+                    phantom_tracker = get_phantom_tracker()  # Pullback phantom tracker
+                    enhanced_mr_scorer = get_enhanced_mr_scorer()  # Enhanced MR ML
+                    mr_phantom_tracker = get_mr_phantom_tracker()  # MR phantom tracker
+                    mean_reversion_scorer = None  # Not used in enhanced system
+
+                    # Get and log stats for both systems
+                    pullback_stats = ml_scorer.get_stats()
+                    mr_stats = enhanced_mr_scorer.get_enhanced_stats()
+
+                    logger.info(f"✅ Enhanced Parallel ML System initialized")
+                    logger.info(f"   Pullback ML: {pullback_stats['status']} (threshold: {pullback_stats['current_threshold']:.0f}, trades: {pullback_stats['completed_trades']})")
+                    logger.info(f"   Mean Reversion ML: {mr_stats['status']} (threshold: {mr_stats['current_threshold']:.0f}, trades: {mr_stats['completed_trades']})")
+
+                    if pullback_stats['recent_win_rate'] > 0:
+                        logger.info(f"   Pullback recent WR: {pullback_stats['recent_win_rate']:.1f}%")
+                    if mr_stats['recent_win_rate'] > 0:
+                        logger.info(f"   MR recent WR: {mr_stats['recent_win_rate']:.1f}%")
+
                 else:
-                    logger.warning("⚠️ Mean Reversion ML Scorer failed to initialize.")
-                
-                # Get and log ML stats
-                ml_stats = ml_scorer.get_stats()
-                logger.info(f"✅ Immediate ML Scorer initialized")
-                logger.info(f"   Status: {ml_stats['status']}")
-                logger.info(f"   Threshold: {ml_stats['current_threshold']:.0f}")
-                logger.info(f"   Completed trades: {ml_stats['completed_trades']}")
-                if ml_stats['recent_win_rate'] > 0:
-                    logger.info(f"   Recent win rate: {ml_stats['recent_win_rate']:.1f}%")
+                    # Initialize original ML system
+                    ml_scorer = get_immediate_scorer()
+                    phantom_tracker = get_phantom_tracker()
+                    enhanced_mr_scorer = None
+                    mr_phantom_tracker = None
+                    mean_reversion_scorer = get_mean_reversion_scorer() # Original MR scorer
+
+                    # Get and log ML stats
+                    ml_stats = ml_scorer.get_stats()
+                    logger.info(f"✅ Original ML Scorer initialized")
+                    logger.info(f"   Status: {ml_stats['status']}")
+                    logger.info(f"   Threshold: {ml_stats['current_threshold']:.0f}")
+                    logger.info(f"   Completed trades: {ml_stats['completed_trades']}")
+                    if ml_stats['recent_win_rate'] > 0:
+                        logger.info(f"   Recent win rate: {ml_stats['recent_win_rate']:.1f}%")
                 if ml_stats['models_active']:
                     logger.info(f"   Active models: {', '.join(ml_stats['models_active'])}")
                     
@@ -1110,13 +1189,18 @@ class TradingBot:
                         btc_price = None
                         if 'BTCUSDT' in self.frames and not self.frames['BTCUSDT'].empty:
                             btc_price = self.frames['BTCUSDT']['close'].iloc[-1]
-                        # Pass df and symbol_collector for comprehensive data tracking
-                        phantom_tracker.update_phantom_prices(
-                            sym, current_price, 
-                            df=df, 
-                            btc_price=btc_price, 
-                            symbol_collector=symbol_collector
-                        )
+                        # Update phantom prices for both systems
+                        if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
+                            # Update both phantom trackers in parallel system
+                            phantom_tracker.update_phantom_prices(
+                                sym, current_price, df=df, btc_price=btc_price, symbol_collector=symbol_collector
+                            )
+                            mr_phantom_tracker.update_mr_phantom_prices(sym, current_price, df=df)
+                        else:
+                            # Original system
+                            phantom_tracker.update_phantom_prices(
+                                sym, current_price, df=df, btc_price=btc_price, symbol_collector=symbol_collector
+                            )
                 
                     # Auto-save to database every 15 minutes
                     if (datetime.now() - self.last_save_time).total_seconds() > 900:
@@ -1157,15 +1241,28 @@ class TradingBot:
                     if (datetime.now() - last_summary_log).total_seconds() > summary_log_interval:
                         logger.info(f"📊 5-min Summary: {candles_processed} candles processed, {signals_detected} signals, {len(book.positions)} positions open")
                         # Add ML stats to summary
-                        if ml_scorer:
-                            ml_stats = ml_scorer.get_stats()
-                            retrain_info = ml_scorer.get_retrain_info()
-                            logger.info(f"🧠 Pullback ML: {ml_stats.get('completed_trades', 0)} trades, {retrain_info.get('trades_until_next_retrain', 'N/A')} to retrain")
-                        if mean_reversion_scorer:
-                            mr_ml_stats = mean_reversion_scorer.get_stats()
-                            # Mean Reversion scorer might not have retrain_info if it's just for patterns
-                            # For now, just log completed trades
-                            logger.info(f"🧠 Mean Reversion ML: {mr_ml_stats.get('completed_trades', 0)} trades")
+                        if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
+                            # Enhanced parallel system stats
+                            if ml_scorer:
+                                pullback_stats = ml_scorer.get_stats()
+                                pullback_retrain = ml_scorer.get_retrain_info()
+                                logger.info(f"🧠 Pullback ML: {pullback_stats.get('completed_trades', 0)} trades, "
+                                           f"{pullback_retrain.get('trades_until_next_retrain', 'N/A')} to retrain")
+
+                            if enhanced_mr_scorer:
+                                mr_stats = enhanced_mr_scorer.get_enhanced_stats()
+                                logger.info(f"🧠 Enhanced MR ML: {mr_stats.get('completed_trades', 0)} trades, "
+                                           f"threshold: {mr_stats.get('current_threshold', 'N/A')}, "
+                                           f"{mr_stats.get('trades_until_retrain', 'N/A')} to retrain")
+                        else:
+                            # Original system stats
+                            if ml_scorer:
+                                ml_stats = ml_scorer.get_stats()
+                                retrain_info = ml_scorer.get_retrain_info()
+                                logger.info(f"🧠 Pullback ML: {ml_stats.get('completed_trades', 0)} trades, {retrain_info.get('trades_until_next_retrain', 'N/A')} to retrain")
+                            if mean_reversion_scorer:
+                                mr_ml_stats = mean_reversion_scorer.get_stats()
+                                logger.info(f"🧠 Mean Reversion ML: {mr_ml_stats.get('completed_trades', 0)} trades")
                         last_summary_log = datetime.now()
                         candles_processed = 0
                         signals_detected = 0
@@ -1177,24 +1274,58 @@ class TradingBot:
                             # Skip silently - no need to log every cooldown
                             continue
                 
-                    # Detect market regime in shadow mode
-                    # This requires a higher timeframe dataframe, which we will simulate for now
-                    # In a full implementation, you would manage and pass the 4H dataframe here.
-                    current_regime = get_market_regime(df) # Using 15m df as a proxy for now
-                    logger.info(f"[{sym}] Market Regime Detected: {current_regime}")
-
-                    # --- STRATEGY SWITCHING LOGIC ---
+                    # --- ENHANCED PARALLEL STRATEGY ROUTING ---
                     sig = None
-                    if use_regime_switching and current_regime == "Ranging":
-                        # If enabled and ranging, use the new strategy
-                        logger.debug(f"[{sym}] In Ranging regime, using Mean Reversion strategy.")
-                        sig = detect_signal_mean_reversion(df.copy(), settings, sym)
+                    selected_strategy = "pullback"  # Default
+                    selected_ml_scorer = ml_scorer
+                    selected_phantom_tracker = phantom_tracker
+
+                    if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
+                        # Use enhanced regime detection for strategy routing
+                        regime_analysis = get_enhanced_market_regime(df, sym)
+
+                        logger.debug(f"[{sym}] Enhanced regime: {regime_analysis.primary_regime} "
+                                   f"(conf: {regime_analysis.regime_confidence:.2f}) → {regime_analysis.recommended_strategy}")
+
+                        if regime_analysis.recommended_strategy == "enhanced_mr":
+                            # Use Enhanced Mean Reversion System
+                            sig = detect_signal_mean_reversion(df.copy(), settings, sym)
+                            selected_strategy = "enhanced_mr"
+                            selected_ml_scorer = enhanced_mr_scorer
+                            selected_phantom_tracker = mr_phantom_tracker
+                            logger.debug(f"[{sym}] Using Enhanced Mean Reversion (range quality: {regime_analysis.range_quality})")
+
+                        elif regime_analysis.recommended_strategy == "pullback":
+                            # Use Pullback System
+                            sig = get_pullback_signals(df.copy(), settings, sym)
+                            selected_strategy = "pullback"
+                            selected_ml_scorer = ml_scorer
+                            selected_phantom_tracker = phantom_tracker
+                            logger.debug(f"[{sym}] Using Pullback Strategy (trend strength: {regime_analysis.trend_strength:.1f})")
+
+                        else:
+                            # Skip this symbol for now (volatile or poor conditions)
+                            logger.debug(f"[{sym}] Skipping - {regime_analysis.primary_regime} regime with {regime_analysis.volatility_level} volatility")
+                            continue
+
+                    elif use_regime_switching:
+                        # Original regime switching logic (fallback)
+                        from market_regime import get_market_regime
+                        current_regime = get_market_regime(df)
+                        logger.debug(f"[{sym}] Basic regime: {current_regime}")
+
+                        if current_regime == "Ranging":
+                            sig = detect_signal_mean_reversion(df.copy(), settings, sym)
+                            selected_strategy = "mean_reversion"
+                        else:
+                            sig = get_pullback_signals(df.copy(), settings, sym)
+                            selected_strategy = "pullback"
+
                     else:
-                        # Otherwise, use the default pullback strategy
-                        if use_regime_switching:
-                            logger.debug(f"[{sym}] In {current_regime} regime, using Pullback strategy.")
+                        # Default pullback strategy
                         sig = get_pullback_signals(df.copy(), settings, sym)
-                    # --- END OF STRATEGY SWITCHING LOGIC ---
+                        selected_strategy = "pullback"
+                    # --- END PARALLEL STRATEGY ROUTING ---
 
                     if sig is None:
                         # Don't log every non-signal to reduce log spam
@@ -1203,34 +1334,97 @@ class TradingBot:
                     logger.info(f"[{sym}] Signal detected: {sig.side} @ {sig.entry:.4f}")
                     signals_detected += 1
                 
-                    # Apply ML scoring and phantom tracking
+                    # Apply ML scoring and phantom tracking using selected system
                     ml_score = 100.0  # Default if no ML
                     ml_reason = "No ML"
                     should_take_trade = True
-                
-                    if ml_scorer is not None and phantom_tracker is not None:
+
+                    if selected_ml_scorer is not None and selected_phantom_tracker is not None:
                         try:
-                            # Extract features for ML (from the strategy's calculate_ml_features if available)
-                            from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
-                        
-                            # Get or create state for this symbol
-                            if sym not in ml_breakout_states:
-                                ml_breakout_states[sym] = BreakoutState()
-                            state = ml_breakout_states[sym]
-                        
-                            # Calculate ML features
-                            # Note: calculate_ml_features expects (df, state, side, retracement)
-                            # Calculate retracement from entry price
-                            if sig.side == "long":
-                                retracement = sig.entry  # Use entry as proxy for retracement level
+                            # Different feature extraction based on strategy
+                            if selected_strategy == "enhanced_mr":
+                                # Use enhanced MR features
+                                from enhanced_mr_features import calculate_enhanced_mr_features
+
+                                enhanced_features = calculate_enhanced_mr_features(df, sig.__dict__, sym)
+
+                                # Score using Enhanced MR ML system
+                                ml_score, ml_reason = selected_ml_scorer.score_signal(sig.__dict__, enhanced_features, df)
+
+                                # Record in MR phantom tracker
+                                should_take_trade = ml_score >= selected_ml_scorer.min_score
+                                selected_phantom_tracker.record_mr_signal(
+                                    sym, sig.__dict__, ml_score, should_take_trade, {}, enhanced_features
+                                )
+
+                                logger.info(f"[{sym}] Enhanced MR ML: {ml_score:.1f} ({'EXECUTE' if should_take_trade else 'REJECT'}) - {ml_reason}")
+
                             else:
-                                retracement = sig.entry
-                        
-                            # Calculate basic features (22 features for original ML)
-                            basic_features = calculate_ml_features(df, state, sig.side, retracement)
+                                # Use pullback features (original system)
+                                from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
+
+                                # Get or create state for this symbol
+                                if sym not in ml_breakout_states:
+                                    ml_breakout_states[sym] = BreakoutState()
+                                state = ml_breakout_states[sym]
+
+                                # Calculate retracement from entry price
+                                if sig.side == "long":
+                                    retracement = sig.entry  # Use entry as proxy for retracement level
+                                else:
+                                    retracement = sig.entry
+
+                                # Calculate basic features (22 features for original ML)
+                                basic_features = calculate_ml_features(df, state, sig.side, retracement)
                             
-                            # Add entry price for MTF feature calculation
-                            basic_features['entry_price'] = sig.entry
+                                # Add entry price for MTF feature calculation
+                                basic_features['entry_price'] = sig.entry
+
+                                # Add symbol cluster features with enhanced confidence scores
+                                try:
+                                    from cluster_feature_enhancer import enhance_ml_features
+                                    basic_features = enhance_ml_features(basic_features, sym)
+                                except Exception as e:
+                                    logger.debug(f"[{sym}] Enhanced clustering not available: {e}")
+                                    # Fallback to simple clustering
+                                    from symbol_clustering import load_symbol_clusters
+                                    symbol_clusters = load_symbol_clusters()
+                                    cluster_id = symbol_clusters.get(sym, 3)
+                                    basic_features['symbol_cluster'] = cluster_id
+
+                                # Score using pullback ML system
+                                ml_score, ml_reason = selected_ml_scorer.score_signal(
+                                    {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                    basic_features
+                                )
+
+                                # Record in pullback phantom tracker
+                                should_take_trade = ml_score >= selected_ml_scorer.min_score
+                                selected_phantom_tracker.record_signal(
+                                    symbol=sym,
+                                    signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                    ml_score=ml_score,
+                                    was_executed=should_take_trade,
+                                    features=basic_features
+                                )
+
+                                logger.info(f"[{sym}] Pullback ML: {ml_score:.1f} ({'EXECUTE' if should_take_trade else 'REJECT'}) - {ml_reason}")
+
+                        except Exception as e:
+                            logger.warning(f"[{sym}] ML scoring failed: {e}")
+                            # Fallback to default behavior
+                            ml_score = 75.0
+                            ml_reason = "ML Error - Using Default"
+                            should_take_trade = True
+
+                    # Update strategy name for position tracking
+                    strategy_name = selected_strategy
+
+                    # Store ML data in signal for later use
+                    if hasattr(sig, '__dict__'):
+                        sig.__dict__['ml_score'] = ml_score
+                        sig.__dict__['features'] = basic_features if 'basic_features' in locals() else {}
+                        sig.__dict__['enhanced_features'] = enhanced_features if 'enhanced_features' in locals() else {}
                             
                             # Add symbol cluster features with enhanced confidence scores
                             try:
@@ -1335,16 +1529,68 @@ class TradingBot:
                             should_take_trade = ml_score >= ml_scorer.min_score
 
                             strategy_name = "MeanReversion" if use_regime_switching and current_regime == "Ranging" else "Pullback"
-                        
-                            # ALWAYS record the signal in phantom tracker for learning
-                            phantom_tracker.record_signal(
-                                symbol=sym,
-                                signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                                ml_score=ml_score,
-                                was_executed=should_take_trade,
-                                features=basic_features,
-                                strategy_name=strategy_name
-                            )
+
+                            # Use appropriate ML scorer based on strategy
+                            if strategy_name == "MeanReversion" and mean_reversion_scorer:
+                                # Extract mean reversion features from signal meta
+                                mr_features = sig.meta.get('mr_features', {})
+                                if mr_features:
+                                    try:
+                                        # Use mean reversion ML scorer
+                                        mr_ml_score, mr_ml_reason = mean_reversion_scorer.score_signal(
+                                            {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp, 'meta': sig.meta},
+                                            mr_features
+                                        )
+
+                                        # Override with mean reversion score
+                                        ml_score = mr_ml_score
+                                        ml_reason = mr_ml_reason
+                                        should_take_trade = ml_score >= mean_reversion_scorer.min_score
+
+                                        logger.info(f"[{sym}] Mean Reversion ML: {ml_reason}")
+
+                                        # Record in phantom tracker with mean reversion features
+                                        phantom_tracker.record_signal(
+                                            symbol=sym,
+                                            signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                            ml_score=ml_score,
+                                            was_executed=should_take_trade,
+                                            features=mr_features,  # Use MR features
+                                            strategy_name=strategy_name
+                                        )
+                                    except Exception as e:
+                                        logger.warning(f"[{sym}] Mean Reversion ML scoring failed: {e}. Using pullback ML.")
+                                        # Fall back to standard phantom tracking
+                                        phantom_tracker.record_signal(
+                                            symbol=sym,
+                                            signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                            ml_score=ml_score,
+                                            was_executed=should_take_trade,
+                                            features=basic_features,
+                                            strategy_name=strategy_name
+                                        )
+                                else:
+                                    logger.warning(f"[{sym}] No mean reversion features available, using pullback ML")
+                                    # Fall back to standard phantom tracking
+                                    phantom_tracker.record_signal(
+                                        symbol=sym,
+                                        signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                        ml_score=ml_score,
+                                        was_executed=should_take_trade,
+                                        features=basic_features,
+                                        strategy_name=strategy_name
+                                    )
+                            else:
+                                # Use pullback ML scorer (existing logic)
+                                # ALWAYS record the signal in phantom tracker for learning
+                                phantom_tracker.record_signal(
+                                    symbol=sym,
+                                    signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                    ml_score=ml_score,
+                                    was_executed=should_take_trade,
+                                    features=basic_features,
+                                    strategy_name=strategy_name
+                                )
                             
                             # Update ML evolution stats
                             if ml_evolution is not None:

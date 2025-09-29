@@ -288,7 +288,8 @@ trade:
   ml_risk_max_score: 85.0  # ML score for maximum risk
   ml_risk_min_percent: 2.0  # Risk % at minimum score
   ml_risk_max_percent: 4.0  # Risk % at maximum score
-  use_regime_switching: true # Master switch for strategy rotation (Trending vs. Ranging)
+  use_regime_switching: false # Legacy strategy switching (disabled in favor of enhanced parallel)
+  use_enhanced_parallel: true   # Enable Enhanced Parallel ML System (Pullback + Mean Reversion)
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}

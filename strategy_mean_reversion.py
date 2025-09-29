@@ -80,19 +80,94 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
         # Reversal confirmation: Bullish candle (close > open)
         if close.iloc[-1] > df["open"].iloc[-1]:
             entry = current_price
-            sl = lower_range - (current_atr * s.sl_buf_atr)
-            tp = upper_range # Target the top of the range
+
+            # HYBRID SL METHOD - use whichever gives more room (same as pullback strategy)
+            # Volatility adjustment for SL buffer
+            volatility_percentile = 0.5  # Default middle volatility
+            if len(df) >= 50:
+                atr_series = pd.Series([_atr(df.iloc[i-14:i+1], 14)[-1] for i in range(14, len(df))])
+                current_atr_rank = (atr_series < current_atr).sum() / len(atr_series)
+                volatility_percentile = current_atr_rank
+
+            # Volatility multiplier (higher volatility = wider stops)
+            if volatility_percentile > 0.8:
+                volatility_multiplier = 1.4  # High volatility
+            elif volatility_percentile > 0.6:
+                volatility_multiplier = 1.2  # Above average
+            elif volatility_percentile < 0.2:
+                volatility_multiplier = 0.8  # Low volatility
+            else:
+                volatility_multiplier = 1.0  # Normal
+
+            adjusted_sl_buffer = s.sl_buf_atr * volatility_multiplier
+
+            # Option 1: Range lower boundary with small buffer (conservative)
+            sl_option1 = lower_range - (adjusted_sl_buffer * 0.3 * current_atr)
+
+            # Option 2: ATR-based from entry (standard)
+            sl_option2 = entry - (adjusted_sl_buffer * 1.0 * current_atr)
+
+            # Option 3: Support level with larger buffer (range-specific)
+            sl_option3 = lower_range - (current_atr * adjusted_sl_buffer)
+
+            # Use the lowest SL (gives most room for LONG)
+            sl = min(sl_option1, sl_option2, sl_option3)
+
+            # Log which method was used
+            if sl == sl_option1:
+                logger.info(f"{symbol}: Using range boundary for stop: {lower_range:.4f}")
+            elif sl == sl_option2:
+                logger.info(f"{symbol}: Using entry-based stop: {entry:.4f}")
+            else:
+                logger.info(f"{symbol}: Using support level for stop: {lower_range:.4f}")
+
+            # Ensure minimum stop distance (1% of entry price)
+            min_stop_distance = entry * 0.01
+            if abs(entry - sl) < min_stop_distance:
+                sl = entry - min_stop_distance
+                logger.info(f"{symbol}: Adjusted stop to minimum distance (1% from entry)")
+
+            # FIXED RISK:REWARD with fee adjustment (same as pullback)
+            # Bybit fees: 0.06% entry (market) + 0.055% exit (limit) = 0.115% total
+            # Add 0.05% for slippage = 0.165% total cost
+            # To get 2.5:1 after fees, we need to target slightly higher
+            fee_adjustment = 1.00165  # Compensate for 0.165% total costs
+            tp = entry + ((entry - sl) * s.rr * fee_adjustment)
 
             if entry > sl and tp > entry:
                 logger.info(f"[{symbol}] MEAN REVERSION LONG: Bouncing off support {lower_range:.4f}. Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}, R: {(entry - sl):.4f}, RR: {s.rr}")
                 state.last_signal_candle_time = df.index[-1]
+
+                # Calculate mean reversion specific features
+                signal_data = {
+                    'side': 'long',
+                    'entry': entry,
+                    'sl': sl,
+                    'tp': tp,
+                    'meta': {'range_upper': upper_range, 'range_lower': lower_range}
+                }
+
+                # Import and calculate ML features specific to mean reversion
+                try:
+                    from ml_scorer_mean_reversion import calculate_mean_reversion_features
+                    mr_features = calculate_mean_reversion_features(df, signal_data, symbol)
+                    logger.debug(f"[{symbol}] Mean reversion features calculated: {len(mr_features)} features")
+                except Exception as e:
+                    logger.warning(f"[{symbol}] Failed to calculate MR features: {e}")
+                    mr_features = {}
+
                 return Signal(
                     side="long",
                     entry=entry,
                     sl=sl,
                     tp=tp,
                     reason=f"Mean Reversion: Bounce from support @ {lower_range:.2f}",
-                    meta={"range_upper": upper_range, "range_lower": lower_range}
+                    meta={
+                        "range_upper": upper_range,
+                        "range_lower": lower_range,
+                        "mr_features": mr_features,  # Store MR features for ML
+                        "strategy_name": "MeanReversion"
+                    }
                 )
 
     # --- SHORT SIGNAL (Sell at Resistance) ---
@@ -101,19 +176,94 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
         # Reversal confirmation: Bearish candle (close < open)
         if close.iloc[-1] < df["open"].iloc[-1]:
             entry = current_price
-            sl = upper_range + (current_atr * s.sl_buf_atr)
-            tp = lower_range # Target the bottom of the range
+
+            # HYBRID SL METHOD - use whichever gives more room (same as pullback strategy)
+            # Volatility adjustment for SL buffer
+            volatility_percentile = 0.5  # Default middle volatility
+            if len(df) >= 50:
+                atr_series = pd.Series([_atr(df.iloc[i-14:i+1], 14)[-1] for i in range(14, len(df))])
+                current_atr_rank = (atr_series < current_atr).sum() / len(atr_series)
+                volatility_percentile = current_atr_rank
+
+            # Volatility multiplier (higher volatility = wider stops)
+            if volatility_percentile > 0.8:
+                volatility_multiplier = 1.4  # High volatility
+            elif volatility_percentile > 0.6:
+                volatility_multiplier = 1.2  # Above average
+            elif volatility_percentile < 0.2:
+                volatility_multiplier = 0.8  # Low volatility
+            else:
+                volatility_multiplier = 1.0  # Normal
+
+            adjusted_sl_buffer = s.sl_buf_atr * volatility_multiplier
+
+            # Option 1: Range upper boundary with small buffer (conservative)
+            sl_option1 = upper_range + (adjusted_sl_buffer * 0.3 * current_atr)
+
+            # Option 2: ATR-based from entry (standard)
+            sl_option2 = entry + (adjusted_sl_buffer * 1.0 * current_atr)
+
+            # Option 3: Resistance level with larger buffer (range-specific)
+            sl_option3 = upper_range + (current_atr * adjusted_sl_buffer)
+
+            # Use the highest SL (gives most room for SHORT)
+            sl = max(sl_option1, sl_option2, sl_option3)
+
+            # Log which method was used
+            if sl == sl_option1:
+                logger.info(f"{symbol}: Using range boundary for stop: {upper_range:.4f}")
+            elif sl == sl_option2:
+                logger.info(f"{symbol}: Using entry-based stop: {entry:.4f}")
+            else:
+                logger.info(f"{symbol}: Using resistance level for stop: {upper_range:.4f}")
+
+            # Ensure minimum stop distance (1% of entry price)
+            min_stop_distance = entry * 0.01
+            if abs(sl - entry) < min_stop_distance:
+                sl = entry + min_stop_distance
+                logger.info(f"{symbol}: Adjusted stop to minimum distance (1% from entry)")
+
+            # FIXED RISK:REWARD with fee adjustment (same as pullback)
+            # Bybit fees: 0.06% entry (market) + 0.055% exit (limit) = 0.115% total
+            # Add 0.05% for slippage = 0.165% total cost
+            # To get 2.5:1 after fees, we need to target slightly higher
+            fee_adjustment = 1.00165  # Compensate for 0.165% total costs
+            tp = entry - ((sl - entry) * s.rr * fee_adjustment)
 
             if sl > entry and entry > tp:
                 logger.info(f"[{symbol}] MEAN REVERSION SHORT: Rejecting from resistance {upper_range:.4f}. Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}, R: {(sl - entry):.4f}, RR: {s.rr}")
                 state.last_signal_candle_time = df.index[-1]
+
+                # Calculate mean reversion specific features
+                signal_data = {
+                    'side': 'short',
+                    'entry': entry,
+                    'sl': sl,
+                    'tp': tp,
+                    'meta': {'range_upper': upper_range, 'range_lower': lower_range}
+                }
+
+                # Import and calculate ML features specific to mean reversion
+                try:
+                    from ml_scorer_mean_reversion import calculate_mean_reversion_features
+                    mr_features = calculate_mean_reversion_features(df, signal_data, symbol)
+                    logger.debug(f"[{symbol}] Mean reversion features calculated: {len(mr_features)} features")
+                except Exception as e:
+                    logger.warning(f"[{symbol}] Failed to calculate MR features: {e}")
+                    mr_features = {}
+
                 return Signal(
                     side="short",
                     entry=entry,
                     sl=sl,
                     tp=tp,
                     reason=f"Mean Reversion: Rejection from resistance @ {upper_range:.2f}",
-                    meta={"range_upper": upper_range, "range_lower": lower_range}
+                    meta={
+                        "range_upper": upper_range,
+                        "range_lower": lower_range,
+                        "mr_features": mr_features,  # Store MR features for ML
+                        "strategy_name": "MeanReversion"
+                    }
                 )
     return None
 

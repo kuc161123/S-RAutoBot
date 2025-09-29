@@ -1,0 +1,553 @@
+"""
+Mean Reversion Specific Phantom Trade Tracker
+Specialized tracking for ranging market signals with enhanced learning data
+"""
+import json
+import logging
+import redis
+import os
+from datetime import datetime, timedelta
+from dataclasses import dataclass, asdict
+from typing import Dict, List, Optional, Tuple
+import time
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+class MRNumpyJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder for mean reversion data"""
+    def default(self, obj):
+        if isinstance(obj, (np.bool_, np.bool8)):
+            return bool(obj)
+        elif isinstance(obj, (np.integer, np.int_, np.intc, np.intp,
+                            np.int8, np.int16, np.int32, np.int64,
+                            np.uint8, np.uint16, np.uint32, np.uint64)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float_, np.float16,
+                            np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+@dataclass
+class MRPhantomTrade:
+    """A mean reversion phantom trade with range-specific tracking"""
+    symbol: str
+    side: str  # "long" or "short"
+    entry_price: float
+    stop_loss: float
+    take_profit: float
+    signal_time: datetime
+    ml_score: float
+    was_executed: bool
+    features: Dict  # Enhanced MR features
+    enhanced_features: Dict  # Additional enhanced features
+    strategy_name: str = "enhanced_mean_reversion"
+
+    # Range-specific data
+    range_upper: Optional[float] = None
+    range_lower: Optional[float] = None
+    range_confidence: Optional[float] = None
+    range_position: Optional[float] = None  # 0=bottom, 1=top
+
+    # Outcome tracking
+    outcome: Optional[str] = None  # "win", "loss", or "active"
+    exit_price: Optional[float] = None
+    pnl_percent: Optional[float] = None
+    exit_time: Optional[datetime] = None
+    exit_reason: Optional[str] = None  # "tp", "sl", "timeout"
+
+    # Range-specific tracking
+    max_favorable: Optional[float] = None
+    max_adverse: Optional[float] = None
+    time_at_extremes: Optional[int] = None  # Candles spent at range boundaries
+    range_breakout_occurred: Optional[bool] = None  # Did range break during trade
+
+    def to_dict(self):
+        """Convert to dictionary with proper type handling"""
+        d = asdict(self)
+
+        # Handle numpy types in nested dictionaries
+        for key in ['features', 'enhanced_features']:
+            if key in d and d[key]:
+                cleaned_dict = {}
+                for k, v in d[key].items():
+                    if isinstance(v, (np.bool_, np.bool8)):
+                        cleaned_dict[k] = bool(v)
+                    elif isinstance(v, (np.integer, np.floating)):
+                        cleaned_dict[k] = float(v)
+                    else:
+                        cleaned_dict[k] = v
+                d[key] = cleaned_dict
+
+        # Convert datetime fields
+        d['signal_time'] = self.signal_time.isoformat()
+        if self.exit_time:
+            d['exit_time'] = self.exit_time.isoformat()
+
+        return d
+
+    @classmethod
+    def from_dict(cls, d):
+        """Create from dictionary"""
+        d = d.copy()
+        d['signal_time'] = datetime.fromisoformat(d['signal_time'])
+        if d.get('exit_time'):
+            d['exit_time'] = datetime.fromisoformat(d['exit_time'])
+        return cls(**d)
+
+class MRPhantomTracker:
+    """
+    Specialized phantom tracker for mean reversion strategy
+    Tracks range-specific behaviors and outcomes
+    """
+
+    def __init__(self):
+        self.redis_client = None
+        self.mr_phantom_trades = {}  # symbol -> list of MR phantom trades
+        self.active_mr_phantoms = {}  # symbol -> MRPhantomTrade
+
+        # Range tracking data
+        self.range_performance = {}  # Track performance by range characteristics
+        self.timeout_hours = 48  # Close phantom trades after 48 hours in ranging markets
+
+        # Initialize Redis with MR-specific keys
+        self._init_redis()
+        self._load_from_redis()
+
+    def _init_redis(self):
+        """Initialize Redis connection with MR namespace"""
+        try:
+            redis_url = os.getenv('REDIS_URL')
+            if redis_url:
+                self.redis_client = redis.from_url(redis_url, decode_responses=True)
+                self.redis_client.ping()
+                logger.info("MR Phantom Tracker connected to Redis")
+            else:
+                logger.warning("No REDIS_URL for MR Phantom Tracker, using memory only")
+        except Exception as e:
+            logger.warning(f"Redis connection failed for MR Phantom Tracker: {e}")
+            self.redis_client = None
+
+    def _load_from_redis(self):
+        """Load MR phantom trades from Redis"""
+        if not self.redis_client:
+            return
+
+        try:
+            # Load active MR phantoms
+            active_data = self.redis_client.get('mr_phantom:active')
+            if active_data:
+                active_dict = json.loads(active_data)
+                for symbol, trade_dict in active_dict.items():
+                    self.active_mr_phantoms[symbol] = MRPhantomTrade.from_dict(trade_dict)
+                logger.info(f"Loaded {len(self.active_mr_phantoms)} active MR phantom trades")
+
+            # Load completed MR phantoms
+            completed_data = self.redis_client.get('mr_phantom:completed')
+            if completed_data:
+                completed_list = json.loads(completed_data)
+                for trade_dict in completed_list:
+                    phantom = MRPhantomTrade.from_dict(trade_dict)
+                    if phantom.symbol not in self.mr_phantom_trades:
+                        self.mr_phantom_trades[phantom.symbol] = []
+                    self.mr_phantom_trades[phantom.symbol].append(phantom)
+
+                total = sum(len(trades) for trades in self.mr_phantom_trades.values())
+                logger.info(f"Loaded {total} completed MR phantom trades")
+
+        except Exception as e:
+            logger.error(f"Error loading MR phantom trades from Redis: {e}")
+
+    def _save_to_redis(self):
+        """Save MR phantom trades to Redis"""
+        if not self.redis_client:
+            return
+
+        try:
+            # Save active MR phantoms
+            active_dict = {
+                symbol: trade.to_dict()
+                for symbol, trade in self.active_mr_phantoms.items()
+            }
+            self.redis_client.set('mr_phantom:active',
+                                json.dumps(active_dict, cls=MRNumpyJSONEncoder))
+
+            # Save completed MR phantoms (keep last 1500)
+            all_completed = []
+            for trades in self.mr_phantom_trades.values():
+                for trade in trades:
+                    if trade.outcome in ['win', 'loss']:
+                        all_completed.append(trade.to_dict())
+
+            # Keep only last 1500 for storage efficiency
+            all_completed = all_completed[-1500:]
+            self.redis_client.set('mr_phantom:completed',
+                                json.dumps(all_completed, cls=MRNumpyJSONEncoder))
+
+            logger.debug(f"Saved {len(self.active_mr_phantoms)} active and {len(all_completed)} completed MR phantoms")
+
+        except Exception as e:
+            logger.error(f"Error saving MR phantom trades to Redis: {e}")
+
+    def record_mr_signal(self, symbol: str, signal: dict, ml_score: float,
+                        was_executed: bool, features: dict, enhanced_features: dict = None) -> MRPhantomTrade:
+        """
+        Record a mean reversion signal with range-specific data
+
+        Args:
+            symbol: Trading symbol
+            signal: Signal dict with entry, sl, tp, meta
+            ml_score: Enhanced MR ML score
+            was_executed: Whether signal was actually traded
+            features: Basic MR features
+            enhanced_features: Enhanced feature set from enhanced_mr_features.py
+        """
+        # Extract range information from signal meta
+        meta = signal.get('meta', {})
+        range_upper = meta.get('range_upper')
+        range_lower = meta.get('range_lower')
+
+        # Calculate range-specific metrics
+        range_confidence = None
+        range_position = None
+        if range_upper and range_lower and range_upper > range_lower:
+            entry_price = signal['entry']
+            range_width = range_upper - range_lower
+            range_position = (entry_price - range_lower) / range_width
+
+            # Get confidence from enhanced features if available
+            if enhanced_features:
+                range_confidence = enhanced_features.get('range_confidence', 0.5)
+
+        phantom = MRPhantomTrade(
+            symbol=symbol,
+            side=signal['side'],
+            entry_price=signal['entry'],
+            stop_loss=signal['sl'],
+            take_profit=signal['tp'],
+            signal_time=datetime.now(),
+            ml_score=ml_score,
+            was_executed=was_executed,
+            features=features or {},
+            enhanced_features=enhanced_features or {},
+            range_upper=range_upper,
+            range_lower=range_lower,
+            range_confidence=range_confidence,
+            range_position=range_position,
+            strategy_name="enhanced_mean_reversion"
+        )
+
+        # Store as active phantom
+        self.active_mr_phantoms[symbol] = phantom
+
+        # Initialize list if needed
+        if symbol not in self.mr_phantom_trades:
+            self.mr_phantom_trades[symbol] = []
+
+        # Log the recording with MR-specific info
+        status = "EXECUTED" if was_executed else f"REJECTED (score: {ml_score:.1f})"
+        range_info = ""
+        if range_upper and range_lower:
+            range_info = f", Range: {range_lower:.4f}-{range_upper:.4f}"
+            if range_position:
+                range_info += f" (pos: {range_position:.2f})"
+
+        logger.info(f"[{symbol}] MR phantom recorded: {status} - "
+                   f"Entry: {signal['entry']:.4f}, Side: {signal['side']}{range_info}")
+
+        # Save to Redis
+        self._save_to_redis()
+
+        return phantom
+
+    def update_mr_phantom_prices(self, symbol: str, current_price: float, df=None):
+        """Update MR phantom trade with range-specific tracking"""
+        if symbol not in self.active_mr_phantoms:
+            return
+
+        phantom = self.active_mr_phantoms[symbol]
+
+        # Track maximum favorable and adverse excursions
+        if phantom.side == "long":
+            if phantom.max_favorable is None or current_price > phantom.max_favorable:
+                phantom.max_favorable = current_price
+            if phantom.max_adverse is None or current_price < phantom.max_adverse:
+                phantom.max_adverse = current_price
+
+            # Check if hit TP or SL
+            if current_price >= phantom.take_profit:
+                self._close_mr_phantom(symbol, current_price, "win", "tp")
+            elif current_price <= phantom.stop_loss:
+                self._close_mr_phantom(symbol, current_price, "loss", "sl")
+
+        else:  # short
+            if phantom.max_favorable is None or current_price < phantom.max_favorable:
+                phantom.max_favorable = current_price
+            if phantom.max_adverse is None or current_price > phantom.max_adverse:
+                phantom.max_adverse = current_price
+
+            # Check if hit TP or SL
+            if current_price <= phantom.take_profit:
+                self._close_mr_phantom(symbol, current_price, "win", "tp")
+            elif current_price >= phantom.stop_loss:
+                self._close_mr_phantom(symbol, current_price, "loss", "sl")
+
+        # Check for range breakout
+        if phantom.range_upper and phantom.range_lower:
+            if current_price > phantom.range_upper * 1.01 or current_price < phantom.range_lower * 0.99:
+                phantom.range_breakout_occurred = True
+                logger.debug(f"[{symbol}] Range breakout detected during MR phantom trade")
+
+        # Check for timeout (longer timeout for ranging markets)
+        time_elapsed = datetime.now() - phantom.signal_time
+        if time_elapsed > timedelta(hours=self.timeout_hours):
+            logger.info(f"[{symbol}] MR phantom trade timed out after {self.timeout_hours} hours")
+            self._close_mr_phantom(symbol, current_price, "loss", "timeout")
+
+    def _close_mr_phantom(self, symbol: str, exit_price: float, outcome: str, exit_reason: str):
+        """Close MR phantom trade with range-specific analysis"""
+        if symbol not in self.active_mr_phantoms:
+            return
+
+        phantom = self.active_mr_phantoms[symbol]
+        phantom.outcome = outcome
+        phantom.exit_price = exit_price
+        phantom.exit_time = datetime.now()
+        phantom.exit_reason = exit_reason
+
+        # Calculate P&L
+        if phantom.side == "long":
+            phantom.pnl_percent = ((exit_price - phantom.entry_price) / phantom.entry_price) * 100
+        else:
+            phantom.pnl_percent = ((phantom.entry_price - exit_price) / phantom.entry_price) * 100
+
+        # Move to completed list
+        if symbol not in self.mr_phantom_trades:
+            self.mr_phantom_trades[symbol] = []
+        self.mr_phantom_trades[symbol].append(phantom)
+        del self.active_mr_phantoms[symbol]
+
+        # Log outcome with MR-specific details
+        status = "EXECUTED" if phantom.was_executed else f"PHANTOM (score: {phantom.ml_score:.1f})"
+        result = "✅ WIN" if outcome == "win" else "❌ LOSS"
+
+        additional_info = []
+        if phantom.range_breakout_occurred:
+            additional_info.append("BREAKOUT")
+        if phantom.range_position:
+            additional_info.append(f"pos:{phantom.range_position:.2f}")
+        if exit_reason == "timeout":
+            additional_info.append("TIMEOUT")
+
+        info_str = f" [{', '.join(additional_info)}]" if additional_info else ""
+
+        logger.info(f"[{symbol}] MR {status} trade closed: {result} - "
+                   f"P&L: {phantom.pnl_percent:.2f}%, Exit: {exit_reason}{info_str}")
+
+        # Analyze ML accuracy for MR trades
+        if not phantom.was_executed:
+            self._analyze_mr_ml_accuracy(phantom, outcome)
+
+        # Update range performance tracking
+        self._update_range_performance(phantom)
+
+        # Save to Redis
+        self._save_to_redis()
+
+        # Check if ML needs retraining
+        self._check_mr_ml_retrain()
+
+    def _analyze_mr_ml_accuracy(self, phantom: MRPhantomTrade, outcome: str):
+        """Analyze ML accuracy for mean reversion trades"""
+        ml_threshold = 72  # Default MR threshold
+
+        if phantom.ml_score < ml_threshold and outcome == "win":
+            range_info = ""
+            if phantom.range_confidence:
+                range_info = f" (range conf: {phantom.range_confidence:.2f})"
+            logger.warning(f"[{phantom.symbol}] MR ML rejected a winning trade! "
+                         f"Score: {phantom.ml_score:.1f}, Outcome: WIN{range_info}")
+
+        elif phantom.ml_score >= ml_threshold and outcome == "loss":
+            range_info = ""
+            if phantom.range_confidence:
+                range_info = f" (range conf: {phantom.range_confidence:.2f})"
+            logger.warning(f"[{phantom.symbol}] MR ML approved a losing trade! "
+                         f"Score: {phantom.ml_score:.1f}, Outcome: LOSS{range_info}")
+
+    def _update_range_performance(self, phantom: MRPhantomTrade):
+        """Update performance tracking by range characteristics"""
+        if not phantom.range_confidence:
+            return
+
+        # Categorize ranges by confidence
+        if phantom.range_confidence >= 0.8:
+            range_category = "high_confidence"
+        elif phantom.range_confidence >= 0.6:
+            range_category = "medium_confidence"
+        else:
+            range_category = "low_confidence"
+
+        if range_category not in self.range_performance:
+            self.range_performance[range_category] = {'wins': 0, 'losses': 0, 'total_pnl': 0.0}
+
+        if phantom.outcome == 'win':
+            self.range_performance[range_category]['wins'] += 1
+        else:
+            self.range_performance[range_category]['losses'] += 1
+
+        self.range_performance[range_category]['total_pnl'] += phantom.pnl_percent or 0.0
+
+    def _check_mr_ml_retrain(self):
+        """Check if Enhanced MR ML needs retraining"""
+        try:
+            from enhanced_mr_scorer import get_enhanced_mr_scorer
+            mr_scorer = get_enhanced_mr_scorer()
+
+            # Get combined trade count
+            executed_count = mr_scorer.completed_trades
+            phantom_count = sum(len(trades) for trades in self.mr_phantom_trades.values())
+            total_combined = executed_count + phantom_count
+
+            # Check if ready to retrain
+            trades_since_last = total_combined - mr_scorer.last_train_count
+            if trades_since_last >= mr_scorer.RETRAIN_INTERVAL and executed_count >= mr_scorer.MIN_TRADES_FOR_ML:
+                logger.info(f"🔄 Enhanced MR ML retrain triggered after phantom trade completion - "
+                           f"{total_combined} total trades available")
+
+                # Could trigger retrain here or let the main system handle it
+                # For now, just log the opportunity
+
+        except Exception as e:
+            logger.error(f"Error checking Enhanced MR ML retrain: {e}")
+
+    def get_mr_phantom_stats(self, symbol: Optional[str] = None) -> dict:
+        """Get MR-specific phantom trade statistics"""
+        all_mr_phantoms = []
+        if symbol:
+            all_mr_phantoms = self.mr_phantom_trades.get(symbol, [])
+        else:
+            for trades in self.mr_phantom_trades.values():
+                all_mr_phantoms.extend(trades)
+
+        if not all_mr_phantoms:
+            return {
+                'total_mr_trades': 0,
+                'executed': 0,
+                'rejected': 0,
+                'range_performance': {},
+                'mr_specific_metrics': {}
+            }
+
+        executed = [p for p in all_mr_phantoms if p.was_executed]
+        rejected = [p for p in all_mr_phantoms if not p.was_executed]
+
+        # MR-specific analysis
+        range_breakout_trades = [p for p in all_mr_phantoms if p.range_breakout_occurred]
+        timeout_trades = [p for p in all_mr_phantoms if p.exit_reason == "timeout"]
+
+        # Range confidence analysis
+        high_conf_trades = [p for p in all_mr_phantoms if p.range_confidence and p.range_confidence >= 0.8]
+        low_conf_trades = [p for p in all_mr_phantoms if p.range_confidence and p.range_confidence < 0.5]
+
+        # Range position analysis
+        boundary_trades = [p for p in all_mr_phantoms
+                          if p.range_position and (p.range_position <= 0.2 or p.range_position >= 0.8)]
+
+        stats = {
+            'total_mr_trades': len(all_mr_phantoms),
+            'executed': len(executed),
+            'rejected': len(rejected),
+
+            'mr_specific_metrics': {
+                'range_breakout_during_trade': len(range_breakout_trades),
+                'timeout_closures': len(timeout_trades),
+                'high_confidence_ranges': len(high_conf_trades),
+                'low_confidence_ranges': len(low_conf_trades),
+                'boundary_entries': len(boundary_trades),
+            },
+
+            'range_performance': self.range_performance.copy(),
+
+            'outcome_analysis': {
+                'executed_win_rate': (sum(1 for p in executed if p.outcome == 'win') / len(executed) * 100) if executed else 0,
+                'rejected_would_win_rate': (sum(1 for p in rejected if p.outcome == 'win') / len(rejected) * 100) if rejected else 0,
+            }
+        }
+
+        # Add range-specific insights
+        if high_conf_trades:
+            high_conf_wins = sum(1 for p in high_conf_trades if p.outcome == 'win')
+            stats['range_performance']['high_confidence_win_rate'] = high_conf_wins / len(high_conf_trades) * 100
+
+        if boundary_trades:
+            boundary_wins = sum(1 for p in boundary_trades if p.outcome == 'win')
+            stats['mr_specific_metrics']['boundary_entry_win_rate'] = boundary_wins / len(boundary_trades) * 100
+
+        return stats
+
+    def get_mr_learning_data(self) -> List[Dict]:
+        """Get MR phantom data formatted for Enhanced ML learning"""
+        learning_data = []
+
+        for trades in self.mr_phantom_trades.values():
+            for trade in trades:
+                if trade.outcome in ['win', 'loss']:
+                    # Create enhanced learning record with MR-specific features
+                    record = {
+                        'features': trade.features,
+                        'enhanced_features': trade.enhanced_features,
+                        'ml_score': trade.ml_score,
+                        'was_executed': trade.was_executed,
+                        'outcome': 1 if trade.outcome == 'win' else 0,
+                        'pnl_percent': trade.pnl_percent,
+                        'symbol': trade.symbol,
+                        'side': trade.side,
+                        'strategy': trade.strategy_name,
+
+                        # MR-specific data
+                        'range_confidence': trade.range_confidence,
+                        'range_position': trade.range_position,
+                        'range_breakout_occurred': trade.range_breakout_occurred or False,
+                        'exit_reason': trade.exit_reason,
+
+                        # Performance metrics
+                        'max_favorable_move': (abs(trade.max_favorable - trade.entry_price) /
+                                            trade.entry_price * 100) if trade.max_favorable else 0,
+                        'max_adverse_move': (abs(trade.max_adverse - trade.entry_price) /
+                                           trade.entry_price * 100) if trade.max_adverse else 0,
+                    }
+                    learning_data.append(record)
+
+        return learning_data
+
+    def cleanup_old_mr_phantoms(self, hours: int = None):
+        """Clean up old MR phantom trades (now mainly timeout-based)"""
+        if hours is None:
+            hours = self.timeout_hours
+
+        cutoff_time = datetime.now() - timedelta(hours=hours)
+        removed_count = 0
+
+        for symbol in list(self.active_mr_phantoms.keys()):
+            phantom = self.active_mr_phantoms[symbol]
+            if phantom.signal_time < cutoff_time:
+                logger.info(f"[{symbol}] Cleaning up old MR phantom trade (age: {hours}h)")
+                self._close_mr_phantom(symbol, phantom.entry_price, "loss", "cleanup")
+                removed_count += 1
+
+        if removed_count > 0:
+            logger.info(f"Cleaned up {removed_count} old MR phantom trades")
+
+# Global instance
+_mr_phantom_tracker = None
+
+def get_mr_phantom_tracker() -> MRPhantomTracker:
+    """Get or create the global MR phantom tracker instance"""
+    global _mr_phantom_tracker
+    if _mr_phantom_tracker is None:
+        _mr_phantom_tracker = MRPhantomTracker()
+        logger.info("Initialized MR Phantom Tracker")
+    return _mr_phantom_tracker

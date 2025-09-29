@@ -53,6 +53,13 @@ class TGBot:
         self.app.add_handler(CommandHandler("set_ml_threshold", self.set_ml_threshold))
         self.app.add_handler(CommandHandler("htf_sr", self.htf_sr_status))
         self.app.add_handler(CommandHandler("update_htf_sr", self.update_htf_sr))
+        self.app.add_handler(CommandHandler("mr_ml", self.mr_ml_stats))
+        self.app.add_handler(CommandHandler("mr_retrain", self.mr_retrain))
+        self.app.add_handler(CommandHandler("enhanced_mr", self.enhanced_mr_stats))
+        self.app.add_handler(CommandHandler("mr_phantom", self.mr_phantom_stats))
+        self.app.add_handler(CommandHandler("parallel_performance", self.parallel_performance))
+        self.app.add_handler(CommandHandler("regime_analysis", self.regime_analysis))
+        self.app.add_handler(CommandHandler("strategy_comparison", self.strategy_comparison))
         
         self.running = False
 
@@ -1034,6 +1041,18 @@ class TGBot:
             msg += f"• Completed trades (live): {stats.get('completed_trades', 0)}\n"
             msg += f"• Current threshold: {stats.get('current_threshold', 70):.0f}\n"
             msg += f"• Active models: {len(stats.get('models_active', []))}\n"
+
+            # Show retrain info for mean reversion
+            if strategy_arg == 'reversion' and 'next_retrain_in' in stats:
+                msg += f"• Next retrain in: {stats['next_retrain_in']} trades\n"
+
+            # Add strategy-specific notes
+            if strategy_arg == 'reversion':
+                msg += "\n📝 *Mean Reversion Features:*\n"
+                msg += "• Range characteristics\n"
+                msg += "• Oscillator extremes\n"
+                msg += "• Volume confirmation\n"
+                msg += "• Reversal strength\n"
 
             await self.safe_reply(update, msg)
 
@@ -2153,3 +2172,455 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in update_htf_sr: {e}")
             await update.message.reply_text("Error updating HTF S/R levels")
+
+    async def mr_ml_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show detailed Mean Reversion ML statistics"""
+        try:
+            msg = "🔄 *Mean Reversion ML Status*\n"
+            msg += "━" * 30 + "\n\n"
+
+            # Get mean reversion scorer
+            try:
+                mean_reversion_scorer = get_mean_reversion_scorer()
+            except Exception as e:
+                msg += f"❌ *Error getting Mean Reversion ML:* {e}\n"
+                await self.safe_reply(update, msg)
+                return
+
+            # Get comprehensive stats
+            stats = mean_reversion_scorer.get_stats()
+
+            # Status section
+            if stats.get('is_ml_ready'):
+                msg += "✅ *Status: ACTIVE & LEARNING*\n"
+                msg += f"• Models trained: {len(stats.get('models_active', []))}/3\n"
+                msg += f"• Model types: {', '.join(stats.get('models_active', []))}\n"
+            else:
+                msg += "📊 *Status: COLLECTING DATA*\n"
+                remaining = max(0, stats.get('min_trades_for_ml', 50) - stats.get('completed_trades', 0))
+                msg += f"• Trades needed: {remaining} more\n"
+
+            msg += "\n📊 *Trade Statistics:*\n"
+            msg += f"• Total trades: {stats.get('completed_trades', 0)}\n"
+            msg += f"• Last training: {stats.get('last_train_count', 0)} trades\n"
+
+            if 'recent_win_rate' in stats and stats['recent_trades'] > 0:
+                msg += f"• Recent win rate: {stats['recent_win_rate']:.1f}% ({stats['recent_trades']} trades)\n"
+
+            # Retrain info
+            msg += "\n🔄 *Retrain Schedule:*\n"
+            msg += f"• Retrain interval: {stats.get('retrain_interval', 25)} trades\n"
+            next_retrain = stats.get('next_retrain_in', 0)
+            if next_retrain > 0:
+                msg += f"• Next retrain in: {next_retrain} trades\n"
+            else:
+                msg += "• Ready for retrain! \ud83c\udf86\n"
+
+            # Scoring configuration
+            msg += "\n⚙️ *ML Configuration:*\n"
+            msg += f"• Score threshold: {stats.get('current_threshold', 70):.0f}\n"
+            msg += f"• Min trades for ML: {stats.get('min_trades_for_ml', 50)}\n"
+
+            # Feature info
+            msg += "\n🧪 *Features Used:*\n"
+            msg += "• Range width & strength\n"
+            msg += "• RSI & Stochastic extremes\n"
+            msg += "• Volume confirmation\n"
+            msg += "• Reversal candle quality\n"
+            msg += "• Session & time context\n"
+
+            await self.safe_reply(update, msg)
+
+        except Exception as e:
+            logger.error(f"Error in mr_ml_stats: {e}")
+            await update.message.reply_text("Error getting Mean Reversion ML statistics")
+
+    async def mr_retrain(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Force retrain Mean Reversion ML models"""
+        try:
+            msg = "🔄 *Mean Reversion ML Retrain*\n"
+            msg += "━" * 25 + "\n\n"
+
+            # Get mean reversion scorer
+            try:
+                mean_reversion_scorer = get_mean_reversion_scorer()
+            except Exception as e:
+                msg += f"❌ *Error:* {e}\n"
+                await self.safe_reply(update, msg)
+                return
+
+            # Check if retrain is possible
+            retrain_info = mean_reversion_scorer.get_retrain_info()
+
+            if not retrain_info['can_train']:
+                msg += "⚠️ *Cannot Retrain Yet*\n"
+                remaining = max(0, 50 - retrain_info['total_trades'])
+                msg += f"Need {remaining} more trades before first training.\n"
+                await self.safe_reply(update, msg)
+                return
+
+            # Show pre-retrain status
+            msg += "📊 *Pre-Retrain Status:*\n"
+            msg += f"• Available trades: {retrain_info['total_trades']}\n"
+            msg += f"• Last training: {retrain_info['last_train_at']} trades\n"
+
+            # Attempt retrain
+            msg += "\n🔄 *Starting Retrain...*\n"
+            temp_msg = await update.message.reply_text(msg)
+
+            try:
+                success = mean_reversion_scorer.startup_retrain()
+
+                if success:
+                    msg += "✅ *Retrain Successful!*\n"
+                    msg += "\n�\udf86 *Post-Retrain Status:*\n"
+
+                    # Get updated stats
+                    updated_stats = mean_reversion_scorer.get_stats()
+                    msg += f"• Models active: {len(updated_stats.get('models_active', []))}\n"
+                    msg += f"• Trained on: {updated_stats.get('last_train_count', 0)} trades\n"
+                    msg += f"• Status: {updated_stats.get('status', 'Unknown')}\n"
+
+                else:
+                    msg += "❌ *Retrain Failed*\n"
+                    msg += "Check logs for details.\n"
+
+            except Exception as retrain_error:
+                msg += f"❌ *Retrain Error:* {retrain_error}\n"
+
+            await temp_msg.edit_text(msg)
+
+        except Exception as e:
+            logger.error(f"Error in mr_retrain: {e}")
+            await update.message.reply_text("Error during Mean Reversion ML retrain")
+
+    async def enhanced_mr_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show Enhanced Mean Reversion ML statistics"""
+        try:
+            msg = "🧠 *Enhanced Mean Reversion ML Status*\n"
+            msg += "━" * 35 + "\n\n"
+
+            # Check if enhanced system is available
+            try:
+                from enhanced_mr_scorer import get_enhanced_mr_scorer
+                enhanced_mr_scorer = get_enhanced_mr_scorer()
+            except ImportError:
+                msg += "❌ *Enhanced MR ML not available*\n"
+                msg += "Please check if enhanced_mr_scorer.py is installed.\n"
+                await self.safe_reply(update, msg)
+                return
+
+            # Get enhanced stats
+            stats = enhanced_mr_scorer.get_enhanced_stats()
+
+            # Status section
+            if stats.get('is_ml_ready'):
+                msg += "✅ *Status: ADVANCED ML ACTIVE*\n"
+                msg += f"• Strategy: {stats.get('strategy', 'Enhanced Mean Reversion')}\n"
+                msg += f"• Models: {stats.get('model_count', 0)}/4 active\n"
+                msg += f"• Features: {stats.get('feature_count', 30)}+ enhanced features\n"
+            else:
+                msg += f"📚 *Status: {stats.get('status', 'Learning')}*\n"
+                msg += f"• Trades needed: {stats.get('min_trades_for_ml', 30)}\n"
+                msg += f"• Progress: {stats.get('completed_trades', 0)}/{stats.get('min_trades_for_ml', 30)}\n"
+
+            msg += "\n📊 *Performance Metrics:*\n"
+            msg += f"• Completed trades: {stats.get('completed_trades', 0)}\n"
+            msg += f"• Current threshold: {stats.get('current_threshold', 72):.0f}%\n"
+            msg += f"• Threshold range: {stats.get('min_threshold', 65)}-{stats.get('max_threshold', 88)}%\n"
+
+            if stats.get('recent_win_rate', 0) > 0:
+                msg += f"• Recent win rate: {stats.get('recent_win_rate', 0):.1f}%\n"
+                msg += f"• Sample size: {stats.get('recent_trades', 0)} trades\n"
+
+            # Model details
+            if stats.get('models_active'):
+                msg += "\n🤖 *Active Models:*\n"
+                for model in stats.get('models_active', []):
+                    msg += f"• {model.replace('_', ' ').title()}\n"
+
+            # Training info
+            msg += "\n🔄 *Training Info:*\n"
+            msg += f"• Last trained: {stats.get('last_train_count', 0)} trades\n"
+            msg += f"• Retrain interval: {stats.get('retrain_interval', 50)} trades\n"
+            msg += f"• Next retrain in: {stats.get('trades_until_retrain', 'N/A')} trades\n"
+
+            await self.safe_reply(update, msg)
+
+        except Exception as e:
+            logger.error(f"Error in enhanced_mr_stats: {e}")
+            await update.message.reply_text("Error getting Enhanced MR ML stats")
+
+    async def mr_phantom_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show Mean Reversion phantom trade statistics"""
+        try:
+            msg = "👻 *Mean Reversion Phantom Trades*\n"
+            msg += "━" * 30 + "\n\n"
+
+            # Get MR phantom tracker
+            try:
+                from mr_phantom_tracker import get_mr_phantom_tracker
+                mr_phantom_tracker = get_mr_phantom_tracker()
+            except ImportError:
+                msg += "❌ *MR Phantom Tracker not available*\n"
+                await self.safe_reply(update, msg)
+                return
+
+            # Get phantom stats
+            phantom_stats = mr_phantom_tracker.get_mr_phantom_stats()
+
+            msg += f"📈 *Overall Statistics:*\n"
+            msg += f"• Total MR signals: {phantom_stats.get('total_mr_trades', 0)}\n"
+            msg += f"• Executed: {phantom_stats.get('executed', 0)}\n"
+            msg += f"• Rejected: {phantom_stats.get('rejected', 0)}\n"
+
+            # Outcome analysis
+            outcome = phantom_stats.get('outcome_analysis', {})
+            if outcome:
+                msg += f"\n📊 *Performance Analysis:*\n"
+                if outcome.get('executed_win_rate', 0) > 0:
+                    msg += f"• Executed win rate: {outcome.get('executed_win_rate', 0):.1f}%\n"
+                if outcome.get('rejected_would_win_rate', 0) > 0:
+                    msg += f"• Rejected would-be win rate: {outcome.get('rejected_would_win_rate', 0):.1f}%\n"
+
+            # MR-specific metrics
+            mr_metrics = phantom_stats.get('mr_specific_metrics', {})
+            if mr_metrics:
+                msg += f"\n📉 *Mean Reversion Specific:*\n"
+                msg += f"• Range breakouts during trade: {mr_metrics.get('range_breakout_during_trade', 0)}\n"
+                msg += f"• Timeout closures: {mr_metrics.get('timeout_closures', 0)}\n"
+                msg += f"• High confidence ranges: {mr_metrics.get('high_confidence_ranges', 0)}\n"
+                msg += f"• Boundary entries: {mr_metrics.get('boundary_entries', 0)}\n"
+
+                if mr_metrics.get('boundary_entry_win_rate'):
+                    msg += f"• Boundary entry win rate: {mr_metrics.get('boundary_entry_win_rate', 0):.1f}%\n"
+
+            # Range performance breakdown
+            range_perf = phantom_stats.get('range_performance', {})
+            if range_perf:
+                msg += f"\n🎯 *Range Quality Performance:*\n"
+                for quality, data in range_perf.items():
+                    if isinstance(data, dict) and data.get('wins') is not None:
+                        total = data.get('wins', 0) + data.get('losses', 0)
+                        if total > 0:
+                            wr = (data.get('wins', 0) / total) * 100
+                            msg += f"• {quality.replace('_', ' ').title()}: {wr:.1f}% ({total} trades)\n"
+
+            await self.safe_reply(update, msg)
+
+        except Exception as e:
+            logger.error(f"Error in mr_phantom_stats: {e}")
+            await update.message.reply_text("Error getting MR phantom stats")
+
+    async def parallel_performance(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show parallel strategy system performance comparison"""
+        try:
+            msg = "⚡ *Parallel Strategy Performance*\n"
+            msg += "━" * 35 + "\n\n"
+
+            # Check if enhanced parallel system is available
+            try:
+                from enhanced_mr_scorer import get_enhanced_mr_scorer
+                from ml_signal_scorer_immediate import get_immediate_scorer
+                enhanced_mr = get_enhanced_mr_scorer()
+                pullback_ml = get_immediate_scorer()
+            except ImportError:
+                msg += "❌ *Enhanced parallel system not available*\n"
+                await self.safe_reply(update, msg)
+                return
+
+            # Get stats from both systems
+            pullback_stats = pullback_ml.get_stats()
+            mr_stats = enhanced_mr.get_enhanced_stats()
+
+            msg += "🎯 *Pullback Strategy (Trending Markets):*\n"
+            msg += f"• Status: {pullback_stats.get('status', 'Unknown')}\n"
+            msg += f"• Trades: {pullback_stats.get('completed_trades', 0)}\n"
+            msg += f"• Threshold: {pullback_stats.get('current_threshold', 70):.0f}%\n"
+            if pullback_stats.get('recent_win_rate', 0) > 0:
+                msg += f"• Recent WR: {pullback_stats.get('recent_win_rate', 0):.1f}%\n"
+
+            msg += "\n📉 *Mean Reversion Strategy (Ranging Markets):*\n"
+            msg += f"• Status: {mr_stats.get('status', 'Unknown')}\n"
+            msg += f"• Trades: {mr_stats.get('completed_trades', 0)}\n"
+            msg += f"• Threshold: {mr_stats.get('current_threshold', 72):.0f}%\n"
+            if mr_stats.get('recent_win_rate', 0) > 0:
+                msg += f"• Recent WR: {mr_stats.get('recent_win_rate', 0):.1f}%\n"
+
+            # Combined performance
+            total_trades = pullback_stats.get('completed_trades', 0) + mr_stats.get('completed_trades', 0)
+            msg += f"\n📊 *Combined System:*\n"
+            msg += f"• Total trades: {total_trades}\n"
+            msg += f"• Strategy coverage: Full market conditions\n"
+            msg += f"• Adaptive routing: Regime-based selection\n"
+
+            # Active models summary
+            pullback_models = len(pullback_stats.get('models_active', []))
+            mr_models = mr_stats.get('model_count', 0)
+            msg += f"• Active ML models: {pullback_models + mr_models} total\n"
+            msg += f"  - Pullback: {pullback_models}/3 models\n"
+            msg += f"  - Mean Reversion: {mr_models}/4 models\n"
+
+            await self.safe_reply(update, msg)
+
+        except Exception as e:
+            logger.error(f"Error in parallel_performance: {e}")
+            await update.message.reply_text("Error getting parallel performance stats")
+
+    async def regime_analysis(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show current market regime analysis for top symbols"""
+        try:
+            msg = "🌐 *Market Regime Analysis*\n"
+            msg += "━" * 30 + "\n\n"
+
+            # Check if enhanced regime detection is available
+            try:
+                from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
+            except ImportError:
+                msg += "❌ *Enhanced regime detection not available*\n"
+                await self.safe_reply(update, msg)
+                return
+
+            # Get current frames from shared data (if available)
+            book = self.shared.get("book")
+            if not book or not hasattr(book, 'positions'):
+                msg += "❌ *No market data available*\n"
+                await self.safe_reply(update, msg)
+                return
+
+            # Analyze regime for symbols with positions or top symbols
+            frames = self.shared.get("frames", {})
+            symbols_to_analyze = list(book.positions.keys()) if book.positions else ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
+
+            regime_summary = {}
+            for symbol in symbols_to_analyze[:8]:  # Limit to 8 symbols
+                if symbol in frames and not frames[symbol].empty:
+                    try:
+                        regime_analysis = get_enhanced_market_regime(frames[symbol], symbol)
+                        regime_summary[symbol] = regime_analysis
+                    except Exception as e:
+                        logger.debug(f"Regime analysis failed for {symbol}: {e}")
+
+            if regime_summary:
+                msg += "📊 *Current Regime Analysis:*\n"
+                for symbol, analysis in regime_summary.items():
+                    msg += f"\n**{symbol}:**\n"
+                    msg += f"• Regime: {analysis.primary_regime.title()}\n"
+                    msg += f"• Confidence: {analysis.regime_confidence:.0%}\n"
+                    msg += f"• Strategy: {analysis.recommended_strategy.replace('_', ' ').title()}\n"
+
+                    if analysis.primary_regime == "ranging":
+                        msg += f"• Range quality: {analysis.range_quality}\n"
+                    elif analysis.primary_regime == "trending":
+                        msg += f"• Trend strength: {analysis.trend_strength:.0f}%\n"
+
+                    msg += f"• Volatility: {analysis.volatility_level}\n"
+
+                # Overall summary
+                regimes = [analysis.primary_regime for analysis in regime_summary.values()]
+                trending_count = regimes.count('trending')
+                ranging_count = regimes.count('ranging')
+                volatile_count = regimes.count('volatile')
+
+                msg += f"\n🔍 *Market Summary:*\n"
+                msg += f"• Trending: {trending_count} symbols\n"
+                msg += f"• Ranging: {ranging_count} symbols\n"
+                msg += f"• Volatile: {volatile_count} symbols\n"
+
+            else:
+                msg += "❌ *No regime data available*\n"
+
+            await self.safe_reply(update, msg)
+
+        except Exception as e:
+            logger.error(f"Error in regime_analysis: {e}")
+            await update.message.reply_text("Error getting regime analysis")
+
+    async def strategy_comparison(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Compare strategy performance and show regime accuracy"""
+        try:
+            msg = "⚖️ *Strategy Comparison Analysis*\n"
+            msg += "━" * 35 + "\n\n"
+
+            # Get trade tracker for historical performance
+            trade_tracker = self.shared.get("trade_tracker")
+            if not trade_tracker:
+                msg += "❌ *No trade history available*\n"
+                await self.safe_reply(update, msg)
+                return
+
+            try:
+                # Get recent trades by strategy
+                all_trades = trade_tracker.get_all_trades()
+
+                # Filter recent trades (last 50)
+                recent_trades = all_trades[-50:] if len(all_trades) > 50 else all_trades
+
+                # Group by strategy
+                pullback_trades = [t for t in recent_trades if t.strategy_name == "Pullback"]
+                mr_trades = [t for t in recent_trades if t.strategy_name in ["MeanReversion", "enhanced_mean_reversion"]]
+
+                msg += f"📈 *Recent Performance (Last 50 trades):*\n"
+
+                if pullback_trades:
+                    pullback_wins = sum(1 for t in pullback_trades if t.pnl_usd > 0)
+                    pullback_wr = (pullback_wins / len(pullback_trades)) * 100
+                    pullback_pnl = sum(t.pnl_usd for t in pullback_trades)
+
+                    msg += f"\n🎯 *Pullback Strategy:*\n"
+                    msg += f"• Trades: {len(pullback_trades)}\n"
+                    msg += f"• Win rate: {pullback_wr:.1f}%\n"
+                    msg += f"• Total P&L: ${pullback_pnl:.2f}\n"
+                    if len(pullback_trades) > 0:
+                        avg_pnl = pullback_pnl / len(pullback_trades)
+                        msg += f"• Avg P&L: ${avg_pnl:.2f}\n"
+
+                if mr_trades:
+                    mr_wins = sum(1 for t in mr_trades if t.pnl_usd > 0)
+                    mr_wr = (mr_wins / len(mr_trades)) * 100
+                    mr_pnl = sum(t.pnl_usd for t in mr_trades)
+
+                    msg += f"\n📉 *Mean Reversion Strategy:*\n"
+                    msg += f"• Trades: {len(mr_trades)}\n"
+                    msg += f"• Win rate: {mr_wr:.1f}%\n"
+                    msg += f"• Total P&L: ${mr_pnl:.2f}\n"
+                    if len(mr_trades) > 0:
+                        avg_pnl = mr_pnl / len(mr_trades)
+                        msg += f"• Avg P&L: ${avg_pnl:.2f}\n"
+
+                # Combined stats
+                if pullback_trades or mr_trades:
+                    total_trades = len(pullback_trades) + len(mr_trades)
+                    total_wins = (len([t for t in pullback_trades if t.pnl_usd > 0]) +
+                                 len([t for t in mr_trades if t.pnl_usd > 0]))
+                    total_pnl = (sum(t.pnl_usd for t in pullback_trades) +
+                                sum(t.pnl_usd for t in mr_trades))
+
+                    msg += f"\n📊 *Combined Performance:*\n"
+                    msg += f"• Total trades: {total_trades}\n"
+                    if total_trades > 0:
+                        combined_wr = (total_wins / total_trades) * 100
+                        msg += f"• Combined win rate: {combined_wr:.1f}%\n"
+                        msg += f"• Combined P&L: ${total_pnl:.2f}\n"
+                        msg += f"• Avg per trade: ${total_pnl/total_trades:.2f}\n"
+
+                    # Strategy distribution
+                    pullback_pct = (len(pullback_trades) / total_trades) * 100 if total_trades > 0 else 0
+                    mr_pct = (len(mr_trades) / total_trades) * 100 if total_trades > 0 else 0
+
+                    msg += f"\n📋 *Strategy Distribution:*\n"
+                    msg += f"• Pullback: {pullback_pct:.1f}% of trades\n"
+                    msg += f"• Mean Reversion: {mr_pct:.1f}% of trades\n"
+
+                else:
+                    msg += "❌ *No recent strategy trades found*\n"
+
+            except Exception as e:
+                logger.error(f"Error analyzing trade history: {e}")
+                msg += f"❌ *Error analyzing trades: {e}*\n"
+
+            await self.safe_reply(update, msg)
+
+        except Exception as e:
+            logger.error(f"Error in strategy_comparison: {e}")
+            await update.message.reply_text("Error comparing strategies")

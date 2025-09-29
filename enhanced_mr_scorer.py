@@ -1,0 +1,872 @@
+"""
+Enhanced ML Scorer for Mean Reversion Strategy
+Multi-model ensemble specialized for ranging market conditions
+"""
+import numpy as np
+import pandas as pd
+import logging
+import json
+import os
+import redis
+from datetime import datetime, timedelta
+from typing import Dict, Optional, Tuple, List
+from dataclasses import dataclass, asdict
+import pickle
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.neural_network import MLPClassifier
+from sklearn.svm import SVC
+import xgboost as xgb
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.metrics import classification_report, confusion_matrix
+import warnings
+warnings.filterwarnings('ignore')
+
+from enhanced_mr_features import calculate_enhanced_mr_features, get_feature_names, get_feature_count
+
+logger = logging.getLogger(__name__)
+
+class NumpyJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles numpy types"""
+    def default(self, obj):
+        if isinstance(obj, (np.bool_, np.bool8)):
+            return bool(obj)
+        elif isinstance(obj, (np.integer, np.int_, np.intc, np.intp,
+                            np.int8, np.int16, np.int32, np.int64,
+                            np.uint8, np.uint16, np.uint32, np.uint64)):
+            return int(obj)
+        elif isinstance(obj, (np.floating, np.float_, np.float16,
+                            np.float32, np.float64)):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+@dataclass
+class MRModelPerformance:
+    """Track performance of individual models in ensemble"""
+    model_name: str
+    accuracy: float
+    precision: float
+    recall: float
+    f1_score: float
+    predictions_count: int
+    last_updated: datetime
+
+class EnhancedMeanReversionScorer:
+    """
+    Advanced ML Scorer for Mean Reversion Strategy
+    Uses specialized ensemble: RangeDetector + ReversalPredictor + ExitOptimizer + RegimeClassifier
+    """
+
+    # Learning parameters optimized for mean reversion
+    MIN_TRADES_FOR_ML = 30      # Start ML after 30 MR trades
+    RETRAIN_INTERVAL = 50       # Retrain every 50 new trades
+    INITIAL_THRESHOLD = 72      # Start at 72% for ranging markets
+    MAX_THRESHOLD = 88          # Maximum threshold
+    MIN_THRESHOLD = 65          # Minimum threshold
+
+    def __init__(self, enabled: bool = True):
+        self.enabled = enabled
+        self.min_score = self.INITIAL_THRESHOLD
+        self.completed_trades = 0
+        self.last_train_count = 0
+
+        # Multi-model ensemble for mean reversion
+        self.ensemble_models = {
+            'range_detector': None,      # RF: Identifies quality ranging conditions
+            'reversal_predictor': None,  # XGBoost: Predicts reversal probability
+            'exit_optimizer': None,      # NN: Optimizes exit strategies
+            'regime_classifier': None    # SVM: Micro-regime within ranges
+        }
+
+        self.scalers = {
+            'range_detector': StandardScaler(),
+            'reversal_predictor': StandardScaler(),
+            'exit_optimizer': StandardScaler(),
+            'regime_classifier': StandardScaler()
+        }
+
+        self.is_ml_ready = False
+        self.model_performance = {}
+        self.recent_performance = []  # Track recent outcomes for threshold adaptation
+
+        # Feature importance tracking
+        self.feature_importance = {}
+        self.prediction_confidence_history = []
+
+        # Enhanced learning from multiple timeframes
+        self.timeframe_performance = {'15m': [], '1h': [], '4h': []}
+
+        # Initialize Redis with MR-specific keys
+        self.redis_client = None
+        if enabled:
+            self._init_redis()
+            self._load_state()
+
+    def _init_redis(self):
+        """Initialize Redis connection with MR-specific namespace"""
+        try:
+            redis_url = os.getenv('REDIS_URL')
+            if redis_url:
+                self.redis_client = redis.from_url(redis_url, decode_responses=True)
+                self.redis_client.ping()
+                logger.info("Enhanced MR ML connected to Redis")
+            else:
+                logger.warning("No Redis for Enhanced MR ML, using memory only")
+                self.memory_storage = {'trades': [], 'phantoms': []}
+        except Exception as e:
+            logger.warning(f"Redis failed for Enhanced MR ML: {e}")
+            self.redis_client = None
+            self.memory_storage = {'trades': [], 'phantoms': []}
+
+    def _load_state(self):
+        """Load saved state from Redis"""
+        if not self.redis_client:
+            return
+
+        try:
+            # Load completed trades count
+            count = self.redis_client.get('enhanced_mr:completed_trades')
+            self.completed_trades = int(count) if count else 0
+
+            # Load last train count
+            last_train = self.redis_client.get('enhanced_mr:last_train_count')
+            self.last_train_count = int(last_train) if last_train else 0
+
+            # Load threshold
+            threshold = self.redis_client.get('enhanced_mr:threshold')
+            if threshold:
+                self.min_score = float(threshold)
+                logger.info(f"Loaded Enhanced MR threshold: {self.min_score}")
+
+            # Load recent performance
+            perf = self.redis_client.get('enhanced_mr:recent_performance')
+            if perf:
+                self.recent_performance = json.loads(perf)
+
+            # Load models if exist
+            if self.completed_trades >= self.MIN_TRADES_FOR_ML:
+                self._load_ensemble_models()
+
+            logger.info(f"Enhanced MR ML state loaded: {self.completed_trades} trades, "
+                       f"ML ready: {self.is_ml_ready}")
+
+        except Exception as e:
+            logger.error(f"Error loading Enhanced MR ML state: {e}")
+
+    def _load_ensemble_models(self):
+        """Load all ensemble models from Redis"""
+        try:
+            models_data = self.redis_client.get('enhanced_mr:ensemble_models')
+            scalers_data = self.redis_client.get('enhanced_mr:scalers')
+
+            if models_data and scalers_data:
+                import base64
+                self.ensemble_models = pickle.loads(base64.b64decode(models_data))
+                self.scalers = pickle.loads(base64.b64decode(scalers_data))
+
+                # Load performance data
+                perf_data = self.redis_client.get('enhanced_mr:model_performance')
+                if perf_data:
+                    perf_dict = json.loads(perf_data)
+                    self.model_performance = {
+                        name: MRModelPerformance(**data) for name, data in perf_dict.items()
+                    }
+
+                self.is_ml_ready = True
+                active_models = [name for name, model in self.ensemble_models.items() if model is not None]
+                logger.info(f"Loaded Enhanced MR ensemble models: {active_models}")
+
+        except Exception as e:
+            logger.error(f"Error loading Enhanced MR ensemble models: {e}")
+
+    def _save_state(self):
+        """Save current state to Redis"""
+        if not self.redis_client:
+            return
+
+        try:
+            self.redis_client.set('enhanced_mr:completed_trades', str(self.completed_trades))
+            self.redis_client.set('enhanced_mr:last_train_count', str(self.last_train_count))
+            self.redis_client.set('enhanced_mr:threshold', str(self.min_score))
+            self.redis_client.set('enhanced_mr:recent_performance',
+                                json.dumps(self.recent_performance, cls=NumpyJSONEncoder))
+
+            # Save models and scalers
+            if self.is_ml_ready:
+                import base64
+                models_data = base64.b64encode(pickle.dumps(self.ensemble_models)).decode('ascii')
+                scalers_data = base64.b64encode(pickle.dumps(self.scalers)).decode('ascii')
+
+                self.redis_client.set('enhanced_mr:ensemble_models', models_data)
+                self.redis_client.set('enhanced_mr:scalers', scalers_data)
+
+                # Save performance data
+                perf_dict = {name: asdict(perf) for name, perf in self.model_performance.items()}
+                self.redis_client.set('enhanced_mr:model_performance',
+                                    json.dumps(perf_dict, cls=NumpyJSONEncoder))
+
+        except Exception as e:
+            logger.error(f"Error saving Enhanced MR ML state: {e}")
+
+    def score_signal(self, signal_data: dict, features: dict, df: pd.DataFrame = None) -> Tuple[float, str]:
+        """
+        Score a mean reversion signal using specialized ensemble
+
+        Args:
+            signal_data: Signal information (side, entry, sl, tp, meta)
+            features: Enhanced MR features from enhanced_mr_features.py
+            df: Price data for additional context
+
+        Returns:
+            Tuple of (score 0-100, reasoning string)
+        """
+        if not self.enabled:
+            return 75.0, "Enhanced MR ML disabled"
+
+        # Calculate enhanced features if not provided
+        if not features or len(features) < 20:
+            try:
+                features = calculate_enhanced_mr_features(df, signal_data,
+                                                        signal_data.get('symbol', 'UNKNOWN'))
+            except Exception as e:
+                logger.warning(f"Failed to calculate enhanced features: {e}")
+                return self._fallback_theory_score(signal_data, features)
+
+        # Use ML ensemble if ready
+        if self.is_ml_ready and any(model is not None for model in self.ensemble_models.values()):
+            try:
+                return self._ensemble_ml_score(features, signal_data)
+            except Exception as e:
+                logger.warning(f"Enhanced MR ML scoring failed: {e}")
+
+        # Fallback to enhanced theory-based scoring
+        return self._enhanced_theory_score(features, signal_data)
+
+    def _ensemble_ml_score(self, features: dict, signal_data: dict) -> Tuple[float, str]:
+        """Score using specialized ML ensemble"""
+        feature_vector = self._prepare_feature_vector(features)
+        X = np.array([feature_vector]).reshape(1, -1)
+
+        model_predictions = {}
+        model_confidences = {}
+
+        # Get predictions from each specialized model
+        for model_name, model in self.ensemble_models.items():
+            if model is None:
+                continue
+
+            try:
+                scaler = self.scalers[model_name]
+                if hasattr(scaler, 'mean_') and scaler.mean_ is not None:
+                    X_scaled = scaler.transform(X)
+                else:
+                    X_scaled = X
+
+                if hasattr(model, 'predict_proba'):
+                    prob = model.predict_proba(X_scaled)[0][1]  # Probability of positive class
+                    confidence = max(prob, 1 - prob)  # Distance from 0.5
+                else:
+                    # For models without predict_proba, use decision function
+                    decision = model.decision_function(X_scaled)[0] if hasattr(model, 'decision_function') else 0.5
+                    prob = 1 / (1 + np.exp(-decision))  # Sigmoid transform
+                    confidence = abs(decision)
+
+                model_predictions[model_name] = prob
+                model_confidences[model_name] = confidence
+
+            except Exception as e:
+                logger.warning(f"Error in {model_name} prediction: {e}")
+                continue
+
+        if not model_predictions:
+            return self._enhanced_theory_score(features, signal_data)
+
+        # Weighted ensemble scoring based on model specialization
+        ensemble_score = 0.0
+        reasoning_parts = []
+        total_weight = 0.0
+
+        # Model-specific weights for mean reversion
+        model_weights = {
+            'range_detector': 0.30,      # Range quality is crucial
+            'reversal_predictor': 0.40,  # Reversal probability most important
+            'exit_optimizer': 0.20,      # Exit timing valuable
+            'regime_classifier': 0.10    # Regime context helpful
+        }
+
+        for model_name, prob in model_predictions.items():
+            weight = model_weights.get(model_name, 0.25)
+
+            # Calibrate probability for mean reversion characteristics
+            calibrated_prob = self._calibrate_mr_probability(prob, model_name)
+            model_score = calibrated_prob * 100
+
+            ensemble_score += model_score * weight
+            total_weight += weight
+
+            confidence = model_confidences.get(model_name, 0.5)
+            reasoning_parts.append(f"{model_name[:6]}: {model_score:.1f} (conf: {confidence:.2f})")
+
+        # Normalize by total weight
+        if total_weight > 0:
+            ensemble_score /= total_weight
+
+        # Apply confidence adjustment based on model agreement
+        model_scores = [pred * 100 for pred in model_predictions.values()]
+        score_std = np.std(model_scores) if len(model_scores) > 1 else 0
+
+        # Lower confidence adjustment if models disagree significantly
+        confidence_adj = max(0.85, 1.0 - (score_std / 100))  # Reduce by up to 15% for disagreement
+        ensemble_score *= confidence_adj
+
+        # Ensure score stays within bounds
+        ensemble_score = max(0, min(100, ensemble_score))
+
+        # Build reasoning string
+        reasoning = f"Enhanced MR Ensemble ({len(model_predictions)} models): {ensemble_score:.1f} | " + " | ".join(reasoning_parts[:3])
+        if confidence_adj < 0.95:
+            reasoning += f" | Agreement: {confidence_adj:.2f}"
+
+        return float(ensemble_score), reasoning
+
+    def _calibrate_mr_probability(self, prob: float, model_name: str) -> float:
+        """Calibrate probabilities for mean reversion characteristics"""
+        # Different calibration for different model types
+        if model_name == 'range_detector':
+            # Range detector: More conservative, favor higher probabilities
+            return prob ** 0.8
+        elif model_name == 'reversal_predictor':
+            # Reversal predictor: Apply sigmoid enhancement for extremes
+            if prob < 0.3:
+                return prob ** 1.2  # Make low probs even lower
+            elif prob > 0.7:
+                return 1 - ((1 - prob) ** 1.2)  # Make high probs higher
+            else:
+                return prob
+        elif model_name == 'exit_optimizer':
+            # Exit optimizer: Linear calibration with slight boost
+            return min(1.0, prob * 1.1)
+        else:
+            # Default calibration
+            return prob
+
+    def _enhanced_theory_score(self, features: dict, signal_data: dict) -> Tuple[float, str]:
+        """Enhanced theory-based scoring using comprehensive feature set"""
+        score = 50.0  # Base score
+        reasoning = []
+
+        try:
+            # ===== RANGE QUALITY ANALYSIS (30 points) =====
+            range_confidence = features.get('range_confidence', 0.5)
+            range_width_atr = features.get('range_width_atr', 2.0)
+            range_strength = features.get('range_strength', 0.8)
+
+            # Range quality bonus
+            if range_confidence >= 0.8:
+                score += 15
+                reasoning.append(f"Strong range (conf: {range_confidence:.2f})")
+            elif range_confidence >= 0.6:
+                score += 8
+                reasoning.append("Good range confidence")
+
+            # Optimal range width (not too tight, not too wide)
+            if 1.5 <= range_width_atr <= 4.0:
+                score += 10
+                reasoning.append(f"Optimal range width ({range_width_atr:.1f} ATR)")
+            elif range_width_atr > 4.0:
+                score -= 5  # Too wide, less reliable
+
+            # Range strength (fewer breakout attempts = stronger range)
+            if range_strength >= 0.8:
+                score += 5
+                reasoning.append("Strong range boundaries")
+
+            # ===== REVERSAL SIGNAL STRENGTH (25 points) =====
+            rsi_oversold = features.get('rsi_oversold_strength', 0.0)
+            rsi_overbought = features.get('rsi_overbought_strength', 0.0)
+            williams_r = features.get('williams_r', -50.0)
+            stochastic = features.get('stochastic_current', 50.0)
+
+            # RSI extremes
+            if rsi_oversold >= 10:  # RSI below 20
+                score += 15
+                reasoning.append(f"Strong oversold (RSI: {30-rsi_oversold:.0f})")
+            elif rsi_oversold >= 5:  # RSI below 25
+                score += 8
+                reasoning.append("Moderate oversold")
+
+            if rsi_overbought >= 10:  # RSI above 80
+                score += 15
+                reasoning.append(f"Strong overbought (RSI: {70+rsi_overbought:.0f})")
+            elif rsi_overbought >= 5:  # RSI above 75
+                score += 8
+                reasoning.append("Moderate overbought")
+
+            # Williams %R confirmation
+            if williams_r <= -80:  # Very oversold
+                score += 5
+                reasoning.append("Williams %R oversold")
+            elif williams_r >= -20:  # Very overbought
+                score += 5
+                reasoning.append("Williams %R overbought")
+
+            # Stochastic confirmation
+            if stochastic <= 20 or stochastic >= 80:
+                score += 5
+                reasoning.append("Stochastic extreme")
+
+            # ===== VOLUME AND MOMENTUM (15 points) =====
+            volume_ratio = features.get('volume_ratio', 1.0)
+            price_momentum_5 = abs(features.get('price_momentum_5', 0.0))
+            buy_sell_ratio = features.get('buy_sell_ratio', 0.5)
+
+            # Volume confirmation
+            if volume_ratio >= 1.5:
+                score += 8
+                reasoning.append(f"Strong volume ({volume_ratio:.1f}x)")
+            elif volume_ratio >= 1.2:
+                score += 4
+                reasoning.append("Good volume")
+
+            # Momentum exhaustion (good for mean reversion)
+            if price_momentum_5 >= 0.03:  # 3% momentum
+                score += 4
+                reasoning.append("Momentum exhaustion")
+
+            # Order flow balance
+            if abs(buy_sell_ratio - 0.5) >= 0.2:  # Imbalanced flow
+                score += 3
+                reasoning.append("Order flow imbalance")
+
+            # ===== POSITION AND TIMING (15 points) =====
+            range_position = features.get('range_position', 0.5)
+            distance_to_upper = features.get('distance_to_upper_atr', 1.0)
+            distance_to_lower = features.get('distance_to_lower_atr', 1.0)
+            session = features.get('session', 'us')
+
+            # Position within range (closer to boundaries = better)
+            if range_position <= 0.2 or range_position >= 0.8:  # Near boundaries
+                score += 10
+                reasoning.append("Near range boundary")
+            elif range_position <= 0.3 or range_position >= 0.7:
+                score += 5
+                reasoning.append("Good range position")
+
+            # Distance to boundaries
+            min_distance = min(distance_to_upper, distance_to_lower)
+            if min_distance <= 0.5:  # Very close to boundary
+                score += 5
+                reasoning.append("Close to S/R")
+
+            # Session timing
+            if session in ['european', 'us']:  # Better liquidity
+                score += 3
+                reasoning.append(f"Good session ({session})")
+
+            # ===== MARKET MICROSTRUCTURE (10 points) =====
+            volatility_regime = features.get('volatility_regime', 'normal')
+            avg_spread = features.get('avg_spread_atr', 1.0)
+            price_clustering = features.get('price_clustering', 0.1)
+
+            # Volatility regime
+            if volatility_regime == 'low':
+                score += 5  # Mean reversion works better in low vol
+                reasoning.append("Low volatility")
+            elif volatility_regime == 'high':
+                score -= 3  # Reduce confidence in high vol
+                reasoning.append("High volatility penalty")
+
+            # Price clustering (support/resistance strength)
+            if price_clustering >= 0.15:
+                score += 3
+                reasoning.append("Strong price clustering")
+
+            # Spread analysis (tighter spreads = better conditions)
+            if avg_spread <= 0.8:
+                score += 2
+                reasoning.append("Tight spreads")
+
+            # ===== RISK-REWARD CONTEXT (5 points) =====
+            signal_rr = features.get('signal_risk_reward', 2.0)
+            if signal_rr >= 2.5:
+                score += 5
+                reasoning.append(f"Good R:R ({signal_rr:.1f})")
+            elif signal_rr >= 2.0:
+                score += 2
+                reasoning.append(f"R:R {signal_rr:.1f}")
+            elif signal_rr < 1.5:
+                score -= 5
+                reasoning.append(f"Poor R:R ({signal_rr:.1f})")
+
+            # Apply bounds
+            score = max(35, min(95, score))  # Clamp between 35-95
+
+            # Limit reasoning to top factors
+            top_reasoning = reasoning[:4]
+            reason_str = "; ".join(top_reasoning) if top_reasoning else "Theory-based analysis"
+
+            return float(score), f"Enhanced Theory: {score:.0f} ({reason_str})"
+
+        except Exception as e:
+            logger.error(f"Error in enhanced theory scoring: {e}")
+            return 75.0, "Theory scoring error - using default"
+
+    def _fallback_theory_score(self, signal_data: dict, features: dict) -> Tuple[float, str]:
+        """Fallback scoring when feature calculation fails"""
+        # Basic scoring based on signal data
+        score = 70.0  # Conservative default for mean reversion
+
+        if signal_data and 'meta' in signal_data:
+            meta = signal_data['meta']
+            if 'range_upper' in meta and 'range_lower' in meta:
+                score += 5  # Bonus for detected range
+
+        return float(score), "Fallback theory score"
+
+    def _prepare_feature_vector(self, features: dict) -> List[float]:
+        """Convert feature dictionary to vector for ML models"""
+        feature_names = get_feature_names()
+        vector = []
+
+        for feat_name in feature_names:
+            val = features.get(feat_name, 0.0)
+
+            # Handle categorical features
+            if feat_name == 'session':
+                val = {'asian': 0, 'european': 1, 'us': 2, 'off_hours': 3}.get(val, 3)
+            elif feat_name == 'volatility_regime':
+                val = {'low': 0, 'normal': 1, 'high': 2}.get(val, 1)
+            elif isinstance(val, str):
+                val = 0.0  # Default for unexpected string values
+            elif pd.isna(val) or val is None:
+                val = 0.0
+
+            vector.append(float(val))
+
+        return vector
+
+    def record_outcome(self, signal_data: dict, outcome: str, pnl_percent: float):
+        """Record trade outcome for enhanced MR learning"""
+        try:
+            self.completed_trades += 1
+
+            # Track recent performance
+            outcome_binary = 1 if outcome == 'win' else 0
+            self.recent_performance.append(outcome_binary)
+            if len(self.recent_performance) > 30:  # Keep last 30 trades
+                self.recent_performance = self.recent_performance[-30:]
+
+            # Adapt threshold based on performance
+            self._adapt_mr_threshold()
+
+            # Store enhanced trade record
+            trade_record = {
+                'features': signal_data.get('features', {}),
+                'enhanced_features': signal_data.get('enhanced_features', {}),
+                'score': signal_data.get('score', 0),
+                'outcome': outcome_binary,
+                'pnl_percent': float(pnl_percent),
+                'timestamp': datetime.now().isoformat(),
+                'symbol': signal_data.get('symbol', 'UNKNOWN'),
+                'strategy': 'enhanced_mean_reversion'
+            }
+
+            self._store_trade_record(trade_record)
+
+            # Save state
+            self._save_state()
+
+            # Check for retraining
+            if (self.completed_trades >= self.MIN_TRADES_FOR_ML and
+                self.completed_trades - self.last_train_count >= self.RETRAIN_INTERVAL):
+                logger.info(f"Enhanced MR ML retrain triggered: {self.completed_trades - self.last_train_count} new trades")
+                self._retrain_ensemble()
+
+        except Exception as e:
+            logger.error(f"Error recording Enhanced MR outcome: {e}")
+
+    def _adapt_mr_threshold(self):
+        """Adapt threshold based on recent mean reversion performance"""
+        if len(self.recent_performance) >= 15:
+            win_rate = sum(self.recent_performance) / len(self.recent_performance)
+
+            # Target win rate for mean reversion: 70-75%
+            if win_rate > 0.78:  # Too high - raise threshold
+                new_threshold = min(self.MAX_THRESHOLD, self.min_score + 2)
+                if new_threshold != self.min_score:
+                    self.min_score = new_threshold
+                    logger.info(f"Enhanced MR threshold raised to {self.min_score} (WR: {win_rate*100:.1f}%)")
+
+            elif win_rate < 0.65:  # Too low - lower threshold
+                new_threshold = max(self.MIN_THRESHOLD, self.min_score - 1.5)
+                if new_threshold != self.min_score:
+                    self.min_score = new_threshold
+                    logger.info(f"Enhanced MR threshold lowered to {self.min_score} (WR: {win_rate*100:.1f}%)")
+
+    def _store_trade_record(self, trade_record: dict):
+        """Store trade record for training"""
+        try:
+            if self.redis_client:
+                self.redis_client.rpush('enhanced_mr:trades',
+                                      json.dumps(trade_record, cls=NumpyJSONEncoder))
+                # Keep only last 2000 trades
+                self.redis_client.ltrim('enhanced_mr:trades', -2000, -1)
+            else:
+                if 'trades' not in self.memory_storage:
+                    self.memory_storage['trades'] = []
+                self.memory_storage['trades'].append(trade_record)
+                self.memory_storage['trades'] = self.memory_storage['trades'][-1000:]
+
+        except Exception as e:
+            logger.error(f"Error storing Enhanced MR trade record: {e}")
+
+    def _retrain_ensemble(self):
+        """Retrain the specialized ensemble models"""
+        try:
+            logger.info(f"🔄 Retraining Enhanced MR ensemble models... ({self.completed_trades} total trades)")
+
+            # Load training data
+            training_data = self._load_training_data()
+
+            if len(training_data) < self.MIN_TRADES_FOR_ML:
+                logger.warning(f"Not enough Enhanced MR data for training: {len(training_data)} < {self.MIN_TRADES_FOR_ML}")
+                return
+
+            # Prepare features and targets
+            X_list, y_list = self._prepare_training_data(training_data)
+
+            if len(X_list) < self.MIN_TRADES_FOR_ML:
+                logger.warning(f"Not enough valid Enhanced MR features: {len(X_list)}")
+                return
+
+            X = np.array(X_list)
+            y = np.array(y_list)
+
+            # Log training info
+            wins = np.sum(y)
+            losses = len(y) - wins
+            win_rate = wins / len(y) if len(y) > 0 else 0.0
+            logger.info(f"Enhanced MR training: {len(y)} trades, {wins} wins, {losses} losses ({win_rate:.1%})")
+
+            # Train specialized models
+            self._train_specialized_ensemble(X, y)
+
+            self.is_ml_ready = True
+            self.last_train_count = self.completed_trades
+            self._save_state()
+
+            active_models = [name for name, model in self.ensemble_models.items() if model is not None]
+            logger.info(f"✅ Enhanced MR ensemble trained! Active models: {active_models}")
+
+        except Exception as e:
+            logger.error(f"Enhanced MR ensemble training failed: {e}")
+
+    def _load_training_data(self) -> List[dict]:
+        """Load training data from storage"""
+        training_data = []
+
+        try:
+            if self.redis_client:
+                trade_data = self.redis_client.lrange('enhanced_mr:trades', 0, -1)
+                for trade_json in trade_data:
+                    try:
+                        trade = json.loads(trade_json)
+                        training_data.append(trade)
+                    except json.JSONDecodeError:
+                        continue
+            else:
+                training_data = self.memory_storage.get('trades', [])
+
+        except Exception as e:
+            logger.error(f"Error loading Enhanced MR training data: {e}")
+
+        return training_data
+
+    def _prepare_training_data(self, training_data: List[dict]) -> Tuple[List, List]:
+        """Prepare features and targets for model training"""
+        X_list = []
+        y_list = []
+
+        for trade in training_data:
+            try:
+                # Use enhanced features if available, fallback to regular features
+                features = trade.get('enhanced_features') or trade.get('features', {})
+                outcome = trade.get('outcome', 0)
+
+                feature_vector = self._prepare_feature_vector(features)
+                if len(feature_vector) == get_feature_count():
+                    X_list.append(feature_vector)
+                    y_list.append(outcome)
+
+            except Exception as e:
+                logger.debug(f"Skipping invalid Enhanced MR training record: {e}")
+                continue
+
+        return X_list, y_list
+
+    def _train_specialized_ensemble(self, X: np.ndarray, y: np.ndarray):
+        """Train the specialized ensemble models"""
+
+        # 1. Range Detector (Random Forest) - Identifies quality ranging conditions
+        try:
+            rf_scaler = StandardScaler()
+            X_rf = rf_scaler.fit_transform(X)
+
+            rf_model = RandomForestClassifier(
+                n_estimators=150,
+                max_depth=10,
+                min_samples_split=8,
+                min_samples_leaf=4,
+                class_weight='balanced',
+                random_state=42
+            )
+            rf_model.fit(X_rf, y)
+
+            self.ensemble_models['range_detector'] = rf_model
+            self.scalers['range_detector'] = rf_scaler
+
+            logger.info("✅ Range Detector (RF) trained")
+
+        except Exception as e:
+            logger.warning(f"Range Detector training failed: {e}")
+            self.ensemble_models['range_detector'] = None
+
+        # 2. Reversal Predictor (XGBoost) - Predicts reversal probability
+        try:
+            xgb_scaler = StandardScaler()
+            X_xgb = xgb_scaler.fit_transform(X)
+
+            xgb_model = xgb.XGBClassifier(
+                n_estimators=100,
+                max_depth=6,
+                learning_rate=0.1,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                random_state=42
+            )
+            xgb_model.fit(X_xgb, y)
+
+            self.ensemble_models['reversal_predictor'] = xgb_model
+            self.scalers['reversal_predictor'] = xgb_scaler
+
+            logger.info("✅ Reversal Predictor (XGB) trained")
+
+        except Exception as e:
+            logger.warning(f"Reversal Predictor training failed: {e}")
+            self.ensemble_models['reversal_predictor'] = None
+
+        # 3. Exit Optimizer (Neural Network) - Optimizes exit strategies
+        try:
+            if len(X) >= 50:  # Need more data for NN
+                nn_scaler = StandardScaler()
+                X_nn = nn_scaler.fit_transform(X)
+
+                nn_model = MLPClassifier(
+                    hidden_layer_sizes=(64, 32, 16),
+                    activation='relu',
+                    learning_rate_init=0.001,
+                    max_iter=500,
+                    early_stopping=True,
+                    validation_fraction=0.2,
+                    random_state=42
+                )
+                nn_model.fit(X_nn, y)
+
+                self.ensemble_models['exit_optimizer'] = nn_model
+                self.scalers['exit_optimizer'] = nn_scaler
+
+                logger.info("✅ Exit Optimizer (NN) trained")
+
+            else:
+                logger.info("Not enough data for Exit Optimizer (NN)")
+
+        except Exception as e:
+            logger.warning(f"Exit Optimizer training failed: {e}")
+            self.ensemble_models['exit_optimizer'] = None
+
+        # 4. Regime Classifier (SVM) - Micro-regime within ranges
+        try:
+            if len(X) >= 40:  # SVM needs reasonable amount of data
+                svm_scaler = StandardScaler()
+                X_svm = svm_scaler.fit_transform(X)
+
+                svm_model = SVC(
+                    kernel='rbf',
+                    C=1.0,
+                    gamma='scale',
+                    probability=True,  # Enable probability estimates
+                    random_state=42
+                )
+                svm_model.fit(X_svm, y)
+
+                self.ensemble_models['regime_classifier'] = svm_model
+                self.scalers['regime_classifier'] = svm_scaler
+
+                logger.info("✅ Regime Classifier (SVM) trained")
+
+            else:
+                logger.info("Not enough data for Regime Classifier (SVM)")
+
+        except Exception as e:
+            logger.warning(f"Regime Classifier training failed: {e}")
+            self.ensemble_models['regime_classifier'] = None
+
+    def get_enhanced_stats(self) -> dict:
+        """Get comprehensive Enhanced MR statistics"""
+        try:
+            recent_win_rate = 0.0
+            if self.recent_performance:
+                recent_win_rate = sum(self.recent_performance) / len(self.recent_performance) * 100
+
+            active_models = [name for name, model in self.ensemble_models.items() if model is not None]
+
+            stats = {
+                'strategy': 'Enhanced Mean Reversion',
+                'enabled': self.enabled,
+                'is_ml_ready': self.is_ml_ready,
+                'status': 'Advanced ML Active' if self.is_ml_ready else f'Learning ({self.completed_trades}/{self.MIN_TRADES_FOR_ML})',
+                'completed_trades': self.completed_trades,
+                'current_threshold': self.min_score,
+                'min_threshold': self.MIN_THRESHOLD,
+                'max_threshold': self.MAX_THRESHOLD,
+                'last_train_count': self.last_train_count,
+                'models_active': active_models,
+                'model_count': len(active_models),
+                'recent_win_rate': recent_win_rate,
+                'recent_trades': len(self.recent_performance),
+                'retrain_interval': self.RETRAIN_INTERVAL,
+                'trades_until_retrain': max(0, self.RETRAIN_INTERVAL - (self.completed_trades - self.last_train_count)),
+                'feature_count': get_feature_count(),
+            }
+
+            # Add model performance if available
+            if self.model_performance:
+                stats['model_performance'] = {
+                    name: {
+                        'accuracy': perf.accuracy,
+                        'predictions': perf.predictions_count
+                    } for name, perf in self.model_performance.items()
+                }
+
+            return stats
+
+        except Exception as e:
+            logger.error(f"Error getting Enhanced MR stats: {e}")
+            return {
+                'strategy': 'Enhanced Mean Reversion',
+                'enabled': self.enabled,
+                'error': str(e)
+            }
+
+# Global instance
+_enhanced_mr_scorer = None
+
+def get_enhanced_mr_scorer(enabled: bool = True) -> EnhancedMeanReversionScorer:
+    """Get or create the global enhanced mean reversion scorer"""
+    global _enhanced_mr_scorer
+    if _enhanced_mr_scorer is None:
+        _enhanced_mr_scorer = EnhancedMeanReversionScorer(enabled=enabled)
+        logger.info("Initialized Enhanced Mean Reversion ML Scorer")
+    return _enhanced_mr_scorer

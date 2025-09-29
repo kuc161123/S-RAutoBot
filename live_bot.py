@@ -446,6 +446,9 @@ class TradingBot:
                             # Record outcome in ML scorer - now for ALL trades
                             ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
 
+                            # Debugging: Log strategy name for all closed trades
+                            logger.debug(f"[{symbol}] Closed trade strategy: {pos.strategy_name}")
+
                             # Also record outcome in Mean Reversion ML scorer if applicable
                             if mean_reversion_scorer and pos.strategy_name == "MeanReversion":
                                 # Assuming mean_reversion_scorer has a similar record_outcome method
@@ -839,6 +842,10 @@ class TradingBot:
                 ml_scorer = get_immediate_scorer()
                 phantom_tracker = get_phantom_tracker()
                 mean_reversion_scorer = get_mean_reversion_scorer() # Initialize Mean Reversion Scorer
+                if mean_reversion_scorer:
+                    logger.info("✅ Mean Reversion ML Scorer initialized.")
+                else:
+                    logger.warning("⚠️ Mean Reversion ML Scorer failed to initialize.")
                 
                 # Get and log ML stats
                 ml_stats = ml_scorer.get_stats()

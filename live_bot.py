@@ -30,6 +30,7 @@ except ImportError:
     from trade_tracker import TradeTracker, Trade
     USING_POSTGRES_TRACKER = False
 from multi_websocket_handler import MultiWebSocketHandler
+from ml_scorer_mean_reversion import get_mean_reversion_scorer
 
 # Import ML scorer with immediate activation
 try:
@@ -810,6 +811,7 @@ class TradingBot:
         # Initialize Immediate ML Scorer and Phantom Tracker
         ml_scorer = None
         phantom_tracker = None
+        mean_reversion_scorer = None # Initialize Mean Reversion Scorer
         use_ml = cfg["trade"].get("use_ml_scoring", True)  # Default to True for immediate learning
         
         # Initialize ML Evolution System (optional)
@@ -831,6 +833,7 @@ class TradingBot:
                 # Initialize immediate ML scorer that works from day 1
                 ml_scorer = get_immediate_scorer()
                 phantom_tracker = get_phantom_tracker()
+                mean_reversion_scorer = get_mean_reversion_scorer() # Initialize Mean Reversion Scorer
                 
                 # Get and log ML stats
                 ml_stats = ml_scorer.get_stats()
@@ -1141,6 +1144,16 @@ class TradingBot:
                     # Log summary periodically instead of every candle
                     if (datetime.now() - last_summary_log).total_seconds() > summary_log_interval:
                         logger.info(f"📊 5-min Summary: {candles_processed} candles processed, {signals_detected} signals, {len(book.positions)} positions open")
+                        # Add ML stats to summary
+                        if ml_scorer:
+                            ml_stats = ml_scorer.get_stats()
+                            retrain_info = ml_scorer.get_retrain_info()
+                            logger.info(f"🧠 Pullback ML: {ml_stats.get('completed_trades', 0)} trades, {retrain_info.get('trades_until_next_retrain', 'N/A')} to retrain")
+                        if mean_reversion_scorer:
+                            mr_ml_stats = mean_reversion_scorer.get_stats()
+                            # Mean Reversion scorer might not have retrain_info if it's just for patterns
+                            # For now, just log completed trades
+                            logger.info(f"🧠 Mean Reversion ML: {mr_ml_stats.get('completed_trades', 0)} trades")
                         last_summary_log = datetime.now()
                         candles_processed = 0
                         signals_detected = 0

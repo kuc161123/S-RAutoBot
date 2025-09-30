@@ -504,6 +504,10 @@ class MRPhantomTracker:
         else:
             for trades in self.mr_phantom_trades.values():
                 all_mr_phantoms.extend(trades)
+            
+            # Also include active phantoms in the count
+            for active_phantom in self.active_mr_phantoms.values():
+                all_mr_phantoms.append(active_phantom)
 
         if not all_mr_phantoms:
             return {
@@ -511,23 +515,29 @@ class MRPhantomTracker:
                 'executed': 0,
                 'rejected': 0,
                 'range_performance': {},
-                'mr_specific_metrics': {}
+                'mr_specific_metrics': {},
+                'outcome_analysis': {
+                    'executed_win_rate': 0,
+                    'rejected_would_win_rate': 0
+                }
             }
 
-        executed = [p for p in all_mr_phantoms if p.was_executed]
-        rejected = [p for p in all_mr_phantoms if not p.was_executed]
+        # Properly separate executed vs rejected trades
+        executed = [p for p in all_mr_phantoms if hasattr(p, 'was_executed') and p.was_executed]
+        rejected = [p for p in all_mr_phantoms if hasattr(p, 'was_executed') and not p.was_executed]
 
-        # MR-specific analysis
-        range_breakout_trades = [p for p in all_mr_phantoms if p.range_breakout_occurred]
-        timeout_trades = [p for p in all_mr_phantoms if p.exit_reason == "timeout"]
+        # MR-specific analysis (only count completed trades for these metrics)
+        completed_phantoms = [p for p in all_mr_phantoms if hasattr(p, 'outcome') and p.outcome in ['win', 'loss']]
+        range_breakout_trades = [p for p in completed_phantoms if hasattr(p, 'range_breakout_occurred') and p.range_breakout_occurred]
+        timeout_trades = [p for p in completed_phantoms if hasattr(p, 'exit_reason') and p.exit_reason == "timeout"]
 
         # Range confidence analysis
-        high_conf_trades = [p for p in all_mr_phantoms if p.range_confidence and p.range_confidence >= 0.8]
-        low_conf_trades = [p for p in all_mr_phantoms if p.range_confidence and p.range_confidence < 0.5]
+        high_conf_trades = [p for p in completed_phantoms if hasattr(p, 'range_confidence') and p.range_confidence and p.range_confidence >= 0.8]
+        low_conf_trades = [p for p in completed_phantoms if hasattr(p, 'range_confidence') and p.range_confidence and p.range_confidence < 0.5]
 
         # Range position analysis
-        boundary_trades = [p for p in all_mr_phantoms
-                          if p.range_position and (p.range_position <= 0.2 or p.range_position >= 0.8)]
+        boundary_trades = [p for p in completed_phantoms
+                          if hasattr(p, 'range_position') and p.range_position and (p.range_position <= 0.2 or p.range_position >= 0.8)]
 
         stats = {
             'total_mr_trades': len(all_mr_phantoms),
@@ -545,18 +555,18 @@ class MRPhantomTracker:
             'range_performance': self.range_performance.copy(),
 
             'outcome_analysis': {
-                'executed_win_rate': (sum(1 for p in executed if p.outcome == 'win') / len(executed) * 100) if executed else 0,
-                'rejected_would_win_rate': (sum(1 for p in rejected if p.outcome == 'win') / len(rejected) * 100) if rejected else 0,
+                'executed_win_rate': (sum(1 for p in executed if hasattr(p, 'outcome') and p.outcome == 'win') / len(executed) * 100) if executed else 0,
+                'rejected_would_win_rate': (sum(1 for p in rejected if hasattr(p, 'outcome') and p.outcome == 'win') / len(rejected) * 100) if rejected else 0,
             }
         }
 
         # Add range-specific insights
         if high_conf_trades:
-            high_conf_wins = sum(1 for p in high_conf_trades if p.outcome == 'win')
+            high_conf_wins = sum(1 for p in high_conf_trades if hasattr(p, 'outcome') and p.outcome == 'win')
             stats['range_performance']['high_confidence_win_rate'] = high_conf_wins / len(high_conf_trades) * 100
 
         if boundary_trades:
-            boundary_wins = sum(1 for p in boundary_trades if p.outcome == 'win')
+            boundary_wins = sum(1 for p in boundary_trades if hasattr(p, 'outcome') and p.outcome == 'win')
             stats['mr_specific_metrics']['boundary_entry_win_rate'] = boundary_wins / len(boundary_trades) * 100
 
         return stats

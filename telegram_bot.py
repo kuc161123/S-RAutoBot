@@ -1438,16 +1438,30 @@ class TGBot:
             msg += "📊 *Overview*\n"
             msg += f"• Total signals tracked: {len(all_phantoms)}\n"
             msg += f"• Executed trades: {len(executed)}\n"
-            msg += f"• Phantom trades: {len(rejected)}\n\n"
+            msg += f"• Phantom trades: {len(rejected)}\n"
+            
+            # Verify counts add up
+            if len(all_phantoms) != (len(executed) + len(rejected)):
+                msg += f"⚠️ *Count mismatch: {len(all_phantoms)} ≠ {len(executed) + len(rejected)}*\n"
+            msg += "\n"
 
             if rejected:
                 msg += "🚫 *Rejected Trade Analysis*\n"
                 rejected_wr = (len(rejected_wins) / len(rejected)) * 100 if rejected else 0
-                msg += f"• Rejected Win Rate: {rejected_wr:.1f}%\n"
+                msg += f"• Rejected Win Rate: {rejected_wr:.1f}% ({len(rejected_wins)}/{len(rejected)})\n"
                 msg += f"• Missed Profit: +{missed_profit:.2f}%\n"
                 msg += f"• Avoided Loss: -{avoided_loss:.2f}%\n"
                 net_impact = missed_profit - avoided_loss
                 msg += f"• *Net Impact: {net_impact:+.2f}%*\n"
+            
+            # Add executed trade analysis if available
+            if executed:
+                executed_wins = [p for p in executed if p.outcome == 'win']
+                executed_losses = [p for p in executed if p.outcome == 'loss']
+                if executed_wins or executed_losses:
+                    msg += "\n✅ *Executed Trade Analysis*\n"
+                    executed_wr = (len(executed_wins) / len(executed)) * 100 if executed else 0
+                    msg += f"• Executed Win Rate: {executed_wr:.1f}% ({len(executed_wins)}/{len(executed)})\n"
 
             await self.safe_reply(update, msg)
 
@@ -2416,18 +2430,34 @@ class TGBot:
             phantom_stats = mr_phantom_tracker.get_mr_phantom_stats()
 
             msg += f"📈 *Overall Statistics:*\n"
-            msg += f"• Total MR signals: {phantom_stats.get('total_mr_trades', 0)}\n"
-            msg += f"• Executed: {phantom_stats.get('executed', 0)}\n"
-            msg += f"• Rejected: {phantom_stats.get('rejected', 0)}\n"
+            total_trades = phantom_stats.get('total_mr_trades', 0)
+            executed_trades = phantom_stats.get('executed', 0)
+            rejected_trades = phantom_stats.get('rejected', 0)
+            
+            msg += f"• Total MR signals: {total_trades}\n"
+            msg += f"• Executed: {executed_trades}\n"
+            msg += f"• Rejected: {rejected_trades}\n"
+            
+            # Add verification that counts add up
+            if total_trades != (executed_trades + rejected_trades):
+                msg += f"⚠️ *Count mismatch detected: {total_trades} ≠ {executed_trades + rejected_trades}*\n"
 
-            # Outcome analysis
+            # Outcome analysis - show all rates, not just non-zero
             outcome = phantom_stats.get('outcome_analysis', {})
-            if outcome:
+            if phantom_stats.get('executed', 0) > 0 or phantom_stats.get('rejected', 0) > 0:
                 msg += f"\n📊 *Performance Analysis:*\n"
-                if outcome.get('executed_win_rate', 0) > 0:
-                    msg += f"• Executed win rate: {outcome.get('executed_win_rate', 0):.1f}%\n"
-                if outcome.get('rejected_would_win_rate', 0) > 0:
-                    msg += f"• Rejected would-be win rate: {outcome.get('rejected_would_win_rate', 0):.1f}%\n"
+                
+                # Show executed trades performance
+                executed_count = phantom_stats.get('executed', 0)
+                if executed_count > 0:
+                    executed_wr = outcome.get('executed_win_rate', 0)
+                    msg += f"• Executed trades: {executed_count} (Win rate: {executed_wr:.1f}%)\n"
+                
+                # Show rejected trades performance
+                rejected_count = phantom_stats.get('rejected', 0)
+                if rejected_count > 0:
+                    rejected_wr = outcome.get('rejected_would_win_rate', 0)
+                    msg += f"• Rejected trades: {rejected_count} (Would-be win rate: {rejected_wr:.1f}%)\n"
 
             # MR-specific metrics
             mr_metrics = phantom_stats.get('mr_specific_metrics', {})

@@ -578,14 +578,138 @@ class EnhancedMeanReversionScorer:
             # Save state
             self._save_state()
 
-            # Check for retraining
-            if (self.completed_trades >= self.MIN_TRADES_FOR_ML and
-                self.completed_trades - self.last_train_count >= self.RETRAIN_INTERVAL):
-                logger.info(f"Enhanced MR ML retrain triggered: {self.completed_trades - self.last_train_count} new trades")
+            # Check for retraining (including phantom trades)
+            total_combined = self._get_total_combined_trades()
+            if (total_combined >= self.MIN_TRADES_FOR_ML and
+                total_combined - self.last_train_count >= self.RETRAIN_INTERVAL):
+                logger.info(f"Enhanced MR ML retrain triggered: {total_combined - self.last_train_count} new trades (executed + phantom)")
                 self._retrain_ensemble()
 
         except Exception as e:
             logger.error(f"Error recording Enhanced MR outcome: {e}")
+
+    def _get_total_combined_trades(self) -> int:
+        """Get total trade count including phantom trades from MR phantom tracker"""
+        total = self.completed_trades
+        try:
+            from mr_phantom_tracker import get_mr_phantom_tracker
+            mr_phantom_tracker = get_mr_phantom_tracker()
+            phantom_count = sum(len(trades) for trades in mr_phantom_tracker.mr_phantom_trades.values())
+            total += phantom_count
+        except Exception as e:
+            logger.debug(f"Could not get MR phantom trade count: {e}")
+        return total
+
+    def get_retrain_info(self) -> dict:
+        """Get information about next retrain - includes phantom trades"""
+        phantom_count = 0
+        try:
+            from mr_phantom_tracker import get_mr_phantom_tracker
+            mr_phantom_tracker = get_mr_phantom_tracker()
+            phantom_count = sum(len(trades) for trades in mr_phantom_tracker.mr_phantom_trades.values())
+        except Exception as e:
+            logger.debug(f"Could not get MR phantom trade count: {e}")
+        
+        total_combined = self.completed_trades + phantom_count
+        
+        info = {
+            'is_ml_ready': self.is_ml_ready,
+            'completed_trades': self.completed_trades,
+            'phantom_count': phantom_count,
+            'total_combined': total_combined,
+            'last_train_count': self.last_train_count,
+            'trades_until_next_retrain': 0,
+            'next_retrain_at': 0,
+            'can_train': False
+        }
+        
+        # Calculate retrain info
+        if not self.is_ml_ready:
+            # Not trained yet
+            info['can_train'] = total_combined >= self.MIN_TRADES_FOR_ML
+            info['trades_until_next_retrain'] = max(0, self.MIN_TRADES_FOR_ML - total_combined)
+            info['next_retrain_at'] = self.MIN_TRADES_FOR_ML
+        else:
+            # Already trained, calculate next retrain
+            trades_since_last = total_combined - self.last_train_count
+            info['trades_until_next_retrain'] = max(0, self.RETRAIN_INTERVAL - trades_since_last)
+            info['next_retrain_at'] = self.last_train_count + self.RETRAIN_INTERVAL
+            info['can_train'] = True  # We can always retrain if models exist
+        
+        return info
+
+    def startup_retrain(self) -> bool:
+        """Retrain models on startup with all available data including phantom trades"""
+        logger.info("Checking Enhanced MR startup retrain...")
+        
+        # Count available data
+        executed_count = 0
+        phantom_count = 0
+        
+        # Get executed trades
+        try:
+            if self.redis_client:
+                trade_data = self.redis_client.lrange('enhanced_mr:trades', 0, -1)
+                executed_count = len(trade_data)
+            else:
+                executed_count = len(self.memory_storage.get('trades', []))
+        except Exception as e:
+            logger.warning(f"Error counting Enhanced MR executed trades: {e}")
+        
+        # Get phantom trades
+        try:
+            from mr_phantom_tracker import get_mr_phantom_tracker
+            mr_phantom_tracker = get_mr_phantom_tracker()
+            phantom_count = sum(len(trades) for trades in mr_phantom_tracker.mr_phantom_trades.values())
+        except Exception as e:
+            logger.warning(f"Error counting Enhanced MR phantom trades: {e}")
+        
+        total_available = executed_count + phantom_count
+        logger.info(f"Enhanced MR startup data: {executed_count} executed, {phantom_count} phantom, {total_available} total")
+        
+        # Decide if we should retrain
+        should_retrain = False
+        
+        if not self.is_ml_ready and total_available >= self.MIN_TRADES_FOR_ML:
+            logger.info("No Enhanced MR models but sufficient data - will train")
+            should_retrain = True
+        elif self.is_ml_ready:
+            new_trades = total_available - self.last_train_count
+            if new_trades >= self.RETRAIN_INTERVAL:
+                logger.info(f"Found {new_trades} new Enhanced MR trades since last training - will retrain")
+                should_retrain = True
+            elif not any(model is not None for model in self.ensemble_models.values()):
+                logger.warning("Enhanced MR marked as ready but no models found - will retrain")
+                should_retrain = True
+            else:
+                logger.info(f"Enhanced MR models up to date ({new_trades} new trades, need {self.RETRAIN_INTERVAL})")
+        else:
+            logger.info(f"Insufficient Enhanced MR data for training ({total_available} trades, need {self.MIN_TRADES_FOR_ML})")
+        
+        # Perform retrain if needed
+        if should_retrain:
+            logger.info("Starting Enhanced MR startup model retraining...")
+            try:
+                # Update counts to match actual data
+                self.completed_trades = executed_count
+                if self.redis_client:
+                    self.redis_client.set('enhanced_mr:completed_trades', str(self.completed_trades))
+                
+                # Force retrain with all available data (including phantoms)
+                self._retrain_ensemble_with_phantoms()
+                
+                # Update last train count to current total
+                self.last_train_count = total_available
+                if self.redis_client:
+                    self.redis_client.set('enhanced_mr:last_train_count', str(self.last_train_count))
+                
+                logger.info("✅ Enhanced MR startup retrain completed successfully")
+                return True
+            except Exception as e:
+                logger.error(f"Enhanced MR startup retrain failed: {e}")
+                return False
+        
+        return False
 
     def _adapt_mr_threshold(self):
         """Adapt threshold based on recent mean reversion performance"""
@@ -623,12 +747,17 @@ class EnhancedMeanReversionScorer:
             logger.error(f"Error storing Enhanced MR trade record: {e}")
 
     def _retrain_ensemble(self):
-        """Retrain the specialized ensemble models"""
+        """Retrain the specialized ensemble models (executed trades only)"""
+        self._retrain_ensemble_with_phantoms(include_phantoms=False)
+
+    def _retrain_ensemble_with_phantoms(self, include_phantoms=True):
+        """Retrain the specialized ensemble models with optional phantom data"""
         try:
-            logger.info(f"🔄 Retraining Enhanced MR ensemble models... ({self.completed_trades} total trades)")
+            total_combined = self._get_total_combined_trades() if include_phantoms else self.completed_trades
+            logger.info(f"🔄 Retraining Enhanced MR ensemble models... ({total_combined} total trades, phantoms: {include_phantoms})")
 
             # Load training data
-            training_data = self._load_training_data()
+            training_data = self._load_training_data(include_phantoms=include_phantoms)
 
             if len(training_data) < self.MIN_TRADES_FOR_ML:
                 logger.warning(f"Not enough Enhanced MR data for training: {len(training_data)} < {self.MIN_TRADES_FOR_ML}")
@@ -648,13 +777,19 @@ class EnhancedMeanReversionScorer:
             wins = np.sum(y)
             losses = len(y) - wins
             win_rate = wins / len(y) if len(y) > 0 else 0.0
-            logger.info(f"Enhanced MR training: {len(y)} trades, {wins} wins, {losses} losses ({win_rate:.1%})")
+            
+            # Count executed vs phantom trades
+            executed_count = sum(1 for trade in training_data if trade.get('was_executed', True))
+            phantom_count = len(training_data) - executed_count
+            
+            logger.info(f"Enhanced MR training: {len(y)} total trades ({executed_count} executed, {phantom_count} phantom)")
+            logger.info(f"Enhanced MR results: {wins} wins, {losses} losses ({win_rate:.1%})")
 
             # Train specialized models
             self._train_specialized_ensemble(X, y)
 
             self.is_ml_ready = True
-            self.last_train_count = self.completed_trades
+            self.last_train_count = total_combined if include_phantoms else self.completed_trades
             self._save_state()
 
             active_models = [name for name, model in self.ensemble_models.items() if model is not None]
@@ -663,21 +798,53 @@ class EnhancedMeanReversionScorer:
         except Exception as e:
             logger.error(f"Enhanced MR ensemble training failed: {e}")
 
-    def _load_training_data(self) -> List[dict]:
-        """Load training data from storage"""
+    def _load_training_data(self, include_phantoms=True) -> List[dict]:
+        """Load training data from storage, optionally including phantom trades"""
         training_data = []
 
         try:
+            # Load executed trades
             if self.redis_client:
                 trade_data = self.redis_client.lrange('enhanced_mr:trades', 0, -1)
                 for trade_json in trade_data:
                     try:
                         trade = json.loads(trade_json)
+                        trade['was_executed'] = True  # Mark as executed trade
                         training_data.append(trade)
                     except json.JSONDecodeError:
                         continue
             else:
-                training_data = self.memory_storage.get('trades', [])
+                executed_trades = self.memory_storage.get('trades', [])
+                for trade in executed_trades:
+                    trade['was_executed'] = True
+                    training_data.append(trade)
+
+            # Load phantom trades if requested
+            if include_phantoms:
+                try:
+                    from mr_phantom_tracker import get_mr_phantom_tracker
+                    mr_phantom_tracker = get_mr_phantom_tracker()
+                    phantom_data = mr_phantom_tracker.get_mr_learning_data()
+                    
+                    # Convert phantom data format to match executed trades
+                    for phantom in phantom_data:
+                        phantom_record = {
+                            'enhanced_features': phantom.get('enhanced_features', {}),
+                            'features': phantom.get('features', {}),
+                            'score': phantom.get('score', 0),
+                            'outcome': phantom.get('outcome', 0),
+                            'pnl_percent': phantom.get('pnl_percent', 0.0),
+                            'timestamp': phantom.get('signal_time', datetime.now().isoformat()),
+                            'symbol': phantom.get('symbol', 'UNKNOWN'),
+                            'strategy': 'enhanced_mean_reversion',
+                            'was_executed': phantom.get('was_executed', False)
+                        }
+                        training_data.append(phantom_record)
+                    
+                    logger.info(f"Enhanced MR training data: {len(phantom_data)} phantom trades added")
+                    
+                except Exception as e:
+                    logger.warning(f"Could not load Enhanced MR phantom data: {e}")
 
         except Exception as e:
             logger.error(f"Error loading Enhanced MR training data: {e}")

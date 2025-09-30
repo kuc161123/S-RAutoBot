@@ -497,9 +497,14 @@ class TradingBot:
                             # Check if ML needs retraining after this trade completes
                             self._check_ml_retrain(ml_scorer)
 
-                            # Also check mean reversion ML retraining
-                            if shared_mr_scorer and pos.strategy_name == "MeanReversion":
-                                self._check_mr_ml_retrain(shared_mr_scorer)
+                            # Also check mean reversion ML retraining (both enhanced and original systems)
+                            if pos.strategy_name in ["enhanced_mr", "mean_reversion", "MeanReversion"]:
+                                # Get the appropriate MR scorer references
+                                enhanced_mr_scorer_ref = shared_enhanced_mr if use_enhanced and shared_enhanced_mr else None
+                                original_mr_scorer_ref = shared_mr_scorer if not use_enhanced else None
+                                
+                                # Call the appropriate retrain check
+                                self._check_mr_ml_retrain(original_mr_scorer_ref, enhanced_mr_scorer_ref)
                             
                         except Exception as e:
                             logger.error(f"Failed to update ML outcome: {e}")
@@ -548,31 +553,37 @@ class TradingBot:
         except Exception as e:
             logger.error(f"Error checking ML retrain: {e}")
 
-    def _check_mr_ml_retrain(self, mean_reversion_scorer):
+    def _check_mr_ml_retrain(self, mean_reversion_scorer=None, enhanced_mr_scorer=None):
         """Check if Mean Reversion ML needs retraining after a trade completes"""
-        if not mean_reversion_scorer:
+        # Use the appropriate MR scorer based on system configuration
+        mr_scorer = enhanced_mr_scorer if enhanced_mr_scorer else mean_reversion_scorer
+        
+        if not mr_scorer:
             return
 
         try:
-            # Get retrain info from mean reversion scorer
-            retrain_info = mean_reversion_scorer.get_retrain_info()
+            # Get retrain info from the active MR scorer
+            retrain_info = mr_scorer.get_retrain_info()
+            
+            scorer_type = "Enhanced MR" if enhanced_mr_scorer else "Original MR"
 
             # Check if ready to retrain
             if retrain_info['can_train'] and retrain_info['trades_until_next_retrain'] == 0:
-                logger.info(f"🔄 Mean Reversion ML retrain triggered after trade completion - "
-                           f"{retrain_info['total_trades']} total MR trades available")
+                total_trades = retrain_info.get('total_combined', retrain_info.get('total_trades', 0))
+                logger.info(f"🔄 {scorer_type} ML retrain triggered after trade completion - "
+                           f"{total_trades} total trades available")
 
                 # Trigger retrain
-                retrain_result = mean_reversion_scorer.startup_retrain()
+                retrain_result = mr_scorer.startup_retrain()
                 if retrain_result:
-                    logger.info("✅ Mean Reversion ML models successfully retrained after trade completion")
+                    logger.info(f"✅ {scorer_type} ML models successfully retrained after trade completion")
                 else:
-                    logger.warning("⚠️ Mean Reversion ML retrain attempt failed")
+                    logger.warning(f"⚠️ {scorer_type} ML retrain attempt failed")
             else:
-                logger.debug(f"Mean Reversion ML retrain check: {retrain_info['trades_until_next_retrain']} trades until next retrain")
+                logger.debug(f"{scorer_type} ML retrain check: {retrain_info['trades_until_next_retrain']} trades until next retrain")
 
         except Exception as e:
-            logger.error(f"Error checking Mean Reversion ML retrain: {e}")
+            logger.error(f"Error checking {scorer_type} ML retrain: {e}")
 
     async def recover_positions(self, book:Book, sizer:Sizer):
         """Recover existing positions from exchange - preserves all existing orders"""
@@ -927,6 +938,22 @@ class TradingBot:
                         logger.info(f"   Pullback recent WR: {pullback_stats['recent_win_rate']:.1f}%")
                     if mr_stats['recent_win_rate'] > 0:
                         logger.info(f"   MR recent WR: {mr_stats['recent_win_rate']:.1f}%")
+
+                    # Perform Enhanced MR startup retrain with phantom data
+                    logger.info("🔄 Checking for Enhanced MR startup retrain...")
+                    enhanced_mr_startup_result = enhanced_mr_scorer.startup_retrain()
+                    if enhanced_mr_startup_result:
+                        # Get updated stats after retrain
+                        mr_stats = enhanced_mr_scorer.get_enhanced_stats()
+                        logger.info(f"✅ Enhanced MR models retrained on startup")
+                        logger.info(f"   Status: {mr_stats['status']}")
+                        logger.info(f"   Threshold: {mr_stats['current_threshold']:.0f}")
+                        if mr_stats.get('models_active'):
+                            logger.info(f"   Active models: {', '.join(mr_stats['models_active'])}")
+                    elif enhanced_mr_scorer.is_ml_ready:
+                        logger.info("✅ Pre-trained Enhanced MR models loaded successfully.")
+                    else:
+                        logger.info("⚠️ No pre-trained Enhanced MR models found. Starting in online learning mode.")
 
                 else:
                     # Initialize original ML system

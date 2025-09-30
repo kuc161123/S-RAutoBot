@@ -25,7 +25,7 @@ from typing import List, Dict, Optional
 from dotenv import load_dotenv
 
 # Import existing components
-from backtester import Backtester
+from enhanced_backtester import EnhancedBacktester  # Use enhanced backtester for accurate ML features
 from strategy_pullback_ml_learning import get_ml_learning_signals, MinimalSettings as PullbackSettings, reset_symbol_state as reset_pullback_state
 
 logger = logging.getLogger(__name__)
@@ -165,10 +165,11 @@ class BackgroundInitialTrainer:
             logger.info("\n🎯 Phase 1: Pullback Strategy Training")
             update_progress("Initializing Pullback Backtester", "", 0, total_symbols)
             
-            pullback_backtester = Backtester(
+            pullback_backtester = EnhancedBacktester(
                 get_ml_learning_signals, 
                 PullbackSettings(), 
-                reset_state_func=reset_pullback_state
+                reset_state_func=reset_pullback_state,
+                strategy_type="pullback"
             )
             
             all_pullback_data = []
@@ -187,67 +188,37 @@ class BackgroundInitialTrainer:
             update_progress("Training Pullback Model", "", total_symbols, total_symbols)
             self._train_pullback_model(all_pullback_data)
             
-            # Phase 2: Enhanced Mean Reversion Strategy Training
-            logger.info("\n🎯 Phase 2: Enhanced Mean Reversion Strategy Training")
-            update_progress("Initializing Enhanced MR Backtester", "", 0, total_symbols)
+            # Phase 2: Mean Reversion Strategy Training 
+            logger.info("\n🎯 Phase 2: Mean Reversion Strategy Training")
+            update_progress("Initializing MR Backtester", "", 0, total_symbols)
             
-            # Import Enhanced MR components
-            try:
-                from enhanced_mr_strategy import detect_enhanced_mr_signal, EnhancedMRSettings
-                from enhanced_mr_strategy import reset_enhanced_mr_state
-                
-                mr_backtester = Backtester(
-                    detect_enhanced_mr_signal,
-                    EnhancedMRSettings(),
-                    reset_state_func=reset_enhanced_mr_state
-                )
-                
-                all_mr_data = []
-                for i, symbol in enumerate(symbols):
-                    update_progress("Backtesting Enhanced MR", symbol, i+1, total_symbols)
-                    try:
-                        results = mr_backtester.run(symbol)
-                        all_mr_data.extend(results)
-                        logger.info(f"  ✅ {symbol}: {len(results)} signals")
-                    except Exception as e:
-                        logger.error(f"  ❌ {symbol}: {e}")
-                
-                logger.info(f"📈 Enhanced MR backtesting complete: {len(all_mr_data)} total signals")
-                
-                # Train Enhanced MR model
-                update_progress("Training Enhanced MR Model", "", total_symbols, total_symbols)
-                self._train_enhanced_mr_model(all_mr_data)
-                
-            except ImportError as e:
-                logger.warning(f"Enhanced MR strategy not available: {e}")
-                logger.info("Falling back to original Mean Reversion strategy")
-                
-                # Fallback to original MR strategy
-                from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion
-                from strategy_mean_reversion import reset_symbol_state as reset_mean_reversion_state
-                from strategy_pullback import Settings as ReversionSettings
-                
-                mr_backtester = Backtester(
-                    detect_signal_mean_reversion,
-                    ReversionSettings(),
-                    reset_state_func=reset_mean_reversion_state
-                )
-                
-                all_mr_data = []
-                for i, symbol in enumerate(symbols):
-                    update_progress("Backtesting Mean Reversion", symbol, i+1, total_symbols)
-                    try:
-                        results = mr_backtester.run(symbol)
-                        all_mr_data.extend(results)
-                        logger.info(f"  ✅ {symbol}: {len(results)} signals")
-                    except Exception as e:
-                        logger.error(f"  ❌ {symbol}: {e}")
-                
-                logger.info(f"📈 Mean Reversion backtesting complete: {len(all_mr_data)} total signals")
-                
-                # Train original MR model
-                update_progress("Training MR Model", "", total_symbols, total_symbols)
-                self._train_mean_reversion_model(all_mr_data)
+            # Use the actual mean reversion strategy from live bot
+            from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion
+            from strategy_mean_reversion import reset_symbol_state as reset_mean_reversion_state  
+            from strategy_pullback import Settings as MRSettings
+            
+            mr_backtester = EnhancedBacktester(
+                detect_signal_mean_reversion,
+                MRSettings(),
+                reset_state_func=reset_mean_reversion_state,
+                strategy_type="mean_reversion"
+            )
+            
+            all_mr_data = []
+            for i, symbol in enumerate(symbols):
+                update_progress("Backtesting Mean Reversion", symbol, i+1, total_symbols)
+                try:
+                    results = mr_backtester.run(symbol)
+                    all_mr_data.extend(results)
+                    logger.info(f"  ✅ {symbol}: {len(results)} signals")
+                except Exception as e:
+                    logger.error(f"  ❌ {symbol}: {e}")
+            
+            logger.info(f"📈 Mean Reversion backtesting complete: {len(all_mr_data)} total signals")
+            
+            # Train Enhanced MR model (uses enhanced scorer with MR signals)
+            update_progress("Training Enhanced MR Model", "", total_symbols, total_symbols)
+            self._train_enhanced_mr_model(all_mr_data)
             
             # Mark completion
             completion_data = {

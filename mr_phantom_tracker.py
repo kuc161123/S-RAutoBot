@@ -424,7 +424,7 @@ class MRPhantomTracker:
                 'symbol': phantom.symbol,
                 'features': phantom.features,
                 'enhanced_features': phantom.enhanced_features,
-                'ml_score': phantom.ml_score,
+                'score': phantom.ml_score,  # ML scorer expects 'score' field
                 'timestamp': phantom.signal_time
             }
 

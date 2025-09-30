@@ -426,7 +426,7 @@ class PhantomTradeTracker:
                 'tp': phantom.take_profit,
                 'symbol': phantom.symbol,
                 'features': phantom.features,
-                'ml_score': phantom.ml_score,
+                'score': phantom.ml_score,  # ML scorer expects 'score' field
                 'timestamp': phantom.signal_time
             }
 

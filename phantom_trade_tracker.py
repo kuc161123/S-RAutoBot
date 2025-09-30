@@ -310,9 +310,13 @@ class PhantomTradeTracker:
             except Exception as e:
                 logger.warning(f"[{symbol}] Failed to record phantom data: {e}")
         
+        # Feed phantom trade outcome to pullback ML for training
+        if not phantom.was_executed:
+            self._feed_phantom_to_pullback_ml(phantom)
+
         # Save to Redis
         self._save_to_redis()
-        
+
         # Check if ML needs retraining after this trade completes
         self._check_ml_retrain()
     
@@ -408,6 +412,39 @@ class PhantomTradeTracker:
         # Keeping the method signature for backwards compatibility
         pass
     
+    def _feed_phantom_to_pullback_ml(self, phantom):
+        """Feed completed phantom trade outcome to pullback ML for training"""
+        try:
+            from ml_signal_scorer_immediate import get_immediate_scorer
+            ml_scorer = get_immediate_scorer()
+
+            # Create signal data format expected by ML scorer
+            signal_data = {
+                'side': phantom.side,
+                'entry': phantom.entry_price,
+                'sl': phantom.stop_loss,
+                'tp': phantom.take_profit,
+                'symbol': phantom.symbol,
+                'features': phantom.features,
+                'ml_score': phantom.ml_score,
+                'timestamp': phantom.signal_time
+            }
+
+            # Determine outcome (win/loss)
+            outcome = phantom.outcome
+
+            # Calculate P&L percentage for outcome
+            pnl_pct = phantom.pnl_percent if hasattr(phantom, 'pnl_percent') else 0
+
+            # Record phantom trade outcome for ML learning
+            ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
+
+            logger.debug(f"[{phantom.symbol}] Fed pullback phantom trade outcome to ML: {outcome} "
+                        f"(P&L: {pnl_pct:.2f}%, Score: {phantom.ml_score:.1f})")
+
+        except Exception as e:
+            logger.error(f"Error feeding pullback phantom trade to ML: {e}")
+
     def _check_ml_retrain(self):
         """Check if ML needs retraining after a trade completes"""
         try:

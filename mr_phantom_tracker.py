@@ -361,6 +361,10 @@ class MRPhantomTracker:
         # Save to Redis
         self._save_to_redis()
 
+        # Feed phantom trade outcome to MR ML for training
+        if not phantom.was_executed:
+            self._feed_phantom_to_mr_ml(phantom)
+
         # Check if ML needs retraining
         self._check_mr_ml_retrain()
 
@@ -404,6 +408,40 @@ class MRPhantomTracker:
             self.range_performance[range_category]['losses'] += 1
 
         self.range_performance[range_category]['total_pnl'] += phantom.pnl_percent or 0.0
+
+    def _feed_phantom_to_mr_ml(self, phantom: MRPhantomTrade):
+        """Feed completed phantom trade outcome to MR ML for training"""
+        try:
+            from enhanced_mr_scorer import get_enhanced_mr_scorer
+            mr_scorer = get_enhanced_mr_scorer()
+
+            # Create signal data format expected by ML scorer
+            signal_data = {
+                'side': phantom.side,
+                'entry': phantom.entry_price,
+                'sl': phantom.stop_loss,
+                'tp': phantom.take_profit,
+                'symbol': phantom.symbol,
+                'features': phantom.features,
+                'enhanced_features': phantom.enhanced_features,
+                'ml_score': phantom.ml_score,
+                'timestamp': phantom.signal_time
+            }
+
+            # Calculate P&L percentage for outcome
+            pnl_pct = phantom.pnl_percent if hasattr(phantom, 'pnl_percent') else 0
+
+            # Determine outcome (win/loss)
+            outcome = phantom.outcome
+
+            # Record phantom trade outcome for ML learning
+            mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
+
+            logger.debug(f"[{phantom.symbol}] Fed MR phantom trade outcome to ML: {outcome} "
+                        f"(P&L: {pnl_pct:.2f}%, Score: {phantom.ml_score:.1f})")
+
+        except Exception as e:
+            logger.error(f"Error feeding phantom trade to MR ML: {e}")
 
     def _check_mr_ml_retrain(self):
         """Check if Enhanced MR ML needs retraining"""

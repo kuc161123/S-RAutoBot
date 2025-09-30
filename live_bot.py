@@ -456,14 +456,16 @@ class TradingBot:
                                 'score': 0  # Will be filled from phantom tracker if available
                             }
                             
-                            # Debugging: Log strategy name for all closed trades
-                            logger.debug(f"[{symbol}] Closed trade strategy: {pos.strategy_name}")
+                            # Debugging: Log strategy name and routing info for all closed trades
+                            logger.info(f"[{symbol}] ML ROUTING DEBUG: strategy='{pos.strategy_name}', use_enhanced={shared.get('use_enhanced_parallel', False) if 'shared' in locals() else False}")
 
                             # Record outcome in appropriate ML scorer based on strategy (NO DUPLICATION)
                             # Get shared data components for ML scorers
                             shared_enhanced_mr = shared.get('enhanced_mr_scorer') if 'shared' in locals() else None
                             shared_mr_scorer = shared.get('mean_reversion_scorer') if 'shared' in locals() else None
                             use_enhanced = shared.get('use_enhanced_parallel', False) if 'shared' in locals() else False
+
+                            logger.info(f"[{symbol}] ML COMPONENTS: enhanced_mr={shared_enhanced_mr is not None}, mr_scorer={shared_mr_scorer is not None}, use_enhanced={use_enhanced}")
 
                             if use_enhanced and shared_enhanced_mr:
                                 # Enhanced parallel system - route to correct ML scorer

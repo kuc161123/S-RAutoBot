@@ -463,7 +463,7 @@ class TradingBot:
                             # Get shared data components for ML scorers
                             shared_enhanced_mr = shared.get('enhanced_mr_scorer') if 'shared' in locals() else None
                             shared_mr_scorer = shared.get('mean_reversion_scorer') if 'shared' in locals() else None
-                            use_enhanced = shared.get('use_enhanced_parallel', False) if 'shared' in locals() else use_enhanced_parallel
+                            use_enhanced = shared.get('use_enhanced_parallel', False) if 'shared' in locals() else False
 
                             if use_enhanced and shared_enhanced_mr:
                                 # Enhanced parallel system - route to correct ML scorer

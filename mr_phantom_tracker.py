@@ -466,6 +466,36 @@ class MRPhantomTracker:
         except Exception as e:
             logger.error(f"Error checking Enhanced MR ML retrain: {e}")
 
+    def get_learning_data(self) -> List[Dict]:
+        """
+        Get all MR phantom trade data formatted for ML learning
+        Returns both executed and phantom trades for comprehensive learning
+        """
+        learning_data = []
+
+        for trades in self.mr_phantom_trades.values():
+            for trade in trades:
+                if hasattr(trade, 'outcome') and trade.outcome in ['win', 'loss']:
+                    # Create learning record
+                    record = {
+                        'features': trade.features,
+                        'enhanced_features': trade.enhanced_features,
+                        'score': trade.ml_score,  # ML training expects 'score' field
+                        'was_executed': trade.was_executed,
+                        'outcome': 1 if trade.outcome == 'win' else 0,
+                        'pnl_percent': getattr(trade, 'pnl_percent', 0),
+                        'symbol': trade.symbol,
+                        'side': trade.side,
+                        'strategy': 'enhanced_mean_reversion',
+                        'range_upper': trade.range_upper,
+                        'range_lower': trade.range_lower,
+                        'range_position': getattr(trade, 'range_position', None),
+                        'range_breakout': getattr(trade, 'range_breakout_occurred', False)
+                    }
+                    learning_data.append(record)
+
+        return learning_data
+
     def get_mr_phantom_stats(self, symbol: Optional[str] = None) -> dict:
         """Get MR-specific phantom trade statistics"""
         all_mr_phantoms = []

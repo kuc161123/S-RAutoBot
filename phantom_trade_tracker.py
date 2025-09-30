@@ -393,7 +393,7 @@ class PhantomTradeTracker:
                     # Create learning record
                     record = {
                         'features': trade.features,
-                        'ml_score': trade.ml_score,
+                        'score': trade.ml_score,  # ML training expects 'score' field
                         'was_executed': trade.was_executed,
                         'outcome': 1 if trade.outcome == 'win' else 0,
                         'pnl_percent': trade.pnl_percent,

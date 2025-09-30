@@ -119,7 +119,7 @@ class TradeTrackerPostgres:
                         exit_time TIMESTAMP NOT NULL,
                         pnl_usd DECIMAL(20, 8) NOT NULL,
                         pnl_percent DECIMAL(20, 8) NOT NULL,
-                        exit_reason VARCHAR(20) NOT NULL,
+                        exit_reason VARCHAR(50) NOT NULL,
                         leverage DECIMAL(10, 2) DEFAULT 1.0,
                         strategy_name VARCHAR(50),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -212,9 +212,9 @@ class TradeTrackerPostgres:
                             exit_reason, leverage, strategy_name
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
-                        trade.symbol, trade.side, trade.entry_price, trade.exit_price,
+                        str(trade.symbol)[:50], str(trade.side)[:10], trade.entry_price, trade.exit_price,
                         trade.quantity, trade.entry_time, trade.exit_time,
-                        trade.pnl_usd, trade.pnl_percent, trade.exit_reason, trade.leverage, trade.strategy_name
+                        trade.pnl_usd, trade.pnl_percent, str(trade.exit_reason)[:50], trade.leverage, str(trade.strategy_name)[:50]
                     ))
                     self.conn.commit()
                     

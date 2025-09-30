@@ -1455,6 +1455,7 @@ class TradingBot:
                                 else:
                                     logger.info(f"   ❌ DECISION: REJECT TRADE - ML score {ml_score:.1f} below threshold {threshold}")
                                     logger.info(f"   💡 Rejection reason: {ml_reason}")
+                                    continue  # Skip trade execution when ML score below threshold
 
                                 # Record in MR phantom tracker (initially as ML approval, will update with actual execution)
                                 selected_phantom_tracker.record_mr_signal(
@@ -1537,6 +1538,7 @@ class TradingBot:
                                 else:
                                     logger.info(f"   ❌ DECISION: REJECT TRADE - ML score {ml_score:.1f} below threshold {threshold}")
                                     logger.info(f"   💡 Rejection reason: {ml_reason}")
+                                    continue  # Skip trade execution when ML score below threshold
 
                                 # Record in pullback phantom tracker
                                 selected_phantom_tracker.record_signal(

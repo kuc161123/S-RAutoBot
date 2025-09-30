@@ -1739,6 +1739,8 @@ class TradingBot:
                     # Send notification
                     if self.tg:
                         emoji = "🟢" if sig.side == "long" else "🔴"
+                        # Debug log to ensure correct side display
+                        logger.debug(f"[{sym}] Notification: side='{sig.side}', emoji='{emoji}', order_side='{side}'")
                         # Calculate actual risk used
                         if risk.use_ml_dynamic_risk:
                             score_range = risk.ml_risk_max_score - risk.ml_risk_min_score

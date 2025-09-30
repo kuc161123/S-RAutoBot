@@ -71,6 +71,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("strategy_comparison", self.strategy_comparison))
         self.app.add_handler(CommandHandler("strategycomparison", self.strategy_comparison))  # Alternative command name
         self.app.add_handler(CommandHandler("system", self.system_status))
+        self.app.add_handler(CommandHandler("training_status", self.training_status))
+        self.app.add_handler(CommandHandler("trainingstatus", self.training_status))  # Alternative command name
         
         self.running = False
 
@@ -262,6 +264,11 @@ class TGBot:
 ⚙️ *Controls:*
 /panic_close [symbol] - Emergency close position
 /force_retrain - Force ML model retrain
+
+🎯 *ML Training:*
+/training_status - Background training progress
+/ml - Pullback ML model status
+/enhanced_mr - Enhanced MR model status
 
 ℹ️ *Info:*
 /start - Welcome message
@@ -2784,3 +2791,118 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in system_status: {e}")
             await update.message.reply_text("Error getting system status")
+
+    async def training_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show background ML training status"""
+        try:
+            msg = "🎯 *Background ML Training Status*\n"
+            msg += "━" * 35 + "\n\n"
+
+            # Get background trainer status
+            try:
+                from background_initial_trainer import get_background_trainer
+                trainer = get_background_trainer()
+                status = trainer.get_status()
+                
+                current_status = status.get('status', 'unknown')
+                
+                if current_status == 'not_started':
+                    msg += "⏳ *Status: Not Started*\n"
+                    msg += "Training will begin if no existing ML models are detected.\n\n"
+                    
+                    # Check if models already exist
+                    try:
+                        import redis
+                        import os
+                        redis_client = redis.from_url(os.getenv('REDIS_URL'), decode_responses=True)
+                        
+                        pullback_model = redis_client.get('ml_scorer:model_data')
+                        mr_model = redis_client.get('enhanced_mr:model_data')
+                        
+                        if pullback_model and mr_model:
+                            msg += "✅ *Existing ML Models Found:*\n"
+                            msg += "• Pullback ML Model: ✅ Trained\n"
+                            msg += "• Enhanced MR Model: ✅ Trained\n\n"
+                            msg += "🔄 Live bot handles automatic retraining as trades accumulate.\n"
+                        else:
+                            msg += "❌ *Missing ML Models:*\n"
+                            if not pullback_model:
+                                msg += "• Pullback ML Model: ⏳ Missing\n"
+                            if not mr_model:
+                                msg += "• Enhanced MR Model: ⏳ Missing\n"
+                            msg += "\n📝 Training should start automatically on next bot restart.\n"
+                    except:
+                        msg += "❓ Unable to check existing models.\n"
+                
+                elif current_status == 'running':
+                    msg += "🚀 *Status: Training In Progress*\n\n"
+                    
+                    stage = status.get('stage', 'Unknown')
+                    symbol = status.get('symbol', '')
+                    progress = status.get('progress', 0)
+                    total = status.get('total', 0)
+                    
+                    msg += f"📊 *Current Stage:* {stage}\n"
+                    if symbol:
+                        msg += f"🔍 *Current Symbol:* {symbol}\n"
+                    if total > 0:
+                        percentage = (progress / total) * 100
+                        msg += f"📈 *Progress:* {progress}/{total} ({percentage:.1f}%)\n"
+                    
+                    msg += f"\n⏰ *Last Updated:* {status.get('timestamp', 'Unknown')}\n\n"
+                    msg += "💡 Training runs in background - live trading continues normally.\n"
+                
+                elif current_status == 'completed':
+                    msg += "🎉 *Status: Training Complete!*\n\n"
+                    
+                    pullback_signals = status.get('pullback_signals', 0)
+                    mr_signals = status.get('mr_signals', 0)
+                    total_symbols = status.get('total_symbols', 0)
+                    
+                    msg += f"✅ *Results:*\n"
+                    msg += f"• Pullback Signals: {pullback_signals:,}\n"
+                    msg += f"• MR Signals: {mr_signals:,}\n"
+                    msg += f"• Total Symbols: {total_symbols}\n\n"
+                    
+                    msg += f"⏰ *Completed:* {status.get('timestamp', 'Unknown')}\n\n"
+                    msg += "🔄 *Next Steps:*\n"
+                    msg += "• Live bot now handles automatic retraining\n"
+                    msg += "• Use `/ml` and `/enhanced_mr` to check model status\n"
+                    msg += "• Models retrain automatically as trades accumulate\n"
+                
+                elif current_status == 'error':
+                    msg += "❌ *Status: Training Error*\n\n"
+                    
+                    error = status.get('error', 'Unknown error')
+                    msg += f"🚨 *Error:* {error}\n\n"
+                    msg += f"⏰ *Error Time:* {status.get('timestamp', 'Unknown')}\n\n"
+                    msg += "🔄 *Recovery:*\n"
+                    msg += "• Training will retry on next bot restart\n"
+                    msg += "• Check logs for detailed error information\n"
+                    msg += "• Ensure sufficient disk space and memory\n"
+                
+                else:
+                    msg += f"❓ *Status: {current_status}*\n"
+                    msg += "Unknown training status.\n"
+                    
+            except ImportError:
+                msg += "❌ *Background Trainer Not Available*\n"
+                msg += "Background training module not found.\n\n"
+                msg += "💡 Use the existing `/ml` commands to check model status.\n"
+            except Exception as e:
+                msg += f"❌ *Error Getting Status*\n"
+                msg += f"Error: {str(e)[:100]}...\n\n"
+                msg += "Try again in a few moments.\n"
+
+            msg += "\n" + "━" * 35 + "\n"
+            msg += "📋 *Available Commands:*\n"
+            msg += "`/ml` - Pullback ML status\n"
+            msg += "`/enhanced_mr` - Enhanced MR status\n"
+            msg += "`/phantom` - Phantom tracking stats\n"
+            msg += "`/mr_phantom` - MR phantom stats\n"
+
+            await self.safe_reply(update, msg)
+
+        except Exception as e:
+            logger.error(f"Error in training_status: {e}")
+            await update.message.reply_text("Error getting training status")

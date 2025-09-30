@@ -1139,6 +1139,16 @@ class TradingBot:
                     self.tg = None
                     break
         
+        # Start background initial training if needed
+        try:
+            from background_initial_trainer import get_background_trainer
+            background_trainer = get_background_trainer(self.tg)
+            training_started = await background_trainer.start_if_needed()
+            if training_started:
+                logger.info("🎯 Background ML training started - will run while bot trades")
+        except Exception as e:
+            logger.error(f"Failed to start background trainer: {e}")
+        
         # Signal tracking
         last_signal_time = {}
         signal_cooldown = 60  # Seconds between signals per symbol

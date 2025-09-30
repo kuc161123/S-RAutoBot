@@ -261,8 +261,8 @@ trade:
   - API3USDT
   - GUSDT
   timeframe: '15'
-  risk_usd: 2
-  risk_percent: 3.0
+  risk_usd: 10
+  risk_percent: 1.0
   use_percent_risk: true
   use_ema: false  # Disabled to let ML learn when EMA matters
   ema_len: 200    # ML will learn if trend alignment helps

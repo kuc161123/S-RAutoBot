@@ -456,28 +456,33 @@ class TradingBot:
                                 'score': 0  # Will be filled from phantom tracker if available
                             }
                             
-                            # Record outcome in ML scorer - now for ALL trades
-                            ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-
                             # Debugging: Log strategy name for all closed trades
                             logger.debug(f"[{symbol}] Closed trade strategy: {pos.strategy_name}")
 
-                            # Record outcome in appropriate ML scorer based on strategy
-                            if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
+                            # Record outcome in appropriate ML scorer based on strategy (NO DUPLICATION)
+                            # Get shared data components for ML scorers
+                            shared_enhanced_mr = shared.get('enhanced_mr_scorer') if 'shared' in locals() else None
+                            shared_mr_scorer = shared.get('mean_reversion_scorer') if 'shared' in locals() else None
+                            use_enhanced = shared.get('use_enhanced_parallel', False) if 'shared' in locals() else use_enhanced_parallel
+
+                            if use_enhanced and shared_enhanced_mr:
                                 # Enhanced parallel system - route to correct ML scorer
-                                if pos.strategy_name in ["MeanReversion", "enhanced_mean_reversion"]:
-                                    enhanced_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                if pos.strategy_name == "enhanced_mr":
+                                    shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
                                     logger.info(f"[{symbol}] Enhanced MR ML updated with outcome.")
                                 else:
-                                    # Pullback or other strategy - note: ml_scorer is available in this scope
-                                    if 'ml_scorer' in locals() and ml_scorer is not None:
+                                    # Pullback strategy
+                                    if ml_scorer is not None:
                                         ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                        logger.debug(f"[{symbol}] Pullback ML updated with outcome.")
+                                        logger.info(f"[{symbol}] Pullback ML updated with outcome.")
                             else:
-                                # Original system - record in Mean Reversion ML scorer if applicable
-                                if mean_reversion_scorer and pos.strategy_name == "MeanReversion":
-                                    mean_reversion_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                # Original system - record in appropriate ML scorer
+                                if pos.strategy_name == "mean_reversion" and shared_mr_scorer:
+                                    shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
                                     logger.info(f"[{symbol}] Mean Reversion ML updated with outcome.")
+                                elif ml_scorer is not None:
+                                    ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                    logger.info(f"[{symbol}] Pullback ML updated with outcome.")
 
                             # Also record in ML evolution if available
                             if ml_evolution is not None:
@@ -1051,16 +1056,22 @@ class TradingBot:
         
         # Setup shared data for Telegram
         shared = {
-            "risk": risk, 
-            "book": book, 
-            "panic": panic_list, 
+            "risk": risk,
+            "book": book,
+            "panic": panic_list,
             "meta": cfg.get("symbol_meta",{}),
             "broker": bybit,
             "frames": self.frames,
             "last_analysis": last_analysis,
             "trade_tracker": self.trade_tracker,
             "ml_scorer": ml_scorer,  # Add ML scorer for telegram access
-            "bot_instance": self  # Add bot instance for cluster updates
+            "bot_instance": self,  # Add bot instance for cluster updates
+            # Enhanced ML system components
+            "enhanced_mr_scorer": enhanced_mr_scorer if 'enhanced_mr_scorer' in locals() else None,
+            "mr_phantom_tracker": mr_phantom_tracker if 'mr_phantom_tracker' in locals() else None,
+            "mean_reversion_scorer": mean_reversion_scorer if 'mean_reversion_scorer' in locals() else None,
+            "phantom_tracker": phantom_tracker,
+            "use_enhanced_parallel": use_enhanced_parallel
         }
         
         # Initialize Telegram bot with retry on conflict
@@ -1662,9 +1673,8 @@ class TradingBot:
                     logger.info(f"[{sym}] Setting TP={sig.tp:.4f} (Limit), SL={sig.sl:.4f} (Market)")
                     bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl, qty=qty)
                 
-                    # Update book with actual entry price
-                    strategy_name = "MeanReversion" if use_regime_switching and current_regime == "Ranging" else "Pullback"
-                    book.positions[sym] = Position(sig.side, qty, actual_entry, sig.sl, sig.tp, datetime.now(), strategy_name=strategy_name)
+                    # Update book with actual entry price - use the selected strategy name
+                    book.positions[sym] = Position(sig.side, qty, actual_entry, sig.sl, sig.tp, datetime.now(), strategy_name=selected_strategy)
                     last_signal_time[sym] = now
                     
                     # Debug log the position details

@@ -25,10 +25,15 @@ class TGBot:
         self.app.add_handler(CommandHandler("help", self.help))
         self.app.add_handler(CommandHandler("risk", self.show_risk))
         self.app.add_handler(CommandHandler("set_risk", self.set_risk))
+        self.app.add_handler(CommandHandler("setrisk", self.set_risk))  # Alternative command name
         self.app.add_handler(CommandHandler("risk_percent", self.set_risk_percent))
+        self.app.add_handler(CommandHandler("riskpercent", self.set_risk_percent))  # Alternative command name
         self.app.add_handler(CommandHandler("risk_usd", self.set_risk_usd))
+        self.app.add_handler(CommandHandler("riskusd", self.set_risk_usd))  # Alternative command name
         self.app.add_handler(CommandHandler("ml_risk", self.ml_risk))
         self.app.add_handler(CommandHandler("ml_risk_range", self.ml_risk_range))
+        self.app.add_handler(CommandHandler("mlriskrange", self.ml_risk_range))  # Alternative command name
+        self.app.add_handler(CommandHandler("mlriskrank", self.ml_risk_range))  # Alternative command name
         self.app.add_handler(CommandHandler("status", self.status))
         self.app.add_handler(CommandHandler("panic_close", self.panic_close))
         self.app.add_handler(CommandHandler("balance", self.balance))
@@ -56,10 +61,15 @@ class TGBot:
         self.app.add_handler(CommandHandler("mr_ml", self.mr_ml_stats))
         self.app.add_handler(CommandHandler("mr_retrain", self.mr_retrain))
         self.app.add_handler(CommandHandler("enhanced_mr", self.enhanced_mr_stats))
+        self.app.add_handler(CommandHandler("enhancedmr", self.enhanced_mr_stats))  # Alternative command name
         self.app.add_handler(CommandHandler("mr_phantom", self.mr_phantom_stats))
+        self.app.add_handler(CommandHandler("mrphantom", self.mr_phantom_stats))  # Alternative command name
         self.app.add_handler(CommandHandler("parallel_performance", self.parallel_performance))
+        self.app.add_handler(CommandHandler("parallelperformance", self.parallel_performance))  # Alternative command name
         self.app.add_handler(CommandHandler("regime_analysis", self.regime_analysis))
+        self.app.add_handler(CommandHandler("regimeanalysis", self.regime_analysis))  # Alternative command name
         self.app.add_handler(CommandHandler("strategy_comparison", self.strategy_comparison))
+        self.app.add_handler(CommandHandler("strategycomparison", self.strategy_comparison))  # Alternative command name
         self.app.add_handler(CommandHandler("system", self.system_status))
         
         self.running = False

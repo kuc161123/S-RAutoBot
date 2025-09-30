@@ -1139,15 +1139,17 @@ class TradingBot:
                     self.tg = None
                     break
         
-        # Start background initial training if needed
-        try:
-            from background_initial_trainer import get_background_trainer
-            background_trainer = get_background_trainer(self.tg)
-            training_started = await background_trainer.start_if_needed()
-            if training_started:
-                logger.info("🎯 Background ML training started - will run while bot trades")
-        except Exception as e:
-            logger.error(f"Failed to start background trainer: {e}")
+        # Background training disabled - bot runs normally
+        # Uncomment the lines below to enable background ML training:
+        # try:
+        #     from background_initial_trainer import get_background_trainer
+        #     background_trainer = get_background_trainer(self.tg)
+        #     training_started = await background_trainer.start_if_needed()
+        #     if training_started:
+        #         logger.info("🎯 Background ML training started - will run while bot trades")
+        # except Exception as e:
+        #     logger.error(f"Failed to start background trainer: {e}")
+        logger.info("🚀 Bot starting in normal mode - background training disabled")
         
         # Signal tracking
         last_signal_time = {}

@@ -466,6 +466,7 @@ class TradingBot:
                             use_enhanced = shared.get('use_enhanced_parallel', False) if 'shared' in locals() else False
 
                             logger.info(f"[{symbol}] ML COMPONENTS: enhanced_mr={shared_enhanced_mr is not None}, mr_scorer={shared_mr_scorer is not None}, use_enhanced={use_enhanced}")
+                            logger.info(f"[{symbol}] ML ROUTING DECISION: Enhanced system active: {use_enhanced and shared_enhanced_mr}, Strategy: '{pos.strategy_name}'")
 
                             if use_enhanced and shared_enhanced_mr:
                                 # Enhanced parallel system - route to correct ML scorer
@@ -882,10 +883,12 @@ class TradingBot:
         book = Book()
         panic_list:list[str] = []
         
-        # Initialize Immediate ML Scorer and Phantom Tracker
+        # Initialize ALL ML components (including enhanced ones)
         ml_scorer = None
         phantom_tracker = None
         mean_reversion_scorer = None # Initialize Mean Reversion Scorer
+        enhanced_mr_scorer = None  # Initialize Enhanced MR Scorer
+        mr_phantom_tracker = None  # Initialize MR Phantom Tracker
         use_ml = cfg["trade"].get("use_ml_scoring", True)  # Default to True for immediate learning
         
         # Initialize ML Evolution System (optional)
@@ -1056,7 +1059,7 @@ class TradingBot:
         # Track analysis times
         last_analysis = {}
         
-        # Setup shared data for Telegram
+        # Setup shared data for Telegram - all ML components are now in scope
         shared = {
             "risk": risk,
             "book": book,
@@ -1066,12 +1069,12 @@ class TradingBot:
             "frames": self.frames,
             "last_analysis": last_analysis,
             "trade_tracker": self.trade_tracker,
-            "ml_scorer": ml_scorer,  # Add ML scorer for telegram access
-            "bot_instance": self,  # Add bot instance for cluster updates
+            "ml_scorer": ml_scorer,
+            "bot_instance": self,
             # Enhanced ML system components
-            "enhanced_mr_scorer": enhanced_mr_scorer if 'enhanced_mr_scorer' in locals() else None,
-            "mr_phantom_tracker": mr_phantom_tracker if 'mr_phantom_tracker' in locals() else None,
-            "mean_reversion_scorer": mean_reversion_scorer if 'mean_reversion_scorer' in locals() else None,
+            "enhanced_mr_scorer": enhanced_mr_scorer,
+            "mr_phantom_tracker": mr_phantom_tracker,
+            "mean_reversion_scorer": mean_reversion_scorer,
             "phantom_tracker": phantom_tracker,
             "use_enhanced_parallel": use_enhanced_parallel
         }

@@ -110,8 +110,8 @@ class TradeTrackerPostgres:
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS trades (
                         id SERIAL PRIMARY KEY,
-                        symbol VARCHAR(50) NOT NULL,
-                        side VARCHAR(10) NOT NULL,
+                        symbol VARCHAR(100) NOT NULL,
+                        side VARCHAR(20) NOT NULL,
                         entry_price DECIMAL(20, 8) NOT NULL,
                         exit_price DECIMAL(20, 8) NOT NULL,
                         quantity DECIMAL(20, 8) NOT NULL,
@@ -119,13 +119,24 @@ class TradeTrackerPostgres:
                         exit_time TIMESTAMP NOT NULL,
                         pnl_usd DECIMAL(20, 8) NOT NULL,
                         pnl_percent DECIMAL(20, 8) NOT NULL,
-                        exit_reason VARCHAR(50) NOT NULL,
+                        exit_reason VARCHAR(100) NOT NULL,
                         leverage DECIMAL(10, 2) DEFAULT 1.0,
-                        strategy_name VARCHAR(50),
+                        strategy_name VARCHAR(100),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """)
                 
+                # Update existing table columns if they exist with smaller sizes
+                try:
+                    cur.execute("ALTER TABLE trades ALTER COLUMN symbol TYPE VARCHAR(100)")
+                    cur.execute("ALTER TABLE trades ALTER COLUMN side TYPE VARCHAR(20)")
+                    cur.execute("ALTER TABLE trades ALTER COLUMN exit_reason TYPE VARCHAR(100)")
+                    cur.execute("ALTER TABLE trades ALTER COLUMN strategy_name TYPE VARCHAR(100)")
+                    logger.info("Updated existing database schema to larger field sizes")
+                except Exception as e:
+                    # Column modifications might fail if table doesn't exist or already correct size
+                    logger.debug(f"Database schema update info: {e}")
+
                 # Create indexes separately (PostgreSQL syntax)
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_symbol ON trades (symbol)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_exit_time ON trades (exit_time)")
@@ -212,9 +223,9 @@ class TradeTrackerPostgres:
                             exit_reason, leverage, strategy_name
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
-                        str(trade.symbol)[:50], str(trade.side)[:10], trade.entry_price, trade.exit_price,
+                        str(trade.symbol)[:100], str(trade.side)[:20], trade.entry_price, trade.exit_price,
                         trade.quantity, trade.entry_time, trade.exit_time,
-                        trade.pnl_usd, trade.pnl_percent, str(trade.exit_reason)[:50], trade.leverage, str(trade.strategy_name)[:50]
+                        trade.pnl_usd, trade.pnl_percent, str(trade.exit_reason)[:100], trade.leverage, str(trade.strategy_name)[:100]
                     ))
                     self.conn.commit()
                     

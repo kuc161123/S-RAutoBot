@@ -495,8 +495,8 @@ class TradingBot:
                             self._check_ml_retrain(ml_scorer)
 
                             # Also check mean reversion ML retraining
-                            if mean_reversion_scorer and pos.strategy_name == "MeanReversion":
-                                self._check_mr_ml_retrain(mean_reversion_scorer)
+                            if shared_mr_scorer and pos.strategy_name == "MeanReversion":
+                                self._check_mr_ml_retrain(shared_mr_scorer)
                             
                         except Exception as e:
                             logger.error(f"Failed to update ML outcome: {e}")
@@ -1271,8 +1271,10 @@ class TradingBot:
                                 ml_stats = ml_scorer.get_stats()
                                 retrain_info = ml_scorer.get_retrain_info()
                                 logger.info(f"🧠 Pullback ML: {ml_stats.get('completed_trades', 0)} trades, {retrain_info.get('trades_until_next_retrain', 'N/A')} to retrain")
-                            if mean_reversion_scorer:
-                                mr_ml_stats = mean_reversion_scorer.get_stats()
+                            # Get mean reversion scorer from shared data for logging
+                            shared_mr_scorer_log = shared.get('mean_reversion_scorer') if 'shared' in locals() else None
+                            if shared_mr_scorer_log:
+                                mr_ml_stats = shared_mr_scorer_log.get_stats()
                                 logger.info(f"🧠 Mean Reversion ML: {mr_ml_stats.get('completed_trades', 0)} trades")
                         last_summary_log = datetime.now()
                         candles_processed = 0

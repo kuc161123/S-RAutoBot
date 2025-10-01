@@ -884,7 +884,7 @@ class TradingBot:
             risk_usd=cfg["trade"]["risk_usd"],
             risk_percent=cfg["trade"]["risk_percent"],
             use_percent_risk=cfg["trade"]["use_percent_risk"],
-            use_ml_dynamic_risk=True,  # Enable ML dynamic risk
+            use_ml_dynamic_risk=False,  # Disabled - using fixed 1% risk until ML models are consistent
             ml_risk_min_score=70.0,
             ml_risk_max_score=100.0,
             ml_risk_min_percent=1.0,

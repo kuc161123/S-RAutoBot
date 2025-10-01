@@ -43,7 +43,7 @@ class MRPhantomTrade:
     was_executed: bool
     features: Dict  # Enhanced MR features
     enhanced_features: Dict  # Additional enhanced features
-    strategy_name: str = "enhanced_mean_reversion"
+    strategy_name: str = "enhanced_mr"
 
     # Range-specific data
     range_upper: Optional[float] = None
@@ -241,7 +241,7 @@ class MRPhantomTracker:
             range_lower=range_lower,
             range_confidence=range_confidence,
             range_position=range_position,
-            strategy_name="enhanced_mean_reversion"
+            strategy_name="enhanced_mr"
         )
 
         # Store as active phantom
@@ -486,7 +486,7 @@ class MRPhantomTracker:
                         'pnl_percent': getattr(trade, 'pnl_percent', 0),
                         'symbol': trade.symbol,
                         'side': trade.side,
-                        'strategy': 'enhanced_mean_reversion',
+                        'strategy': 'enhanced_mr',
                         'range_upper': trade.range_upper,
                         'range_lower': trade.range_lower,
                         'range_position': getattr(trade, 'range_position', None),

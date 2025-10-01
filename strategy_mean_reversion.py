@@ -182,7 +182,7 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
                         "range_upper": upper_range,
                         "range_lower": lower_range,
                         "mr_features": mr_features,  # Store MR features for ML
-                        "strategy_name": "MeanReversion"
+                        "strategy_name": "mean_reversion"
                     }
                 )
 
@@ -278,7 +278,7 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
                         "range_upper": upper_range,
                         "range_lower": lower_range,
                         "mr_features": mr_features,  # Store MR features for ML
-                        "strategy_name": "MeanReversion"
+                        "strategy_name": "mean_reversion"
                     }
                 )
     return None

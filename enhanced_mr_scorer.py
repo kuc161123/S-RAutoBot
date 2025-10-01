@@ -570,7 +570,7 @@ class EnhancedMeanReversionScorer:
                 'pnl_percent': float(pnl_percent),
                 'timestamp': datetime.now().isoformat(),
                 'symbol': signal_data.get('symbol', 'UNKNOWN'),
-                'strategy': 'enhanced_mean_reversion'
+                'strategy': 'enhanced_mr'
             }
 
             self._store_trade_record(trade_record)
@@ -836,7 +836,7 @@ class EnhancedMeanReversionScorer:
                             'pnl_percent': phantom.get('pnl_percent', 0.0),
                             'timestamp': phantom.get('signal_time', datetime.now().isoformat()),
                             'symbol': phantom.get('symbol', 'UNKNOWN'),
-                            'strategy': 'enhanced_mean_reversion',
+                            'strategy': 'enhanced_mr',
                             'was_executed': phantom.get('was_executed', False)
                         }
                         training_data.append(phantom_record)

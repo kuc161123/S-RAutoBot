@@ -1474,9 +1474,9 @@ class TradingBot:
                                     logger.info(f"   💡 Rejection reason: {ml_reason}")
                                     continue  # Skip trade execution when ML score below threshold
 
-                                # Record in MR phantom tracker (initially as ML approval, will update with actual execution)
+                                # Record in MR phantom tracker with correct execution status
                                 selected_phantom_tracker.record_mr_signal(
-                                    sym, sig.__dict__, ml_score, False, {}, enhanced_features  # Always False initially - will update after execution
+                                    sym, sig.__dict__, ml_score, should_take_trade, {}, enhanced_features  # Use should_take_trade like pullback strategy
                                 )
 
                             else:
@@ -1840,17 +1840,7 @@ class TradingBot:
                 
                     logger.info(f"[{sym}] {sig.side} position opened successfully")
                     
-                    # Update phantom tracker with actual execution status for MR trades
-                    if selected_strategy == "enhanced_mr" and ENHANCED_ML_AVAILABLE:
-                        try:
-                            # Update the phantom trade to mark it as actually executed
-                            if sym in selected_phantom_tracker.active_mr_phantoms:
-                                phantom = selected_phantom_tracker.active_mr_phantoms[sym]
-                                phantom.was_executed = True
-                                logger.debug(f"[{sym}] Updated MR phantom tracker: trade actually executed")
-                                selected_phantom_tracker._save_to_redis()
-                        except Exception as e:
-                            logger.error(f"Error updating MR phantom execution status: {e}")
+                    # MR phantom tracking: Status already recorded correctly with initial phantom record
                     
                 except Exception as e:
                     logger.error(f"Order error: {e}")

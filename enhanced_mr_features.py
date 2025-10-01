@@ -311,17 +311,28 @@ def calculate_enhanced_mr_features(df: pd.DataFrame, signal_data: dict, symbol: 
         features['session'] = session
 
         # Market cap tier (simplified based on symbol)
-        if symbol.endswith('USDT'):
-            base_symbol = symbol[:-4]
-            # Major coins typically have shorter names
-            if len(base_symbol) <= 3:
-                features['market_cap_tier'] = 1  # Large cap
-            elif len(base_symbol) <= 4:
-                features['market_cap_tier'] = 2  # Mid cap
-            else:
-                features['market_cap_tier'] = 3  # Small cap
-        else:
+        # Use proper hardcoded clustering instead of primitive name length logic
+        try:
+            from hardcoded_clusters import get_symbol_cluster
+            cluster_id = get_symbol_cluster(symbol)
+            features['symbol_cluster'] = cluster_id
+            features['market_cap_tier'] = cluster_id  # Keep compatibility with existing features
+            
+            # Add cluster-specific volatility norms for MR strategy
+            cluster_volatility_norms = {
+                1: 2.5,  # Blue chip - lower volatility expectation
+                2: 0.1,  # Stable - very low volatility
+                3: 8.5,  # Meme/volatile - high volatility expectation  
+                4: 4.2,  # Mid-cap alts - moderate volatility
+                5: 6.5   # Small cap - higher volatility
+            }
+            features['cluster_volatility_norm'] = cluster_volatility_norms.get(cluster_id, 5.0)
+            
+        except ImportError:
+            # Fallback if clustering not available
+            features['symbol_cluster'] = 3
             features['market_cap_tier'] = 2
+            features['cluster_volatility_norm'] = 5.0
 
         # Volatility regime classification (encoded as numbers)
         vol_low_threshold = volatility_20.quantile(0.33) if len(volatility_20) > 0 else 0.01
@@ -344,6 +355,14 @@ def calculate_enhanced_mr_features(df: pd.DataFrame, signal_data: dict, symbol: 
             features['signal_risk_reward'] = float(reward / risk) if risk > 0 else 2.0
         else:
             features['signal_risk_reward'] = 2.0
+
+        # Add cluster enhancement features for improved MR strategy performance
+        try:
+            from cluster_feature_enhancer import enhance_ml_features
+            features = enhance_ml_features(features, symbol)
+            logger.debug(f"[{symbol}] Added cluster enhancement features")
+        except ImportError:
+            logger.debug(f"[{symbol}] Cluster feature enhancer not available")
 
         # Convert numpy types to Python native types for JSON serialization
         for key, value in features.items():
@@ -405,7 +424,12 @@ def _get_default_enhanced_features() -> Dict:
         'session': "us",
         'market_cap_tier': 2,
         'volatility_regime': "normal",
-        'signal_risk_reward': 2.0
+        'signal_risk_reward': 2.0,
+        
+        # Cluster features (defaults)
+        'symbol_cluster': 3,
+        'cluster_volatility_norm': 5.0,
+        'cluster_confidence': 1.0
     }
 
 def get_feature_count() -> int:

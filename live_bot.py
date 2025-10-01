@@ -1700,6 +1700,19 @@ class TradingBot:
                 logger.info(f"   ⚙️ Setting leverage to {max_lev}x (before position to preserve TP/SL)")
                 bybit.set_leverage(sym, max_lev)
                 
+                # Validate SL price before executing trade to prevent Bybit API errors
+                current_price = df['close'].iloc[-1]
+                if sig.side == "short" and sig.sl <= current_price:
+                    logger.error(f"[{sym}] Invalid SL for SHORT: {sig.sl:.4f} must be > current price {current_price:.4f}")
+                    if self.tg:
+                        await self.tg.send_message(f"❌ {sym} SHORT rejected: SL {sig.sl:.4f} too low (current: {current_price:.4f})")
+                    continue
+                elif sig.side == "long" and sig.sl >= current_price:
+                    logger.error(f"[{sym}] Invalid SL for LONG: {sig.sl:.4f} must be < current price {current_price:.4f}")
+                    if self.tg:
+                        await self.tg.send_message(f"❌ {sym} LONG rejected: SL {sig.sl:.4f} too high (current: {current_price:.4f})")
+                    continue
+
                 # Place market order AFTER leverage is set
                 side = "Buy" if sig.side == "long" else "Sell"
                 try:
@@ -1735,11 +1748,31 @@ class TradingBot:
                     except Exception as e:
                         logger.warning(f"[{sym}] Could not get actual entry price: {e}. Using signal entry.")
                     
-                    # Set TP/SL - these will not be cancelled since leverage was set before position
+                    # Set TP/SL - CRITICAL: This must succeed or position becomes unprotected
                     logger.info(f"[{sym}] Setting TP={sig.tp:.4f} (Limit), SL={sig.sl:.4f} (Market)")
-                    bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl, qty=qty)
+                    try:
+                        bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl, qty=qty)
+                        logger.info(f"[{sym}] TP/SL set successfully")
+                    except Exception as tpsl_error:
+                        logger.critical(f"[{sym}] CRITICAL: Failed to set TP/SL: {tpsl_error}")
+                        logger.critical(f"[{sym}] Attempting emergency position closure to prevent unprotected position")
+                        
+                        # Attempt to close the unprotected position immediately
+                        try:
+                            emergency_side = "Sell" if sig.side == "long" else "Buy"
+                            close_result = bybit.place_market(sym, emergency_side, qty, reduce_only=True)
+                            logger.warning(f"[{sym}] Emergency position closure executed: {close_result}")
+                            if self.tg:
+                                await self.tg.send_message(f"🚨 EMERGENCY CLOSURE: {sym} position closed due to TP/SL failure: {str(tpsl_error)[:100]}")
+                        except Exception as close_error:
+                            logger.critical(f"[{sym}] FAILED TO CLOSE UNPROTECTED POSITION: {close_error}")
+                            if self.tg:
+                                await self.tg.send_message(f"🆘 CRITICAL: {sym} position UNPROTECTED! Manual intervention required. SL/TP failed: {str(tpsl_error)[:100]}")
+                        
+                        # Re-raise the original error to prevent position being added to book
+                        raise Exception(f"Failed to set TP/SL for {sym}: {tpsl_error}")
                 
-                    # Update book with actual entry price - use the selected strategy name
+                    # Only update book if BOTH market order AND TP/SL succeeded
                     book.positions[sym] = Position(sig.side, qty, actual_entry, sig.sl, sig.tp, datetime.now(), strategy_name=selected_strategy)
                     last_signal_time[sym] = now
                     

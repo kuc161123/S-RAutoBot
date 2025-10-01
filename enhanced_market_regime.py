@@ -90,28 +90,65 @@ def _detect_range_quality(df: pd.DataFrame, lookback: int = 100) -> Dict:
     close_prices = recent_df['close']
     volume_prices = recent_df['volume']
 
-    # Find significant peaks and troughs
-    # Use adaptive prominence based on volatility
-    price_std = close_prices.std()
-    prominence_threshold = price_std * 0.5
+    # Find significant peaks and troughs with more relaxed criteria
+    # Use adaptive prominence based on price level (percentage-based)
+    avg_price = close_prices.mean()
+    prominence_threshold = avg_price * 0.001  # 0.1% of average price (was 0.5%)
+    min_prominence = avg_price * 0.0005  # 0.05% minimum (was 0.2%)
+
+    # Use the higher of the two thresholds
+    prominence = max(prominence_threshold, min_prominence)
 
     high_peaks, high_properties = find_peaks(high_prices,
                                            distance=5,
-                                           prominence=prominence_threshold)
+                                           prominence=prominence)
     low_peaks, low_properties = find_peaks(-low_prices,
                                          distance=5,
-                                         prominence=prominence_threshold)
+                                         prominence=prominence)
 
-    if len(high_peaks) < 3 or len(low_peaks) < 3:
-        return {'quality': 'low', 'confidence': 0.3, 'upper': None, 'lower': None, 'age': 0}
+    if len(high_peaks) < 2 or len(low_peaks) < 2:
+        # Fallback: use simple max/min approach
+        upper_level = high_prices.max()
+        lower_level = low_prices.min()
+        
+        # Basic range validation
+        if upper_level <= lower_level:
+            return {'quality': 'low', 'confidence': 0.2, 'upper': None, 'lower': None, 'age': 0}
+        
+        range_height = upper_level - lower_level
+        range_pct = range_height / lower_level
+        
+        # Simple quality assessment for fallback - add missing fields
+        tolerance = range_height * 0.02
+        upper_touches = ((high_prices >= (upper_level - tolerance)) &
+                        (high_prices <= (upper_level + tolerance))).sum()
+        lower_touches = ((low_prices >= (lower_level - tolerance)) &
+                        (low_prices <= (lower_level + tolerance))).sum()
+        total_touches = upper_touches + lower_touches
+        in_range_count = ((close_prices >= lower_level) & (close_prices <= upper_level)).sum()
+        range_respect = in_range_count / len(close_prices)
+        
+        if range_pct < 0.015:  # Less than 1.5%
+            return {'quality': 'low', 'confidence': 0.3, 'upper': float(upper_level), 'lower': float(lower_level), 'age': 0,
+                   'touches': int(total_touches), 'respect_rate': float(range_respect), 'level_consistency': 0.3}
+        elif range_pct > 0.12:  # More than 12%
+            return {'quality': 'low', 'confidence': 0.3, 'upper': float(upper_level), 'lower': float(lower_level), 'age': 0,
+                   'touches': int(total_touches), 'respect_rate': float(range_respect), 'level_consistency': 0.3}
+        else:
+            return {'quality': 'medium', 'confidence': 0.5, 'upper': float(upper_level), 'lower': float(lower_level), 'age': lookback//2,
+                   'touches': int(total_touches), 'respect_rate': float(range_respect), 'level_consistency': 0.6}
 
-    # Get recent significant levels (last 3-4 peaks)
-    recent_highs = high_prices.iloc[high_peaks[-4:]] if len(high_peaks) >= 4 else high_prices.iloc[high_peaks]
-    recent_lows = low_prices.iloc[low_peaks[-4:]] if len(low_peaks) >= 4 else low_prices.iloc[low_peaks]
+    # Get recent significant levels - prefer more recent peaks
+    # Take the highest highs and lowest lows from recent peaks
+    recent_high_count = min(6, len(high_peaks))
+    recent_low_count = min(6, len(low_peaks))
+    
+    recent_highs = high_prices.iloc[high_peaks[-recent_high_count:]]
+    recent_lows = low_prices.iloc[low_peaks[-recent_low_count:]]
 
-    # Calculate potential range boundaries
-    upper_level = recent_highs.median()  # Use median for robustness
-    lower_level = recent_lows.median()
+    # Calculate potential range boundaries - use percentile approach for robustness
+    upper_level = recent_highs.quantile(0.8)  # 80th percentile of recent highs
+    lower_level = recent_lows.quantile(0.2)   # 20th percentile of recent lows
 
     if upper_level <= lower_level:
         return {'quality': 'low', 'confidence': 0.2, 'upper': None, 'lower': None, 'age': 0}
@@ -304,14 +341,16 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
             # Apply range width filter: Only recommend enhanced MR for optimal range sizes
             if range_analysis['upper'] and range_analysis['lower']:
                 range_width = (range_analysis['upper'] - range_analysis['lower']) / range_analysis['lower']
-                min_range_width = 0.025  # 2.5% minimum
-                max_range_width = 0.06   # 6.0% maximum
+                min_range_width = 0.006  # 0.6% minimum (was 0.8%)
+                max_range_width = 0.08   # 8.0% maximum (was 6.0%)
 
                 if min_range_width <= range_width <= max_range_width:
-                    if range_quality in ["high", "medium"] and regime_confidence >= 0.6:
+                    if range_quality in ["high", "medium"] and regime_confidence >= 0.4:  # Was 0.6
                         recommended_strategy = "enhanced_mr"
-                    elif range_quality == "medium" and regime_confidence >= 0.4:
+                    elif range_quality == "medium" and regime_confidence >= 0.3:  # Was 0.4
                         recommended_strategy = "enhanced_mr"  # Still try MR but with caution
+                    elif range_quality == "low" and regime_confidence >= 0.4 and range_width >= 0.025:
+                        recommended_strategy = "enhanced_mr"  # Give low quality ranges a chance if wide enough
                     else:
                         recommended_strategy = "none"  # Range too poor quality
                 else:

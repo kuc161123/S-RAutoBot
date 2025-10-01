@@ -165,7 +165,7 @@ def _detect_range_quality(df: pd.DataFrame, lookback: int = 100) -> Dict:
     quality_score += level_consistency * 0.30
 
     # 2. Touch frequency (how often price visits the levels)
-    tolerance = range_height * 0.02  # 2% tolerance
+    tolerance = range_height * 0.05  # 5% tolerance (increased from 2% for crypto volatility)
     upper_touches = ((high_prices >= (upper_level - tolerance)) &
                     (high_prices <= (upper_level + tolerance))).sum()
     lower_touches = ((low_prices >= (lower_level - tolerance)) &
@@ -345,11 +345,11 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
                 max_range_width = 0.08   # 8.0% maximum (was 6.0%)
 
                 if min_range_width <= range_width <= max_range_width:
-                    if range_quality in ["high", "medium"] and regime_confidence >= 0.4:  # Was 0.6
+                    if range_quality in ["high", "medium"] and regime_confidence >= 0.35:  # Lowered from 0.4
                         recommended_strategy = "enhanced_mr"
-                    elif range_quality == "medium" and regime_confidence >= 0.3:  # Was 0.4
+                    elif range_quality == "medium" and regime_confidence >= 0.25:  # Lowered from 0.3
                         recommended_strategy = "enhanced_mr"  # Still try MR but with caution
-                    elif range_quality == "low" and regime_confidence >= 0.4 and range_width >= 0.025:
+                    elif range_quality == "low" and regime_confidence >= 0.35 and range_width >= 0.02:  # Lowered from 0.025
                         recommended_strategy = "enhanced_mr"  # Give low quality ranges a chance if wide enough
                     else:
                         recommended_strategy = "none"  # Range too poor quality

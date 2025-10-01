@@ -172,13 +172,16 @@ def _detect_range_quality(df: pd.DataFrame, lookback: int = 100) -> Dict:
                     (low_prices <= (lower_level + tolerance))).sum()
 
     total_touches = upper_touches + lower_touches
-    touch_score = min(1.0, total_touches / 10)  # Normalize to max 10 touches
+    touch_score = min(1.0, total_touches / 6)  # More forgiving (was /10)
     quality_score += touch_score * 0.25
 
-    # 3. Range respect (price stays within range most of the time)
+    # 3. Range respect (price stays within range most of the time) - more lenient
     in_range_count = ((close_prices >= lower_level) & (close_prices <= upper_level)).sum()
     range_respect = in_range_count / len(close_prices)
-    quality_score += range_respect * 0.20
+    if range_respect >= 0.4:  # More lenient threshold
+        quality_score += range_respect * 0.20
+    else:
+        quality_score += range_respect * 0.10  # Partial credit
 
     # 4. Volume confirmation at levels
     volume_mean = volume_prices.mean()
@@ -193,7 +196,7 @@ def _detect_range_quality(df: pd.DataFrame, lookback: int = 100) -> Dict:
     if not pd.isna(lower_volume_avg) and lower_volume_avg > volume_mean:
         volume_confirmation += 0.5
 
-    quality_score += volume_confirmation * 0.15
+    quality_score += volume_confirmation * 0.05  # Make volume less critical (was 0.15)
 
     # 5. Range age/persistence
     # Estimate how long the range has been active
@@ -338,35 +341,77 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
         # ===== STRATEGY RECOMMENDATION =====
 
         if primary_regime == "ranging":
-            # Apply range width filter: Only recommend enhanced MR for optimal range sizes
+            # Apply range width filter: Much more permissive for enhanced MR
             if range_analysis['upper'] and range_analysis['lower']:
                 range_width = (range_analysis['upper'] - range_analysis['lower']) / range_analysis['lower']
-                min_range_width = 0.006  # 0.6% minimum (was 0.8%)
-                max_range_width = 0.08   # 8.0% maximum (was 6.0%)
+                min_range_width = 0.003  # 0.3% minimum (was 0.6% - 50% lower)
+                max_range_width = 0.12   # 12.0% maximum (was 8.0% - 50% higher)
+
+                logger.info(f"[{symbol}] 🔍 RANGE DEBUG: width={range_width:.1%}, quality={range_quality}, confidence={regime_confidence:.1%}")
+                logger.info(f"[{symbol}] 📊 Range bounds: {min_range_width:.1%}-{max_range_width:.1%}, touches={range_analysis.get('touches', 0)}")
 
                 if min_range_width <= range_width <= max_range_width:
-                    if range_quality in ["high", "medium"] and regime_confidence >= 0.35:  # Lowered from 0.4
+                    if range_quality == "high" and regime_confidence >= 0.2:  # Much more permissive
                         recommended_strategy = "enhanced_mr"
-                    elif range_quality == "medium" and regime_confidence >= 0.25:  # Lowered from 0.3
-                        recommended_strategy = "enhanced_mr"  # Still try MR but with caution
-                    elif range_quality == "low" and regime_confidence >= 0.35 and range_width >= 0.02:  # Lowered from 0.025
-                        recommended_strategy = "enhanced_mr"  # Give low quality ranges a chance if wide enough
+                        logger.info(f"[{symbol}] ✅ MR: High quality range")
+                    elif range_quality == "medium" and regime_confidence >= 0.15:  # Much more permissive
+                        recommended_strategy = "enhanced_mr"
+                        logger.info(f"[{symbol}] ✅ MR: Medium quality range")
+                    elif range_quality == "low" and regime_confidence >= 0.2 and range_width >= 0.01:  # More permissive
+                        recommended_strategy = "enhanced_mr"
+                        logger.info(f"[{symbol}] ✅ MR: Low quality but wide range")
+                    elif regime_confidence >= 0.1:  # NEW: Catch-all for any detected range
+                        recommended_strategy = "enhanced_mr"
+                        logger.info(f"[{symbol}] ✅ MR: Fallback - any detected range")
                     else:
-                        recommended_strategy = "none"  # Range too poor quality
+                        recommended_strategy = "none"
+                        logger.info(f"[{symbol}] ❌ MR: Range too poor quality (conf={regime_confidence:.1%})")
                 else:
-                    recommended_strategy = "none"  # Range width outside optimal bounds
-                    logger.debug(f"[{symbol}] Range width {range_width:.1%} outside optimal bounds ({min_range_width:.1%}-{max_range_width:.1%})")
+                    recommended_strategy = "none"
+                    logger.info(f"[{symbol}] ❌ MR: Range width {range_width:.1%} outside bounds ({min_range_width:.1%}-{max_range_width:.1%})")
             else:
-                recommended_strategy = "none"  # No valid range detected
+                recommended_strategy = "none"
+                logger.info(f"[{symbol}] ❌ MR: No valid range detected (upper={range_analysis.get('upper')}, lower={range_analysis.get('lower')})")
 
         elif primary_regime == "trending":
-            if trend_strength >= 25 and volatility_level != "high":
+            logger.info(f"[{symbol}] 🔍 TREND DEBUG: strength={trend_strength:.1f}, volatility={volatility_level}")
+            if trend_strength >= 15:  # Much more permissive (was 25)
                 recommended_strategy = "pullback"
+                logger.info(f"[{symbol}] ✅ PULLBACK: Strong trend")
+            elif trend_strength >= 10 and volatility_level == "low":  # NEW: weak trends in low vol
+                recommended_strategy = "pullback"
+                logger.info(f"[{symbol}] ✅ PULLBACK: Weak trend + low volatility")
             else:
-                recommended_strategy = "none"  # Trend too weak or too volatile
+                recommended_strategy = "none"
+                logger.info(f"[{symbol}] ❌ PULLBACK: Trend too weak (strength={trend_strength:.1f})")
 
-        else:  # volatile
-            recommended_strategy = "none"  # Skip volatile markets
+        elif primary_regime == "volatile":
+            logger.info(f"[{symbol}] 🔍 VOLATILE DEBUG: strength={trend_strength:.1f}, volatility={volatility_level}")
+            if trend_strength >= 20 and volatility_level != "extreme":  # NEW: volatile but trending
+                recommended_strategy = "pullback"
+                logger.info(f"[{symbol}] ✅ PULLBACK: Volatile but trending")
+            else:
+                recommended_strategy = "none"
+                logger.info(f"[{symbol}] ❌ VOLATILE: Too chaotic for trading")
+
+        else:
+            recommended_strategy = "none"
+            logger.info(f"[{symbol}] ❌ Unknown regime: {primary_regime}")
+
+        # ===== COMPREHENSIVE FALLBACK SYSTEM =====
+        if recommended_strategy == "none":
+            logger.info(f"[{symbol}] 🛡️ FALLBACK ANALYSIS:")
+            # Intelligence-based fallback
+            if range_analysis.get('confidence', 0) > 0.05:  # Any range detected
+                recommended_strategy = "enhanced_mr"
+                logger.info(f"[{symbol}] ✅ FALLBACK: Range detected ({range_analysis.get('confidence', 0):.1%}) -> MR")
+            elif trend_strength > 5:  # Any trend detected
+                recommended_strategy = "pullback"
+                logger.info(f"[{symbol}] ✅ FALLBACK: Trend detected ({trend_strength:.1f}) -> Pullback")
+            else:
+                # Market is truly chaotic - default to pullback (more robust)
+                recommended_strategy = "pullback"
+                logger.info(f"[{symbol}] ✅ FALLBACK: Chaotic market -> Default Pullback")
 
         # ===== REGIME PERSISTENCE =====
         # Estimate how long current regime has been active

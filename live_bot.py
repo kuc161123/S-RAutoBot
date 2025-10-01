@@ -477,6 +477,18 @@ class TradingBot:
                                     # Legacy mean reversion trade (from before enhanced system)
                                     shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
                                     logger.info(f"[{symbol}] Legacy MR ML updated with outcome (routed to enhanced).")
+                                elif pos.strategy_name == "unknown":
+                                    # Recovered position - check signal reason to determine strategy
+                                    reason = signal_data.get('meta', {}).get('reason', '')
+                                    if 'Mean Reversion:' in reason or 'Rejection from resistance' in reason or 'Rejection from support' in reason:
+                                        # This is actually a Mean Reversion trade
+                                        shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
+                                        logger.info(f"[{symbol}] MR ML updated with outcome (recovered position, detected from reason).")
+                                    else:
+                                        # Default to pullback ML
+                                        if ml_scorer is not None:
+                                            ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                            logger.info(f"[{symbol}] Pullback ML updated with outcome (recovered position, defaulted).")
                                 else:
                                     # Pullback strategy
                                     if ml_scorer is not None:
@@ -640,7 +652,8 @@ class TradingBot:
                         entry=entry,
                         sl=sl if sl > 0 else (entry * 0.95 if side == "long" else entry * 1.05),
                         tp=tp if tp > 0 else (entry * 1.1 if side == "long" else entry * 0.9),
-                        entry_time=datetime.now() - pd.Timedelta(hours=1)  # Approximate for recovered positions
+                        entry_time=datetime.now() - pd.Timedelta(hours=1),  # Approximate for recovered positions
+                        strategy_name="unknown"  # Mark recovered positions - will be detected via signal reason
                     )
                     
                     recovered += 1

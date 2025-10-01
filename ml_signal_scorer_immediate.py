@@ -516,8 +516,10 @@ class ImmediateMLScorer:
             # ALWAYS use original features for the main ML system
             # This ensures stability and prevents feature mismatches
             self.model_feature_version = 'original'
-            self.feature_count = 27
-            logger.info("Training original ML with 22 core features (enhanced features reserved for evolution)")
+            # Calculate actual feature count dynamically
+            test_features = self._prepare_features({})
+            self.feature_count = len(test_features)
+            logger.info(f"Training original ML with {self.feature_count} total features (includes cluster features)")
             
             # Prepare training data
             X = []
@@ -539,42 +541,30 @@ class ImmediateMLScorer:
             phantom_count = total_data - executed_count
             logger.info(f"Training on {total_data} total trades: {executed_count} executed, {phantom_count} phantom")
             
-            # Calculate class weights for rebalancing
-            from sklearn.utils.class_weight import compute_class_weight
-            classes = np.unique(y)
-            class_weights_array = compute_class_weight('balanced', classes=classes, y=y)
-            class_weight_dict = dict(zip(classes, class_weights_array))
-
-            # Create sample weights for training
-            sample_weights = np.ones(len(y))
-            for i, label in enumerate(y):
-                sample_weights[i] = class_weight_dict.get(label, 1.0)
-
-            # Log class distribution
+            # Log class distribution (no rebalancing needed for trading)
             win_count = np.sum(y)
             loss_count = len(y) - win_count
             logger.info(f"Class distribution: {win_count} wins ({win_count/len(y)*100:.1f}%), {loss_count} losses ({loss_count/len(y)*100:.1f}%)")
-            logger.info(f"Class weights: Win={class_weight_dict.get(1, 1):.2f}, Loss={class_weight_dict.get(0, 1):.2f}")
+            logger.info("No class rebalancing - trading profitability comes from risk/reward ratio, not just accuracy")
 
             # Fit scaler
             self.scaler.fit(X)
             X_scaled = self.scaler.transform(X)
 
-            # Train ensemble models with class rebalancing
+            # Train ensemble models (no rebalancing for trading)
             self.models = {}
 
-            # Random Forest with class weights
+            # Random Forest (no rebalancing)
             rf = RandomForestClassifier(
                 n_estimators=100,  # Increased for better performance
                 max_depth=7,  # Slightly deeper for complex patterns
                 min_samples_split=5,
-                class_weight='balanced',  # Auto-balance classes
                 random_state=42
             )
-            rf.fit(X_scaled, y, sample_weight=sample_weights)
+            rf.fit(X_scaled, y)
             self.models['rf'] = rf
 
-            # Gradient Boosting with sample weights
+            # Gradient Boosting (no rebalancing)
             gb = GradientBoostingClassifier(
                 n_estimators=100,  # Increased for better performance
                 max_depth=4,  # Slightly deeper
@@ -582,7 +572,7 @@ class ImmediateMLScorer:
                 subsample=0.8,  # Add some randomness
                 random_state=42
             )
-            gb.fit(X_scaled, y, sample_weight=sample_weights)
+            gb.fit(X_scaled, y)
             self.models['gb'] = gb
             
             # Neural Network

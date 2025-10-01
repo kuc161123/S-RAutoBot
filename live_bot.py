@@ -1251,7 +1251,9 @@ class TradingBot:
                         
                     df.loc[row.index[0]] = row.iloc[0]
                     df.sort_index(inplace=True)
-                    df = df.tail(10000)  # Keep last 10000 candles for maximum historical analysis
+                    # Limit candles per symbol based on total symbols to control memory
+                    max_candles_per_symbol = max(2000, 100000 // len(self.config['trade']['symbols']))
+                    df = df.tail(max_candles_per_symbol)  # Dynamic limit based on symbol count
                     self.frames[sym] = df
                     
                     # Update phantom trades with current price
@@ -1768,6 +1770,8 @@ class TradingBot:
                             logger.critical(f"[{sym}] FAILED TO CLOSE UNPROTECTED POSITION: {close_error}")
                             if self.tg:
                                 await self.tg.send_message(f"🆘 CRITICAL: {sym} position UNPROTECTED! Manual intervention required. SL/TP failed: {str(tpsl_error)[:100]}")
+                                # Stop bot from taking new trades until manual review
+                                await self.tg.send_message(f"🛑 Bot halted due to unprotected position. Use /resume to restart after manual review.")
                         
                         # Re-raise the original error to prevent position being added to book
                         raise Exception(f"Failed to set TP/SL for {sym}: {tpsl_error}")

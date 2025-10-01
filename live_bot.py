@@ -473,6 +473,10 @@ class TradingBot:
                                 if pos.strategy_name == "enhanced_mr":
                                     shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
                                     logger.info(f"[{symbol}] Enhanced MR ML updated with outcome.")
+                                elif pos.strategy_name == "mean_reversion":
+                                    # Legacy mean reversion trade (from before enhanced system)
+                                    shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
+                                    logger.info(f"[{symbol}] Legacy MR ML updated with outcome (routed to enhanced).")
                                 else:
                                     # Pullback strategy
                                     if ml_scorer is not None:

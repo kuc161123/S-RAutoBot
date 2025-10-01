@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-An ML-enhanced automated trading bot for Bybit perpetual futures that monitors 263 trading pairs simultaneously. Uses pullback strategies with pivot-based support/resistance detection, market structure analysis, and machine learning signal scoring for trade execution with strict risk management.
+An ML-enhanced automated trading bot for Bybit perpetual futures that monitors the top 50 cryptocurrency pairs by market cap. Uses pullback strategies with pivot-based support/resistance detection, market structure analysis, and machine learning signal scoring for trade execution with strict risk management.
 
 ## Key Architecture
 
@@ -29,7 +29,7 @@ An ML-enhanced automated trading bot for Bybit perpetual futures that monitors 2
 - **symbol_clustering.py**: Groups symbols by behavior for better ML performance
 
 ### Data Flow
-1. Multi-WebSocket streams → 263 symbols' live klines → frames dict
+1. Multi-WebSocket streams → top 50 symbols' live klines → frames dict
 2. Strategy analyzes 200+ candles → detects pullback signals
 3. ML scorer evaluates signal → 34 features → score 0-100
 4. Phantom tracker records all signals for learning

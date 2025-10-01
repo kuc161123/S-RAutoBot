@@ -126,15 +126,17 @@ class SymbolClusterer:
             
         clusters = {}
         
-        # Hardcoded lists to ensure correct classification
-        major_cryptos = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 
-                        'ADAUSDT', 'AVAXUSDT', 'DOTUSDT', 'MATICUSDT', 'LINKUSDT']
+        # Updated for top 50 market cap symbols
+        major_cryptos = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'AVAXUSDT', 
+                        'LINKUSDT', 'DOTUSDT', 'BCHUSDT', 'LTCUSDT', 'NEARUSDT',
+                        'ICPUSDT', 'ARBUSDT', 'OPUSDT', 'INJUSDT', 'ATOMUSDT']
         
-        stablecoins = ['USDTUSDT', 'USDCUSDT', 'BUSDUSDT', 'DAIUSDT', 'TUSDUSDT']
+        # No stablecoins in top 50 crypto market cap list
+        stablecoins = []
         
-        meme_coins = ['DOGEUSDT', 'SHIBUSDT', '1000SHIBUSDT', 'PEPEUSDT', '1000PEPEUSDT',
-                     'FLOKIUSDT', '1000FLOKIUSDT', 'BONKUSDT', '1000BONKUSDT', 
-                     'MEMEUSDT', 'BOMEUSDT', 'WIFUSDT']
+        # Meme/gaming/speculative coins from top 50
+        meme_coins = ['DOGEUSDT', '1000PEPEUSDT', 'FLOKIUSDT', 'GMTUSDT', 'APEUSDT', 
+                     'GALAUSDT', 'SANDUSDT', 'MANAUSDT', 'AXSUSDT', 'CHZUSDT']
         
         for symbol, m in self.metrics.items():
             # Rule-based clustering for interpretability

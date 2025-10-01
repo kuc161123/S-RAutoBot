@@ -28,7 +28,6 @@ trade:
   - ARBUSDT
   - OPUSDT
   - INJUSDT
-  - SEIUSDT
   - ATOMUSDT
   - IMXUSDT
   - PYTHUSDT
@@ -56,240 +55,36 @@ trade:
   - BLURUSDT
   - CYBERUSDT
   - ARKMUSDT
-  - PENDLEUSDT
-  - LAUNCHCOINUSDT
-  - OPUSDT
-  - ADAUSDT
-  - NEIROETHUSDT
-  - QIUSDT
-  - ETCUSDT
-  - MNTUSDT
-  - CROUSDT
-  - IPUSDT
-  - HYPEUSDT
-  - PENGUUSDT
-  - SKYUSDT
-  - 1000BONKUSDT
-  - MUSDT
-  - FARTCOINUSDT
-  - PUMPFUNUSDT
-  - LRCUSDT
-  - MAVUSDT
-  - AI16ZUSDT
-  - DOLOUSDT
-  - JELLYJELLYUSDT
-  - POPCATUSDT
-  - EGLDUSDT
-  - CFXUSDT
-  - COMPUSDT
-  - DASHUSDT
-  - GMXUSDT
-  - 1INCHUSDT
-  - DOGSUSDT
-  - 10000SATSUSDT
-  - 10000WHYUSDT
-  - BOMEUSDT
-  - MEMEUSDT
-  - A2ZUSDT
-  - HMSTRUSDT
-  - SHIB1000USDT
-  - BEAMUSDT
-  - MEWUSDT
-  - 1000000BABYDOGEUSDT
-  - DOGUSDT
-  - GORKUSDT
-  - MYRIAUSDT
-  - MERLUSDT
-  - 10000LADYSUSDT
-  - HIPPOUSDT
-  - 1000RATSUSDT
-  - JASMYUSDT
-  - BAKEUSDT
-  - FUELUSDT
-  - SKLUSDT
-  - DEGENUSDT
-  - PEOPLEUSDT
-  - RSRUSDT
-  - SAPIENUSDT
-  - LAUNCHCOINUSDT
-  - HUSDT
-  - BIOUSDT
-  - GIGAUSDT
-  - CTSIUSDT
-  - 10000ELONUSDT
-  - IDEXUSDT
-  - ARCUSDT
-  - SLFUSDT
-  - AERGOUSDT
-  - CAMPUSDT
-  - MOODENGUSDT
-  - ALUUSDT
-  - HUMAUSDT
-  - BANANAS31USDT
-  - MBLUSDT
-  - RVNUSDT
-  - FUSDT
-  - HIFIUSDT
-  - B3USDT
-  - DOODUSDT
-  - REZUSDT
-  - REXUSDT
-  - ETHBTCUSDT
-  - BTRUSDT
-  - PIPPINUSDT
-  - AVAAIUSDT
-  - SLPUSDT
-  - MITOUSDT
-  - SCUSDT
-  - GRIFFAINUSDT
-  - HOMEUSDT
-  - FLOCKUSDT
-  - COOKUSDT
-  - 10000COQUSDT
-  - RHEAUSDT
-  - QIUSDT
-  - DMCUSDT
-  - RFCUSDT
-  - DAMUSDT
-  - BIGTIMEUSDT
-  - ESPORTSUSDT
-  - ANIMEUSDT
-  - GPSUSDT
-  - MYROUSDT
-  - DUCKUSDT
-  - SAHARAUSDT
-  - PLUMEUSDT
-  - CHILLGUYUSDT
-  - ONEUSDT
-  - MASAUSDT
-  - NTRNUSDT
-  - L3USDT
-  - OMUSDT
-  - MVLUSDT
-  - DEEPUSDT
-  - ATHUSDT
-  - FLRUSDT
-  - NEIROETHUSDT
-  - COSUSDT
-  - ACHUSDT
-  - AIOUSDT
-  - CATIUSDT
-  - BANKUSDT
-  - ALCHUSDT
-  - DBRUSDT
-  - MOVEUSDT
-  - 10000QUBICUSDT
-  - ROSEUSDT
-  - BABYUSDT
-  - MUBARAKUSDT
-  - ALPHAUSDT
-  - PORTALUSDT
-  - FWOGUSDT
-  - QUICKUSDT
-  - ANKRUSDT
-  - MAGICUSDT
-  - PONKEUSDT
-  - BSWUSDT
-  - BDXNUSDT
-  - CELRUSDT
-  - MYXUSDT
-  - RESOLVUSDT
-  - COOKIEUSDT
-  - ETHFIUSDT
-  - AVAILUSDT
-  - C98USDT
-  - INUSDT
-  - DYDXUSDT
-  - FHEUSDT
-  - ROAMUSDT
-  - MOCAUSDT
-  - GUNUSDT
-  - OLUSDT
-  - PUMPBTCUSDT
-  - PROVEUSDT
-  - KAIAUSDT
-  - BANUSDT
-  - PIXELUSDT
-  - OGNUSDT
-  - KMNOUSDT
-  - ASTRUSDT
-  - RAREUSDT
-  - SIRENUSDT
-  - 1000NEIROCTOUSDT
-  - NAORISUSDT
-  - RSS3USDT
-  - AEROUSDT
-  - FLMUSDT
-  - IOTXUSDT
-  - PRCLUSDT
-  - SIGNUSDT
-  - 1000000MOGUSDT
-  - CUSDT
-  - HOOKUSDT
-  - PARTIUSDT
-  - COTIUSDT
-  - CPOOLUSDT
-  - REDUSDT
-  - LOOKSUSDT
-  - AINUSDT
-  - CLOUDUSDT
-  - ORBSUSDT
-  - 1000LUNCUSDT
-  - HYPERUSDT
-  - EIGENUSDT
-  - CUDISUSDT
-  - BROCCOLIUSDT
-  - FIDAUSDT
-  - MELANIAUSDT
-  - KUSDT
-  - 1000TOSHIUSDT
-  - 1000XECUSDT
-  - FRAGUSDT
-  - AEVOUSDT
-  - OBOLUSDT
-  - GLMRUSDT
-  - HEIUSDT
-  - BERAUSDT
-  - IDUSDT
-  - AIUSDT
-  - SKYAIUSDT
-  - MILKUSDT
-  - ARPAUSDT
-  - IOTAUSDT
-  - BSUUSDT
-  - SERAPHUSDT
-  - API3USDT
-  - GUSDT
   timeframe: '15'
   risk_usd: 10
   risk_percent: 1.0
   use_percent_risk: true
-  use_ema: false  # Disabled to let ML learn when EMA matters
-  ema_len: 200    # ML will learn if trend alignment helps
-  use_vol: false  # Disabled to let ML learn volume importance
-  vol_len: 20     # ML will track volume patterns
-  vol_mult: 1.2   # ML will determine optimal volume thresholds
+  use_ema: false
+  ema_len: 200
+  use_vol: false
+  vol_len: 20
+  vol_mult: 1.2
   atr_len: 14
-  sl_buf_atr: 1.5  # Increased from 0.5 to reduce stop-outs
-  rr: 2.5  # Risk:Reward ratio (adjusted for fees in strategy)
+  sl_buf_atr: 1.5
+  rr: 2.5
   both_hit_rule: SL_FIRST
   use_pullback_strategy: true
   confirmation_candles: 2
-  use_mtf_sr: true  # Enable multi-timeframe support/resistance
-  mtf_weight: 2.0  # Prefer major levels 2x over minor
-  mtf_min_strength: 3.0  # Minimum strength for major levels
-  mtf_update_interval: 100  # Update HTF S/R every N candles (default 100)
-  use_ml_scoring: true  # ML Signal Quality Scoring (learns after 200 trades)
-  ml_min_score: 70.0  # Minimum ML score to take signal (0-100)
-  enable_ml_evolution: false  # Symbol-specific ML evolution (SHADOW MODE - learning only)
-  use_symbol_clusters: true  # Enable symbol clustering features for ML
-  use_ml_dynamic_risk: false  # Enable ML-based dynamic risk sizing
-  ml_risk_min_score: 70.0  # ML score for minimum risk
-  ml_risk_max_score: 85.0  # ML score for maximum risk
-  ml_risk_min_percent: 2.0  # Risk % at minimum score
-  ml_risk_max_percent: 4.0  # Risk % at maximum score
-  use_regime_switching: false # Legacy strategy switching (disabled in favor of enhanced parallel)
-  use_enhanced_parallel: true   # Enable Enhanced Parallel ML System (Pullback + Mean Reversion)
+  use_mtf_sr: true
+  mtf_weight: 2.0
+  mtf_min_strength: 3.0
+  mtf_update_interval: 100
+  use_ml_scoring: true
+  ml_min_score: 70.0
+  enable_ml_evolution: false
+  use_symbol_clusters: true
+  use_ml_dynamic_risk: false
+  ml_risk_min_score: 70.0
+  ml_risk_max_score: 85.0
+  ml_risk_min_percent: 2.0
+  ml_risk_max_percent: 4.0
+  use_regime_switching: false
+  use_enhanced_parallel: true
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}

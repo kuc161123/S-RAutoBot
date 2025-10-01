@@ -856,6 +856,9 @@ class TradingBot:
         # Replace environment variables
         cfg = replace_env_vars(cfg)
         
+        # Store config as instance variable
+        self.config = cfg
+        
         # Extract configuration
         symbols = [s.upper() for s in cfg["trade"]["symbols"]]
         tf = cfg["trade"]["timeframe"]
@@ -1590,6 +1593,11 @@ class TradingBot:
                     # Safety: Allow signal if ML fails but log the error
                     logger.warning(f"[{sym}] ML scoring error: {e}. Allowing signal for safety.")
                     should_take_trade = True
+
+                # Ensure we have a valid signal before proceeding
+                if sig is None:
+                    logger.warning(f"[{sym}] No valid signal found after processing, skipping")
+                    continue
 
                 # One position per symbol rule - wait for current position to close
                 # Final trade execution decision logging

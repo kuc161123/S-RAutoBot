@@ -1477,12 +1477,15 @@ class TradingBot:
                                 else:
                                     logger.info(f"   ❌ DECISION: REJECT TRADE - ML score {ml_score:.1f} below threshold {threshold}")
                                     logger.info(f"   💡 Rejection reason: {ml_reason}")
-                                    continue  # Skip trade execution when ML score below threshold
 
-                                # Record in MR phantom tracker with correct execution status
+                                # Record in MR phantom tracker BEFORE continue (for both executed and rejected)
                                 selected_phantom_tracker.record_mr_signal(
                                     sym, sig.__dict__, ml_score, should_take_trade, {}, enhanced_features  # Use should_take_trade like pullback strategy
                                 )
+
+                                # Skip trade execution if ML score below threshold (but phantom is recorded)
+                                if not should_take_trade:
+                                    continue
 
                             else:
                                 # Use pullback features (original system)
@@ -1560,9 +1563,8 @@ class TradingBot:
                                 else:
                                     logger.info(f"   ❌ DECISION: REJECT TRADE - ML score {ml_score:.1f} below threshold {threshold}")
                                     logger.info(f"   💡 Rejection reason: {ml_reason}")
-                                    continue  # Skip trade execution when ML score below threshold
 
-                                # Record in phantom tracker with proper strategy name
+                                # Record in phantom tracker BEFORE continue (for both executed and rejected)
                                 selected_phantom_tracker.record_signal(
                                     symbol=sym,
                                     signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
@@ -1571,6 +1573,10 @@ class TradingBot:
                                     features=basic_features,
                                     strategy_name=selected_strategy
                                 )
+
+                                # Skip trade execution if ML score below threshold (but phantom is recorded)
+                                if not should_take_trade:
+                                    continue
 
                         except Exception as e:
                             logger.warning(f"🚨 [{sym}] ML SCORING ERROR: {e}")

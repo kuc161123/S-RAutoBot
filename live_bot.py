@@ -1511,11 +1511,112 @@ class TradingBot:
                                 logger.info(f"   💡 Trend strength: {regime_analysis.trend_strength:.1f}, volatility: {regime_analysis.volatility_level}")
 
                         else:
-                            # Skip this symbol for now (volatile or poor conditions)
+                            # Router recommends no trading (none). Do phantom-only sampling with caps/dedup.
                             logger.debug(f"⏭️ [{sym}] STRATEGY SELECTION:")
-                            logger.info(f"   ❌ SKIPPING - {regime_analysis.primary_regime.upper()} regime not suitable")
+                            logger.info(f"   ❌ SKIPPING EXECUTION - {regime_analysis.primary_regime.upper()} regime not suitable")
                             logger.info(f"   💡 Volatility: {regime_analysis.volatility_level}, confidence: {regime_analysis.regime_confidence:.1%}")
-                            logger.info(f"   📊 Market needs: trending (>25 strength) OR ranging (>medium quality)")
+                            logger.info(f"   📊 Market needs: trending (>25) OR high-quality range")
+
+                            # Initialize shared caches
+                            if 'phantom_budget' not in shared:
+                                shared['phantom_budget'] = {}
+                            if 'phantom_cooldown' not in shared:
+                                shared['phantom_cooldown'] = {}
+                            # Try to use phantom tracker Redis for dedup (7d TTL)
+                            phantom_dedup_redis = None
+                            try:
+                                if phantom_tracker and getattr(phantom_tracker, 'redis_client', None):
+                                    phantom_dedup_redis = phantom_tracker.redis_client
+                            except Exception:
+                                pass
+
+                            def _dedup_key(symbol, sig):
+                                try:
+                                    e = round(float(sig.entry), 4)
+                                    s = round(float(sig.sl), 4)
+                                    t = round(float(sig.tp), 4)
+                                    return f"{symbol}:{sig.side}:{e}:{s}:{t}"
+                                except Exception:
+                                    return f"{symbol}:{sig.side}:{time.time()}"
+
+                            def _not_duplicate(symbol, sig):
+                                key = _dedup_key(symbol, sig)
+                                if phantom_dedup_redis:
+                                    try:
+                                        if phantom_dedup_redis.exists(f"phantom:dedup:{key}"):
+                                            return False
+                                    except Exception:
+                                        pass
+                                if phantom_dedup_redis:
+                                    try:
+                                        phantom_dedup_redis.setex(f"phantom:dedup:{key}", 7*24*3600, '1')
+                                    except Exception:
+                                        pass
+                                return True
+
+                            # Hourly phantom-only budget per symbol (max 3)
+                            budget = shared['phantom_budget'].setdefault(sym, [])
+                            now_ts = time.time()
+                            one_hour_ago = now_ts - 3600
+                            budget = [ts for ts in budget if ts > one_hour_ago]
+                            shared['phantom_budget'][sym] = budget
+                            remaining = 3 - len(budget)
+                            if remaining <= 0:
+                                logger.debug(f"[{sym}] Phantom-only budget exhausted for this hour")
+                                continue
+
+                            # Per-symbol phantom cooldown (8 candles)
+                            phantom_cd_map = shared['phantom_cooldown']
+                            last_idx = phantom_cd_map.get(sym, {}).get('last_idx', -999999)
+                            if candles_processed - last_idx < 8:
+                                continue
+
+                            recorded = 0
+                            # Try MR phantom
+                            try:
+                                sig_mr = detect_signal_mean_reversion(df.copy(), settings, sym)
+                                if sig_mr and _not_duplicate(sym, sig_mr):
+                                    ef = sig_mr.meta.get('mr_features', {}).copy() if sig_mr.meta else {}
+                                    ef['routing'] = 'none'
+                                    logger.info(f"[{sym}] 👻 Phantom-only (MR none): {sig_mr.side.upper()} @ {sig_mr.entry:.4f}")
+                                    if mr_phantom_tracker:
+                                        mr_phantom_tracker.record_mr_signal(sym, sig_mr.__dict__, 0.0, False, {}, ef)
+                                    budget.append(now_ts)
+                                    recorded += 1
+                            except Exception:
+                                pass
+
+                            # Try Pullback phantom if budget remains
+                            if recorded < remaining:
+                                try:
+                                    sig_pb = get_pullback_signals(df.copy(), settings, sym)
+                                    if sig_pb and _not_duplicate(sym, sig_pb):
+                                        from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
+                                        if sym not in ml_breakout_states:
+                                            ml_breakout_states[sym] = BreakoutState()
+                                        state = ml_breakout_states[sym]
+                                        retracement = sig_pb.entry
+                                        feats = calculate_ml_features(df, state, sig_pb.side, retracement)
+                                        feats['routing'] = 'none'
+                                        logger.info(f"[{sym}] 👻 Phantom-only (Pullback none): {sig_pb.side.upper()} @ {sig_pb.entry:.4f}")
+                                        if phantom_tracker:
+                                            phantom_tracker.record_signal(
+                                                symbol=sym,
+                                                signal={'side': sig_pb.side, 'entry': sig_pb.entry, 'sl': sig_pb.sl, 'tp': sig_pb.tp},
+                                                ml_score=0.0,
+                                                was_executed=False,
+                                                features=feats,
+                                                strategy_name='pullback'
+                                            )
+                                        budget.append(now_ts)
+                                        recorded += 1
+                                except Exception:
+                                    pass
+
+                            shared['phantom_budget'][sym] = budget
+                            phantom_cd_map[sym] = { 'last_idx': candles_processed }
+                            shared['phantom_cooldown'] = phantom_cd_map
+                            # Done with phantom-only; continue to next symbol
                             continue
 
                     elif use_regime_switching:

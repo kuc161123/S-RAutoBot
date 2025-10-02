@@ -606,6 +606,7 @@ class MLScorerMeanReversion:
             # Prepare features and targets
             X_list = []
             y_list = []
+            weights_list = []
             pnl_list = []
 
             for trade in training_data:
@@ -620,6 +621,17 @@ class MLScorerMeanReversion:
                         X_list.append(feature_vector)
                         y_list.append(outcome)
                         pnl_list.append(pnl)
+                        # Compute sample weight
+                        w = 0.9  # default for MR executed (no explicit flag)
+                        try:
+                            if isinstance(features, dict) and features.get('routing') == 'none':
+                                w = 0.5
+                            cl = int(features.get('symbol_cluster', 0)) if isinstance(features, dict) else 0
+                            if cl == 3:
+                                w *= 0.7
+                        except Exception:
+                            pass
+                        weights_list.append(w)
                 except Exception as e:
                     logger.debug(f"Skipping invalid trade data: {e}")
                     continue
@@ -671,7 +683,10 @@ class MLScorerMeanReversion:
             trained_models = 0
             for name, model in self.models.items():
                 try:
-                    model.fit(X_scaled, y)
+                    if name in ('range_rf', 'reversal_gb'):
+                        model.fit(X_scaled, y, sample_weight=np.array(weights_list))
+                    else:
+                        model.fit(X_scaled, y)
                     trained_models += 1
                     logger.debug(f"Trained {name} model successfully")
                 except Exception as e:

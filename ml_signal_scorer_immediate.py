@@ -558,6 +558,7 @@ class ImmediateMLScorer:
             X = []
             y = []
             
+            weights = []
             for data in all_training_data:
                 features = data['features']
                 outcome = data['outcome']
@@ -565,6 +566,18 @@ class ImmediateMLScorer:
                 feature_vector = self._prepare_features(features)
                 X.append(feature_vector)
                 y.append(outcome)
+                # Compute sample weight
+                w = 1.0 if data.get('was_executed') else 0.8
+                try:
+                    if isinstance(features, dict) and features.get('routing') == 'none':
+                        w = 0.5
+                    # Cluster-aware downweighting for high-vol symbols
+                    cl = int(features.get('symbol_cluster', 0)) if isinstance(features, dict) else 0
+                    if cl == 3:
+                        w *= 0.7
+                except Exception:
+                    pass
+                weights.append(w)
                 
             X = np.array(X)
             y = np.array(y)
@@ -594,7 +607,10 @@ class ImmediateMLScorer:
                 min_samples_split=5,
                 random_state=42
             )
-            rf.fit(X_scaled, y)
+            try:
+                rf.fit(X_scaled, y, sample_weight=np.array(weights))
+            except Exception:
+                rf.fit(X_scaled, y)
             self.models['rf'] = rf
 
             # Gradient Boosting (no rebalancing)
@@ -605,7 +621,10 @@ class ImmediateMLScorer:
                 subsample=0.8,  # Add some randomness
                 random_state=42
             )
-            gb.fit(X_scaled, y)
+            try:
+                gb.fit(X_scaled, y, sample_weight=np.array(weights))
+            except Exception:
+                gb.fit(X_scaled, y)
             self.models['gb'] = gb
             
             # Neural Network

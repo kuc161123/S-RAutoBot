@@ -71,11 +71,11 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
     if upper_range <= lower_range:
         return None # Invalid range
 
-    # Range width filter: Trade ranges between 1.5% and 8% wide
-    # Expanded to match regime detection bounds while maintaining quality
-    range_width = (upper_range - lower_range) / lower_range  
-    min_range_width = 0.015  # 1.5% minimum (was 2.5%)
-    max_range_width = 0.08   # 8.0% maximum (was 6.0%)
+    # Range width filter: Only trade ranges between 2.5% and 6% wide (REVERTED TO ORIGINAL)
+    # This ensures fixed 2.5:1 R:R aligns well with natural range boundaries
+    range_width = (upper_range - lower_range) / lower_range
+    min_range_width = 0.025  # 2.5% minimum (original strict setting)
+    max_range_width = 0.06   # 6.0% maximum (original strict setting)
 
     if range_width < min_range_width:
         logger.debug(f"[{symbol}] Range too narrow: {range_width:.1%} < {min_range_width:.1%} minimum")
@@ -91,12 +91,10 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
     current_atr = _atr(df, s.atr_len)[-1]
 
     # --- LONG SIGNAL (Buy at Support) ---
-    # Condition: Price approaches the lower part of the range  
-    if abs(current_price - lower_range) < (current_atr * 0.75):  # Relaxed from 0.5 to 0.75
-        # Reversal confirmation: Either bullish candle OR oversold bounce
-        bullish_candle = close.iloc[-1] > df["open"].iloc[-1]
-        near_support = current_price <= lower_range * 1.01  # Within 1% of support
-        if bullish_candle or near_support:
+    # Condition: Price touches the lower part of the range and shows reversal (REVERTED TO ORIGINAL)
+    if abs(current_price - lower_range) < (current_atr * 0.5):  # Original strict 0.5 ATR
+        # Reversal confirmation: Bullish candle (close > open) - ORIGINAL STRICT REQUIREMENT
+        if close.iloc[-1] > df["open"].iloc[-1]:
             entry = current_price
 
             # HYBRID SL METHOD - use whichever gives more room (same as pullback strategy)
@@ -189,12 +187,10 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
                 )
 
     # --- SHORT SIGNAL (Sell at Resistance) ---
-    # Condition: Price approaches the upper part of the range
-    if abs(current_price - upper_range) < (current_atr * 0.75):  # Relaxed from 0.5 to 0.75
-        # Reversal confirmation: Either bearish candle OR overbought rejection
-        bearish_candle = close.iloc[-1] < df["open"].iloc[-1]
-        near_resistance = current_price >= upper_range * 0.99  # Within 1% of resistance
-        if bearish_candle or near_resistance:
+    # Condition: Price touches the upper part of the range and shows reversal (REVERTED TO ORIGINAL)
+    if abs(current_price - upper_range) < (current_atr * 0.5):  # Original strict 0.5 ATR
+        # Reversal confirmation: Bearish candle (close < open) - ORIGINAL STRICT REQUIREMENT
+        if close.iloc[-1] < df["open"].iloc[-1]:
             entry = current_price
 
             # HYBRID SL METHOD - use whichever gives more room (same as pullback strategy)

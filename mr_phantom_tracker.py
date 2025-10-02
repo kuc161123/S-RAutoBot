@@ -65,6 +65,10 @@ class MRPhantomTrade:
     max_adverse: Optional[float] = None
     time_at_extremes: Optional[int] = None  # Candles spent at range boundaries
     range_breakout_occurred: Optional[bool] = None  # Did range break during trade
+    # Enriched labels
+    one_r_hit: Optional[bool] = None
+    two_r_hit: Optional[bool] = None
+    realized_rr: Optional[float] = None
 
     def to_dict(self):
         """Convert to dictionary with proper type handling"""
@@ -357,6 +361,29 @@ class MRPhantomTracker:
             phantom.pnl_percent = ((exit_price - phantom.entry_price) / phantom.entry_price) * 100
         else:
             phantom.pnl_percent = ((phantom.entry_price - exit_price) / phantom.entry_price) * 100
+
+        # Enrich labels: 1R/2R hits and realized RR
+        try:
+            if phantom.side == 'long':
+                R = phantom.entry_price - phantom.stop_loss
+                one_r_lvl = phantom.entry_price + R
+                two_r_lvl = phantom.entry_price + 2 * R
+                max_fav = phantom.max_favorable if phantom.max_favorable is not None else phantom.entry_price
+                phantom.one_r_hit = bool(max_fav >= one_r_lvl)
+                phantom.two_r_hit = bool(max_fav >= two_r_lvl)
+                phantom.realized_rr = (exit_price - phantom.entry_price) / R if R > 0 else 0.0
+            else:
+                R = phantom.stop_loss - phantom.entry_price
+                one_r_lvl = phantom.entry_price - R
+                two_r_lvl = phantom.entry_price - 2 * R
+                min_fav = phantom.max_favorable if phantom.max_favorable is not None else phantom.entry_price
+                phantom.one_r_hit = bool(min_fav <= one_r_lvl)
+                phantom.two_r_hit = bool(min_fav <= two_r_lvl)
+                phantom.realized_rr = (phantom.entry_price - exit_price) / R if R > 0 else 0.0
+        except Exception:
+            phantom.one_r_hit = None
+            phantom.two_r_hit = None
+            phantom.realized_rr = None
 
         # Move to completed list
         if symbol not in self.mr_phantom_trades:

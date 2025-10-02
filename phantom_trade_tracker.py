@@ -54,6 +54,10 @@ class PhantomTrade:
     exit_time: Optional[datetime] = None
     max_favorable: Optional[float] = None  # Best price reached
     max_adverse: Optional[float] = None  # Worst price reached
+    # Enriched labels
+    one_r_hit: Optional[bool] = None
+    two_r_hit: Optional[bool] = None
+    realized_rr: Optional[float] = None
     
     def to_dict(self):
         """Convert to dictionary for storage"""
@@ -302,6 +306,29 @@ class PhantomTradeTracker:
             phantom.pnl_percent = ((exit_price - phantom.entry_price) / phantom.entry_price) * 100
         else:
             phantom.pnl_percent = ((phantom.entry_price - exit_price) / phantom.entry_price) * 100
+
+        # Enrich labels: 1R/2R hits and realized RR
+        try:
+            if phantom.side == 'long':
+                R = phantom.entry_price - phantom.stop_loss
+                one_r_lvl = phantom.entry_price + R
+                two_r_lvl = phantom.entry_price + 2 * R
+                max_fav = phantom.max_favorable if phantom.max_favorable is not None else phantom.entry_price
+                phantom.one_r_hit = bool(max_fav >= one_r_lvl)
+                phantom.two_r_hit = bool(max_fav >= two_r_lvl)
+                phantom.realized_rr = (exit_price - phantom.entry_price) / R if R > 0 else 0.0
+            else:
+                R = phantom.stop_loss - phantom.entry_price
+                one_r_lvl = phantom.entry_price - R
+                two_r_lvl = phantom.entry_price - 2 * R
+                min_fav = phantom.max_favorable if phantom.max_favorable is not None else phantom.entry_price
+                phantom.one_r_hit = bool(min_fav <= one_r_lvl)
+                phantom.two_r_hit = bool(min_fav <= two_r_lvl)
+                phantom.realized_rr = (phantom.entry_price - exit_price) / R if R > 0 else 0.0
+        except Exception:
+            phantom.one_r_hit = None
+            phantom.two_r_hit = None
+            phantom.realized_rr = None
         
         # Move to completed list
         if symbol not in self.phantom_trades:
@@ -446,7 +473,10 @@ class PhantomTradeTracker:
                         'side': trade.side,
                         'max_favorable_move': abs(trade.max_favorable - trade.entry_price) / trade.entry_price * 100 if trade.max_favorable else 0,
                         'max_adverse_move': abs(trade.max_adverse - trade.entry_price) / trade.entry_price * 100 if trade.max_adverse else 0,
-                        'time_to_outcome_sec': t_sec
+                        'time_to_outcome_sec': t_sec,
+                        'one_r_hit': trade.one_r_hit,
+                        'two_r_hit': trade.two_r_hit,
+                        'realized_rr': trade.realized_rr
                     }
                     learning_data.append(record)
         

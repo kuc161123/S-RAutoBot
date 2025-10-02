@@ -249,6 +249,20 @@ class ImmediateMLScorer:
                         ml_score = np.mean(predictions)
 
                     score = ml_score
+                    # Apply executed-only calibration mapping if available
+                    try:
+                        if self.redis_client:
+                            calib_json = self.redis_client.get('iml:calibration')
+                            if calib_json:
+                                calib = json.loads(calib_json)
+                                # Map score (0-100) to bin 0-9
+                                s = max(0.0, min(100.0, score)) / 100.0
+                                bin_idx = min(9, int(s * 10))
+                                mapped = calib[bin_idx] if 0 <= bin_idx < len(calib) else s
+                                score = mapped * 100.0
+                                reasoning.insert(0, f"Calibrated bin{bin_idx}→{mapped*100:.1f}")
+                    except Exception:
+                        pass
                     reasoning.insert(0, f"ML Ensemble: {score:.1f}")
                     
             except Exception as e:
@@ -535,6 +549,18 @@ class ImmediateMLScorer:
                 except Exception:
                     continue
             
+            # Enforce executed anchor: keep phantom <= 1.5x executed to maintain >=40% executed share
+            try:
+                executed_count = sum(1 for d in all_training_data if d['was_executed'])
+                phantom_items = [d for d in all_training_data if not d['was_executed']]
+                exec_items = [d for d in all_training_data if d['was_executed']]
+                max_phantom = int(executed_count * 1.5)
+                if len(phantom_items) > max_phantom:
+                    phantom_items = phantom_items[-max_phantom:]
+                all_training_data = exec_items + phantom_items
+            except Exception:
+                pass
+
             # Cap training set size to avoid memory growth (keep most recent)
             MAX_TRAINING_SAMPLES = 5000
             if len(all_training_data) > MAX_TRAINING_SAMPLES:
@@ -559,6 +585,8 @@ class ImmediateMLScorer:
             y = []
             
             weights = []
+            from datetime import datetime as _dt
+            now_dt = _dt.utcnow()
             for data in all_training_data:
                 features = data['features']
                 outcome = data['outcome']
@@ -566,6 +594,39 @@ class ImmediateMLScorer:
                 feature_vector = self._prepare_features(features)
                 X.append(feature_vector)
                 y.append(outcome)
+                # Compute sample weight
+                w = 1.0 if data.get('was_executed') else 0.8
+                try:
+                    # Curriculum: boost high-confidence contexts early
+                    ts = float(features.get('trend_strength', 0)) if isinstance(features, dict) else 0
+                    rc = float(features.get('range_confidence', 0)) if isinstance(features, dict) else 0
+                    if (ts >= 70 or rc >= 0.8) and executed_count < 100:
+                        w *= 1.2
+                    # Routing none downweight
+                    if isinstance(features, dict) and features.get('routing') == 'none':
+                        w *= 0.5
+                    # Virtual snapshots downweight
+                    if isinstance(features, dict) and 'virtual_threshold' in features:
+                        w *= 0.2
+                    # Cluster 3 downweight
+                    cl = int(features.get('symbol_cluster', 0)) if isinstance(features, dict) else 0
+                    if cl == 3:
+                        w *= 0.7
+                    # Time decay (half-life 30d)
+                    ts_str = data.get('timestamp')
+                    if ts_str:
+                        try:
+                            dt = _dt.fromisoformat(ts_str.replace('Z','+00:00'))
+                        except Exception:
+                            dt = now_dt
+                    else:
+                        dt = now_dt
+                    days = max(0.0, (now_dt - dt).total_seconds() / 86400.0)
+                    decay = 0.5 ** (days / 30.0)
+                    w *= decay
+                except Exception:
+                    pass
+                weights.append(w)
                 # Compute sample weight
                 w = 1.0 if data.get('was_executed') else 0.8
                 try:
@@ -656,12 +717,45 @@ class ImmediateMLScorer:
                 self.redis_client.set('iml:feature_count', str(X.shape[1]))
                 logger.info(f"Saved models trained with {self.model_feature_version} features (count: {X.shape[1]})")
                 
-            # Calculate win rates
+            # Calculate win rates and calibration
             overall_wr = np.mean(y) * 100
             executed_wr = np.mean([all_training_data[i]['outcome'] for i in range(len(all_training_data)) if all_training_data[i]['was_executed']])
             phantom_wr = np.mean([all_training_data[i]['outcome'] for i in range(len(all_training_data)) if not all_training_data[i]['was_executed']])
             
             logger.info(f"ML models trained successfully! Overall WR: {overall_wr:.1f}% | Executed: {executed_wr*100:.1f}% | Phantom: {phantom_wr*100:.1f}%")
+
+            # Build executed-only calibration mapping if enough executed samples
+            try:
+                if executed_count >= 300:
+                    # Recompute predicted probabilities for executed-only
+                    exec_X = [self._prepare_features(d['features']) for d in all_training_data if d['was_executed']]
+                    exec_y = [d['outcome'] for d in all_training_data if d['was_executed']]
+                    ex = np.array(exec_X)
+                    ex_scaled = self.scaler.transform(ex)
+                    preds = []
+                    if 'rf' in self.models:
+                        preds.append(self.models['rf'].predict_proba(ex_scaled)[:,1])
+                    if 'gb' in self.models:
+                        preds.append(self.models['gb'].predict_proba(ex_scaled)[:,1])
+                    if 'nn' in self.models:
+                        preds.append(self.models['nn'].predict_proba(ex_scaled)[:,1])
+                    if preds:
+                        probs = np.mean(preds, axis=0)
+                        # Apply internal calibration then bucketize
+                        probs = np.array([self._calibrate_probability(p) for p in probs])
+                        bins = np.linspace(0,1,11)
+                        calib = []
+                        for i in range(10):
+                            mask = (probs >= bins[i]) & (probs < bins[i+1])
+                            if np.any(mask):
+                                calib.append(float(np.mean(np.array(exec_y)[mask])))
+                            else:
+                                calib.append(0.0)
+                        if self.redis_client:
+                            self.redis_client.set('iml:calibration', json.dumps(calib))
+                            logger.info("Saved executed-only calibration map (10 bins)")
+            except Exception as e:
+                logger.debug(f"Calibration mapping failed: {e}")
             
         except Exception as e:
             logger.error(f"Model training failed: {e}")

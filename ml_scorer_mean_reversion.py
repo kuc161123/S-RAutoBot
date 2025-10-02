@@ -552,7 +552,8 @@ class MLScorerMeanReversion:
                     'features': features,
                     'outcome': outcome_binary,
                     'pnl_percent': pnl_percent,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now().isoformat(),
+                    'was_executed': 1
                 }
 
                 # Store in Redis list with strategy-specific key

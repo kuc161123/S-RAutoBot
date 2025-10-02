@@ -97,7 +97,7 @@ phantom:
   enable_virtual_snapshots: false
   virtual_snapshots_delta: 5   # Create variants at (threshold ± delta)
 scalp:
-  enabled: false
+  enabled: true
   timeframe: 3           # Future: stream 3m for scalps; current uses main tf
   use_ml: true
   threshold: 75

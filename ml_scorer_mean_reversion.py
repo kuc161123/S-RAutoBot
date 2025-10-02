@@ -330,8 +330,23 @@ class MLScorerMeanReversion:
                 self.models = pickle.loads(base64.b64decode(model_data))
                 scaler_data = self.redis_client.get('ml:scaler:mean_reversion')
                 self.scaler = pickle.loads(base64.b64decode(scaler_data))
-                self.is_ml_ready = True
-                logger.info(f"Loaded Mean Reversion ML models (trained on {self.completed_trades} trades)")
+                # Validate feature count against current simplified spec
+                expected = len(self._prepare_features({}))
+                scaler_feats = getattr(self.scaler, 'n_features_in_', None)
+                if scaler_feats is not None and scaler_feats != expected:
+                    logger.warning(
+                        f"Mean Reversion scaler feature mismatch: expected {expected}, found {scaler_feats}. Disabling ML until retrain."
+                    )
+                    self.models = {}
+                    self.is_ml_ready = False
+                    try:
+                        self.redis_client.delete('ml:model:mean_reversion')
+                        self.redis_client.delete('ml:scaler:mean_reversion')
+                    except Exception:
+                        pass
+                else:
+                    self.is_ml_ready = True
+                    logger.info(f"Loaded Mean Reversion ML models (trained on {self.completed_trades} trades)")
         except Exception as e:
             logger.error(f"Error loading Mean Reversion ML state: {e}")
 

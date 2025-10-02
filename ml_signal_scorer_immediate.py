@@ -132,6 +132,25 @@ class ImmediateMLScorer:
                     elif feature_version == 'simplified_v1':
                         self.feature_count = 13
                     logger.info(f"Models use {self.model_feature_version} features ({self.feature_count} total)")
+
+                # Validate scaler/model feature count vs current simplified spec
+                expected = len(self._prepare_features({}))
+                scaler_feats = getattr(self.scaler, 'n_features_in_', None)
+                if self.model_feature_version != 'simplified_v1' or (scaler_feats is not None and scaler_feats != expected):
+                    logger.warning(
+                        f"Feature layout changed. Expected {expected} (simplified_v1), found {scaler_feats} with version {self.model_feature_version}. Marking ML as not ready and forcing retrain."
+                    )
+                    self.is_ml_ready = False
+                    self.force_retrain = True
+                    # Attempt to invalidate stale artifacts to avoid accidental use
+                    try:
+                        self.redis_client.delete('iml:models')
+                        self.redis_client.delete('iml:scaler')
+                        self.redis_client.set('iml:feature_version', 'simplified_v1')
+                        self.redis_client.set('iml:feature_count', str(expected))
+                        logger.info("Cleared stale models/scaler; will retrain with simplified_v1 on next cycle")
+                    except Exception as e:
+                        logger.debug(f"Could not clear stale artifacts: {e}")
                     
         except Exception as e:
             logger.error(f"Error loading state: {e}")

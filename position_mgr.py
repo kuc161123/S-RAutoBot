@@ -43,6 +43,8 @@ class Position:
     tp:float
     entry_time:Optional[datetime] = None
     strategy_name:str = "unknown"
+    ml_score:float = 0.0
+    ml_reason:str = ""
 
 @dataclass
 class Book:

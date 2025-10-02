@@ -129,6 +129,51 @@ class TradingBot:
         self.last_save_time = datetime.now()
         self.trade_tracker = TradeTracker()  # Initialize trade tracker
         
+    def _create_task(self, coro):
+        try:
+            asyncio.get_running_loop().create_task(coro)
+        except RuntimeError:
+            loop = asyncio.get_event_loop()
+            loop.create_task(coro)
+
+    async def _notify_phantom_trade(self, label: str, phantom):
+        if not self.tg:
+            return
+
+        try:
+            outcome = getattr(phantom, 'outcome', None)
+            if not outcome:
+                return
+
+            outcome_emoji = "✅" if outcome == "win" else "❌"
+            prefix = "👻" if not getattr(phantom, 'was_executed', False) else "🔁"
+            exit_reason = getattr(phantom, 'exit_reason', 'unknown')
+            exit_label = exit_reason.replace('_', ' ').title()
+            pnl_percent = getattr(phantom, 'pnl_percent', 0.0) or 0.0
+            entry_price = getattr(phantom, 'entry_price', 0.0)
+            exit_price = getattr(phantom, 'exit_price', 0.0)
+            ml_score = getattr(phantom, 'ml_score', 0.0)
+
+            lines = [
+                f"{prefix} *{label} Phantom {outcome_emoji}*",
+                f"{phantom.symbol} {phantom.side.upper()} | ML {ml_score:.1f}",
+                f"Entry → Exit: {entry_price:.4f} → {exit_price:.4f}",
+                f"P&L: {pnl_percent:+.2f}% ({exit_label})"
+            ]
+
+            if label == "Mean Reversion":
+                range_conf = getattr(phantom, 'range_confidence', None)
+                if range_conf is not None:
+                    lines.append(f"Range confidence: {range_conf:.2f}")
+                range_pos = getattr(phantom, 'range_position', None)
+                if range_pos is not None:
+                    lines.append(f"Range position: {range_pos:.2f}")
+
+            await self.tg.send_message("\n".join(lines))
+
+        except Exception as notify_err:
+            logger.debug(f"Failed phantom notification: {notify_err}")
+
     async def load_or_fetch_initial_data(self, symbols:list[str], timeframe:str):
         """Load candles from database or fetch from API if not available"""
         logger.info("Loading historical data from database...")
@@ -236,7 +281,41 @@ class TradingBot:
             # Add to tracker
             self.trade_tracker.add_trade(trade)
             logger.info(f"Trade recorded: {symbol} {exit_reason} PnL: ${pnl_usd:.2f}")
-            
+
+            if self.tg:
+                try:
+                    hold_minutes = 0
+                    if pos.entry_time:
+                        hold_minutes = int((datetime.now() - pos.entry_time).total_seconds() // 60)
+                    outcome_emoji = "✅" if pnl_usd >= 0 else "❌"
+                    exit_label_map = {
+                        "tp": "Take Profit",
+                        "sl": "Stop Loss",
+                        "timeout": "Timeout",
+                        "manual": "Manual",
+                        "unknown": "Unknown"
+                    }
+                    exit_label = exit_label_map.get(exit_reason.lower(), exit_reason.upper()) if isinstance(exit_reason, str) else str(exit_reason)
+                    ml_details = ""
+                    if hasattr(pos, 'ml_score') and pos.ml_score:
+                        ml_details = f"ML Score: {pos.ml_score:.1f}\n"
+
+                    strategy_label = getattr(pos, 'strategy_name', 'unknown')
+                    if isinstance(strategy_label, str):
+                        strategy_label = strategy_label.replace('_', ' ').title()
+                    message = (
+                        f"{outcome_emoji} *Trade Closed* {symbol} {pos.side.upper()}\n\n"
+                        f"Exit Price: {exit_price:.4f}\n"
+                        f"PnL: ${pnl_usd:.2f} ({pnl_percent:.2f}%)\n"
+                        f"Hold: {hold_minutes}m\n"
+                        f"Exit: {exit_label}\n"
+                        f"Strategy: {strategy_label}\n"
+                        f"{ml_details}"
+                    )
+                    asyncio.create_task(self.tg.send_message(message.strip()))
+                except Exception as notify_err:
+                    logger.warning(f"Failed to send Telegram close notification: {notify_err}")
+
         except Exception as e:
             logger.error(f"Failed to record trade: {e}")
     
@@ -1137,6 +1216,16 @@ class TradingBot:
                     "_Use /risk to manage risk settings_\n"
                     "_Use /dashboard for full status_"
                 )
+
+                if phantom_tracker and hasattr(phantom_tracker, 'set_notifier'):
+                    def pullback_notifier(trade, scope='Pullback'):
+                        self._create_task(self._notify_phantom_trade(scope, trade))
+                    phantom_tracker.set_notifier(pullback_notifier)
+
+                if mr_phantom_tracker and hasattr(mr_phantom_tracker, 'set_notifier'):
+                    def mr_notifier(trade, scope='Mean Reversion'):
+                        self._create_task(self._notify_phantom_trade(scope, trade))
+                    mr_phantom_tracker.set_notifier(mr_notifier)
                 break  # Success
             except Exception as e:
                 if "Conflict" in str(e) and attempt < max_retries - 1:
@@ -1474,6 +1563,12 @@ class TradingBot:
 
                                 # Skip trade execution if ML score below threshold (but phantom is recorded)
                                 if not should_take_trade:
+                                    if self.tg:
+                                        reject_msg = (
+                                            f"🤖 *ML Reject* {sym} {sig.side.upper()} (Enhanced MR)\n"
+                                            f"Score {ml_score:.1f} < {threshold:.0f}. Tracking via phantom."
+                                        )
+                                        await self.tg.send_message(reject_msg)
                                     continue
 
                             else:
@@ -1566,6 +1661,12 @@ class TradingBot:
 
                                 # Skip trade execution if ML score below threshold (but phantom is recorded)
                                 if not should_take_trade:
+                                    if self.tg:
+                                        reject_msg = (
+                                            f"🤖 *ML Reject* {sym} {sig.side.upper()} (Pullback)\n"
+                                            f"Score {ml_score:.1f} < {threshold:.0f}. Tracking via phantom."
+                                        )
+                                        await self.tg.send_message(reject_msg)
                                     continue
 
                         except Exception as e:
@@ -1790,7 +1891,17 @@ class TradingBot:
                         raise Exception(f"Failed to set TP/SL for {sym}: {tpsl_error}")
                 
                     # Only update book if BOTH market order AND TP/SL succeeded
-                    book.positions[sym] = Position(sig.side, qty, actual_entry, sig.sl, sig.tp, datetime.now(), strategy_name=selected_strategy)
+                    book.positions[sym] = Position(
+                        sig.side,
+                        qty,
+                        actual_entry,
+                        sig.sl,
+                        sig.tp,
+                        datetime.now(),
+                        strategy_name=selected_strategy,
+                        ml_score=float(ml_score),
+                        ml_reason=ml_reason if isinstance(ml_reason, str) else ""
+                    )
                     last_signal_time[sym] = now
                     
                     # Debug log the position details
@@ -1821,9 +1932,8 @@ class TradingBot:
                     # Send notification
                     if self.tg:
                         emoji = "🟢" if sig.side == "long" else "🔴"
-                        # Debug log to ensure correct side display
                         logger.debug(f"[{sym}] Notification: side='{sig.side}', emoji='{emoji}', order_side='{side}'")
-                        # Calculate actual risk used
+
                         if risk.use_ml_dynamic_risk:
                             score_range = risk.ml_risk_max_score - risk.ml_risk_min_score
                             risk_range = risk.ml_risk_max_percent - risk.ml_risk_min_percent
@@ -1837,20 +1947,27 @@ class TradingBot:
                         else:
                             actual_risk_pct = risk.risk_percent
                             risk_display = f"{actual_risk_pct}%"
-                        
-                        # Add TP adjustment info if applicable
+
                         entry_info = f"Entry: {actual_entry:.4f}"
                         if actual_entry != sig.entry:
                             price_diff_pct = ((actual_entry - sig.entry) / sig.entry) * 100
                             entry_info += f" (signal: {sig.entry:.4f}, {price_diff_pct:+.2f}%)"
-                        
+
+                        strategy_label = selected_strategy.replace('_', ' ').title()
+                        threshold_text = "N/A"
+                        if selected_ml_scorer is not None:
+                            threshold_text = f"{selected_ml_scorer.min_score:.0f}"
+                        elif selected_strategy == "enhanced_mr" and enhanced_mr_scorer is not None:
+                            threshold_text = f"{enhanced_mr_scorer.min_score:.0f}"
+
                         msg = (
-                            f"{emoji} *{sym} {sig.side.upper()}*\n\n"
+                            f"{emoji} *{sym} {sig.side.upper()}* ({strategy_label})\n\n"
                             f"{entry_info}\n"
                             f"Stop Loss: {sig.sl:.4f}\n"
                             f"Take Profit: {sig.tp:.4f}\n"
                             f"Quantity: {qty}\n"
                             f"Risk: {risk_display} (${risk_amount:.2f})\n"
+                            f"ML Score: {ml_score:.1f} (≥ {threshold_text})\n"
                             f"Reason: {sig.reason}"
                         )
                         await self.tg.send_message(msg)

@@ -5,13 +5,15 @@ This allows ML to learn from the full spectrum of trading opportunities
 """
 import json
 import logging
-import redis
 import os
+import time
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
-from typing import Dict, List, Optional, Tuple
-import time
+from typing import Callable, Dict, List, Optional, Tuple
+
+import asyncio
 import numpy as np
+import redis
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +103,7 @@ class PhantomTradeTracker:
         self.redis_client = None
         self.phantom_trades = {}  # symbol -> list of phantom trades
         self.active_phantoms = {}  # symbol -> PhantomTrade
+        self.notifier: Optional[Callable] = None
         
         # Initialize Redis
         self._init_redis()
@@ -177,7 +180,11 @@ class PhantomTradeTracker:
             
         except Exception as e:
             logger.error(f"Error saving phantom trades to Redis: {e}")
-    
+
+    def set_notifier(self, notifier: Optional[Callable]):
+        """Register a callback to receive phantom trade events."""
+        self.notifier = notifier
+
     def record_signal(self, symbol: str, signal: dict, ml_score: float, 
                      was_executed: bool, features: dict, strategy_name: str = "unknown") -> PhantomTrade:
         """
@@ -319,6 +326,14 @@ class PhantomTradeTracker:
 
         # Check if ML needs retraining after this trade completes
         self._check_ml_retrain()
+
+        if self.notifier:
+            try:
+                result = self.notifier(phantom)
+                if asyncio.iscoroutine(result):
+                    asyncio.create_task(result)
+            except Exception as notify_err:
+                logger.debug(f"Phantom notifier error: {notify_err}")
     
     def get_phantom_stats(self, symbol: Optional[str] = None) -> dict:
         """

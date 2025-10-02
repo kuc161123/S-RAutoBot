@@ -96,6 +96,12 @@ phantom:
   # Virtual snapshot settings (for calibration around threshold)
   enable_virtual_snapshots: false
   virtual_snapshots_delta: 5   # Create variants at (threshold ± delta)
+scalp:
+  enabled: false
+  timeframe: 3           # Future: stream 3m for scalps; current uses main tf
+  use_ml: true
+  threshold: 75
+  session_only: ["us", "european"]
 symbol_meta:
   default:
     qty_step: 0.001

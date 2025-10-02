@@ -1685,6 +1685,34 @@ class TradingBot:
                                 except Exception:
                                     pass
 
+                            # Scalp phantom (Phase 0) under NONE/volatile
+                            if recorded < remaining and use_scalp and SCALP_AVAILABLE and detect_scalp_signal is not None and regime_analysis.volatility_level in ['high','normal']:
+                                try:
+                                    sc_sig = detect_scalp_signal(df.copy(), ScalpSettings(), sym)
+                                    if sc_sig and _not_duplicate(sym, sc_sig) and not _daily_capped(sym, cluster_id):
+                                        sc_feats = {
+                                            'routing': 'none',
+                                            'vwap_dist_atr': sc_sig.meta.get('dist_vwap_atr', 0),
+                                            'volume_ratio': sc_sig.meta.get('vol_ratio', 1),
+                                            'symbol_cluster': cluster_id,
+                                            'volatility_regime': regime_analysis.volatility_level
+                                        }
+                                        logger.info(f"[{sym}] 👻 Phantom-only (Scalp none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                                        if phantom_tracker:
+                                            phantom_tracker.record_signal(
+                                                symbol=sym,
+                                                signal={'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                                ml_score=0.0,
+                                                was_executed=False,
+                                                features=sc_feats,
+                                                strategy_name='scalp'
+                                            )
+                                        _increment_daily(sym, cluster_id, 'none')
+                                        budget.append(now_ts)
+                                        recorded += 1
+                                except Exception:
+                                    pass
+
                             # Virtual snapshots around threshold if enabled
                             if phantom_enable_virtual and recorded > 0:
                                 try:

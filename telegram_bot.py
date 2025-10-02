@@ -79,6 +79,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("training_status", self.training_status))
         self.app.add_handler(CommandHandler("trainingstatus", self.training_status))  # Alternative command name
         self.app.add_handler(CommandHandler("phantomqa", self.phantom_qa))
+        self.app.add_handler(CommandHandler("scalpqa", self.scalp_qa))
         from telegram.ext import CallbackQueryHandler
         self.app.add_handler(CallbackQueryHandler(self.ui_callback, pattern=r"^ui:"))
         self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
@@ -3079,6 +3080,26 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in phantom_qa: {e}")
             await update.message.reply_text("Error getting phantom QA")
+
+    async def scalp_qa(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Quick summary of scalp phantom stats using the generic phantom tracker."""
+        try:
+            from phantom_trade_tracker import get_phantom_tracker
+            pt = get_phantom_tracker()
+            recs = pt.get_learning_data()
+            scalp = [r for r in recs if r.get('features', {}).get('strategy','') == 'scalp' or r.get('symbol','').lower().endswith('usdt')]
+            total = len(scalp)
+            wr = (sum(r['outcome'] for r in scalp) / total * 100) if total else 0.0
+            msg = [
+                "🩳 *Scalp QA*",
+                f"• Phantom recorded: {total}",
+                f"• Phantom WR: {wr:.1f}%",
+                "_Scalp runs phantom-only by default in volatile/none routing_"
+            ]
+            await self.safe_reply(update, "\n".join(msg))
+        except Exception as e:
+            logger.error(f"Error in scalp_qa: {e}")
+            await update.message.reply_text("Error getting scalp QA")
 
     async def training_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show background ML training status"""

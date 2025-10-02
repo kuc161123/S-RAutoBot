@@ -3,19 +3,23 @@ Enhanced Market Regime Detection
 Sophisticated classification for parallel strategy routing
 Determines: HighQualityRanging, LowQualityRanging, Trending, Volatile
 """
-import pandas as pd
-import numpy as np
 import logging
-from typing import Dict, Tuple, Optional
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Tuple
+
+import numpy as np
+import pandas as pd
 from scipy.signal import find_peaks
 import ta
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class RegimeAnalysis:
     """Complete regime analysis result"""
+
     primary_regime: str  # "ranging", "trending", "volatile"
     regime_confidence: float  # 0-1 confidence in classification
     range_quality: str  # "high", "medium", "low" (if ranging)
@@ -23,6 +27,151 @@ class RegimeAnalysis:
     volatility_level: str  # "low", "normal", "high"
     regime_persistence: float  # How long this regime has been active
     recommended_strategy: str  # "enhanced_mr", "pullback", "none"
+    trend_probability: float = 0.0
+    range_probability: float = 0.0
+    volatile_probability: float = 0.0
+    feature_snapshot: Dict[str, float] = field(default_factory=dict)
+
+
+def _normalize_scores(scores: Dict[str, float]) -> Dict[str, float]:
+    adjusted = {label: max(0.0, float(value)) for label, value in scores.items()}
+    total = sum(adjusted.values())
+    if total <= 0:
+        uniform = 1.0 / max(len(scores), 1)
+        return {label: uniform for label in scores}
+    return {label: value / total for label, value in adjusted.items()}
+
+
+def _safe_resample(df: pd.DataFrame, rule: str, min_length: int = 5) -> Optional[pd.DataFrame]:
+    if len(df) < min_length or not isinstance(df.index, pd.DatetimeIndex):
+        return None
+    if df.index.tz is None:
+        df = df.tz_localize("UTC")
+    try:
+        resampled = df.resample(rule).agg({
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum",
+        }).dropna()
+        if len(resampled) >= min_length:
+            return resampled
+    except Exception:
+        pass
+    return None
+
+
+def _linear_regression_stats(series: pd.Series, window: int) -> Tuple[float, float]:
+    if len(series) < window or window <= 1:
+        return 0.0, 0.0
+    window_series = series.tail(window).values
+    if np.allclose(window_series, window_series[0]):
+        return 0.0, 0.0
+    x = np.arange(window, dtype=float)
+    slope, intercept = np.polyfit(x, window_series, 1)
+    fitted = slope * x + intercept
+    resid = window_series - fitted
+    ss_res = np.sum(resid ** 2)
+    ss_tot = np.sum((window_series - window_series.mean()) ** 2)
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    return float(slope), float(max(min(r2, 1.0), 0.0))
+
+
+def _hurst_exponent(series: pd.Series) -> float:
+    if len(series) < 64:
+        return 0.5
+    lags = range(2, min(100, len(series) // 2))
+    tau = [np.sqrt(((series[lag:] - series[:-lag]) ** 2).mean()) for lag in lags]
+    with np.errstate(divide="ignore"):
+        log_lags = np.log(lags)
+        log_tau = np.log(np.maximum(tau, 1e-9))
+    slope, _ = np.polyfit(log_lags, log_tau, 1)
+    return float(max(0.0, min(1.0, slope * 2)))
+
+
+def _auto_corr(series: pd.Series, lag: int) -> float:
+    if len(series) <= lag or lag <= 0:
+        return 0.0
+    return float(series.autocorr(lag=lag))
+
+
+def _compute_regime_features(df: pd.DataFrame) -> Dict[str, float]:
+    features: Dict[str, float] = {}
+    close = df["close"]
+    volume = df["volume"]
+
+    slope_15, r2_15 = _linear_regression_stats(close, min(len(close), 30))
+    slope_60, r2_60 = _linear_regression_stats(close, min(len(close), 60))
+    slope_240, r2_240 = _linear_regression_stats(close, min(len(close), 120))
+
+    features["trend_slope_15"] = slope_15
+    features["trend_r2_15"] = r2_15
+    features["trend_slope_60"] = slope_60
+    features["trend_r2_60"] = r2_60
+    features["trend_slope_240"] = slope_240
+    features["trend_r2_240"] = r2_240
+
+    ema_short = close.ewm(span=8).mean().iloc[-1]
+    ema_long = close.ewm(span=55).mean().iloc[-1]
+    features["ema_alignment"] = float((ema_short - ema_long) / ema_long) if ema_long else 0.0
+
+    atr_series = _atr(df, 14)
+    current_atr = atr_series.iloc[-1] if len(atr_series) else close.iloc[-1] * 0.02
+    features["atr_to_price"] = float(current_atr / close.iloc[-1]) if close.iloc[-1] else 0.0
+
+    rolling_std = close.pct_change().rolling(20).std().iloc[-1]
+    if rolling_std and not math.isnan(rolling_std):
+        features["atr_volatility_ratio"] = float(current_atr / (rolling_std * close.iloc[-1]))
+    else:
+        features["atr_volatility_ratio"] = 0.0
+
+    bb_upper, bb_middle, bb_lower = _bollinger_bands(df, 20, 2)
+    bb_width = ((bb_upper - bb_lower) / bb_middle).fillna(0)
+    current_bb_width = bb_width.iloc[-1] if len(bb_width) else 0.0
+    if len(bb_width) > 20:
+        features["bb_width_percentile"] = float((bb_width < current_bb_width).sum() / len(bb_width))
+    else:
+        features["bb_width_percentile"] = 0.5
+
+    returns = close.pct_change().dropna()
+    features["return_volatility"] = float(returns.std()) if len(returns) else 0.0
+    features["hurst_exponent"] = _hurst_exponent(close)
+    features["auto_corr_1"] = _auto_corr(returns, 1)
+    features["auto_corr_2"] = _auto_corr(returns, 2)
+
+    vol_window = volume.rolling(30)
+    vol_mean = vol_window.mean().iloc[-1]
+    vol_std = vol_window.std().iloc[-1]
+    features["volume_zscore"] = float((volume.iloc[-1] - vol_mean) / vol_std) if vol_std else 0.0
+
+    price_range = close.rolling(20).apply(lambda x: x.max() - x.min()).iloc[-1]
+    features["price_chop_ratio"] = float(price_range / close.iloc[-1]) if close.iloc[-1] else 0.0
+
+    for rule, prefix in (("1H", "60"), ("4H", "240")):
+        resampled = _safe_resample(df, rule)
+        if resampled is not None:
+            slope, r2 = _linear_regression_stats(resampled["close"], min(len(resampled), 30))
+            features[f"trend_slope_{prefix}"] = slope
+            features[f"trend_r2_{prefix}"] = r2
+
+    return features
+
+
+_CLASSIFIER = None
+
+
+def _get_classifier():
+    global _CLASSIFIER
+    if _CLASSIFIER is None:
+        try:
+            from regime_classifier import get_regime_classifier
+
+            _CLASSIFIER = get_regime_classifier()
+        except Exception as exc:
+            logger.debug(f"Regime classifier unavailable: {exc}")
+            _CLASSIFIER = False
+    return _CLASSIFIER if _CLASSIFIER not in (None, False) else None
 
 def _atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
     """Calculate Average True Range"""
@@ -246,6 +395,12 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
         low = df['low']
         volume = df['volume']
 
+        feature_snapshot = _compute_regime_features(df)
+        classifier = _get_classifier()
+        ml_probabilities = None
+        if classifier:
+            ml_probabilities = classifier.predict_probabilities(feature_snapshot)
+
         # ===== TREND ANALYSIS =====
         adx_series, plus_di, minus_di = _adx(df, 14)
         current_adx = adx_series.iloc[-1] if len(adx_series) > 0 else 25
@@ -375,8 +530,27 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
             'volatile': volatile_score
         }
 
-        primary_regime = max(regime_scores, key=regime_scores.get)
-        regime_confidence = regime_scores[primary_regime]
+        probability_map = _normalize_scores(regime_scores)
+        primary_regime = max(probability_map, key=probability_map.get)
+        regime_confidence = probability_map[primary_regime]
+
+        if ml_probabilities:
+            blend_weight = 0.4
+            blended = {}
+            for label in regime_scores:
+                blended[label] = (
+                    probability_map.get(label, 0.0) * (1 - blend_weight)
+                    + ml_probabilities.get(label, 0.0) * blend_weight
+                )
+            probability_map = _normalize_scores(blended)
+            ml_primary = max(probability_map, key=probability_map.get)
+            if ml_primary != primary_regime:
+                logger.info(
+                    f"[{symbol}] 🤖 ML override: {primary_regime} → {ml_primary} "
+                    f"(heur={regime_confidence:.1%}, ml={probability_map[ml_primary]:.1%})"
+                )
+            primary_regime = ml_primary
+            regime_confidence = probability_map[primary_regime]
 
         # ===== STRATEGY RECOMMENDATION =====
 
@@ -530,7 +704,11 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
             trend_strength=float(trend_strength),
             volatility_level=volatility_level,
             regime_persistence=float(regime_persistence),
-            recommended_strategy=recommended_strategy
+            recommended_strategy=recommended_strategy,
+            trend_probability=float(probability_map.get('trending', 0.0)),
+            range_probability=float(probability_map.get('ranging', 0.0)),
+            volatile_probability=float(probability_map.get('volatile', 0.0)),
+            feature_snapshot=feature_snapshot
         )
 
     except Exception as e:

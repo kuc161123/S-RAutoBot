@@ -35,6 +35,23 @@ class Candle(Base):
         Index('idx_symbol_timestamp', 'symbol', 'timestamp', unique=True),
     )
 
+class Candle3m(Base):
+    """3m Candle data model stored separately to avoid mixing timeframes"""
+    __tablename__ = 'candles_3m'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    symbol = Column(String(20), nullable=False, index=True)
+    timestamp = Column(BigInteger, nullable=False, index=True)
+    open = Column(Float, nullable=False)
+    high = Column(Float, nullable=False)
+    low = Column(Float, nullable=False)
+    close = Column(Float, nullable=False)
+    volume = Column(Float, nullable=False)
+
+    __table_args__ = (
+        Index('idx_symbol_timestamp_3m', 'symbol', 'timestamp', unique=True),
+    )
+
 class PostgresCandleStorage:
     # Class-level tracking for summary logging
     _save_summary = {'count': 0, 'symbols': set(), 'last_log_time': 0, 'total_candles': 0}
@@ -161,6 +178,97 @@ class PostgresCandleStorage:
             return False
         finally:
             session.close()
+
+    def save_candles_3m(self, symbol: str, df: pd.DataFrame) -> bool:
+        """Save 3m candles to dedicated table to avoid mixing with 15m."""
+        session = self.Session()
+        try:
+            if df is None or df.empty:
+                return False
+
+            saved_count = 0
+            for idx, row in df.iterrows():
+                if isinstance(idx, pd.Timestamp):
+                    timestamp = int(idx.timestamp() * 1000)
+                else:
+                    timestamp = int(pd.Timestamp(idx).timestamp() * 1000)
+                existing = session.query(Candle3m).filter_by(
+                    symbol=symbol,
+                    timestamp=timestamp
+                ).first()
+                if existing:
+                    existing.open = float(row['open'])
+                    existing.high = float(row['high'])
+                    existing.low = float(row['low'])
+                    existing.close = float(row['close'])
+                    existing.volume = float(row['volume'])
+                else:
+                    candle = Candle3m(
+                        symbol=symbol,
+                        timestamp=timestamp,
+                        open=float(row['open']),
+                        high=float(row['high']),
+                        low=float(row['low']),
+                        close=float(row['close']),
+                        volume=float(row['volume'])
+                    )
+                    session.add(candle)
+                saved_count += 1
+            session.commit()
+            # Reuse summary logger
+            self._update_save_summary(symbol, saved_count)
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Failed to save 3m candles for {symbol}: {e}")
+            return False
+        finally:
+            session.close()
+
+    def load_candles_3m(self, symbol: str, limit: int = None) -> Optional[pd.DataFrame]:
+        """Load 3m candles from database for a symbol"""
+        session = self.Session()
+        try:
+            query = session.query(Candle3m).filter_by(symbol=symbol).\
+                order_by(Candle3m.timestamp.desc())
+            if limit is not None:
+                query = query.limit(limit)
+            candles = query.all()
+            if not candles:
+                logger.debug(f"[{symbol}] No 3m candles found in database")
+                return None
+            data = []
+            for c in candles:
+                dt = pd.Timestamp(c.timestamp, unit='ms', tz='UTC')
+                data.append({
+                    'timestamp': dt,
+                    'open': c.open,
+                    'high': c.high,
+                    'low': c.low,
+                    'close': c.close,
+                    'volume': c.volume
+                })
+            df = pd.DataFrame(data).sort_values('timestamp')
+            df.set_index('timestamp', inplace=True)
+            logger.info(f"[{symbol}] Loaded {len(df)} 3m candles from database")
+            return df
+        except Exception as e:
+            logger.error(f"Failed to load 3m candles for {symbol}: {e}")
+            return None
+        finally:
+            session.close()
+
+    def save_all_frames_3m(self, frames: Dict[str, pd.DataFrame]) -> bool:
+        try:
+            saved_count = 0
+            for symbol, df in frames.items():
+                if self.save_candles_3m(symbol, df):
+                    saved_count += 1
+            logger.info(f"Saved {saved_count}/{len(frames)} symbols to 3m database table")
+            return saved_count > 0
+        except Exception as e:
+            logger.error(f"Failed to save all 3m frames: {e}")
+            return False
     
     def load_candles(self, symbol: str, limit: int = None) -> Optional[pd.DataFrame]:
         """Load candles from database for a symbol"""

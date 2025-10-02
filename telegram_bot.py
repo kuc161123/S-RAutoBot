@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import UpdateType, ParseMode
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 import telegram.error
 import asyncio
 import logging
@@ -81,7 +81,6 @@ class TGBot:
         self.app.add_handler(CommandHandler("phantomqa", self.phantom_qa))
         self.app.add_handler(CommandHandler("scalpqa", self.scalp_qa))
         self.app.add_handler(CommandHandler("scalppromote", self.scalp_promotion_status))
-        from telegram.ext import CallbackQueryHandler
         self.app.add_handler(CallbackQueryHandler(self.ui_callback, pattern=r"^ui:"))
         self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
         self.app.add_handler(CommandHandler("panicclose", self.panic_close))
@@ -866,7 +865,10 @@ class TGBot:
     async def dashboard(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show complete bot dashboard"""
         try:
-            from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+            # simple rate-limit to avoid Telegram flood control on heavy dashboard
+            if not self._cooldown_ok('dashboard'):
+                await self.safe_reply(update, "⏳ Please wait before using /dashboard again")
+                return
             frames = self.shared.get("frames", {})
             book = self.shared.get("book")
             last_analysis = self.shared.get("last_analysis", {})
@@ -3083,17 +3085,19 @@ class TGBot:
             await update.message.reply_text("Error getting phantom QA")
 
     async def scalp_qa(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Quick summary of scalp phantom stats using the generic phantom tracker."""
+        """Quick summary of scalp phantom stats using the dedicated scalp tracker."""
         try:
-            from phantom_trade_tracker import get_phantom_tracker
-            pt = get_phantom_tracker()
-            recs = pt.get_learning_data()
-            scalp = [r for r in recs if r.get('features', {}).get('strategy','') == 'scalp' or r.get('symbol','').lower().endswith('usdt')]
-            total = len(scalp)
-            wr = (sum(r['outcome'] for r in scalp) / total * 100) if total else 0.0
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            st = scpt.get_scalp_phantom_stats()
+            total = st.get('total', 0)
+            wins = st.get('wins', 0)
+            losses = st.get('losses', 0)
+            wr = st.get('wr', 0.0)
             msg = [
                 "🩳 *Scalp QA*",
                 f"• Phantom recorded: {total}",
+                f"• Wins/Losses: {wins}/{losses}",
                 f"• Phantom WR: {wr:.1f}%",
                 "_Scalp runs phantom-only by default in volatile/none routing_"
             ]

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Dedicated Phantom Tracker for Scalping Strategy
 Stores and labels scalp phantom trades separately from other strategies.
@@ -205,4 +206,3 @@ def get_scalp_phantom_tracker() -> ScalpPhantomTracker:
     if _scalp_phantom_tracker is None:
         _scalp_phantom_tracker = ScalpPhantomTracker()
     return _scalp_phantom_tracker
-

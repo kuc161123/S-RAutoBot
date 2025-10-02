@@ -179,6 +179,11 @@ class TradingBot:
                 df.loc[row.index[0]] = row.iloc[0]
                 df.sort_index(inplace=True)
                 self.frames_3m[sym] = df.tail(1000)
+                # Persist the latest 3m candle row
+                try:
+                    self.storage.save_candles_3m(sym, row)
+                except Exception as e:
+                    logger.debug(f"3m candle persist error for {sym}: {e}")
             except Exception as e:
                 logger.debug(f"Secondary stream update error for {sym}: {e}")
 
@@ -1241,6 +1246,7 @@ class TradingBot:
             "book": book,
             "panic": panic_list,
             "meta": cfg.get("symbol_meta",{}),
+            "config": cfg,
             "broker": bybit,
             "frames": self.frames,
             "last_analysis": last_analysis,
@@ -1502,6 +1508,16 @@ class TradingBot:
                                 logger.info(f"🧠 Enhanced MR ML: {mr_stats.get('completed_trades', 0)} trades, "
                                            f"threshold: {mr_stats.get('current_threshold', 'N/A')}, "
                                            f"{mr_stats.get('trades_until_retrain', 'N/A')} to retrain")
+                            # Scalp ML (phantom-only visibility)
+                            if SCALP_AVAILABLE and get_scalp_scorer is not None:
+                                try:
+                                    sc_scorer = get_scalp_scorer()
+                                    logger.info(
+                                        f"🩳 Scalp ML: {sc_scorer.completed_trades} samples, threshold: {sc_scorer.min_score:.0f}, "
+                                        f"ready: {'yes' if sc_scorer.is_ml_ready else 'no'}"
+                                    )
+                                except Exception:
+                                    pass
                         else:
                             # Original system stats
                             if ml_scorer:
@@ -1741,36 +1757,56 @@ class TradingBot:
                                 except Exception:
                                     pass
 
-                            # Scalp phantom (Phase 0) under NONE/volatile
-                            if recorded < remaining and use_scalp and SCALP_AVAILABLE and detect_scalp_signal is not None and regime_analysis.volatility_level in ['high','normal']:
-                                try:
-                                    sc_sig = detect_scalp_signal(df.copy(), ScalpSettings(), sym)
-                                    if sc_sig and _not_duplicate(sym, sc_sig) and not _daily_capped(sym, cluster_id):
-                                        sc_feats = {
-                                            'routing': 'none',
-                                            'vwap_dist_atr': sc_sig.meta.get('dist_vwap_atr', 0),
-                                            'volume_ratio': sc_sig.meta.get('vol_ratio', 1),
-                                            'symbol_cluster': cluster_id,
-                                            'volatility_regime': regime_analysis.volatility_level
-                                        }
-                                        logger.info(f"[{sym}] 👻 Phantom-only (Scalp none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
-                                        try:
-                                            from scalp_phantom_tracker import get_scalp_phantom_tracker
-                                            scpt = get_scalp_phantom_tracker()
-                                            scpt.record_scalp_signal(
-                                                sym,
-                                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                                0.0,
-                                                False,
-                                                sc_feats
-                                            )
-                                        except Exception:
-                                            pass
-                                        _increment_daily(sym, cluster_id, 'none')
-                                        budget.append(now_ts)
-                                        recorded += 1
-                                except Exception:
-                                    pass
+                            # Scalp phantom (Phase 0) under NONE/volatile — not constrained by shared phantom budget
+                            if use_scalp and SCALP_AVAILABLE and detect_scalp_signal is not None:
+                                if regime_analysis.volatility_level not in ['high','normal']:
+                                    logger.info(f"[{sym}] 🩳 Scalp skipped: volatility={regime_analysis.volatility_level}")
+                                else:
+                                    try:
+                                        # Prefer 3m frames when available
+                                        df3 = self.frames_3m.get(sym)
+                                        if df3 is not None and not df3.empty and len(df3) >= 120:
+                                            df_for_scalp = df3
+                                            logger.info(f"[{sym}] 🩳 Using 3m frames for scalp ({len(df3)} bars)")
+                                        else:
+                                            df_for_scalp = df
+                                            if df3 is None or df3.empty:
+                                                logger.info(f"[{sym}] 🩳 Scalp using main tf: 3m unavailable")
+                                            else:
+                                                logger.info(f"[{sym}] 🩳 Scalp using main tf: 3m sparse ({len(df3)} bars)")
+
+                                        sc_sig = detect_scalp_signal(df_for_scalp.copy(), ScalpSettings(), sym)
+                                        if sc_sig and _not_duplicate(sym, sc_sig) and not _daily_capped(sym, cluster_id):
+                                            sc_feats = {
+                                                'routing': 'none',
+                                                'vwap_dist_atr': sc_sig.meta.get('dist_vwap_atr', 0),
+                                                'volume_ratio': sc_sig.meta.get('vol_ratio', 1),
+                                                'symbol_cluster': cluster_id,
+                                                'volatility_regime': regime_analysis.volatility_level
+                                            }
+                                            logger.info(f"[{sym}] 👻 Phantom-only (Scalp none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                                            try:
+                                                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                                                scpt = get_scalp_phantom_tracker()
+                                                scpt.record_scalp_signal(
+                                                    sym,
+                                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                                    0.0,
+                                                    False,
+                                                    sc_feats
+                                                )
+                                            except Exception:
+                                                pass
+                                            _increment_daily(sym, cluster_id, 'none')
+                                        else:
+                                            logger.info(f"[{sym}] 🩳 No Scalp Signal (filters not met)")
+                                    except Exception as e:
+                                        logger.debug(f"[{sym}] Scalp detection error: {e}")
+                            else:
+                                if not use_scalp:
+                                    logger.info("🩳 Scalp disabled by config")
+                                elif not SCALP_AVAILABLE or detect_scalp_signal is None:
+                                    logger.info("🩳 Scalp modules not available")
 
                             # Virtual snapshots around threshold if enabled
                             if phantom_enable_virtual and recorded > 0:

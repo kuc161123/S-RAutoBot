@@ -9,6 +9,7 @@ import logging
 
 from ml_signal_scorer_immediate import get_immediate_scorer
 from ml_scorer_mean_reversion import get_mean_reversion_scorer
+from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
 
 logger = logging.getLogger(__name__)
 
@@ -67,12 +68,16 @@ class TGBot:
         self.app.add_handler(CommandHandler("parallelperformance", self.parallel_performance))  # Alternative command name
         self.app.add_handler(CommandHandler("regime_analysis", self.regime_analysis))
         self.app.add_handler(CommandHandler("regimeanalysis", self.regime_analysis))  # Alternative command name
+        self.app.add_handler(CommandHandler("regime", self.regime_single))
         self.app.add_handler(CommandHandler("strategy_comparison", self.strategy_comparison))
         self.app.add_handler(CommandHandler("strategycomparison", self.strategy_comparison))  # Alternative command name
         self.app.add_handler(CommandHandler("system", self.system_status))
         self.app.add_handler(CommandHandler("training_status", self.training_status))
         self.app.add_handler(CommandHandler("trainingstatus", self.training_status))  # Alternative command name
-        
+        self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
+        self.app.add_handler(CommandHandler("panicclose", self.panic_close))
+        self.app.add_handler(CommandHandler("forceretrain", self.force_retrain_ml))
+
         self.running = False
 
     def _compute_risk_snapshot(self):
@@ -80,15 +85,14 @@ class TGBot:
         risk = self.shared.get("risk")
         last_balance = self.shared.get("last_balance")
 
-        per_trade = float(risk.risk_usd)
+        per_trade = float(getattr(risk, 'risk_usd', 0.0))
         label: str
 
         if getattr(risk, 'use_percent_risk', False) and last_balance:
-            per_trade = last_balance * (risk.risk_percent / 100.0)
+            per_trade = last_balance * (getattr(risk, 'risk_percent', 0.0) / 100.0)
             label = f"{risk.risk_percent}% (~${per_trade:.2f})"
         elif getattr(risk, 'use_percent_risk', False):
-            # No balance available, fall back to USD risk while noting percentage target
-            per_trade = float(risk.risk_usd)
+            per_trade = float(getattr(risk, 'risk_usd', 0.0))
             label = f"{risk.risk_percent}% (fallback ${per_trade:.2f})"
         else:
             label = f"${per_trade:.2f}"
@@ -249,62 +253,64 @@ class TGBot:
 
     async def help(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Help command handler"""
-        help_text = """
-📚 *Bot Commands*
+        per_trade, risk_label = self._compute_risk_snapshot()
+        risk_cfg = self.shared.get("risk")
+        timeframe = self.shared.get("timeframe", "15")
 
-📊 *Monitoring:*
-/dashboard - Complete bot overview
-/health - Bot status & analysis activity
-/status - Open positions
-/balance - Account balance
-/regime `[symbol]` - Check current market regime
+        help_text = f"""📚 *Bot Commands*
 
-📈 *Statistics:*
-/stats `[strategy]` - Trading statistics (all, pullback, reversion)
-/recent `[limit]` - Recent trades history
-/ml_status `[strategy]` - ML model status
-/mlpatterns `[strategy]` - ML learned patterns
-/phantom `[strategy]` - Phantom trade analysis
-/evolution - ML Evolution shadow performance
+📊 *Monitoring*
+/dashboard – Full bot overview
+/health – Data & heartbeat summary
+/status – Open positions snapshot
+/balance – Latest account balance
+/symbols – Active trading universe
+/regime SYMBOL – Market regime for a symbol
 
-🚀 *Enhanced Parallel System:*
-/system - Enhanced system status & architecture
-/enhanced_mr - Enhanced Mean Reversion ML status
-/mr_phantom - Mean Reversion phantom trades
-/parallel_performance - Compare strategy performance
-/regime_analysis - Market regime analysis (top symbols)
-/strategy_comparison - Strategy performance comparison
+📈 *Performance & Analytics*
+/stats [all|pullback|reversion] – Trade statistics
+/recent [limit] – Recent trade log
+/ml or /mlstatus – Pullback ML status
+/mlpatterns [strategy] – Learned ML patterns
+/phantom [strategy] – Phantom trade outcomes
+/evolution – ML evolution shadow book
+/analysis [symbol] – Recent analysis timestamps
 
-⚙️ *Risk Management:*
-/risk - Show current risk settings
-/risk_percent [value] - Set % risk (e.g., 2.5)
-/risk_usd [value] - Set USD risk (e.g., 100)
-/set_risk [amount] - Flexible (3% or 50)
-/ml_risk - ML dynamic risk status/control
-/ml_risk_range [min] [max] - Set ML risk range
+🚀 *Enhanced Parallel System*
+/system – Parallel routing status
+/enhancedmr – Enhanced MR ML summary
+/mrphantom – MR phantom trades
+/parallel_performance – Compare strategies
+/regimeanalysis – Top regime signals
+/strategycomparison – Strategy performance table
 
-⚙️ *Controls:*
-/panic_close [symbol] - Emergency close position
-/force_retrain - Force ML model retrain
+⚙️ *Risk Management*
+/risk – Current risk settings
+/riskpercent value – Set % risk (e.g. 2.5)
+/riskusd value – Set USD risk (e.g. 100)
+/setrisk amount – Flexible input ("3%" or "50")
+/mlrisk – Toggle ML dynamic risk
+/mlriskrange min max – Dynamic risk bounds
 
-🎯 *ML Training:*
-/training_status - Background training progress
-/ml - Pullback ML model status
-/enhanced_mr - Enhanced MR model status
+🛠 *Controls*
+/panic_close or /panicclose SYMBOL – Emergency exit
+/forceretrain – Force ML retrain cycle
+/update_clusters – Refresh symbol clusters
 
-ℹ️ *Info:*
-/start - Welcome message
-/help - This help menu
+🎯 *ML Training*
+/trainingstatus – Background training progress
+/mr_ml – MR ML statistics
 
-📈 *Current Settings:*
-• Risk per trade: {}
-• Max leverage: {}x
-• Timeframe: 15 minutes
-• Strategy: S/R + Market Structure
-""".format(
-            f"{self.shared['risk'].risk_percent}%" if self.shared["risk"].use_percent_risk else f"${self.shared['risk'].risk_usd}",
-            self.shared["risk"].max_leverage
-        )
+ℹ️ *Info*
+/start – Welcome
+/help – This menu
+
+📈 *Current Settings*
+• Risk per trade: {risk_label}
+• Max leverage: {risk_cfg.max_leverage}x
+• Timeframe: {timeframe} minutes
+• Strategies: Pullback ML & Mean Reversion
+"""
         await self.safe_reply(update, help_text)
 
     async def show_risk(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
@@ -937,68 +943,105 @@ class TGBot:
     
 
 
-    async def analysis(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
-        """Show recent analysis details for symbols"""
+    async def regime_single(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Show enhanced regime snapshot for one or more symbols."""
         try:
             frames = self.shared.get("frames", {})
-            analysis_log = self.shared.get("analysis_log", {})
-            
             if not frames:
-                await update.message.reply_text("No data available yet")
+                await update.message.reply_text("No market data available yet")
                 return
-            
-            msg = "🔍 *Recent Analysis Details*\n"
-            msg += "━" * 20 + "\n\n"
-            
-            # Get symbol from args or show first 5
+
             if ctx.args:
                 symbols = [ctx.args[0].upper()]
             else:
-                symbols = list(frames.keys())[:5]
-            
-            for symbol in symbols:
-                if symbol not in frames:
-                    continue
-                    
-                df = frames[symbol]
-                if df is None or len(df) < 50:
-                    msg += f"*{symbol}*: Insufficient data\n\n"
-                    continue
-                
-                # Get last price and check for recent highs/lows
-                last_price = df['close'].iloc[-1]
-                recent_high = df['high'].iloc[-20:].max()
-                recent_low = df['low'].iloc[-20:].min()
-                
-                msg += f"*{symbol}*\n"
-                msg += f"• Price: {last_price:.4f}\n"
-                msg += f"• 20-bar High: {recent_high:.4f}\n"
-                msg += f"• 20-bar Low: {recent_low:.4f}\n"
-                
-                # Check if we have analysis logs
-                if symbol in analysis_log:
-                    log_entry = analysis_log[symbol]
-                    msg += f"• Structure: {log_entry.get('structure', 'Unknown')}\n"
-                    msg += f"• Signal: {log_entry.get('signal', 'None')}\n"
+                last_analysis = self.shared.get("last_analysis", {})
+                if last_analysis:
+                    symbols = [sym for sym, _ in sorted(last_analysis.items(), key=lambda kv: kv[1], reverse=True)[:5]]
                 else:
-                    # Simple trend detection
-                    sma20 = df['close'].iloc[-20:].mean()
-                    if last_price > sma20 * 1.01:
-                        msg += f"• Trend: Bullish (above SMA20: {sma20:.4f})\n"
-                    elif last_price < sma20 * 0.99:
-                        msg += f"• Trend: Bearish (below SMA20: {sma20:.4f})\n"
-                    else:
-                        msg += f"• Trend: Neutral (near SMA20: {sma20:.4f})\n"
-                
-                msg += "\n"
-            
-            msg += "_Use /analysis SYMBOL for specific pair_"
-            
-            await self.safe_reply(update, msg)
-            
+                    symbols = list(frames.keys())[:5]
+
+            if not symbols:
+                await update.message.reply_text("No symbols to analyse")
+                return
+
+            lines = ["🔍 *Market Regime Snapshot*", ""]
+
+            for sym in symbols:
+                df = frames.get(sym)
+                if df is None or len(df) < 50:
+                    lines.append(f"• {sym}: insufficient data")
+                    continue
+
+                try:
+                    analysis = get_enhanced_market_regime(df.tail(200), sym)
+                    confidence = analysis.regime_confidence * 100
+                    lines.append(f"• *{sym}*: {analysis.primary_regime.title()} ({confidence:.0f}% conf)")
+
+                    detail = [f"Vol: {analysis.volatility_level}"]
+                    if analysis.primary_regime == "ranging":
+                        detail.append(f"Range: {analysis.range_quality}")
+                    if analysis.recommended_strategy and analysis.recommended_strategy != "none":
+                        detail.append(f"Strat: {analysis.recommended_strategy.replace('_', ' ').title()}")
+                    lines.append("  " + " | ".join(detail))
+                except Exception as exc:
+                    logger.debug(f"Regime analysis error for {sym}: {exc}")
+                    lines.append(f"• {sym}: unable to analyse")
+
+            await self.safe_reply(update, "\n".join(lines))
+
         except Exception as e:
-            logger.error(f"Error in analysis: {e}")
-            await update.message.reply_text("Error getting analysis")
+            logger.exception("Error in regime command: %s", e)
+            await update.message.reply_text("Error retrieving regime information")
+
+
+    async def analysis(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Show recent analysis details for symbols."""
+        try:
+            frames = self.shared.get("frames", {})
+            last_analysis = self.shared.get("last_analysis", {})
+
+            if not frames:
+                await update.message.reply_text("No market data available yet")
+                return
+
+            if ctx.args:
+                symbols = [ctx.args[0].upper()]
+            elif last_analysis:
+                symbols = [sym for sym, _ in sorted(last_analysis.items(), key=lambda kv: kv[1], reverse=True)[:5]]
+            else:
+                symbols = list(frames.keys())[:5]
+
+            msg = "🔍 *Recent Analysis*\n"
+            msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
+
+            for symbol in symbols:
+                df = frames.get(symbol)
+                if df is None or len(df) < 20:
+                    msg += f"*{symbol}*: insufficient data\n\n"
+                    continue
+
+                msg += f"*{symbol}*\n"
+
+                if symbol in last_analysis:
+                    analysed_at = last_analysis[symbol]
+                    if analysed_at.tzinfo is None:
+                        analysed_at = analysed_at.replace(tzinfo=timezone.utc)
+                    age_minutes = max(0, int((datetime.now(timezone.utc) - analysed_at).total_seconds() // 60))
+                    msg += f"• Last analysed: {age_minutes}m ago\n"
+                else:
+                    msg += "• Last analysed: n/a\n"
+
+                last_price = df['close'].iloc[-1]
+                msg += f"• Last price: {last_price:.4f}\n"
+                msg += f"• Candles loaded: {len(df)}\n\n"
+
+            msg += "_Use /analysis SYMBOL for a specific market_"
+
+            await self.safe_reply(update, msg)
+
+        except Exception as e:
+            logger.exception("Error in analysis: %s", e)
+            await update.message.reply_text("Error getting analysis details")
     
     async def stats(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show trading statistics"""

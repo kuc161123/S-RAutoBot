@@ -3111,6 +3111,10 @@ class TGBot:
             cfg = self.shared.get('config') or {}
             scalp_cfg = cfg.get('scalp', {})
             thr = scalp_cfg.get('threshold', 75)
+            # Override from config if provided
+            min_samples = int(scalp_cfg.get('promote_min_samples', min_samples))
+            target_wr = float(scalp_cfg.get('promote_min_wr', target_wr))
+            promote_enabled = bool(scalp_cfg.get('promote_enabled', False))
 
             # Stats from dedicated scalp tracker
             try:
@@ -3140,6 +3144,7 @@ class TGBot:
                 f"• Phantom WR (proxy): {wr:.1f}%",
                 f"• ML Ready: {'✅' if ml_ready else '⏳'} | Threshold: {thr}",
                 f"• Gate: N ≥ {min_samples}, WR ≥ {target_wr:.1f}%",
+                f"• Promotion toggle: {'ON' if promote_enabled else 'OFF'}",
                 f"• Recommendation: {'🟢 Ready' if ready else '🟡 Keep collecting'}",
                 "_Note: precision@threshold is proxied by phantom WR until executed data and model scores are available._"
             ]

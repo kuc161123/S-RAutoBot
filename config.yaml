@@ -102,6 +102,9 @@ scalp:
   use_ml: true
   threshold: 75
   session_only: ["us", "european"]
+  promote_enabled: false
+  promote_min_samples: 200
+  promote_min_wr: 55.0
 symbol_meta:
   default:
     qty_step: 0.001

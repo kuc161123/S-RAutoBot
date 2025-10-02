@@ -1483,8 +1483,9 @@ class TradingBot:
                                     logger.info(f"   💡 Rejection reason: {ml_reason}")
 
                                 # Record in MR phantom tracker BEFORE continue (for both executed and rejected)
+                                logger.info(f"[{sym}] 📊 PHANTOM ROUTING: MR phantom tracker recording (executed={should_take_trade})")
                                 selected_phantom_tracker.record_mr_signal(
-                                    sym, sig.__dict__, ml_score, should_take_trade, {}, enhanced_features  # Use should_take_trade like pullback strategy
+                                    sym, sig.__dict__, ml_score, should_take_trade, {}, enhanced_features
                                 )
 
                                 # Skip trade execution if ML score below threshold (but phantom is recorded)
@@ -1569,6 +1570,7 @@ class TradingBot:
                                     logger.info(f"   💡 Rejection reason: {ml_reason}")
 
                                 # Record in phantom tracker BEFORE continue (for both executed and rejected)
+                                logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Pullback phantom tracker recording (executed={should_take_trade})")
                                 selected_phantom_tracker.record_signal(
                                     symbol=sym,
                                     signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},

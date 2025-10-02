@@ -351,22 +351,17 @@ class MLScorerMeanReversion:
             logger.error(f"Error saving Mean Reversion ML state: {e}")
 
     def _prepare_features(self, features: Dict) -> List[float]:
-        """Converts feature dictionary to a list for the model."""
-        # Define the order of features for consistency
+        """Converts feature dictionary to a list for the model (simplified set)."""
+        # Minimal high-signal MR features
         feature_order = [
             'range_width_atr',
-            'time_in_range_candles',
+            'range_confidence',
             'touch_count_sr',
+            'distance_from_midpoint_atr',
+            'rsi_at_edge',
             'reversal_candle_size_atr',
             'volume_at_reversal_ratio',
-            'rsi_at_edge',
-            'stochastic_at_edge',
-            'distance_from_midpoint_atr',
-            # Categorical features need mapping
-            'volatility_regime', # Map to 0, 1, 2
-            'hour_of_day',
-            'day_of_week',
-            'session', # Map to 0, 1, 2, 3
+            'volatility_regime',  # map to numeric
             'symbol_cluster'
         ]
         vector = []
@@ -374,9 +369,7 @@ class MLScorerMeanReversion:
             val = features.get(feat)
             if feat == 'volatility_regime':
                 val = {"low": 0, "normal": 1, "high": 2}.get(val, 1)
-            elif feat == 'session':
-                val = {"asian": 0, "european": 1, "us": 2, "off_hours": 3}.get(val, 3)
-            vector.append(float(val) if val is not None else 0)
+            vector.append(float(val) if val is not None else 0.0)
         return vector
 
     def _calibrate_probability(self, prob: float) -> float:
@@ -408,7 +401,21 @@ class MLScorerMeanReversion:
         try:
             feature_vector = self._prepare_features(features)
             X = np.array([feature_vector]).reshape(1, -1)
-            X_scaled = self.scaler.transform(X)
+
+            # Guard against feature count mismatch with saved scaler/models
+            try:
+                if hasattr(self.scaler, 'n_features_in_') and self.scaler.n_features_in_ != X.shape[1]:
+                    logger.warning(
+                        f"Mean Reversion ML feature mismatch: scaler expects {getattr(self.scaler, 'n_features_in_', '?')}, got {X.shape[1]}. Falling back to theory-based scoring until retrain."
+                    )
+                    # Disable ML usage until retrain occurs
+                    self.is_ml_ready = False
+                    return self._theory_based_score(features)
+                X_scaled = self.scaler.transform(X)
+            except Exception as e:
+                logger.warning(f"Scaler transform failed ({e}); using theory-based scoring")
+                self.is_ml_ready = False
+                return self._theory_based_score(features)
 
             predictions = []
             for model_name, model in self.models.items():

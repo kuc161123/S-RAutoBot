@@ -51,8 +51,9 @@ class ImmediateMLScorer:
         self.last_data_cache = {}  # symbol -> {df, btc_price}
         
         # Track which feature set the models were trained with
-        self.model_feature_version = 'original'  # 'original' or 'enhanced'
-        self.feature_count = 34  # 22 original + 5 basic cluster + 4 enhanced cluster + 3 MTF features
+        # Switch to a simplified, high-signal feature set
+        self.model_feature_version = 'simplified_v1'
+        self.feature_count = 13  # simplified pullback features
 
         # Flag to force retrain - SET TO TRUE FOR STARTUP RETRAIN
         # Force retrain to apply new class rebalancing
@@ -124,7 +125,12 @@ class ImmediateMLScorer:
                 feature_version = self.redis_client.get('iml:feature_version')
                 if feature_version:
                     self.model_feature_version = feature_version
-                    self.feature_count = 48 if feature_version == 'enhanced' else 22
+                    if feature_version == 'enhanced':
+                        self.feature_count = 48
+                    elif feature_version == 'original':
+                        self.feature_count = 22
+                    elif feature_version == 'simplified_v1':
+                        self.feature_count = 13
                     logger.info(f"Models use {self.model_feature_version} features ({self.feature_count} total)")
                     
         except Exception as e:
@@ -322,47 +328,30 @@ class ImmediateMLScorer:
         return score, reasoning
     
     def _prepare_features(self, features: dict) -> list:
-        """Convert feature dict to vector for ML - includes cluster features"""
-        # Core original features
-        original_features = [
-            'trend_strength', 'higher_tf_alignment', 'ema_distance_ratio',
-            'volume_ratio', 'volume_trend', 'breakout_volume',
-            'support_resistance_strength', 'pullback_depth', 'confirmation_candle_strength',
-            'atr_percentile', 'risk_reward_ratio', 'atr_stop_distance',
-            'hour_of_day', 'day_of_week', 'candle_body_ratio', 'upper_wick_ratio',
-            'lower_wick_ratio', 'candle_range_atr', 'volume_ma_ratio',
-            'rsi', 'bb_position', 'volume_percentile'
+        """Convert feature dict to vector for ML - simplified high-signal set"""
+        # Minimal, de-correlated pullback feature set
+        feature_order = [
+            'trend_strength',
+            'higher_tf_alignment',
+            'ema_distance_ratio',
+            'support_resistance_strength',
+            'pullback_depth',
+            'confirmation_candle_strength',
+            'candle_range_atr',
+            'upper_wick_ratio',
+            'lower_wick_ratio',
+            'bb_position',           # choose BB position as the sole momentum proxy
+            'volume_ratio',          # single volume proxy
+            'atr_percentile',
+            'symbol_cluster'         # keep only coarse cluster id
         ]
-        
-        # Basic cluster features
-        basic_cluster_features = [
-            'symbol_cluster', 'cluster_volatility_norm', 'cluster_volume_norm',
-            'btc_correlation_bucket', 'price_tier'
-        ]
-        
-        # Enhanced cluster features (added by cluster_feature_enhancer)
-        enhanced_cluster_features = [
-            'cluster_confidence', 'cluster_secondary', 'cluster_mixed', 'cluster_conf_ratio'
-        ]
-        
-        # Use all features including enhanced clusters
-        feature_order = original_features + basic_cluster_features + enhanced_cluster_features
-        
+
         vector = []
         for feat in feature_order:
-            if feat in features:
-                val = features[feat]
-                # Convert categorical to numeric
-                if feat == 'volatility_regime':
-                    val = {'low': 0, 'normal': 1, 'high': 2}.get(val, 1)
-                elif feat == 'session':
-                    val = {'asian': 0, 'european': 1, 'us': 2, 'off_hours': 3}.get(val, 3)
-                elif isinstance(val, bool):
-                    val = 1.0 if val else 0.0
-                vector.append(float(val) if val is not None else 0)
-            else:
-                vector.append(0)
-                
+            val = features.get(feat, 0)
+            if isinstance(val, bool):
+                val = 1.0 if val else 0.0
+            vector.append(float(val) if val is not None else 0.0)
         return vector
     
     def record_outcome(self, signal_data: dict, outcome: str, pnl_percent: float):
@@ -524,13 +513,12 @@ class ImmediateMLScorer:
                 logger.info(f"Not enough data yet: {total_data}/{self.MIN_TRADES_FOR_ML}")
                 return
                 
-            # ALWAYS use original features for the main ML system
-            # This ensures stability and prevents feature mismatches
-            self.model_feature_version = 'original'
+            # Use simplified features for the main ML system
+            self.model_feature_version = 'simplified_v1'
             # Calculate actual feature count dynamically
             test_features = self._prepare_features({})
             self.feature_count = len(test_features)
-            logger.info(f"Training original ML with {self.feature_count} total features (includes cluster features)")
+            logger.info(f"Training ML with simplified feature set ({self.feature_count} features)")
             
             # Prepare training data
             X = []

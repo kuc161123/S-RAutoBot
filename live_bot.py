@@ -1559,11 +1559,61 @@ class TradingBot:
                                 logger.info(f"🧠 [{sym}] ENHANCED MR ML ANALYSIS:")
                                 logger.info(f"   📊 Features: {len(enhanced_features)} basic MR features")
 
+                                # Pre-ML guardrails for MR to boost live WR (phantom will still track rejects)
+                                policy_reject_reason = None
+                                try:
+                                    rc = float(enhanced_features.get('range_confidence', 0))
+                                    touches = float(enhanced_features.get('touch_count_sr', 0))
+                                    dist_mid = float(enhanced_features.get('distance_from_midpoint_atr', 0))
+                                    rev_atr = float(enhanced_features.get('reversal_candle_size_atr', 0))
+                                    vol_reg = enhanced_features.get('volatility_regime', 'normal')
+
+                                    if rc < 0.70:
+                                        policy_reject_reason = f"Low range_confidence {rc:.2f}"
+                                    elif touches < 4:
+                                        policy_reject_reason = f"Insufficient S/R touches {touches:.0f}"
+                                    elif dist_mid < 0.80:
+                                        policy_reject_reason = f"Edge distance too small {dist_mid:.2f} ATR"
+                                    elif isinstance(vol_reg, str) and vol_reg == 'high':
+                                        policy_reject_reason = "High volatility regime"
+                                    elif rev_atr < 1.10:
+                                        policy_reject_reason = f"Weak reversal candle {rev_atr:.2f} ATR"
+                                except Exception:
+                                    # If any parsing issues, do not enforce guardrail
+                                    policy_reject_reason = None
+
+                                if policy_reject_reason is not None:
+                                    logger.info(f"   ⛔ Policy Reject (MR): {policy_reject_reason}")
+                                    # Record as phantom so learning continues
+                                    try:
+                                        if self.tg:
+                                            await self.tg.send_message(
+                                                f"🚫 *Policy Reject* {sym} {sig.side.upper()} (MR)\n{policy_reject_reason} — tracking via phantom"
+                                            )
+                                    except Exception:
+                                        pass
+                                    try:
+                                        shared.get("telemetry", {})["policy_rejects"] += 1
+                                    except Exception:
+                                        pass
+                                    policy_features = {'policy_reject': 1, 'policy_reason': policy_reject_reason}
+                                    selected_phantom_tracker.record_mr_signal(
+                                        sym, sig.__dict__, 0.0, False, policy_features, enhanced_features
+                                    )
+                                    continue
+
                                 # Score using Enhanced MR ML system
                                 ml_score, ml_reason = selected_ml_scorer.score_signal(sig.__dict__, enhanced_features, df)
 
                                 # Detailed ML decision logging
                                 threshold = selected_ml_scorer.min_score
+                                # Cluster-aware threshold bump for high-vol symbols if cluster id is present
+                                try:
+                                    cl = int(enhanced_features.get('symbol_cluster', 0))
+                                    if cl == 3:  # meme/high-vol cluster
+                                        threshold = min(85, threshold + 3)
+                                except Exception:
+                                    pass
                                 should_take_trade = ml_score >= threshold
 
                                 logger.info(f"   🎯 ML Score: {ml_score:.1f} / {threshold:.0f} threshold")
@@ -1644,6 +1694,58 @@ class TradingBot:
                                     logger.info(f"   🏷️ Basic cluster ID: {cluster_id}")
 
                                 # Score using pullback ML system
+                                # Pre-ML guardrails for Pullback to boost live WR (phantom will still track rejects)
+                                pb_policy_reason = None
+                                try:
+                                    ts = float(basic_features.get('trend_strength', 0))
+                                    htf = float(basic_features.get('higher_tf_alignment', 50))
+                                    atrp = float(basic_features.get('atr_percentile', 50))
+                                    cra = float(basic_features.get('candle_range_atr', 0))
+                                    srs = float(basic_features.get('support_resistance_strength', 0))
+                                    pbd = float(basic_features.get('pullback_depth', 0))
+
+                                    if ts < 60:
+                                        pb_policy_reason = f"Weak trend_strength {ts:.1f}"
+                                    elif htf < 75:
+                                        pb_policy_reason = f"Poor HTF alignment {htf:.1f}"
+                                    elif not (35 <= atrp <= 80):
+                                        pb_policy_reason = f"ATR percentile out of band {atrp:.1f}"
+                                    elif cra > 1.5:
+                                        pb_policy_reason = f"Large candle_range_atr {cra:.2f}"
+                                    elif srs < 2:
+                                        pb_policy_reason = f"Weak S/R strength {srs:.0f}"
+                                    elif not (30 <= pbd <= 65):
+                                        pb_policy_reason = f"Pullback depth {pbd:.1f}% outside [30,65]"
+                                except Exception:
+                                    pb_policy_reason = None
+
+                                if pb_policy_reason is not None:
+                                    logger.info(f"   ⛔ Policy Reject (Pullback): {pb_policy_reason}")
+                                    # Record as phantom so learning continues
+                                    try:
+                                        if self.tg:
+                                            await self.tg.send_message(
+                                                f"🚫 *Policy Reject* {sym} {sig.side.upper()} (Pullback)\n{pb_policy_reason} — tracking via phantom"
+                                            )
+                                    except Exception:
+                                        pass
+                                    try:
+                                        shared.get("telemetry", {})["policy_rejects"] += 1
+                                    except Exception:
+                                        pass
+                                    policy_features = basic_features.copy()
+                                    policy_features['policy_reject'] = 1
+                                    policy_features['policy_reason'] = pb_policy_reason
+                                    selected_phantom_tracker.record_signal(
+                                        symbol=sym,
+                                        signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                        ml_score=0.0,
+                                        was_executed=False,
+                                        features=policy_features,
+                                        strategy_name=selected_strategy
+                                    )
+                                    continue
+
                                 ml_score, ml_reason = selected_ml_scorer.score_signal(
                                     {'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
                                     basic_features
@@ -1651,6 +1753,13 @@ class TradingBot:
 
                                 # Detailed ML decision logging
                                 threshold = selected_ml_scorer.min_score
+                                # Cluster-aware threshold bump
+                                try:
+                                    cl = int(basic_features.get('symbol_cluster', 0))
+                                    if cl == 3:
+                                        threshold = min(85, threshold + 3)
+                                except Exception:
+                                    pass
                                 should_take_trade = ml_score >= threshold
 
                                 logger.info(f"   🎯 ML Score: {ml_score:.1f} / {threshold:.0f} threshold")

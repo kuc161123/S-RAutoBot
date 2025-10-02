@@ -1471,7 +1471,7 @@ class TradingBot:
                         regime_analysis = get_enhanced_market_regime(df, sym)
 
                         # Enhanced regime analysis logging
-                        logger.info(f"🔍 [{sym}] MARKET ANALYSIS:")
+                        logger.debug(f"🔍 [{sym}] MARKET ANALYSIS:")
                         logger.info(f"   📊 Regime: {regime_analysis.primary_regime.upper()} (confidence: {regime_analysis.regime_confidence:.1%})")
                         logger.info(f"   📈 Trend Strength: {regime_analysis.trend_strength:.1f} | Volatility: {regime_analysis.volatility_level}")
                         if regime_analysis.primary_regime == "ranging":
@@ -1480,7 +1480,7 @@ class TradingBot:
 
                         if regime_analysis.recommended_strategy == "enhanced_mr":
                             # Use Enhanced Mean Reversion System
-                            logger.info(f"🟢 [{sym}] ENHANCED MEAN REVERSION ANALYSIS:")
+                            logger.debug(f"🟢 [{sym}] ENHANCED MEAN REVERSION ANALYSIS:")
                             sig = detect_signal_mean_reversion(df.copy(), settings, sym)
                             selected_strategy = "enhanced_mr"
                             selected_ml_scorer = enhanced_mr_scorer
@@ -1496,7 +1496,7 @@ class TradingBot:
 
                         elif regime_analysis.recommended_strategy == "pullback":
                             # Use Pullback System
-                            logger.info(f"🔵 [{sym}] PULLBACK STRATEGY ANALYSIS:")
+                            logger.debug(f"🔵 [{sym}] PULLBACK STRATEGY ANALYSIS:")
                             sig = get_pullback_signals(df.copy(), settings, sym)
                             selected_strategy = "pullback"
                             selected_ml_scorer = ml_scorer
@@ -1512,7 +1512,7 @@ class TradingBot:
 
                         else:
                             # Skip this symbol for now (volatile or poor conditions)
-                            logger.info(f"⏭️ [{sym}] STRATEGY SELECTION:")
+                            logger.debug(f"⏭️ [{sym}] STRATEGY SELECTION:")
                             logger.info(f"   ❌ SKIPPING - {regime_analysis.primary_regime.upper()} regime not suitable")
                             logger.info(f"   💡 Volatility: {regime_analysis.volatility_level}, confidence: {regime_analysis.regime_confidence:.1%}")
                             logger.info(f"   📊 Market needs: trending (>25 strength) OR ranging (>medium quality)")

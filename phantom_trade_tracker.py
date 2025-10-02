@@ -165,11 +165,18 @@ class PhantomTradeTracker:
             }
             self.redis_client.set('phantom:active', json.dumps(active_dict, cls=NumpyJSONEncoder))
             
-            # Save completed phantoms (keep last 1000)
+            # Save completed phantoms (keep last 1000, and drop >30d old)
+            from datetime import datetime, timedelta
+            cutoff = datetime.now() - timedelta(days=30)
             all_completed = []
             for trades in self.phantom_trades.values():
                 for trade in trades:
                     if trade.outcome in ['win', 'loss']:
+                        try:
+                            if trade.exit_time and trade.exit_time < cutoff:
+                                continue
+                        except Exception:
+                            pass
                         all_completed.append(trade.to_dict())
             
             # Keep only last 1000 for storage efficiency

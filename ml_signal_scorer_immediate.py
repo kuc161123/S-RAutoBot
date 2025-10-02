@@ -512,6 +512,13 @@ class ImmediateMLScorer:
                 except Exception:
                     continue
             
+            # Cap training set size to avoid memory growth (keep most recent)
+            MAX_TRAINING_SAMPLES = 5000
+            if len(all_training_data) > MAX_TRAINING_SAMPLES:
+                discarded = len(all_training_data) - MAX_TRAINING_SAMPLES
+                all_training_data = all_training_data[-MAX_TRAINING_SAMPLES:]
+                logger.info(f"Capped pullback training set to {MAX_TRAINING_SAMPLES} (discarded {discarded})")
+
             total_data = len(all_training_data)
             if total_data < self.MIN_TRADES_FOR_ML:
                 logger.info(f"Not enough data yet: {total_data}/{self.MIN_TRADES_FOR_ML}")

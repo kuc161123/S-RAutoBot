@@ -16,7 +16,12 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
-import xgboost as xgb
+try:
+    import xgboost as xgb
+    _XGB_AVAILABLE = True
+except Exception:
+    xgb = None
+    _XGB_AVAILABLE = False
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import classification_report, confusion_matrix
 import warnings
@@ -780,6 +785,13 @@ class EnhancedMeanReversionScorer:
             # Load training data
             training_data = self._load_training_data(include_phantoms=include_phantoms)
 
+            # Cap training set size (keep most recent)
+            MAX_TRAINING_SAMPLES = 5000
+            if len(training_data) > MAX_TRAINING_SAMPLES:
+                discarded = len(training_data) - MAX_TRAINING_SAMPLES
+                training_data = training_data[-MAX_TRAINING_SAMPLES:]
+                logger.info(f"Capped Enhanced MR training set to {MAX_TRAINING_SAMPLES} (discarded {discarded})")
+
             if len(training_data) < self.MIN_TRADES_FOR_ML:
                 logger.warning(f"Not enough Enhanced MR data for training: {len(training_data)} < {self.MIN_TRADES_FOR_ML}")
                 return
@@ -923,25 +935,29 @@ class EnhancedMeanReversionScorer:
             logger.warning(f"Range Detector training failed: {e}")
             self.ensemble_models['range_detector'] = None
 
-        # 2. Reversal Predictor (XGBoost) - Predicts reversal probability
+        # 2. Reversal Predictor (XGBoost) - Predicts reversal probability (optional)
         try:
-            xgb_scaler = StandardScaler()
-            X_xgb = xgb_scaler.fit_transform(X)
+            if _XGB_AVAILABLE:
+                xgb_scaler = StandardScaler()
+                X_xgb = xgb_scaler.fit_transform(X)
 
-            xgb_model = xgb.XGBClassifier(
-                n_estimators=100,
-                max_depth=6,
-                learning_rate=0.1,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                random_state=42
-            )
-            xgb_model.fit(X_xgb, y)
+                xgb_model = xgb.XGBClassifier(
+                    n_estimators=100,
+                    max_depth=6,
+                    learning_rate=0.1,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    random_state=42
+                )
+                xgb_model.fit(X_xgb, y)
 
-            self.ensemble_models['reversal_predictor'] = xgb_model
-            self.scalers['reversal_predictor'] = xgb_scaler
+                self.ensemble_models['reversal_predictor'] = xgb_model
+                self.scalers['reversal_predictor'] = xgb_scaler
 
-            logger.info("✅ Reversal Predictor (XGB) trained")
+                logger.info("✅ Reversal Predictor (XGB) trained")
+            else:
+                self.ensemble_models['reversal_predictor'] = None
+                logger.info("ℹ️ XGBoost not available; skipping Reversal Predictor")
 
         except Exception as e:
             logger.warning(f"Reversal Predictor training failed: {e}")

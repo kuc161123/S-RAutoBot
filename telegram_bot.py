@@ -19,6 +19,9 @@ class TGBot:
         self.app = Application.builder().token(token).build()
         self.chat_id = chat_id
         self.shared = shared
+        # Simple per-command cooldown
+        self._cooldowns = {}
+        self._cooldown_seconds = 2.0
         
         # Add command handlers
         self.app.add_handler(CommandHandler("start", self.start))
@@ -80,6 +83,19 @@ class TGBot:
         self.app.add_handler(CommandHandler("forceretrain", self.force_retrain_ml))
 
         self.running = False
+
+    def _cooldown_ok(self, name: str) -> bool:
+        """Return True if command is not rate-limited; otherwise False."""
+        try:
+            import time
+            now = time.time()
+            last = self._cooldowns.get(name, 0.0)
+            if (now - last) < self._cooldown_seconds:
+                return False
+            self._cooldowns[name] = now
+            return True
+        except Exception:
+            return True
 
     def _compute_risk_snapshot(self):
         """Return (per_trade_risk_usd, label) based on current configuration."""
@@ -2614,6 +2630,9 @@ class TGBot:
 
     async def parallel_performance(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show parallel strategy system performance comparison"""
+        if not self._cooldown_ok('parallel_performance'):
+            await self.safe_reply(update, "⏳ Please wait before using /parallel_performance again")
+            return
         try:
             msg = "⚡ *Parallel Strategy Performance*\n"
             msg += "━" * 35 + "\n\n"
@@ -2669,6 +2688,9 @@ class TGBot:
 
     async def regime_analysis(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show current market regime analysis for top symbols"""
+        if not self._cooldown_ok('regime_analysis'):
+            await self.safe_reply(update, "⏳ Please wait before using /regimeanalysis again")
+            return
         try:
             msg = "🌐 *Market Regime Analysis*\n"
             msg += "━" * 30 + "\n\n"
@@ -2738,6 +2760,9 @@ class TGBot:
 
     async def strategy_comparison(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Compare strategy performance and show regime accuracy"""
+        if not self._cooldown_ok('strategy_comparison'):
+            await self.safe_reply(update, "⏳ Please wait before using /strategycomparison again")
+            return
         try:
             msg = "⚖️ *Strategy Comparison Analysis*\n"
             msg += "━" * 35 + "\n\n"

@@ -535,7 +535,12 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
         regime_confidence = probability_map[primary_regime]
 
         if ml_probabilities:
-            blend_weight = 0.4
+            # Allow weight override via environment variable REGIME_BLEND_WEIGHT (default 0.4)
+            import os
+            try:
+                blend_weight = float(os.getenv('REGIME_BLEND_WEIGHT', '0.4'))
+            except Exception:
+                blend_weight = 0.4
             blended = {}
             for label in regime_scores:
                 blended[label] = (

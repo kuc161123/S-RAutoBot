@@ -28,6 +28,7 @@ logs/
 # Data
 *.csv
 *.json
+!symbol_clusters.json
 ml_data/
 data/
 

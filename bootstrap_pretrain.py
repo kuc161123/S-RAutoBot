@@ -149,6 +149,8 @@ def main():
 
     pullback_training: List[Dict] = []
     mr_training: List[Dict] = []
+    total_pb_wins = total_pb_losses = 0
+    total_mr_wins = total_mr_losses = 0
 
     for sym in symbols:
         logger.info(f"Loading candles for {sym}...")
@@ -163,15 +165,31 @@ def main():
         # Pullback samples
         pb = _pullback_samples(df, sym, pb_settings)
         pullback_training.extend(pb)
-        logger.info(f"{sym}: pullback samples {len(pb)}")
+        pb_wins = sum(1 for s in pb if s.get('outcome') == 1)
+        pb_losses = len(pb) - pb_wins
+        total_pb_wins += pb_wins
+        total_pb_losses += pb_losses
+        if len(pb) > 0:
+            wr = (pb_wins / len(pb)) * 100
+            logger.info(f"{sym}: pullback samples {len(pb)} | wins {pb_wins} / losses {pb_losses} (WR {wr:.1f}%)")
+        else:
+            logger.info(f"{sym}: pullback samples 0")
 
         # MR samples
         mr = _mean_reversion_samples(df, sym, mr_settings)
         mr_training.extend(mr)
-        logger.info(f"{sym}: MR samples {len(mr)}")
+        mr_wins = sum(1 for s in mr if s.get('outcome') == 1)
+        mr_losses = len(mr) - mr_wins
+        total_mr_wins += mr_wins
+        total_mr_losses += mr_losses
+        if len(mr) > 0:
+            mr_wr = (mr_wins / len(mr)) * 100
+            logger.info(f"{sym}: MR samples {len(mr)} | wins {mr_wins} / losses {mr_losses} (WR {mr_wr:.1f}%)")
+        else:
+            logger.info(f"{sym}: MR samples 0")
 
-    logger.info(f"Total pullback samples: {len(pullback_training)}")
-    logger.info(f"Total MR samples: {len(mr_training)}")
+    logger.info(f"Total pullback samples: {len(pullback_training)} (wins {total_pb_wins} / losses {total_pb_losses}, WR {(total_pb_wins / max(1, (total_pb_wins+total_pb_losses)))*100:.1f}%)")
+    logger.info(f"Total MR samples: {len(mr_training)} (wins {total_mr_wins} / losses {total_mr_losses}, WR {(total_mr_wins / max(1, (total_mr_wins+total_mr_losses)))*100:.1f}%)")
 
     # Push samples to Redis if available so scorers can train from persisted data
     redis_client = None

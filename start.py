@@ -82,16 +82,15 @@ if __name__ == "__main__":
         print("Pre-trained models found in Redis. Skipping offline training.")
 
     if should_train:
-        print("Running offline trainer to build ML models...")
+        print("Running bootstrap pretrainer (candles-only) to build ML models...")
         try:
-            # Execute the offline_trainer.py script
-            # Use sys.executable to ensure the correct python interpreter is used
-            # subprocess.run([sys.executable, "offline_trainer.py"], check=True) # Disabled to start live bot directly
-            print("Offline training complete. Models saved to Redis.")
+            # Use the candle-only bootstrap to generate samples and train scalers/models
+            subprocess.run([sys.executable, "bootstrap_pretrain.py"], check=True)
+            print("Bootstrap pretraining complete. Models saved if Redis available.")
         except subprocess.CalledProcessError as e:
-            print(f"Error: Offline training failed with exit code {e.returncode}. Live bot will start in online learning mode.")
+            print(f"Error: Bootstrap pretraining failed with exit code {e.returncode}. Live bot will start in online learning mode.")
         except Exception as e:
-            print(f"Error running offline trainer: {e}. Live bot will start in online learning mode.")
+            print(f"Error running bootstrap pretrainer: {e}. Live bot will start in online learning mode.")
 
     print("Launching live bot...")
     os.execvp(sys.executable, [sys.executable, "live_bot.py"])

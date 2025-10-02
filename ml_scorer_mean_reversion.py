@@ -615,7 +615,8 @@ class MLScorerMeanReversion:
                     pnl = trade.get('pnl_percent', 0.0)
 
                     feature_vector = self._prepare_features(features)
-                    if len(feature_vector) == 13:  # Expected feature count
+                    expected_len = len(self._prepare_features({}))
+                    if len(feature_vector) == expected_len:
                         X_list.append(feature_vector)
                         y_list.append(outcome)
                         pnl_list.append(pnl)

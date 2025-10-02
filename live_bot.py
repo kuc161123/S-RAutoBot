@@ -1711,13 +1711,13 @@ class TradingBot:
                                 cluster_id = int(clusters_map.get(sym, 3))
                             except Exception:
                                 cluster_id = 3
-                            if _daily_capped(sym, cluster_id):
-                                logger.debug(f"[{sym}] Daily phantom caps reached; skipping phantom-only")
-                                continue
+                            caps_reached = _daily_capped(sym, cluster_id)
+                            if caps_reached:
+                                logger.debug(f"[{sym}] Daily phantom caps reached; MR/PB phantom skipped; scalp still allowed")
                             # Try MR phantom
                             try:
                                 sig_mr = detect_signal_mean_reversion(df.copy(), settings, sym)
-                                if sig_mr and _not_duplicate(sym, sig_mr):
+                                if (not caps_reached) and sig_mr and _not_duplicate(sym, sig_mr):
                                     ef = sig_mr.meta.get('mr_features', {}).copy() if sig_mr.meta else {}
                                     ef['routing'] = 'none'
                                     logger.info(f"[{sym}] 👻 Phantom-only (MR none): {sig_mr.side.upper()} @ {sig_mr.entry:.4f}")
@@ -1730,7 +1730,7 @@ class TradingBot:
                                 pass
 
                             # Try Pullback phantom if budget remains
-                            if recorded < remaining:
+                            if (not caps_reached) and recorded < remaining:
                                 try:
                                     sig_pb = get_pullback_signals(df.copy(), settings, sym)
                                     if sig_pb and _not_duplicate(sym, sig_pb):
@@ -1776,7 +1776,7 @@ class TradingBot:
                                                 logger.info(f"[{sym}] 🩳 Scalp using main tf: 3m sparse ({len(df3)} bars)")
 
                                         sc_sig = detect_scalp_signal(df_for_scalp.copy(), ScalpSettings(), sym)
-                                        if sc_sig and _not_duplicate(sym, sc_sig) and not _daily_capped(sym, cluster_id):
+                                        if sc_sig and _not_duplicate(sym, sc_sig):
                                             sc_feats = {
                                                 'routing': 'none',
                                                 'vwap_dist_atr': sc_sig.meta.get('dist_vwap_atr', 0),
@@ -1797,7 +1797,7 @@ class TradingBot:
                                                 )
                                             except Exception:
                                                 pass
-                                            _increment_daily(sym, cluster_id, 'none')
+                                            # Scalp is exempt from daily caps; do not increment daily counters
                                         else:
                                             logger.info(f"[{sym}] 🩳 No Scalp Signal (filters not met)")
                                     except Exception as e:

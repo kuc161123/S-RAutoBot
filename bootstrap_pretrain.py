@@ -14,6 +14,9 @@ from typing import List, Dict
 
 import yaml
 import pandas as pd
+import os
+import json
+from datetime import datetime
 
 from candle_storage_postgres import CandleStorage
 from utils_data_quality import prepare_df_for_features
@@ -170,12 +173,63 @@ def main():
     logger.info(f"Total pullback samples: {len(pullback_training)}")
     logger.info(f"Total MR samples: {len(mr_training)}")
 
+    # Push samples to Redis if available so scorers can train from persisted data
+    redis_client = None
+    try:
+        import redis  # type: ignore
+        redis_url = os.getenv('REDIS_URL')
+        if redis_url:
+            redis_client = redis.from_url(redis_url, decode_responses=True)
+            redis_client.ping()
+            logger.info("Connected to Redis for pretraining persistence")
+    except Exception as e:
+        logger.warning(f"Redis not available for pretraining: {e}")
+
+    # If Redis exists, write datasets to the expected keys
+    if redis_client:
+        try:
+            # Persist Pullback executed trades to 'iml:trades'
+            redis_client.delete('iml:trades')
+            for s in pullback_training:
+                record = {
+                    'features': s['features'],
+                    'outcome': 'win' if s['outcome'] == 1 else 'loss',
+                    'pnl_percent': 0.0,
+                    'timestamp': datetime.now().isoformat()
+                }
+                redis_client.rpush('iml:trades', json.dumps(record))
+            redis_client.set('iml:completed_trades', str(len(pullback_training)))
+            # Reset last train count so startup retrain uses all data
+            redis_client.set('iml:last_train_count', '0')
+            logger.info(f"Persisted {len(pullback_training)} pullback samples to Redis")
+        except Exception as e:
+            logger.error(f"Failed to persist pullback samples to Redis: {e}")
+
+        try:
+            # Persist MR trades to 'ml:trades:mean_reversion'
+            redis_client.delete('ml:trades:mean_reversion')
+            for s in mr_training:
+                record = {
+                    'features': s['features'],
+                    'outcome': int(s['outcome']),
+                    'pnl_percent': 0.0,
+                    'timestamp': datetime.now().isoformat()
+                }
+                redis_client.rpush('ml:trades:mean_reversion', json.dumps(record))
+            redis_client.set('ml:completed_trades:mean_reversion', str(len(mr_training)))
+            redis_client.set('ml:last_train_count:mean_reversion', '0')
+            logger.info(f"Persisted {len(mr_training)} MR samples to Redis")
+        except Exception as e:
+            logger.error(f"Failed to persist MR samples to Redis: {e}")
+
     # Train Pullback ML
     try:
         from ml_signal_scorer_immediate import get_immediate_scorer
         pb_scorer = get_immediate_scorer()
-        pb_scorer.memory_storage = {'trades': pullback_training, 'phantoms': []}
-        pb_scorer.completed_trades = len(pullback_training)
+        if not redis_client:
+            # Memory fallback
+            pb_scorer.memory_storage = {'trades': pullback_training, 'phantoms': []}
+            pb_scorer.completed_trades = len(pullback_training)
         pb_scorer.force_retrain = True
         trained = pb_scorer.startup_retrain()
         logger.info(f"Pullback ML startup retrain: {'SUCCESS' if trained else 'SKIPPED/FAILED'}")
@@ -186,10 +240,12 @@ def main():
     try:
         from ml_scorer_mean_reversion import get_mean_reversion_scorer
         mr_scorer = get_mean_reversion_scorer()
-        if not hasattr(mr_scorer, 'memory_storage'):
-            mr_scorer.memory_storage = {'trades': []}
-        mr_scorer.memory_storage['trades'] = mr_training
-        mr_scorer.completed_trades = len(mr_training)
+        if not redis_client:
+            if not hasattr(mr_scorer, 'memory_storage'):
+                mr_scorer.memory_storage = {'trades': []}
+            mr_scorer.memory_storage['trades'] = mr_training
+            mr_scorer.completed_trades = len(mr_training)
+        # Use scorer's training entrypoint (handles scaler save)
         mr_scorer._retrain_models()
         logger.info(f"MR ML trained: {mr_scorer.is_ml_ready}")
     except Exception as e:
@@ -200,4 +256,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

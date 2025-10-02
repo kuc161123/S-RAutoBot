@@ -526,25 +526,36 @@ class EnhancedMeanReversionScorer:
         return float(score), "Fallback theory score"
 
     def _prepare_feature_vector(self, features: dict) -> List[float]:
-        """Convert feature dictionary to vector for ML models"""
-        # Simplified feature set for core MR trading
-        feature_names = ['range_width', 'range_confidence', 'trend_strength', 'volatility_level']
-        vector = []
+        """Convert feature dictionary to vector for ML models.
 
-        for feat_name in feature_names:
-            val = features.get(feat_name, 0.0)
+        The feature names here must match the output of
+        `ml_scorer_mean_reversion.calculate_mean_reversion_features`.
+        """
 
-            # Handle categorical features
-            if feat_name == 'session':
-                val = {'asian': 0, 'european': 1, 'us': 2, 'off_hours': 3}.get(val, 3)
-            elif feat_name == 'volatility_regime':
-                val = {'low': 0, 'normal': 1, 'high': 2}.get(val, 1)
-            elif isinstance(val, str):
-                val = 0.0  # Default for unexpected string values
+        feature_names = [
+            'range_width_atr',         # Width of the detected range in ATR terms
+            'touch_count_sr',          # Support/resistance touches in the range
+            'volume_at_reversal_ratio',# Volume confirmation at the reversal
+            'volatility_regime',       # Low/normal/high
+        ]
+
+        vector: List[float] = []
+
+        for name in feature_names:
+            val = features.get(name, 0.0)
+
+            if name == 'volatility_regime':
+                # Encode categorical volatility regime deterministically
+                val = {'low': 0.0, 'normal': 1.0, 'high': 2.0}.get(str(val).lower(), 1.0)
             elif pd.isna(val) or val is None:
                 val = 0.0
+            else:
+                try:
+                    val = float(val)
+                except (TypeError, ValueError):
+                    val = 0.0
 
-            vector.append(float(val))
+            vector.append(val)
 
         return vector
 

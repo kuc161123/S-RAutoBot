@@ -402,9 +402,12 @@ class ImmediateMLScorer:
             try:
                 from phantom_trade_tracker import get_phantom_tracker
                 phantom_tracker = get_phantom_tracker()
-                phantom_count = sum(len(trades) for trades in phantom_tracker.phantom_trades.values())
+                phantom_count = sum(
+                    len([p for p in trades if not getattr(p, 'was_executed', False)])
+                    for trades in phantom_tracker.phantom_trades.values()
+                )
                 total_combined = self.completed_trades + phantom_count
-            except:
+            except Exception:
                 pass  # Use executed trades only if phantom tracker not available
             
             # Retrain if we've had RETRAIN_INTERVAL new trades since last training OR force retrain
@@ -652,10 +655,13 @@ class ImmediateMLScorer:
         try:
             from phantom_trade_tracker import get_phantom_tracker
             phantom_tracker = get_phantom_tracker()
-            phantom_count = sum(len(trades) for trades in phantom_tracker.phantom_trades.values())
+            phantom_count = sum(
+                len([p for p in trades if not getattr(p, 'was_executed', False)])
+                for trades in phantom_tracker.phantom_trades.values()
+            )
             info['phantom_count'] = phantom_count
             info['total_combined'] = self.completed_trades + phantom_count
-        except:
+        except Exception:
             pass
         
         # Calculate retrain info
@@ -734,7 +740,10 @@ class ImmediateMLScorer:
         try:
             from phantom_trade_tracker import get_phantom_tracker
             phantom_tracker = get_phantom_tracker()
-            phantom_count = sum(len(trades) for trades in phantom_tracker.phantom_trades.values())
+            phantom_count = sum(
+                len([p for p in trades if not getattr(p, 'was_executed', False)])
+                for trades in phantom_tracker.phantom_trades.values()
+            )
         except Exception as e:
             logger.warning(f"Error counting phantom trades: {e}")
         

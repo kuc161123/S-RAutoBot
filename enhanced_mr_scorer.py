@@ -606,7 +606,10 @@ class EnhancedMeanReversionScorer:
         try:
             from mr_phantom_tracker import get_mr_phantom_tracker
             mr_phantom_tracker = get_mr_phantom_tracker()
-            phantom_count = sum(len(trades) for trades in mr_phantom_tracker.mr_phantom_trades.values())
+            phantom_count = sum(
+                len([p for p in trades if not getattr(p, 'was_executed', False)])
+                for trades in mr_phantom_tracker.mr_phantom_trades.values()
+            )
             total += phantom_count
         except Exception as e:
             logger.debug(f"Could not get MR phantom trade count: {e}")
@@ -618,7 +621,10 @@ class EnhancedMeanReversionScorer:
         try:
             from mr_phantom_tracker import get_mr_phantom_tracker
             mr_phantom_tracker = get_mr_phantom_tracker()
-            phantom_count = sum(len(trades) for trades in mr_phantom_tracker.mr_phantom_trades.values())
+            phantom_count = sum(
+                len([p for p in trades if not getattr(p, 'was_executed', False)])
+                for trades in mr_phantom_tracker.mr_phantom_trades.values()
+            )
         except Exception as e:
             logger.debug(f"Could not get MR phantom trade count: {e}")
         
@@ -672,7 +678,10 @@ class EnhancedMeanReversionScorer:
         try:
             from mr_phantom_tracker import get_mr_phantom_tracker
             mr_phantom_tracker = get_mr_phantom_tracker()
-            phantom_count = sum(len(trades) for trades in mr_phantom_tracker.mr_phantom_trades.values())
+            phantom_count = sum(
+                len([p for p in trades if not getattr(p, 'was_executed', False)])
+                for trades in mr_phantom_tracker.mr_phantom_trades.values()
+            )
         except Exception as e:
             logger.warning(f"Error counting Enhanced MR phantom trades: {e}")
         
@@ -837,9 +846,11 @@ class EnhancedMeanReversionScorer:
                     from mr_phantom_tracker import get_mr_phantom_tracker
                     mr_phantom_tracker = get_mr_phantom_tracker()
                     phantom_data = mr_phantom_tracker.get_mr_learning_data()
-                    
+
                     # Convert phantom data format to match executed trades
                     for phantom in phantom_data:
+                        if phantom.get('was_executed'):
+                            continue  # executed trades already captured in executed dataset
                         phantom_record = {
                             'enhanced_features': phantom.get('enhanced_features', {}),
                             'features': phantom.get('features', {}),

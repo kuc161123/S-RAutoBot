@@ -80,6 +80,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("trainingstatus", self.training_status))  # Alternative command name
         self.app.add_handler(CommandHandler("phantomqa", self.phantom_qa))
         self.app.add_handler(CommandHandler("scalpqa", self.scalp_qa))
+        self.app.add_handler(CommandHandler("scalppromote", self.scalp_promotion_status))
         from telegram.ext import CallbackQueryHandler
         self.app.add_handler(CallbackQueryHandler(self.ui_callback, pattern=r"^ui:"))
         self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
@@ -3100,6 +3101,52 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_qa: {e}")
             await update.message.reply_text("Error getting scalp QA")
+
+    async def scalp_promotion_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Summarize scalp phantom sample size and WR to assess promotion readiness."""
+        try:
+            # Config thresholds (defaults)
+            min_samples = 200
+            target_wr = 55.0
+            cfg = self.shared.get('config') or {}
+            scalp_cfg = cfg.get('scalp', {})
+            thr = scalp_cfg.get('threshold', 75)
+
+            # Stats from dedicated scalp tracker
+            try:
+                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                scpt = get_scalp_phantom_tracker()
+                st = scpt.get_scalp_phantom_stats()
+            except Exception:
+                st = {'total': 0, 'wins': 0, 'losses': 0, 'wr': 0.0}
+
+            # Scalp scorer readiness
+            ml_ready = False
+            try:
+                from ml_scorer_scalp import get_scalp_scorer
+                s = get_scalp_scorer()
+                ml_ready = bool(getattr(s, 'is_ml_ready', False))
+                thr = getattr(s, 'min_score', thr)
+            except Exception:
+                pass
+
+            total = st.get('total', 0)
+            wr = st.get('wr', 0.0)
+            ready = (total >= min_samples) and (wr >= target_wr)
+
+            lines = [
+                "🩳 *Scalp Promotion Status*",
+                f"• Phantom samples: {total} (wins {st.get('wins',0)}, losses {st.get('losses',0)})",
+                f"• Phantom WR (proxy): {wr:.1f}%",
+                f"• ML Ready: {'✅' if ml_ready else '⏳'} | Threshold: {thr}",
+                f"• Gate: N ≥ {min_samples}, WR ≥ {target_wr:.1f}%",
+                f"• Recommendation: {'🟢 Ready' if ready else '🟡 Keep collecting'}",
+                "_Note: precision@threshold is proxied by phantom WR until executed data and model scores are available._"
+            ]
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"Error in scalp_promotion_status: {e}")
+            await update.message.reply_text("Error getting scalp promotion status")
 
     async def training_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show background ML training status"""

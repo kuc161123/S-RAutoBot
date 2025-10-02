@@ -160,7 +160,11 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
                     'entry': entry,
                     'sl': sl,
                     'tp': tp,
-                    'meta': {'range_upper': upper_range, 'range_lower': lower_range}
+                    'meta': {
+                        'range_upper': upper_range,
+                        'range_lower': lower_range,
+                        'range_confidence': range_confidence
+                    }
                 }
 
                 # Import and calculate ML features specific to mean reversion
@@ -181,6 +185,7 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
                     meta={
                         "range_upper": upper_range,
                         "range_lower": lower_range,
+                        "range_confidence": range_confidence,
                         "mr_features": mr_features,  # Store MR features for ML
                         "strategy_name": "mean_reversion"
                     }
@@ -256,7 +261,11 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
                     'entry': entry,
                     'sl': sl,
                     'tp': tp,
-                    'meta': {'range_upper': upper_range, 'range_lower': lower_range}
+                    'meta': {
+                        'range_upper': upper_range,
+                        'range_lower': lower_range,
+                        'range_confidence': range_confidence
+                    }
                 }
 
                 # Import and calculate ML features specific to mean reversion
@@ -277,6 +286,7 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
                     meta={
                         "range_upper": upper_range,
                         "range_lower": lower_range,
+                        "range_confidence": range_confidence,
                         "mr_features": mr_features,  # Store MR features for ML
                         "strategy_name": "mean_reversion"
                     }

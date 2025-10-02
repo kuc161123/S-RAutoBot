@@ -93,8 +93,10 @@ def calculate_mean_reversion_features(df: pd.DataFrame, signal_data: dict, symbo
         # Extract signal information
         side = signal_data.get('side', 'long')
         entry_price = signal_data.get('entry', df['close'].iloc[-1])
-        range_upper = signal_data.get('meta', {}).get('range_upper', 0)
-        range_lower = signal_data.get('meta', {}).get('range_lower', 0)
+        meta = signal_data.get('meta', {})
+        range_upper = meta.get('range_upper', 0)
+        range_lower = meta.get('range_lower', 0)
+        range_confidence_meta = meta.get('range_confidence')
 
         # Basic OHLCV data
         close = df['close']
@@ -127,6 +129,21 @@ def calculate_mean_reversion_features(df: pd.DataFrame, signal_data: dict, symbo
             touch_count_sr = float(upper_touches + lower_touches)
         else:
             touch_count_sr = 2.0  # Default
+
+        # Estimate range confidence if not provided
+        if range_confidence_meta is not None:
+            range_confidence_metric = float(range_confidence_meta)
+        else:
+            if range_upper > range_lower and range_upper > 0:
+                range_pct = (range_upper - range_lower) / range_lower
+                touch_score = min(1.0, touch_count_sr / 6)
+                respect_rate = 0.0
+                if range_upper > range_lower:
+                    candles_in_range = ((close.tail(30) >= range_lower) & (close.tail(30) <= range_upper)).mean()
+                    respect_rate = float(candles_in_range)
+                range_confidence_metric = float(np.clip((touch_score * 0.5) + (respect_rate * 0.3) + (max(0.0, min(1.0, 0.08 / max(range_pct, 1e-6))) * 0.2), 0.0, 1.0))
+            else:
+                range_confidence_metric = 0.5
 
         # --- REVERSAL STRENGTH ---
         # Current candle size relative to ATR
@@ -210,6 +227,7 @@ def calculate_mean_reversion_features(df: pd.DataFrame, signal_data: dict, symbo
             'range_width_atr': float(range_width_atr),
             'time_in_range_candles': float(time_in_range_candles),
             'touch_count_sr': float(touch_count_sr),
+            'range_confidence': range_confidence_metric,
 
             # Reversal strength
             'reversal_candle_size_atr': float(reversal_candle_size_atr),

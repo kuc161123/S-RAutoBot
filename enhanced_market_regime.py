@@ -285,9 +285,12 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
 
         volatility_score = (atr_percentile + bb_width_percentile) / 2
 
-        if volatility_score < 0.33:
+        # More aggressive volatility thresholds to filter chaotic markets
+        if volatility_score < 0.25:
             volatility_level = "low"
-        elif volatility_score > 0.67:
+        elif volatility_score > 0.85:
+            volatility_level = "extreme"  # New extreme level for very volatile markets
+        elif volatility_score > 0.65:
             volatility_level = "high"
         else:
             volatility_level = "normal"
@@ -320,13 +323,23 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
             range_score += 0.15
 
         # Volatile scoring (high volatility, low trend, low range quality)
-        if volatility_level == "high":
+        if volatility_level == "extreme":
+            volatile_score += 0.7  # Very high score for extreme volatility
+        elif volatility_level == "high":
             volatile_score += 0.4
         if trend_strength < 20 and range_confidence < 0.4:
             volatile_score += 0.3
         bb_threshold = bb_width.quantile(0.8) if len(bb_width) > 20 else 0.06
         if current_bb_width > bb_threshold:
             volatile_score += 0.2
+        
+        # Additional volatility penalty - check for extreme ATR spikes
+        if len(atr_series) > 10:
+            recent_atr_mean = atr_series.tail(10).mean()
+            atr_spike_ratio = current_atr / recent_atr_mean if recent_atr_mean > 0 else 1
+            if atr_spike_ratio > 2.0:  # ATR is 2x higher than recent average
+                volatile_score += 0.3
+                logger.info(f"[{symbol}] 🚨 ATR SPIKE: {atr_spike_ratio:.1f}x recent average - adding volatility penalty")
 
         # Determine primary regime
         regime_scores = {
@@ -387,31 +400,41 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
 
         elif primary_regime == "volatile":
             logger.info(f"[{symbol}] 🔍 VOLATILE DEBUG: strength={trend_strength:.1f}, volatility={volatility_level}")
-            if trend_strength >= 20 and volatility_level != "extreme":  # NEW: volatile but trending
-                recommended_strategy = "pullback"
-                logger.info(f"[{symbol}] ✅ PULLBACK: Volatile but trending")
-            else:
-                recommended_strategy = "none"
-                logger.info(f"[{symbol}] ❌ VOLATILE: Too chaotic for trading")
+            # STRICT: No trading in volatile markets regardless of trend strength
+            recommended_strategy = "none"
+            logger.info(f"[{symbol}] ❌ VOLATILE: Market too chaotic for any strategy (volatility={volatility_level})")
 
         else:
             recommended_strategy = "none"
             logger.info(f"[{symbol}] ❌ Unknown regime: {primary_regime}")
 
+        # ===== VOLATILITY SAFETY CHECK =====
+        # CRITICAL: No trading in extreme volatility regardless of other factors
+        if volatility_level == "extreme":
+            recommended_strategy = "none"
+            logger.info(f"[{symbol}] 🚫 VOLATILITY OVERRIDE: Extreme volatility detected - no trading allowed")
+        
         # ===== COMPREHENSIVE FALLBACK SYSTEM =====
-        if recommended_strategy == "none":
+        elif recommended_strategy == "none":
             logger.info(f"[{symbol}] 🛡️ FALLBACK ANALYSIS:")
-            # Intelligence-based fallback
-            if range_analysis.get('confidence', 0) > 0.05:  # Any range detected
-                recommended_strategy = "enhanced_mr"
-                logger.info(f"[{symbol}] ✅ FALLBACK: Range detected ({range_analysis.get('confidence', 0):.1%}) -> MR")
-            elif trend_strength > 5:  # Any trend detected
-                recommended_strategy = "pullback"
-                logger.info(f"[{symbol}] ✅ FALLBACK: Trend detected ({trend_strength:.1f}) -> Pullback")
+            
+            # Only use fallback if volatility is not high
+            if volatility_level in ["low", "normal"]:
+                # Intelligence-based fallback for non-volatile markets only
+                if range_analysis.get('confidence', 0) > 0.05:  # Any range detected
+                    recommended_strategy = "enhanced_mr"
+                    logger.info(f"[{symbol}] ✅ FALLBACK: Range detected ({range_analysis.get('confidence', 0):.1%}) -> MR")
+                elif trend_strength > 8:  # Slightly higher threshold for fallback
+                    recommended_strategy = "pullback"
+                    logger.info(f"[{symbol}] ✅ FALLBACK: Trend detected ({trend_strength:.1f}) -> Pullback")
+                else:
+                    # Market is truly chaotic and volatile - no trading
+                    recommended_strategy = "none"
+                    logger.info(f"[{symbol}] ❌ FALLBACK: Market too chaotic for safe trading")
             else:
-                # Market is truly chaotic - default to pullback (more robust)
-                recommended_strategy = "pullback"
-                logger.info(f"[{symbol}] ✅ FALLBACK: Chaotic market -> Default Pullback")
+                # High volatility markets get no fallback
+                recommended_strategy = "none"
+                logger.info(f"[{symbol}] ❌ FALLBACK: High/extreme volatility - no trading allowed")
 
         # ===== REGIME PERSISTENCE =====
         # Estimate how long current regime has been active
@@ -456,13 +479,13 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
 
     except Exception as e:
         logger.error(f"[{symbol}] Error in enhanced regime detection: {e}")
-        # Return safe default
+        # Return safe default - assume extreme volatility in error cases
         return RegimeAnalysis(
             primary_regime="volatile",
             regime_confidence=0.3,
             range_quality="low",
             trend_strength=50.0,
-            volatility_level="normal",
+            volatility_level="extreme",  # Assume extreme volatility for safety
             regime_persistence=0.5,
             recommended_strategy="none"
         )

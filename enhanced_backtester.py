@@ -171,7 +171,7 @@ class EnhancedBacktester:
     def _generate_mr_features(self, df: pd.DataFrame, signal: Signal, symbol: str) -> Dict:
         """Generate ML features for mean reversion strategy exactly like live bot"""
         try:
-            from enhanced_mr_features import calculate_enhanced_mr_features
+            # Enhanced MR features removed - using basic features
             
             logger.debug(f"[{symbol}] Generating enhanced MR features")
             
@@ -185,7 +185,8 @@ class EnhancedBacktester:
             }
             
             # Generate enhanced MR features like live bot
-            enhanced_features = calculate_enhanced_mr_features(df, signal_data, symbol)
+            # Use basic MR features from signal meta
+            enhanced_features = signal.meta.get('mr_features', {})
             
             logger.debug(f"[{symbol}] Generated {len(enhanced_features)} enhanced MR features")
             return enhanced_features

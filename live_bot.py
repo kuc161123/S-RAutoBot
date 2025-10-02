@@ -1432,14 +1432,10 @@ class TradingBot:
                             # Different feature extraction based on strategy
                             if selected_strategy == "enhanced_mr":
                                 # Use enhanced MR features
-                                try:
-                                    from enhanced_mr_features import calculate_enhanced_mr_features
-                                    enhanced_features = calculate_enhanced_mr_features(df, sig.__dict__, sym)
-                                    logger.info(f"🧠 [{sym}] ENHANCED MR ML ANALYSIS:")
-                                    logger.info(f"   📊 Features: {len(enhanced_features)} range-specific features calculated")
-                                except ImportError:
-                                    logger.warning(f"[{sym}] enhanced_mr_features not available, skipping enhanced MR strategy")
-                                    continue
+                                # Use basic MR features from signal meta  
+                                enhanced_features = sig.meta.get('mr_features', {})
+                                logger.info(f"🧠 [{sym}] ENHANCED MR ML ANALYSIS:")
+                                logger.info(f"   📊 Features: {len(enhanced_features)} basic MR features")
 
                                 # Score using Enhanced MR ML system
                                 ml_score, ml_reason = selected_ml_scorer.score_signal(sig.__dict__, enhanced_features, df)

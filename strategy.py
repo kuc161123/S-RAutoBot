@@ -18,6 +18,8 @@ class Settings:
     vol_len:int=20
     vol_mult:float=1.2
     both_hit_rule:str="SL_FIRST"  # or "TP_FIRST"
+    # Cooldown between signals (in candles of the base timeframe). Used by mean reversion.
+    min_candles_between_signals:int=8
 
 @dataclass
 class Signal:

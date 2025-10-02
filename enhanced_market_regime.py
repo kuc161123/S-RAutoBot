@@ -307,20 +307,47 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
         range_score = 0
         volatile_score = 0
 
-        # Trend scoring
-        if trend_strength >= 30:  # Strong trend
-            trend_score += trend_strength / 100 * 0.4
-            if volatility_level == "normal":
-                trend_score += 0.2  # Bonus for normal volatility in trends
-            if range_confidence < 0.5:  # Low range confidence supports trending
+        # Trend scoring - MUCH MORE STRICT for truly trending markets
+        if trend_strength >= 40:  # Strong trend threshold raised significantly
+            trend_score += trend_strength / 100 * 0.5  # Higher weight for strong trends
+            if volatility_level in ["low", "normal"]:  # Require low/normal volatility
+                trend_score += 0.25  # Bonus for stable volatility in trends
+            if range_confidence < 0.4:  # Range confidence must be low for trending
                 trend_score += 0.2
+            
+            # Additional trend quality checks
+            # EMA alignment bonus - require proper trend structure
+            if len(close) >= 50:
+                ema_8 = close.ewm(span=8).mean().iloc[-1]
+                ema_21 = close.ewm(span=21).mean().iloc[-1] 
+                ema_50 = close.ewm(span=50).mean().iloc[-1]
+                current_price = close.iloc[-1]
+                
+                # Strong uptrend alignment
+                if current_price > ema_8 > ema_21 > ema_50:
+                    trend_score += 0.15
+                # Strong downtrend alignment  
+                elif current_price < ema_8 < ema_21 < ema_50:
+                    trend_score += 0.15
 
-        # Range scoring
-        range_score = range_confidence * 0.6
-        if trend_strength < 25:  # Low trend strength supports ranging
-            range_score += 0.2
-        if volatility_level == "low":  # Low volatility supports ranging
-            range_score += 0.15
+        # Range scoring - MUCH MORE STRICT for truly ranging markets
+        # Only consider ranges with high confidence (≥50%)
+        if range_confidence >= 0.5:
+            range_score = range_confidence * 0.7  # Higher weight for confident ranges
+            
+            if trend_strength < 20:  # Very low trend strength required for ranging
+                range_score += 0.2
+            if volatility_level == "low":  # Low volatility strongly supports ranging
+                range_score += 0.2
+                
+            # Additional range quality requirements
+            if range_analysis.get('touches', 0) >= 4:  # Minimum 4 touches for quality
+                range_score += 0.1
+            if range_analysis.get('respect_rate', 0) >= 0.6:  # 60% respect rate required
+                range_score += 0.1
+        else:
+            # Low confidence ranges get minimal score
+            range_score = range_confidence * 0.3
 
         # Volatile scoring (high volatility, low trend, low range quality)
         if volatility_level == "extreme":
@@ -354,49 +381,75 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
         # ===== STRATEGY RECOMMENDATION =====
 
         if primary_regime == "ranging":
-            # Apply range width filter: Much more permissive for enhanced MR
+            # STRICT range requirements for truly ranging markets
             if range_analysis['upper'] and range_analysis['lower']:
                 range_width = (range_analysis['upper'] - range_analysis['lower']) / range_analysis['lower']
-                min_range_width = 0.003  # 0.3% minimum (was 0.6% - 50% lower)
-                max_range_width = 0.12   # 12.0% maximum (was 8.0% - 50% higher)
+                min_range_width = 0.015  # 1.5% minimum - tighter than before
+                max_range_width = 0.08   # 8.0% maximum - tighter than before
+                
+                touches = range_analysis.get('touches', 0)
+                respect_rate = range_analysis.get('respect_rate', 0)
 
                 logger.info(f"[{symbol}] 🔍 RANGE DEBUG: width={range_width:.1%}, quality={range_quality}, confidence={regime_confidence:.1%}")
-                logger.info(f"[{symbol}] 📊 Range bounds: {min_range_width:.1%}-{max_range_width:.1%}, touches={range_analysis.get('touches', 0)}")
+                logger.info(f"[{symbol}] 📊 Range details: touches={touches}, respect={respect_rate:.1%}, bounds={min_range_width:.1%}-{max_range_width:.1%}")
 
                 if min_range_width <= range_width <= max_range_width:
-                    if range_quality == "high" and regime_confidence >= 0.2:  # Much more permissive
+                    # STRICT quality requirements - only high quality ranges
+                    if (range_quality == "high" and 
+                        regime_confidence >= 0.6 and  # 60% minimum confidence
+                        touches >= 4 and              # Minimum 4 touches
+                        respect_rate >= 0.6):         # 60% respect rate
                         recommended_strategy = "enhanced_mr"
-                        logger.info(f"[{symbol}] ✅ MR: High quality range")
-                    elif range_quality == "medium" and regime_confidence >= 0.15:  # Much more permissive
+                        logger.info(f"[{symbol}] ✅ MR: HIGH QUALITY range (conf={regime_confidence:.1%}, touches={touches}, respect={respect_rate:.1%})")
+                    
+                    elif (range_quality == "medium" and 
+                          regime_confidence >= 0.7 and  # Higher confidence for medium quality
+                          touches >= 5 and              # More touches required  
+                          respect_rate >= 0.7):         # Higher respect rate
                         recommended_strategy = "enhanced_mr"
-                        logger.info(f"[{symbol}] ✅ MR: Medium quality range")
-                    elif range_quality == "low" and regime_confidence >= 0.2 and range_width >= 0.01:  # More permissive
-                        recommended_strategy = "enhanced_mr"
-                        logger.info(f"[{symbol}] ✅ MR: Low quality but wide range")
-                    elif regime_confidence >= 0.1:  # NEW: Catch-all for any detected range
-                        recommended_strategy = "enhanced_mr"
-                        logger.info(f"[{symbol}] ✅ MR: Fallback - any detected range")
+                        logger.info(f"[{symbol}] ✅ MR: MEDIUM quality range with strong metrics (conf={regime_confidence:.1%}, touches={touches})")
+                    
                     else:
                         recommended_strategy = "none"
-                        logger.info(f"[{symbol}] ❌ MR: Range too poor quality (conf={regime_confidence:.1%})")
+                        logger.info(f"[{symbol}] ❌ MR: Range quality insufficient (quality={range_quality}, conf={regime_confidence:.1%}, touches={touches}, respect={respect_rate:.1%})")
                 else:
                     recommended_strategy = "none"
-                    logger.info(f"[{symbol}] ❌ MR: Range width {range_width:.1%} outside bounds ({min_range_width:.1%}-{max_range_width:.1%})")
+                    logger.info(f"[{symbol}] ❌ MR: Range width {range_width:.1%} outside strict bounds ({min_range_width:.1%}-{max_range_width:.1%})")
             else:
                 recommended_strategy = "none"
-                logger.info(f"[{symbol}] ❌ MR: No valid range detected (upper={range_analysis.get('upper')}, lower={range_analysis.get('lower')})")
+                logger.info(f"[{symbol}] ❌ MR: No valid range detected")
 
         elif primary_regime == "trending":
             logger.info(f"[{symbol}] 🔍 TREND DEBUG: strength={trend_strength:.1f}, volatility={volatility_level}")
-            if trend_strength >= 15:  # Much more permissive (was 25)
-                recommended_strategy = "pullback"
-                logger.info(f"[{symbol}] ✅ PULLBACK: Strong trend")
-            elif trend_strength >= 10 and volatility_level == "low":  # NEW: weak trends in low vol
-                recommended_strategy = "pullback"
-                logger.info(f"[{symbol}] ✅ PULLBACK: Weak trend + low volatility")
+            
+            # STRICT trend requirements for truly trending markets
+            if (trend_strength >= 35 and                    # Much higher threshold
+                regime_confidence >= 0.6 and               # High confidence required
+                volatility_level in ["low", "normal"] and  # Stable volatility only
+                range_confidence < 0.4):                   # Low range confidence
+                
+                # Additional EMA alignment check for trend quality
+                trend_aligned = False
+                if len(close) >= 50:
+                    ema_8 = close.ewm(span=8).mean().iloc[-1]
+                    ema_21 = close.ewm(span=21).mean().iloc[-1] 
+                    ema_50 = close.ewm(span=50).mean().iloc[-1]
+                    current_price = close.iloc[-1]
+                    
+                    # Check for proper trend alignment
+                    if (current_price > ema_8 > ema_21 > ema_50 or  # Strong uptrend
+                        current_price < ema_8 < ema_21 < ema_50):   # Strong downtrend
+                        trend_aligned = True
+                
+                if trend_aligned:
+                    recommended_strategy = "pullback"
+                    logger.info(f"[{symbol}] ✅ PULLBACK: STRONG TRENDING market (strength={trend_strength:.1f}, conf={regime_confidence:.1%}, EMA aligned)")
+                else:
+                    recommended_strategy = "none"
+                    logger.info(f"[{symbol}] ❌ PULLBACK: Trend lacks EMA alignment (strength={trend_strength:.1f})")
             else:
                 recommended_strategy = "none"
-                logger.info(f"[{symbol}] ❌ PULLBACK: Trend too weak (strength={trend_strength:.1f})")
+                logger.info(f"[{symbol}] ❌ PULLBACK: Trend requirements not met (strength={trend_strength:.1f}, conf={regime_confidence:.1%}, vol={volatility_level})")
 
         elif primary_regime == "volatile":
             logger.info(f"[{symbol}] 🔍 VOLATILE DEBUG: strength={trend_strength:.1f}, volatility={volatility_level}")
@@ -418,19 +471,22 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
         elif recommended_strategy == "none":
             logger.info(f"[{symbol}] 🛡️ FALLBACK ANALYSIS:")
             
-            # Only use fallback if volatility is not high
+            # STRICT fallback - no permissive defaults
             if volatility_level in ["low", "normal"]:
-                # Intelligence-based fallback for non-volatile markets only
-                if range_analysis.get('confidence', 0) > 0.05:  # Any range detected
+                # Only very high confidence signals allowed in fallback
+                if (range_analysis.get('confidence', 0) >= 0.7 and  # 70% confidence minimum
+                    range_analysis.get('quality') == "high" and
+                    range_analysis.get('touches', 0) >= 5):
                     recommended_strategy = "enhanced_mr"
-                    logger.info(f"[{symbol}] ✅ FALLBACK: Range detected ({range_analysis.get('confidence', 0):.1%}) -> MR")
-                elif trend_strength > 8:  # Slightly higher threshold for fallback
+                    logger.info(f"[{symbol}] ✅ FALLBACK: Exceptional range detected ({range_analysis.get('confidence', 0):.1%}) -> MR")
+                elif (trend_strength >= 40 and                     # Very strong trend required
+                      volatility_level == "low"):                  # Only in low volatility
                     recommended_strategy = "pullback"
-                    logger.info(f"[{symbol}] ✅ FALLBACK: Trend detected ({trend_strength:.1f}) -> Pullback")
+                    logger.info(f"[{symbol}] ✅ FALLBACK: Exceptional trend detected ({trend_strength:.1f}) -> Pullback")
                 else:
-                    # Market is truly chaotic and volatile - no trading
+                    # No weak signals allowed - prefer safety
                     recommended_strategy = "none"
-                    logger.info(f"[{symbol}] ❌ FALLBACK: Market too chaotic for safe trading")
+                    logger.info(f"[{symbol}] ❌ FALLBACK: No exceptional signals - safer to avoid trading")
             else:
                 # High volatility markets get no fallback
                 recommended_strategy = "none"

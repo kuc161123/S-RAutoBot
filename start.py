@@ -70,27 +70,30 @@ if __name__ == "__main__":
             print(f"Warning: Could not connect to Redis: {e}. Models will not be checked/saved.")
             r = None
 
-    # Check if models need training
-    should_train = False
-    if r and not check_for_trained_models(r):
-        print("Pre-trained models not found in Redis.")
-        should_train = True
-    elif os.getenv('FORCE_ML_TRAIN', 'false').lower() == 'true':
-        print("FORCE_ML_TRAIN environment variable is true. Retraining models.")
-        should_train = True
-    else:
-        print("Pre-trained models found in Redis. Skipping offline training.")
+    # Bootstrap pretraining is disabled by default. Enable only if explicitly requested.
+    enable_bootstrap = os.getenv('ENABLE_BOOTSTRAP_PRETRAIN', 'false').lower() == 'true'
+    if enable_bootstrap:
+        # Optional: run pretrainer only when models are missing OR forced
+        should_train = False
+        if r and not check_for_trained_models(r):
+            print("[Bootstrap] Pre-trained models not found in Redis. Running pretrainer...")
+            should_train = True
+        elif os.getenv('FORCE_ML_TRAIN', 'false').lower() == 'true':
+            print("[Bootstrap] FORCE_ML_TRAIN=true. Running pretrainer...")
+            should_train = True
 
-    if should_train:
-        print("Running bootstrap pretrainer (candles-only) to build ML models...")
-        try:
-            # Use the candle-only bootstrap to generate samples and train scalers/models
-            subprocess.run([sys.executable, "bootstrap_pretrain.py"], check=True)
-            print("Bootstrap pretraining complete. Models saved if Redis available.")
-        except subprocess.CalledProcessError as e:
-            print(f"Error: Bootstrap pretraining failed with exit code {e.returncode}. Live bot will start in online learning mode.")
-        except Exception as e:
-            print(f"Error running bootstrap pretrainer: {e}. Live bot will start in online learning mode.")
+        if should_train:
+            try:
+                subprocess.run([sys.executable, "bootstrap_pretrain.py"], check=True)
+                print("[Bootstrap] Pretraining complete. Models saved if Redis available.")
+            except subprocess.CalledProcessError as e:
+                print(f"[Bootstrap] Error: Pretraining failed with exit code {e.returncode}. Continuing without.")
+            except Exception as e:
+                print(f"[Bootstrap] Error running pretrainer: {e}. Continuing without.")
+        else:
+            print("[Bootstrap] Skipped (models present and no force).")
+    else:
+        print("Bootstrap pretraining disabled. Bot will learn from live trades only.")
 
     print("Launching live bot...")
     os.execvp(sys.executable, [sys.executable, "live_bot.py"])

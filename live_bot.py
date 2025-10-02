@@ -128,13 +128,20 @@ class TradingBot:
         self.storage = CandleStorage()  # Will use DATABASE_URL from environment
         self.last_save_time = datetime.now()
         self.trade_tracker = TradeTracker()  # Initialize trade tracker
+        self._tasks = set()
         
     def _create_task(self, coro):
         try:
-            asyncio.get_running_loop().create_task(coro)
+            loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = asyncio.get_event_loop()
-            loop.create_task(coro)
+        task = loop.create_task(coro)
+        try:
+            self._tasks.add(task)
+            task.add_done_callback(lambda t: self._tasks.discard(t))
+        except Exception:
+            pass
+        return task
 
     async def _notify_phantom_trade(self, label: str, phantom):
         if not self.tg:
@@ -170,6 +177,17 @@ class TradingBot:
                     lines.append(f"Range position: {range_pos:.2f}")
 
             await self.tg.send_message("\n".join(lines))
+
+            # Telemetry counters for phantom outcomes (non-executed only)
+            try:
+                if hasattr(self.tg, 'shared') and not getattr(phantom, 'was_executed', False):
+                    tel = self.tg.shared.get('telemetry', {})
+                    if outcome == 'win':
+                        tel['phantom_wins'] = tel.get('phantom_wins', 0) + 1
+                    elif outcome == 'loss':
+                        tel['phantom_losses'] = tel.get('phantom_losses', 0) + 1
+            except Exception:
+                pass
 
         except Exception as notify_err:
             logger.debug(f"Failed phantom notification: {notify_err}")
@@ -1191,7 +1209,9 @@ class TradingBot:
             "mr_phantom_tracker": mr_phantom_tracker,
             "mean_reversion_scorer": mean_reversion_scorer,
             "phantom_tracker": phantom_tracker,
-            "use_enhanced_parallel": use_enhanced_parallel
+            "use_enhanced_parallel": use_enhanced_parallel,
+            # Simple telemetry counters
+            "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0}
         }
         
         # Initialize Telegram bot with retry on conflict
@@ -1285,7 +1305,7 @@ class TradingBot:
                     # Continue running even if update fails
         
         # Start the weekly updater task
-        cluster_updater_task = asyncio.create_task(weekly_cluster_updater())
+        self._create_task(weekly_cluster_updater())
         logger.info("📅 Started weekly cluster update scheduler")
         
         try:
@@ -1395,6 +1415,15 @@ class TradingBot:
                     # Log summary periodically instead of every candle
                     if (datetime.now() - last_summary_log).total_seconds() > summary_log_interval:
                         logger.info(f"📊 5-min Summary: {candles_processed} candles processed, {signals_detected} signals, {len(book.positions)} positions open")
+                        # Telemetry counters for ML/phantom flows
+                        try:
+                            tel = shared.get('telemetry', {}) if 'shared' in locals() else {}
+                            mr = tel.get('phantom_wins', 0)
+                            ml = tel.get('phantom_losses', 0)
+                            rej = tel.get('ml_rejects', 0)
+                            logger.info(f"📈 Telemetry: ML rejects={rej}, Phantom wins={mr}, Phantom losses={ml}")
+                        except Exception:
+                            pass
                         # Add ML stats to summary
                         if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
                             # Enhanced parallel system stats
@@ -1563,6 +1592,11 @@ class TradingBot:
 
                                 # Skip trade execution if ML score below threshold (but phantom is recorded)
                                 if not should_take_trade:
+                                    try:
+                                        shared.get("telemetry", {})["ml_rejects"] += 1
+                                        logger.debug(f"Telemetry: ML rejects so far = {shared['telemetry']['ml_rejects']}")
+                                    except Exception:
+                                        pass
                                     if self.tg:
                                         reject_msg = (
                                             f"🤖 *ML Reject* {sym} {sig.side.upper()} (Enhanced MR)\n"
@@ -1661,6 +1695,11 @@ class TradingBot:
 
                                 # Skip trade execution if ML score below threshold (but phantom is recorded)
                                 if not should_take_trade:
+                                    try:
+                                        shared.get("telemetry", {})["ml_rejects"] += 1
+                                        logger.debug(f"Telemetry: ML rejects so far = {shared['telemetry']['ml_rejects']}")
+                                    except Exception:
+                                        pass
                                     if self.tg:
                                         reject_msg = (
                                             f"🤖 *ML Reject* {sym} {sig.side.upper()} (Pullback)\n"
@@ -2016,6 +2055,14 @@ class TradingBot:
         """Stop the bot"""
         logger.info("Stopping trading bot...")
         self.running = False
+        # Cancel background tasks
+        try:
+            for task in list(self._tasks):
+                task.cancel()
+            if self._tasks:
+                await asyncio.gather(*list(self._tasks), return_exceptions=True)
+        except Exception:
+            pass
         if self.ws:
             await self.ws.close()
         if self.tg:

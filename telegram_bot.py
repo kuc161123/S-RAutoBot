@@ -72,6 +72,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("strategy_comparison", self.strategy_comparison))
         self.app.add_handler(CommandHandler("strategycomparison", self.strategy_comparison))  # Alternative command name
         self.app.add_handler(CommandHandler("system", self.system_status))
+        self.app.add_handler(CommandHandler("telemetry", self.telemetry))
         self.app.add_handler(CommandHandler("training_status", self.training_status))
         self.app.add_handler(CommandHandler("trainingstatus", self.training_status))  # Alternative command name
         self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
@@ -275,6 +276,8 @@ class TGBot:
 /phantom [strategy] – Phantom trade outcomes
 /evolution – ML evolution shadow book
 /analysis [symbol] – Recent analysis timestamps
+\n🧪 *Diagnostics*
+/telemetry – ML rejects and phantom outcomes
 
 🚀 *Enhanced Parallel System*
 /system – Parallel routing status
@@ -312,6 +315,40 @@ class TGBot:
 • Strategies: Pullback ML & Mean Reversion
 """
         await self.safe_reply(update, help_text)
+
+    async def telemetry(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Show lightweight ML/phantom telemetry counters"""
+        try:
+            tel = self.shared.get('telemetry', {})
+            ml_rejects = tel.get('ml_rejects', 0)
+            phantom_wins = tel.get('phantom_wins', 0)
+            phantom_losses = tel.get('phantom_losses', 0)
+
+            lines = [
+                "🧪 *Telemetry*",
+                f"• ML rejects → phantom: {ml_rejects}",
+                f"• Phantom wins (rejected): {phantom_wins}",
+                f"• Phantom losses (rejected): {phantom_losses}",
+            ]
+
+            # Add ML thresholds for context
+            pullback_ml = self.shared.get('ml_scorer')
+            enhanced_mr = self.shared.get('enhanced_mr_scorer')
+            if pullback_ml:
+                try:
+                    lines.append(f"• Pullback ML threshold: {pullback_ml.min_score:.0f}")
+                except Exception:
+                    pass
+            if enhanced_mr:
+                try:
+                    lines.append(f"• Enhanced MR threshold: {enhanced_mr.min_score:.0f}")
+                except Exception:
+                    pass
+
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"Error in telemetry: {e}")
+            await update.message.reply_text("Telemetry unavailable")
 
     async def show_risk(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show current risk settings"""

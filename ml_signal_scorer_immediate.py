@@ -499,13 +499,18 @@ class ImmediateMLScorer:
                     'was_executed': True
                 })
             
-            # Add phantom trades
+            # Add phantom trades (exclude executed to avoid double counting)
             for phantom in phantom_data:
-                all_training_data.append({
-                    'features': phantom['features'],
-                    'outcome': phantom['outcome'],
-                    'was_executed': phantom['was_executed']
-                })
+                try:
+                    if phantom.get('was_executed'):
+                        continue
+                    all_training_data.append({
+                        'features': phantom.get('features', {}),
+                        'outcome': phantom.get('outcome', 0),
+                        'was_executed': False
+                    })
+                except Exception:
+                    continue
             
             total_data = len(all_training_data)
             if total_data < self.MIN_TRADES_FOR_ML:
@@ -904,16 +909,22 @@ class ImmediateMLScorer:
                 phantom_tracker = get_phantom_tracker()
                 phantom_data = phantom_tracker.get_learning_data()
 
-                # Convert phantom data to same format as executed trades
-                for phantom in phantom_data[-100:]:  # Last 100 phantom trades
+                # Convert phantom data to same format as executed trades, skipping executed
+                added = 0
+                for phantom in reversed(phantom_data):
+                    if phantom.get('was_executed'):
+                        continue
                     trade_record = {
                         'features': phantom.get('features', {}),
                         'outcome': 'win' if phantom.get('outcome') == 1 else 'loss',
                         'was_executed': False
                     }
                     all_trades.append(trade_record)
+                    added += 1
+                    if added >= 100:
+                        break
 
-                logger.debug(f"Pattern analysis using {len(executed_trades)} executed + {len(phantom_data[-100:])} phantom trades")
+                logger.debug(f"Pattern analysis using {len(executed_trades)} executed + {added} phantom trades")
             except Exception as e:
                 logger.warning(f"Could not include phantom trades in pattern analysis: {e}")
 

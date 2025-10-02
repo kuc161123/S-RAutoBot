@@ -87,6 +87,33 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
 
     logger.debug(f"[{symbol}] Range width {range_width:.1%} within optimal bounds ({min_range_width:.1%}-{max_range_width:.1%})")
 
+    # Compute range confidence for downstream ML/meta use
+    # Heuristic aligns with ml_scorer_mean_reversion.calculate_mean_reversion_features
+    try:
+        recent_window = 30 if len(df) >= 30 else len(df)
+        upper_touches = ((df['high'].tail(recent_window) >= upper_range * 0.995) &
+                         (df['high'].tail(recent_window) <= upper_range * 1.005)).sum()
+        lower_touches = ((df['low'].tail(recent_window) <= lower_range * 1.005) &
+                         (df['low'].tail(recent_window) >= lower_range * 0.995)).sum()
+        touches = float(upper_touches + lower_touches)
+        touch_score = min(1.0, touches / 6.0)
+
+        in_range_ratio = 0.0
+        if recent_window > 0:
+            closes = df['close'].tail(recent_window)
+            in_range_ratio = float(((closes >= lower_range) & (closes <= upper_range)).mean())
+
+        # Prefer tighter ranges up to ~8%
+        width_component = 0.0
+        try:
+            width_component = max(0.0, min(1.0, 0.08 / max(range_width, 1e-6)))
+        except Exception:
+            width_component = 0.0
+
+        range_confidence = float(np.clip((touch_score * 0.5) + (in_range_ratio * 0.3) + (width_component * 0.2), 0.0, 1.0))
+    except Exception:
+        range_confidence = 0.5
+
     current_price = close.iloc[-1]
     current_atr = _atr(df, s.atr_len)[-1]
 

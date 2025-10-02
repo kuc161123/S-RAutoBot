@@ -1,44 +1,47 @@
+# Standard library imports
 import asyncio
 import json
-import yaml
-import os
-import time
 import logging
+import os
 import signal
 import sys
+import time
+import yaml
 from datetime import datetime
 from typing import Dict, Optional
 
+# Third-party imports
 import numpy as np
 import pandas as pd
 import websockets
 from dotenv import load_dotenv
 
-# Import strategy based on configuration
-from strategy_pullback import Settings  # Settings are the same for both strategies
+# Core trading components
+from broker_bybit import Bybit, BybitConfig
+from candle_storage_postgres import CandleStorage
 from live_bot_selector import get_strategy_module
+from multi_websocket_handler import MultiWebSocketHandler
 from position_mgr import RiskConfig, Book, Position
 from sizer import Sizer
-from broker_bybit import Bybit, BybitConfig
+from strategy_pullback import Settings  # Settings are the same for both strategies
 from telegram_bot import TGBot
-from candle_storage_postgres import CandleStorage
-# Use enhanced PostgreSQL trade tracker for persistence
+
+# Trade tracking with PostgreSQL fallback
 try:
     from trade_tracker_postgres import TradeTrackerPostgres as TradeTracker, Trade
     USING_POSTGRES_TRACKER = True
 except ImportError:
     from trade_tracker import TradeTracker, Trade
     USING_POSTGRES_TRACKER = False
-from multi_websocket_handler import MultiWebSocketHandler
-from ml_scorer_mean_reversion import get_mean_reversion_scorer
 
-# Import ML scorers for parallel strategy system
+# ML scoring system - Enhanced parallel system (Pullback + Mean Reversion)
 try:
     from ml_signal_scorer_immediate import get_immediate_scorer
     from phantom_trade_tracker import get_phantom_tracker
     from enhanced_mr_scorer import get_enhanced_mr_scorer
     from mr_phantom_tracker import get_mr_phantom_tracker
     from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
+    from ml_scorer_mean_reversion import get_mean_reversion_scorer
     logger = logging.getLogger(__name__)
     logger.info("Using Enhanced Parallel ML System (Pullback + Mean Reversion)")
     ML_AVAILABLE = True
@@ -52,12 +55,13 @@ except ImportError as e:
     try:
         from ml_signal_scorer_immediate import get_immediate_scorer
         from phantom_trade_tracker import get_phantom_tracker
+        from ml_scorer_mean_reversion import get_mean_reversion_scorer
         ML_AVAILABLE = True
         logger.info("Using Original ML Scorer only")
     except ImportError as e2:
         logger.warning(f"No ML available: {e2}")
 
-# Import symbol data collector for future ML
+# Symbol data collection for ML learning
 try:
     from symbol_data_collector import get_symbol_collector
     SYMBOL_COLLECTOR_AVAILABLE = True
@@ -236,7 +240,7 @@ class TradingBot:
         except Exception as e:
             logger.error(f"Failed to record trade: {e}")
     
-    async def check_closed_positions(self, book: Book, meta: dict = None, ml_scorer=None, reset_symbol_state=None, symbol_collector=None, ml_evolution=None):
+    async def check_closed_positions(self, book: Book, meta: dict = None, ml_scorer=None, reset_symbol_state=None, symbol_collector=None):
         """Check for positions that have been closed and record them"""
         try:
             # Get current positions from exchange
@@ -507,9 +511,7 @@ class TradingBot:
                                     ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
                                     logger.info(f"[{symbol}] Pullback ML updated with outcome.")
 
-                            # Also record in ML evolution if available
-                            if ml_evolution is not None:
-                                ml_evolution.record_outcome(symbol, outcome == "win", pnl_pct)                            
+                            
                             # Log with clear outcome based on actual P&L and corrected exit reason
                             actual_result = "WIN" if pnl_pct > 0 else "LOSS"
                             logger.info(f"[{symbol}] ML updated: {actual_result} ({pnl_pct:.2f}%) - Exit trigger: {exit_reason.upper()}")
@@ -724,8 +726,12 @@ class TradingBot:
         """Auto-generate or update enhanced clusters if needed"""
         try:
             # First try to load existing enhanced clusters
-            from cluster_feature_enhancer import load_cluster_data
-            simple_clusters, enhanced_clusters = load_cluster_data()
+            try:
+                from cluster_feature_enhancer import load_cluster_data
+                simple_clusters, enhanced_clusters = load_cluster_data()
+            except ImportError:
+                logger.warning("cluster_feature_enhancer not available, using basic clustering only")
+                simple_clusters, enhanced_clusters = {}, {}
             
             # Check if we need to generate or update
             needs_generation = False
@@ -926,10 +932,6 @@ class TradingBot:
         mr_phantom_tracker = None  # Initialize MR Phantom Tracker
         use_ml = cfg["trade"].get("use_ml_scoring", True)  # Default to True for immediate learning
         
-        # Initialize ML Evolution System (optional)
-        ml_evolution = None
-        evolution_trainer = None
-        enable_ml_evolution = cfg["trade"].get("enable_ml_evolution", False)
         
         # Initialize symbol data collector
         symbol_collector = None
@@ -1016,27 +1018,6 @@ class TradingBot:
                 else:
                     logger.warning("⚠️ No pre-trained Pullback model found. Starting in online learning mode.")
                 
-                # Initialize ML Evolution (always initialize for shadow learning)
-                try:
-                    from ml_evolution_system import get_evolution_system
-                    from symbol_ml_trainer import get_symbol_trainer
-                    
-                    # Always create evolution system (enabled flag controls if it affects decisions)
-                    ml_evolution = get_evolution_system(enabled=enable_ml_evolution)
-                    evolution_trainer = get_symbol_trainer()
-                    
-                    if enable_ml_evolution:
-                        logger.info("🚀 ML Evolution System ACTIVE - Symbol-specific models enabled")
-                    else:
-                        logger.info("👁️ ML Evolution System in SHADOW MODE - Learning but not affecting trades")
-                    
-                    # Always start background training for data collection
-                    asyncio.create_task(evolution_trainer.start_background_training())
-                    logger.info("📊 Background ML training started - Building symbol knowledge base")
-                    
-                except Exception as e:
-                    logger.warning(f"Failed to initialize ML Evolution: {e}")
-                    ml_evolution = None
                 
             except Exception as e:
                 logger.warning(f"Failed to initialize ML/Phantom system: {e}. Running without ML.")
@@ -1290,7 +1271,7 @@ class TradingBot:
                 
                     # Check for closed positions periodically
                     if (datetime.now() - last_position_check).total_seconds() > position_check_interval:
-                        await self.check_closed_positions(book, shared.get("meta"), ml_scorer, reset_symbol_state, symbol_collector, ml_evolution)
+                        await self.check_closed_positions(book, shared.get("meta"), ml_scorer, reset_symbol_state, symbol_collector)
                         last_position_check = datetime.now()
                 
                     # Handle panic close requests
@@ -1451,11 +1432,14 @@ class TradingBot:
                             # Different feature extraction based on strategy
                             if selected_strategy == "enhanced_mr":
                                 # Use enhanced MR features
-                                from enhanced_mr_features import calculate_enhanced_mr_features
-
-                                logger.info(f"🧠 [{sym}] ENHANCED MR ML ANALYSIS:")
-                                enhanced_features = calculate_enhanced_mr_features(df, sig.__dict__, sym)
-                                logger.info(f"   📊 Features: {len(enhanced_features)} range-specific features calculated")
+                                try:
+                                    from enhanced_mr_features import calculate_enhanced_mr_features
+                                    enhanced_features = calculate_enhanced_mr_features(df, sig.__dict__, sym)
+                                    logger.info(f"🧠 [{sym}] ENHANCED MR ML ANALYSIS:")
+                                    logger.info(f"   📊 Features: {len(enhanced_features)} range-specific features calculated")
+                                except ImportError:
+                                    logger.warning(f"[{sym}] enhanced_mr_features not available, skipping enhanced MR strategy")
+                                    continue
 
                                 # Score using Enhanced MR ML system
                                 ml_score, ml_reason = selected_ml_scorer.score_signal(sig.__dict__, enhanced_features, df)

@@ -22,7 +22,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 import warnings
 warnings.filterwarnings('ignore')
 
-from enhanced_mr_features import calculate_enhanced_mr_features, get_feature_names, get_feature_count
+# Enhanced MR features removed for simplification - using basic MR features
 
 logger = logging.getLogger(__name__)
 
@@ -228,8 +228,8 @@ class EnhancedMeanReversionScorer:
         # Calculate enhanced features if not provided
         if not features or len(features) < 20:
             try:
-                features = calculate_enhanced_mr_features(df, signal_data,
-                                                        signal_data.get('symbol', 'UNKNOWN'))
+                # Use basic MR features from signal meta
+                features = signal_data.get('meta', {}).get('mr_features', {})
             except Exception as e:
                 logger.warning(f"Failed to calculate enhanced features: {e}")
                 return self._fallback_theory_score(signal_data, features)
@@ -527,7 +527,8 @@ class EnhancedMeanReversionScorer:
 
     def _prepare_feature_vector(self, features: dict) -> List[float]:
         """Convert feature dictionary to vector for ML models"""
-        feature_names = get_feature_names()
+        # Simplified feature set for core MR trading
+        feature_names = ['range_width', 'range_confidence', 'trend_strength', 'volatility_level']
         vector = []
 
         for feat_name in feature_names:
@@ -863,7 +864,7 @@ class EnhancedMeanReversionScorer:
                 outcome = trade.get('outcome', 0)
 
                 feature_vector = self._prepare_feature_vector(features)
-                if len(feature_vector) == get_feature_count():
+                if len(feature_vector) == 4:  # 4 basic MR features
                     X_list.append(feature_vector)
                     y_list.append(outcome)
 
@@ -1005,7 +1006,7 @@ class EnhancedMeanReversionScorer:
                 'recent_trades': len(self.recent_performance),
                 'retrain_interval': self.RETRAIN_INTERVAL,
                 'trades_until_retrain': max(0, self.RETRAIN_INTERVAL - (self.completed_trades - self.last_train_count)),
-                'feature_count': get_feature_count(),
+                'feature_count': 4,  # Basic MR features
             }
 
             # Add model performance if available

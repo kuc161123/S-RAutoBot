@@ -1,11 +1,7 @@
 """
-Enhanced ML Signal Scorer with Immediate Activation
+ML Signal Scorer with Immediate Activation
 Works from day 1 with continuous learning from both real and phantom trades
 Progressively improves as it gathers more data
-
-IMPORTANT: This scorer ALWAYS uses only the original 22 features for stability.
-The enhanced 48-feature set is reserved for the ML Evolution system in shadow mode.
-This separation ensures the live trading system remains stable while evolution learns.
 """
 import numpy as np
 import pandas as pd

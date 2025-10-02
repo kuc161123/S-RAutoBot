@@ -470,27 +470,31 @@ class TradingBot:
 
                             if use_enhanced and shared_enhanced_mr:
                                 # Enhanced parallel system - route to correct ML scorer
+                                logger.info(f"[{symbol}] 🎯 ML ROUTING: strategy_name='{pos.strategy_name}', outcome='{outcome}'")
+                                
                                 if pos.strategy_name == "enhanced_mr":
                                     shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
-                                    logger.info(f"[{symbol}] Enhanced MR ML updated with outcome.")
+                                    logger.info(f"[{symbol}] ✅ Enhanced MR ML updated with outcome.")
                                 elif pos.strategy_name == "mean_reversion":
                                     # Legacy mean reversion trade (from before enhanced system)
                                     shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
-                                    logger.info(f"[{symbol}] Legacy MR ML updated with outcome (routed to enhanced).")
+                                    logger.info(f"[{symbol}] ✅ Legacy MR ML updated with outcome (routed to enhanced).")
                                 elif pos.strategy_name == "unknown":
                                     # Recovered position - check signal reason to determine strategy
                                     reason = signal_data.get('meta', {}).get('reason', '')
+                                    logger.info(f"[{symbol}] 🔍 UNKNOWN STRATEGY - Checking reason: '{reason}'")
                                     if 'Mean Reversion:' in reason or 'Rejection from resistance' in reason or 'Rejection from support' in reason:
                                         # This is actually a Mean Reversion trade
                                         shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
-                                        logger.info(f"[{symbol}] MR ML updated with outcome (recovered position, detected from reason).")
+                                        logger.info(f"[{symbol}] ✅ MR ML updated with outcome (recovered position, detected from reason).")
                                     else:
                                         # Default to pullback ML
                                         if ml_scorer is not None:
                                             ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                            logger.info(f"[{symbol}] Pullback ML updated with outcome (recovered position, defaulted).")
+                                            logger.info(f"[{symbol}] ⚠️ Pullback ML updated with outcome (recovered position, defaulted).")
                                 else:
                                     # Pullback strategy
+                                    logger.info(f"[{symbol}] 🔵 PULLBACK STRATEGY detected")
                                     if ml_scorer is not None:
                                         ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
                                         logger.info(f"[{symbol}] Pullback ML updated with outcome.")

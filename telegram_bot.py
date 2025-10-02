@@ -79,6 +79,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("training_status", self.training_status))
         self.app.add_handler(CommandHandler("trainingstatus", self.training_status))  # Alternative command name
         self.app.add_handler(CommandHandler("phantomqa", self.phantom_qa))
+        from telegram.ext import CallbackQueryHandler
+        self.app.add_handler(CallbackQueryHandler(self.ui_callback, pattern=r"^ui:"))
         self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
         self.app.add_handler(CommandHandler("panicclose", self.panic_close))
         self.app.add_handler(CommandHandler("forceretrain", self.force_retrain_ml))
@@ -862,6 +864,7 @@ class TGBot:
     async def dashboard(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show complete bot dashboard"""
         try:
+            from telegram import InlineKeyboardMarkup, InlineKeyboardButton
             frames = self.shared.get("frames", {})
             book = self.shared.get("book")
             last_analysis = self.shared.get("last_analysis", {})
@@ -989,11 +992,100 @@ class TGBot:
             lines.append("")
             lines.append("_Use /status for position details and /ml for full analytics._")
 
-            await self.safe_reply(update, "\n".join(lines))
+            # If UI mode, add inline buttons
+            ui_enabled = True  # simple default; could be from config
+            if ui_enabled:
+                kb = [
+                    [InlineKeyboardButton("🔄 Refresh", callback_data="ui:dash:refresh"),
+                     InlineKeyboardButton("📊 Symbols", callback_data="ui:symbols:0")],
+                    [InlineKeyboardButton("🤖 ML", callback_data="ui:ml:main"),
+                     InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:main")],
+                    [InlineKeyboardButton("⚙️ Risk", callback_data="ui:risk:main"),
+                     InlineKeyboardButton("🧭 Regime", callback_data="ui:regime:main")]
+                ]
+                await update.message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await self.safe_reply(update, "\n".join(lines))
 
         except Exception as e:
             logger.exception("Error in dashboard: %s", e)
             await update.message.reply_text("Error getting dashboard")
+
+    async def ui_callback(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Handle inline UI callbacks"""
+        try:
+            query = update.callback_query
+            data = query.data or ""
+            if data.startswith("ui:dash:refresh"):
+                # Reuse dashboard
+                await query.answer("Refreshing…")
+                # Rebuild dashboard text
+                fake_update = type('obj', (object,), {'message': query.message})
+                await self.dashboard(fake_update, ctx)
+            elif data.startswith("ui:symbols:"):
+                idx = int(data.split(":")[-1])
+                frames = self.shared.get("frames", {})
+                symbols = list(frames.keys())
+                if not symbols:
+                    await query.answer("No symbols")
+                    return
+                idx = max(0, min(len(symbols)-1, idx))
+                sym = symbols[idx]
+                df = frames.get(sym)
+                msg = f"📈 *{sym}*\n"
+                if df is not None and not df.empty:
+                    last = df['close'].iloc[-1]
+                    msg += f"• Last: {last:.4f}\n• Candles: {len(df)}\n"
+                kb = [[
+                    InlineKeyboardButton("◀️ Prev", callback_data=f"ui:symbols:{idx-1}"),
+                    InlineKeyboardButton("Next ▶️", callback_data=f"ui:symbols:{idx+1}")
+                ],[
+                    InlineKeyboardButton("🔙 Back", callback_data="ui:dash:refresh")
+                ]]
+                await query.edit_message_text(msg, reply_markup=InlineKeyboardMarkup(kb), parse_mode='Markdown')
+            elif data.startswith("ui:phantom:main"):
+                # Quick phantom QA reuse
+                await query.answer()
+                fake_update = type('obj', (object,), {'message': query.message})
+                await self.phantom_qa(fake_update, ctx)
+            elif data.startswith("ui:ml:main"):
+                await query.answer()
+                ml = self.shared.get("ml_scorer")
+                msg = "🤖 *ML Overview*\n"
+                if ml:
+                    st = ml.get_stats()
+                    msg += f"• Pullback: {st.get('status')} | Thresh: {st.get('current_threshold')}\n"
+                    calib = None
+                    try:
+                        import os, redis, json
+                        r = redis.from_url(os.getenv('REDIS_URL'), decode_responses=True)
+                        calib = r.get('iml:calibration')
+                    except Exception:
+                        pass
+                    if calib:
+                        msg += "• Calibration: bins saved\n"
+                await query.edit_message_text(msg, parse_mode='Markdown')
+            elif data.startswith("ui:risk:main"):
+                await query.answer()
+                risk = self.shared.get('risk')
+                msg = "⚙️ *Risk Settings*\n"
+                if risk:
+                    msg += f"• Risk: {risk.risk_percent:.2f}% | Leverage: {risk.max_leverage}x\n"
+                await query.edit_message_text(msg, parse_mode='Markdown')
+            elif data.startswith("ui:regime:main"):
+                await query.answer()
+                frames = self.shared.get('frames', {})
+                msg = "🧭 *Regime*"
+                # Keep minimal for now
+                await query.edit_message_text(msg, parse_mode='Markdown')
+            else:
+                await query.answer("Unknown action")
+        except Exception as e:
+            logger.error(f"Error in ui_callback: {e}")
+            try:
+                await update.callback_query.answer("Error")
+            except Exception:
+                pass
     
 
 

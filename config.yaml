@@ -88,6 +88,14 @@ trade:
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}
+phantom:
+  # Daily caps for phantom sampling to keep training balanced
+  none_cap: 50           # Max phantom from routing='none' per day (global)
+  cluster3_cap: 20       # Max phantom from cluster 3 (meme/high-vol) per day
+  offhours_cap: 15       # Max phantom during off-hours per day
+  # Virtual snapshot settings (for calibration around threshold)
+  enable_virtual_snapshots: false
+  virtual_snapshots_delta: 5   # Create variants at (threshold ± delta)
 symbol_meta:
   default:
     qty_step: 0.001

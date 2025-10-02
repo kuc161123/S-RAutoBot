@@ -984,6 +984,14 @@ class TradingBot:
         use_enhanced_parallel = cfg["trade"].get("use_enhanced_parallel", True) and ENHANCED_ML_AVAILABLE
         use_regime_switching = cfg["trade"].get("use_regime_switching", False)
 
+        # Phantom config
+        phantom_cfg = cfg.get('phantom', {})
+        phantom_none_cap = int(phantom_cfg.get('none_cap', 50))
+        phantom_cluster3_cap = int(phantom_cfg.get('cluster3_cap', 20))
+        phantom_offhours_cap = int(phantom_cfg.get('offhours_cap', 15))
+        phantom_enable_virtual = bool(phantom_cfg.get('enable_virtual_snapshots', False))
+        phantom_virtual_delta = int(phantom_cfg.get('virtual_snapshots_delta', 5))
+
         if use_enhanced_parallel:
             strategy_type = "Enhanced Parallel (Pullback + Mean Reversion with ML)"
             logger.info(f"📊 Strategy: {strategy_type}")
@@ -1544,6 +1552,13 @@ class TradingBot:
                                 if phantom_dedup_redis:
                                     try:
                                         if phantom_dedup_redis.exists(f"phantom:dedup:{key}"):
+                                            # Track dedup hits (per day)
+                                            try:
+                                                from datetime import datetime as _dt
+                                                day = _dt.utcnow().strftime('%Y%m%d')
+                                                phantom_dedup_redis.incr(f"phantom:dedup_hits:{day}")
+                                            except Exception:
+                                                pass
                                             return False
                                     except Exception:
                                         pass
@@ -1553,6 +1568,51 @@ class TradingBot:
                                     except Exception:
                                         pass
                                 return True
+
+                            # Daily caps via Redis
+                            def _daily_capped(symbol, cluster_id: int) -> bool:
+                                if not phantom_dedup_redis:
+                                    return False
+                                try:
+                                    from datetime import datetime as _dt
+                                    day = _dt.utcnow().strftime('%Y%m%d')
+                                    # None routing cap
+                                    none_key = f"phantom:daily:none_count:{day}"
+                                    none_val = int(phantom_dedup_redis.get(none_key) or 0)
+                                    if none_val >= phantom_none_cap:
+                                        return True
+                                    # Cluster 3 cap
+                                    if cluster_id == 3:
+                                        cl_key = f"phantom:daily:cluster3_count:{day}"
+                                        cl_val = int(phantom_dedup_redis.get(cl_key) or 0)
+                                        if cl_val >= phantom_cluster3_cap:
+                                            return True
+                                    # Off-hours cap
+                                    hour = _dt.utcnow().hour
+                                    is_off = (hour >= 22 or hour < 2)
+                                    if is_off:
+                                        off_key = f"phantom:daily:offhours_count:{day}"
+                                        off_val = int(phantom_dedup_redis.get(off_key) or 0)
+                                        if off_val >= phantom_offhours_cap:
+                                            return True
+                                except Exception:
+                                    return False
+                                return False
+
+                            def _increment_daily(symbol, cluster_id: int, routing: str):
+                                if not phantom_dedup_redis:
+                                    return
+                                from datetime import datetime as _dt
+                                day = _dt.utcnow().strftime('%Y%m%d')
+                                try:
+                                    phantom_dedup_redis.incr(f"phantom:daily:none_count:{day}")
+                                    if cluster_id == 3:
+                                        phantom_dedup_redis.incr(f"phantom:daily:cluster3_count:{day}")
+                                    hour = _dt.utcnow().hour
+                                    if (hour >= 22 or hour < 2):
+                                        phantom_dedup_redis.incr(f"phantom:daily:offhours_count:{day}")
+                                except Exception:
+                                    pass
 
                             # Hourly phantom-only budget per symbol (max 3)
                             budget = shared['phantom_budget'].setdefault(sym, [])
@@ -1572,6 +1632,16 @@ class TradingBot:
                                 continue
 
                             recorded = 0
+                            # Load cluster id for quotas
+                            try:
+                                from symbol_clustering import load_symbol_clusters
+                                clusters_map = load_symbol_clusters()
+                                cluster_id = int(clusters_map.get(sym, 3))
+                            except Exception:
+                                cluster_id = 3
+                            if _daily_capped(sym, cluster_id):
+                                logger.debug(f"[{sym}] Daily phantom caps reached; skipping phantom-only")
+                                continue
                             # Try MR phantom
                             try:
                                 sig_mr = detect_signal_mean_reversion(df.copy(), settings, sym)
@@ -1581,6 +1651,7 @@ class TradingBot:
                                     logger.info(f"[{sym}] 👻 Phantom-only (MR none): {sig_mr.side.upper()} @ {sig_mr.entry:.4f}")
                                     if mr_phantom_tracker:
                                         mr_phantom_tracker.record_mr_signal(sym, sig_mr.__dict__, 0.0, False, {}, ef)
+                                        _increment_daily(sym, cluster_id, 'none')
                                     budget.append(now_ts)
                                     recorded += 1
                             except Exception:
@@ -1608,8 +1679,41 @@ class TradingBot:
                                                 features=feats,
                                                 strategy_name='pullback'
                                             )
+                                            _increment_daily(sym, cluster_id, 'none')
                                         budget.append(now_ts)
                                         recorded += 1
+                                except Exception:
+                                    pass
+
+                            # Virtual snapshots around threshold if enabled
+                            if phantom_enable_virtual and recorded > 0:
+                                try:
+                                    # Use available scorer thresholds; fallback to 75
+                                    pb_thr = getattr(ml_scorer, 'min_score', 75) if ml_scorer else 75
+                                    mr_thr = getattr(enhanced_mr_scorer, 'min_score', 75) if enhanced_mr_scorer else 75
+                                    for delta in (-phantom_virtual_delta, +phantom_virtual_delta):
+                                        vthr_pb = max(60, min(90, pb_thr + delta))
+                                        vthr_mr = max(60, min(90, mr_thr + delta))
+                                        # Duplicate last recorded phantoms with virtual_threshold tag
+                                        if sig_mr and mr_phantom_tracker and not _daily_capped(sym, cluster_id):
+                                            ef2 = ef.copy()
+                                            ef2['routing'] = 'none'
+                                            ef2['virtual_threshold'] = vthr_mr
+                                            mr_phantom_tracker.record_mr_signal(sym, sig_mr.__dict__, 0.0, False, {}, ef2)
+                                            _increment_daily(sym, cluster_id, 'none')
+                                        if sig_pb and phantom_tracker and not _daily_capped(sym, cluster_id):
+                                            feats2 = feats.copy()
+                                            feats2['routing'] = 'none'
+                                            feats2['virtual_threshold'] = vthr_pb
+                                            phantom_tracker.record_signal(
+                                                symbol=sym,
+                                                signal={'side': sig_pb.side, 'entry': sig_pb.entry, 'sl': sig_pb.sl, 'tp': sig_pb.tp},
+                                                ml_score=0.0,
+                                                was_executed=False,
+                                                features=feats2,
+                                                strategy_name='pullback'
+                                            )
+                                            _increment_daily(sym, cluster_id, 'none')
                                 except Exception:
                                     pass
 

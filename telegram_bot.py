@@ -78,6 +78,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("telemetry", self.telemetry))
         self.app.add_handler(CommandHandler("training_status", self.training_status))
         self.app.add_handler(CommandHandler("trainingstatus", self.training_status))  # Alternative command name
+        self.app.add_handler(CommandHandler("phantomqa", self.phantom_qa))
         self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
         self.app.add_handler(CommandHandler("panicclose", self.panic_close))
         self.app.add_handler(CommandHandler("forceretrain", self.force_retrain_ml))
@@ -2933,6 +2934,59 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in system_status: {e}")
             await update.message.reply_text("Error getting system status")
+
+    async def phantom_qa(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show phantom sampling QA: caps, usage, dedup hits, basic WR by routing."""
+        try:
+            from datetime import datetime
+            day = datetime.utcnow().strftime('%Y%m%d')
+            # Load config caps
+            cfg = self.shared.get('config') or {}
+            ph = cfg.get('phantom', {})
+            none_cap = ph.get('none_cap', 50)
+            cl3_cap = ph.get('cluster3_cap', 20)
+            off_cap = ph.get('offhours_cap', 15)
+
+            # Read counters from Redis if available
+            none_used = cl3_used = off_used = dedup_hits = 0
+            try:
+                import os, redis
+                r = redis.from_url(os.getenv('REDIS_URL'), decode_responses=True)
+                none_used = int(r.get(f'phantom:daily:none_count:{day}') or 0)
+                cl3_used = int(r.get(f'phantom:daily:cluster3_count:{day}') or 0)
+                off_used = int(r.get(f'phantom:daily:offhours_count:{day}') or 0)
+                dedup_hits = int(r.get(f'phantom:dedup_hits:{day}') or 0)
+            except Exception:
+                pass
+
+            # WR by routing from phantom tracker
+            wr_none = wr_allowed = 0.0
+            try:
+                from phantom_trade_tracker import get_phantom_tracker
+                pt = get_phantom_tracker()
+                recs = pt.get_learning_data()
+                if recs:
+                    none_recs = [r for r in recs if isinstance(r.get('features'), dict) and r['features'].get('routing') == 'none']
+                    alw_recs = [r for r in recs if not (isinstance(r.get('features'), dict) and r['features'].get('routing') == 'none')]
+                    if none_recs:
+                        wr_none = (sum(r['outcome'] for r in none_recs) / len(none_recs)) * 100
+                    if alw_recs:
+                        wr_allowed = (sum(r['outcome'] for r in alw_recs) / len(alw_recs)) * 100
+            except Exception:
+                pass
+
+            lines = [
+                "🧪 *Phantom QA*",
+                f"• Caps (none/cluster3/off): {none_cap}/{cl3_cap}/{off_cap}",
+                f"• Used today: {none_used}/{cl3_used}/{off_used}",
+                f"• Dedup hits today: {dedup_hits}",
+                f"• WR routing=none: {wr_none:.1f}%",
+                f"• WR routing=allowed: {wr_allowed:.1f}%",
+            ]
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"Error in phantom_qa: {e}")
+            await update.message.reply_text("Error getting phantom QA")
 
     async def training_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show background ML training status"""

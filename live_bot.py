@@ -26,6 +26,18 @@ from sizer import Sizer
 from strategy_pullback import Settings  # Settings are the same for both strategies
 from telegram_bot import TGBot
 
+# Optional scalping modules
+try:
+    from strategy_scalp import detect_scalp_signal, ScalpSettings
+    from ml_scorer_scalp import get_scalp_scorer
+    from scalp_phantom_tracker import get_scalp_phantom_tracker
+    SCALP_AVAILABLE = True
+except Exception:
+    SCALP_AVAILABLE = False
+    detect_scalp_signal = None
+    get_scalp_scorer = None
+    get_scalp_phantom_tracker = None
+
 # Trade tracking with PostgreSQL fallback
 try:
     from trade_tracker_postgres import TradeTrackerPostgres as TradeTracker, Trade
@@ -123,6 +135,7 @@ class TradingBot:
         self.running = False
         self.ws = None
         self.frames: Dict[str, pd.DataFrame] = {}
+        self.frames_3m: Dict[str, pd.DataFrame] = {}
         self.tg: Optional[TGBot] = None
         self.bybit = None
         self.storage = CandleStorage()  # Will use DATABASE_URL from environment
@@ -142,6 +155,32 @@ class TradingBot:
         except Exception:
             pass
         return task
+
+    async def _collect_secondary_stream(self, ws_url: str, timeframe: str, symbols: list[str]):
+        """Collect a secondary timeframe (e.g., 3m) for scalp detection."""
+        handler = MultiWebSocketHandler(ws_url, self.running)
+        topics = [f"{timeframe}.{s}" for s in symbols]
+        async for sym, k in handler.multi_kline_stream(topics):
+            try:
+                ts = int(k.get("start")) if k.get("start") is not None else None
+                row = pd.DataFrame(
+                    [[float(k["open"]), float(k["high"]), float(k["low"]), float(k["close"]), float(k["volume"])]] ,
+                    index=[pd.to_datetime(ts, unit="ms", utc=True) if ts else pd.Timestamp.utcnow()],
+                    columns=["open","high","low","close","volume"]
+                )
+                df = self.frames_3m.get(sym)
+                if df is None:
+                    df = new_frame()
+                # TZ consistency
+                if df.index.tz is None and row.index.tz is not None:
+                    df.index = df.index.tz_localize('UTC')
+                elif df.index.tz is not None and row.index.tz is None:
+                    row.index = row.index.tz_localize('UTC')
+                df.loc[row.index[0]] = row.iloc[0]
+                df.sort_index(inplace=True)
+                self.frames_3m[sym] = df.tail(1000)
+            except Exception as e:
+                logger.debug(f"Secondary stream update error for {sym}: {e}")
 
     async def _notify_phantom_trade(self, label: str, phantom):
         if not self.tg:
@@ -1316,18 +1355,28 @@ class TradingBot:
         self._create_task(weekly_cluster_updater())
         logger.info("📅 Started weekly cluster update scheduler")
         
-        try:
-            # Use multi-websocket handler if >190 topics
-            if len(topics) > 190:
-                logger.info(f"Using multi-websocket handler for {len(topics)} topics")
-                ws_handler = MultiWebSocketHandler(cfg["bybit"]["ws_public"], self)
-                stream = ws_handler.multi_kline_stream(topics)
-            else:
-                logger.info(f"Using single websocket for {len(topics)} topics")
-                stream = self.kline_stream(cfg["bybit"]["ws_public"], topics)
-            
-            # Start streaming
-            async for sym, k in stream:
+        # Use multi-websocket handler if >190 topics
+        if len(topics) > 190:
+            logger.info(f"Using multi-websocket handler for {len(topics)} topics")
+            ws_handler = MultiWebSocketHandler(cfg["bybit"]["ws_public"], self)
+            stream = ws_handler.multi_kline_stream(topics)
+        else:
+            logger.info(f"Using single websocket for {len(topics)} topics")
+            stream = self.kline_stream(cfg["bybit"]["ws_public"], topics)
+        # Start secondary stream for scalps if configured
+        scalp_cfg = cfg.get('scalp', {})
+        use_scalp = bool(scalp_cfg.get('enabled', False) and SCALP_AVAILABLE)
+        scalp_stream_tf = str(scalp_cfg.get('timeframe', '3'))
+        scalp_use_frames_3m = bool(scalp_cfg.get('use_frames_3m_for_detection', True))
+        if use_scalp and SCALP_AVAILABLE and scalp_stream_tf:
+            try:
+                self._create_task(self._collect_secondary_stream(cfg['bybit']['ws_public'], scalp_stream_tf, symbols))
+                logger.info(f"🩳 Scalp secondary stream started (tf={scalp_stream_tf}m)")
+            except Exception as e:
+                logger.warning(f"Failed to start scalp secondary stream: {e}")
+
+        # Start streaming
+        async for sym, k in stream:
                 if not self.running:
                     break
                 
@@ -1379,6 +1428,13 @@ class TradingBot:
                                 sym, current_price, df=df, btc_price=btc_price, symbol_collector=symbol_collector
                             )
                             mr_phantom_tracker.update_mr_phantom_prices(sym, current_price, df=df)
+                            # Scalp phantom tracker price updates (if available)
+                            try:
+                                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                                scpt = get_scalp_phantom_tracker()
+                                scpt.update_scalp_phantom_prices(sym, current_price)
+                            except Exception:
+                                pass
                         else:
                             # Original system
                             phantom_tracker.update_phantom_prices(
@@ -1698,15 +1754,18 @@ class TradingBot:
                                             'volatility_regime': regime_analysis.volatility_level
                                         }
                                         logger.info(f"[{sym}] 👻 Phantom-only (Scalp none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
-                                        if phantom_tracker:
-                                            phantom_tracker.record_signal(
-                                                symbol=sym,
-                                                signal={'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                                ml_score=0.0,
-                                                was_executed=False,
-                                                features=sc_feats,
-                                                strategy_name='scalp'
+                                        try:
+                                            from scalp_phantom_tracker import get_scalp_phantom_tracker
+                                            scpt = get_scalp_phantom_tracker()
+                                            scpt.record_scalp_signal(
+                                                sym,
+                                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                                0.0,
+                                                False,
+                                                sc_feats
                                             )
+                                        except Exception:
+                                            pass
                                         _increment_daily(sym, cluster_id, 'none')
                                         budget.append(now_ts)
                                         recorded += 1
@@ -2356,11 +2415,6 @@ class TradingBot:
                     logger.info(f"[{sym}] {sig.side} position opened successfully")
                     
                     # MR phantom tracking: Status already recorded correctly with initial phantom record
-                    
-                except Exception as e:
-                    logger.error(f"Order error: {e}")
-                    if self.tg:
-                        await self.tg.send_message(f"❌ Failed to open {sym} {sig.side}: {str(e)[:100]}")
                 
                 except KeyError as e:
                     # KeyError likely means symbol not in config or metadata
@@ -2370,6 +2424,10 @@ class TradingBot:
                         logger.error(f"[{sym}] KeyError accessing: {e}")
                     continue
                 except Exception as e:
+                    logger.error(f"Order error: {e}")
+                    if self.tg:
+                        await self.tg.send_message(f"❌ Failed to open {sym} {sig.side}: {str(e)[:100]}")
+                except Exception as e:
                     # Other errors - log with more detail
                     import traceback
                     logger.error(f"[{sym}] Processing error: {type(e).__name__}: {e}")
@@ -2377,15 +2435,6 @@ class TradingBot:
                     # Don't crash the whole bot for one symbol's error
                     continue
         
-        except Exception as e:
-            logger.error(f"Bot error: {e}")
-            if self.tg:
-                await self.tg.send_message(f"❌ Bot error: {str(e)[:100]}")
-        
-        finally:
-            if self.tg:
-                await self.tg.send_message("🛑 Trading bot stopped")
-                await self.tg.stop()
 
     async def start(self):
         """Start the bot"""

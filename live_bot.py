@@ -1103,6 +1103,10 @@ class TradingBot:
             "trade_tracker": self.trade_tracker,
             "ml_scorer": ml_scorer,
             "bot_instance": self,
+            "last_balance": None,
+            "timeframe": tf,
+            "symbols_config": symbols,
+            "risk_reward": settings.rr,
             # Enhanced ML system components
             "enhanced_mr_scorer": enhanced_mr_scorer,
             "mr_phantom_tracker": mr_phantom_tracker,
@@ -1617,20 +1621,25 @@ class TradingBot:
 
                 if original_tp != sig.tp or original_sl != sig.sl:
                     logger.info(f"[{sym}] Rounded TP/SL to tick size {tick_size}. TP: {original_tp:.6f} -> {sig.tp:.6f}, SL: {original_sl:.6f} -> {sig.sl:.6f}")
-                
+
                 # Check account balance and update risk calculation
+                risk_amount = risk.risk_usd
+                if risk.use_percent_risk and sizer.account_balance and sizer.account_balance > 0:
+                    risk_amount = sizer.account_balance * (risk.risk_percent / 100.0)
+
                 current_balance = bybit.get_balance()
                 if current_balance:
                     balance = current_balance
                     # Update sizer with current balance for percentage-based risk
                     sizer.account_balance = balance
-                
+                    shared["last_balance"] = balance
+
                     # Calculate actual risk amount for this trade
                     if risk.use_percent_risk:
                         risk_amount = balance * (risk.risk_percent / 100.0)
                     else:
                         risk_amount = risk.risk_usd
-                
+
                     # Calculate required margin with max leverage
                     required_margin = (risk_amount * 100) / m.get("max_leverage", 50)  # Rough estimate
                 
@@ -1647,6 +1656,10 @@ class TradingBot:
                     logger.info(f"      💰 Available: ${balance:.2f}")
                     logger.info(f"      💸 Risk Amount: ${risk_amount:.2f}")
                     logger.info(f"      🛡️ Margin Required: ≈${required_margin:.2f}")
+                else:
+                    if risk.use_percent_risk:
+                        logger.warning("Balance unavailable; using fallback USD risk amount")
+                    shared["last_balance"] = None
 
                 # Calculate position size
                 qty = sizer.qty_for(sig.entry, sig.sl, m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)

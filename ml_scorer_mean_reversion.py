@@ -258,6 +258,7 @@ def _get_default_mr_features() -> dict:
         'range_width_atr': 2.0,
         'time_in_range_candles': 20.0,
         'touch_count_sr': 2.0,
+        'range_confidence': 0.5,
         'reversal_candle_size_atr': 1.0,
         'volume_at_reversal_ratio': 1.0,
         'rsi_at_edge': 10.0,

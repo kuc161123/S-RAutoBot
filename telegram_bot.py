@@ -1,12 +1,11 @@
+from datetime import datetime, timezone
+
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram.constants import UpdateType, ParseMode
+from telegram.ext import Application, CommandHandler, ContextTypes
 import telegram.error
 import asyncio
 import logging
-
-from ml_signal_scorer_immediate import get_immediate_scorer
-from ml_scorer_mean_reversion import get_mean_reversion_scorer
 
 from ml_signal_scorer_immediate import get_immediate_scorer
 from ml_scorer_mean_reversion import get_mean_reversion_scorer
@@ -75,6 +74,29 @@ class TGBot:
         self.app.add_handler(CommandHandler("trainingstatus", self.training_status))  # Alternative command name
         
         self.running = False
+
+    def _compute_risk_snapshot(self):
+        """Return (per_trade_risk_usd, label) based on current configuration."""
+        risk = self.shared.get("risk")
+        last_balance = self.shared.get("last_balance")
+
+        per_trade = float(risk.risk_usd)
+        label: str
+
+        if getattr(risk, 'use_percent_risk', False) and last_balance:
+            per_trade = last_balance * (risk.risk_percent / 100.0)
+            label = f"{risk.risk_percent}% (~${per_trade:.2f})"
+        elif getattr(risk, 'use_percent_risk', False):
+            # No balance available, fall back to USD risk while noting percentage target
+            per_trade = float(risk.risk_usd)
+            label = f"{risk.risk_percent}% (fallback ${per_trade:.2f})"
+        else:
+            label = f"${per_trade:.2f}"
+
+        if getattr(risk, 'use_ml_dynamic_risk', False):
+            label += " (ML dynamic)"
+
+        return per_trade, label
 
     async def start_polling(self):
         """Start the bot polling"""
@@ -590,50 +612,71 @@ class TGBot:
     async def status(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show current positions"""
         try:
-            bk = self.shared["book"].positions
-            if not bk:
-                msg = "📊 *Position Status*\n\n"
-                msg += "No open positions\n\n"
-                msg += f"Risk per trade: ${self.shared['risk'].risk_usd}\n"
-                msg += f"Max positions: Unlimited\n"
-                msg += f"\n_Bot is actively scanning {len(self.shared.get('frames', {}))} symbols_"
-                await self.safe_reply(update, msg)
+            book = self.shared.get("book")
+            positions = book.positions if book else {}
+            frames = self.shared.get("frames", {})
+            per_trade_risk, risk_label = self._compute_risk_snapshot()
+
+            header = ["📊 *Open Positions*", "━━━━━━━━━━━━━━━━━━━━━━"]
+
+            if not positions:
+                header.append("")
+                header.append("No open positions.")
+                header.append(f"*Risk per trade:* {risk_label}")
+                header.append(f"*Symbols scanning:* {len(frames)}")
+                await self.safe_reply(update, "\n".join(header))
                 return
-                
-            msg = "📊 *Open Positions*\n"
-            msg += "━" * 20 + "\n\n"
-            
-            for sym, p in bk.items():
-                emoji = "🟢" if p.side == "long" else "🔴"
-                
-                # Calculate current P&L if we have price data
-                frames = self.shared.get("frames", {})
-                pnl_str = ""
+
+            now = datetime.now(timezone.utc)
+            total_pnl = 0.0
+            lines = header + [""]
+
+            for idx, (sym, pos) in enumerate(positions.items()):
+                if idx >= 10:
+                    lines.append(f"…and {len(positions) - idx} more symbols")
+                    break
+
+                emoji = "🟢" if pos.side == "long" else "🔴"
+                lines.append(f"{emoji} *{sym}* ({pos.side.upper()})")
+
+                strategy = getattr(pos, 'strategy_name', 'unknown')
+                lines.append(f"  Strategy: {strategy}")
+                lines.append(f"  Entry: {pos.entry:.4f} | Size: {pos.qty}")
+                lines.append(f"  SL: {pos.sl:.4f} | TP: {pos.tp:.4f}")
+
+                # Hold duration
+                if getattr(pos, 'entry_time', None):
+                    entry_time = pos.entry_time
+                    if entry_time.tzinfo is None:
+                        entry_time = entry_time.replace(tzinfo=timezone.utc)
+                    held_minutes = max(0, int((now - entry_time).total_seconds() // 60))
+                    lines.append(f"  Held: {held_minutes}m")
+
+                # Live PnL snapshot
                 if sym in frames and len(frames[sym]) > 0:
                     current_price = frames[sym]['close'].iloc[-1]
-                    if p.side == "long":
-                        pnl = (current_price - p.entry) * p.qty
-                        pnl_pct = ((current_price - p.entry) / p.entry) * 100
+                    if pos.side == "long":
+                        pnl = (current_price - pos.entry) * pos.qty
+                        pnl_pct = ((current_price - pos.entry) / pos.entry) * 100
                     else:
-                        pnl = (p.entry - current_price) * p.qty
-                        pnl_pct = ((p.entry - current_price) / p.entry) * 100
-                    
-                    pnl_emoji = "🟢" if pnl > 0 else "🔴"
-                    pnl_str = f"\n  P&L: {pnl_emoji} ${pnl:.2f} ({pnl_pct:+.2f}%)"
-                
-                msg += f"{emoji} *{sym}* ({p.side.upper()})\n"
-                msg += f"  Entry: {p.entry:.4f}\n"
-                msg += f"  Size: {p.qty}\n"
-                msg += f"  SL: {p.sl:.4f} | TP: {p.tp:.4f}"
-                msg += pnl_str + "\n\n"
-                
-            msg += f"*Total positions:* {len(bk)}\n"
-            msg += f"*Risk exposure:* ${len(bk) * self.shared['risk'].risk_usd}"
-            
-            await self.safe_reply(update, msg)
-            
+                        pnl = (pos.entry - current_price) * pos.qty
+                        pnl_pct = ((pos.entry - current_price) / pos.entry) * 100
+                    total_pnl += pnl
+                    pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+                    lines.append(f"  P&L: {pnl_emoji} ${pnl:.2f} ({pnl_pct:+.2f}%)")
+
+                lines.append("")
+
+            total_positions = len(positions)
+            estimated_risk = per_trade_risk * total_positions
+            lines.append(f"*Positions:* {total_positions} | *Estimated risk:* ${estimated_risk:.2f}")
+            lines.append(f"*Risk per trade:* {risk_label}")
+            lines.append(f"*Unrealised P&L:* ${total_pnl:.2f}")
+
+            await self.safe_reply(update, "\n".join(lines))
+
         except Exception as e:
-            logger.error(f"Error in status: {e}")
+            logger.exception("Error in status: %s", e)
             await update.message.reply_text("Error getting status")
 
     async def balance(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
@@ -643,13 +686,14 @@ class TGBot:
             if broker:
                 balance = broker.get_balance()
                 if balance:
+                    self.shared["last_balance"] = balance
                     await self.safe_reply(update, f"💰 *Balance:* ${balance:.2f} USDT")
                 else:
                     await update.message.reply_text("Unable to fetch balance")
             else:
                 await update.message.reply_text("Broker not initialized")
         except Exception as e:
-            logger.error(f"Error in balance: {e}")
+            logger.exception("Error in balance: %s", e)
             await update.message.reply_text("Error getting balance")
 
     async def panic_close(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
@@ -726,180 +770,173 @@ class TGBot:
         """Show list of active trading symbols"""
         try:
             frames = self.shared.get("frames", {})
-            
-            if not frames:
+            configured = self.shared.get("symbols_config")
+
+            if configured:
+                symbols_list = list(configured)
+            elif frames:
+                symbols_list = list(frames.keys())
+            else:
                 await update.message.reply_text("No symbols loaded yet")
                 return
-            
+
             msg = "📈 *Active Trading Pairs*\n\n"
-            
-            # Group symbols for better display
-            symbols_list = list(frames.keys())
-            
+
             # Show in groups of 5
             for i in range(0, len(symbols_list), 5):
                 group = symbols_list[i:i+5]
                 msg += " • ".join(group) + "\n"
             
             msg += f"\n*Total:* {len(symbols_list)} symbols"
-            msg += "\n*Timeframe:* 15 minutes"
-            msg += "\n*Strategy:* Support/Resistance Breakout"
+            timeframe = self.shared.get("timeframe")
+            if timeframe:
+                msg += f"\n*Timeframe:* {timeframe} minutes"
+            msg += "\n*Strategies:* Pullback ML / Mean Reversion"
             
             await self.safe_reply(update, msg)
             
         except Exception as e:
-            logger.error(f"Error in symbols: {e}")
+            logger.exception("Error in symbols: %s", e)
             await update.message.reply_text("Error getting symbols")
     
     async def dashboard(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show complete bot dashboard"""
         try:
-            import datetime
-            
-            # Gather all data
             frames = self.shared.get("frames", {})
             book = self.shared.get("book")
-            risk = self.shared.get("risk")
             last_analysis = self.shared.get("last_analysis", {})
-            
-            msg = "🎯 *Trading Bot Dashboard*\n"
-            msg += "━" * 25 + "\n\n"
-            
-            # System Status
-            msg += "⚡ *System Status*\n"
+            per_trade_risk, risk_label = self._compute_risk_snapshot()
+
+            lines = ["🎯 *Trading Bot Dashboard*", "━━━━━━━━━━━━━━━━━━━━━", ""]
+
+            lines.append("⚡ *System Status*")
             if frames:
-                msg += f"• Status: ✅ Online\n"
-                msg += f"• Symbols: {len(frames)} active\n"
+                lines.append("• Status: ✅ Online")
+                lines.append(f"• Symbols streaming: {len(frames)}")
             else:
-                msg += "• Status: ⏳ Starting up\n"
-            
-            # Get balance and API key info
+                lines.append("• Status: ⏳ Starting up")
+
+            timeframe = self.shared.get("timeframe")
+            if timeframe:
+                lines.append(f"• Timeframe: {timeframe}m")
+
+            symbols_cfg = self.shared.get("symbols_config")
+            if symbols_cfg:
+                lines.append(f"• Universe: {len(symbols_cfg)} symbols")
+
+            if last_analysis:
+                try:
+                    latest_symbol, latest_time = max(last_analysis.items(), key=lambda kv: kv[1])
+                    if isinstance(latest_time, datetime):
+                        ref_now = datetime.now(latest_time.tzinfo) if latest_time.tzinfo else datetime.now()
+                        age_minutes = max(0, int((ref_now - latest_time).total_seconds() // 60))
+                        lines.append(f"• Last scan: {latest_symbol} ({age_minutes}m ago)")
+                except Exception as exc:
+                    logger.debug(f"Unable to compute last analysis recency: {exc}")
+
             broker = self.shared.get("broker")
+            balance = self.shared.get("last_balance")
             if broker:
-                balance = broker.get_balance()
-                if balance:
-                    msg += f"• Balance: ${balance:.2f} USDT\n"
-                
-                # Get API Key expiration
+                if balance is None:
+                    try:
+                        balance = broker.get_balance()
+                        if balance:
+                            self.shared["last_balance"] = balance
+                    except Exception as exc:
+                        logger.warning(f"Error refreshing balance: {exc}")
+                if balance is not None:
+                    lines.append(f"• Balance: ${balance:.2f} USDT")
                 try:
                     api_info = broker.get_api_key_info()
                     if api_info and api_info.get("expiredAt"):
-                        # Bybit gives timestamp in milliseconds
                         expiry_timestamp = int(api_info["expiredAt"]) / 1000
                         expiry_date = datetime.fromtimestamp(expiry_timestamp)
                         days_remaining = (expiry_date - datetime.now()).days
-                        
                         if days_remaining < 14:
-                            msg += f"⚠️ *API Key: Expires in {days_remaining} days!*\n"
+                            lines.append(f"⚠️ *API Key:* expires in {days_remaining} days")
                         else:
-                            msg += f"🔑 *API Key:* Expires in {days_remaining} days\n"
-                except Exception as e:
-                    logger.warning(f"Could not fetch API key expiry: {e}")
-            
-            msg += "\n"
-            
-            # Trading Settings
-            msg += "⚙️ *Trading Settings*\n"
-            if risk.use_percent_risk:
-                msg += f"• Risk per trade: {risk.risk_percent}%\n"
-            else:
-                msg += f"• Risk per trade: ${risk.risk_usd}\n"
-            msg += f"• Max leverage: {risk.max_leverage}x\n"
-            msg += f"• Timeframe: 15 minutes\n"
-            msg += "\n"
-            
-            # ML Status (Brief)
+                            lines.append(f"🔑 API Key: {days_remaining} days remaining")
+                except Exception as exc:
+                    logger.warning(f"Could not fetch API key expiry: {exc}")
+
+            lines.append("")
+
+            risk = self.shared.get("risk")
+            lines.append("⚙️ *Trading Settings*")
+            lines.append(f"• Risk per trade: {risk_label}")
+            lines.append(f"• Max leverage: {risk.max_leverage}x")
+            if getattr(risk, 'use_ml_dynamic_risk', False):
+                lines.append("• ML Dynamic Risk: Enabled")
+
             ml_scorer = self.shared.get("ml_scorer")
             if ml_scorer:
                 try:
-                    ml_stats = ml_scorer.get_ml_stats()
-                    msg += "🤖 *ML System*\n"
-                    if ml_stats['is_trained']:
-                        msg += f"• Status: ✅ Active\n"
-                        msg += f"• Trained on: {ml_stats['completed_trades']} trades\n"
-                    else:
-                        progress = (ml_stats['completed_trades'] / 200) * 100
-                        msg += f"• Status: 📊 Learning ({progress:.0f}%)\n"
-                        msg += f"• Trades: {ml_stats['completed_trades']}/200\n"
-                    msg += "• Use /ml for details\n"
-                except:
-                    pass
-            msg += "\n"
-            
-            # Positions
-            msg += "📊 *Positions*\n"
-            if book and book.positions:
-                for sym, pos in book.positions.items():
-                    emoji = "🟢" if pos.side == "long" else "🔴"
-                    msg += f"{emoji} {sym}: {pos.side.upper()}\n"
-                    msg += f"  Entry: {pos.entry:.4f}\n"
-                    msg += f"  Qty: {pos.qty}\n"
+                    ml_stats = ml_scorer.get_stats()
+                    lines.append("")
+                    lines.append("🤖 *Pullback ML*")
+                    lines.append(f"• Status: {ml_stats['status']}")
+                    lines.append(f"• Trades used: {ml_stats['completed_trades']}")
+                    if ml_stats.get('recent_win_rate'):
+                        lines.append(f"• Recent win rate: {ml_stats['recent_win_rate']:.1f}%")
+                except Exception as exc:
+                    logger.debug(f"Unable to fetch pullback ML stats: {exc}")
+
+            enhanced_mr = self.shared.get("enhanced_mr_scorer")
+            if enhanced_mr:
+                try:
+                    mr_info = enhanced_mr.get_retrain_info()
+                    lines.append("")
+                    lines.append("🧠 *Mean Reversion ML*")
+                    status = "✅ Ready" if mr_info.get('is_ml_ready') else "⏳ Training"
+                    lines.append(f"• Status: {status}")
+                    lines.append(f"• Trades (exec + phantom): {mr_info.get('total_combined', 0)}")
+                    lines.append(f"• Next retrain in: {mr_info.get('trades_until_next_retrain', 0)} trades")
+                except Exception as exc:
+                    logger.debug(f"Unable to fetch MR ML stats: {exc}")
+
+            positions = book.positions if book else {}
+            lines.append("")
+            lines.append("📊 *Positions*")
+            if positions:
+                estimated_risk = per_trade_risk * len(positions)
+                lines.append(f"• Open positions: {len(positions)}")
+                lines.append(f"• Estimated risk: ${estimated_risk:.2f}")
+                if self.shared.get('use_enhanced_parallel', False):
+                    lines.append("• Routing: Enhanced parallel (Pullback + MR)")
             else:
-                msg += "• No open positions\n"
-            msg += "\n"
+                lines.append("• No open positions")
 
-            # Enhanced Parallel System Status
-            msg += "🚀 *Enhanced Parallel System*\n"
-            try:
-                # Check if enhanced system is available
-                enhanced_available = False
-                enhanced_mr_active = False
+            phantom_tracker = self.shared.get("phantom_tracker")
+            if phantom_tracker:
+                try:
+                    stats = phantom_tracker.get_phantom_stats()
+                    lines.append("")
+                    lines.append("👻 *Pullback Phantom*")
+                    lines.append(f"• Rejections tracked: {stats.get('rejected', 0)}")
+                except Exception as exc:
+                    logger.debug(f"Unable to fetch pullback phantom stats: {exc}")
 
-                bot_instance = self.shared.get("bot_instance")
-                if bot_instance and hasattr(bot_instance, 'enhanced_mr_scorer'):
-                    enhanced_available = True
-                    if hasattr(bot_instance, 'enhanced_mr_scorer') and bot_instance.enhanced_mr_scorer:
-                        enhanced_mr_active = True
+            mr_phantom = self.shared.get("mr_phantom_tracker")
+            if mr_phantom:
+                try:
+                    mr_stats = mr_phantom.get_mr_phantom_stats()
+                    lines.append("")
+                    lines.append("🌀 *MR Phantom*")
+                    lines.append(f"• Tracked: {mr_stats.get('total_mr_trades', 0)}")
+                except Exception as exc:
+                    logger.debug(f"Unable to fetch MR phantom stats: {exc}")
 
-                if enhanced_available:
-                    msg += f"• Status: {'✅ Active' if enhanced_mr_active else '⏳ Initializing'}\n"
-                    msg += f"• Mean Reversion ML: {'✅' if enhanced_mr_active else '⏳'}\n"
-                    msg += f"• Regime Detection: ✅\n"
-                    msg += f"• Parallel Routing: ✅\n"
-                else:
-                    msg += "• Status: ⏳ Loading enhanced system...\n"
+            lines.append("")
+            lines.append("_Use /status for position details and /ml for full analytics._")
 
-            except Exception as e:
-                msg += "• Status: ❓ Unknown\n"
-                logger.debug(f"Enhanced system status error: {e}")
+            await self.safe_reply(update, "\n".join(lines))
 
-            msg += "\n"
-
-            # Recent Analysis
-            msg += "🔍 *Recent Analysis*\n"
-            if last_analysis:
-                now = datetime.datetime.now()
-                recent = sorted(last_analysis.items(), key=lambda x: x[1], reverse=True)[:3]
-                for sym, timestamp in recent:
-                    time_ago = (now - timestamp).total_seconds()
-                    if time_ago < 60:
-                        msg += f"• {sym}: {int(time_ago)}s ago\n"
-                    else:
-                        msg += f"• {sym}: {int(time_ago/60)}m ago\n"
-            else:
-                msg += "• Waiting for data...\n"
-            
-            msg += "\n"
-            
-            # Next Analysis
-            now = datetime.datetime.now()
-            next_15 = (now.minute // 15 + 1) * 15
-            if next_15 >= 60:
-                next_time = now.replace(minute=0, second=0) + datetime.timedelta(hours=1)
-            else:
-                next_time = now.replace(minute=next_15, second=0)
-            
-            time_until = (next_time - now).total_seconds()
-            msg += f"⏰ *Next Analysis:* {int(time_until/60)}m {int(time_until%60)}s\n"
-            
-            msg += "\n_Use /help for all commands_"
-            
-            await self.safe_reply(update, msg)
-            
         except Exception as e:
-            logger.error(f"Error in dashboard: {e}")
-            await update.message.reply_text("Error generating dashboard")
+            logger.exception("Error in dashboard: %s", e)
+            await update.message.reply_text("Error getting dashboard")
     
+
+
     async def analysis(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show recent analysis details for symbols"""
         try:

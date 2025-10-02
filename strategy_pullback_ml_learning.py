@@ -12,6 +12,7 @@ from typing import Optional, Dict
 import numpy as np
 import pandas as pd
 import logging
+from utils_data_quality import prepare_df_for_features
 
 logger = logging.getLogger(__name__)
 
@@ -456,6 +457,12 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
     
     state = breakout_states[symbol]
     
+    # Prepare data: use only closed, sanitized, spec-rounded candles
+    try:
+        df = prepare_df_for_features(df, symbol)
+    except Exception as e:
+        logger.debug(f"{symbol}: data quality prepare failed: {e}")
+
     # Get indicators
     pivots_high = _pivot_high(df["high"], settings.left, settings.right)
     pivots_low = _pivot_low(df["low"], settings.left, settings.right)

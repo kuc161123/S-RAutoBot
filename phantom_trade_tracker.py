@@ -204,6 +204,22 @@ class PhantomTradeTracker:
             was_executed: Whether this signal was actually traded
             features: ML features for this signal
         """
+        # Annotate features with feature_version/count for reproducibility
+        try:
+            if isinstance(features, dict):
+                from ml_signal_scorer_immediate import get_immediate_scorer
+                scorer = get_immediate_scorer()
+                features = features.copy()
+                features.setdefault('feature_version', getattr(scorer, 'model_feature_version', 'unknown'))
+                # Derive expected count using scorer's vectorizer on empty dict
+                try:
+                    expected = len(scorer._prepare_features({}))
+                except Exception:
+                    expected = 0
+                features.setdefault('feature_count', expected)
+        except Exception:
+            pass
+
         phantom = PhantomTrade(
             symbol=symbol,
             side=signal['side'],
@@ -413,6 +429,13 @@ class PhantomTradeTracker:
             for trade in trades:
                 if trade.outcome in ['win', 'loss']:
                     # Create learning record
+                    # Time to outcome (seconds)
+                    t_sec = None
+                    try:
+                        t_sec = int((trade.exit_time - trade.signal_time).total_seconds()) if trade.exit_time else None
+                    except Exception:
+                        t_sec = None
+
                     record = {
                         'features': trade.features,
                         'score': trade.ml_score,  # ML training expects 'score' field
@@ -422,7 +445,8 @@ class PhantomTradeTracker:
                         'symbol': trade.symbol,
                         'side': trade.side,
                         'max_favorable_move': abs(trade.max_favorable - trade.entry_price) / trade.entry_price * 100 if trade.max_favorable else 0,
-                        'max_adverse_move': abs(trade.max_adverse - trade.entry_price) / trade.entry_price * 100 if trade.max_adverse else 0
+                        'max_adverse_move': abs(trade.max_adverse - trade.entry_price) / trade.entry_price * 100 if trade.max_adverse else 0,
+                        'time_to_outcome_sec': t_sec
                     }
                     learning_data.append(record)
         

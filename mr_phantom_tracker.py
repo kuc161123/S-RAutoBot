@@ -239,6 +239,23 @@ class MRPhantomTracker:
         if range_upper > 0 and range_lower > 0:
             range_width_pct = (range_upper - range_lower) / range_lower
 
+        # Annotate features with MR feature version/count for reproducibility
+        try:
+            if isinstance(features, dict):
+                # Import MR scorer to detect current feature layout
+                from ml_scorer_mean_reversion import get_mean_reversion_scorer
+                mr = get_mean_reversion_scorer()
+                features = features.copy()
+                # Convention: label as mr_simplified_v1 for current minimal set
+                features.setdefault('feature_version', 'mr_simplified_v1')
+                try:
+                    expected = len(mr._prepare_features({}))
+                except Exception:
+                    expected = 0
+                features.setdefault('feature_count', expected)
+        except Exception:
+            pass
+
         phantom = MRPhantomTrade(
             symbol=symbol,
             side=signal['side'],

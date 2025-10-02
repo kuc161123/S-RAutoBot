@@ -530,8 +530,20 @@ class MLScorerMeanReversion:
         try:
             self.completed_trades += 1
 
-            # Extract features from signal_data
+            # Extract features; if missing, try to recover from MR phantom tracker (executed trades)
             features = signal_data.get('features', {})
+            if not features:
+                try:
+                    from mr_phantom_tracker import MRPhantomTrade, MRPhantomTracker
+                    # Create an instance (singleton pattern not used here)
+                    tracker = MRPhantomTracker()
+                    sym = signal_data.get('symbol')
+                    if sym and sym in tracker.mr_phantom_trades:
+                        recent = [p for p in reversed(tracker.mr_phantom_trades[sym]) if getattr(p, 'was_executed', False)]
+                        if recent:
+                            features = recent[0].features or {}
+                except Exception:
+                    pass
             outcome_binary = 1 if outcome == 'win' else 0
 
             # Store in Redis for persistence

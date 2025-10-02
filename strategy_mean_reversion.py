@@ -12,6 +12,7 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 import logging
+from utils_data_quality import prepare_df_for_features
 
 # Import base classes and utilities from existing strategy
 from strategy_pullback import Settings, Signal, _pivot_high, _pivot_low, _atr
@@ -37,6 +38,12 @@ def detect_signal(df: pd.DataFrame, s: Settings, symbol: str = "") -> Optional[S
     Returns:
         Optional[Signal]: A trading signal if conditions are met.
     """
+    # Prepare data: closed, sanitized, spec-rounded candles
+    try:
+        df = prepare_df_for_features(df, symbol)
+    except Exception as e:
+        logger.debug(f"[{symbol}] data quality prepare failed: {e}")
+
     # Initialize state for new symbols
     if symbol not in mean_reversion_states:
         mean_reversion_states[symbol] = BreakoutState()

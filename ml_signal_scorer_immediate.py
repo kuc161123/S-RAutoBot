@@ -392,9 +392,24 @@ class ImmediateMLScorer:
         # Adapt threshold based on performance
         self._adapt_threshold()
         
+        # Ensure features exist (recover from phantom tracker for executed trades)
+        features = signal_data.get('features') or {}
+        if not features:
+            try:
+                from phantom_trade_tracker import get_phantom_tracker
+                pt = get_phantom_tracker()
+                # Find the most recent executed phantom for this symbol
+                sym = signal_data.get('symbol')
+                if sym and sym in pt.phantom_trades:
+                    recent = [p for p in reversed(pt.phantom_trades[sym]) if getattr(p, 'was_executed', False)]
+                    if recent:
+                        features = recent[0].features or {}
+            except Exception:
+                pass
+
         # Store trade data
         trade_record = {
-            'features': signal_data['features'],
+            'features': features,
             'score': signal_data['score'],
             'outcome': outcome,
             'pnl_percent': pnl_percent,

@@ -767,24 +767,29 @@ class TradingBot:
                             logger.info(f"[{symbol}] ML ROUTING DECISION: Enhanced system active: {use_enhanced and shared_enhanced_mr}, Strategy: '{pos.strategy_name}'")
 
                             if use_enhanced and shared_enhanced_mr:
-                                # Enhanced parallel system - route to correct ML scorer
+                                # Enhanced parallel system - STRICT routing guard
                                 logger.info(f"[{symbol}] 🎯 ML ROUTING: strategy_name='{pos.strategy_name}', outcome='{outcome}'")
-                                
                                 if pos.strategy_name == "enhanced_mr":
                                     shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
                                     logger.info(f"[{symbol}] ✅ Enhanced MR ML updated with outcome.")
                                 elif pos.strategy_name == "mean_reversion":
-                                    # Legacy mean reversion trade (from before enhanced system)
-                                    shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
-                                    logger.info(f"[{symbol}] ✅ Legacy MR ML updated with outcome (routed to enhanced).")
+                                    # Guard: do NOT route 'mean_reversion' to Enhanced MR to avoid accidental increments
+                                    if shared_mr_scorer is not None:
+                                        shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                        logger.info(f"[{symbol}] ✅ Original MR ML updated with outcome (guarded).")
+                                    else:
+                                        logger.warning(f"[{symbol}] ⚠️ Mean Reversion outcome not recorded (no original MR scorer active; guard preventing Enhanced MR increment)")
                                 elif pos.strategy_name == "unknown":
                                     # Recovered position - check signal reason to determine strategy
                                     reason = signal_data.get('meta', {}).get('reason', '')
                                     logger.info(f"[{symbol}] 🔍 UNKNOWN STRATEGY - Checking reason: '{reason}'")
                                     if 'Mean Reversion:' in reason or 'Rejection from resistance' in reason or 'Rejection from support' in reason:
-                                        # This is actually a Mean Reversion trade
-                                        shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
-                                        logger.info(f"[{symbol}] ✅ MR ML updated with outcome (recovered position, detected from reason).")
+                                        # Treat as MR, but guard against Enhanced MR increments if original scorer absent
+                                        if shared_mr_scorer is not None:
+                                            shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                            logger.info(f"[{symbol}] ✅ Original MR ML updated with outcome (recovered, inferred).")
+                                        else:
+                                            logger.warning(f"[{symbol}] ⚠️ Inferred MR outcome not recorded (no original MR scorer; guard active)")
                                     else:
                                         # Default to pullback ML
                                         if ml_scorer is not None:
@@ -1287,6 +1292,45 @@ class TradingBot:
                         logger.info("✅ Pre-trained Enhanced MR models loaded successfully.")
                     else:
                         logger.info("⚠️ No pre-trained Enhanced MR models found. Starting in online learning mode.")
+
+                    # One-time Enhanced MR diagnostic dump and optional clear on start
+                    try:
+                        emr_cfg = cfg.get('enhanced_mr', {})
+                        # Diagnostic dump: show first/last executed entries
+                        if bool(emr_cfg.get('diag_dump_on_start', True)) and getattr(enhanced_mr_scorer, 'redis_client', None):
+                            r = enhanced_mr_scorer.redis_client
+                            total = int(r.llen('enhanced_mr:trades') or 0)
+                            if total > 0:
+                                first = r.lrange('enhanced_mr:trades', 0, min(1, total-1)) or []
+                                last = r.lrange('enhanced_mr:trades', max(0, total-2), total-1) or []
+                                import json
+                                def _fmt(items):
+                                    out = []
+                                    for it in items:
+                                        try:
+                                            rec = json.loads(it)
+                                            out.append(f"{rec.get('timestamp','?')} {rec.get('symbol','?')}")
+                                        except Exception:
+                                            out.append(str(it)[:80])
+                                    return out
+                                logger.info(f"🧪 Enhanced MR executed (diagnostic): count={total}, first={_fmt(first)}, last={_fmt(last)}")
+                        # Optional clearing (disabled by default)
+                        if bool(emr_cfg.get('clear_on_start', False)) and getattr(enhanced_mr_scorer, 'redis_client', None):
+                            r = enhanced_mr_scorer.redis_client
+                            logger.warning("⚠️ Clearing Enhanced MR Redis namespace (clear_on_start=true)")
+                            for key in ['enhanced_mr:trades', 'enhanced_mr:completed_trades', 'enhanced_mr:last_train_count']:
+                                try:
+                                    r.delete(key)
+                                except Exception:
+                                    pass
+                            try:
+                                enhanced_mr_scorer.completed_trades = 0
+                                enhanced_mr_scorer.last_train_count = 0
+                            except Exception:
+                                pass
+                            logger.info("✅ Enhanced MR Redis keys cleared and counters reset")
+                    except Exception as e:
+                        logger.debug(f"Enhanced MR diagnostics/clear failed: {e}")
 
                 else:
                     # Initialize original ML system

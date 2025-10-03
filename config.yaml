@@ -94,9 +94,10 @@ exploration:
 pullback:
   explore:
     enabled: true
-    trend_strength_min: 50         # min trend strength for phantom-only
-    confirmation_strength_min: 0.2 # lightweight confirmation for exploration
-    mtf_level_strength_min: 0.5    # accept weaker MTF levels in exploration
+    # Relaxed, phantom-only gates to increase sample flow (execution unchanged)
+    trend_strength_min: 38         # was 50 — allow moderate trends
+    confirmation_strength_min: 0.10 # was 0.2 — lighter confirmation
+    mtf_level_strength_min: 0.30    # was 0.5 — accept weaker MTF S/R
     allow_volatility_high: true
     enable_virtual_snapshots: true
     snapshots_delta: 5
@@ -105,10 +106,11 @@ pullback:
 mr:
   explore:
     enabled: true
-    rc_min: 0.70                   # range_confidence minimum for exploration
-    touches_min: 6                 # min S/R touches
-    dist_mid_atr_min: 0.60         # distance from midpoint in ATR
-    rev_candle_atr_min: 1.0        # reversal candle size in ATR
+    # Relaxed, phantom-only gates (execution remains strict)
+    rc_min: 0.50                   # was 0.70 — broader range acceptance
+    touches_min: 4                 # was 6 — fewer S/R confirmations
+    dist_mid_atr_min: 0.40         # was 0.60 — allow farther from edge
+    rev_candle_atr_min: 0.80       # was 1.0 — allow smaller rejection
     allow_volatility_high: true
     timeout_hours: 36              # shorter phantom timeout for faster labels
     enable_virtual_snapshots: true
@@ -118,9 +120,9 @@ telegram:
   chat_id: ${TELEGRAM_CHAT_ID}
 phantom:
   # Daily caps for phantom sampling to keep training balanced
-  none_cap: 50           # Max phantom from routing='none' per day (global)
-  cluster3_cap: 20       # Max phantom from cluster 3 (meme/high-vol) per day
-  offhours_cap: 15       # Max phantom during off-hours per day
+  none_cap: 120          # was 50 — allow more global exploration per day
+  cluster3_cap: 30       # was 20 — modestly higher for high-vol symbols
+  offhours_cap: 20       # was 15 — modestly higher off-hours cap
   # Virtual snapshot settings (for calibration around threshold)
   enable_virtual_snapshots: false
   virtual_snapshots_delta: 5   # Create variants at (threshold ± delta)
@@ -135,9 +137,10 @@ scalp:
   promote_min_wr: 55.0
   explore:
     relax_enabled: true
-    vwap_dist_atr_max: 0.8
-    min_bb_width_pct: 0.6
-    vol_ratio_min: 1.15
+    # Relaxed, phantom-only thresholds to widen net (execution unchanged)
+    vwap_dist_atr_max: 1.0   # was 0.8 — allow farther from VWAP
+    min_bb_width_pct: 0.50   # was 0.6 — accept narrower bands
+    vol_ratio_min: 1.00      # was 1.15 — lower volume spike requirement
 symbol_meta:
   default:
     qty_step: 0.001

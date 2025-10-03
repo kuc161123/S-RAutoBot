@@ -238,8 +238,16 @@ class Bybit:
             # Not critical if no orders to cancel
             return True
     
-    def get_klines(self, symbol:str, interval:str, limit:int=200) -> list:
-        """Get historical kline/candlestick data"""
+    def get_klines(self, symbol:str, interval:str, limit:int=200, start:Optional[int]=None, end:Optional[int]=None) -> list:
+        """Get historical kline/candlestick data.
+
+        Args:
+            symbol: e.g., 'BTCUSDT'
+            interval: '1','3','5','15','60','240','D',...
+            limit: max records to return (Bybit caps at 200)
+            start: optional start timestamp in ms
+            end: optional end timestamp in ms
+        """
         try:
             params = {
                 "category": "linear",
@@ -247,6 +255,10 @@ class Bybit:
                 "interval": interval,  # 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M
                 "limit": str(min(limit, 200))  # Max 200 per request
             }
+            if start is not None:
+                params["start"] = str(int(start))
+            if end is not None:
+                params["end"] = str(int(end))
             resp = self._request("GET", "/v5/market/kline", params)
             
             if resp and resp.get("result"):

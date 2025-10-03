@@ -306,6 +306,7 @@ class TradingBot:
         # Show database stats
         stats = self.storage.get_stats()
         logger.info(f"Database: {stats.get('total_candles', 0)} candles, {stats.get('symbols', 0)} symbols, {stats.get('db_size_mb', 0):.2f} MB")
+
     
     async def save_all_candles(self):
         """Save all candles to database"""
@@ -1270,6 +1271,8 @@ class TradingBot:
                     logger.debug("Scalp disabled in config; skipping 3m backfill")
             except Exception as e:
                 logger.warning(f"3m backfill skipped due to error: {e}")
+
+            # Note: main timeframe backfill intentionally not applied (per user request)
             
             # Initialize all S/R levels
             sr_results = initialize_all_sr_levels(self.frames)

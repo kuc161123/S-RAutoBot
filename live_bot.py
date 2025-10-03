@@ -230,8 +230,20 @@ class TradingBot:
                         pass
 
                 # Run scalper on 3m df
+                # Build ScalpSettings, applying phantom-only relaxed thresholds if enabled
                 try:
-                    sc_sig = detect_scalp_signal(self.frames_3m[sym].copy(), ScalpSettings(), sym)
+                    sc_settings = ScalpSettings()
+                    try:
+                        s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+                        exp = s_cfg.get('explore', {})
+                        if exp.get('relax_enabled', False):
+                            # Apply relaxed thresholds for phantom exploration only
+                            sc_settings.vwap_dist_atr_max = float(exp.get('vwap_dist_atr_max', sc_settings.vwap_dist_atr_max))
+                            sc_settings.min_bb_width_pct = float(exp.get('min_bb_width_pct', sc_settings.min_bb_width_pct))
+                            sc_settings.vol_ratio_min = float(exp.get('vol_ratio_min', sc_settings.vol_ratio_min))
+                    except Exception:
+                        pass
+                    sc_sig = detect_scalp_signal(self.frames_3m[sym].copy(), sc_settings, sym)
                 except Exception as e:
                     logger.debug(f"[{sym}] Scalp(3m) detection error: {e}")
                     sc_sig = None

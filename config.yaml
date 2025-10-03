@@ -133,6 +133,11 @@ scalp:
   promote_enabled: false
   promote_min_samples: 200
   promote_min_wr: 55.0
+  explore:
+    relax_enabled: true
+    vwap_dist_atr_max: 0.8
+    min_bb_width_pct: 0.6
+    vol_ratio_min: 1.15
 symbol_meta:
   default:
     qty_step: 0.001

@@ -22,6 +22,7 @@ class ScalpSettings:
     min_bb_width_pct: float = 0.7  # 70th percentile of BB width
     vol_ratio_min: float = 1.3     # 1.3x 20-bar avg
     wick_ratio_min: float = 0.3
+    vwap_dist_atr_max: float = 0.6 # max normalized distance to VWAP
 
 
 @dataclass
@@ -114,7 +115,7 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
             orb_ok = False
 
     # Long scalp candidate
-    if ema_aligned_up and bbw_pct >= s.min_bb_width_pct and vol_ratio >= s.vol_ratio_min and lower_w >= s.wick_ratio_min and dist_vwap_atr <= 0.6 and orb_ok:
+    if ema_aligned_up and bbw_pct >= s.min_bb_width_pct and vol_ratio >= s.vol_ratio_min and lower_w >= s.wick_ratio_min and dist_vwap_atr <= s.vwap_dist_atr_max and orb_ok:
         # Stop below VWAP/EMA band
         sl = min(cur_vwap, ema_s.iloc[-1]) - 0.8 * cur_atr
         entry = c
@@ -134,7 +135,7 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
         )
 
     # Short scalp candidate
-    if ema_aligned_dn and bbw_pct >= s.min_bb_width_pct and vol_ratio >= s.vol_ratio_min and upper_w >= s.wick_ratio_min and dist_vwap_atr <= 0.6 and orb_ok:
+    if ema_aligned_dn and bbw_pct >= s.min_bb_width_pct and vol_ratio >= s.vol_ratio_min and upper_w >= s.wick_ratio_min and dist_vwap_atr <= s.vwap_dist_atr_max and orb_ok:
         sl = max(cur_vwap, ema_s.iloc[-1]) + 0.8 * cur_atr
         entry = c
         if sl <= entry:
@@ -153,4 +154,3 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
         )
 
     return None
-

@@ -142,6 +142,8 @@ class TradingBot:
         self.last_save_time = datetime.now()
         self.trade_tracker = TradeTracker()  # Initialize trade tracker
         self._tasks = set()
+        # Per-symbol cooldown for 3m scalp detections (timestamp of last recorded attempt)
+        self._scalp_cooldown: Dict[str, pd.Timestamp] = {}
         
     def _create_task(self, coro):
         try:
@@ -184,6 +186,95 @@ class TradingBot:
                     self.storage.save_candles_3m(sym, row)
                 except Exception as e:
                     logger.debug(f"3m candle persist error for {sym}: {e}")
+
+                # On 3m bar close, attempt phantom-only scalp detection for NONE regime
+                try:
+                    confirm = bool(k.get("confirm", False))
+                except Exception:
+                    confirm = False
+                if not confirm:
+                    continue
+
+                # Guard: scalper enabled and modules available
+                try:
+                    scalp_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+                    use_scalp = bool(scalp_cfg.get('enabled', False) and SCALP_AVAILABLE)
+                except Exception:
+                    use_scalp = False
+                if not use_scalp or detect_scalp_signal is None:
+                    continue
+
+                # Gate by regime: only when router recommends NONE and volatility not extreme
+                regime_ok = False
+                vol_level = 'unknown'
+                if 'frames' in dir(self) and sym in self.frames and not self.frames[sym].empty and ENHANCED_ML_AVAILABLE:
+                    try:
+                        analysis = get_enhanced_market_regime(self.frames[sym].tail(200), sym)
+                        vol_level = analysis.volatility_level
+                        if str(analysis.recommended_strategy or 'none') == 'none' and vol_level != 'extreme':
+                            regime_ok = True
+                    except Exception:
+                        regime_ok = False
+                if not regime_ok:
+                    logger.debug(f"[{sym}] 🩳 Scalp(3m) skipped: regime not NONE or vol={vol_level}")
+                    continue
+
+                # Per-symbol cooldown: require ~8 bars (≈24 minutes) between scalp records
+                last_ts = self._scalp_cooldown.get(sym)
+                bar_ts = row.index[0]
+                if last_ts is not None:
+                    try:
+                        if (bar_ts - last_ts).total_seconds() < (8 * 180):
+                            continue
+                    except Exception:
+                        pass
+
+                # Run scalper on 3m df
+                try:
+                    sc_sig = detect_scalp_signal(self.frames_3m[sym].copy(), ScalpSettings(), sym)
+                except Exception as e:
+                    logger.debug(f"[{sym}] Scalp(3m) detection error: {e}")
+                    sc_sig = None
+                if not sc_sig:
+                    # Do not spam logs at 3m; only log positives and regime skips
+                    continue
+
+                # Dedup via Redis (phantom dedup scope)
+                dedup_ok = True
+                try:
+                    from scalp_phantom_tracker import get_scalp_phantom_tracker
+                    scpt = get_scalp_phantom_tracker()
+                    r = scpt.redis_client
+                    if r is not None:
+                        key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),4)}:{round(float(sc_sig.sl),4)}:{round(float(sc_sig.tp),4)}"
+                        if r.exists(f"phantom:dedup:{key}"):
+                            dedup_ok = False
+                        else:
+                            r.setex(f"phantom:dedup:{key}", 7*24*3600, '1')
+                except Exception:
+                    pass
+                if not dedup_ok:
+                    logger.debug(f"[{sym}] 🩳 Scalp(3m) dedup: duplicate signal skipped")
+                    continue
+
+                # Record phantom to scalp tracker; features include routing and vol
+                sc_feats = {
+                    'routing': 'none',
+                    'volatility_regime': vol_level,
+                }
+                try:
+                    scpt = get_scalp_phantom_tracker()
+                    scpt.record_scalp_signal(
+                        sym,
+                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                        0.0,
+                        False,
+                        sc_feats
+                    )
+                    logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                    self._scalp_cooldown[sym] = bar_ts
+                except Exception as e:
+                    logger.debug(f"[{sym}] Scalp(3m) record error: {e}")
             except Exception as e:
                 logger.debug(f"Secondary stream update error for {sym}: {e}")
 

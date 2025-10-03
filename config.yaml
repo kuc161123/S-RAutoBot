@@ -1486,4 +1486,4 @@ symbol_meta:
 # Enhanced MR scorer controls
 enhanced_mr:
   diag_dump_on_start: true   # Log first/last executed entries from Redis for auditing
-  clear_on_start: false      # DANGER: if true, clears Enhanced MR Redis namespace on start
+  clear_on_start: true       # DANGER: if true, clears Enhanced MR Redis namespace on start

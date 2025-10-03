@@ -3090,6 +3090,7 @@ class TGBot:
 
             # Read counters from Redis if available
             none_used = cl3_used = off_used = dedup_hits = 0
+            blocked_total = blocked_pb = blocked_mr = blocked_scalp = 0
             try:
                 import os, redis
                 r = redis.from_url(os.getenv('REDIS_URL'), decode_responses=True)
@@ -3097,6 +3098,10 @@ class TGBot:
                 cl3_used = int(r.get(f'phantom:daily:cluster3_count:{day}') or 0)
                 off_used = int(r.get(f'phantom:daily:offhours_count:{day}') or 0)
                 dedup_hits = int(r.get(f'phantom:dedup_hits:{day}') or 0)
+                blocked_total = int(r.get(f'phantom:blocked:{day}') or 0)
+                blocked_pb = int(r.get(f'phantom:blocked:{day}:pullback') or 0)
+                blocked_mr = int(r.get(f'phantom:blocked:{day}:mr') or 0)
+                blocked_scalp = int(r.get(f'phantom:blocked:{day}:scalp') or 0)
             except Exception:
                 pass
 
@@ -3123,6 +3128,7 @@ class TGBot:
                 f"• Dedup hits today: {dedup_hits}",
                 f"• WR routing=none: {wr_none:.1f}%",
                 f"• WR routing=allowed: {wr_allowed:.1f}%",
+                f"• Blocked today: {blocked_total} (PB {blocked_pb}, MR {blocked_mr}, Scalp {blocked_scalp})",
             ]
             await self.safe_reply(update, "\n".join(lines))
         except Exception as e:

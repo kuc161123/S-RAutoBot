@@ -106,6 +106,22 @@ class ScalpPhantomTracker:
             logger.error(f"Scalp Phantom save error: {e}")
 
     def record_scalp_signal(self, symbol: str, signal: Dict, ml_score: float, was_executed: bool, features: Dict) -> ScalpPhantomTrade:
+        # Enforce single-active-per-symbol for scalp phantom signals
+        if symbol in self.active:
+            try:
+                import os, redis
+                url = os.getenv('REDIS_URL')
+                r = redis.from_url(url, decode_responses=True) if url else None
+                if r:
+                    from datetime import datetime as _dt
+                    day = _dt.utcnow().strftime('%Y%m%d')
+                    r.incr(f'phantom:blocked:{day}')
+                    r.incr(f'phantom:blocked:{day}:scalp')
+            except Exception:
+                pass
+            logger.info(f"[{symbol}] Scalp phantom blocked: active trade in progress")
+            return self.active[symbol]
+
         ph = ScalpPhantomTrade(
             symbol=symbol,
             side=signal['side'],

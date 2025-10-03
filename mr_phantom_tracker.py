@@ -208,6 +208,17 @@ class MRPhantomTracker:
     def set_notifier(self, notifier: Optional[Callable]):
         self.notifier = notifier
 
+    def _incr_blocked(self):
+        if not self.redis_client:
+            return
+        try:
+            from datetime import datetime as _dt
+            day = _dt.utcnow().strftime('%Y%m%d')
+            self.redis_client.incr(f'phantom:blocked:{day}')
+            self.redis_client.incr(f'phantom:blocked:{day}:mr')
+        except Exception:
+            pass
+
     def record_mr_signal(self, symbol: str, signal: dict, ml_score: float,
                         was_executed: bool, features: dict, enhanced_features: dict = None) -> MRPhantomTrade:
         """
@@ -221,6 +232,12 @@ class MRPhantomTracker:
             features: Basic MR features
             enhanced_features: Enhanced feature set from enhanced_mr_features.py
         """
+        # Enforce single-active-per-symbol for MR phantom (non-executed) signals
+        if symbol in self.active_mr_phantoms and not was_executed:
+            logger.info(f"[{symbol}] MR phantom blocked: active trade in progress")
+            self._incr_blocked()
+            return self.active_mr_phantoms[symbol]
+
         # Extract range information from signal meta
         meta = signal.get('meta', {})
         range_upper = meta.get('range_upper')
@@ -278,8 +295,9 @@ class MRPhantomTracker:
             strategy_name="enhanced_mr"
         )
 
-        # Store as active phantom
-        self.active_mr_phantoms[symbol] = phantom
+        # Only set active for phantom (non-executed) records
+        if not was_executed:
+            self.active_mr_phantoms[symbol] = phantom
 
         # Initialize list if needed
         if symbol not in self.mr_phantom_trades:

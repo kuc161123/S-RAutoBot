@@ -196,6 +196,18 @@ class PhantomTradeTracker:
         """Register a callback to receive phantom trade events."""
         self.notifier = notifier
 
+    def _incr_blocked(self, strategy: str = 'pullback'):
+        """Increment daily blocked-counter in Redis for visibility."""
+        if not self.redis_client:
+            return
+        try:
+            from datetime import datetime as _dt
+            day = _dt.utcnow().strftime('%Y%m%d')
+            self.redis_client.incr(f'phantom:blocked:{day}')
+            self.redis_client.incr(f'phantom:blocked:{day}:{strategy}')
+        except Exception:
+            pass
+
     def record_signal(self, symbol: str, signal: dict, ml_score: float, 
                      was_executed: bool, features: dict, strategy_name: str = "unknown") -> PhantomTrade:
         """
@@ -224,6 +236,13 @@ class PhantomTradeTracker:
         except Exception:
             pass
 
+        # Enforce single-active-per-symbol for phantom (non-executed) trades
+        if symbol in self.active_phantoms and not was_executed:
+            logger.info(f"[{symbol}] Phantom blocked: active trade in progress (strategy={strategy_name})")
+            self._incr_blocked(strategy_name if strategy_name else 'pullback')
+            # Do not overwrite the active phantom; return the existing one
+            return self.active_phantoms[symbol]
+
         phantom = PhantomTrade(
             symbol=symbol,
             side=signal['side'],
@@ -237,8 +256,9 @@ class PhantomTradeTracker:
             strategy_name=strategy_name
         )
         
-        # Store as active phantom
-        self.active_phantoms[symbol] = phantom
+        # Only set as active if this is a phantom (non-executed) record
+        if not was_executed:
+            self.active_phantoms[symbol] = phantom
         
         # Initialize list if needed
         if symbol not in self.phantom_trades:
@@ -249,7 +269,7 @@ class PhantomTradeTracker:
         logger.info(f"[{symbol}] Phantom trade recorded: {status} - "
                    f"Entry: {signal['entry']:.4f}, TP: {signal['tp']:.4f}, SL: {signal['sl']:.4f}")
         
-        # Save to Redis
+        # Save to Redis (only active set changed for phantom; still OK to write unified snapshot)
         self._save_to_redis()
         
         return phantom

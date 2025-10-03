@@ -621,6 +621,10 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
         # Basic confirmation
         if df["close"].iloc[-1] > df["open"].iloc[-1]:
             state.confirmation_count += 1
+            try:
+                logger.info(f"{symbol}: HL confirmation {state.confirmation_count}/{settings.confirmation_candles}")
+            except Exception:
+                pass
         
         if state.confirmation_count >= settings.confirmation_candles:
             # Generate LONG signal - no filtering!
@@ -713,6 +717,10 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
         # Basic confirmation
         if df["close"].iloc[-1] < df["open"].iloc[-1]:
             state.confirmation_count += 1
+            try:
+                logger.info(f"{symbol}: LH confirmation {state.confirmation_count}/{settings.confirmation_candles}")
+            except Exception:
+                pass
         
         if state.confirmation_count >= settings.confirmation_candles:
             # Generate SHORT signal - no filtering!

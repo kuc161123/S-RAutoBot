@@ -1755,6 +1755,10 @@ class TradingBot:
                         elif regime_analysis.recommended_strategy == "pullback":
                             # Use Pullback System
                             logger.debug(f"🔵 [{sym}] PULLBACK STRATEGY ANALYSIS:")
+                            try:
+                                logger.info(f"🔵 [{sym}] PULLBACK STRUCTURE: checking breakout and HL/LH")
+                            except Exception:
+                                pass
                             sig = get_pullback_signals(df.copy(), settings, sym)
                             selected_strategy = "pullback"
                             selected_ml_scorer = ml_scorer

@@ -1974,7 +1974,18 @@ class TradingBot:
                                                 allow_high = bool(pb_explore.get('allow_volatility_high', True))
                                                 ts = float(feats.get('trend_strength', 0))
                                                 conf = float(feats.get('confirmation_candle_strength', 0))
+                                                # Derive a conservative MTF/SR strength proxy if mtf_level_strength is missing
                                                 mtf = float(feats.get('mtf_level_strength', 0))
+                                                if mtf <= 0:
+                                                    # Use support_resistance_strength (0..5) normalized
+                                                    srs = float(feats.get('support_resistance_strength', 0))
+                                                    mtf = min(1.0, max(0.0, srs / 5.0))
+                                                    # Consider near_major flags as a strong signal
+                                                    try:
+                                                        if int(feats.get('near_major_resistance', 0)) == 1 or int(feats.get('near_major_support', 0)) == 1:
+                                                            mtf = max(mtf, 1.0)
+                                                    except Exception:
+                                                        pass
                                                 vol_reg = getattr(regime_analysis, 'volatility_level', 'normal')
                                                 if ts < ts_min:
                                                     meets_gate = False; reasons.append(f"trend {ts:.1f}<{ts_min}")

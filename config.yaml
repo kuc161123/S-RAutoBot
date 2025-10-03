@@ -98,7 +98,7 @@ pullback:
     confirmation_strength_min: 0.2 # lightweight confirmation for exploration
     mtf_level_strength_min: 0.5    # accept weaker MTF levels in exploration
     allow_volatility_high: true
-    enable_virtual_snapshots: false
+    enable_virtual_snapshots: true
     snapshots_delta: 5
 
 # Mean Reversion exploration (phantom-only loosening; execution remains strict)
@@ -111,7 +111,7 @@ mr:
     rev_candle_atr_min: 1.0        # reversal candle size in ATR
     allow_volatility_high: true
     timeout_hours: 36              # shorter phantom timeout for faster labels
-    enable_virtual_snapshots: false
+    enable_virtual_snapshots: true
     snapshots_delta: 5
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}

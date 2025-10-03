@@ -3102,6 +3102,13 @@ class TGBot:
                 blocked_pb = int(r.get(f'phantom:blocked:{day}:pullback') or 0)
                 blocked_mr = int(r.get(f'phantom:blocked:{day}:mr') or 0)
                 blocked_scalp = int(r.get(f'phantom:blocked:{day}:scalp') or 0)
+                # Flow controller stats (accepted and relax per strategy)
+                pb_acc = int(r.get(f'phantom:flow:{day}:pullback:accepted') or 0)
+                mr_acc = int(r.get(f'phantom:flow:{day}:mr:accepted') or 0)
+                sc_acc = int(r.get(f'phantom:flow:{day}:scalp:accepted') or 0)
+                pb_relax = float(r.get(f'phantom:flow:{day}:pullback:relax') or 0.0)
+                mr_relax = float(r.get(f'phantom:flow:{day}:mr:relax') or 0.0)
+                sc_relax = float(r.get(f'phantom:flow:{day}:scalp:relax') or 0.0)
             except Exception:
                 pass
 
@@ -3130,6 +3137,19 @@ class TGBot:
                 f"• WR routing=allowed: {wr_allowed:.1f}%",
                 f"• Blocked today: {blocked_total} (PB {blocked_pb}, MR {blocked_mr}, Scalp {blocked_scalp})",
             ]
+            # Append flow controller section if available
+            try:
+                pf = cfg.get('phantom_flow', {})
+                if pf.get('enabled', False):
+                    targets = pf.get('daily_target', {'pullback':40,'mr':40,'scalp':40})
+                    lines.extend([
+                        "\n🎛️ *Flow Controller* (phantom-only)",
+                        f"• Pullback: {locals().get('pb_acc',0)}/{targets.get('pullback',0)} (relax {locals().get('pb_relax',0.0)*100:.0f}%)",
+                        f"• Mean Reversion: {locals().get('mr_acc',0)}/{targets.get('mr',0)} (relax {locals().get('mr_relax',0.0)*100:.0f}%)",
+                        f"• Scalp: {locals().get('sc_acc',0)}/{targets.get('scalp',0)} (relax {locals().get('sc_relax',0.0)*100:.0f}%)",
+                    ])
+            except Exception:
+                pass
             await self.safe_reply(update, "\n".join(lines))
         except Exception as e:
             logger.error(f"Error in phantom_qa: {e}")

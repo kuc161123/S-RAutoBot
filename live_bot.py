@@ -130,6 +130,134 @@ def replace_env_vars(config:dict) -> dict:
     
     return {k: replace_in_value(v) for k, v in config.items()}
 
+# --- Adaptive Phantom Flow Controller (phantom-only) ---
+class FlowController:
+    """Adaptive controller to hit daily phantom targets per strategy.
+
+    Computes a relax ratio r in [0,1] based on pace vs. target and applies
+    bounded adjustments to phantom exploration gates. Execution rules remain unchanged.
+    """
+    def __init__(self, cfg: dict, redis_client=None):
+        self.cfg = cfg or {}
+        self.enabled = bool(self.cfg.get('phantom_flow', {}).get('enabled', False))
+        pf = self.cfg.get('phantom_flow', {})
+        self.targets = pf.get('daily_target', {'pullback': 40, 'mr': 40, 'scalp': 40})
+        self.smoothing_hours = int(pf.get('smoothing_hours', 3))
+        self.limits = pf.get('relax_limits', {})
+        self.guards = pf.get('min_quality_guards', {})
+        self.redis = redis_client
+        if self.redis is None:
+            # Best-effort local init; safe to fail if REDIS_URL not present
+            try:
+                import redis as _redis, os as _os
+                url = _os.getenv('REDIS_URL')
+                if url:
+                    self.redis = _redis.from_url(url, decode_responses=True)
+                    self.redis.ping()
+            except Exception:
+                self.redis = None
+
+    def _day(self):
+        from datetime import datetime as _dt
+        return _dt.utcnow().strftime('%Y%m%d')
+
+    def _get(self, key: str, default: float = 0.0) -> float:
+        if not self.redis:
+            return default
+        try:
+            v = self.redis.get(key)
+            return float(v) if v is not None else default
+        except Exception:
+            return default
+
+    def _set(self, key: str, value: float):
+        if not self.redis:
+            return
+        try:
+            self.redis.set(key, value)
+        except Exception:
+            pass
+
+    def increment_accepted(self, strategy: str, amount: int = 1):
+        if not self.redis or not self.enabled:
+            return
+        try:
+            day = self._day()
+            self.redis.incrby(f'phantom:flow:{day}:{strategy}:accepted', amount)
+        except Exception:
+            pass
+
+    def _relax_ratio(self, strategy: str) -> float:
+        if not self.enabled:
+            return 0.0
+        day = self._day()
+        if not self.redis:
+            return 0.0
+        try:
+            accepted = int(self.redis.get(f'phantom:flow:{day}:{strategy}:accepted') or 0)
+        except Exception:
+            accepted = 0
+        # Compute pace target by hours elapsed
+        from datetime import datetime as _dt
+        hours_elapsed = max(1, _dt.utcnow().hour)
+        target = float(self.targets.get(strategy, 40))
+        pace_target = target * min(1.0, hours_elapsed / 24.0)
+        deficit = max(0.0, pace_target - float(accepted))
+        base_r = min(1.0, deficit / max(1.0, target * 0.5))
+        # Simple EMA smoothing using stored state
+        key = f'phantom:flow:{day}:{strategy}:relax'
+        prev = self._get(key, 0.0)
+        # alpha ~ 1/smoothing_hours (bounded)
+        alpha = max(0.2, min(1.0, 1.0 / max(1, self.smoothing_hours)))
+        r = prev * (1 - alpha) + base_r * alpha
+        self._set(key, r)
+        return float(max(0.0, min(1.0, r)))
+
+    # --- Per-strategy gate adjustments ---
+    def adjust_pullback(self, trend_min: float, confirm_min: float, mtf_min: float) -> Dict[str, float]:
+        r = self._relax_ratio('pullback')
+        lim = self.limits.get('pullback', {})
+        g = self.guards.get('pullback', {})
+        trend_adj = trend_min - r * float(lim.get('trend', 0.0))
+        confirm_adj = confirm_min - r * float(lim.get('confirm', 0.0))
+        mtf_adj = mtf_min - r * float(lim.get('mtf', 0.0))
+        # Apply guards
+        trend_adj = max(float(g.get('trend_min', 0.0)), trend_adj)
+        confirm_adj = max(float(g.get('confirm_min', 0.0)), confirm_adj)
+        mtf_adj = max(float(g.get('mtf_min', 0.0)), mtf_adj)
+        return {'trend_min': trend_adj, 'confirm_min': confirm_adj, 'mtf_min': mtf_adj, 'relax': r}
+
+    def adjust_mr(self, rc_min: float, touches_min: int, dist_mid_min: float, rev_min: float) -> Dict[str, float]:
+        r = self._relax_ratio('mr')
+        lim = self.limits.get('mr', {})
+        g = self.guards.get('mr', {})
+        rc_adj = rc_min - r * float(lim.get('rc', 0.0))
+        touches_adj = touches_min - int(round(r * float(lim.get('touches', 0.0))))
+        dist_adj = dist_mid_min - r * float(lim.get('dist_mid_atr', 0.0))
+        rev_adj = rev_min - r * float(lim.get('rev_atr', 0.0))
+        # Apply guards
+        rc_adj = max(float(g.get('rc_min', 0.0)), rc_adj)
+        touches_adj = max(int(g.get('touches_min', 0)), touches_adj)
+        dist_adj = max(float(g.get('dist_mid_atr_min', 0.0)), dist_adj)
+        rev_adj = max(float(g.get('rev_candle_atr_min', 0.0)), rev_adj)
+        return {'rc_min': rc_adj, 'touches_min': touches_adj, 'dist_mid_min': dist_adj, 'rev_min': rev_adj, 'relax': r}
+
+    def adjust_scalp(self, sc_settings):
+        """Mutate a ScalpSettings instance using relax ratio."""
+        r = self._relax_ratio('scalp')
+        lim = self.limits.get('scalp', {})
+        g = self.guards.get('scalp', {})
+        try:
+            sc_settings.vwap_dist_atr_max = min(float(g.get('vwap_dist_atr_max', sc_settings.vwap_dist_atr_max)),
+                                                sc_settings.vwap_dist_atr_max + r * float(lim.get('vwap_dist_atr', 0.0)))
+            sc_settings.min_bb_width_pct = max(float(g.get('min_bb_width_pct', 0.0)),
+                                               sc_settings.min_bb_width_pct - r * float(lim.get('bb_width_pct', 0.0)))
+            sc_settings.vol_ratio_min = max(float(g.get('vol_ratio_min', 0.0)),
+                                            sc_settings.vol_ratio_min - r * float(lim.get('vol_ratio', 0.0)))
+        except Exception:
+            pass
+        return sc_settings
+
 class TradingBot:
     def __init__(self):
         self.running = False
@@ -241,6 +369,12 @@ class TradingBot:
                             sc_settings.vwap_dist_atr_max = float(exp.get('vwap_dist_atr_max', sc_settings.vwap_dist_atr_max))
                             sc_settings.min_bb_width_pct = float(exp.get('min_bb_width_pct', sc_settings.min_bb_width_pct))
                             sc_settings.vol_ratio_min = float(exp.get('vol_ratio_min', sc_settings.vol_ratio_min))
+                    except Exception:
+                        pass
+                    # Apply adaptive flow relax on top of config (phantom-only)
+                    try:
+                        if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                            sc_settings = self.flow_controller.adjust_scalp(sc_settings)
                     except Exception:
                         pass
                     sc_sig = detect_scalp_signal(self.frames_3m[sym].copy(), sc_settings, sym)
@@ -1393,6 +1527,13 @@ class TradingBot:
             cfg["bybit"]["api_key"], 
             cfg["bybit"]["api_secret"]
         ))
+
+        # Initialize adaptive phantom flow controller (phantom-only)
+        try:
+            flow_ctrl = FlowController(cfg, getattr(phantom_tracker, 'redis_client', None) if 'phantom_tracker' in locals() else None)
+        except Exception:
+            flow_ctrl = FlowController(cfg, None)
+        self.flow_controller = flow_ctrl
         
         # Test connection
         balance = bybit.get_balance()
@@ -1485,6 +1626,8 @@ class TradingBot:
             "mean_reversion_scorer": mean_reversion_scorer,
             "phantom_tracker": phantom_tracker,
             "use_enhanced_parallel": use_enhanced_parallel,
+            # Phantom flow controller (adaptive phantom-only acceptance)
+            "flow_controller": flow_ctrl,
             # Simple telemetry counters
             "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0}
         }
@@ -1961,11 +2104,21 @@ class TradingBot:
                                     reasons = []
                                     try:
                                         if exploration_enabled and mr_explore.get('enabled', True):
-                                            rc_min = float(mr_explore.get('rc_min', 0.70))
-                                            touches_min = int(mr_explore.get('touches_min', 6))
-                                            dist_mid_min = float(mr_explore.get('dist_mid_atr_min', 0.60))
-                                            rev_min = float(mr_explore.get('rev_candle_atr_min', 1.0))
+                                            base_rc_min = float(mr_explore.get('rc_min', 0.70))
+                                            base_touches_min = int(mr_explore.get('touches_min', 6))
+                                            base_dist_mid_min = float(mr_explore.get('dist_mid_atr_min', 0.60))
+                                            base_rev_min = float(mr_explore.get('rev_candle_atr_min', 1.0))
                                             allow_high = bool(mr_explore.get('allow_volatility_high', True))
+                                            # Apply adaptive relax (phantom-only)
+                                            rc_min = base_rc_min; touches_min = base_touches_min
+                                            dist_mid_min = base_dist_mid_min; rev_min = base_rev_min
+                                            try:
+                                                if self.flow_controller and self.flow_controller.enabled:
+                                                    adj = self.flow_controller.adjust_mr(rc_min, touches_min, dist_mid_min, rev_min)
+                                                    rc_min = adj['rc_min']; touches_min = adj['touches_min']
+                                                    dist_mid_min = adj['dist_mid_min']; rev_min = adj['rev_min']
+                                            except Exception:
+                                                pass
                                             rc = float(ef.get('range_confidence', 0))
                                             touches = float(ef.get('touch_count_sr', 0))
                                             dist_mid = float(ef.get('distance_from_midpoint_atr', 0))
@@ -1989,6 +2142,12 @@ class TradingBot:
                                         logger.info(f"[{sym}] 👻 Phantom-only (MR none): {sig_mr.side.upper()} @ {sig_mr.entry:.4f}")
                                         if mr_phantom_tracker:
                                             mr_phantom_tracker.record_mr_signal(sym, sig_mr.__dict__, 0.0, False, {}, ef)
+                                            # Count accepted MR phantom for flow pacing
+                                            try:
+                                                if self.flow_controller:
+                                                    self.flow_controller.increment_accepted('mr', 1)
+                                            except Exception:
+                                                pass
                                             _increment_daily(sym, cluster_id, 'none')
                                         budget.append(now_ts)
                                         recorded += 1
@@ -2012,10 +2171,18 @@ class TradingBot:
                                         reasons = []
                                         try:
                                             if exploration_enabled and pb_explore.get('enabled', True):
-                                                ts_min = float(pb_explore.get('trend_strength_min', 50))
-                                                conf_min = float(pb_explore.get('confirmation_strength_min', 0.2))
-                                                mtf_min = float(pb_explore.get('mtf_level_strength_min', 0.5))
+                                                base_ts_min = float(pb_explore.get('trend_strength_min', 50))
+                                                base_conf_min = float(pb_explore.get('confirmation_strength_min', 0.2))
+                                                base_mtf_min = float(pb_explore.get('mtf_level_strength_min', 0.5))
                                                 allow_high = bool(pb_explore.get('allow_volatility_high', True))
+                                                # Apply adaptive relax (phantom-only)
+                                                ts_min = base_ts_min; conf_min = base_conf_min; mtf_min = base_mtf_min
+                                                try:
+                                                    if self.flow_controller and self.flow_controller.enabled:
+                                                        adj = self.flow_controller.adjust_pullback(ts_min, conf_min, mtf_min)
+                                                        ts_min = adj['trend_min']; conf_min = adj['confirm_min']; mtf_min = adj['mtf_min']
+                                                except Exception:
+                                                    pass
                                                 ts = float(feats.get('trend_strength', 0))
                                                 conf = float(feats.get('confirmation_candle_strength', 0))
                                                 # Derive a conservative MTF/SR strength proxy if mtf_level_strength is missing
@@ -2054,6 +2221,12 @@ class TradingBot:
                                                     features=feats,
                                                     strategy_name='pullback'
                                                 )
+                                                # Count accepted Pullback phantom for flow pacing
+                                                try:
+                                                    if self.flow_controller:
+                                                        self.flow_controller.increment_accepted('pullback', 1)
+                                                except Exception:
+                                                    pass
                                                 _increment_daily(sym, cluster_id, 'none')
                                             budget.append(now_ts)
                                             recorded += 1
@@ -2098,6 +2271,12 @@ class TradingBot:
                                                     False,
                                                     sc_feats
                                                 )
+                                                # Count accepted Scalp phantom for flow pacing
+                                                try:
+                                                    if hasattr(self, 'flow_controller') and self.flow_controller:
+                                                        self.flow_controller.increment_accepted('scalp', 1)
+                                                except Exception:
+                                                    pass
                                             except Exception:
                                                 pass
                                             # Scalp is exempt from daily caps; do not increment daily counters

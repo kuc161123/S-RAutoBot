@@ -126,6 +126,43 @@ phantom:
   # Virtual snapshot settings (for calibration around threshold)
   enable_virtual_snapshots: false
   virtual_snapshots_delta: 5   # Create variants at (threshold ± delta)
+
+# Adaptive daily phantom flow controller (phantom-only; execution unaffected)
+phantom_flow:
+  enabled: true
+  daily_target:
+    pullback: 40
+    mr: 40
+    scalp: 40
+  smoothing_hours: 3
+  relax_limits:
+    pullback:
+      trend: 10.0           # reduce trend_min by up to 10 points
+      confirm: 0.10         # reduce confirmation_min by up to 0.10
+      mtf: 0.20             # reduce mtf_min by up to 0.20
+    mr:
+      rc: 0.20              # reduce rc_min by up to 0.20
+      touches: 2            # reduce touches_min by up to 2
+      dist_mid_atr: 0.30    # reduce dist_mid_atr_min by up to 0.30
+      rev_atr: 0.30         # reduce rev_candle_atr_min by up to 0.30
+    scalp:
+      vwap_dist_atr: 0.40   # increase vwap_dist_atr_max by up to 0.40
+      bb_width_pct: 0.20    # reduce min_bb_width_pct by up to 0.20
+      vol_ratio: 0.30       # reduce vol_ratio_min by up to 0.30
+  min_quality_guards:
+    pullback:
+      trend_min: 30.0
+      confirm_min: 0.05
+      mtf_min: 0.20
+    mr:
+      rc_min: 0.45
+      touches_min: 3
+      dist_mid_atr_min: 0.30
+      rev_candle_atr_min: 0.70
+    scalp:
+      vwap_dist_atr_max: 1.20
+      min_bb_width_pct: 0.40
+      vol_ratio_min: 0.90
 scalp:
   enabled: true
   timeframe: 3           # Future: stream 3m for scalps; current uses main tf

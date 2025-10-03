@@ -315,6 +315,55 @@ class TradingBot:
                 logger.info("Auto-saved all candles to database")
         except Exception as e:
             logger.error(f"Failed to auto-save candles: {e}")
+
+    async def backfill_frames_3m(self, symbols: list[str], use_api_fallback: bool = True, limit: int = 200):
+        """Backfill 3m frames from DB; if missing and allowed, fetch from Bybit REST.
+
+        - Loads up to `limit` recent 3m candles from the database for each symbol.
+        - If no 3m data is present and API fallback is enabled, fetch recent 3m klines
+          via REST and seed frames_3m, then persist to the 3m table.
+        """
+        loaded_db = 0
+        fetched_api = 0
+        for idx, symbol in enumerate(symbols):
+            try:
+                df3 = self.storage.load_candles_3m(symbol, limit=limit)
+                if df3 is not None and not df3.empty:
+                    self.frames_3m[symbol] = df3.tail(1000)
+                    loaded_db += 1
+                    continue
+                if not use_api_fallback:
+                    continue
+                # Rate-limit API calls lightly for many symbols
+                if idx > 0 and len(symbols) > 25:
+                    await asyncio.sleep(0.05)
+                # Fetch recent 3m klines from REST (max 200 per request)
+                kl = self.bybit.get_klines(symbol, '3', limit=limit)
+                if kl:
+                    data = []
+                    for k in kl:
+                        data.append({
+                            'open': float(k[1]),
+                            'high': float(k[2]),
+                            'low': float(k[3]),
+                            'close': float(k[4]),
+                            'volume': float(k[5])
+                        })
+                    import pandas as pd
+                    df = pd.DataFrame(data)
+                    df.index = pd.to_datetime([int(k[0]) for k in kl], unit='ms', utc=True)
+                    df.sort_index(inplace=True)
+                    self.frames_3m[symbol] = df.tail(1000)
+                    # Persist to 3m table for future startups
+                    self.storage.save_candles_3m(symbol, df)
+                    fetched_api += 1
+            except Exception as e:
+                logger.debug(f"3m backfill error for {symbol}: {e}")
+                continue
+        if loaded_db or fetched_api:
+            logger.info(f"🩳 3m backfill complete: DB={loaded_db} symbols, API={fetched_api} symbols")
+        else:
+            logger.info("🩳 3m backfill: no data found (DB empty, API disabled or unavailable)")
     
     def record_closed_trade(self, symbol: str, pos: Position, exit_price: float, exit_reason: str, leverage: float = 1.0):
         """Record a closed trade to history"""
@@ -1210,6 +1259,17 @@ class TradingBot:
             mtf_update_interval = cfg["trade"].get("mtf_update_interval", 100)
             mtf_sr.update_interval = mtf_update_interval
             logger.info(f"MTF S/R update interval set to {mtf_update_interval} candles")
+
+            # Backfill 3m frames for scalper if enabled before analysis begins
+            try:
+                scalp_cfg = cfg.get('scalp', {})
+                use_scalp = bool(scalp_cfg.get('enabled', False) and SCALP_AVAILABLE)
+                if use_scalp:
+                    await self.backfill_frames_3m(symbols, use_api_fallback=True, limit=200)
+                else:
+                    logger.debug("Scalp disabled in config; skipping 3m backfill")
+            except Exception as e:
+                logger.warning(f"3m backfill skipped due to error: {e}")
             
             # Initialize all S/R levels
             sr_results = initialize_all_sr_levels(self.frames)

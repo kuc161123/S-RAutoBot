@@ -971,7 +971,7 @@ class TGBot:
                 lines.append("")
                 lines.append("🩳 *Scalp ML*")
                 lines.append(f"• Samples: {getattr(sc_scorer, 'completed_trades', 0)}")
-                ready = '✅ Ready' if getattr(sc_scorer, 'is_ml_ready', False) else '⏳ Training"
+                ready = '✅ Ready' if getattr(sc_scorer, 'is_ml_ready', False) else '⏳ Training'
                 lines.append(f"• Status: {ready}")
                 lines.append(f"• Threshold: {getattr(sc_scorer, 'min_score', 75):.0f}")
             except Exception as exc:

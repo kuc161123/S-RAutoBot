@@ -85,6 +85,34 @@ trade:
   ml_risk_max_percent: 4.0
   use_regime_switching: false
   use_enhanced_parallel: true
+
+# Global exploration toggle
+exploration:
+  enabled: true
+
+# Pullback exploration (phantom-only loosening; execution remains strict)
+pullback:
+  explore:
+    enabled: true
+    trend_strength_min: 50         # min trend strength for phantom-only
+    confirmation_strength_min: 0.2 # lightweight confirmation for exploration
+    mtf_level_strength_min: 0.5    # accept weaker MTF levels in exploration
+    allow_volatility_high: true
+    enable_virtual_snapshots: false
+    snapshots_delta: 5
+
+# Mean Reversion exploration (phantom-only loosening; execution remains strict)
+mr:
+  explore:
+    enabled: true
+    rc_min: 0.70                   # range_confidence minimum for exploration
+    touches_min: 6                 # min S/R touches
+    dist_mid_atr_min: 0.60         # distance from midpoint in ATR
+    rev_candle_atr_min: 1.0        # reversal candle size in ATR
+    allow_volatility_high: true
+    timeout_hours: 36              # shorter phantom timeout for faster labels
+    enable_virtual_snapshots: false
+    snapshots_delta: 5
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}

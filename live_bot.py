@@ -1078,6 +1078,11 @@ class TradingBot:
         use_enhanced_parallel = cfg["trade"].get("use_enhanced_parallel", True) and ENHANCED_ML_AVAILABLE
         use_regime_switching = cfg["trade"].get("use_regime_switching", False)
 
+        # Exploration flags (phantom-only loosening per strategy)
+        exploration_enabled = bool(cfg.get('exploration', {}).get('enabled', True))
+        pb_explore = cfg.get('pullback', {}).get('explore', {})
+        mr_explore = cfg.get('mr', {}).get('explore', {})
+
         # Phantom config
         phantom_cfg = cfg.get('phantom', {})
         phantom_none_cap = int(phantom_cfg.get('none_cap', 50))
@@ -1271,6 +1276,13 @@ class TradingBot:
                     logger.debug("Scalp disabled in config; skipping 3m backfill")
             except Exception as e:
                 logger.warning(f"3m backfill skipped due to error: {e}")
+            # Apply MR phantom timeout override from config (exploration)
+            try:
+                if mr_explore and 'timeout_hours' in mr_explore and mr_phantom_tracker is not None:
+                    mr_phantom_tracker.timeout_hours = int(mr_explore['timeout_hours'])
+                    logger.info(f"MR phantom timeout set to {mr_phantom_tracker.timeout_hours}h (exploration)")
+            except Exception as e:
+                logger.debug(f"Could not set MR phantom timeout: {e}")
 
             # Note: main timeframe backfill intentionally not applied (per user request)
             
@@ -1777,22 +1789,52 @@ class TradingBot:
                             caps_reached = _daily_capped(sym, cluster_id)
                             if caps_reached:
                                 logger.debug(f"[{sym}] Daily phantom caps reached; MR/PB phantom skipped; scalp still allowed")
-                            # Try MR phantom
+                            # Try MR phantom (exploration gating)
                             try:
                                 sig_mr = detect_signal_mean_reversion(df.copy(), settings, sym)
                                 if (not caps_reached) and sig_mr and _not_duplicate(sym, sig_mr):
                                     ef = sig_mr.meta.get('mr_features', {}).copy() if sig_mr.meta else {}
                                     ef['routing'] = 'none'
-                                    logger.info(f"[{sym}] 👻 Phantom-only (MR none): {sig_mr.side.upper()} @ {sig_mr.entry:.4f}")
-                                    if mr_phantom_tracker:
-                                        mr_phantom_tracker.record_mr_signal(sym, sig_mr.__dict__, 0.0, False, {}, ef)
-                                        _increment_daily(sym, cluster_id, 'none')
-                                    budget.append(now_ts)
-                                    recorded += 1
+                                    # Exploration gate (phantom-only) — high-vol allowed if configured
+                                    meets_gate = True
+                                    reasons = []
+                                    try:
+                                        if exploration_enabled and mr_explore.get('enabled', True):
+                                            rc_min = float(mr_explore.get('rc_min', 0.70))
+                                            touches_min = int(mr_explore.get('touches_min', 6))
+                                            dist_mid_min = float(mr_explore.get('dist_mid_atr_min', 0.60))
+                                            rev_min = float(mr_explore.get('rev_candle_atr_min', 1.0))
+                                            allow_high = bool(mr_explore.get('allow_volatility_high', True))
+                                            rc = float(ef.get('range_confidence', 0))
+                                            touches = float(ef.get('touch_count_sr', 0))
+                                            dist_mid = float(ef.get('distance_from_midpoint_atr', 0))
+                                            rev_atr = float(ef.get('reversal_candle_size_atr', 0))
+                                            vol_reg = getattr(regime_analysis, 'volatility_level', 'normal')
+                                            if rc < rc_min:
+                                                meets_gate = False; reasons.append(f"rc {rc:.2f}<{rc_min}")
+                                            if touches < touches_min:
+                                                meets_gate = False; reasons.append(f"touches {touches:.0f}<{touches_min}")
+                                            if dist_mid < dist_mid_min:
+                                                meets_gate = False; reasons.append(f"edge {dist_mid:.2f}<{dist_mid_min}")
+                                            if rev_atr < rev_min:
+                                                meets_gate = False; reasons.append(f"rev {rev_atr:.2f}<{rev_min}")
+                                            if vol_reg == 'high' and not allow_high:
+                                                meets_gate = False; reasons.append("vol=high disallowed")
+                                    except Exception:
+                                        pass
+                                    if not meets_gate:
+                                        logger.info(f"[{sym}] 👻 MR explore skip: {', '.join(reasons) if reasons else 'gate fail'}")
+                                    else:
+                                        logger.info(f"[{sym}] 👻 Phantom-only (MR none): {sig_mr.side.upper()} @ {sig_mr.entry:.4f}")
+                                        if mr_phantom_tracker:
+                                            mr_phantom_tracker.record_mr_signal(sym, sig_mr.__dict__, 0.0, False, {}, ef)
+                                            _increment_daily(sym, cluster_id, 'none')
+                                        budget.append(now_ts)
+                                        recorded += 1
                             except Exception:
                                 pass
 
-                            # Try Pullback phantom if budget remains
+                            # Try Pullback phantom if budget remains (exploration gating)
                             if (not caps_reached) and recorded < remaining:
                                 try:
                                     sig_pb = get_pullback_signals(df.copy(), settings, sym)
@@ -1804,19 +1846,45 @@ class TradingBot:
                                         retracement = sig_pb.entry
                                         feats = calculate_ml_features(df, state, sig_pb.side, retracement)
                                         feats['routing'] = 'none'
-                                        logger.info(f"[{sym}] 👻 Phantom-only (Pullback none): {sig_pb.side.upper()} @ {sig_pb.entry:.4f}")
-                                        if phantom_tracker:
-                                            phantom_tracker.record_signal(
-                                                symbol=sym,
-                                                signal={'side': sig_pb.side, 'entry': sig_pb.entry, 'sl': sig_pb.sl, 'tp': sig_pb.tp},
-                                                ml_score=0.0,
-                                                was_executed=False,
-                                                features=feats,
-                                                strategy_name='pullback'
-                                            )
-                                            _increment_daily(sym, cluster_id, 'none')
-                                        budget.append(now_ts)
-                                        recorded += 1
+                                        # Exploration gate for Pullback
+                                        meets_gate = True
+                                        reasons = []
+                                        try:
+                                            if exploration_enabled and pb_explore.get('enabled', True):
+                                                ts_min = float(pb_explore.get('trend_strength_min', 50))
+                                                conf_min = float(pb_explore.get('confirmation_strength_min', 0.2))
+                                                mtf_min = float(pb_explore.get('mtf_level_strength_min', 0.5))
+                                                allow_high = bool(pb_explore.get('allow_volatility_high', True))
+                                                ts = float(feats.get('trend_strength', 0))
+                                                conf = float(feats.get('confirmation_candle_strength', 0))
+                                                mtf = float(feats.get('mtf_level_strength', 0))
+                                                vol_reg = getattr(regime_analysis, 'volatility_level', 'normal')
+                                                if ts < ts_min:
+                                                    meets_gate = False; reasons.append(f"trend {ts:.1f}<{ts_min}")
+                                                if conf < conf_min:
+                                                    meets_gate = False; reasons.append(f"confirm {conf:.2f}<{conf_min}")
+                                                if mtf < mtf_min:
+                                                    meets_gate = False; reasons.append(f"mtf {mtf:.2f}<{mtf_min}")
+                                                if vol_reg == 'high' and not allow_high:
+                                                    meets_gate = False; reasons.append("vol=high disallowed")
+                                        except Exception:
+                                            pass
+                                        if not meets_gate:
+                                            logger.info(f"[{sym}] 👻 Pullback explore skip: {', '.join(reasons) if reasons else 'gate fail'}")
+                                        else:
+                                            logger.info(f"[{sym}] 👻 Phantom-only (Pullback none): {sig_pb.side.upper()} @ {sig_pb.entry:.4f}")
+                                            if phantom_tracker:
+                                                phantom_tracker.record_signal(
+                                                    symbol=sym,
+                                                    signal={'side': sig_pb.side, 'entry': sig_pb.entry, 'sl': sig_pb.sl, 'tp': sig_pb.tp},
+                                                    ml_score=0.0,
+                                                    was_executed=False,
+                                                    features=feats,
+                                                    strategy_name='pullback'
+                                                )
+                                                _increment_daily(sym, cluster_id, 'none')
+                                            budget.append(now_ts)
+                                            recorded += 1
                                 except Exception:
                                     pass
 
@@ -1872,34 +1940,41 @@ class TradingBot:
                                     logger.info("🩳 Scalp modules not available")
 
                             # Virtual snapshots around threshold if enabled
-                            if phantom_enable_virtual and recorded > 0:
+                            # Strategy-specific virtual snapshots (exploration)
+                            if recorded > 0:
                                 try:
                                     # Use available scorer thresholds; fallback to 75
                                     pb_thr = getattr(ml_scorer, 'min_score', 75) if ml_scorer else 75
                                     mr_thr = getattr(enhanced_mr_scorer, 'min_score', 75) if enhanced_mr_scorer else 75
-                                    for delta in (-phantom_virtual_delta, +phantom_virtual_delta):
-                                        vthr_pb = max(60, min(90, pb_thr + delta))
-                                        vthr_mr = max(60, min(90, mr_thr + delta))
-                                        # Duplicate last recorded phantoms with virtual_threshold tag
-                                        if sig_mr and mr_phantom_tracker and not _daily_capped(sym, cluster_id):
-                                            ef2 = ef.copy()
-                                            ef2['routing'] = 'none'
-                                            ef2['virtual_threshold'] = vthr_mr
-                                            mr_phantom_tracker.record_mr_signal(sym, sig_mr.__dict__, 0.0, False, {}, ef2)
-                                            _increment_daily(sym, cluster_id, 'none')
-                                        if sig_pb and phantom_tracker and not _daily_capped(sym, cluster_id):
-                                            feats2 = feats.copy()
-                                            feats2['routing'] = 'none'
-                                            feats2['virtual_threshold'] = vthr_pb
-                                            phantom_tracker.record_signal(
-                                                symbol=sym,
-                                                signal={'side': sig_pb.side, 'entry': sig_pb.entry, 'sl': sig_pb.sl, 'tp': sig_pb.tp},
-                                                ml_score=0.0,
-                                                was_executed=False,
-                                                features=feats2,
-                                                strategy_name='pullback'
-                                            )
-                                            _increment_daily(sym, cluster_id, 'none')
+                                    # Pullback snapshots
+                                    if exploration_enabled and pb_explore.get('enable_virtual_snapshots', False):
+                                        delta_pb = int(pb_explore.get('snapshots_delta', phantom_virtual_delta))
+                                        for delta in (-delta_pb, +delta_pb):
+                                            vthr_pb = max(60, min(90, pb_thr + delta))
+                                            if sig_pb and phantom_tracker and not _daily_capped(sym, cluster_id):
+                                                feats2 = feats.copy()
+                                                feats2['routing'] = 'none'
+                                                feats2['virtual_threshold'] = vthr_pb
+                                                phantom_tracker.record_signal(
+                                                    symbol=sym,
+                                                    signal={'side': sig_pb.side, 'entry': sig_pb.entry, 'sl': sig_pb.sl, 'tp': sig_pb.tp},
+                                                    ml_score=0.0,
+                                                    was_executed=False,
+                                                    features=feats2,
+                                                    strategy_name='pullback'
+                                                )
+                                                _increment_daily(sym, cluster_id, 'none')
+                                    # MR snapshots
+                                    if exploration_enabled and mr_explore.get('enable_virtual_snapshots', False):
+                                        delta_mr = int(mr_explore.get('snapshots_delta', phantom_virtual_delta))
+                                        for delta in (-delta_mr, +delta_mr):
+                                            vthr_mr = max(60, min(90, mr_thr + delta))
+                                            if sig_mr and mr_phantom_tracker and not _daily_capped(sym, cluster_id):
+                                                ef2 = ef.copy()
+                                                ef2['routing'] = 'none'
+                                                ef2['virtual_threshold'] = vthr_mr
+                                                mr_phantom_tracker.record_mr_signal(sym, sig_mr.__dict__, 0.0, False, {}, ef2)
+                                                _increment_daily(sym, cluster_id, 'none')
                                 except Exception:
                                     pass
 

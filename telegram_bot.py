@@ -280,7 +280,7 @@ class TGBot:
 
         help_text = f"""📚 *Bot Commands*
 
-📊 *Monitoring*
+📊 Monitoring
 /dashboard – Full bot overview
 /health – Data & heartbeat summary
 /status – Open positions snapshot
@@ -288,51 +288,54 @@ class TGBot:
 /symbols – Active trading universe
 /regime SYMBOL – Market regime for a symbol
 
-📈 *Performance & Analytics*
+📈 Analytics
 /stats [all|pullback|reversion] – Trade statistics
 /recent [limit] – Recent trade log
-/ml or /mlstatus – Pullback ML status
-/mlpatterns [strategy] – Learned ML patterns
-/phantom [strategy] – Phantom trade outcomes
-/evolution – ML evolution shadow book
 /analysis [symbol] – Recent analysis timestamps
-\n🧪 *Diagnostics*
-/telemetry – ML rejects and phantom outcomes
+/mlrankings – Symbol rankings by WR/PnL
 
-🚀 *Enhanced Parallel System*
+🤖 ML & Phantoms
+/ml or /mlstatus – Pullback ML status
+/enhancedmr – Enhanced MR ML status
+/mrphantom – MR phantom stats
+/phantom [strategy] – Phantom trade outcomes
+/phantomqa – Phantom caps & WR QA
+/scalpqa – Scalp phantom QA
+/scalppromote – Scalp promotion readiness
+/trainingstatus – Background training progress
+
+🧭 Regime & System
 /system – Parallel routing status
-/enhancedmr – Enhanced MR ML summary
-/mrphantom – MR phantom trades
-/parallel_performance – Compare strategies
 /regimeanalysis – Top regime signals
-/strategycomparison – Strategy performance table
+/strategycomparison – Strategy comparison table
+/parallel_performance – Compare strategy performance
 
-⚙️ *Risk Management*
+🧱 Support/Resistance
+/htf_sr [SYMBOL] – HTF S/R snapshot
+/update_htf_sr – Force HTF S/R update
+
+⚙️ Risk & Controls
 /risk – Current risk settings
-/riskpercent value – Set % risk (e.g. 2.5)
-/riskusd value – Set USD risk (e.g. 100)
-/setrisk amount – Flexible input ("3%" or "50")
+/riskpercent V – Set % risk (e.g., 2.5)
+/riskusd V – Set USD risk (e.g., 100)
+/setrisk amount – Flexible ("3%" or "50")
 /mlrisk – Toggle ML dynamic risk
 /mlriskrange min max – Dynamic risk bounds
+/panicclose SYMBOL – Emergency close
+/forceretrain – Force ML retrain
 
-🛠 *Controls*
-/panic_close or /panicclose SYMBOL – Emergency exit
-/forceretrain – Force ML retrain cycle
-/update_clusters – Refresh symbol clusters
+🧪 Diagnostics
+/telemetry – ML rejects and phantom outcomes
 
-🎯 *ML Training*
-/trainingstatus – Background training progress
-/mr_ml – MR ML statistics
-
-ℹ️ *Info*
+ℹ️ Info
 /start – Welcome
 /help – This menu
 
-📈 *Current Settings*
+📈 Current Settings
 • Risk per trade: {risk_label}
 • Max leverage: {risk_cfg.max_leverage}x
 • Timeframe: {timeframe} minutes
-• Strategies: Pullback ML & Mean Reversion
+• Strategies: Pullback ML, Mean Reversion, Scalp (phantom)
 """
         await self.safe_reply(update, help_text)
 
@@ -961,6 +964,28 @@ class TGBot:
                 except Exception as exc:
                     logger.debug(f"Unable to fetch MR ML stats: {exc}")
 
+            # Scalp ML + Scalp phantom sections
+            try:
+                from ml_scorer_scalp import get_scalp_scorer
+                sc_scorer = get_scalp_scorer()
+                lines.append("")
+                lines.append("🩳 *Scalp ML*")
+                lines.append(f"• Samples: {getattr(sc_scorer, 'completed_trades', 0)}")
+                ready = '✅ Ready' if getattr(sc_scorer, 'is_ml_ready', False) else '⏳ Training"
+                lines.append(f"• Status: {ready}")
+                lines.append(f"• Threshold: {getattr(sc_scorer, 'min_score', 75):.0f}")
+            except Exception as exc:
+                logger.debug(f"Scalp ML not available: {exc}")
+
+            try:
+                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                scpt = get_scalp_phantom_tracker()
+                st = scpt.get_scalp_phantom_stats()
+                lines.append("🩳 *Scalp Phantom*")
+                lines.append(f"• Recorded: {st.get('total', 0)} | WR: {st.get('wr', 0.0):.1f}%")
+            except Exception as exc:
+                logger.debug(f"Scalp phantom not available: {exc}")
+
             positions = book.positions if book else {}
             lines.append("")
             lines.append("📊 *Positions*")
@@ -1004,6 +1029,10 @@ class TGBot:
                      InlineKeyboardButton("📊 Symbols", callback_data="ui:symbols:0")],
                     [InlineKeyboardButton("🤖 ML", callback_data="ui:ml:main"),
                      InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:main")],
+                    [InlineKeyboardButton("🩳 Scalp QA", callback_data="ui:scalp:qa"),
+                     InlineKeyboardButton("🧪 Scalp Promote", callback_data="ui:scalp:promote")],
+                    [InlineKeyboardButton("🧱 HTF S/R", callback_data="ui:htf:status"),
+                     InlineKeyboardButton("🔄 Update S/R", callback_data="ui:htf:update")],
                     [InlineKeyboardButton("⚙️ Risk", callback_data="ui:risk:main"),
                      InlineKeyboardButton("🧭 Regime", callback_data="ui:regime:main")]
                 ]
@@ -1052,6 +1081,14 @@ class TGBot:
                 await query.answer()
                 fake_update = type('obj', (object,), {'message': query.message})
                 await self.phantom_qa(fake_update, ctx)
+            elif data.startswith("ui:scalp:qa"):
+                await query.answer()
+                fake_update = type('obj', (object,), {'message': query.message})
+                await self.scalp_qa(fake_update, ctx)
+            elif data.startswith("ui:scalp:promote"):
+                await query.answer()
+                fake_update = type('obj', (object,), {'message': query.message})
+                await self.scalp_promotion_status(fake_update, ctx)
             elif data.startswith("ui:ml:main"):
                 await query.answer()
                 ml = self.shared.get("ml_scorer")
@@ -1082,6 +1119,14 @@ class TGBot:
                 msg = "🧭 *Regime*"
                 # Keep minimal for now
                 await query.edit_message_text(msg, parse_mode='Markdown')
+            elif data.startswith("ui:htf:status"):
+                await query.answer()
+                fake_update = type('obj', (object,), {'message': query.message})
+                await self.htf_sr_status(fake_update, ctx)
+            elif data.startswith("ui:htf:update"):
+                await query.answer("Updating…")
+                fake_update = type('obj', (object,), {'message': query.message})
+                await self.update_htf_sr(fake_update, ctx)
             else:
                 await query.answer("Unknown action")
         except Exception as e:

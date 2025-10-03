@@ -1477,6 +1477,16 @@ class TradingBot:
                     def mr_notifier(trade, scope='Mean Reversion'):
                         self._create_task(self._notify_phantom_trade(scope, trade))
                     mr_phantom_tracker.set_notifier(mr_notifier)
+                # Wire scalp phantom notifications to Telegram (if scalp modules available)
+                try:
+                    if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
+                        scpt = get_scalp_phantom_tracker()
+                        if hasattr(scpt, 'set_notifier'):
+                            def scalp_notifier(trade, scope='Scalp'):
+                                self._create_task(self._notify_phantom_trade(scope, trade))
+                            scpt.set_notifier(scalp_notifier)
+                except Exception as e:
+                    logger.debug(f"Failed to set scalp notifier: {e}")
                 break  # Success
             except Exception as e:
                 if "Conflict" in str(e) and attempt < max_retries - 1:

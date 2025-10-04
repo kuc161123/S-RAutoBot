@@ -1479,7 +1479,8 @@ class TradingBot:
                                         except Exception:
                                             out.append(str(it)[:80])
                                     return out
-                                logger.info(f"🧪 Enhanced MR executed (diagnostic): count={total}, first={_fmt(first)}, last={_fmt(last)}")
+                                # Clarify this buffer contains executed trade records only
+                                logger.info(f"🧪 Enhanced MR trade records (executed buffer): count={total}, first={_fmt(first)}, last={_fmt(last)}")
                         # Optional clearing (disabled by default)
                         if bool(emr_cfg.get('clear_on_start', False)) and getattr(enhanced_mr_scorer, 'redis_client', None):
                             r = enhanced_mr_scorer.redis_client

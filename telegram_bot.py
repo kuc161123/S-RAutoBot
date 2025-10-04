@@ -220,6 +220,8 @@ class TGBot:
                 lines.append(f"• Status: {status}")
                 lines.append(f"• Trades (exec + phantom): {mr_info.get('total_combined', 0)}")
                 lines.append(f"• Next retrain in: {mr_info.get('trades_until_next_retrain', 0)} trades")
+                # Clarify executed vs phantom counts for transparency
+                lines.append(f"• Executed: {mr_info.get('completed_trades', 0)} | Phantom: {mr_info.get('phantom_count', 0)}")
             except Exception as exc:
                 logger.debug(f"Unable to fetch MR ML stats: {exc}")
 
@@ -643,6 +645,19 @@ class TGBot:
                 f"• Pullback: tracked {pb_total} (+{pb_active} active), WR { _wr(pb_wins, pb_total):.1f}%",
                 f"• Mean Reversion: tracked {mr_total} (+{mr_active} active), WR { _wr(mr_wins, mr_total):.1f}%",
                 f"• Scalp: tracked {sc_stats.get('total',0)}, WR {sc_stats.get('wr',0.0):.1f}%",
+            ])
+
+            # Add executed counts for clarity
+            try:
+                pb_exec = int(getattr(self.shared.get('ml_scorer'), 'completed_trades', 0)) if self.shared.get('ml_scorer') else 0
+            except Exception:
+                pb_exec = 0
+            try:
+                mr_exec = int(getattr(self.shared.get('enhanced_mr_scorer'), 'completed_trades', 0)) if self.shared.get('enhanced_mr_scorer') else 0
+            except Exception:
+                mr_exec = 0
+            lines.extend([
+                f"• Executed (PB/MR): {pb_exec}/{mr_exec}",
             ])
 
             # Flow controller status
@@ -1236,6 +1251,7 @@ class TGBot:
                         status = "Ready" if info.get('is_ml_ready') else 'Training'
                         msg += f"• Enhanced MR: {status} | Thresh: {getattr(emr, 'min_score', 'N/A')}\n"
                         msg += f"  Trades: {info.get('total_combined', 0)} | Next retrain in: {info.get('trades_until_next_retrain', 0)}\n"
+                        msg += f"  Executed: {info.get('completed_trades', 0)} | Phantom: {info.get('phantom_count', 0)}\n"
                     except Exception:
                         pass
                 await query.edit_message_text(msg, parse_mode='Markdown')

@@ -1028,12 +1028,37 @@ class EnhancedMeanReversionScorer:
 
             active_models = [name for name, model in self.ensemble_models.items() if model is not None]
 
+            # Include phantom count for combined progress visibility
+            phantom_count = 0
+            try:
+                from mr_phantom_tracker import get_mr_phantom_tracker
+                mr_phantom_tracker = get_mr_phantom_tracker()
+                phantom_count = sum(
+                    len([p for p in trades if not getattr(p, 'was_executed', False)])
+                    for trades in mr_phantom_tracker.mr_phantom_trades.values()
+                )
+            except Exception:
+                pass
+
+            total_combined = self.completed_trades + phantom_count
+
+            # Compute trades_until_retrain consistently with combined counts
+            if not self.is_ml_ready:
+                trades_until_retrain = max(0, self.MIN_TRADES_FOR_ML - total_combined)
+                status_text = f'Learning ({total_combined}/{self.MIN_TRADES_FOR_ML})'
+            else:
+                trades_since_last = total_combined - self.last_train_count
+                trades_until_retrain = max(0, self.RETRAIN_INTERVAL - trades_since_last)
+                status_text = 'Advanced ML Active'
+
             stats = {
                 'strategy': 'Enhanced Mean Reversion',
                 'enabled': self.enabled,
                 'is_ml_ready': self.is_ml_ready,
-                'status': 'Advanced ML Active' if self.is_ml_ready else f'Learning ({self.completed_trades}/{self.MIN_TRADES_FOR_ML})',
+                'status': status_text,
                 'completed_trades': self.completed_trades,
+                'phantom_count': phantom_count,
+                'total_combined': total_combined,
                 'current_threshold': self.min_score,
                 'min_threshold': self.MIN_THRESHOLD,
                 'max_threshold': self.MAX_THRESHOLD,
@@ -1043,7 +1068,7 @@ class EnhancedMeanReversionScorer:
                 'recent_win_rate': recent_win_rate,
                 'recent_trades': len(self.recent_performance),
                 'retrain_interval': self.RETRAIN_INTERVAL,
-                'trades_until_retrain': max(0, self.RETRAIN_INTERVAL - (self.completed_trades - self.last_train_count)),
+                'trades_until_retrain': trades_until_retrain,
                 'feature_count': 4,  # Basic MR features
             }
 

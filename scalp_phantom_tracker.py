@@ -68,6 +68,8 @@ class ScalpPhantomTracker:
                 logger.warning(f"Scalp Phantom Redis unavailable: {e}")
         self.active: Dict[str, ScalpPhantomTrade] = {}
         self.completed: Dict[str, List[ScalpPhantomTrade]] = {}
+        # Local blocked counters fallback: day (YYYYMMDD) -> counts
+        self._blocked_counts: Dict[str, Dict[str, int]] = {}
         self._load()
 
     def _load(self):
@@ -119,6 +121,15 @@ class ScalpPhantomTracker:
                     r.incr(f'phantom:blocked:{day}:scalp')
             except Exception:
                 pass
+            # Track locally as well
+            try:
+                from datetime import datetime as _dt
+                day = _dt.utcnow().strftime('%Y%m%d')
+                day_map = self._blocked_counts.setdefault(day, {'total': 0, 'pullback': 0, 'mr': 0, 'scalp': 0})
+                day_map['total'] += 1
+                day_map['scalp'] = day_map.get('scalp', 0) + 1
+            except Exception:
+                pass
             logger.info(f"[{symbol}] Scalp phantom blocked: active trade in progress")
             return self.active[symbol]
 
@@ -137,6 +148,13 @@ class ScalpPhantomTracker:
         self._save()
         logger.info(f"[{symbol}] Scalp phantom recorded: {signal['side'].upper()} {signal['entry']:.4f}")
         return ph
+
+    def get_blocked_counts(self, day: Optional[str] = None) -> Dict[str, int]:
+        # Return local blocked counters for a given day (YYYYMMDD)
+        from datetime import datetime as _dt
+        if day is None:
+            day = _dt.utcnow().strftime('%Y%m%d')
+        return self._blocked_counts.get(day, {'total': 0, 'pullback': 0, 'mr': 0, 'scalp': 0})
 
     def update_scalp_phantom_prices(self, symbol: str, current_price: float, df: Optional[pd.DataFrame] = None):  # type: ignore
         if symbol not in self.active:

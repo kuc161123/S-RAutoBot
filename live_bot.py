@@ -146,6 +146,9 @@ class FlowController:
         self.limits = pf.get('relax_limits', {})
         self.guards = pf.get('min_quality_guards', {})
         self.redis = redis_client
+        # In-memory fallback state to survive Redis outages
+        # Structure: {'accepted': {day: {strategy: int}}, 'relax': {day: {strategy: float}}}
+        self._mem = {'accepted': {}, 'relax': {}}
         if self.redis is None:
             # Best-effort local init; safe to fail if REDIS_URL not present
             try:
@@ -179,24 +182,37 @@ class FlowController:
             pass
 
     def increment_accepted(self, strategy: str, amount: int = 1):
-        if not self.redis or not self.enabled:
+        # Always update in-memory state; best-effort Redis
+        if not self.enabled:
             return
+        day = self._day()
         try:
-            day = self._day()
-            self.redis.incrby(f'phantom:flow:{day}:{strategy}:accepted', amount)
+            day_map = self._mem['accepted'].setdefault(day, {})
+            day_map[strategy] = int(day_map.get(strategy, 0)) + int(amount)
         except Exception:
             pass
+        if self.redis:
+            try:
+                self.redis.incrby(f'phantom:flow:{day}:{strategy}:accepted', amount)
+            except Exception:
+                pass
 
     def _relax_ratio(self, strategy: str) -> float:
         if not self.enabled:
             return 0.0
         day = self._day()
-        if not self.redis:
-            return 0.0
-        try:
-            accepted = int(self.redis.get(f'phantom:flow:{day}:{strategy}:accepted') or 0)
-        except Exception:
-            accepted = 0
+        # Accepted count from Redis or memory fallback
+        accepted = 0
+        if self.redis:
+            try:
+                accepted = int(self.redis.get(f'phantom:flow:{day}:{strategy}:accepted') or 0)
+            except Exception:
+                accepted = 0
+        if accepted == 0:
+            try:
+                accepted = int(self._mem['accepted'].get(day, {}).get(strategy, 0))
+            except Exception:
+                accepted = 0
         # Compute pace target by hours elapsed
         from datetime import datetime as _dt
         hours_elapsed = max(1, _dt.utcnow().hour)
@@ -205,12 +221,28 @@ class FlowController:
         deficit = max(0.0, pace_target - float(accepted))
         base_r = min(1.0, deficit / max(1.0, target * 0.5))
         # Simple EMA smoothing using stored state
-        key = f'phantom:flow:{day}:{strategy}:relax'
-        prev = self._get(key, 0.0)
+        prev = 0.0
+        if self.redis:
+            key = f'phantom:flow:{day}:{strategy}:relax'
+            prev = self._get(key, 0.0)
+        else:
+            try:
+                prev = float(self._mem['relax'].get(day, {}).get(strategy, 0.0))
+            except Exception:
+                prev = 0.0
         # alpha ~ 1/smoothing_hours (bounded)
         alpha = max(0.2, min(1.0, 1.0 / max(1, self.smoothing_hours)))
         r = prev * (1 - alpha) + base_r * alpha
-        self._set(key, r)
+        if self.redis:
+            try:
+                self._set(f'phantom:flow:{day}:{strategy}:relax', r)
+            except Exception:
+                pass
+        else:
+            try:
+                self._mem['relax'].setdefault(day, {})[strategy] = float(max(0.0, min(1.0, r)))
+            except Exception:
+                pass
         return float(max(0.0, min(1.0, r)))
 
     # --- Per-strategy gate adjustments ---

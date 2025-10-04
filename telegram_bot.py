@@ -123,6 +123,183 @@ class TGBot:
 
         return per_trade, label
 
+    def _build_dashboard(self):
+        """Build dashboard text and inline keyboard without sending it.
+        Returns (text:str, keyboard:InlineKeyboardMarkup|None).
+        """
+        frames = self.shared.get("frames", {})
+        book = self.shared.get("book")
+        last_analysis = self.shared.get("last_analysis", {})
+        per_trade_risk, risk_label = self._compute_risk_snapshot()
+
+        lines = ["🎯 *Trading Bot Dashboard*", "━━━━━━━━━━━━━━━━━━━━━", ""]
+
+        # System status
+        lines.append("⚡ *System Status*")
+        if frames:
+            lines.append("• Status: ✅ Online")
+            lines.append(f"• Symbols streaming: {len(frames)}")
+        else:
+            lines.append("• Status: ⏳ Starting up")
+
+        timeframe = self.shared.get("timeframe")
+        if timeframe:
+            lines.append(f"• Timeframe: {timeframe}m")
+
+        symbols_cfg = self.shared.get("symbols_config")
+        if symbols_cfg:
+            lines.append(f"• Universe: {len(symbols_cfg)} symbols")
+
+        if last_analysis:
+            try:
+                latest_symbol, latest_time = max(last_analysis.items(), key=lambda kv: kv[1])
+                if isinstance(latest_time, datetime):
+                    ref_now = datetime.now(latest_time.tzinfo) if latest_time.tzinfo else datetime.now()
+                    age_minutes = max(0, int((ref_now - latest_time).total_seconds() // 60))
+                    lines.append(f"• Last scan: {latest_symbol} ({age_minutes}m ago)")
+            except Exception as exc:
+                logger.debug(f"Unable to compute last analysis recency: {exc}")
+
+        broker = self.shared.get("broker")
+        balance = self.shared.get("last_balance")
+        if broker:
+            if balance is None:
+                try:
+                    balance = broker.get_balance()
+                    if balance:
+                        self.shared["last_balance"] = balance
+                except Exception as exc:
+                    logger.warning(f"Error refreshing balance: {exc}")
+            if balance is not None:
+                lines.append(f"• Balance: ${balance:.2f} USDT")
+            try:
+                api_info = broker.get_api_key_info()
+                if api_info and api_info.get("expiredAt"):
+                    expiry_timestamp = int(api_info["expiredAt"]) / 1000
+                    expiry_date = datetime.fromtimestamp(expiry_timestamp)
+                    days_remaining = (expiry_date - datetime.now()).days
+                    if days_remaining < 14:
+                        lines.append(f"⚠️ *API Key:* expires in {days_remaining} days")
+                    else:
+                        lines.append(f"🔑 API Key: {days_remaining} days remaining")
+            except Exception as exc:
+                logger.warning(f"Could not fetch API key expiry: {exc}")
+
+        lines.append("")
+
+        # Trading settings
+        risk = self.shared.get("risk")
+        lines.append("⚙️ *Trading Settings*")
+        lines.append(f"• Risk per trade: {risk_label}")
+        lines.append(f"• Max leverage: {risk.max_leverage}x")
+        if getattr(risk, 'use_ml_dynamic_risk', False):
+            lines.append("• ML Dynamic Risk: Enabled")
+
+        # Pullback ML
+        ml_scorer = self.shared.get("ml_scorer")
+        if ml_scorer:
+            try:
+                ml_stats = ml_scorer.get_stats()
+                lines.append("")
+                lines.append("🤖 *Pullback ML*")
+                lines.append(f"• Status: {ml_stats['status']}")
+                lines.append(f"• Trades used: {ml_stats['completed_trades']}")
+                if ml_stats.get('recent_win_rate'):
+                    lines.append(f"• Recent win rate: {ml_stats['recent_win_rate']:.1f}%")
+            except Exception as exc:
+                logger.debug(f"Unable to fetch pullback ML stats: {exc}")
+
+        # Enhanced MR ML
+        enhanced_mr = self.shared.get("enhanced_mr_scorer")
+        if enhanced_mr:
+            try:
+                mr_info = enhanced_mr.get_retrain_info()
+                lines.append("")
+                lines.append("🧠 *Mean Reversion ML*")
+                status = "✅ Ready" if mr_info.get('is_ml_ready') else "⏳ Training"
+                lines.append(f"• Status: {status}")
+                lines.append(f"• Trades (exec + phantom): {mr_info.get('total_combined', 0)}")
+                lines.append(f"• Next retrain in: {mr_info.get('trades_until_next_retrain', 0)} trades")
+            except Exception as exc:
+                logger.debug(f"Unable to fetch MR ML stats: {exc}")
+
+        # Scalp ML
+        try:
+            from ml_scorer_scalp import get_scalp_scorer
+            sc_scorer = get_scalp_scorer()
+            lines.append("")
+            lines.append("🩳 *Scalp ML*")
+            lines.append(f"• Samples: {getattr(sc_scorer, 'completed_trades', 0)}")
+            ready = '✅ Ready' if getattr(sc_scorer, 'is_ml_ready', False) else '⏳ Training'
+            lines.append(f"• Status: {ready}")
+            lines.append(f"• Threshold: {getattr(sc_scorer, 'min_score', 75):.0f}")
+        except Exception as exc:
+            logger.debug(f"Scalp ML not available: {exc}")
+
+        # Scalp Phantom
+        try:
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            st = scpt.get_scalp_phantom_stats()
+            lines.append("🩳 *Scalp Phantom*")
+            lines.append(f"• Recorded: {st.get('total', 0)} | WR: {st.get('wr', 0.0):.1f}%")
+        except Exception as exc:
+            logger.debug(f"Scalp phantom not available: {exc}")
+
+        # Positions
+        positions = book.positions if book else {}
+        lines.append("")
+        lines.append("📊 *Positions*")
+        if positions:
+            estimated_risk = per_trade_risk * len(positions)
+            lines.append(f"• Open positions: {len(positions)}")
+            lines.append(f"• Estimated risk: ${estimated_risk:.2f}")
+            if self.shared.get('use_enhanced_parallel', False):
+                lines.append("• Routing: Enhanced parallel (Pullback + MR)")
+        else:
+            lines.append("• No open positions")
+
+        # Pullback Phantom (include active via tracker function)
+        phantom_tracker = self.shared.get("phantom_tracker")
+        if phantom_tracker:
+            try:
+                stats = phantom_tracker.get_phantom_stats()
+                lines.append("")
+                lines.append("👻 *Pullback Phantom*")
+                lines.append(f"• Rejections tracked: {stats.get('rejected', 0)}")
+            except Exception as exc:
+                logger.debug(f"Unable to fetch pullback phantom stats: {exc}")
+
+        # MR Phantom
+        mr_phantom = self.shared.get("mr_phantom_tracker")
+        if mr_phantom:
+            try:
+                mr_stats = mr_phantom.get_mr_phantom_stats()
+                lines.append("")
+                lines.append("🌀 *MR Phantom*")
+                lines.append(f"• Tracked: {mr_stats.get('total_mr_trades', 0)}")
+            except Exception as exc:
+                logger.debug(f"Unable to fetch MR phantom stats: {exc}")
+
+        lines.append("")
+        lines.append("_Use /status for position details and /ml for full analytics._")
+
+        # Inline UI
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Refresh", callback_data="ui:dash:refresh"),
+             InlineKeyboardButton("📊 Symbols", callback_data="ui:symbols:0")],
+            [InlineKeyboardButton("🤖 ML", callback_data="ui:ml:main"),
+             InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:main")],
+            [InlineKeyboardButton("🩳 Scalp QA", callback_data="ui:scalp:qa"),
+             InlineKeyboardButton("🧪 Scalp Promote", callback_data="ui:scalp:promote")],
+            [InlineKeyboardButton("🧱 HTF S/R", callback_data="ui:htf:status"),
+             InlineKeyboardButton("🔄 Update S/R", callback_data="ui:htf:update")],
+            [InlineKeyboardButton("⚙️ Risk", callback_data="ui:risk:main"),
+             InlineKeyboardButton("🧭 Regime", callback_data="ui:regime:main")]
+        ])
+
+        return "\n".join(lines), kb
+
     async def start_polling(self):
         """Start the bot polling"""
         if not self.running:
@@ -346,17 +523,108 @@ class TGBot:
             ml_rejects = tel.get('ml_rejects', 0)
             phantom_wins = tel.get('phantom_wins', 0)
             phantom_losses = tel.get('phantom_losses', 0)
+            # Strategy-wise phantom stats
+            pb_total = pb_wins = pb_active = 0
+            mr_total = mr_wins = mr_active = 0
+            sc_stats = {'total': 0, 'wins': 0, 'wr': 0.0}
+            try:
+                from phantom_trade_tracker import get_phantom_tracker
+                pt = get_phantom_tracker()
+                # Completed rejected
+                for trades in pt.phantom_trades.values():
+                    for p in trades:
+                        if not getattr(p, 'was_executed', False) and getattr(p, 'outcome', None) in ('win','loss'):
+                            pb_total += 1
+                            if p.outcome == 'win':
+                                pb_wins += 1
+                pb_active = len(pt.active_phantoms or {})
+            except Exception:
+                pass
+            try:
+                from mr_phantom_tracker import get_mr_phantom_tracker
+                mrpt = get_mr_phantom_tracker()
+                for trades in mrpt.mr_phantom_trades.values():
+                    for p in trades:
+                        if not getattr(p, 'was_executed', False) and getattr(p, 'outcome', None) in ('win','loss'):
+                            mr_total += 1
+                            if p.outcome == 'win':
+                                mr_wins += 1
+                mr_active = len(mrpt.active_mr_phantoms or {})
+            except Exception:
+                pass
+            try:
+                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                scpt = get_scalp_phantom_tracker()
+                sc_stats = scpt.get_scalp_phantom_stats()
+            except Exception:
+                pass
 
+            def _wr(wins:int, total:int) -> float:
+                return (wins/total*100.0) if total else 0.0
+
+            # Flow controller overview
+            cfg = self.shared.get('config') or {}
+            pf = cfg.get('phantom_flow', {})
+            targets = pf.get('daily_target', {'pullback':40,'mr':40,'scalp':40})
+            # Attempt to read accepted/relax from Redis; fallback to derived
+            pb_acc = mr_acc = sc_acc = 0
+            pb_relax = mr_relax = sc_relax = 0.0
+            try:
+                import os, redis
+                day = __import__('datetime').datetime.utcnow().strftime('%Y%m%d')
+                r = redis.from_url(os.getenv('REDIS_URL'), decode_responses=True)
+                pb_acc = int(r.get(f'phantom:flow:{day}:pullback:accepted') or 0)
+                mr_acc = int(r.get(f'phantom:flow:{day}:mr:accepted') or 0)
+                sc_acc = int(r.get(f'phantom:flow:{day}:scalp:accepted') or 0)
+                pb_relax = float(r.get(f'phantom:flow:{day}:pullback:relax') or 0.0)
+                mr_relax = float(r.get(f'phantom:flow:{day}:mr:relax') or 0.0)
+                sc_relax = float(r.get(f'phantom:flow:{day}:scalp:relax') or 0.0)
+            except Exception:
+                # Fallback to derived acceptances (completed + active phantom-only records today)
+                try:
+                    day = __import__('datetime').datetime.utcnow().strftime('%Y%m%d')
+                    # For PB/MR/Scalp derive accepted today similarly to phantom_qa
+                    # PB accepted today
+                    from phantom_trade_tracker import get_phantom_tracker
+                    pt = get_phantom_tracker()
+                    pb_acc = sum(1 for trades in pt.phantom_trades.values() for p in trades if getattr(p,'signal_time',None) and p.signal_time.strftime('%Y%m%d') == day and not getattr(p,'was_executed', False))
+                    pb_acc += sum(1 for p in pt.active_phantoms.values() if p.signal_time.strftime('%Y%m%d') == day)
+                except Exception:
+                    pass
+                try:
+                    from mr_phantom_tracker import get_mr_phantom_tracker
+                    mrpt = get_mr_phantom_tracker()
+                    mr_acc = sum(1 for trades in mrpt.mr_phantom_trades.values() for p in trades if getattr(p,'signal_time',None) and p.signal_time.strftime('%Y%m%d') == day and not getattr(p,'was_executed', False))
+                    mr_acc += sum(1 for p in mrpt.active_mr_phantoms.values() if p.signal_time.strftime('%Y%m%d') == day)
+                except Exception:
+                    pass
+                try:
+                    from scalp_phantom_tracker import get_scalp_phantom_tracker
+                    scpt = get_scalp_phantom_tracker()
+                    sc_acc = sum(1 for trades in scpt.completed.values() for p in trades if p.signal_time.strftime('%Y%m%d') == day and not getattr(p,'was_executed', False))
+                    sc_acc += sum(1 for p in scpt.active.values() if p.signal_time.strftime('%Y%m%d') == day)
+                except Exception:
+                    pass
+                def _relax(accepted:int, tgt:int) -> float:
+                    try:
+                        h = __import__('datetime').datetime.utcnow().hour
+                        pace = tgt * min(1.0, max(1, h)/24.0)
+                        deficit = max(0.0, pace - float(accepted))
+                        return min(1.0, deficit / max(1.0, tgt*0.5))
+                    except Exception:
+                        return 0.0
+                pb_relax = _relax(pb_acc, int(targets.get('pullback',40)))
+                mr_relax = _relax(mr_acc, int(targets.get('mr',40)))
+                sc_relax = _relax(sc_acc, int(targets.get('scalp',40)))
+
+            # Build output
+            pullback_ml = self.shared.get('ml_scorer')
+            enhanced_mr = self.shared.get('enhanced_mr_scorer')
             lines = [
                 "🧪 *Telemetry*",
                 f"• ML rejects → phantom: {ml_rejects}",
-                f"• Phantom wins (rejected): {phantom_wins}",
-                f"• Phantom losses (rejected): {phantom_losses}",
+                f"• Phantom outcomes (rejected): ✅ {phantom_wins} / ❌ {phantom_losses}",
             ]
-
-            # Add ML thresholds for context
-            pullback_ml = self.shared.get('ml_scorer')
-            enhanced_mr = self.shared.get('enhanced_mr_scorer')
             if pullback_ml:
                 try:
                     lines.append(f"• Pullback ML threshold: {pullback_ml.min_score:.0f}")
@@ -367,6 +635,24 @@ class TGBot:
                     lines.append(f"• Enhanced MR threshold: {enhanced_mr.min_score:.0f}")
                 except Exception:
                     pass
+
+            # Per-strategy phantom WR
+            lines.extend([
+                "",
+                "👻 *Phantom by Strategy*",
+                f"• Pullback: tracked {pb_total} (+{pb_active} active), WR { _wr(pb_wins, pb_total):.1f}%",
+                f"• Mean Reversion: tracked {mr_total} (+{mr_active} active), WR { _wr(mr_wins, mr_total):.1f}%",
+                f"• Scalp: tracked {sc_stats.get('total',0)}, WR {sc_stats.get('wr',0.0):.1f}%",
+            ])
+
+            # Flow controller status
+            lines.extend([
+                "",
+                "🎛️ *Flow Controller*",
+                f"• Pullback: {pb_acc}/{targets.get('pullback',0)} (relax {pb_relax*100:.0f}%)",
+                f"• Mean Reversion: {mr_acc}/{targets.get('mr',0)} (relax {mr_relax*100:.0f}%)",
+                f"• Scalp: {sc_acc}/{targets.get('scalp',0)} (relax {sc_relax*100:.0f}%)",
+            ])
 
             await self.safe_reply(update, "\n".join(lines))
         except Exception as e:
@@ -872,173 +1158,8 @@ class TGBot:
             if not self._cooldown_ok('dashboard'):
                 await self.safe_reply(update, "⏳ Please wait before using /dashboard again")
                 return
-            frames = self.shared.get("frames", {})
-            book = self.shared.get("book")
-            last_analysis = self.shared.get("last_analysis", {})
-            per_trade_risk, risk_label = self._compute_risk_snapshot()
-
-            lines = ["🎯 *Trading Bot Dashboard*", "━━━━━━━━━━━━━━━━━━━━━", ""]
-
-            lines.append("⚡ *System Status*")
-            if frames:
-                lines.append("• Status: ✅ Online")
-                lines.append(f"• Symbols streaming: {len(frames)}")
-            else:
-                lines.append("• Status: ⏳ Starting up")
-
-            timeframe = self.shared.get("timeframe")
-            if timeframe:
-                lines.append(f"• Timeframe: {timeframe}m")
-
-            symbols_cfg = self.shared.get("symbols_config")
-            if symbols_cfg:
-                lines.append(f"• Universe: {len(symbols_cfg)} symbols")
-
-            if last_analysis:
-                try:
-                    latest_symbol, latest_time = max(last_analysis.items(), key=lambda kv: kv[1])
-                    if isinstance(latest_time, datetime):
-                        ref_now = datetime.now(latest_time.tzinfo) if latest_time.tzinfo else datetime.now()
-                        age_minutes = max(0, int((ref_now - latest_time).total_seconds() // 60))
-                        lines.append(f"• Last scan: {latest_symbol} ({age_minutes}m ago)")
-                except Exception as exc:
-                    logger.debug(f"Unable to compute last analysis recency: {exc}")
-
-            broker = self.shared.get("broker")
-            balance = self.shared.get("last_balance")
-            if broker:
-                if balance is None:
-                    try:
-                        balance = broker.get_balance()
-                        if balance:
-                            self.shared["last_balance"] = balance
-                    except Exception as exc:
-                        logger.warning(f"Error refreshing balance: {exc}")
-                if balance is not None:
-                    lines.append(f"• Balance: ${balance:.2f} USDT")
-                try:
-                    api_info = broker.get_api_key_info()
-                    if api_info and api_info.get("expiredAt"):
-                        expiry_timestamp = int(api_info["expiredAt"]) / 1000
-                        expiry_date = datetime.fromtimestamp(expiry_timestamp)
-                        days_remaining = (expiry_date - datetime.now()).days
-                        if days_remaining < 14:
-                            lines.append(f"⚠️ *API Key:* expires in {days_remaining} days")
-                        else:
-                            lines.append(f"🔑 API Key: {days_remaining} days remaining")
-                except Exception as exc:
-                    logger.warning(f"Could not fetch API key expiry: {exc}")
-
-            lines.append("")
-
-            risk = self.shared.get("risk")
-            lines.append("⚙️ *Trading Settings*")
-            lines.append(f"• Risk per trade: {risk_label}")
-            lines.append(f"• Max leverage: {risk.max_leverage}x")
-            if getattr(risk, 'use_ml_dynamic_risk', False):
-                lines.append("• ML Dynamic Risk: Enabled")
-
-            ml_scorer = self.shared.get("ml_scorer")
-            if ml_scorer:
-                try:
-                    ml_stats = ml_scorer.get_stats()
-                    lines.append("")
-                    lines.append("🤖 *Pullback ML*")
-                    lines.append(f"• Status: {ml_stats['status']}")
-                    lines.append(f"• Trades used: {ml_stats['completed_trades']}")
-                    if ml_stats.get('recent_win_rate'):
-                        lines.append(f"• Recent win rate: {ml_stats['recent_win_rate']:.1f}%")
-                except Exception as exc:
-                    logger.debug(f"Unable to fetch pullback ML stats: {exc}")
-
-            enhanced_mr = self.shared.get("enhanced_mr_scorer")
-            if enhanced_mr:
-                try:
-                    mr_info = enhanced_mr.get_retrain_info()
-                    lines.append("")
-                    lines.append("🧠 *Mean Reversion ML*")
-                    status = "✅ Ready" if mr_info.get('is_ml_ready') else "⏳ Training"
-                    lines.append(f"• Status: {status}")
-                    lines.append(f"• Trades (exec + phantom): {mr_info.get('total_combined', 0)}")
-                    lines.append(f"• Next retrain in: {mr_info.get('trades_until_next_retrain', 0)} trades")
-                except Exception as exc:
-                    logger.debug(f"Unable to fetch MR ML stats: {exc}")
-
-            # Scalp ML + Scalp phantom sections
-            try:
-                from ml_scorer_scalp import get_scalp_scorer
-                sc_scorer = get_scalp_scorer()
-                lines.append("")
-                lines.append("🩳 *Scalp ML*")
-                lines.append(f"• Samples: {getattr(sc_scorer, 'completed_trades', 0)}")
-                ready = '✅ Ready' if getattr(sc_scorer, 'is_ml_ready', False) else '⏳ Training'
-                lines.append(f"• Status: {ready}")
-                lines.append(f"• Threshold: {getattr(sc_scorer, 'min_score', 75):.0f}")
-            except Exception as exc:
-                logger.debug(f"Scalp ML not available: {exc}")
-
-            try:
-                from scalp_phantom_tracker import get_scalp_phantom_tracker
-                scpt = get_scalp_phantom_tracker()
-                st = scpt.get_scalp_phantom_stats()
-                lines.append("🩳 *Scalp Phantom*")
-                lines.append(f"• Recorded: {st.get('total', 0)} | WR: {st.get('wr', 0.0):.1f}%")
-            except Exception as exc:
-                logger.debug(f"Scalp phantom not available: {exc}")
-
-            positions = book.positions if book else {}
-            lines.append("")
-            lines.append("📊 *Positions*")
-            if positions:
-                estimated_risk = per_trade_risk * len(positions)
-                lines.append(f"• Open positions: {len(positions)}")
-                lines.append(f"• Estimated risk: ${estimated_risk:.2f}")
-                if self.shared.get('use_enhanced_parallel', False):
-                    lines.append("• Routing: Enhanced parallel (Pullback + MR)")
-            else:
-                lines.append("• No open positions")
-
-            phantom_tracker = self.shared.get("phantom_tracker")
-            if phantom_tracker:
-                try:
-                    stats = phantom_tracker.get_phantom_stats()
-                    lines.append("")
-                    lines.append("👻 *Pullback Phantom*")
-                    lines.append(f"• Rejections tracked: {stats.get('rejected', 0)}")
-                except Exception as exc:
-                    logger.debug(f"Unable to fetch pullback phantom stats: {exc}")
-
-            mr_phantom = self.shared.get("mr_phantom_tracker")
-            if mr_phantom:
-                try:
-                    mr_stats = mr_phantom.get_mr_phantom_stats()
-                    lines.append("")
-                    lines.append("🌀 *MR Phantom*")
-                    lines.append(f"• Tracked: {mr_stats.get('total_mr_trades', 0)}")
-                except Exception as exc:
-                    logger.debug(f"Unable to fetch MR phantom stats: {exc}")
-
-            lines.append("")
-            lines.append("_Use /status for position details and /ml for full analytics._")
-
-            # If UI mode, add inline buttons
-            ui_enabled = True  # simple default; could be from config
-            if ui_enabled:
-                kb = [
-                    [InlineKeyboardButton("🔄 Refresh", callback_data="ui:dash:refresh"),
-                     InlineKeyboardButton("📊 Symbols", callback_data="ui:symbols:0")],
-                    [InlineKeyboardButton("🤖 ML", callback_data="ui:ml:main"),
-                     InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:main")],
-                    [InlineKeyboardButton("🩳 Scalp QA", callback_data="ui:scalp:qa"),
-                     InlineKeyboardButton("🧪 Scalp Promote", callback_data="ui:scalp:promote")],
-                    [InlineKeyboardButton("🧱 HTF S/R", callback_data="ui:htf:status"),
-                     InlineKeyboardButton("🔄 Update S/R", callback_data="ui:htf:update")],
-                    [InlineKeyboardButton("⚙️ Risk", callback_data="ui:risk:main"),
-                     InlineKeyboardButton("🧭 Regime", callback_data="ui:regime:main")]
-                ]
-                await update.message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(kb))
-            else:
-                await self.safe_reply(update, "\n".join(lines))
+            text, kb = self._build_dashboard()
+            await update.message.reply_text(text, reply_markup=kb)
 
         except Exception as e:
             logger.exception("Error in dashboard: %s", e)
@@ -1050,11 +1171,14 @@ class TGBot:
             query = update.callback_query
             data = query.data or ""
             if data.startswith("ui:dash:refresh"):
-                # Reuse dashboard
+                # Build fresh dashboard and edit in place (no cooldown)
                 await query.answer("Refreshing…")
-                # Rebuild dashboard text
-                fake_update = type('obj', (object,), {'message': query.message})
-                await self.dashboard(fake_update, ctx)
+                text, kb = self._build_dashboard()
+                try:
+                    await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
+                except Exception:
+                    # Fallback to sending a new message if edit fails
+                    await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
             elif data.startswith("ui:symbols:"):
                 idx = int(data.split(":")[-1])
                 frames = self.shared.get("frames", {})
@@ -1105,6 +1229,15 @@ class TGBot:
                         pass
                     if calib:
                         msg += "• Calibration: bins saved\n"
+                emr = self.shared.get("enhanced_mr_scorer")
+                if emr:
+                    try:
+                        info = emr.get_retrain_info()
+                        status = "Ready" if info.get('is_ml_ready') else 'Training'
+                        msg += f"• Enhanced MR: {status} | Thresh: {getattr(emr, 'min_score', 'N/A')}\n"
+                        msg += f"  Trades: {info.get('total_combined', 0)} | Next retrain in: {info.get('trades_until_next_retrain', 0)}\n"
+                    except Exception:
+                        pass
                 await query.edit_message_text(msg, parse_mode='Markdown')
             elif data.startswith("ui:risk:main"):
                 await query.answer()
@@ -1116,9 +1249,26 @@ class TGBot:
             elif data.startswith("ui:regime:main"):
                 await query.answer()
                 frames = self.shared.get('frames', {})
-                msg = "🧭 *Regime*"
-                # Keep minimal for now
-                await query.edit_message_text(msg, parse_mode='Markdown')
+                lines = ["🧭 *Market Regime*", ""]
+                if not frames:
+                    lines.append("No market data available yet")
+                else:
+                    # Show summaries for up to 5 most recently analysed symbols
+                    last_analysis = self.shared.get("last_analysis", {})
+                    if last_analysis:
+                        symbols = [s for s, _ in sorted(last_analysis.items(), key=lambda kv: kv[1], reverse=True)[:5]]
+                    else:
+                        symbols = list(frames.keys())[:5]
+                    for sym in symbols:
+                        df = frames.get(sym)
+                        if df is None or df.empty:
+                            continue
+                        try:
+                            summary = get_regime_summary(df.tail(200), sym)
+                            lines.append(f"• {sym}: {summary}")
+                        except Exception:
+                            lines.append(f"• {sym}: unable to analyse")
+                await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
             elif data.startswith("ui:htf:status"):
                 await query.answer()
                 fake_update = type('obj', (object,), {'message': query.message})
@@ -3112,19 +3262,194 @@ class TGBot:
             except Exception:
                 pass
 
-            # WR by routing from phantom tracker
-            wr_none = wr_allowed = 0.0
+            # Fallbacks when Redis is unavailable or counters are zero
+            # Derive usage and blocked from in-memory trackers
             try:
                 from phantom_trade_tracker import get_phantom_tracker
-                pt = get_phantom_tracker()
-                recs = pt.get_learning_data()
-                if recs:
-                    none_recs = [r for r in recs if isinstance(r.get('features'), dict) and r['features'].get('routing') == 'none']
-                    alw_recs = [r for r in recs if not (isinstance(r.get('features'), dict) and r['features'].get('routing') == 'none')]
-                    if none_recs:
-                        wr_none = (sum(r['outcome'] for r in none_recs) / len(none_recs)) * 100
-                    if alw_recs:
-                        wr_allowed = (sum(r['outcome'] for r in alw_recs) / len(alw_recs)) * 100
+                from mr_phantom_tracker import get_mr_phantom_tracker
+                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                from symbol_clustering import load_symbol_clusters
+                clusters_map = load_symbol_clusters()
+            except Exception:
+                get_phantom_tracker = get_mr_phantom_tracker = get_scalp_phantom_tracker = None  # type: ignore
+                clusters_map = {}
+
+            # Helper: check if timestamp is today UTC off-hours
+            def _is_off_hours(ts: datetime) -> bool:
+                h = ts.hour
+                return (h >= 22 or h < 2)
+
+            # Build a list of all phantom signals recorded today (PB, MR, Scalp)
+            derived_none_used = derived_cl3_used = derived_off_used = 0
+            derived_pb_acc = derived_mr_acc = derived_sc_acc = 0
+            derived_blk_total = derived_blk_pb = derived_blk_mr = derived_blk_sc = 0
+            # Pullback
+            try:
+                pt = get_phantom_tracker() if get_phantom_tracker else None
+                if pt:
+                    d_blk_total = 0; d_blk_pb = 0
+                    # Completed
+                    for trades in pt.phantom_trades.values():
+                        for p in trades:
+                            if hasattr(p, 'signal_time') and p.signal_time.strftime('%Y%m%d') == day and not getattr(p, 'was_executed', False):
+                                derived_none_used += 1
+                                derived_pb_acc += 1
+                                if clusters_map.get(p.symbol, 0) == 3:
+                                    derived_cl3_used += 1
+                                if _is_off_hours(p.signal_time):
+                                    derived_off_used += 1
+                    # Active
+                    for p in pt.active_phantoms.values():
+                        if p.signal_time.strftime('%Y%m%d') == day:
+                            derived_none_used += 1
+                            derived_pb_acc += 1
+                            if clusters_map.get(p.symbol, 0) == 3:
+                                derived_cl3_used += 1
+                            if _is_off_hours(p.signal_time):
+                                derived_off_used += 1
+                    # Blocked (local fallback)
+                    bl = pt.get_blocked_counts(day)
+                    derived_blk_total += bl.get('total', 0)
+                    derived_blk_pb += bl.get('pullback', 0)
+            except Exception:
+                pass
+            # MR
+            try:
+                mrpt = get_mr_phantom_tracker() if get_mr_phantom_tracker else None
+                if mrpt:
+                    d_blk_total = 0; d_blk_mr = 0
+                    for trades in mrpt.mr_phantom_trades.values():
+                        for p in trades:
+                            if hasattr(p, 'signal_time') and p.signal_time.strftime('%Y%m%d') == day and not getattr(p, 'was_executed', False):
+                                derived_none_used += 1
+                                derived_mr_acc += 1
+                                if clusters_map.get(p.symbol, 0) == 3:
+                                    derived_cl3_used += 1
+                                if _is_off_hours(p.signal_time):
+                                    derived_off_used += 1
+                    for p in mrpt.active_mr_phantoms.values():
+                        if p.signal_time.strftime('%Y%m%d') == day:
+                            derived_none_used += 1
+                            derived_mr_acc += 1
+                            if clusters_map.get(p.symbol, 0) == 3:
+                                derived_cl3_used += 1
+                            if _is_off_hours(p.signal_time):
+                                derived_off_used += 1
+                    bl = mrpt.get_blocked_counts(day)
+                    derived_blk_total += bl.get('total', 0)
+                    derived_blk_mr += bl.get('mr', 0)
+            except Exception:
+                pass
+            # Scalp
+            try:
+                scpt = get_scalp_phantom_tracker() if get_scalp_phantom_tracker else None
+                if scpt:
+                    d_blk_total = 0; d_blk_sc = 0
+                    for trades in scpt.completed.values():
+                        for p in trades:
+                            if p.signal_time.strftime('%Y%m%d') == day and not getattr(p, 'was_executed', False):
+                                derived_none_used += 1
+                                derived_sc_acc += 1
+                                if clusters_map.get(p.symbol, 0) == 3:
+                                    derived_cl3_used += 1
+                                if _is_off_hours(p.signal_time):
+                                    derived_off_used += 1
+                    for p in scpt.active.values():
+                        if p.signal_time.strftime('%Y%m%d') == day:
+                            derived_none_used += 1
+                            derived_sc_acc += 1
+                            if clusters_map.get(p.symbol, 0) == 3:
+                                derived_cl3_used += 1
+                            if _is_off_hours(p.signal_time):
+                                derived_off_used += 1
+                    bl = scpt.get_blocked_counts(day)
+                    derived_blk_total += bl.get('total', 0)
+                    derived_blk_sc += bl.get('scalp', 0)
+            except Exception:
+                pass
+
+            # Prefer Redis values if present; otherwise use derived
+            if none_used == 0 and (derived_none_used > 0):
+                none_used = derived_none_used
+            if cl3_used == 0 and (derived_cl3_used > 0):
+                cl3_used = derived_cl3_used
+            if off_used == 0 and (derived_off_used > 0):
+                off_used = derived_off_used
+            if blocked_total == 0 and derived_blk_total > 0:
+                blocked_total = derived_blk_total
+            if blocked_pb == 0 and derived_blk_pb > 0:
+                blocked_pb = derived_blk_pb
+            if blocked_mr == 0 and derived_blk_mr > 0:
+                blocked_mr = derived_blk_mr
+            if blocked_scalp == 0 and derived_blk_sc > 0:
+                blocked_scalp = derived_blk_sc
+
+            # Flow controller: accepted & relax fallback
+            targets = (cfg.get('phantom_flow', {}) or {}).get('daily_target', {'pullback':40,'mr':40,'scalp':40})
+            def _relax_from(accepted:int, target:int) -> float:
+                try:
+                    h = datetime.utcnow().hour
+                    pace_target = float(target) * min(1.0, max(1, h) / 24.0)
+                    deficit = max(0.0, pace_target - float(accepted))
+                    base_r = min(1.0, deficit / max(1.0, target * 0.5))
+                    return base_r
+                except Exception:
+                    return 0.0
+            if 'pb_acc' not in locals() or pb_acc == 0:
+                pb_acc = derived_pb_acc
+            if 'mr_acc' not in locals() or mr_acc == 0:
+                mr_acc = derived_mr_acc
+            if 'sc_acc' not in locals() or sc_acc == 0:
+                sc_acc = derived_sc_acc
+            if 'pb_relax' not in locals() or pb_relax == 0.0:
+                pb_relax = _relax_from(pb_acc, int(targets.get('pullback',40)))
+            if 'mr_relax' not in locals() or mr_relax == 0.0:
+                mr_relax = _relax_from(mr_acc, int(targets.get('mr',40)))
+            if 'sc_relax' not in locals() or sc_relax == 0.0:
+                sc_relax = _relax_from(sc_acc, int(targets.get('scalp',40)))
+
+            # WR by routing across PB + MR + Scalp trackers
+            wr_none = wr_allowed = 0.0
+            try:
+                total_none = wins_none = 0
+                total_allowed = wins_allowed = 0
+                # Pullback
+                if get_phantom_tracker:
+                    pt = get_phantom_tracker()
+                    for r in pt.get_learning_data():
+                        routed_none = isinstance(r.get('features'), dict) and r['features'].get('routing') == 'none'
+                        if routed_none:
+                            total_none += 1; wins_none += int(r.get('outcome', 0))
+                        else:
+                            total_allowed += 1; wins_allowed += int(r.get('outcome', 0))
+                # MR
+                if get_mr_phantom_tracker:
+                    mrpt = get_mr_phantom_tracker()
+                    for r in mrpt.get_learning_data():
+                        routed_none = False
+                        try:
+                            f = r.get('features') or {}
+                            ef = r.get('enhanced_features') or {}
+                            routed_none = (isinstance(f, dict) and f.get('routing') == 'none') or (isinstance(ef, dict) and ef.get('routing') == 'none')
+                        except Exception:
+                            pass
+                        if routed_none:
+                            total_none += 1; wins_none += int(r.get('outcome', 0))
+                        else:
+                            total_allowed += 1; wins_allowed += int(r.get('outcome', 0))
+                # Scalp
+                if get_scalp_phantom_tracker:
+                    scpt = get_scalp_phantom_tracker()
+                    for r in scpt.get_learning_data():
+                        f = r.get('features') or {}
+                        if isinstance(f, dict) and f.get('routing') == 'none':
+                            total_none += 1; wins_none += int(r.get('outcome', 0))
+                        else:
+                            total_allowed += 1; wins_allowed += int(r.get('outcome', 0))
+                if total_none:
+                    wr_none = wins_none / total_none * 100.0
+                if total_allowed:
+                    wr_allowed = wins_allowed / total_allowed * 100.0
             except Exception:
                 pass
 

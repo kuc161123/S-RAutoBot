@@ -114,6 +114,8 @@ class MRPhantomTracker:
         self.mr_phantom_trades = {}  # symbol -> list of MR phantom trades
         self.active_mr_phantoms = {}  # symbol -> MRPhantomTrade
         self.notifier: Optional[Callable] = None
+        # Local blocked counters fallback: day (YYYYMMDD) -> counts
+        self._blocked_counts: Dict[str, Dict[str, int]] = {}
 
         # Range tracking data
         self.range_performance = {}  # Track performance by range characteristics
@@ -209,15 +211,26 @@ class MRPhantomTracker:
         self.notifier = notifier
 
     def _incr_blocked(self):
-        if not self.redis_client:
-            return
-        try:
-            from datetime import datetime as _dt
+        from datetime import datetime as _dt
+        day = _dt.utcnow().strftime('%Y%m%d')
+        # Always track locally
+        day_map = self._blocked_counts.setdefault(day, {'total': 0, 'pullback': 0, 'mr': 0, 'scalp': 0})
+        day_map['total'] += 1
+        day_map['mr'] = day_map.get('mr', 0) + 1
+        # Best-effort Redis
+        if self.redis_client:
+            try:
+                self.redis_client.incr(f'phantom:blocked:{day}')
+                self.redis_client.incr(f'phantom:blocked:{day}:mr')
+            except Exception:
+                pass
+
+    def get_blocked_counts(self, day: Optional[str] = None) -> Dict[str, int]:
+        """Return local blocked counters for a given day (YYYYMMDD)."""
+        from datetime import datetime as _dt
+        if day is None:
             day = _dt.utcnow().strftime('%Y%m%d')
-            self.redis_client.incr(f'phantom:blocked:{day}')
-            self.redis_client.incr(f'phantom:blocked:{day}:mr')
-        except Exception:
-            pass
+        return self._blocked_counts.get(day, {'total': 0, 'pullback': 0, 'mr': 0, 'scalp': 0})
 
     def record_mr_signal(self, symbol: str, signal: dict, ml_score: float,
                         was_executed: bool, features: dict, enhanced_features: dict = None) -> MRPhantomTrade:

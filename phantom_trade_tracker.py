@@ -108,6 +108,8 @@ class PhantomTradeTracker:
         self.phantom_trades = {}  # symbol -> list of phantom trades
         self.active_phantoms = {}  # symbol -> PhantomTrade
         self.notifier: Optional[Callable] = None
+        # Local blocked counters fallback: day (YYYYMMDD) -> counts
+        self._blocked_counts: Dict[str, Dict[str, int]] = {}
         
         # Initialize Redis
         self._init_redis()
@@ -198,15 +200,26 @@ class PhantomTradeTracker:
 
     def _incr_blocked(self, strategy: str = 'pullback'):
         """Increment daily blocked-counter in Redis for visibility."""
-        if not self.redis_client:
-            return
-        try:
-            from datetime import datetime as _dt
+        # Always track locally
+        from datetime import datetime as _dt
+        day = _dt.utcnow().strftime('%Y%m%d')
+        day_map = self._blocked_counts.setdefault(day, {'total': 0, 'pullback': 0, 'mr': 0, 'scalp': 0})
+        day_map['total'] += 1
+        day_map[strategy] = day_map.get(strategy, 0) + 1
+        # Best-effort Redis
+        if self.redis_client:
+            try:
+                self.redis_client.incr(f'phantom:blocked:{day}')
+                self.redis_client.incr(f'phantom:blocked:{day}:{strategy}')
+            except Exception:
+                pass
+
+    def get_blocked_counts(self, day: Optional[str] = None) -> Dict[str, int]:
+        """Return local blocked counters for a given day (YYYYMMDD)."""
+        from datetime import datetime as _dt
+        if day is None:
             day = _dt.utcnow().strftime('%Y%m%d')
-            self.redis_client.incr(f'phantom:blocked:{day}')
-            self.redis_client.incr(f'phantom:blocked:{day}:{strategy}')
-        except Exception:
-            pass
+        return self._blocked_counts.get(day, {'total': 0, 'pullback': 0, 'mr': 0, 'scalp': 0})
 
     def record_signal(self, symbol: str, signal: dict, ml_score: float, 
                      was_executed: bool, features: dict, strategy_name: str = "unknown") -> PhantomTrade:
@@ -413,11 +426,25 @@ class PhantomTradeTracker:
             symbol: Optional symbol to filter by
         """
         all_phantoms = []
+        # Include completed phantoms
         if symbol:
             all_phantoms = self.phantom_trades.get(symbol, [])
         else:
             for trades in self.phantom_trades.values():
                 all_phantoms.extend(trades)
+
+        # Include active (in-flight) phantom trades so the dashboard reflects
+        # freshly tracked rejections immediately (not only after close)
+        try:
+            if symbol:
+                if symbol in self.active_phantoms:
+                    all_phantoms.append(self.active_phantoms[symbol])
+            else:
+                for active in self.active_phantoms.values():
+                    all_phantoms.append(active)
+        except Exception:
+            # Best-effort; stats still work with completed-only
+            pass
         
         if not all_phantoms:
             return {
@@ -427,8 +454,8 @@ class PhantomTradeTracker:
                 'rejection_stats': {}
             }
         
-        executed = [p for p in all_phantoms if p.was_executed]
-        rejected = [p for p in all_phantoms if not p.was_executed]
+        executed = [p for p in all_phantoms if getattr(p, 'was_executed', False)]
+        rejected = [p for p in all_phantoms if not getattr(p, 'was_executed', False)]
         
         # Calculate what would have happened with rejected trades
         rejected_wins = [p for p in rejected if p.outcome == "win"]
@@ -449,8 +476,8 @@ class PhantomTradeTracker:
                 'total_rejected': len(rejected),
                 'would_have_won': len(rejected_wins),
                 'would_have_lost': len(rejected_losses),
-                'missed_profit_pct': sum(p.pnl_percent for p in rejected_wins) if rejected_wins else 0,
-                'avoided_loss_pct': sum(abs(p.pnl_percent) for p in rejected_losses) if rejected_losses else 0
+                'missed_profit_pct': sum((p.pnl_percent or 0) for p in rejected_wins) if rejected_wins else 0,
+                'avoided_loss_pct': sum(abs(p.pnl_percent or 0) for p in rejected_losses) if rejected_losses else 0
             },
             
             'ml_accuracy': {

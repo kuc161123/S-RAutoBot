@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import websockets
+import time
 from typing import List, AsyncGenerator, Tuple
 
 logger = logging.getLogger(__name__)
@@ -17,8 +18,21 @@ class MultiWebSocketHandler:
     
     def __init__(self, ws_url: str, running_flag):
         self.ws_url = ws_url
-        self.running = running_flag
+        # Accept either a boolean or an object with a 'running' attribute
+        self._running_flag = running_flag
         self.connections = []
+
+    def _is_running(self) -> bool:
+        try:
+            if isinstance(self._running_flag, bool):
+                return self._running_flag
+            # Object with a 'running' attribute
+            if hasattr(self._running_flag, 'running'):
+                return bool(getattr(self._running_flag, 'running'))
+            # Fallback to truthiness
+            return bool(self._running_flag)
+        except Exception:
+            return True
         
     async def multi_kline_stream(self, topics: List[str]) -> AsyncGenerator[Tuple[str, dict], None]:
         """
@@ -57,7 +71,7 @@ class MultiWebSocketHandler:
         
         try:
             # Merge streams from all connections
-            while self.running:
+            while self._is_running():
                 # Check all queues for data
                 for queue_idx, queue in enumerate(queues):
                     try:
@@ -84,7 +98,7 @@ class MultiWebSocketHandler:
         
         backoff = 2.0  # seconds
         max_backoff = 30.0
-        while self.running:
+        while self._is_running():
             try:
                 logger.info(f"[WS-{conn_id}] Connecting with {len(topics)} topics...")
                 
@@ -100,10 +114,13 @@ class MultiWebSocketHandler:
                     logger.info(f"[WS-{conn_id}] Subscribed to {len(topics)} topics")
                     
                     timeouts = 0
-                    while self.running:
+                    last_msg_ts = time.monotonic()
+                    last_warn_ts = 0.0
+                    while self._is_running():
                         try:
                             msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=30))
                             timeouts = 0  # reset timeout counter on message
+                            last_msg_ts = time.monotonic()
                             
                             if msg.get("success") == False:
                                 # Check if it's a duplicate subscription error
@@ -126,6 +143,11 @@ class MultiWebSocketHandler:
                             except Exception:
                                 logger.warning(f"[WS-{conn_id}] Ping failed after timeout, reconnecting...")
                                 break
+                            # Stale feed warning if no data for > 60 seconds
+                            now = time.monotonic()
+                            if now - last_msg_ts > 60 and (now - last_warn_ts > 60):
+                                logger.warning(f"[WS-{conn_id}] No data received for {int(now - last_msg_ts)}s; monitoring…")
+                                last_warn_ts = now
                             # If repeated timeouts, force reconnect
                             if timeouts >= 3:
                                 logger.warning(f"[WS-{conn_id}] Repeated timeouts ({timeouts}), reconnecting...")

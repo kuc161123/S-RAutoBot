@@ -2250,7 +2250,16 @@ class TradingBot:
                                                 try:
                                                     if self.flow_controller and self.flow_controller.enabled:
                                                         adj = self.flow_controller.adjust_pullback(ts_min, conf_min, mtf_min)
-                                                        ts_min = adj['trend_min']; conf_min = adj['confirm_min']; mtf_min = adj['mtf_min']
+                                                        # Apply volatility-aware damping to relax under high volatility
+                                                        vol_reg_tmp = getattr(regime_analysis, 'volatility_level', 'normal')
+                                                        if vol_reg_tmp == 'high':
+                                                            # Blend adjusted minima back toward base minima (dampen relax)
+                                                            damp = 0.5  # keep at most 50% of relax effect in high vol
+                                                            ts_min = base_ts_min - (base_ts_min - adj['trend_min']) * damp
+                                                            conf_min = base_conf_min - (base_conf_min - adj['confirm_min']) * damp
+                                                            mtf_min = base_mtf_min - (base_mtf_min - adj['mtf_min']) * damp
+                                                        else:
+                                                            ts_min = adj['trend_min']; conf_min = adj['confirm_min']; mtf_min = adj['mtf_min']
                                                 except Exception:
                                                     pass
                                                 ts = float(feats.get('trend_strength', 0))

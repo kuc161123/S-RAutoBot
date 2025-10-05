@@ -82,6 +82,8 @@ class MultiWebSocketHandler:
         """Handle a single WebSocket connection with its subset of topics"""
         sub = {"op": "subscribe", "args": [f"kline.{t}" for t in topics]}
         
+        backoff = 2.0  # seconds
+        max_backoff = 30.0
         while self.running:
             try:
                 logger.info(f"[WS-{conn_id}] Connecting with {len(topics)} topics...")
@@ -91,13 +93,17 @@ class MultiWebSocketHandler:
                     ping_interval=20, 
                     ping_timeout=10
                 ) as ws:
+                    # Reset backoff on successful connection
+                    backoff = 2.0
                     
                     await ws.send(json.dumps(sub))
                     logger.info(f"[WS-{conn_id}] Subscribed to {len(topics)} topics")
                     
+                    timeouts = 0
                     while self.running:
                         try:
                             msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=30))
+                            timeouts = 0  # reset timeout counter on message
                             
                             if msg.get("success") == False:
                                 # Check if it's a duplicate subscription error
@@ -114,11 +120,24 @@ class MultiWebSocketHandler:
                                     await queue.put((sym, k))
                                     
                         except asyncio.TimeoutError:
-                            await ws.ping()
+                            timeouts += 1
+                            try:
+                                await ws.ping()
+                            except Exception:
+                                logger.warning(f"[WS-{conn_id}] Ping failed after timeout, reconnecting...")
+                                break
+                            # If repeated timeouts, force reconnect
+                            if timeouts >= 3:
+                                logger.warning(f"[WS-{conn_id}] Repeated timeouts ({timeouts}), reconnecting...")
+                                break
                         except websockets.exceptions.ConnectionClosed:
                             logger.warning(f"[WS-{conn_id}] Connection closed, reconnecting...")
                             break
                             
             except Exception as e:
                 logger.error(f"[WS-{conn_id}] Connection error: {e}")
-                await asyncio.sleep(5)  # Wait before reconnecting
+                # Exponential backoff with jitter
+                import random
+                sleep_s = min(max_backoff, backoff * (1.0 + random.uniform(-0.2, 0.2)))
+                await asyncio.sleep(sleep_s)
+                backoff = min(max_backoff, backoff * 1.6)

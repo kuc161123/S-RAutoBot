@@ -56,27 +56,51 @@ class Bybit:
         if method == "GET" and query_string:
             url += "?" + query_string
         
-        try:
-            if method == "POST":
-                r = self.session.post(url, headers=headers, data=body, timeout=15)
-            else:
-                r = self.session.get(url, headers=headers, timeout=15)
-                
-            r.raise_for_status()
-            j = r.json()
-            
-            if str(j.get("retCode")) != "0":
-                logger.error(f"Bybit API error: {j}")
-                raise RuntimeError(f"Bybit error: {j.get('retMsg', 'Unknown error')}")
-                
-            return j
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request failed: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-            raise
+        # Simple retry with exponential backoff for transient failures
+        import random
+        max_retries = 3
+        backoff = 0.5
+        last_err = None
+        for attempt in range(max_retries):
+            try:
+                if method == "POST":
+                    r = self.session.post(url, headers=headers, data=body, timeout=15)
+                else:
+                    r = self.session.get(url, headers=headers, timeout=15)
+
+                r.raise_for_status()
+                j = r.json()
+
+                if str(j.get("retCode")) != "0":
+                    # Retry only for likely transient messages
+                    msg = str(j.get('retMsg', '')).lower()
+                    if any(k in msg for k in ["timeout", "limit", "too many", "system busy", "server error"]):
+                        raise RuntimeError(msg)
+                    logger.error(f"Bybit API error: {j}")
+                    raise RuntimeError(f"Bybit error: {j.get('retMsg', 'Unknown error')}")
+
+                return j
+
+            except requests.exceptions.RequestException as e:
+                last_err = e
+                logger.warning(f"Bybit request attempt {attempt+1}/{max_retries} failed: {e}")
+            except RuntimeError as e:
+                last_err = e
+                logger.warning(f"Bybit API attempt {attempt+1}/{max_retries} transient error: {e}")
+            except Exception as e:
+                last_err = e
+                logger.warning(f"Unexpected Bybit error attempt {attempt+1}/{max_retries}: {e}")
+
+            # Backoff with jitter before next try
+            if attempt < max_retries - 1:
+                sleep_s = backoff * (2 ** attempt) * (1.0 + random.uniform(-0.2, 0.2))
+                time.sleep(max(0.2, min(5.0, sleep_s)))
+
+        # All retries failed
+        logger.error(f"Bybit request failed after {max_retries} attempts: {last_err}")
+        if isinstance(last_err, Exception):
+            raise last_err
+        raise RuntimeError("Bybit request failed")
 
     def get_balance(self) -> Optional[float]:
         """Get USDT balance"""

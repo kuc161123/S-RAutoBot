@@ -301,9 +301,37 @@ class FlowController:
         try:
             wg = rm.get('wr_guard', {})
             if wg.get('enabled', False):
-                # Placeholder: read WR from Redis trackers if needed. For now, we skip integration if unavailable.
-                # r_inst = min(r_inst, float(wg.get('cap', 0.60))) if wr < min_wr else r_inst
-                pass
+                if self.redis:
+                    try:
+                        window = max(5, int(wg.get('window', 40)))
+                        min_wr = float(wg.get('min_wr', 20.0)) / 100.0
+                        cap = float(wg.get('cap', 0.60))
+                        # Map strategy to WR key
+                        key = f"phantom:wr:{strategy}"
+                        vals = self.redis.lrange(key, 0, window - 1) or []
+                        wr = None
+                        guard_active = False
+                        if len(vals) >= max(5, window // 2):
+                            try:
+                                wins = sum(1 for v in vals if str(v) == '1')
+                                wr = wins / len(vals) if len(vals) > 0 else None
+                            except Exception:
+                                wr = None
+                        if wr is not None and wr < min_wr:
+                            r_inst = min(r_inst, cap)
+                            guard_active = True
+                        # Stash WR and guard state into components for UI/debug
+                        try:
+                            comps = self._mem.setdefault('relax_components', {})
+                            dmap = comps.setdefault(day, {})
+                            d = dmap.setdefault(strategy, {})
+                            d['wr'] = float(wr) if wr is not None else None
+                            d['guard_cap'] = cap
+                            d['guard_active'] = guard_active
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
         except Exception:
             pass
         # Simple EMA smoothing using stored state

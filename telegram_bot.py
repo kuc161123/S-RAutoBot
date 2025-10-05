@@ -3989,11 +3989,19 @@ class TGBot:
                 try:
                     c = comps.get(name_key) or {}
                     if c:
+                        wr_txt = ""
+                        try:
+                            if c.get('wr') is not None:
+                                wr_txt = f", wr {float(c.get('wr',0.0))*100:.0f}%"
+                                if bool(c.get('guard_active', False)):
+                                    wr_txt += f" (guard {float(c.get('guard_cap',0.0))*100:.0f}% active)"
+                        except Exception:
+                            pass
                         return (
                             f"• {label}: {acc.get(name_key,0)}/{targets.get(name_key,0)} "
                             f"(relax {float(rx.get(name_key,0.0))*100:.0f}%, "
                             f"pace {float(c.get('pace',0.0))*100:.0f}%, def {float(c.get('deficit',0.0))*100:.0f}%, "
-                            f"boost +{float(c.get('boost',0.0))*100:.0f}%, min {float(c.get('min',0.0))*100:.0f}%)"
+                            f"boost +{float(c.get('boost',0.0))*100:.0f}%, min {float(c.get('min',0.0))*100:.0f}%{wr_txt})"
                         )
                 except Exception:
                     pass

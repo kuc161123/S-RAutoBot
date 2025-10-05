@@ -206,6 +206,16 @@ class ScalpPhantomTracker:
         self._save()
         logger.info(f"[{symbol}] Scalp PHANTOM closed: {'✅ WIN' if outcome=='win' else '❌ LOSS'} ({ph.pnl_percent:+.2f}%)")
 
+        # Update rolling WR list for WR guard (Scalp)
+        try:
+            if self.redis_client:
+                key = 'phantom:wr:scalp'
+                val = '1' if outcome == 'win' else '0'
+                self.redis_client.lpush(key, val)
+                self.redis_client.ltrim(key, 0, 199)
+        except Exception:
+            pass
+
         # Feed outcome to Scalp ML scorer for learning
         try:
             from ml_scorer_scalp import get_scalp_scorer

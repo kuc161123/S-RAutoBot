@@ -164,10 +164,10 @@ phantom_flow:
       mr: 0.80
       scalp: 0.60
     wr_guard:
-      enabled: false          # keep off initially; can enable later
-      window: 40
-      min_wr: 20.0
-      cap: 0.60
+      enabled: true           # Enabled: cap relax when WR is low
+      window: 40              # number of recent phantom closures
+      min_wr: 20.0            # threshold (%) below which cap applies
+      cap: 0.60               # max relax while guard active
   min_quality_guards:
     pullback:
       trend_min: 30.0

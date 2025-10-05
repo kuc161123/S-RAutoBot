@@ -330,6 +330,16 @@ class MRPhantomTracker:
         # Save to Redis
         self._save_to_redis()
 
+        # Update rolling WR list for WR guard (MR strategy)
+        try:
+            if self.redis_client:
+                key = 'phantom:wr:mr'
+                val = '1' if outcome == 'win' else '0'
+                self.redis_client.lpush(key, val)
+                self.redis_client.ltrim(key, 0, 199)
+        except Exception:
+            pass
+
         return phantom
 
     def update_mr_phantom_prices(self, symbol: str, current_price: float, df=None):

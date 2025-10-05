@@ -407,6 +407,18 @@ class PhantomTradeTracker:
         # Save to Redis
         self._save_to_redis()
 
+        # Update rolling WR list for WR guard (per-strategy)
+        try:
+            if self.redis_client:
+                strat = getattr(phantom, 'strategy_name', 'pullback') or 'pullback'
+                key = f"phantom:wr:{'pullback' if strat == 'unknown' else strat}"
+                val = '1' if outcome == 'win' else '0'
+                # Keep modest window in Redis (FlowController will read at configured window)
+                self.redis_client.lpush(key, val)
+                self.redis_client.ltrim(key, 0, 199)
+        except Exception:
+            pass
+
         # Check if ML needs retraining after this trade completes
         self._check_ml_retrain()
 

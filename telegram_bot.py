@@ -272,6 +272,16 @@ class TGBot:
                 lines.append("")
                 lines.append("👻 *Pullback Phantom*")
                 lines.append(f"• Rejections tracked: {stats.get('rejected', 0)}")
+                # Timeouts count (pullback)
+                try:
+                    pb_timeouts = 0
+                    for trades in getattr(phantom_tracker, 'phantom_trades', {}).values():
+                        for p in trades:
+                            if not getattr(p, 'was_executed', False) and getattr(p, 'exit_reason', None) == 'timeout':
+                                pb_timeouts += 1
+                    lines.append(f"• Timeouts: {pb_timeouts}")
+                except Exception:
+                    pass
             except Exception as exc:
                 logger.debug(f"Unable to fetch pullback phantom stats: {exc}")
 
@@ -329,6 +339,7 @@ class TGBot:
 
             # Scalp phantom summary
             sc_wins = sc_losses = sc_closed = sc_open = 0
+            sc_timeouts = 0
             try:
                 from scalp_phantom_tracker import get_scalp_phantom_tracker
                 scpt = get_scalp_phantom_tracker()
@@ -341,6 +352,8 @@ class TGBot:
                                     sc_wins += 1
                                 else:
                                     sc_losses += 1
+                                if getattr(p, 'exit_reason', None) == 'timeout':
+                                    sc_timeouts += 1
                     sc_open = len(getattr(scpt, 'active', {}) or {})
                 except Exception:
                     pass
@@ -397,6 +410,7 @@ class TGBot:
             lines.append(f"• 🩳 Scalp")
             lines.append(f"  ✅ W: {sc_wins}   ❌ L: {sc_losses}   🎯 WR: {sc_wr:.1f}%")
             lines.append(f"  🟢 Open: {sc_open}   🔒 Closed: {sc_closed}")
+            lines.append(f"  ⏱️ Timeouts: {sc_timeouts}")
 
             lines.append("")
             lines.append("✅ *Executed Summary*")

@@ -427,7 +427,8 @@ class ImmediateMLScorer:
             'score': signal_data['score'],
             'outcome': outcome,
             'pnl_percent': pnl_percent,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'exit_reason': signal_data.get('exit_reason')
         }
         
         self._store_trade(trade_record)

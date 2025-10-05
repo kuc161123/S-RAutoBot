@@ -99,6 +99,7 @@ pullback:
     confirmation_strength_min: 0.10 # was 0.2 — lighter confirmation
     mtf_level_strength_min: 0.30    # was 0.5 — accept weaker MTF S/R
     allow_volatility_high: true
+    timeout_hours: 36              # auto-close phantom after 36h for learning
     enable_virtual_snapshots: true
     snapshots_delta: 5
 
@@ -197,6 +198,7 @@ scalp:
     vwap_dist_atr_max: 1.0   # was 0.8 — allow farther from VWAP
     min_bb_width_pct: 0.50   # was 0.6 — accept narrower bands
     vol_ratio_min: 1.00      # was 1.15 — lower volume spike requirement
+    timeout_hours: 24        # auto-close scalp phantoms after 24h for learning
 symbol_meta:
   default:
     qty_step: 0.001

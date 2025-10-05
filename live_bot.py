@@ -1858,6 +1858,23 @@ class TradingBot:
                     logger.info(f"MR phantom timeout set to {mr_phantom_tracker.timeout_hours}h (exploration)")
             except Exception as e:
                 logger.debug(f"Could not set MR phantom timeout: {e}")
+            # Apply Pullback phantom timeout override from config (exploration)
+            try:
+                if pb_explore and 'timeout_hours' in pb_explore and phantom_tracker is not None:
+                    phantom_tracker.timeout_hours = int(pb_explore['timeout_hours'])
+                    logger.info(f"Pullback phantom timeout set to {phantom_tracker.timeout_hours}h (exploration)")
+            except Exception as e:
+                logger.debug(f"Could not set Pullback phantom timeout: {e}")
+            # Apply Scalp phantom timeout override from config (exploration)
+            try:
+                s_cfg = cfg.get('scalp', {}).get('explore', {})
+                if s_cfg and 'timeout_hours' in s_cfg and SCALP_AVAILABLE:
+                    from scalp_phantom_tracker import get_scalp_phantom_tracker
+                    scpt = get_scalp_phantom_tracker()
+                    scpt.timeout_hours = int(s_cfg['timeout_hours'])
+                    logger.info(f"Scalp phantom timeout set to {scpt.timeout_hours}h (exploration)")
+            except Exception as e:
+                logger.debug(f"Could not set Scalp phantom timeout: {e}")
 
             # Note: main timeframe backfill intentionally not applied (per user request)
             

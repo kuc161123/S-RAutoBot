@@ -38,6 +38,7 @@ class ScalpPhantomTrade:
     one_r_hit: Optional[bool] = None
     two_r_hit: Optional[bool] = None
     realized_rr: Optional[float] = None
+    exit_reason: Optional[str] = None
 
     def to_dict(self):
         d = asdict(self)
@@ -71,6 +72,8 @@ class ScalpPhantomTracker:
         # Local blocked counters fallback: day (YYYYMMDD) -> counts
         self._blocked_counts: Dict[str, Dict[str, int]] = {}
         self._load()
+        # Default timeout hours for scalp phantom (config override available)
+        self.timeout_hours: int = 24
 
     def _load(self):
         if not self.redis_client:
@@ -165,16 +168,40 @@ class ScalpPhantomTracker:
             ph.max_favorable = max(ph.max_favorable or current_price, current_price)
             ph.max_adverse = min(ph.max_adverse or current_price, current_price)
             if current_price >= ph.take_profit:
+                ph.exit_reason = 'tp'
                 self._close(symbol, current_price, 'win')
             elif current_price <= ph.stop_loss:
+                ph.exit_reason = 'sl'
                 self._close(symbol, current_price, 'loss')
         else:
             ph.max_favorable = min(ph.max_favorable or current_price, current_price)
             ph.max_adverse = max(ph.max_adverse or current_price, current_price)
             if current_price <= ph.take_profit:
+                ph.exit_reason = 'tp'
                 self._close(symbol, current_price, 'win')
             elif current_price >= ph.stop_loss:
+                ph.exit_reason = 'sl'
                 self._close(symbol, current_price, 'loss')
+
+        # Timeout handling
+        try:
+            if self.timeout_hours and ph.signal_time:
+                from datetime import datetime as _dt, timedelta as _td
+                if _dt.utcnow() - ph.signal_time > _td(hours=int(self.timeout_hours)):
+                    # Outcome by PnL sign at timeout
+                    try:
+                        if ph.side == 'long':
+                            pnl_pct_now = (current_price - ph.entry_price) / ph.entry_price * 100
+                        else:
+                            pnl_pct_now = (ph.entry_price - current_price) / ph.entry_price * 100
+                        outc = 'win' if pnl_pct_now >= 0 else 'loss'
+                    except Exception:
+                        outc = 'loss'
+                    ph.exit_reason = 'timeout'
+                    self._close(symbol, current_price, outc)
+                    return
+        except Exception:
+            pass
 
     def _close(self, symbol: str, exit_price: float, outcome: str):
         if symbol not in self.active:
@@ -206,9 +233,9 @@ class ScalpPhantomTracker:
         self._save()
         logger.info(f"[{symbol}] Scalp PHANTOM closed: {'✅ WIN' if outcome=='win' else '❌ LOSS'} ({ph.pnl_percent:+.2f}%)")
 
-        # Update rolling WR list for WR guard (Scalp)
+        # Update rolling WR list for WR guard (Scalp) — skip timeouts
         try:
-            if self.redis_client:
+            if self.redis_client and getattr(ph, 'exit_reason', None) != 'timeout':
                 key = 'phantom:wr:scalp'
                 val = '1' if outcome == 'win' else '0'
                 self.redis_client.lpush(key, val)
@@ -222,7 +249,8 @@ class ScalpPhantomTracker:
             scorer = get_scalp_scorer()
             signal = {
                 'features': ph.features or {},
-                'was_executed': False
+                'was_executed': False,
+                'exit_reason': getattr(ph, 'exit_reason', None)
             }
             scorer.record_outcome(signal, outcome, float(ph.pnl_percent or 0.0))
         except Exception as e:

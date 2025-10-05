@@ -58,6 +58,7 @@ class PhantomTrade:
     one_r_hit: Optional[bool] = None
     two_r_hit: Optional[bool] = None
     realized_rr: Optional[float] = None
+    exit_reason: Optional[str] = None
     
     def to_dict(self):
         """Convert to dictionary for storage"""
@@ -114,6 +115,8 @@ class PhantomTradeTracker:
         # Initialize Redis
         self._init_redis()
         self._load_from_redis()
+        # Default timeout for pullback phantom (can be overridden via config)
+        self.timeout_hours: int = 36
     
     def _init_redis(self):
         """Initialize Redis connection"""
@@ -307,9 +310,9 @@ class PhantomTradeTracker:
                 
             # Check if hit TP or SL
             if current_price >= phantom.take_profit:
-                self._close_phantom(symbol, current_price, "win", df, btc_price, symbol_collector)
+                self._close_phantom(symbol, current_price, "win", df, btc_price, symbol_collector, exit_reason='tp')
             elif current_price <= phantom.stop_loss:
-                self._close_phantom(symbol, current_price, "loss", df, btc_price, symbol_collector)
+                self._close_phantom(symbol, current_price, "loss", df, btc_price, symbol_collector, exit_reason='sl')
                 
         else:  # short
             if phantom.max_favorable is None or current_price < phantom.max_favorable:
@@ -319,12 +322,30 @@ class PhantomTradeTracker:
                 
             # Check if hit TP or SL
             if current_price <= phantom.take_profit:
-                self._close_phantom(symbol, current_price, "win", df, btc_price, symbol_collector)
+                self._close_phantom(symbol, current_price, "win", df, btc_price, symbol_collector, exit_reason='tp')
             elif current_price >= phantom.stop_loss:
-                self._close_phantom(symbol, current_price, "loss", df, btc_price, symbol_collector)
+                self._close_phantom(symbol, current_price, "loss", df, btc_price, symbol_collector, exit_reason='sl')
+
+        # Timeout handling: close after configured hours
+        try:
+            if self.timeout_hours and phantom.signal_time:
+                from datetime import datetime as _dt, timedelta as _td
+                if _dt.now() - phantom.signal_time > _td(hours=int(self.timeout_hours)):
+                    try:
+                        if phantom.side == 'long':
+                            pnl_pct_now = ((current_price - phantom.entry_price) / phantom.entry_price) * 100
+                        else:
+                            pnl_pct_now = ((phantom.entry_price - current_price) / phantom.entry_price) * 100
+                        outcome_timeout = 'win' if pnl_pct_now >= 0 else 'loss'
+                    except Exception:
+                        outcome_timeout = 'loss'
+                    self._close_phantom(symbol, current_price, outcome_timeout, df, btc_price, symbol_collector, exit_reason='timeout')
+                    return
+        except Exception:
+            pass
     
     def _close_phantom(self, symbol: str, exit_price: float, outcome: str, 
-                       df=None, btc_price: float = None, symbol_collector=None):
+                       df=None, btc_price: float = None, symbol_collector=None, exit_reason: Optional[str] = None):
         """Close a phantom trade and record its outcome"""
         if symbol not in self.active_phantoms:
             return
@@ -339,6 +360,8 @@ class PhantomTradeTracker:
             phantom.pnl_percent = ((exit_price - phantom.entry_price) / phantom.entry_price) * 100
         else:
             phantom.pnl_percent = ((phantom.entry_price - exit_price) / phantom.entry_price) * 100
+        if exit_reason:
+            phantom.exit_reason = exit_reason
 
         # Enrich labels: 1R/2R hits and realized RR
         try:
@@ -372,7 +395,8 @@ class PhantomTradeTracker:
         # Log the outcome
         status = "EXECUTED" if phantom.was_executed else f"PHANTOM (score: {phantom.ml_score:.1f})"
         result = "✅ WIN" if outcome == "win" else "❌ LOSS"
-        logger.info(f"[{symbol}] {status} trade closed: {result} - P&L: {phantom.pnl_percent:.2f}%")
+        logger.info(f"[{symbol}] {status} trade closed: {result} - P&L: {phantom.pnl_percent:.2f}%"
+                    + (f" (exit: {phantom.exit_reason})" if phantom.exit_reason else ""))
         
         # Important: Log if ML was wrong
         if not phantom.was_executed:
@@ -407,13 +431,12 @@ class PhantomTradeTracker:
         # Save to Redis
         self._save_to_redis()
 
-        # Update rolling WR list for WR guard (per-strategy)
+        # Update rolling WR list for WR guard (skip timeouts)
         try:
-            if self.redis_client:
+            if self.redis_client and getattr(phantom, 'exit_reason', None) != 'timeout':
                 strat = getattr(phantom, 'strategy_name', 'pullback') or 'pullback'
                 key = f"phantom:wr:{'pullback' if strat == 'unknown' else strat}"
                 val = '1' if outcome == 'win' else '0'
-                # Keep modest window in Redis (FlowController will read at configured window)
                 self.redis_client.lpush(key, val)
                 self.redis_client.ltrim(key, 0, 199)
         except Exception:
@@ -562,7 +585,8 @@ class PhantomTradeTracker:
                 'symbol': phantom.symbol,
                 'features': phantom.features,
                 'score': phantom.ml_score,  # ML scorer expects 'score' field
-                'timestamp': phantom.signal_time
+                'timestamp': phantom.signal_time,
+                'exit_reason': getattr(phantom, 'exit_reason', None)
             }
 
             # Determine outcome (win/loss)

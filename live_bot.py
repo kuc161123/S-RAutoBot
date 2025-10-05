@@ -8,7 +8,7 @@ import sys
 import time
 import yaml
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 # Third-party imports
 import numpy as np
@@ -149,6 +149,32 @@ class FlowController:
         self.smoothing_hours = int(pf.get('smoothing_hours', 3))
         self.limits = pf.get('relax_limits', {})
         self.guards = pf.get('min_quality_guards', {})
+        # Advanced relax behavior (deficit/boost/min_relax)
+        rm = pf.get('relax_mode', {})
+        self.relax_mode = {
+            'enable_deficit': bool(rm.get('enable_deficit', False)),
+            'deficit_scale': float(rm.get('deficit_scale', 0.30)),
+            'weight_deficit': float(rm.get('weight_deficit', 0.6)),
+            'catchup': {
+                'enabled': bool(rm.get('catchup', {}).get('enabled', False)),
+                'pace_gap_trades': int(rm.get('catchup', {}).get('pace_gap_trades', 8)),
+                'boost_base': float(rm.get('catchup', {}).get('boost_base', 0.30)),
+                'boost_slope': float(rm.get('catchup', {}).get('boost_slope', 0.02)),
+                'max_boost': float(rm.get('catchup', {}).get('max_boost', 0.40)),
+            },
+            'min_relax': {
+                'pullback': float(rm.get('min_relax', {}).get('pullback', 0.0)),
+                'mr': float(rm.get('min_relax', {}).get('mr', 0.0)),
+                'scalp': float(rm.get('min_relax', {}).get('scalp', 0.0)),
+            },
+            # Optional WR guard (disabled by default)
+            'wr_guard': {
+                'enabled': bool(rm.get('wr_guard', {}).get('enabled', False)),
+                'window': int(rm.get('wr_guard', {}).get('window', 40)),
+                'min_wr': float(rm.get('wr_guard', {}).get('min_wr', 20.0)),
+                'cap': float(rm.get('wr_guard', {}).get('cap', 0.60)),
+            }
+        }
         self.redis = redis_client
         # In-memory fallback state to survive Redis outages
         # Structure: {'accepted': {day: {strategy: int}}, 'relax': {day: {strategy: float}}}
@@ -201,6 +227,20 @@ class FlowController:
             except Exception:
                 pass
 
+    def _pace_relax(self, strategy: str, accepted: int) -> Tuple[float, float, float]:
+        """Compute pace-based relax and supporting values.
+        Returns (r_pace, pace_target, target).
+        """
+        day = self._day()
+        # Compute pace target by hours elapsed
+        from datetime import datetime as _dt
+        hours_elapsed = max(1, _dt.utcnow().hour)
+        target = float(self.targets.get(strategy, 40))
+        pace_target = target * min(1.0, hours_elapsed / 24.0)
+        deficit = max(0.0, pace_target - float(accepted))
+        base_r = min(1.0, deficit / max(1.0, target * 0.5))
+        return base_r, pace_target, target
+
     def _relax_ratio(self, strategy: str) -> float:
         if not self.enabled:
             return 0.0
@@ -217,13 +257,55 @@ class FlowController:
                 accepted = int(self._mem['accepted'].get(day, {}).get(strategy, 0))
             except Exception:
                 accepted = 0
-        # Compute pace target by hours elapsed
-        from datetime import datetime as _dt
-        hours_elapsed = max(1, _dt.utcnow().hour)
-        target = float(self.targets.get(strategy, 40))
-        pace_target = target * min(1.0, hours_elapsed / 24.0)
-        deficit = max(0.0, pace_target - float(accepted))
-        base_r = min(1.0, deficit / max(1.0, target * 0.5))
+        # Pace-based relax
+        r_pace, pace_target, target = self._pace_relax(strategy, accepted)
+        # Deficit relax (total-day perspective)
+        rm = self.relax_mode
+        r_def = 0.0
+        if rm.get('enable_deficit', False):
+            try:
+                scale = max(0.05, float(rm.get('deficit_scale', 0.30)))
+                r_def = (max(0.0, target - float(accepted)) / max(1.0, target * scale))
+                r_def = float(max(0.0, min(1.0, r_def)))
+            except Exception:
+                r_def = 0.0
+        # Catch-up boost when behind pace by X trades
+        r_boost = 0.0
+        try:
+            cu = rm.get('catchup', {})
+            if cu.get('enabled', False):
+                gap = max(0.0, pace_target - float(accepted))
+                if gap >= float(cu.get('pace_gap_trades', 8)):
+                    base = float(cu.get('boost_base', 0.30))
+                    slope = float(cu.get('boost_slope', 0.02))
+                    maxb = float(cu.get('max_boost', 0.40))
+                    r_boost = min(maxb, base + slope * (gap - float(cu.get('pace_gap_trades', 8))))
+        except Exception:
+            r_boost = 0.0
+        # Blend deficit with pace
+        try:
+            w = float(rm.get('weight_deficit', 0.6)) if rm.get('enable_deficit', False) else 0.0
+            r_blend = max(r_pace, (w * r_def) + ((1.0 - w) * r_pace))
+        except Exception:
+            r_blend = r_pace
+        # Apply boost and clamp
+        r_inst = float(max(0.0, min(1.0, r_blend + r_boost)))
+        # Apply per-strategy minimum relax
+        try:
+            min_map = rm.get('min_relax', {})
+            min_r = float(min_map.get(strategy, 0.0))
+            r_inst = max(min_r, r_inst)
+        except Exception:
+            pass
+        # WR guard clamp (optional)
+        try:
+            wg = rm.get('wr_guard', {})
+            if wg.get('enabled', False):
+                # Placeholder: read WR from Redis trackers if needed. For now, we skip integration if unavailable.
+                # r_inst = min(r_inst, float(wg.get('cap', 0.60))) if wr < min_wr else r_inst
+                pass
+        except Exception:
+            pass
         # Simple EMA smoothing using stored state
         prev = 0.0
         if self.redis:
@@ -236,7 +318,7 @@ class FlowController:
                 prev = 0.0
         # alpha ~ 1/smoothing_hours (bounded)
         alpha = max(0.2, min(1.0, 1.0 / max(1, self.smoothing_hours)))
-        r = prev * (1 - alpha) + base_r * alpha
+        r = prev * (1 - alpha) + r_inst * alpha
         if self.redis:
             try:
                 self._set(f'phantom:flow:{day}:{strategy}:relax', r)
@@ -247,6 +329,20 @@ class FlowController:
                 self._mem['relax'].setdefault(day, {})[strategy] = float(max(0.0, min(1.0, r)))
             except Exception:
                 pass
+        # Stash components for UI/debug (memory only)
+        try:
+            comps = self._mem.setdefault('relax_components', {})
+            dmap = comps.setdefault(day, {})
+            dmap[strategy] = {
+                'pace': float(r_pace),
+                'deficit': float(r_def),
+                'boost': float(r_boost),
+                'min': float(rm.get('min_relax', {}).get(strategy, 0.0)),
+                'inst': float(r_inst),
+                'smoothed': float(max(0.0, min(1.0, r)))
+            }
+        except Exception:
+            pass
         return float(max(0.0, min(1.0, r)))
 
     # --- Per-strategy gate adjustments ---
@@ -306,7 +402,8 @@ class FlowController:
             'targets': self.targets,
             'smoothing_hours': self.smoothing_hours,
             'accepted': {},
-            'relax': {}
+            'relax': {},
+            'components': {}
         }
         for s in strategies:
             # Accepted from Redis or memory
@@ -329,6 +426,12 @@ class FlowController:
             if rx == 0.0:
                 rx = float(self._mem['relax'].get(day, {}).get(s, 0.0)) if day in self._mem['relax'] else 0.0
             out['relax'][s] = rx
+            # Include components if available
+            try:
+                comps = self._mem.get('relax_components', {}).get(day, {}).get(s, {})
+                out['components'][s] = comps
+            except Exception:
+                pass
         return out
 
 class TradingBot:

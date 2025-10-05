@@ -149,6 +149,25 @@ phantom_flow:
       vwap_dist_atr: 0.60   # increase vwap_dist_atr_max by up to 0.60
       bb_width_pct: 0.30    # reduce min_bb_width_pct by up to 0.30
       vol_ratio: 0.40       # reduce vol_ratio_min by up to 0.40
+  relax_mode:
+    enable_deficit: true
+    deficit_scale: 0.30       # fraction of target used to scale deficit
+    weight_deficit: 0.60      # blend weight for deficit vs pace
+    catchup:
+      enabled: true
+      pace_gap_trades: 8
+      boost_base: 0.30
+      boost_slope: 0.02
+      max_boost: 0.40
+    min_relax:
+      pullback: 0.60
+      mr: 0.80
+      scalp: 0.60
+    wr_guard:
+      enabled: false          # keep off initially; can enable later
+      window: 40
+      min_wr: 20.0
+      cap: 0.60
   min_quality_guards:
     pullback:
       trend_min: 30.0

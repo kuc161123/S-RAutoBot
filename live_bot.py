@@ -2403,58 +2403,58 @@ class TradingBot:
 
                             if chosen is None:
                                 # Record phantoms (if signals exist) and continue to next symbol
-                            try:
-                                # Enforce per-strategy hourly budget (pullback)
-                                hb = cfg.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
-                                pb_limit = int(hb.get('pullback', 3))
-                                if 'phantom_budget' not in shared or not isinstance(shared['phantom_budget'], dict):
-                                    shared['phantom_budget'] = {}
-                                pb_map = shared['phantom_budget'].setdefault('pullback', {})
-                                now_ts = time.time(); one_hour_ago = now_ts - 3600
-                                pb_list = [ts for ts in pb_map.get(sym, []) if ts > one_hour_ago]
-                                pb_map[sym] = pb_list
-                                shared['phantom_budget']['pullback'] = pb_map
-                                pb_remaining = pb_limit - len(pb_list)
-                                if soft_sig_pb and phantom_tracker and pb_remaining > 0:
-                                    from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
-                                    if sym not in ml_breakout_states:
-                                        ml_breakout_states[sym] = BreakoutState()
-                                    state = ml_breakout_states[sym]
-                                    feats = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry)
-                                    phantom_tracker.record_signal(sym, {'side': soft_sig_pb.side, 'entry': soft_sig_pb.entry, 'sl': soft_sig_pb.sl, 'tp': soft_sig_pb.tp}, float(pb_score or 0.0), False, feats, 'pullback')
-                                    try:
-                                        if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
-                                            self.flow_controller.increment_accepted('pullback', 1)
-                                    except Exception:
-                                        pass
-                                    pb_list.append(now_ts)
+                                try:
+                                    # Enforce per-strategy hourly budget (pullback)
+                                    hb = cfg.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
+                                    pb_limit = int(hb.get('pullback', 3))
+                                    if 'phantom_budget' not in shared or not isinstance(shared['phantom_budget'], dict):
+                                        shared['phantom_budget'] = {}
+                                    pb_map = shared['phantom_budget'].setdefault('pullback', {})
+                                    now_ts = time.time(); one_hour_ago = now_ts - 3600
+                                    pb_list = [ts for ts in pb_map.get(sym, []) if ts > one_hour_ago]
                                     pb_map[sym] = pb_list
-                            except Exception:
-                                pass
-                            try:
-                                # Enforce per-strategy hourly budget (mr)
-                                hb = cfg.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
-                                mr_limit = int(hb.get('mr', 3))
-                                if 'phantom_budget' not in shared or not isinstance(shared['phantom_budget'], dict):
-                                    shared['phantom_budget'] = {}
-                                mr_map = shared['phantom_budget'].setdefault('mr', {})
-                                now_ts = time.time(); one_hour_ago = now_ts - 3600
-                                mr_list = [ts for ts in mr_map.get(sym, []) if ts > one_hour_ago]
-                                mr_map[sym] = mr_list
-                                shared['phantom_budget']['mr'] = mr_map
-                                mr_remaining = mr_limit - len(mr_list)
-                                if soft_sig_mr and mr_phantom_tracker and mr_remaining > 0:
-                                    ef2 = soft_sig_mr.meta.get('mr_features', {}) if soft_sig_mr.meta else {}
-                                    mr_phantom_tracker.record_mr_signal(sym, soft_sig_mr.__dict__, float(mr_score or 0.0), False, {}, ef2)
-                                    try:
-                                        if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
-                                            self.flow_controller.increment_accepted('mr', 1)
-                                    except Exception:
-                                        pass
-                                    mr_list.append(now_ts)
+                                    shared['phantom_budget']['pullback'] = pb_map
+                                    pb_remaining = pb_limit - len(pb_list)
+                                    if soft_sig_pb and phantom_tracker and pb_remaining > 0:
+                                        from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
+                                        if sym not in ml_breakout_states:
+                                            ml_breakout_states[sym] = BreakoutState()
+                                        state = ml_breakout_states[sym]
+                                        feats = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry)
+                                        phantom_tracker.record_signal(sym, {'side': soft_sig_pb.side, 'entry': soft_sig_pb.entry, 'sl': soft_sig_pb.sl, 'tp': soft_sig_pb.tp}, float(pb_score or 0.0), False, feats, 'pullback')
+                                        try:
+                                            if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                                                self.flow_controller.increment_accepted('pullback', 1)
+                                        except Exception:
+                                            pass
+                                        pb_list.append(now_ts)
+                                        pb_map[sym] = pb_list
+                                except Exception:
+                                    pass
+                                try:
+                                    # Enforce per-strategy hourly budget (mr)
+                                    hb = cfg.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
+                                    mr_limit = int(hb.get('mr', 3))
+                                    if 'phantom_budget' not in shared or not isinstance(shared['phantom_budget'], dict):
+                                        shared['phantom_budget'] = {}
+                                    mr_map = shared['phantom_budget'].setdefault('mr', {})
+                                    now_ts = time.time(); one_hour_ago = now_ts - 3600
+                                    mr_list = [ts for ts in mr_map.get(sym, []) if ts > one_hour_ago]
                                     mr_map[sym] = mr_list
-                            except Exception:
-                                pass
+                                    shared['phantom_budget']['mr'] = mr_map
+                                    mr_remaining = mr_limit - len(mr_list)
+                                    if soft_sig_mr and mr_phantom_tracker and mr_remaining > 0:
+                                        ef2 = soft_sig_mr.meta.get('mr_features', {}) if soft_sig_mr.meta else {}
+                                        mr_phantom_tracker.record_mr_signal(sym, soft_sig_mr.__dict__, float(mr_score or 0.0), False, {}, ef2)
+                                        try:
+                                            if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                                                self.flow_controller.increment_accepted('mr', 1)
+                                        except Exception:
+                                            pass
+                                        mr_list.append(now_ts)
+                                        mr_map[sym] = mr_list
+                                except Exception:
+                                    pass
                                 logger.info(f"[{sym}] 🧭 SOFT ROUTING: No strategy exceeded ML threshold — recorded phantoms, skipping execution")
                             else:
                                 # Strategy isolation arbitration: pick chosen and proceed to execution

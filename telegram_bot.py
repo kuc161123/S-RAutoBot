@@ -285,6 +285,114 @@ class TGBot:
             except Exception as exc:
                 logger.debug(f"Unable to fetch MR phantom stats: {exc}")
 
+        # Phantom + Executed summaries with WR and open/closed
+        try:
+            # Pullback phantom summary
+            pb_wins = pb_losses = pb_closed = pb_open = 0
+            if phantom_tracker:
+                try:
+                    for trades in phantom_tracker.phantom_trades.values():
+                        for p in trades:
+                            if not getattr(p, 'was_executed', False) and getattr(p, 'outcome', None) in ('win','loss'):
+                                pb_closed += 1
+                                if p.outcome == 'win':
+                                    pb_wins += 1
+                                else:
+                                    pb_losses += 1
+                    pb_open = len(getattr(phantom_tracker, 'active_phantoms', {}) or {})
+                except Exception:
+                    pass
+            pb_wr = (pb_wins / (pb_wins + pb_losses) * 100.0) if (pb_wins + pb_losses) else 0.0
+
+            # MR phantom summary
+            mr_wins = mr_losses = mr_closed = mr_open = 0
+            if mr_phantom:
+                try:
+                    for trades in mr_phantom.mr_phantom_trades.values():
+                        for p in trades:
+                            if not getattr(p, 'was_executed', False) and getattr(p, 'outcome', None) in ('win','loss'):
+                                mr_closed += 1
+                                if p.outcome == 'win':
+                                    mr_wins += 1
+                                else:
+                                    mr_losses += 1
+                    mr_open = len(getattr(mr_phantom, 'active_mr_phantoms', {}) or {})
+                except Exception:
+                    pass
+            mr_wr = (mr_wins / (mr_wins + mr_losses) * 100.0) if (mr_wins + mr_losses) else 0.0
+
+            # Scalp phantom summary
+            sc_wins = sc_losses = sc_closed = sc_open = 0
+            try:
+                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                scpt = get_scalp_phantom_tracker()
+                try:
+                    for trades in scpt.completed.values():
+                        for p in trades:
+                            if getattr(p, 'outcome', None) in ('win','loss') and not getattr(p, 'was_executed', False):
+                                sc_closed += 1
+                                if p.outcome == 'win':
+                                    sc_wins += 1
+                                else:
+                                    sc_losses += 1
+                    sc_open = len(getattr(scpt, 'active', {}) or {})
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            sc_wr = (sc_wins / (sc_wins + sc_losses) * 100.0) if (sc_wins + sc_losses) else 0.0
+
+            # Executed summaries by strategy (closed from trade tracker, open from book)
+            exec_stats = {
+                'pullback': {'wins': 0, 'losses': 0, 'closed': 0, 'open': 0},
+                'mr': {'wins': 0, 'losses': 0, 'closed': 0, 'open': 0},
+                'scalp': {'wins': 0, 'losses': 0, 'closed': 0, 'open': 0},
+            }
+            # Closed executed
+            try:
+                tt = self.shared.get('trade_tracker')
+                trades = getattr(tt, 'trades', []) or []
+                for t in trades:
+                    strat = (getattr(t, 'strategy_name', '') or '').lower()
+                    grp = 'pullback' if 'pullback' in strat else 'mr' if ('mr' in strat or 'reversion' in strat) else 'scalp' if 'scalp' in strat else None
+                    if grp:
+                        exec_stats[grp]['closed'] += 1
+                        try:
+                            pnl = float(getattr(t, 'pnl_usd', 0))
+                        except Exception:
+                            pnl = 0.0
+                        if pnl > 0:
+                            exec_stats[grp]['wins'] += 1
+                        else:
+                            exec_stats[grp]['losses'] += 1
+            except Exception:
+                pass
+            # Open executed
+            try:
+                for pos in (self.shared.get('book').positions.values() if self.shared.get('book') else []):
+                    strat = (getattr(pos, 'strategy_name', '') or '').lower()
+                    grp = 'pullback' if 'pullback' in strat else 'mr' if ('mr' in strat or 'reversion' in strat) else 'scalp' if 'scalp' in strat else None
+                    if grp:
+                        exec_stats[grp]['open'] += 1
+            except Exception:
+                pass
+
+            lines.append("")
+            lines.append("👻 *Phantom Summary*")
+            lines.append(f"• Pullback: W {pb_wins} | L {pb_losses} | WR {pb_wr:.1f}% | Open {pb_open} | Closed {pb_closed}")
+            lines.append(f"• Mean Reversion: W {mr_wins} | L {mr_losses} | WR {mr_wr:.1f}% | Open {mr_open} | Closed {mr_closed}")
+            lines.append(f"• Scalp: W {sc_wins} | L {sc_losses} | WR {sc_wr:.1f}% | Open {sc_open} | Closed {sc_closed}")
+
+            lines.append("")
+            lines.append("✅ *Executed Summary*")
+            for key, label in [('pullback','Pullback'), ('mr','Mean Reversion'), ('scalp','Scalp')]:
+                wins = exec_stats[key]['wins']
+                losses = exec_stats[key]['losses']
+                wr = (wins / (wins + losses) * 100.0) if (wins + losses) else 0.0
+                lines.append(f"• {label}: W {wins} | L {losses} | WR {wr:.1f}% | Open {exec_stats[key]['open']} | Closed {exec_stats[key]['closed']}")
+        except Exception as exc:
+            logger.debug(f"Dashboard summary calc error: {exc}")
+
         lines.append("")
         lines.append("_Use /status for position details and /ml for full analytics._")
 

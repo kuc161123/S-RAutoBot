@@ -604,6 +604,7 @@ class TGBot:
 /recent [limit] – Recent trade log
 /analysis [symbol] – Recent analysis timestamps
 /mlrankings – Symbol rankings by WR/PnL
+/mlpatterns – Learned ML patterns & insights
 
 🤖 ML & Phantoms
 /ml or /mlstatus – Pullback ML status
@@ -2279,19 +2280,40 @@ class TGBot:
             await update.message.reply_text(f"Error forcing ML retrain: {str(e)[:100]}")
     
     async def ml_patterns(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Show detailed ML patterns and insights for both strategies"""
+        """Show detailed ML patterns and insights for all strategies (when trained)"""
         try:
             response_text = "🧠 *ML Pattern Analysis*\n"
             response_text += "━" * 25 + "\n\n"
 
             # Get ML scorers
-            pullback_scorer = get_immediate_scorer()
-            mean_reversion_scorer = get_mean_reversion_scorer()
+            pullback_scorer = None
+            mean_reversion_scorer = None
+            enhanced_mr_scorer = None
+            scalp_scorer = None
+            try:
+                pullback_scorer = get_immediate_scorer()
+            except Exception:
+                pass
+            try:
+                from enhanced_mr_scorer import get_enhanced_mr_scorer
+                enhanced_mr_scorer = get_enhanced_mr_scorer()
+            except Exception:
+                pass
+            try:
+                mean_reversion_scorer = get_mean_reversion_scorer()
+            except Exception:
+                pass
+            try:
+                from ml_scorer_scalp import get_scalp_scorer
+                scalp_scorer = get_scalp_scorer()
+            except Exception:
+                pass
 
-            scorers = {
-                "Pullback Strategy": pullback_scorer,
-                "Mean Reversion Strategy": mean_reversion_scorer
-            }
+            scorers = {}
+            if pullback_scorer:
+                scorers["Pullback Strategy"] = pullback_scorer
+            if mean_reversion_scorer:
+                scorers["Original MR Strategy"] = mean_reversion_scorer
 
             for strategy_name, scorer in scorers.items():
                 response_text += f"*{strategy_name}:*\n"
@@ -2414,7 +2436,34 @@ class TGBot:
                 response_text += "  • Adapt to market conditions\n"
                 response_text += "  • Avoid danger patterns\n\n"
             
-            response_text += "--- End of " + strategy_name + " ---\n\n"
+            response_text += "--- End of Pullback/MR (classic) ---\n\n"
+
+            # Enhanced MR insights (status + placeholder until patterns exposed)
+            if enhanced_mr_scorer:
+                try:
+                    info = enhanced_mr_scorer.get_enhanced_stats()
+                    response_text += "🧠 *Enhanced MR (Ensemble) Insights*\n"
+                    response_text += f"• Status: {info.get('status')}\n"
+                    response_text += f"• Executed: {info.get('completed_trades',0)} | Phantom: {info.get('phantom_count',0)} | Total: {info.get('total_combined',0)}\n"
+                    response_text += f"• Threshold: {info.get('current_threshold','?')}\n"
+                    # Placeholder for future feature importance (ensemble)
+                    response_text += "_Detailed feature importance will be exposed as the ensemble matures._\n\n"
+                except Exception:
+                    response_text += "🧠 *Enhanced MR (Ensemble) Insights*\n  ❌ Not available\n\n"
+
+            # Scalp insights (status + placeholder until ML is trained)
+            if scalp_scorer:
+                try:
+                    response_text += "🩳 *Scalp ML Insights*\n"
+                    response_text += f"• Status: {'✅ Ready' if getattr(scalp_scorer,'is_ml_ready',False) else '⏳ Training'}\n"
+                    response_text += f"• Samples: {getattr(scalp_scorer,'completed_trades',0)}\n"
+                    if getattr(scalp_scorer,'is_ml_ready',False):
+                        response_text += f"• Threshold: {getattr(scalp_scorer,'min_score',75)}\n"
+                        response_text += "_Feature importance and pattern mining will appear as scalp transitions to execution._\n\n"
+                    else:
+                        response_text += "_Patterns will appear once Scalp ML has sufficient samples._\n\n"
+                except Exception:
+                    response_text += "🩳 *Scalp ML Insights*\n  ❌ Not available\n\n"
 
             await update.message.reply_text(response_text, parse_mode=ParseMode.MARKDOWN)
             

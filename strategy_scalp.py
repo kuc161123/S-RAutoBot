@@ -116,9 +116,18 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
 
     # Long scalp candidate
     if ema_aligned_up and bbw_pct >= s.min_bb_width_pct and vol_ratio >= s.vol_ratio_min and lower_w >= s.wick_ratio_min and dist_vwap_atr <= s.vwap_dist_atr_max and orb_ok:
-        # Stop below VWAP/EMA band
-        sl = min(cur_vwap, ema_s.iloc[-1]) - 0.8 * cur_atr
+        # Stop below VWAP/EMA band with high-volatility widening
+        buf_mult = 0.8
+        if bbw_pct >= 0.85:
+            buf_mult = 1.2
+        elif bbw_pct >= 0.70:
+            buf_mult = 1.0
+        sl = min(cur_vwap, ema_s.iloc[-1]) - buf_mult * cur_atr
         entry = c
+        # Enforce minimum stop distance to avoid micro-stops on 3m
+        min_dist = max(entry * 0.002, 0.6 * cur_atr)  # 0.2% of price or 0.6*ATR
+        if entry - sl < min_dist:
+            sl = entry - min_dist
         if entry <= sl:
             return None
         tp = entry + s.rr * (entry - sl)
@@ -136,8 +145,17 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
 
     # Short scalp candidate
     if ema_aligned_dn and bbw_pct >= s.min_bb_width_pct and vol_ratio >= s.vol_ratio_min and upper_w >= s.wick_ratio_min and dist_vwap_atr <= s.vwap_dist_atr_max and orb_ok:
-        sl = max(cur_vwap, ema_s.iloc[-1]) + 0.8 * cur_atr
+        buf_mult = 0.8
+        if bbw_pct >= 0.85:
+            buf_mult = 1.2
+        elif bbw_pct >= 0.70:
+            buf_mult = 1.0
+        sl = max(cur_vwap, ema_s.iloc[-1]) + buf_mult * cur_atr
         entry = c
+        # Enforce minimum stop distance
+        min_dist = max(entry * 0.002, 0.6 * cur_atr)
+        if sl - entry < min_dist:
+            sl = entry + min_dist
         if sl <= entry:
             return None
         tp = entry - s.rr * (sl - entry)

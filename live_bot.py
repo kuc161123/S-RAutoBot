@@ -2427,6 +2427,22 @@ class TradingBot:
                                                 meets_gate = False; reasons.append(f"rev {rev_atr:.2f}<{rev_min}")
                                             if vol_reg == 'high' and not allow_high:
                                                 meets_gate = False; reasons.append("vol=high disallowed")
+                                            # Stronger reversal confirmation for phantom-only MR
+                                            try:
+                                                o_last = df['open'].iloc[-1]
+                                                c_last = df['close'].iloc[-1]
+                                                h_last = df['high'].iloc[-1]
+                                                l_last = df['low'].iloc[-1]
+                                                rng = max(1e-9, h_last - l_last)
+                                                body_ratio = abs(c_last - o_last) / rng
+                                                if sig_mr.side == 'long':
+                                                    if not (c_last > o_last and body_ratio >= 0.4):
+                                                        meets_gate = False; reasons.append(f"weak bull reversal body={body_ratio:.2f}")
+                                                else:
+                                                    if not (c_last < o_last and body_ratio >= 0.4):
+                                                        meets_gate = False; reasons.append(f"weak bear reversal body={body_ratio:.2f}")
+                                            except Exception:
+                                                pass
                                     except Exception:
                                         pass
                                     if not meets_gate:

@@ -379,17 +379,39 @@ class TGBot:
 
             lines.append("")
             lines.append("👻 *Phantom Summary*")
-            lines.append(f"• Pullback: W {pb_wins} | L {pb_losses} | WR {pb_wr:.1f}% | Open {pb_open} | Closed {pb_closed}")
-            lines.append(f"• Mean Reversion: W {mr_wins} | L {mr_losses} | WR {mr_wr:.1f}% | Open {mr_open} | Closed {mr_closed}")
-            lines.append(f"• Scalp: W {sc_wins} | L {sc_losses} | WR {sc_wr:.1f}% | Open {sc_open} | Closed {sc_closed}")
+            # Pullback (phantom)
+            lines.append(f"• 🔵 Pullback")
+            lines.append(f"  ✅ W: {pb_wins}   ❌ L: {pb_losses}   🎯 WR: {pb_wr:.1f}%")
+            lines.append(f"  🟢 Open: {pb_open}   🔒 Closed: {pb_closed}")
+            # Mean Reversion (phantom)
+            lines.append(f"• 🌀 Mean Reversion")
+            lines.append(f"  ✅ W: {mr_wins}   ❌ L: {mr_losses}   🎯 WR: {mr_wr:.1f}%")
+            lines.append(f"  🟢 Open: {mr_open}   🔒 Closed: {mr_closed}")
+            # Scalp (phantom)
+            lines.append(f"• 🩳 Scalp")
+            lines.append(f"  ✅ W: {sc_wins}   ❌ L: {sc_losses}   🎯 WR: {sc_wr:.1f}%")
+            lines.append(f"  🟢 Open: {sc_open}   🔒 Closed: {sc_closed}")
 
             lines.append("")
             lines.append("✅ *Executed Summary*")
-            for key, label in [('pullback','Pullback'), ('mr','Mean Reversion'), ('scalp','Scalp')]:
-                wins = exec_stats[key]['wins']
-                losses = exec_stats[key]['losses']
-                wr = (wins / (wins + losses) * 100.0) if (wins + losses) else 0.0
-                lines.append(f"• {label}: W {wins} | L {losses} | WR {wr:.1f}% | Open {exec_stats[key]['open']} | Closed {exec_stats[key]['closed']}")
+            # Executed Pullback
+            pbx = exec_stats['pullback']
+            pbx_wr = (pbx['wins'] / (pbx['wins'] + pbx['losses']) * 100.0) if (pbx['wins'] + pbx['losses']) else 0.0
+            lines.append("• 🔵 Pullback")
+            lines.append(f"  ✅ W: {pbx['wins']}   ❌ L: {pbx['losses']}   🎯 WR: {pbx_wr:.1f}%")
+            lines.append(f"  🔓 Open: {pbx['open']}   🔒 Closed: {pbx['closed']}")
+            # Executed MR
+            mrx = exec_stats['mr']
+            mrx_wr = (mrx['wins'] / (mrx['wins'] + mrx['losses']) * 100.0) if (mrx['wins'] + mrx['losses']) else 0.0
+            lines.append("• 🌀 Mean Reversion")
+            lines.append(f"  ✅ W: {mrx['wins']}   ❌ L: {mrx['losses']}   🎯 WR: {mrx_wr:.1f}%")
+            lines.append(f"  🔓 Open: {mrx['open']}   🔒 Closed: {mrx['closed']}")
+            # Executed Scalp
+            scx = exec_stats['scalp']
+            scx_wr = (scx['wins'] / (scx['wins'] + scx['losses']) * 100.0) if (scx['wins'] + scx['losses']) else 0.0
+            lines.append("• 🩳 Scalp")
+            lines.append(f"  ✅ W: {scx['wins']}   ❌ L: {scx['losses']}   🎯 WR: {scx_wr:.1f}%")
+            lines.append(f"  🔓 Open: {scx['open']}   🔒 Closed: {scx['closed']}")
         except Exception as exc:
             logger.debug(f"Dashboard summary calc error: {exc}")
 

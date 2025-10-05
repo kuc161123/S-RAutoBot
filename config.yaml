@@ -124,6 +124,25 @@ phantom:
   none_cap: 180          # was 120 — allow more global exploration per day
   cluster3_cap: 45       # was 30 — higher for high-vol symbols
   offhours_cap: 30       # was 20 — higher off-hours cap
+  # Per-strategy hourly per-symbol budgets (more aggressive)
+  hourly_symbol_budget:
+    pullback: 3
+    mr: 3
+    scalp: 4
+  # Per-strategy daily caps (UTC) — isolation across strategies
+  caps:
+    pullback:
+      none: 180
+      cluster3: 45
+      offhours: 30
+    mr:
+      none: 180
+      cluster3: 45
+      offhours: 30
+    scalp:
+      none: 200
+      cluster3: 60
+      offhours: 40
   # Virtual snapshot settings (for calibration around threshold)
   enable_virtual_snapshots: false
   virtual_snapshots_delta: 5   # Create variants at (threshold ± delta)

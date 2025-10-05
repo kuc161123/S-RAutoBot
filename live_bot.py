@@ -607,10 +607,10 @@ class TradingBot:
                     r = scpt.redis_client
                     if r is not None:
                         key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),4)}:{round(float(sc_sig.sl),4)}:{round(float(sc_sig.tp),4)}"
-                        if r.exists(f"phantom:dedup:{key}"):
+                        if r.exists(f"phantom:dedup:scalp:{key}"):
                             dedup_ok = False
                         else:
-                            r.setex(f"phantom:dedup:{key}", 7*24*3600, '1')
+                            r.setex(f"phantom:dedup:scalp:{key}", 7*24*3600, '1')
                 except Exception:
                     pass
                 if not dedup_ok:
@@ -624,21 +624,52 @@ class TradingBot:
                 }
                 try:
                     scpt = get_scalp_phantom_tracker()
-                    scpt.record_scalp_signal(
-                        sym,
-                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                        0.0,
-                        False,
-                        sc_feats
-                    )
-                    # Increment Flow Controller accepted counter for scalp (phantom-only pacing)
+                    # Enforce per-strategy hourly per-symbol budget for scalp
+                    hb = self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
+                    sc_limit = int(hb.get('scalp', 4))
+                    if not hasattr(self, '_scalp_budget'):
+                        self._scalp_budget = {}
+                    now_ts = pd.Timestamp.utcnow().timestamp()
+                    blist = [ts for ts in self._scalp_budget.get(sym, []) if (now_ts - ts) < 3600]
+                    self._scalp_budget[sym] = blist
+                    sc_remaining = sc_limit - len(blist)
+                    # Daily cap (none) per strategy for scalp
+                    daily_ok = True
+                    n_key = None
                     try:
-                        if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
-                            self.flow_controller.increment_accepted('scalp', 1)
+                        if scpt.redis_client is not None:
+                            day = pd.Timestamp.utcnow().strftime('%Y%m%d')
+                            caps_cfg = (self.config.get('phantom', {}).get('caps', {}) or {}).get('scalp', {})
+                            none_cap = int(caps_cfg.get('none', 200))
+                            n_key = f"phantom:daily:none_count:{day}:scalp"
+                            n_val = int(scpt.redis_client.get(n_key) or 0)
+                            daily_ok = n_val < none_cap
                     except Exception:
                         pass
-                    logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
-                    self._scalp_cooldown[sym] = bar_ts
+                    if sc_remaining > 0 and daily_ok:
+                        scpt.record_scalp_signal(
+                            sym,
+                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                            0.0,
+                            False,
+                            sc_feats
+                        )
+                        # Increment Flow Controller accepted counter for scalp (phantom-only pacing)
+                        try:
+                            if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                                self.flow_controller.increment_accepted('scalp', 1)
+                        except Exception:
+                            pass
+                        # Increment daily none count for scalp
+                        try:
+                            if scpt.redis_client is not None and n_key is not None:
+                                scpt.redis_client.incr(n_key)
+                        except Exception:
+                            pass
+                        logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                        self._scalp_cooldown[sym] = bar_ts
+                        blist.append(now_ts)
+                        self._scalp_budget[sym] = blist
                 except Exception as e:
                     logger.debug(f"[{sym}] Scalp(3m) record error: {e}")
             except Exception as e:
@@ -2359,32 +2390,58 @@ class TradingBot:
 
                             if chosen is None:
                                 # Record phantoms (if signals exist) and continue to next symbol
-                                try:
-                                    if soft_sig_pb and phantom_tracker:
-                                        from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
-                                        if sym not in ml_breakout_states:
-                                            ml_breakout_states[sym] = BreakoutState()
-                                        state = ml_breakout_states[sym]
-                                        feats = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry)
-                                        phantom_tracker.record_signal(sym, {'side': soft_sig_pb.side, 'entry': soft_sig_pb.entry, 'sl': soft_sig_pb.sl, 'tp': soft_sig_pb.tp}, float(pb_score or 0.0), False, feats, 'pullback')
-                                        try:
-                                            if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
-                                                self.flow_controller.increment_accepted('pullback', 1)
-                                        except Exception:
-                                            pass
-                                except Exception:
-                                    pass
-                                try:
-                                    if soft_sig_mr and mr_phantom_tracker:
-                                        ef2 = soft_sig_mr.meta.get('mr_features', {}) if soft_sig_mr.meta else {}
-                                        mr_phantom_tracker.record_mr_signal(sym, soft_sig_mr.__dict__, float(mr_score or 0.0), False, {}, ef2)
-                                        try:
-                                            if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
-                                                self.flow_controller.increment_accepted('mr', 1)
-                                        except Exception:
-                                            pass
-                                except Exception:
-                                    pass
+                            try:
+                                # Enforce per-strategy hourly budget (pullback)
+                                hb = cfg.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
+                                pb_limit = int(hb.get('pullback', 3))
+                                if 'phantom_budget' not in shared or not isinstance(shared['phantom_budget'], dict):
+                                    shared['phantom_budget'] = {}
+                                pb_map = shared['phantom_budget'].setdefault('pullback', {})
+                                now_ts = time.time(); one_hour_ago = now_ts - 3600
+                                pb_list = [ts for ts in pb_map.get(sym, []) if ts > one_hour_ago]
+                                pb_map[sym] = pb_list
+                                shared['phantom_budget']['pullback'] = pb_map
+                                pb_remaining = pb_limit - len(pb_list)
+                                if soft_sig_pb and phantom_tracker and pb_remaining > 0:
+                                    from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
+                                    if sym not in ml_breakout_states:
+                                        ml_breakout_states[sym] = BreakoutState()
+                                    state = ml_breakout_states[sym]
+                                    feats = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry)
+                                    phantom_tracker.record_signal(sym, {'side': soft_sig_pb.side, 'entry': soft_sig_pb.entry, 'sl': soft_sig_pb.sl, 'tp': soft_sig_pb.tp}, float(pb_score or 0.0), False, feats, 'pullback')
+                                    try:
+                                        if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                                            self.flow_controller.increment_accepted('pullback', 1)
+                                    except Exception:
+                                        pass
+                                    pb_list.append(now_ts)
+                                    pb_map[sym] = pb_list
+                            except Exception:
+                                pass
+                            try:
+                                # Enforce per-strategy hourly budget (mr)
+                                hb = cfg.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
+                                mr_limit = int(hb.get('mr', 3))
+                                if 'phantom_budget' not in shared or not isinstance(shared['phantom_budget'], dict):
+                                    shared['phantom_budget'] = {}
+                                mr_map = shared['phantom_budget'].setdefault('mr', {})
+                                now_ts = time.time(); one_hour_ago = now_ts - 3600
+                                mr_list = [ts for ts in mr_map.get(sym, []) if ts > one_hour_ago]
+                                mr_map[sym] = mr_list
+                                shared['phantom_budget']['mr'] = mr_map
+                                mr_remaining = mr_limit - len(mr_list)
+                                if soft_sig_mr and mr_phantom_tracker and mr_remaining > 0:
+                                    ef2 = soft_sig_mr.meta.get('mr_features', {}) if soft_sig_mr.meta else {}
+                                    mr_phantom_tracker.record_mr_signal(sym, soft_sig_mr.__dict__, float(mr_score or 0.0), False, {}, ef2)
+                                    try:
+                                        if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                                            self.flow_controller.increment_accepted('mr', 1)
+                                    except Exception:
+                                        pass
+                                    mr_list.append(now_ts)
+                                    mr_map[sym] = mr_list
+                            except Exception:
+                                pass
                                 logger.info(f"[{sym}] 🧭 SOFT ROUTING: No strategy exceeded ML threshold — recorded phantoms, skipping execution")
                                 continue
 
@@ -2537,11 +2594,11 @@ class TradingBot:
                                 except Exception:
                                     return f"{symbol}:{sig.side}:{time.time()}"
 
-                            def _not_duplicate(symbol, sig):
+                            def _not_duplicate(strategy_tag: str, symbol, sig):
                                 key = _dedup_key(symbol, sig)
                                 if phantom_dedup_redis:
                                     try:
-                                        if phantom_dedup_redis.exists(f"phantom:dedup:{key}"):
+                                        if phantom_dedup_redis.exists(f"phantom:dedup:{strategy_tag}:{key}"):
                                             # Track dedup hits (per day)
                                             try:
                                                 from datetime import datetime as _dt
@@ -2554,66 +2611,77 @@ class TradingBot:
                                         pass
                                 if phantom_dedup_redis:
                                     try:
-                                        phantom_dedup_redis.setex(f"phantom:dedup:{key}", 7*24*3600, '1')
+                                        phantom_dedup_redis.setex(f"phantom:dedup:{strategy_tag}:{key}", 7*24*3600, '1')
                                     except Exception:
                                         pass
                                 return True
 
-                            # Daily caps via Redis
-                            def _daily_capped(symbol, cluster_id: int) -> bool:
+                            # Daily caps via Redis (per strategy)
+                            def _daily_capped(strategy: str, symbol, cluster_id: int) -> bool:
                                 if not phantom_dedup_redis:
                                     return False
                                 try:
                                     from datetime import datetime as _dt
                                     day = _dt.utcnow().strftime('%Y%m%d')
-                                    # None routing cap
-                                    none_key = f"phantom:daily:none_count:{day}"
+                                    caps_cfg = (cfg.get('phantom', {}).get('caps', {}) or {}).get(strategy, {})
+                                    none_cap = int(caps_cfg.get('none', phantom_none_cap))
+                                    cluster3_cap = int(caps_cfg.get('cluster3', phantom_cluster3_cap))
+                                    offhours_cap = int(caps_cfg.get('offhours', phantom_offhours_cap))
+                                    # None routing cap (per strategy)
+                                    none_key = f"phantom:daily:none_count:{day}:{strategy}"
                                     none_val = int(phantom_dedup_redis.get(none_key) or 0)
-                                    if none_val >= phantom_none_cap:
+                                    if none_val >= none_cap:
                                         return True
                                     # Cluster 3 cap
                                     if cluster_id == 3:
-                                        cl_key = f"phantom:daily:cluster3_count:{day}"
+                                        cl_key = f"phantom:daily:cluster3_count:{day}:{strategy}"
                                         cl_val = int(phantom_dedup_redis.get(cl_key) or 0)
-                                        if cl_val >= phantom_cluster3_cap:
+                                        if cl_val >= cluster3_cap:
                                             return True
                                     # Off-hours cap
                                     hour = _dt.utcnow().hour
                                     is_off = (hour >= 22 or hour < 2)
                                     if is_off:
-                                        off_key = f"phantom:daily:offhours_count:{day}"
+                                        off_key = f"phantom:daily:offhours_count:{day}:{strategy}"
                                         off_val = int(phantom_dedup_redis.get(off_key) or 0)
-                                        if off_val >= phantom_offhours_cap:
+                                        if off_val >= offhours_cap:
                                             return True
                                 except Exception:
                                     return False
                                 return False
 
-                            def _increment_daily(symbol, cluster_id: int, routing: str):
+                            def _increment_daily(strategy: str, symbol, cluster_id: int, routing: str):
                                 if not phantom_dedup_redis:
                                     return
                                 from datetime import datetime as _dt
                                 day = _dt.utcnow().strftime('%Y%m%d')
                                 try:
-                                    phantom_dedup_redis.incr(f"phantom:daily:none_count:{day}")
+                                    phantom_dedup_redis.incr(f"phantom:daily:none_count:{day}:{strategy}")
                                     if cluster_id == 3:
-                                        phantom_dedup_redis.incr(f"phantom:daily:cluster3_count:{day}")
+                                        phantom_dedup_redis.incr(f"phantom:daily:cluster3_count:{day}:{strategy}")
                                     hour = _dt.utcnow().hour
                                     if (hour >= 22 or hour < 2):
-                                        phantom_dedup_redis.incr(f"phantom:daily:offhours_count:{day}")
+                                        phantom_dedup_redis.incr(f"phantom:daily:offhours_count:{day}:{strategy}")
                                 except Exception:
                                     pass
 
-                            # Hourly phantom-only budget per symbol (max 3)
-                            budget = shared['phantom_budget'].setdefault(sym, [])
+                            # Ensure per-strategy hourly budget maps
+                            if 'phantom_budget' not in shared or not isinstance(shared['phantom_budget'], dict):
+                                shared['phantom_budget'] = {}
+                            pb_budget_map = shared['phantom_budget'].setdefault('pullback', {})
+                            mr_budget_map = shared['phantom_budget'].setdefault('mr', {})
+                            # Configured per-strategy hourly budgets (defaults)
+                            hb = cfg.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
+                            pb_limit = int(hb.get('pullback', 3))
+                            mr_limit = int(hb.get('mr', 3))
                             now_ts = time.time()
                             one_hour_ago = now_ts - 3600
-                            budget = [ts for ts in budget if ts > one_hour_ago]
-                            shared['phantom_budget'][sym] = budget
-                            remaining = 3 - len(budget)
-                            if remaining <= 0:
-                                logger.debug(f"[{sym}] Phantom-only budget exhausted for this hour")
-                                continue
+                            # Clean old entries
+                            pb_budget = [ts for ts in pb_budget_map.get(sym, []) if ts > one_hour_ago]
+                            mr_budget = [ts for ts in mr_budget_map.get(sym, []) if ts > one_hour_ago]
+                            pb_budget_map[sym] = pb_budget
+                            mr_budget_map[sym] = mr_budget
+                            shared['phantom_budget'] = {'pullback': pb_budget_map, 'mr': mr_budget_map}
 
                             # Per-symbol phantom cooldown (8 candles)
                             phantom_cd_map = shared['phantom_cooldown']
@@ -2621,7 +2689,6 @@ class TradingBot:
                             if candles_processed - last_idx < 8:
                                 continue
 
-                            recorded = 0
                             # Load cluster id for quotas
                             try:
                                 from symbol_clustering import load_symbol_clusters
@@ -2629,13 +2696,16 @@ class TradingBot:
                                 cluster_id = int(clusters_map.get(sym, 3))
                             except Exception:
                                 cluster_id = 3
-                            caps_reached = _daily_capped(sym, cluster_id)
-                            if caps_reached:
-                                logger.debug(f"[{sym}] Daily phantom caps reached; MR/PB phantom skipped; scalp still allowed")
+                            # Per-strategy daily caps
+                            mr_caps_reached = _daily_capped('mr', sym, cluster_id)
+                            pb_caps_reached = _daily_capped('pullback', sym, cluster_id)
+                            if mr_caps_reached and pb_caps_reached:
+                                logger.debug(f"[{sym}] Daily caps reached for MR and PB; skipping both")
                             # Try MR phantom (exploration gating)
                             try:
                                 sig_mr = detect_signal_mean_reversion(df.copy(), settings, sym)
-                                if (not caps_reached) and sig_mr and _not_duplicate(sym, sig_mr):
+                                mr_remaining = mr_limit - len(mr_budget)
+                                if (not mr_caps_reached) and mr_remaining > 0 and sig_mr and _not_duplicate('mr', sym, sig_mr):
                                     ef = sig_mr.meta.get('mr_features', {}).copy() if sig_mr.meta else {}
                                     ef['routing'] = 'none'
                                     # Exploration gate (phantom-only) — high-vol allowed if configured
@@ -2703,17 +2773,19 @@ class TradingBot:
                                                     self.flow_controller.increment_accepted('mr', 1)
                                             except Exception:
                                                 pass
-                                            _increment_daily(sym, cluster_id, 'none')
-                                        budget.append(now_ts)
-                                        recorded += 1
+                                            _increment_daily('mr', sym, cluster_id, 'none')
+                                        # Consume MR hourly budget
+                                        mr_budget.append(now_ts)
+                                        mr_budget_map[sym] = mr_budget
                             except Exception:
                                 pass
 
-                            # Try Pullback phantom if budget remains (exploration gating)
-                            if (not caps_reached) and recorded < remaining:
+                            # Try Pullback phantom (exploration gating)
+                            if not pb_caps_reached:
                                 try:
                                     sig_pb = get_pullback_signals(df.copy(), settings, sym)
-                                    if sig_pb and _not_duplicate(sym, sig_pb):
+                                    pb_remaining = pb_limit - len(pb_budget)
+                                    if pb_remaining > 0 and sig_pb and _not_duplicate('pullback', sym, sig_pb):
                                         from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
                                         if sym not in ml_breakout_states:
                                             ml_breakout_states[sym] = BreakoutState()
@@ -2791,9 +2863,10 @@ class TradingBot:
                                                         self.flow_controller.increment_accepted('pullback', 1)
                                                 except Exception:
                                                     pass
-                                                _increment_daily(sym, cluster_id, 'none')
-                                            budget.append(now_ts)
-                                            recorded += 1
+                                                _increment_daily('pullback', sym, cluster_id, 'none')
+                                            # Consume PB hourly budget
+                                            pb_budget.append(now_ts)
+                                            pb_budget_map[sym] = pb_budget
                                 except Exception:
                                     pass
 

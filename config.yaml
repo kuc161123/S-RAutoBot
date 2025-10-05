@@ -120,9 +120,9 @@ telegram:
   chat_id: ${TELEGRAM_CHAT_ID}
 phantom:
   # Daily caps for phantom sampling to keep training balanced
-  none_cap: 120          # was 50 — allow more global exploration per day
-  cluster3_cap: 30       # was 20 — modestly higher for high-vol symbols
-  offhours_cap: 20       # was 15 — modestly higher off-hours cap
+  none_cap: 180          # was 120 — allow more global exploration per day
+  cluster3_cap: 45       # was 30 — higher for high-vol symbols
+  offhours_cap: 30       # was 20 — higher off-hours cap
   # Virtual snapshot settings (for calibration around threshold)
   enable_virtual_snapshots: false
   virtual_snapshots_delta: 5   # Create variants at (threshold ± delta)
@@ -131,24 +131,24 @@ phantom:
 phantom_flow:
   enabled: true
   daily_target:
-    pullback: 40
-    mr: 40
-    scalp: 40
-  smoothing_hours: 3
+    pullback: 80
+    mr: 80
+    scalp: 80
+  smoothing_hours: 2
   relax_limits:
     pullback:
-      trend: 10.0           # reduce trend_min by up to 10 points
-      confirm: 0.10         # reduce confirmation_min by up to 0.10
-      mtf: 0.20             # reduce mtf_min by up to 0.20
+      trend: 15.0           # reduce trend_min by up to 15 points
+      confirm: 0.15         # reduce confirmation_min by up to 0.15
+      mtf: 0.30             # reduce mtf_min by up to 0.30
     mr:
-      rc: 0.20              # reduce rc_min by up to 0.20
-      touches: 2            # reduce touches_min by up to 2
-      dist_mid_atr: 0.30    # reduce dist_mid_atr_min by up to 0.30
-      rev_atr: 0.30         # reduce rev_candle_atr_min by up to 0.30
+      rc: 0.30              # reduce rc_min by up to 0.30
+      touches: 3            # reduce touches_min by up to 3
+      dist_mid_atr: 0.40    # reduce dist_mid_atr_min by up to 0.40
+      rev_atr: 0.40         # reduce rev_candle_atr_min by up to 0.40
     scalp:
-      vwap_dist_atr: 0.40   # increase vwap_dist_atr_max by up to 0.40
-      bb_width_pct: 0.20    # reduce min_bb_width_pct by up to 0.20
-      vol_ratio: 0.30       # reduce vol_ratio_min by up to 0.30
+      vwap_dist_atr: 0.60   # increase vwap_dist_atr_max by up to 0.60
+      bb_width_pct: 0.30    # reduce min_bb_width_pct by up to 0.30
+      vol_ratio: 0.40       # reduce vol_ratio_min by up to 0.40
   min_quality_guards:
     pullback:
       trend_min: 30.0

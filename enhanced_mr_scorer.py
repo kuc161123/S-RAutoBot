@@ -1091,6 +1091,248 @@ class EnhancedMeanReversionScorer:
                 'error': str(e)
             }
 
+    def get_enhanced_patterns(self) -> dict:
+        """Extract learned patterns and insights for Enhanced MR.
+
+        Returns structure compatible with UI renderer used for Pullback patterns:
+        {
+          'feature_importance': {feat: importance%},
+          'time_patterns': {
+             'best_hours': {hour: 'WR xx% (N=yy)'},
+             'worst_hours': {...},
+             'session_performance': {session: 'WR xx% (N=yy)'}
+          },
+          'market_conditions': { ... },
+          'winning_patterns': [str,...],
+          'losing_patterns': [str,...]
+        }
+        """
+        patterns = {
+            'feature_importance': {},
+            'time_patterns': {},
+            'market_conditions': {},
+            'winning_patterns': [],
+            'losing_patterns': []
+        }
+
+        try:
+            # 1) Feature importance from RangeDetector (RF) if present
+            rf = self.ensemble_models.get('range_detector')
+            if rf is not None and hasattr(rf, 'feature_importances_'):
+                feature_names = [
+                    'range_width_atr',
+                    'touch_count_sr',
+                    'volume_at_reversal_ratio',
+                    'volatility_regime'
+                ]
+                imps = getattr(rf, 'feature_importances_', None)
+                if imps is not None and len(imps) > 0:
+                    # Guard mismatch
+                    if len(imps) != len(feature_names):
+                        feature_names = feature_names[:len(imps)]
+                    pairs = list(zip(feature_names, imps))
+                    pairs.sort(key=lambda x: x[1], reverse=True)
+                    for feat, imp in pairs:
+                        patterns['feature_importance'][feat] = round(float(imp) * 100, 1)
+
+            # 2) Load recent executed + phantom MR trades for pattern mining
+            data = []
+            try:
+                training_data = self._load_training_data(include_phantoms=True)
+                # Keep last 500 by timestamp if available
+                def _ts(rec):
+                    try:
+                        return datetime.fromisoformat(str(rec.get('timestamp')))
+                    except Exception:
+                        return datetime.utcnow()
+                training_data.sort(key=_ts)
+                data = training_data[-500:]
+            except Exception:
+                data = []
+
+            if not data:
+                return patterns
+
+            # Normalize helpers
+            def _outcome(rec):
+                o = rec.get('outcome', 0)
+                try:
+                    return int(o)
+                except Exception:
+                    return 1 if str(o).lower() == 'win' else 0
+
+            def _feat(rec, key, default=None):
+                f = rec.get('enhanced_features') or rec.get('features') or {}
+                return f.get(key, default)
+
+            # 3) Time-based patterns (hours + sessions)
+            from collections import defaultdict
+            by_hour = defaultdict(lambda: {'w': 0, 'n': 0})
+            by_sess = defaultdict(lambda: {'w': 0, 'n': 0})
+            for rec in data:
+                try:
+                    ts = datetime.fromisoformat(str(rec.get('timestamp')))
+                except Exception:
+                    ts = datetime.utcnow()
+                hr = ts.hour
+                by_hour[hr]['n'] += 1
+                by_hour[hr]['w'] += _outcome(rec)
+                # Simple UTC session map
+                if 0 <= hr < 8:
+                    sess = 'Asia'
+                elif 8 <= hr < 14:
+                    sess = 'Europe'
+                elif 14 <= hr < 22:
+                    sess = 'US'
+                else:
+                    sess = 'Off'
+                by_sess[sess]['n'] += 1
+                by_sess[sess]['w'] += _outcome(rec)
+
+            def _wr_fmt(w, n):
+                wr = (w / n * 100.0) if n > 0 else 0.0
+                return f"WR {wr:.0f}% (N={n})"
+
+            # Best/Worst hours by WR with min Ns
+            hour_stats = []
+            for h, c in by_hour.items():
+                if c['n'] >= 3:
+                    hour_stats.append((h, c['w'], c['n']))
+            hour_stats.sort(key=lambda x: (x[1]/x[2]) if x[2] else 0.0, reverse=True)
+            best_hours = {str(h): _wr_fmt(w, n) for h, w, n in hour_stats[:5]}
+            worst_hours = {str(h): _wr_fmt(w, n) for h, w, n in hour_stats[-5:][::-1]}
+
+            session_perf = {s: _wr_fmt(c['w'], c['n']) for s, c in by_sess.items() if c['n'] > 0}
+            patterns['time_patterns'] = {
+                'best_hours': best_hours,
+                'worst_hours': worst_hours,
+                'session_performance': session_perf
+            }
+
+            # 4) Market condition patterns
+            # Buckets for key features
+            def _bucket_width(x):
+                try:
+                    x = float(x)
+                except Exception:
+                    return 'unknown'
+                if x < 0.8:
+                    return 'narrow(<0.8 ATR)'
+                if x < 1.5:
+                    return 'medium(0.8-1.5 ATR)'
+                return 'wide(>1.5 ATR)'
+
+            def _bucket_volrev(x):
+                try:
+                    x = float(x)
+                except Exception:
+                    return 'unknown'
+                if x < 0.8:
+                    return 'low(<0.8)'
+                if x < 1.2:
+                    return 'normal(0.8-1.2)'
+                return 'high(>1.2)'
+
+            def _vol_reg(x):
+                if x is None:
+                    return 'unknown'
+                s = str(x).lower()
+                if s in ('0', 'low'):
+                    return 'low'
+                if s in ('2', 'high'):
+                    return 'high'
+                return 'normal'
+
+            from collections import Counter
+            cond_counts = {}
+            # Volatility regime
+            vr = Counter()
+            # Width buckets
+            wb = Counter()
+            # Touches buckets
+            tb = Counter()
+            # Volume at reversal buckets
+            vb = Counter()
+            for rec in data:
+                o = _outcome(rec)
+                ef = rec.get('enhanced_features') or rec.get('features') or {}
+                vr[_vol_reg(ef.get('volatility_regime'))] += (o, 1)
+                wb[_bucket_width(ef.get('range_width_atr'))] += (o, 1)
+                try:
+                    t = float(ef.get('touch_count_sr', 0))
+                    touch_key = 'touches≥4' if t >= 4 else 'touches≤3'
+                except Exception:
+                    touch_key = 'touches≤3'
+                tb[touch_key] += (o, 1)
+                vb[_bucket_volrev(ef.get('volume_at_reversal_ratio'))] += (o, 1)
+
+            def _wr_map(counter_obj):
+                out = {}
+                for k, (w, n) in counter_obj.items():
+                    try:
+                        wr = (w / n) * 100.0 if n else 0.0
+                        out[k] = f"WR {wr:.0f}% (N={n})"
+                    except Exception:
+                        out[k] = "WR 0% (N=0)"
+                return out
+
+            # Convert Counters of tuples to dicts
+            patterns['market_conditions'] = {
+                'volatility_regime': _wr_map(vr),
+                'range_width_atr': _wr_map(wb),
+                'touch_count_sr': _wr_map(tb),
+                'volume_at_reversal': _wr_map(vb)
+            }
+
+            # 5) Summarize winning/losing patterns (heuristic statements)
+            # Use thresholds to highlight notable deltas
+            try:
+                def _top_k(d, k=2):
+                    # d values like "WR xx% (N=yy)" -> sort by WR
+                    def _wr(v):
+                        try:
+                            return float(v.split('%')[0].split()[-1])
+                        except Exception:
+                            return 0.0
+                    return sorted(d.items(), key=lambda x: _wr(x[1]), reverse=True)[:k]
+
+                vr_top = _top_k(patterns['market_conditions'].get('volatility_regime', {}))
+                wb_top = _top_k(patterns['market_conditions'].get('range_width_atr', {}))
+                tb_top = _top_k(patterns['market_conditions'].get('touch_count_sr', {}))
+                vb_top = _top_k(patterns['market_conditions'].get('volume_at_reversal', {}))
+
+                for k, v in vr_top:
+                    patterns['winning_patterns'].append(f"Better in {k} volatility: {v}")
+                for k, v in wb_top:
+                    patterns['winning_patterns'].append(f"Range width {k}: {v}")
+                for k, v in tb_top:
+                    patterns['winning_patterns'].append(f"S/R {k}: {v}")
+                for k, v in vb_top:
+                    patterns['winning_patterns'].append(f"Reversal volume {k}: {v}")
+
+                # Losing: pick bottom 2 for volatility and width
+                def _bottom_k(d, k=2):
+                    def _wr(v):
+                        try:
+                            return float(v.split('%')[0].split()[-1])
+                        except Exception:
+                            return 0.0
+                    return sorted(d.items(), key=lambda x: _wr(x[1]))[:k]
+
+                vr_bot = _bottom_k(patterns['market_conditions'].get('volatility_regime', {}))
+                wb_bot = _bottom_k(patterns['market_conditions'].get('range_width_atr', {}))
+                for k, v in vr_bot:
+                    patterns['losing_patterns'].append(f"Worse in {k} volatility: {v}")
+                for k, v in wb_bot:
+                    patterns['losing_patterns'].append(f"Range width {k}: {v}")
+            except Exception:
+                pass
+
+        except Exception as e:
+            logger.error(f"Error extracting Enhanced MR patterns: {e}")
+
+        return patterns
+
 # Global instance
 _enhanced_mr_scorer = None
 

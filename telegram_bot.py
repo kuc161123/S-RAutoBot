@@ -2344,10 +2344,6 @@ class TGBot:
             except Exception:
                 pass
             try:
-                mean_reversion_scorer = get_mean_reversion_scorer()
-            except Exception:
-                pass
-            try:
                 from ml_scorer_scalp import get_scalp_scorer
                 scalp_scorer = get_scalp_scorer()
             except Exception:
@@ -2356,8 +2352,7 @@ class TGBot:
             scorers = {}
             if pullback_scorer:
                 scorers["Pullback Strategy"] = pullback_scorer
-            if mean_reversion_scorer:
-                scorers["Original MR Strategy"] = mean_reversion_scorer
+            # Original MR disabled per configuration; do not include in patterns
 
             for strategy_name, scorer in scorers.items():
                 response_text += f"*{strategy_name}:*\n"
@@ -2480,9 +2475,9 @@ class TGBot:
                 response_text += "  • Adapt to market conditions\n"
                 response_text += "  • Avoid danger patterns\n\n"
             
-            response_text += "--- End of Pullback/MR (classic) ---\n\n"
+            # End of Pullback (classic). Enhanced MR follows.
 
-            # Enhanced MR insights (status + placeholder until patterns exposed)
+            # Enhanced MR insights (now with patterns)
             if enhanced_mr_scorer:
                 try:
                     info = enhanced_mr_scorer.get_enhanced_stats()
@@ -2490,8 +2485,50 @@ class TGBot:
                     response_text += f"• Status: {info.get('status')}\n"
                     response_text += f"• Executed: {info.get('completed_trades',0)} | Phantom: {info.get('phantom_count',0)} | Total: {info.get('total_combined',0)}\n"
                     response_text += f"• Threshold: {info.get('current_threshold','?')}\n"
-                    # Placeholder for future feature importance (ensemble)
-                    response_text += "_Detailed feature importance will be exposed as the ensemble matures._\n\n"
+                    # Patterns
+                    emr_patterns = enhanced_mr_scorer.get_enhanced_patterns()
+                    fi = emr_patterns.get('feature_importance', {})
+                    if fi:
+                        response_text += "\n  📊 *Feature Importance*\n"
+                        for i, (feat, imp) in enumerate(list(fi.items())[:10], 1):
+                            feat_name = feat.replace('_', ' ').title()
+                            bar_len = max(1, min(10, int(float(imp)/10)))
+                            bar = '█' * bar_len + '░' * (10 - bar_len)
+                            response_text += f"  {i}. {feat_name}\n     {bar} {float(imp):.1f}%\n"
+                    tp = emr_patterns.get('time_patterns', {})
+                    if tp:
+                        response_text += "\n  ⏰ *Time-Based Insights*\n"
+                        if tp.get('best_hours'):
+                            response_text += "  🌟 *Golden Hours*\n"
+                            for h, txt in list(tp['best_hours'].items())[:5]:
+                                response_text += f"  • {h}: {txt}\n"
+                        if tp.get('worst_hours'):
+                            response_text += "  ⚠️ *Danger Hours*\n"
+                            for h, txt in list(tp['worst_hours'].items())[:5]:
+                                response_text += f"  • {h}: {txt}\n"
+                        if tp.get('session_performance'):
+                            response_text += "  🌍 *Market Sessions*\n"
+                            for s, txt in tp['session_performance'].items():
+                                response_text += f"  • {s}: {txt}\n"
+                    mc = emr_patterns.get('market_conditions', {})
+                    if mc:
+                        response_text += "\n  🌡️ *Market Condition Patterns*\n"
+                        for k, v in mc.items():
+                            title = k.replace('_', ' ').title()
+                            response_text += f"  {title}:\n"
+                            for bk, txt in v.items():
+                                response_text += f"   • {bk}: {txt}\n"
+                    wp = emr_patterns.get('winning_patterns', [])
+                    if wp:
+                        response_text += "\n  ✅ *Common in Winners*\n"
+                        for p in wp[:5]:
+                            response_text += f"  • {p}\n"
+                    lp = emr_patterns.get('losing_patterns', [])
+                    if lp:
+                        response_text += "\n  ❌ *Common in Losers*\n"
+                        for p in lp[:5]:
+                            response_text += f"  • {p}\n"
+                    response_text += "\n"
                 except Exception:
                     response_text += "🧠 *Enhanced MR (Ensemble) Insights*\n  ❌ Not available\n\n"
 

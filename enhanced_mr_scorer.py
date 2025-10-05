@@ -587,7 +587,8 @@ class EnhancedMeanReversionScorer:
                 'pnl_percent': float(pnl_percent),
                 'timestamp': datetime.now().isoformat(),
                 'symbol': signal_data.get('symbol', 'UNKNOWN'),
-                'strategy': 'enhanced_mr'
+                'strategy': 'enhanced_mr',
+                'exit_reason': signal_data.get('exit_reason')
             }
 
             self._store_trade_record(trade_record)

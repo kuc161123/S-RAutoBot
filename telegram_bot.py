@@ -283,6 +283,11 @@ class TGBot:
                 lines.append("")
                 lines.append("🌀 *MR Phantom*")
                 lines.append(f"• Tracked: {mr_stats.get('total_mr_trades', 0)}")
+                try:
+                    timeouts = mr_stats.get('mr_specific_metrics', {}).get('timeout_closures', 0)
+                    lines.append(f"• Timeouts: {timeouts}")
+                except Exception:
+                    pass
             except Exception as exc:
                 logger.debug(f"Unable to fetch MR phantom stats: {exc}")
 

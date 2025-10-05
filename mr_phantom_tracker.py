@@ -330,16 +330,6 @@ class MRPhantomTracker:
         # Save to Redis
         self._save_to_redis()
 
-        # Update rolling WR list for WR guard (MR strategy)
-        try:
-            if self.redis_client:
-                key = 'phantom:wr:mr'
-                val = '1' if outcome == 'win' else '0'
-                self.redis_client.lpush(key, val)
-                self.redis_client.ltrim(key, 0, 199)
-        except Exception:
-            pass
-
         return phantom
 
     def update_mr_phantom_prices(self, symbol: str, current_price: float, df=None):
@@ -384,7 +374,15 @@ class MRPhantomTracker:
         time_elapsed = datetime.now() - phantom.signal_time
         if time_elapsed > timedelta(hours=self.timeout_hours):
             logger.info(f"[{symbol}] MR phantom trade timed out after {self.timeout_hours} hours")
-            self._close_mr_phantom(symbol, current_price, "loss", "timeout")
+            try:
+                if phantom.side == 'long':
+                    pnl_pct_now = ((current_price - phantom.entry_price) / phantom.entry_price) * 100
+                else:
+                    pnl_pct_now = ((phantom.entry_price - current_price) / phantom.entry_price) * 100
+                outcome_timeout = 'win' if pnl_pct_now >= 0 else 'loss'
+            except Exception:
+                outcome_timeout = 'loss'
+            self._close_mr_phantom(symbol, current_price, outcome_timeout, "timeout")
 
     def _close_mr_phantom(self, symbol: str, exit_price: float, outcome: str, exit_reason: str):
         """Close MR phantom trade with range-specific analysis"""
@@ -455,6 +453,16 @@ class MRPhantomTracker:
 
         # Update range performance tracking
         self._update_range_performance(phantom)
+
+        # Update rolling WR list for WR guard (skip timeouts)
+        try:
+            if self.redis_client and exit_reason != 'timeout':
+                key = 'phantom:wr:mr'
+                val = '1' if outcome == 'win' else '0'
+                self.redis_client.lpush(key, val)
+                self.redis_client.ltrim(key, 0, 199)
+        except Exception:
+            pass
 
         # Save to Redis
         self._save_to_redis()
@@ -531,7 +539,8 @@ class MRPhantomTracker:
                 'features': phantom.features,
                 'enhanced_features': phantom.enhanced_features,
                 'score': phantom.ml_score,  # ML scorer expects 'score' field
-                'timestamp': phantom.signal_time
+                'timestamp': phantom.signal_time,
+                'exit_reason': phantom.exit_reason
             }
 
             # Calculate P&L percentage for outcome

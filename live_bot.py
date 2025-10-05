@@ -1762,16 +1762,15 @@ class TradingBot:
                             logger.debug(f"Scalp promotion readiness check failed: {e}")
                         # One-time backfill of Scalp phantom outcomes into Scalp ML (avoid duplicates via Redis flag)
                         try:
-                            from ml_scorer_scalp import get_scalp_scorer
-                            s_scorer = get_scalp_scorer()
+                            s_scorer = get_scalp_scorer() if (SCALP_AVAILABLE and get_scalp_scorer is not None) else None
                             backfilled = False
-                            if getattr(s_scorer, 'redis_client', None):
+                            if s_scorer and getattr(s_scorer, 'redis_client', None):
                                 try:
                                     if s_scorer.redis_client.get('ml:backfill:scalp:done') == '1':
                                         backfilled = True
                                 except Exception:
                                     pass
-                            if not backfilled:
+                            if s_scorer and not backfilled:
                                 fed = 0
                                 for trades in scpt.completed.values():
                                     for t in trades:
@@ -1784,7 +1783,7 @@ class TradingBot:
                                                 pass
                                 # Set redis flag to avoid duplication on future starts
                                 try:
-                                    if getattr(s_scorer, 'redis_client', None):
+                                    if s_scorer and getattr(s_scorer, 'redis_client', None):
                                         s_scorer.redis_client.set('ml:backfill:scalp:done', '1')
                                 except Exception:
                                     pass

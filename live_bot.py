@@ -1013,6 +1013,43 @@ class TradingBot:
                     # Get leverage
                     leverage = meta.get(symbol, {}).get("max_leverage", 1.0) if meta else 1.0
                     
+                    # Normalize exit_reason for both ML and trade record consistency
+                    try:
+                        # Compute PnL pct and proximity to TP/SL
+                        if pos.side == "long":
+                            pnl_pct_tmp = ((exit_price - pos.entry) / pos.entry) * 100
+                            tp_distance = abs(exit_price - pos.tp)
+                            sl_distance = abs(exit_price - pos.sl)
+                        else:
+                            pnl_pct_tmp = ((pos.entry - exit_price) / pos.entry) * 100
+                            tp_distance = abs(exit_price - pos.tp)
+                            sl_distance = abs(exit_price - pos.sl)
+                        # Reclassify manual closes near targets
+                        if exit_reason == "manual":
+                            if tp_distance < sl_distance and pnl_pct_tmp > 0:
+                                exit_reason = "tp"
+                                logger.info(f"[{symbol}] Manual close near TP with profit - treating as TP for records")
+                            elif sl_distance < tp_distance and pnl_pct_tmp < 0:
+                                exit_reason = "sl"
+                                logger.info(f"[{symbol}] Manual close near SL with loss - treating as SL for records")
+                        # Sanity-correct mismatched labels vs PnL
+                        if exit_reason == "tp" and pnl_pct_tmp < 0:
+                            exit_reason = "sl"
+                        elif exit_reason == "sl" and pnl_pct_tmp > 0:
+                            exit_reason = "tp"
+                    except Exception:
+                        pass
+
+                    # If strategy_name is unknown (e.g., after restart), try recover from Redis hint
+                    try:
+                        if getattr(self, '_redis', None) is not None and getattr(pos, 'strategy_name', 'unknown') == 'unknown':
+                            v = self._redis.get(f'openpos:strategy:{symbol}')
+                            if isinstance(v, str) and v:
+                                pos.strategy_name = v
+                                logger.info(f"[{symbol}] Recovered strategy from Redis for close record: {v}")
+                    except Exception:
+                        pass
+
                     # Record the trade
                     self.record_closed_trade(symbol, pos, exit_price, exit_reason, leverage)
                     
@@ -1105,7 +1142,10 @@ class TradingBot:
                             signal_data = {
                                 'symbol': symbol,
                                 'features': {},  # Features were stored during signal detection
-                                'score': 0  # Will be filled from phantom tracker if available
+                                'score': 0,  # Will be filled from phantom tracker if available
+                                'meta': {
+                                    'reason': getattr(pos, 'ml_reason', '')
+                                }
                             }
                             
                             # Debugging: Log strategy name and routing info for all closed trades
@@ -1134,7 +1174,15 @@ class TradingBot:
                                     else:
                                         logger.warning(f"[{symbol}] ⚠️ Mean Reversion outcome not recorded (no original MR scorer active; guard preventing Enhanced MR increment)")
                                 elif pos.strategy_name == "unknown":
-                                    # Recovered position - check signal reason to determine strategy
+                                    # Recovered position - try Redis hint first, else check reason text
+                                    try:
+                                        if getattr(self, '_redis', None) is not None:
+                                            v = self._redis.get(f'openpos:strategy:{symbol}')
+                                            if isinstance(v, str) and v:
+                                                pos.strategy_name = v
+                                                logger.info(f"[{symbol}] Inferred strategy from Redis: {v}")
+                                    except Exception:
+                                        pass
                                     reason = signal_data.get('meta', {}).get('reason', '')
                                     logger.info(f"[{symbol}] 🔍 UNKNOWN STRATEGY - Checking reason: '{reason}'")
                                     if 'Mean Reversion:' in reason or 'Rejection from resistance' in reason or 'Rejection from support' in reason:

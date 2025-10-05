@@ -206,6 +206,18 @@ class ScalpPhantomTracker:
         self._save()
         logger.info(f"[{symbol}] Scalp PHANTOM closed: {'✅ WIN' if outcome=='win' else '❌ LOSS'} ({ph.pnl_percent:+.2f}%)")
 
+        # Feed outcome to Scalp ML scorer for learning
+        try:
+            from ml_scorer_scalp import get_scalp_scorer
+            scorer = get_scalp_scorer()
+            signal = {
+                'features': ph.features or {},
+                'was_executed': False
+            }
+            scorer.record_outcome(signal, outcome, float(ph.pnl_percent or 0.0))
+        except Exception as e:
+            logger.debug(f"Scalp ML feed error: {e}")
+
     def get_learning_data(self) -> List[Dict]:
         out = []
         for trades in self.completed.values():

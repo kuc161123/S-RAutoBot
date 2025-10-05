@@ -1760,6 +1760,38 @@ class TradingBot:
                             logger.info(f"🩳 Scalp promotion readiness: enabled={promote_enabled}, samples={samples}, wr={wr:.1f}%, ready={shared['scalp_promoted']}")
                         except Exception as e:
                             logger.debug(f"Scalp promotion readiness check failed: {e}")
+                        # One-time backfill of Scalp phantom outcomes into Scalp ML (avoid duplicates via Redis flag)
+                        try:
+                            from ml_scorer_scalp import get_scalp_scorer
+                            s_scorer = get_scalp_scorer()
+                            backfilled = False
+                            if getattr(s_scorer, 'redis_client', None):
+                                try:
+                                    if s_scorer.redis_client.get('ml:backfill:scalp:done') == '1':
+                                        backfilled = True
+                                except Exception:
+                                    pass
+                            if not backfilled:
+                                fed = 0
+                                for trades in scpt.completed.values():
+                                    for t in trades:
+                                        if getattr(t, 'outcome', None) in ('win','loss'):
+                                            try:
+                                                sig = {'features': t.features or {}, 'was_executed': False}
+                                                s_scorer.record_outcome(sig, t.outcome, float(t.pnl_percent or 0.0))
+                                                fed += 1
+                                            except Exception:
+                                                pass
+                                # Set redis flag to avoid duplication on future starts
+                                try:
+                                    if getattr(s_scorer, 'redis_client', None):
+                                        s_scorer.redis_client.set('ml:backfill:scalp:done', '1')
+                                except Exception:
+                                    pass
+                                if fed > 0:
+                                    logger.info(f"🩳 Scalp ML backfill: fed {fed} phantom outcomes into ML store")
+                        except Exception as e:
+                            logger.debug(f"Scalp ML backfill error: {e}")
                 except Exception as e:
                     logger.debug(f"Failed to set scalp notifier: {e}")
                 break  # Success

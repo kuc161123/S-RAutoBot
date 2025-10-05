@@ -401,20 +401,17 @@ class TradingBot:
                 if not use_scalp or detect_scalp_signal is None:
                     continue
 
-                # Gate by regime: only when router recommends NONE and volatility not extreme
-                regime_ok = False
+                # Gate by volatility only: allow low/normal/high; block extreme
                 vol_level = 'unknown'
                 if 'frames' in dir(self) and sym in self.frames and not self.frames[sym].empty and ENHANCED_ML_AVAILABLE:
                     try:
                         analysis = get_enhanced_market_regime(self.frames[sym].tail(200), sym)
                         vol_level = analysis.volatility_level
-                        if str(analysis.recommended_strategy or 'none') == 'none' and vol_level != 'extreme':
-                            regime_ok = True
+                        if vol_level == 'extreme':
+                            logger.debug(f"[{sym}] 🩳 Scalp(3m) skipped: volatility={vol_level}")
+                            continue
                     except Exception:
-                        regime_ok = False
-                if not regime_ok:
-                    logger.debug(f"[{sym}] 🩳 Scalp(3m) skipped: regime not NONE or vol={vol_level}")
-                    continue
+                        pass
 
                 # Per-symbol cooldown: require ~8 bars (≈24 minutes) between scalp records
                 last_ts = self._scalp_cooldown.get(sym)
@@ -1744,6 +1741,19 @@ class TradingBot:
                             def scalp_notifier(trade, scope='Scalp'):
                                 self._create_task(self._notify_phantom_trade(scope, trade))
                             scpt.set_notifier(scalp_notifier)
+                        # Compute promotion readiness from config and stats
+                        try:
+                            scalp_cfg = cfg.get('scalp', {})
+                            promote_enabled = bool(scalp_cfg.get('promote_enabled', False))
+                            min_samples = int(scalp_cfg.get('promote_min_samples', 200))
+                            target_wr = float(scalp_cfg.get('promote_min_wr', 55.0))
+                            st = scpt.get_scalp_phantom_stats()
+                            samples = int(st.get('total', 0))
+                            wr = float(st.get('wr', 0.0))
+                            shared['scalp_promoted'] = bool(promote_enabled and samples >= min_samples and wr >= target_wr)
+                            logger.info(f"🩳 Scalp promotion readiness: enabled={promote_enabled}, samples={samples}, wr={wr:.1f}%, ready={shared['scalp_promoted']}")
+                        except Exception as e:
+                            logger.debug(f"Scalp promotion readiness check failed: {e}")
                 except Exception as e:
                     logger.debug(f"Failed to set scalp notifier: {e}")
                 break  # Success
@@ -2488,10 +2498,10 @@ class TradingBot:
                                 except Exception:
                                     pass
 
-                            # Scalp phantom (Phase 0) under NONE/volatile — not constrained by shared phantom budget
+                            # Scalp phantom (Phase 0) — allow in low/normal/high volatility (block only extreme)
                             if use_scalp and SCALP_AVAILABLE and detect_scalp_signal is not None:
-                                if regime_analysis.volatility_level not in ['high','normal']:
-                                    logger.info(f"[{sym}] 🩳 Scalp skipped: volatility={regime_analysis.volatility_level}")
+                                if getattr(regime_analysis, 'volatility_level', 'unknown') == 'extreme':
+                                    logger.info(f"[{sym}] 🩳 Scalp skipped: volatility=extreme")
                                 else:
                                     try:
                                         # Prefer 3m frames when available

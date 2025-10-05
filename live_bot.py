@@ -1698,6 +1698,8 @@ class TradingBot:
             "use_enhanced_parallel": use_enhanced_parallel,
             # Phantom flow controller (adaptive phantom-only acceptance)
             "flow_controller": flow_ctrl,
+            # Routing stickiness state per symbol
+            "routing_state": {},
             # Simple telemetry counters
             "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0, "policy_rejects": 0}
         }
@@ -2003,7 +2005,143 @@ class TradingBot:
                             logger.info(f"   📦 Range Quality: {regime_analysis.range_quality} | Persistence: {regime_analysis.regime_persistence:.1%}")
                         logger.info(f"   🎯 Recommended Strategy: {regime_analysis.recommended_strategy.upper().replace('_', ' ')}")
 
-                        if regime_analysis.recommended_strategy == "enhanced_mr":
+                        # Soft routing + hysteresis
+                        try:
+                            routing_state = shared.get('routing_state', {})
+                            prev_state = routing_state.get(sym)
+                        except Exception:
+                            prev_state = None
+
+                        uncertain = (
+                            str(regime_analysis.recommended_strategy or 'none') == 'none' or
+                            float(getattr(regime_analysis, 'regime_confidence', 0.0)) < 0.6 or
+                            float(getattr(regime_analysis, 'regime_persistence', 0.0)) < 0.6
+                        )
+
+                        # Hysteresis: keep previous route for 3 candles unless high confidence shift
+                        keep_prev = False
+                        if prev_state is not None:
+                            try:
+                                if (candles_processed - int(prev_state.get('last_idx', 0)) < 3):
+                                    if float(getattr(regime_analysis, 'regime_confidence', 0.0)) < 0.7 or float(getattr(regime_analysis, 'regime_persistence', 0.0)) < 0.7:
+                                        keep_prev = True
+                            except Exception:
+                                pass
+
+                        handled = False
+                        if uncertain:
+                            logger.info(f"[{sym}] 🧭 SOFT ROUTING: Uncertain regime (conf={regime_analysis.regime_confidence:.1%}, persist={regime_analysis.regime_persistence:.1%}) → evaluate both strategies")
+                            # Detect both strategies
+                            soft_sig_mr = None
+                            soft_sig_pb = None
+                            try:
+                                soft_sig_mr = detect_signal_mean_reversion(df.copy(), settings, sym)
+                            except Exception:
+                                soft_sig_mr = None
+                            try:
+                                soft_sig_pb = get_pullback_signals(df.copy(), settings, sym)
+                            except Exception:
+                                soft_sig_pb = None
+
+                            # Score both with ML (if available)
+                            pb_margin = -999; mr_margin = -999
+                            pb_score = mr_score = 0.0
+                            if soft_sig_pb and ml_scorer:
+                                try:
+                                    from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
+                                    if sym not in ml_breakout_states:
+                                        ml_breakout_states[sym] = BreakoutState()
+                                    state = ml_breakout_states[sym]
+                                    basic_features = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry)
+                                    pb_score, _ = ml_scorer.score_signal({'side': soft_sig_pb.side, 'entry': soft_sig_pb.entry, 'sl': soft_sig_pb.sl, 'tp': soft_sig_pb.tp}, basic_features)
+                                    pb_thr = getattr(ml_scorer, 'min_score', 75)
+                                    pb_margin = pb_score - pb_thr
+                                except Exception:
+                                    pass
+                            if soft_sig_mr and enhanced_mr_scorer:
+                                try:
+                                    ef = soft_sig_mr.meta.get('mr_features', {}) if soft_sig_mr.meta else {}
+                                    mr_score, _ = enhanced_mr_scorer.score_signal(soft_sig_mr.__dict__, ef, df)
+                                    mr_thr = getattr(enhanced_mr_scorer, 'min_score', 75)
+                                    mr_margin = mr_score - mr_thr
+                                except Exception:
+                                    pass
+
+                            # Choose by margin if available
+                            chosen = None
+                            if soft_sig_pb and pb_margin >= 0 and (pb_margin >= (mr_margin if mr_margin is not None else -999)):
+                                chosen = ('pullback', soft_sig_pb)
+                            if soft_sig_mr and mr_margin >= 0 and (mr_margin > (pb_margin if pb_margin is not None else -999)):
+                                chosen = ('enhanced_mr', soft_sig_mr)
+
+                            if chosen is None:
+                                # Record phantoms (if signals exist) and continue to next symbol
+                                try:
+                                    if soft_sig_pb and phantom_tracker:
+                                        from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
+                                        if sym not in ml_breakout_states:
+                                            ml_breakout_states[sym] = BreakoutState()
+                                        state = ml_breakout_states[sym]
+                                        feats = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry)
+                                        phantom_tracker.record_signal(sym, {'side': soft_sig_pb.side, 'entry': soft_sig_pb.entry, 'sl': soft_sig_pb.sl, 'tp': soft_sig_pb.tp}, float(pb_score or 0.0), False, feats, 'pullback')
+                                except Exception:
+                                    pass
+                                try:
+                                    if soft_sig_mr and mr_phantom_tracker:
+                                        ef2 = soft_sig_mr.meta.get('mr_features', {}) if soft_sig_mr.meta else {}
+                                        mr_phantom_tracker.record_mr_signal(sym, soft_sig_mr.__dict__, float(mr_score or 0.0), False, {}, ef2)
+                                except Exception:
+                                    pass
+                                logger.info(f"[{sym}] 🧭 SOFT ROUTING: No strategy exceeded ML threshold — recorded phantoms, skipping execution")
+                                continue
+
+                            # Apply hysteresis if requested
+                            if keep_prev and prev_state and chosen[0] != prev_state.get('strategy'):
+                                logger.info(f"[{sym}] 🧭 Hysteresis: keeping previous route {prev_state.get('strategy')} over {chosen[0]}")
+                                selected_strategy = prev_state.get('strategy')
+                                if selected_strategy == 'enhanced_mr':
+                                    selected_ml_scorer = enhanced_mr_scorer
+                                    selected_phantom_tracker = mr_phantom_tracker
+                                    sig = soft_sig_mr
+                                else:
+                                    selected_ml_scorer = ml_scorer
+                                    selected_phantom_tracker = phantom_tracker
+                                    sig = soft_sig_pb
+                            else:
+                                selected_strategy = chosen[0]
+                                if selected_strategy == 'enhanced_mr':
+                                    selected_ml_scorer = enhanced_mr_scorer
+                                    selected_phantom_tracker = mr_phantom_tracker
+                                    sig = soft_sig_mr
+                                else:
+                                    selected_ml_scorer = ml_scorer
+                                    selected_phantom_tracker = phantom_tracker
+                                    sig = soft_sig_pb
+
+                            # Update routing state stickiness
+                            try:
+                                routing_state[sym] = {'strategy': selected_strategy, 'last_idx': candles_processed}
+                                shared['routing_state'] = routing_state
+                            except Exception:
+                                pass
+                            handled = True
+
+                        # If not uncertain, proceed with recommended strategy with optional override check
+                        if not uncertain:
+                            # Check hysteresis preference
+                            if keep_prev and prev_state and prev_state.get('strategy') in ('pullback','enhanced_mr'):
+                                logger.info(f"[{sym}] 🧭 Hysteresis: keeping previous route {prev_state.get('strategy')}")
+                                if prev_state.get('strategy') == 'enhanced_mr':
+                                    selected_strategy = 'enhanced_mr'
+                                    selected_ml_scorer = enhanced_mr_scorer
+                                    selected_phantom_tracker = mr_phantom_tracker
+                                else:
+                                    selected_strategy = 'pullback'
+                                    selected_ml_scorer = ml_scorer
+                                    selected_phantom_tracker = phantom_tracker
+                            # Else start with recommended and optionally override later after signal detection
+
+                        if (not handled) and regime_analysis.recommended_strategy == "enhanced_mr":
                             # Use Enhanced Mean Reversion System
                             logger.debug(f"🟢 [{sym}] ENHANCED MEAN REVERSION ANALYSIS:")
                             sig = detect_signal_mean_reversion(df.copy(), settings, sym)
@@ -2015,11 +2153,32 @@ class TradingBot:
                                 logger.info(f"   ✅ Range Signal Detected: {sig.side.upper()} at {sig.entry:.4f}")
                                 logger.info(f"   🎯 SL: {sig.sl:.4f} | TP: {sig.tp:.4f} | R:R: {((sig.tp-sig.entry)/(sig.entry-sig.sl) if sig.side=='long' else (sig.entry-sig.tp)/(sig.sl-sig.entry)):.2f}")
                                 logger.info(f"   📝 Reason: {sig.reason}")
+                                # Override: if Pullback ML shows very strong signal, prefer it
+                                try:
+                                    alt_pb_sig = get_pullback_signals(df.copy(), settings, sym)
+                                    if alt_pb_sig and ml_scorer:
+                                        from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
+                                        if sym not in ml_breakout_states:
+                                            ml_breakout_states[sym] = BreakoutState()
+                                        state = ml_breakout_states[sym]
+                                        alt_feats = calculate_ml_features(df, state, alt_pb_sig.side, alt_pb_sig.entry)
+                                        pb_score, _ = ml_scorer.score_signal({'side': alt_pb_sig.side, 'entry': alt_pb_sig.entry, 'sl': alt_pb_sig.sl, 'tp': alt_pb_sig.tp}, alt_feats)
+                                        pb_thr = getattr(ml_scorer, 'min_score', 75)
+                                        if pb_score >= pb_thr + 5:
+                                            logger.info(f"[{sym}] 🔀 OVERRIDE: Pullback ML {pb_score:.1f} ≥ {pb_thr+5:.0f} → prefer Pullback over MR")
+                                            selected_strategy = 'pullback'
+                                            selected_ml_scorer = ml_scorer
+                                            selected_phantom_tracker = phantom_tracker
+                                            sig = alt_pb_sig
+                                            routing_state[sym] = {'strategy': selected_strategy, 'last_idx': candles_processed}
+                                            shared['routing_state'] = routing_state
+                                except Exception:
+                                    pass
                             else:
                                 logger.info(f"   ❌ No Mean Reversion Signal: Range conditions not met")
                                 logger.info(f"   💡 Range quality: {regime_analysis.range_quality}, confidence: {regime_analysis.regime_confidence:.1%}")
 
-                        elif regime_analysis.recommended_strategy == "pullback":
+                        elif (not handled) and regime_analysis.recommended_strategy == "pullback":
                             # Use Pullback System
                             logger.debug(f"🔵 [{sym}] PULLBACK STRATEGY ANALYSIS:")
                             try:
@@ -2035,11 +2194,28 @@ class TradingBot:
                                 logger.info(f"   ✅ Pullback Signal Detected: {sig.side.upper()} at {sig.entry:.4f}")
                                 logger.info(f"   🎯 SL: {sig.sl:.4f} | TP: {sig.tp:.4f} | R:R: {((sig.tp-sig.entry)/(sig.entry-sig.sl) if sig.side=='long' else (sig.entry-sig.tp)/(sig.sl-sig.entry)):.2f}")
                                 logger.info(f"   📝 Reason: {sig.reason}")
+                                # Override: if MR ML shows very strong signal, prefer it
+                                try:
+                                    alt_mr_sig = detect_signal_mean_reversion(df.copy(), settings, sym)
+                                    if alt_mr_sig and enhanced_mr_scorer:
+                                        alt_ef = alt_mr_sig.meta.get('mr_features', {}) if alt_mr_sig.meta else {}
+                                        mr_score, _ = enhanced_mr_scorer.score_signal(alt_mr_sig.__dict__, alt_ef, df)
+                                        mr_thr = getattr(enhanced_mr_scorer, 'min_score', 75)
+                                        if mr_score >= mr_thr + 5:
+                                            logger.info(f"[{sym}] 🔀 OVERRIDE: MR ML {mr_score:.1f} ≥ {mr_thr+5:.0f} → prefer MR over Pullback")
+                                            selected_strategy = 'enhanced_mr'
+                                            selected_ml_scorer = enhanced_mr_scorer
+                                            selected_phantom_tracker = mr_phantom_tracker
+                                            sig = alt_mr_sig
+                                            routing_state[sym] = {'strategy': selected_strategy, 'last_idx': candles_processed}
+                                            shared['routing_state'] = routing_state
+                                except Exception:
+                                    pass
                             else:
                                 logger.info(f"   ❌ No Pullback Signal: Trend structure insufficient")
                                 logger.info(f"   💡 Trend strength: {regime_analysis.trend_strength:.1f}, volatility: {regime_analysis.volatility_level}")
 
-                        else:
+                        elif (not handled):
                             # Router recommends no trading (none). Do phantom-only sampling with caps/dedup.
                             logger.debug(f"⏭️ [{sym}] STRATEGY SELECTION:")
                             logger.info(f"   ❌ SKIPPING EXECUTION - {regime_analysis.primary_regime.upper()} regime not suitable")

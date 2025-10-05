@@ -15,6 +15,10 @@ import numpy as np
 import pandas as pd
 import websockets
 from dotenv import load_dotenv
+try:
+    import redis as _redis
+except Exception:
+    _redis = None
 
 # Core trading components
 from broker_bybit import Bybit, BybitConfig
@@ -341,6 +345,19 @@ class TradingBot:
         self._tasks = set()
         # Per-symbol cooldown for 3m scalp detections (timestamp of last recorded attempt)
         self._scalp_cooldown: Dict[str, pd.Timestamp] = {}
+        # Best-effort Redis client for lightweight runtime state (e.g., open position strategy hints)
+        self._redis = None
+        try:
+            if _redis is not None:
+                url = os.getenv('REDIS_URL')
+                if url:
+                    self._redis = _redis.from_url(url, decode_responses=True)
+                    try:
+                        self._redis.ping()
+                    except Exception:
+                        self._redis = None
+        except Exception:
+            self._redis = None
         
     def _create_task(self, coro):
         try:
@@ -1042,6 +1059,12 @@ class TradingBot:
                     # Remove from book
                     book.positions.pop(symbol)
                     logger.info(f"[{symbol}] Position removed from tracking")
+                    # Cleanup runtime strategy hint for this symbol
+                    try:
+                        if getattr(self, '_redis', None) is not None:
+                            self._redis.delete(f'openpos:strategy:{symbol}')
+                    except Exception:
+                        pass
                     
                     # Reset the strategy state
                     if reset_symbol_state:
@@ -1157,6 +1180,15 @@ class TradingBot:
                     
                     # Add to book
                     from position_mgr import Position
+                    # Try to restore strategy from Redis if available
+                    recovered_strategy = "unknown"
+                    try:
+                        if getattr(self, '_redis', None) is not None:
+                            v = self._redis.get(f'openpos:strategy:{symbol}')
+                            if isinstance(v, str) and v:
+                                recovered_strategy = v
+                    except Exception:
+                        recovered_strategy = "unknown"
                     book.positions[symbol] = Position(
                         side=side,
                         qty=qty,
@@ -1164,11 +1196,14 @@ class TradingBot:
                         sl=sl if sl > 0 else (entry * 0.95 if side == "long" else entry * 1.05),
                         tp=tp if tp > 0 else (entry * 1.1 if side == "long" else entry * 0.9),
                         entry_time=datetime.now() - pd.Timedelta(hours=1),  # Approximate for recovered positions
-                        strategy_name="unknown"  # Mark recovered positions - will be detected via signal reason
+                        strategy_name=recovered_strategy  # Restored if available; may remain 'unknown'
                     )
                     
                     recovered += 1
-                    logger.info(f"Recovered {side} position: {symbol} qty={qty} entry={entry:.4f} TP={tp:.4f} SL={sl:.4f}")
+                    if recovered_strategy != "unknown":
+                        logger.info(f"Recovered {side} position: {symbol} qty={qty} entry={entry:.4f} TP={tp:.4f} SL={sl:.4f} strategy={recovered_strategy}")
+                    else:
+                        logger.info(f"Recovered {side} position: {symbol} qty={qty} entry={entry:.4f} TP={tp:.4f} SL={sl:.4f}")
                 
                 if recovered > 0:
                     logger.info(f"Successfully recovered {recovered} position(s) - WILL NOT MODIFY THEM")
@@ -3210,6 +3245,12 @@ class TradingBot:
                         ml_score=float(ml_score),
                         ml_reason=ml_reason if isinstance(ml_reason, str) else ""
                     )
+                    # Persist runtime hint of strategy for recovery after restarts
+                    try:
+                        if getattr(self, '_redis', None) is not None:
+                            self._redis.set(f'openpos:strategy:{sym}', selected_strategy)
+                    except Exception:
+                        pass
                     # Record shadow simulation (phantom-only) for ML-informed adjustments
                     try:
                         base_features = {}

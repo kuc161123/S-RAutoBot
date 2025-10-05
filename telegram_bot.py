@@ -1143,6 +1143,8 @@ class TGBot:
                 lines.append(f"{emoji} *{sym}* ({pos.side.upper()})")
 
                 strategy = getattr(pos, 'strategy_name', 'unknown')
+                if isinstance(strategy, str):
+                    strategy = strategy.replace('_', ' ').title()
                 lines.append(f"  Strategy: {strategy}")
                 lines.append(f"  Entry: {pos.entry:.4f} | Size: {pos.qty}")
                 lines.append(f"  SL: {pos.sl:.4f} | TP: {pos.tp:.4f}")

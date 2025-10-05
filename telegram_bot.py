@@ -3965,14 +3965,31 @@ class TGBot:
             targets = st.get('targets', {})
             acc = st.get('accepted', {})
             rx = st.get('relax', {})
+            # Compute instant (raw) relax based on accepted and time-of-day pace
+            try:
+                from datetime import datetime as _dt
+                hour = _dt.utcnow().hour
+            except Exception:
+                hour = 12
+            def _inst_rel(ax: int, tgt: int) -> float:
+                try:
+                    pace_target = float(tgt) * min(1.0, max(1, hour) / 24.0)
+                    deficit = max(0.0, pace_target - float(ax))
+                    base_r = min(1.0, deficit / max(1.0, tgt * 0.5))
+                    return base_r
+                except Exception:
+                    return 0.0
+            ir_pb = _inst_rel(int(acc.get('pullback',0)), int(targets.get('pullback',0) or 1))
+            ir_mr = _inst_rel(int(acc.get('mr',0)), int(targets.get('mr',0) or 1))
+            ir_sc = _inst_rel(int(acc.get('scalp',0)), int(targets.get('scalp',0) or 1))
             lines = [
                 "🎛️ *Flow Controller Status*",
                 f"• Enabled: {st.get('enabled', False)}",
                 f"• Smoothing hours: {st.get('smoothing_hours', '?')}",
                 "",
-                "• Pullback: " + f"{acc.get('pullback',0)}/{targets.get('pullback',0)} (relax {float(rx.get('pullback',0.0))*100:.0f}%)",
-                "• Mean Reversion: " + f"{acc.get('mr',0)}/{targets.get('mr',0)} (relax {float(rx.get('mr',0.0))*100:.0f}%)",
-                "• Scalp: " + f"{acc.get('scalp',0)}/{targets.get('scalp',0)} (relax {float(rx.get('scalp',0.0))*100:.0f}%)",
+                "• Pullback: " + f"{acc.get('pullback',0)}/{targets.get('pullback',0)} (relax {float(rx.get('pullback',0.0))*100:.0f}%, inst {ir_pb*100:.0f}%)",
+                "• Mean Reversion: " + f"{acc.get('mr',0)}/{targets.get('mr',0)} (relax {float(rx.get('mr',0.0))*100:.0f}%, inst {ir_mr*100:.0f}%)",
+                "• Scalp: " + f"{acc.get('scalp',0)}/{targets.get('scalp',0)} (relax {float(rx.get('scalp',0.0))*100:.0f}%, inst {ir_sc*100:.0f}%)",
                 "",
                 "_Relax raises sampling when behind pace; guards enforce minimum quality._"
             ]

@@ -2136,12 +2136,22 @@ class TradingBot:
                                         state = ml_breakout_states[sym]
                                         feats = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry)
                                         phantom_tracker.record_signal(sym, {'side': soft_sig_pb.side, 'entry': soft_sig_pb.entry, 'sl': soft_sig_pb.sl, 'tp': soft_sig_pb.tp}, float(pb_score or 0.0), False, feats, 'pullback')
+                                        try:
+                                            if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                                                self.flow_controller.increment_accepted('pullback', 1)
+                                        except Exception:
+                                            pass
                                 except Exception:
                                     pass
                                 try:
                                     if soft_sig_mr and mr_phantom_tracker:
                                         ef2 = soft_sig_mr.meta.get('mr_features', {}) if soft_sig_mr.meta else {}
                                         mr_phantom_tracker.record_mr_signal(sym, soft_sig_mr.__dict__, float(mr_score or 0.0), False, {}, ef2)
+                                        try:
+                                            if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                                                self.flow_controller.increment_accepted('mr', 1)
+                                        except Exception:
+                                            pass
                                 except Exception:
                                     pass
                                 logger.info(f"[{sym}] 🧭 SOFT ROUTING: No strategy exceeded ML threshold — recorded phantoms, skipping execution")
@@ -2637,6 +2647,11 @@ class TradingBot:
                                                     features=feats2,
                                                     strategy_name='pullback'
                                                 )
+                                                try:
+                                                    if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                                                        self.flow_controller.increment_accepted('pullback', 1)
+                                                except Exception:
+                                                    pass
                                                 _increment_daily(sym, cluster_id, 'none')
                                     # MR snapshots
                                     if exploration_enabled and mr_explore.get('enable_virtual_snapshots', False):
@@ -2648,6 +2663,11 @@ class TradingBot:
                                                 ef2['routing'] = 'none'
                                                 ef2['virtual_threshold'] = vthr_mr
                                                 mr_phantom_tracker.record_mr_signal(sym, sig_mr.__dict__, 0.0, False, {}, ef2)
+                                                try:
+                                                    if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                                                        self.flow_controller.increment_accepted('mr', 1)
+                                                except Exception:
+                                                    pass
                                                 _increment_daily(sym, cluster_id, 'none')
                                 except Exception:
                                     pass

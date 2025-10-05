@@ -85,6 +85,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
         self.app.add_handler(CommandHandler("panicclose", self.panic_close))
         self.app.add_handler(CommandHandler("forceretrain", self.force_retrain_ml))
+        self.app.add_handler(CommandHandler("flowdebug", self.flow_debug))
+        self.app.add_handler(CommandHandler("flowstatus", self.flow_debug))
 
         self.running = False
 
@@ -3683,3 +3685,30 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in training_status: {e}")
             await update.message.reply_text("Error getting training status")
+
+    async def flow_debug(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show Flow Controller status: accepted, targets, relax per strategy."""
+        try:
+            fc = self.shared.get('flow_controller')
+            if not fc or not getattr(fc, 'enabled', False):
+                await self.safe_reply(update, "🎛️ Flow Controller disabled or unavailable")
+                return
+            st = fc.get_status() if hasattr(fc, 'get_status') else {}
+            targets = st.get('targets', {})
+            acc = st.get('accepted', {})
+            rx = st.get('relax', {})
+            lines = [
+                "🎛️ *Flow Controller Status*",
+                f"• Enabled: {st.get('enabled', False)}",
+                f"• Smoothing hours: {st.get('smoothing_hours', '?')}",
+                "",
+                "• Pullback: " + f"{acc.get('pullback',0)}/{targets.get('pullback',0)} (relax {float(rx.get('pullback',0.0))*100:.0f}%)",
+                "• Mean Reversion: " + f"{acc.get('mr',0)}/{targets.get('mr',0)} (relax {float(rx.get('mr',0.0))*100:.0f}%)",
+                "• Scalp: " + f"{acc.get('scalp',0)}/{targets.get('scalp',0)} (relax {float(rx.get('scalp',0.0))*100:.0f}%)",
+                "",
+                "_Relax raises sampling when behind pace; guards enforce minimum quality._"
+            ]
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"Error in flow_debug: {e}")
+            await update.message.reply_text("Error getting flow status")

@@ -290,6 +290,43 @@ class FlowController:
             pass
         return sc_settings
 
+    # --- Introspection helpers for debugging/QA ---
+    def get_status(self) -> dict:
+        """Return flow controller status snapshot for UI/debug.
+        Includes enabled, targets, accepted counts and relax ratios per strategy.
+        """
+        day = self._day()
+        strategies = ['pullback', 'mr', 'scalp']
+        out = {
+            'enabled': self.enabled,
+            'targets': self.targets,
+            'smoothing_hours': self.smoothing_hours,
+            'accepted': {},
+            'relax': {}
+        }
+        for s in strategies:
+            # Accepted from Redis or memory
+            acc = 0
+            if self.redis:
+                try:
+                    acc = int(self.redis.get(f'phantom:flow:{day}:{s}:accepted') or 0)
+                except Exception:
+                    acc = 0
+            if acc == 0:
+                acc = int(self._mem['accepted'].get(day, {}).get(s, 0)) if day in self._mem['accepted'] else 0
+            out['accepted'][s] = acc
+            # Relax from Redis or memory
+            rx = 0.0
+            if self.redis:
+                try:
+                    rx = float(self.redis.get(f'phantom:flow:{day}:{s}:relax') or 0.0)
+                except Exception:
+                    rx = 0.0
+            if rx == 0.0:
+                rx = float(self._mem['relax'].get(day, {}).get(s, 0.0)) if day in self._mem['relax'] else 0.0
+            out['relax'][s] = rx
+        return out
+
 class TradingBot:
     def __init__(self):
         self.running = False
@@ -1662,7 +1699,7 @@ class TradingBot:
             # Phantom flow controller (adaptive phantom-only acceptance)
             "flow_controller": flow_ctrl,
             # Simple telemetry counters
-            "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0}
+            "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0, "policy_rejects": 0}
         }
         
         # Initialize Telegram bot with retry on conflict

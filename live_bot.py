@@ -483,6 +483,12 @@ class TradingBot:
                         False,
                         sc_feats
                     )
+                    # Increment Flow Controller accepted counter for scalp (phantom-only pacing)
+                    try:
+                        if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                            self.flow_controller.increment_accepted('scalp', 1)
+                    except Exception:
+                        pass
                     logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
                     self._scalp_cooldown[sym] = bar_ts
                 except Exception as e:

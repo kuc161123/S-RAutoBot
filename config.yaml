@@ -188,6 +188,11 @@ phantom_flow:
       window: 40              # number of recent phantom closures
       min_wr: 20.0            # threshold (%) below which cap applies
       cap: 0.60               # max relax while guard active
+
+# Strategy isolation and execution arbitrator
+strategy_isolation:
+  enabled: true               # isolate analysis/learning per strategy and arbitrate execution
+  execution_policy: arbitrate # pick best candidate when multiple strategies fire on same symbol
   min_quality_guards:
     pullback:
       trend_min: 30.0

@@ -2331,9 +2331,22 @@ class TradingBot:
                             float(getattr(regime_analysis, 'regime_confidence', 0.0)) < 0.6 or
                             float(getattr(regime_analysis, 'regime_persistence', 0.0)) < 0.6
                         )
+                        # Strategy isolation: always evaluate both strategies and arbitrate execution
+                        try:
+                            iso_cfg = cfg.get('strategy_isolation', {}) if 'cfg' in locals() else {}
+                            if bool(iso_cfg.get('enabled', False)):
+                                uncertain = True
+                        except Exception:
+                            pass
 
                         # Hysteresis: keep previous route for 3 candles unless high confidence shift
                         keep_prev = False
+                        # Disable hysteresis when isolation is enabled to avoid cross-strategy stickiness
+                        try:
+                            if bool(cfg.get('strategy_isolation', {}).get('enabled', False)):
+                                keep_prev = False
+                        except Exception:
+                            pass
                         if prev_state is not None:
                             try:
                                 if (candles_processed - int(prev_state.get('last_idx', 0)) < 3):
@@ -2443,6 +2456,26 @@ class TradingBot:
                             except Exception:
                                 pass
                                 logger.info(f"[{sym}] 🧭 SOFT ROUTING: No strategy exceeded ML threshold — recorded phantoms, skipping execution")
+                            else:
+                                # Strategy isolation arbitration: pick chosen and proceed to execution
+                                try:
+                                    selected_strategy = chosen[0]
+                                    if selected_strategy == 'enhanced_mr':
+                                        selected_ml_scorer = enhanced_mr_scorer
+                                        sig = chosen[1]
+                                    else:
+                                        selected_ml_scorer = ml_scorer
+                                        sig = chosen[1]
+                                    # mark handled so we skip recommended strategy branches
+                                    handled = True
+                                    # Update routing state stickiness record
+                                    try:
+                                        routing_state[sym] = {'strategy': selected_strategy, 'last_idx': candles_processed}
+                                        shared['routing_state'] = routing_state
+                                    except Exception:
+                                        pass
+                                except Exception:
+                                    pass
                                 continue
 
                             # Apply hysteresis if requested

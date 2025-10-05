@@ -85,6 +85,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
         self.app.add_handler(CommandHandler("panicclose", self.panic_close))
         self.app.add_handler(CommandHandler("forceretrain", self.force_retrain_ml))
+        self.app.add_handler(CommandHandler("shadowstats", self.shadow_stats))
         self.app.add_handler(CommandHandler("flowdebug", self.flow_debug))
         self.app.add_handler(CommandHandler("flowstatus", self.flow_debug))
 
@@ -424,6 +425,7 @@ class TGBot:
              InlineKeyboardButton("📊 Symbols", callback_data="ui:symbols:0")],
             [InlineKeyboardButton("🤖 ML", callback_data="ui:ml:main"),
              InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:main")],
+            [InlineKeyboardButton("🧪 Shadow", callback_data="ui:shadow:stats")],
             [InlineKeyboardButton("🩳 Scalp QA", callback_data="ui:scalp:qa"),
              InlineKeyboardButton("🧪 Scalp Promote", callback_data="ui:scalp:promote")],
             [InlineKeyboardButton("🧱 HTF S/R", callback_data="ui:htf:status"),
@@ -604,6 +606,7 @@ class TGBot:
 /recent [limit] – Recent trade log
 /analysis [symbol] – Recent analysis timestamps
 /mlrankings – Symbol rankings by WR/PnL
+/shadowstats – Compare baseline vs shadow per strategy
 /mlpatterns – Learned ML patterns & insights
 
 🤖 ML & Phantoms
@@ -1388,6 +1391,45 @@ class TGBot:
                     except Exception:
                         pass
                 await query.edit_message_text(msg, parse_mode='Markdown')
+            elif data.startswith("ui:shadow:stats"):
+                await query.answer()
+                try:
+                    from shadow_trade_simulator import get_shadow_tracker
+                    st = get_shadow_tracker()
+                    s_stats = st.get_stats()
+                except Exception:
+                    s_stats = {}
+                # Baseline from executed trades
+                tt = self.shared.get('trade_tracker')
+                trades = getattr(tt, 'trades', []) or []
+                def _baseline_for(key: str):
+                    wins = losses = 0
+                    for t in trades:
+                        strat = (getattr(t, 'strategy_name', '') or '').lower()
+                        grp = 'pullback' if 'pullback' in strat else 'enhanced_mr' if ('mr' in strat or 'reversion' in strat) else None
+                        if grp == key:
+                            pnl = float(getattr(t, 'pnl_usd', 0))
+                            if pnl > 0:
+                                wins += 1
+                            else:
+                                losses += 1
+                    total = wins + losses
+                    wr = (wins/total*100.0) if total else 0.0
+                    return wins, losses, total, wr
+                pbw, pbl, pbt, pbwr = _baseline_for('pullback')
+                mrw, mrl, mrt, mrwr = _baseline_for('enhanced_mr')
+                msg = [
+                    "🧪 *Shadow vs Baseline*",
+                    "",
+                    "🔵 Pullback",
+                    f"• Baseline: W {pbw} / L {pbl} (WR {pbwr:.1f}%)",
+                    f"• Shadow:   W {s_stats.get('pullback',{}).get('wins',0)} / L {s_stats.get('pullback',{}).get('losses',0)} (WR {s_stats.get('pullback',{}).get('wr',0.0):.1f}%)",
+                    "",
+                    "🌀 Mean Reversion",
+                    f"• Baseline: W {mrw} / L {mrl} (WR {mrwr:.1f}%)",
+                    f"• Shadow:   W {s_stats.get('enhanced_mr',{}).get('wins',0)} / L {s_stats.get('enhanced_mr',{}).get('losses',0)} (WR {s_stats.get('enhanced_mr',{}).get('wr',0.0):.1f}%)",
+                ]
+                await query.edit_message_text("\n".join(msg), parse_mode='Markdown')
             elif data.startswith("ui:risk:main"):
                 await query.answer()
                 risk = self.shared.get('risk')
@@ -2470,6 +2512,53 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in ml_patterns: {e}")
             await update.message.reply_text("Error getting ML patterns")
+
+    async def shadow_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Compare baseline executed vs shadow-simulated ML nudges per strategy."""
+        try:
+            try:
+                from shadow_trade_simulator import get_shadow_tracker
+                st = get_shadow_tracker()
+                s_stats = st.get_stats()
+            except Exception:
+                s_stats = {}
+
+            # Baseline from executed trades
+            tt = self.shared.get('trade_tracker')
+            trades = getattr(tt, 'trades', []) or []
+            def _baseline_for(key: str):
+                wins = losses = 0
+                for t in trades:
+                    strat = (getattr(t, 'strategy_name', '') or '').lower()
+                    grp = 'pullback' if 'pullback' in strat else 'enhanced_mr' if ('mr' in strat or 'reversion' in strat) else None
+                    if grp == key:
+                        pnl = float(getattr(t, 'pnl_usd', 0))
+                        if pnl > 0:
+                            wins += 1
+                        else:
+                            losses += 1
+                total = wins + losses
+                wr = (wins/total*100.0) if total else 0.0
+                return wins, losses, total, wr
+
+            pbw, pbl, pbt, pbwr = _baseline_for('pullback')
+            mrw, mrl, mrt, mrwr = _baseline_for('enhanced_mr')
+
+            lines = [
+                "🧪 *Shadow vs Baseline*",
+                "",
+                "🔵 Pullback",
+                f"• Baseline: W {pbw} / L {pbl} (WR {pbwr:.1f}%)",
+                f"• Shadow:   W {s_stats.get('pullback',{}).get('wins',0)} / L {s_stats.get('pullback',{}).get('losses',0)} (WR {s_stats.get('pullback',{}).get('wr',0.0):.1f}%)",
+                "",
+                "🌀 Mean Reversion",
+                f"• Baseline: W {mrw} / L {mrl} (WR {mrwr:.1f}%)",
+                f"• Shadow:   W {s_stats.get('enhanced_mr',{}).get('wins',0)} / L {s_stats.get('enhanced_mr',{}).get('losses',0)} (WR {s_stats.get('enhanced_mr',{}).get('wr',0.0):.1f}%)",
+            ]
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"Error in shadow_stats: {e}")
+            await update.message.reply_text("Error getting shadow stats")
     
     async def ml_retrain_info(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show ML retrain countdown information"""

@@ -1940,6 +1940,11 @@ class TradingBot:
                             phantom_tracker.update_phantom_prices(
                                 sym, current_price, df=df, btc_price=btc_price, symbol_collector=symbol_collector
                             )
+                    # Update shadow simulations with current price
+                    try:
+                        get_shadow_tracker().update_prices(sym, float(df['close'].iloc[-1]))
+                    except Exception:
+                        pass
                 
                     # Auto-save to database every 15 minutes
                     if (datetime.now() - self.last_save_time).total_seconds() > 900:
@@ -3185,6 +3190,25 @@ class TradingBot:
                         ml_score=float(ml_score),
                         ml_reason=ml_reason if isinstance(ml_reason, str) else ""
                     )
+                    # Record shadow simulation (phantom-only) for ML-informed adjustments
+                    try:
+                        base_features = {}
+                        if selected_strategy == 'pullback':
+                            base_features = basic_features if 'basic_features' in locals() else {}
+                        elif selected_strategy == 'enhanced_mr':
+                            base_features = enhanced_features if 'enhanced_features' in locals() else {}
+                        get_shadow_tracker().record_shadow_trade(
+                            strategy=selected_strategy,
+                            symbol=sym,
+                            side=sig.side,
+                            entry=float(actual_entry),
+                            sl=float(sig.sl),
+                            tp=float(sig.tp),
+                            ml_score=float(ml_score or 0.0),
+                            features=base_features or {}
+                        )
+                    except Exception:
+                        pass
                     last_signal_time[sym] = now
                     
                     # Debug log the position details

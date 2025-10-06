@@ -1992,6 +1992,12 @@ class TradingBot:
             "use_enhanced_parallel": use_enhanced_parallel,
             # Phantom flow controller (adaptive phantom-only acceptance)
             "flow_controller": flow_ctrl,
+            # MR promotion state (phantom→execute override when WR strong)
+            "mr_promotion": {
+                "active": False,
+                "day": datetime.utcnow().strftime('%Y%m%d'),
+                "count": 0
+            },
             # Routing stickiness state per symbol
             "routing_state": {},
             # Simple telemetry counters
@@ -2306,6 +2312,48 @@ class TradingBot:
                                 logger.info(f"🧠 Enhanced MR ML: {mr_stats.get('completed_trades', 0)} trades, "
                                            f"threshold: {mr_stats.get('current_threshold', 'N/A')}, "
                                            f"{mr_stats.get('trades_until_retrain', 'N/A')} to retrain")
+                                # MR Promotion toggling based on recent WR
+                                try:
+                                    prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
+                                    if prom_cfg.get('enabled', False):
+                                        mp = shared.get('mr_promotion', {})
+                                        # Reset daily counter on UTC day change
+                                        from datetime import datetime as _dt
+                                        cur_day = _dt.utcnow().strftime('%Y%m%d')
+                                        if mp.get('day') != cur_day:
+                                            mp['day'] = cur_day
+                                            mp['count'] = 0
+
+                                        recent_wr = float(mr_stats.get('recent_win_rate', 0.0))
+                                        recent_n = int(mr_stats.get('recent_trades', 0))
+                                        total_exec = int(mr_stats.get('completed_trades', 0))
+                                        promote_wr = float(prom_cfg.get('promote_wr', 50.0))
+                                        demote_wr = float(prom_cfg.get('demote_wr', 30.0))
+                                        min_recent = int(prom_cfg.get('min_recent', 20))
+                                        min_total = int(prom_cfg.get('min_total_trades', 50))
+
+                                        logger.info(f"   MR recent WR: {recent_wr:.1f}% (N={recent_n}) | active={mp.get('active')} cap_used={mp.get('count',0)}")
+
+                                        # Hysteresis: promote at ≥ promote_wr, demote at < demote_wr
+                                        if not mp.get('active') and recent_n >= min_recent and total_exec >= min_total and recent_wr >= promote_wr:
+                                            mp['active'] = True
+                                            logger.info(f"🚀 MR Promotion activated (WR {recent_wr:.1f}% ≥ {promote_wr:.1f}%, N={recent_n})")
+                                            if self.tg:
+                                                try:
+                                                    await self.tg.send_message(f"🌀 MR Promotion: Activated (WR {recent_wr:.1f}% ≥ {promote_wr:.0f}%)")
+                                                except Exception:
+                                                    pass
+                                        elif mp.get('active') and recent_wr < demote_wr:
+                                            mp['active'] = False
+                                            logger.info(f"🛑 MR Promotion deactivated (WR {recent_wr:.1f}% < {demote_wr:.1f}%)")
+                                            if self.tg:
+                                                try:
+                                                    await self.tg.send_message(f"🌀 MR Promotion: Deactivated (WR {recent_wr:.1f}% < {demote_wr:.0f}%)")
+                                                except Exception:
+                                                    pass
+                                        shared['mr_promotion'] = mp
+                                except Exception:
+                                    pass
                             # Scalp ML (phantom-only visibility)
                             if SCALP_AVAILABLE and get_scalp_scorer is not None:
                                 try:
@@ -3164,6 +3212,7 @@ class TradingBot:
                                 except Exception:
                                     pass
                                 should_take_trade = ml_score >= threshold
+                                promotion_forced = False
 
                                 logger.info(f"   🎯 ML Score: {ml_score:.1f} / {threshold:.0f} threshold")
                                 logger.info(f"   🔍 Analysis: {ml_reason}")
@@ -3182,6 +3231,34 @@ class TradingBot:
                                 else:
                                     logger.info(f"   ❌ DECISION: REJECT TRADE - ML score {ml_score:.1f} below threshold {threshold}")
                                     logger.info(f"   💡 Rejection reason: {ml_reason}")
+
+                                # MR Promotion override: execute despite ML below threshold when active and within caps
+                                try:
+                                    prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
+                                    if prom_cfg.get('enabled', False) and not should_take_trade:
+                                        mp = shared.get('mr_promotion', {})
+                                        # Block in extreme volatility if configured
+                                        block_extreme = bool(prom_cfg.get('block_extreme_vol', True))
+                                        vol_ok = (getattr(regime_analysis, 'volatility_level', 'normal') != 'extreme') or (not block_extreme)
+                                        cap = int(prom_cfg.get('daily_exec_cap', 20))
+                                        if mp.get('active') and int(mp.get('count', 0)) < cap and vol_ok:
+                                            should_take_trade = True
+                                            promotion_forced = True
+                                            # Mark on signal meta for post-exec accounting
+                                            try:
+                                                if not sig.meta:
+                                                    sig.meta = {}
+                                                sig.meta['promotion_forced'] = True
+                                            except Exception:
+                                                pass
+                                            logger.info(f"   🚀 MR Promotion override: executing despite ML {ml_score:.1f} < {threshold:.0f} (cap {mp.get('count',0)+1}/{cap})")
+                                            if self.tg:
+                                                try:
+                                                    await self.tg.send_message(f"🌀 MR Promotion: Executing {sym} {sig.side.upper()} despite ML {ml_score:.1f} < {threshold:.0f}")
+                                                except Exception:
+                                                    pass
+                                except Exception:
+                                    pass
 
                                 # Record in MR phantom tracker BEFORE continue (for both executed and rejected)
                                 logger.info(f"[{sym}] 📊 PHANTOM ROUTING: MR phantom tracker recording (executed={should_take_trade})")
@@ -3762,6 +3839,14 @@ class TradingBot:
                         await self.tg.send_message(msg)
                 
                     logger.info(f"[{sym}] {sig.side} position opened successfully")
+                    # Account for MR promotion daily cap if override was used
+                    try:
+                        if selected_strategy == 'enhanced_mr' and isinstance(getattr(sig, 'meta', {}), dict) and sig.meta.get('promotion_forced'):
+                            mp = shared.get('mr_promotion', {})
+                            mp['count'] = int(mp.get('count', 0)) + 1
+                            shared['mr_promotion'] = mp
+                    except Exception:
+                        pass
                     
                     # MR phantom tracking: Status already recorded correctly with initial phantom record
                 

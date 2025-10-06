@@ -225,6 +225,21 @@ class TGBot:
                 lines.append(f"• Next retrain in: {mr_info.get('trades_until_next_retrain', 0)} trades")
                 # Clarify executed vs phantom counts for transparency
                 lines.append(f"• Executed: {mr_info.get('completed_trades', 0)} | Phantom: {mr_info.get('phantom_count', 0)}")
+                # MR Promotion status
+                try:
+                    mr_stats = enhanced_mr.get_enhanced_stats()
+                    mp = self.shared.get('mr_promotion', {}) or {}
+                    cfg = self.shared.get('config', {}) or {}
+                    prom_cfg = (cfg.get('mr', {}) or {}).get('promotion', {})
+                    cap = int(prom_cfg.get('daily_exec_cap', 0))
+                    promote_wr = float(prom_cfg.get('promote_wr', 0.0))
+                    demote_wr = float(prom_cfg.get('demote_wr', 0.0))
+                    lines.append("")
+                    lines.append("🌀 *MR Promotion*")
+                    lines.append(f"• Status: {'✅ Active' if mp.get('active') else 'Off'} | Used: {mp.get('count',0)}/{cap}")
+                    lines.append(f"• Promote/Demote: {promote_wr:.0f}%/{demote_wr:.0f}% | Recent WR: {mr_stats.get('recent_win_rate',0.0):.1f}%")
+                except Exception:
+                    pass
             except Exception as exc:
                 logger.debug(f"Unable to fetch MR ML stats: {exc}")
 

@@ -119,6 +119,14 @@ mr:
     timeout_hours: 36              # shorter phantom timeout for faster labels
     enable_virtual_snapshots: true
     snapshots_delta: 5
+  promotion:
+    enabled: true
+    promote_wr: 50.0        # Activate when recent WR ≥ 50%
+    demote_wr: 30.0         # Deactivate when recent WR < 30%
+    min_recent: 20          # Require at least this many recent MR trades for decision
+    min_total_trades: 50    # Require overall MR executed trades to be at least this
+    daily_exec_cap: 20      # Max promotion-forced MR executions per UTC day
+    block_extreme_vol: true # Do not promote in extreme volatility
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}

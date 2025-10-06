@@ -251,6 +251,16 @@ class TGBot:
         except Exception as exc:
             logger.debug(f"Scalp phantom not available: {exc}")
 
+        # Scalp Shadow (ML-based)
+        try:
+            from shadow_trade_simulator import get_shadow_tracker
+            sstats = get_shadow_tracker().get_stats().get('scalp', {})
+            if sstats:
+                lines.append("🩳 *Scalp Shadow*")
+                lines.append(f"• Trades: {sstats.get('total',0)} | WR: {sstats.get('wr',0.0):.1f}%")
+        except Exception as exc:
+            logger.debug(f"Scalp shadow stats unavailable: {exc}")
+
         # Positions
         positions = book.positions if book else {}
         lines.append("")
@@ -3834,12 +3844,33 @@ class TGBot:
             wins = st.get('wins', 0)
             losses = st.get('losses', 0)
             wr = st.get('wr', 0.0)
+            # Scalp ML stats
+            ml_ready = False; thr = 75; samples = 0
+            try:
+                from ml_scorer_scalp import get_scalp_scorer
+                s = get_scalp_scorer()
+                ml_ready = bool(getattr(s, 'is_ml_ready', False))
+                thr = getattr(s, 'min_score', 75)
+                samples = getattr(s, 'completed_trades', 0)
+            except Exception:
+                pass
+            # Scalp shadow stats
+            sh_total = sh_wr = 0.0; sh_w = sh_l = 0
+            try:
+                from shadow_trade_simulator import get_shadow_tracker
+                sstats = get_shadow_tracker().get_stats().get('scalp', {})
+                sh_total = sstats.get('total', 0)
+                sh_w = sstats.get('wins', 0)
+                sh_l = sstats.get('losses', 0)
+                sh_wr = sstats.get('wr', 0.0)
+            except Exception:
+                pass
             msg = [
                 "🩳 *Scalp QA*",
-                f"• Phantom recorded: {total}",
-                f"• Wins/Losses: {wins}/{losses}",
-                f"• Phantom WR: {wr:.1f}%",
-                "_Scalp runs phantom-only by default in volatile/none routing_"
+                f"• ML: {'✅ Ready' if ml_ready else '⏳ Training'} | Samples: {samples} | Thr: {thr}",
+                f"• Phantom recorded: {total} | WR: {wr:.1f}% (W/L {wins}/{losses})",
+                f"• Shadow (ML-based): {int(sh_total)} | WR: {sh_wr:.1f}% (W/L {sh_w}/{sh_l})",
+                "_Scalp runs phantom-only; shadow sim reflects ML decision quality_"
             ]
             await self.safe_reply(update, "\n".join(msg))
         except Exception as e:

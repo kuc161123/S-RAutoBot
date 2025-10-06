@@ -25,7 +25,8 @@ class ShadowSimTracker:
         self.active: Dict[str, List[ShadowTrade]] = {}
         self.closed: Dict[str, List[ShadowTrade]] = {
             'pullback': [],
-            'enhanced_mr': []
+            'enhanced_mr': [],
+            'scalp': []
         }
 
     def _adjust_with_ml(self, trade: ShadowTrade) -> ShadowTrade:
@@ -118,7 +119,7 @@ class ShadowSimTracker:
 
     def get_stats(self) -> Dict[str, Dict[str, float]]:
         out: Dict[str, Dict[str, float]] = {}
-        for strat in ('pullback', 'enhanced_mr'):
+        for strat in ('pullback', 'enhanced_mr', 'scalp'):
             arr = self.closed.get(strat, [])
             wins = sum(1 for t in arr if t.outcome == 'win')
             losses = sum(1 for t in arr if t.outcome == 'loss')
@@ -141,4 +142,3 @@ def get_shadow_tracker() -> ShadowSimTracker:
     if _shadow_tracker is None:
         _shadow_tracker = ShadowSimTracker()
     return _shadow_tracker
-

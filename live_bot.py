@@ -670,6 +670,28 @@ class TradingBot:
                         self._scalp_cooldown[sym] = bar_ts
                         blist.append(now_ts)
                         self._scalp_budget[sym] = blist
+                        # Shadow execute Scalp if ML is trained and score ≥ threshold
+                        try:
+                            from ml_scorer_scalp import get_scalp_scorer
+                            scorer = get_scalp_scorer()
+                            if getattr(scorer, 'is_ml_ready', False):
+                                score, _ = scorer.score_signal({'side': sc_sig.side}, sc_feats)
+                                thr_sc = getattr(scorer, 'min_score', 75)
+                                if score >= thr_sc:
+                                    from shadow_trade_simulator import get_shadow_tracker
+                                    get_shadow_tracker().record_shadow_trade(
+                                        strategy='scalp',
+                                        symbol=sym,
+                                        side=sc_sig.side,
+                                        entry=float(sc_sig.entry),
+                                        sl=float(sc_sig.sl),
+                                        tp=float(sc_sig.tp),
+                                        ml_score=float(score or 0.0),
+                                        features=sc_feats or {}
+                                    )
+                                    logger.debug(f"[{sym}] 🩳 Scalp shadow trade recorded (score {score:.1f} ≥ {thr_sc})")
+                        except Exception as se:
+                            logger.debug(f"[{sym}] Scalp shadow error: {se}")
                 except Exception as e:
                     logger.debug(f"[{sym}] Scalp(3m) record error: {e}")
             except Exception as e:

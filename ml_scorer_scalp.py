@@ -140,6 +140,14 @@ class ScalpMLScorer:
                 self._save_state()
             except Exception as e:
                 logger.error(f"Scalp record outcome error: {e}")
+        # Auto-retrain when enough new trades have accumulated
+        try:
+            data_len = len(self._load_training_data())
+            if data_len >= self.MIN_TRADES_FOR_ML and (data_len - self.last_train_count) >= self.RETRAIN_INTERVAL:
+                logger.info(f"Scalp ML retrain trigger: {data_len - self.last_train_count} new trades")
+                self._retrain()
+        except Exception as e:
+            logger.debug(f"Scalp auto-retrain check failed: {e}")
 
     def _load_training_data(self) -> List[Dict]:
         data = []
@@ -207,6 +215,26 @@ class ScalpMLScorer:
             logger.error(f"Scalp startup retrain error: {e}")
             return False
 
+    def get_stats(self) -> Dict:
+        """Return compact stats for dashboard."""
+        try:
+            total = 0
+            if self.redis_client:
+                total = len(self._load_training_data())
+            return {
+                'completed_trades': int(self.completed_trades),
+                'total_records': total,
+                'is_ml_ready': bool(self.is_ml_ready),
+                'current_threshold': float(self.min_score)
+            }
+        except Exception:
+            return {
+                'completed_trades': int(self.completed_trades),
+                'total_records': 0,
+                'is_ml_ready': bool(self.is_ml_ready),
+                'current_threshold': float(self.min_score)
+            }
+
 
 _scalp_scorer = None
 
@@ -216,4 +244,3 @@ def get_scalp_scorer(enabled: bool = True) -> ScalpMLScorer:
     if _scalp_scorer is None:
         _scalp_scorer = ScalpMLScorer(enabled=enabled)
     return _scalp_scorer
-

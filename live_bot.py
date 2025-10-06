@@ -2555,7 +2555,8 @@ class TradingBot:
                         logger.info(f"   📈 Trend Strength: {regime_analysis.trend_strength:.1f} | Volatility: {regime_analysis.volatility_level}")
                         if regime_analysis.primary_regime == "ranging":
                             logger.info(f"   📦 Range Quality: {regime_analysis.range_quality} | Persistence: {regime_analysis.regime_persistence:.1%}")
-                        logger.info(f"   🎯 Recommended Strategy: {regime_analysis.recommended_strategy.upper().replace('_', ' ')}")
+                        # Suppressed global recommendation logging in favor of per-strategy router
+                        # logger.info(f"   🎯 Recommended Strategy: {regime_analysis.recommended_strategy.upper().replace('_', ' ')}")
 
                         # Soft routing + hysteresis
                         try:

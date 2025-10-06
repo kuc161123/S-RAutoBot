@@ -89,12 +89,12 @@ trade:
 # Strategy-specific regime thresholds and hysteresis
 strategy_regimes:
   pb:
-    threshold: 60    # min score for Pullback to be considered
+    threshold: 55    # min score for Pullback to be considered (lowered for more flow)
     min_hold: 3      # candles to keep route unless strongly outscored
   mr:
-    threshold: 70    # min score for Mean Reversion to be considered
+    threshold: 65    # min score for Mean Reversion to be considered (lowered for more flow)
     min_hold: 3
-  tie_breaker_margin: 5  # within this margin, prefer previous route
+  tie_breaker_margin: 7  # within this margin, prefer previous route (more stability)
 
 ml:
   fail_open_on_error: false   # if true, allow execution on ML errors; else skip and record phantom

@@ -503,6 +503,125 @@ class TradingBot:
             pass
         return task
 
+    # --- Scalp feature builder for ML/phantom ---
+    def _build_scalp_features(self, df: pd.DataFrame, sc_meta: dict | None = None,
+                              vol_level: str | None = None, cluster_id: int | None = None) -> dict:
+        """Compute Scalp ML features from a given dataframe window.
+
+        Returns a dict matching ml_scorer_scalp._prepare_features keys.
+        """
+        sc_meta = sc_meta or {}
+        out = {}
+        try:
+            tail = df.tail(50).copy()
+            close = tail['close']
+            open_ = tail['open']
+            high = tail['high']
+            low = tail['low']
+
+            # ATR(14) and ATR pct of price
+            prev_close = close.shift()
+            tr = np.maximum(high - low, np.maximum((high - prev_close).abs(), (low - prev_close).abs()))
+            atr = float(tr.rolling(14).mean().iloc[-1]) if len(tr) >= 14 else float(tr.iloc[-1])
+            price = float(close.iloc[-1]) if len(close) else 0.0
+            atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
+            out['atr_pct'] = max(0.0, atr_pct)
+
+            # Bollinger bands width percent (20)
+            if len(close) >= 20:
+                ma = close.rolling(20).mean()
+                sd = close.rolling(20).std()
+                upper = ma + 2 * sd
+                lower = ma - 2 * sd
+                bb_width = float((upper.iloc[-1] - lower.iloc[-1]))
+                bb_width_pct = float(bb_width / max(1e-9, price))
+            else:
+                bb_width_pct = 0.0
+            out['bb_width_pct'] = max(0.0, bb_width_pct)
+
+            # Impulse ratio: |close change| / ATR
+            if len(close) >= 2 and atr > 0:
+                impulse_ratio = float(abs(close.iloc[-1] - close.iloc[-2]) / atr)
+            else:
+                impulse_ratio = 0.0
+            out['impulse_ratio'] = max(0.0, impulse_ratio)
+
+            # EMA slopes (fast=20, slow=50) over 10 bars as percent of price
+            def _ema(s: pd.Series, n: int) -> pd.Series:
+                return s.ewm(span=n, adjust=False).mean()
+
+            if len(close) >= 20:
+                ema_fast = _ema(close, 20)
+                if len(ema_fast) >= 11:
+                    slope_fast = float((ema_fast.iloc[-1] - ema_fast.iloc[-11]) / 10.0)
+                    out['ema_slope_fast'] = float((slope_fast / max(1e-9, price)) * 100.0)
+                else:
+                    out['ema_slope_fast'] = 0.0
+            else:
+                out['ema_slope_fast'] = 0.0
+            if len(close) >= 50:
+                ema_slow = _ema(close, 50)
+                if len(ema_slow) >= 11:
+                    slope_slow = float((ema_slow.iloc[-1] - ema_slow.iloc[-11]) / 10.0)
+                    out['ema_slope_slow'] = float((slope_slow / max(1e-9, price)) * 100.0)
+                else:
+                    out['ema_slope_slow'] = 0.0
+            else:
+                out['ema_slope_slow'] = 0.0
+
+            # Wick ratios (last candle)
+            if len(tail) >= 1:
+                o = float(open_.iloc[-1]); c = float(close.iloc[-1]); h = float(high.iloc[-1]); l = float(low.iloc[-1])
+                rng = max(1e-9, h - l)
+                upper_wick = h - max(o, c)
+                lower_wick = min(o, c) - l
+                out['upper_wick_ratio'] = float(max(0.0, upper_wick / rng))
+                out['lower_wick_ratio'] = float(max(0.0, lower_wick / rng))
+            else:
+                out['upper_wick_ratio'] = 0.0
+                out['lower_wick_ratio'] = 0.0
+
+            # Volume ratio
+            vol = tail['volume']
+            if len(vol) >= 20 and vol.iloc[-20:-1].mean() > 0:
+                out['volume_ratio'] = float(vol.iloc[-1] / max(1e-9, vol.rolling(20).mean().iloc[-1]))
+            else:
+                out['volume_ratio'] = float(sc_meta.get('vol_ratio', 1.0))
+
+            # VWAP distance in ATR
+            try:
+                if 'dist_vwap_atr' in sc_meta and sc_meta.get('dist_vwap_atr') is not None:
+                    out['vwap_dist_atr'] = float(sc_meta.get('dist_vwap_atr'))
+                else:
+                    tp = (tail['high'] + tail['low'] + tail['close']) / 3.0
+                    vwap = (tp * tail['volume']).rolling(20).sum() / tail['volume'].rolling(20).sum()
+                    out['vwap_dist_atr'] = float(abs(close.iloc[-1] - vwap.iloc[-1]) / max(1e-9, atr)) if len(vwap.dropna()) else 0.0
+            except Exception:
+                out['vwap_dist_atr'] = float(sc_meta.get('dist_vwap_atr', 0.0) or 0.0)
+
+            # Session label for mapping (scorer maps to 0..3)
+            try:
+                hour = pd.Timestamp.utcnow().hour
+                if 0 <= hour < 8:
+                    out['session'] = 'asian'
+                elif 8 <= hour < 16:
+                    out['session'] = 'european'
+                elif 16 <= hour < 24:
+                    out['session'] = 'us'
+                else:
+                    out['session'] = 'off_hours'
+            except Exception:
+                out['session'] = 'off_hours'
+
+            # Volatility regime & cluster
+            out['volatility_regime'] = vol_level if isinstance(vol_level, str) else 'normal'
+            out['symbol_cluster'] = int(cluster_id) if cluster_id is not None else 3
+
+        except Exception:
+            # Return whatever computed; scorer will default missing
+            pass
+        return out
+
     async def _collect_secondary_stream(self, ws_url: str, timeframe: str, symbols: list[str]):
         """Collect a secondary timeframe (e.g., 3m) for scalp detection."""
         handler = MultiWebSocketHandler(ws_url, self.running)
@@ -624,11 +743,9 @@ class TradingBot:
                     logger.debug(f"[{sym}] 🩳 Scalp(3m) dedup: duplicate signal skipped")
                     continue
 
-                # Record phantom to scalp tracker; features include routing and vol
-                sc_feats = {
-                    'routing': 'none',
-                    'volatility_regime': vol_level,
-                }
+                # Record phantom to scalp tracker; build full feature set
+                sc_feats = self._build_scalp_features(self.frames_3m.get(sym) or self.frames.get(sym) or df, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                sc_feats['routing'] = 'none'
                 try:
                     scpt = get_scalp_phantom_tracker()
                     # Enforce per-strategy hourly per-symbol budget for scalp
@@ -3195,13 +3312,8 @@ class TradingBot:
                                         sc_sig = detect_scalp_signal(df_for_scalp.copy(), ScalpSettings(), sym)
                                         if sc_sig and _not_duplicate(sym, sc_sig):
                                             sc_meta = getattr(sc_sig, 'meta', {}) or {}
-                                            sc_feats = {
-                                                'routing': 'none',
-                                                'vwap_dist_atr': sc_meta.get('dist_vwap_atr', 0),
-                                                'volume_ratio': sc_meta.get('vol_ratio', 1),
-                                                'symbol_cluster': cluster_id,
-                                                'volatility_regime': regime_analysis.volatility_level
-                                            }
+                                            sc_feats = self._build_scalp_features(df_for_scalp, sc_meta, regime_analysis.volatility_level, cluster_id)
+                                            sc_feats['routing'] = 'none'
                                             logger.info(f"[{sym}] 👻 Phantom-only (Scalp none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
                                             try:
                                                 from scalp_phantom_tracker import get_scalp_phantom_tracker

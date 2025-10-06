@@ -2077,6 +2077,35 @@ class TradingBot:
                                     logger.info(f"🌀 MR ML startup retrain attempted: {'✅ success' if ok else '⚠️ skipped'}")
                                 except Exception:
                                     pass
+                                # Immediately evaluate MR promotion after backfill/retrain
+                                try:
+                                    mr_stats = enhanced_mr_scorer.get_enhanced_stats()
+                                    prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
+                                    if prom_cfg.get('enabled', False):
+                                        mp = shared.get('mr_promotion', {})
+                                        from datetime import datetime as _dt
+                                        cur_day = _dt.utcnow().strftime('%Y%m%d')
+                                        if mp.get('day') != cur_day:
+                                            mp['day'] = cur_day
+                                            mp['count'] = 0
+                                        recent_wr = float(mr_stats.get('recent_win_rate', 0.0))
+                                        recent_n = int(mr_stats.get('recent_trades', 0))
+                                        total_exec = int(mr_stats.get('completed_trades', 0))
+                                        promote_wr = float(prom_cfg.get('promote_wr', 45.0))
+                                        demote_wr = float(prom_cfg.get('demote_wr', 30.0))
+                                        min_recent = int(prom_cfg.get('min_recent', 20))
+                                        min_total = int(prom_cfg.get('min_total_trades', 50))
+                                        if not mp.get('active') and recent_n >= min_recent and total_exec >= min_total and recent_wr >= promote_wr:
+                                            mp['active'] = True
+                                            logger.info(f"🚀 MR Promotion activated (startup eval) WR {recent_wr:.1f}% (N={recent_n})")
+                                            if self.tg:
+                                                try:
+                                                    await self.tg.send_message(f"🌀 MR Promotion: Activated (WR {recent_wr:.1f}% ≥ {promote_wr:.0f}%) [startup]")
+                                                except Exception:
+                                                    pass
+                                        shared['mr_promotion'] = mp
+                                except Exception:
+                                    pass
                             except Exception as e:
                                 logger.debug(f"MR ML backfill error: {e}")
                 except Exception as e:

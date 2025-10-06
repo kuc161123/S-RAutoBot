@@ -484,6 +484,8 @@ class TradingBot:
         self._tasks = set()
         # Per-symbol cooldown for 3m scalp detections (timestamp of last recorded attempt)
         self._scalp_cooldown: Dict[str, pd.Timestamp] = {}
+        # Store per-symbol ML features at execution time to record outcomes later
+        self._last_signal_features: Dict[str, dict] = {}
         # Best-effort Redis client for lightweight runtime state (e.g., open position strategy hints)
         self._redis = None
         try:
@@ -1324,10 +1326,15 @@ class TradingBot:
                                             exit_reason = "sl"
                             
                             # Create signal data for ML recording
+                            try:
+                                feat_ref = self._last_signal_features.pop(symbol, {})
+                            except Exception:
+                                feat_ref = {}
                             signal_data = {
                                 'symbol': symbol,
-                                'features': {},  # Features were stored during signal detection
-                                'score': 0,  # Will be filled from phantom tracker if available
+                                'features': feat_ref,
+                                'score': 0,
+                                'was_executed': True,
                                 'meta': {
                                     'reason': getattr(pos, 'ml_reason', '')
                                 }
@@ -1791,6 +1798,8 @@ class TradingBot:
         from strategy_trend_breakout import detect_signal as detect_trend_signal, TrendSettings as TrendSettingsTB
         use_enhanced_parallel = cfg["trade"].get("use_enhanced_parallel", True) and ENHANCED_ML_AVAILABLE
         use_regime_switching = cfg["trade"].get("use_regime_switching", False)
+        # Backward-compat: no reset function in Trend-only mode
+        reset_symbol_state = None
 
         # Exploration flags (phantom-only loosening per strategy)
         exploration_enabled = bool(cfg.get('exploration', {}).get('enabled', True))
@@ -3019,6 +3028,12 @@ class TradingBot:
                                         logger.warning(f"Trend ML scoring error: {e}")
                                         should_take_trade = False
                                         ml_score = 0.0
+                                # Persist features to attach on close for executed outcomes
+                                try:
+                                    if should_take_trade:
+                                        self._last_signal_features[sym] = dict(trend_features)
+                                except Exception:
+                                    pass
                                 # Record phantom for trend before continue if not executing
                                 logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed={should_take_trade})")
                                 phantom_tracker.record_signal(

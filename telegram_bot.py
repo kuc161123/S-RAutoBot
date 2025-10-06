@@ -3407,10 +3407,10 @@ HTF S/R module disabled
             msg += f"• Adaptive routing: Regime-based selection\n"
 
             # Active models summary
-            pullback_models = len(trend_stats.get('models_active', []))
+            trend_models = len(trend_stats.get('models_active', []))
             mr_models = mr_stats.get('model_count', 0)
-            msg += f"• Active ML models: {pullback_models + mr_models} total\n"
-            msg += f"  - Trend: {pullback_models}/2 models\n"
+            msg += f"• Active ML models: {trend_models + mr_models} total\n"
+            msg += f"  - Trend: {trend_models}/2 models\n"
             msg += f"  - Mean Reversion: {mr_models}/4 models\n"
 
             await self.safe_reply(update, msg)
@@ -3515,22 +3515,22 @@ HTF S/R module disabled
                 recent_trades = all_trades[-50:] if len(all_trades) > 50 else all_trades
 
                 # Group by strategy
-                pullback_trades = [t for t in recent_trades if t.strategy_name in ("trend_breakout", "pullback")]
+                trend_trades = [t for t in recent_trades if t.strategy_name in ("trend_breakout", "pullback")]
                 mr_trades = [t for t in recent_trades if t.strategy_name in ["mean_reversion", "enhanced_mr"]]
 
                 msg += f"📈 *Recent Performance (Last 50 trades):*\n"
 
-                if pullback_trades:
-                    pullback_wins = sum(1 for t in pullback_trades if t.pnl_usd > 0)
-                    pullback_wr = (pullback_wins / len(pullback_trades)) * 100
-                    pullback_pnl = sum(t.pnl_usd for t in pullback_trades)
+                if trend_trades:
+                    trend_wins = sum(1 for t in trend_trades if t.pnl_usd > 0)
+                    trend_wr = (trend_wins / len(trend_trades)) * 100
+                    trend_pnl = sum(t.pnl_usd for t in trend_trades)
 
                     msg += f"\n🎯 *Trend Strategy:*\n"
-                    msg += f"• Trades: {len(pullback_trades)}\n"
-                    msg += f"• Win rate: {pullback_wr:.1f}%\n"
-                    msg += f"• Total P&L: ${pullback_pnl:.2f}\n"
-                    if len(pullback_trades) > 0:
-                        avg_pnl = pullback_pnl / len(pullback_trades)
+                    msg += f"• Trades: {len(trend_trades)}\n"
+                    msg += f"• Win rate: {trend_wr:.1f}%\n"
+                    msg += f"• Total P&L: ${trend_pnl:.2f}\n"
+                    if len(trend_trades) > 0:
+                        avg_pnl = trend_pnl / len(trend_trades)
                         msg += f"• Avg P&L: ${avg_pnl:.2f}\n"
 
                 if mr_trades:
@@ -3547,11 +3547,11 @@ HTF S/R module disabled
                         msg += f"• Avg P&L: ${avg_pnl:.2f}\n"
 
                 # Combined stats
-                if pullback_trades or mr_trades:
-                    total_trades = len(pullback_trades) + len(mr_trades)
-                    total_wins = (len([t for t in pullback_trades if t.pnl_usd > 0]) +
+                if trend_trades or mr_trades:
+                    total_trades = len(trend_trades) + len(mr_trades)
+                    total_wins = (len([t for t in trend_trades if t.pnl_usd > 0]) +
                                  len([t for t in mr_trades if t.pnl_usd > 0]))
-                    total_pnl = (sum(t.pnl_usd for t in pullback_trades) +
+                    total_pnl = (sum(t.pnl_usd for t in trend_trades) +
                                 sum(t.pnl_usd for t in mr_trades))
 
                     msg += f"\n📊 *Combined Performance:*\n"
@@ -3563,11 +3563,11 @@ HTF S/R module disabled
                         msg += f"• Avg per trade: ${total_pnl/total_trades:.2f}\n"
 
                     # Strategy distribution
-                    pullback_pct = (len(pullback_trades) / total_trades) * 100 if total_trades > 0 else 0
+                    trend_pct = (len(trend_trades) / total_trades) * 100 if total_trades > 0 else 0
                     mr_pct = (len(mr_trades) / total_trades) * 100 if total_trades > 0 else 0
 
                     msg += f"\n📋 *Strategy Distribution:*\n"
-                    msg += f"• Trend: {pullback_pct:.1f}% of trades\n"
+                    msg += f"• Trend: {trend_pct:.1f}% of trades\n"
                     msg += f"• Mean Reversion: {mr_pct:.1f}% of trades\n"
 
                 else:
@@ -3818,8 +3818,8 @@ HTF S/R module disabled
                 off_used = derived_off_used
             if blocked_total == 0 and derived_blk_total > 0:
                 blocked_total = derived_blk_total
-            if blocked_pb == 0 and derived_blk_pb > 0:
-                blocked_pb = derived_blk_pb
+            if blocked_trend == 0 and derived_blk_tr > 0:
+                blocked_trend = derived_blk_tr
             if blocked_mr == 0 and derived_blk_mr > 0:
                 blocked_mr = derived_blk_mr
             if blocked_scalp == 0 and derived_blk_sc > 0:
@@ -3836,14 +3836,14 @@ HTF S/R module disabled
                     return base_r
                 except Exception:
                     return 0.0
-            if 'pb_acc' not in locals() or pb_acc == 0:
-                pb_acc = derived_pb_acc
+            if 'tr_acc' not in locals() or locals().get('tr_acc', 0) == 0:
+                tr_acc = derived_tr_acc
             if 'mr_acc' not in locals() or mr_acc == 0:
                 mr_acc = derived_mr_acc
             if 'sc_acc' not in locals() or sc_acc == 0:
                 sc_acc = derived_sc_acc
-            if 'pb_relax' not in locals() or pb_relax == 0.0:
-                pb_relax = _relax_from(pb_acc, int(targets.get('trend',40)))
+            if 'tr_relax' not in locals() or locals().get('tr_relax', 0.0) == 0.0:
+                tr_relax = _relax_from(tr_acc, int(targets.get('trend',40)))
             if 'mr_relax' not in locals() or mr_relax == 0.0:
                 mr_relax = _relax_from(mr_acc, int(targets.get('mr',40)))
             if 'sc_relax' not in locals() or sc_relax == 0.0:
@@ -4047,17 +4047,17 @@ HTF S/R module disabled
                         import os
                         redis_client = redis.from_url(os.getenv('REDIS_URL'), decode_responses=True)
                         
-                        pullback_model = redis_client.get('tml:model')
+                        trend_model = redis_client.get('tml:model')
                         mr_model = redis_client.get('enhanced_mr:model_data')
                         
-                        if pullback_model and mr_model:
+                        if trend_model and mr_model:
                             msg += "✅ *Existing ML Models Found:*\n"
                             msg += "• Trend ML Model: ✅ Trained\n"
                             msg += "• Enhanced MR Model: ✅ Trained\n\n"
                             msg += "🔄 Live bot handles automatic retraining as trades accumulate.\n"
                         else:
                             msg += "❌ *Missing ML Models:*\n"
-                            if not pullback_model:
+                            if not trend_model:
                                 msg += "• Trend ML Model: ⏳ Missing\n"
                             if not mr_model:
                                 msg += "• Enhanced MR Model: ⏳ Missing\n"
@@ -4086,12 +4086,12 @@ HTF S/R module disabled
                 elif current_status == 'completed':
                     msg += "🎉 *Status: Training Complete!*\n\n"
                     
-                    pullback_signals = status.get('trend_signals', 0)
+                    trend_signals = status.get('trend_signals', 0)
                     mr_signals = status.get('mr_signals', 0)
                     total_symbols = status.get('total_symbols', 0)
                     
                     msg += f"✅ *Results:*\n"
-                    msg += f"• Trend Signals: {pullback_signals:,}\n"
+                    msg += f"• Trend Signals: {trend_signals:,}\n"
                     msg += f"• MR Signals: {mr_signals:,}\n"
                     msg += f"• Total Symbols: {total_symbols}\n\n"
                     

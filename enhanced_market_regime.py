@@ -621,14 +621,14 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
                         trend_aligned = True
                 
                 if trend_aligned:
-                    recommended_strategy = "pullback"
-                    logger.info(f"[{symbol}] ✅ PULLBACK: STRONG TRENDING market (strength={trend_strength:.1f}, conf={regime_confidence:.1%}, EMA aligned)")
+                    recommended_strategy = "trend"
+                    logger.info(f"[{symbol}] ✅ TREND: Strong trending market (strength={trend_strength:.1f}, conf={regime_confidence:.1%}, EMA aligned)")
                 else:
                     recommended_strategy = "none"
-                    logger.info(f"[{symbol}] ❌ PULLBACK: Trend lacks EMA alignment (strength={trend_strength:.1f})")
+                    logger.info(f"[{symbol}] ❌ TREND: Lacks EMA alignment (strength={trend_strength:.1f})")
             else:
                 recommended_strategy = "none"
-                logger.info(f"[{symbol}] ❌ PULLBACK: Trend requirements not met (strength={trend_strength:.1f}, conf={regime_confidence:.1%}, vol={volatility_level})")
+                logger.info(f"[{symbol}] ❌ TREND: Requirements not met (strength={trend_strength:.1f}, conf={regime_confidence:.1%}, vol={volatility_level})")
 
         elif primary_regime == "volatile":
             logger.info(f"[{symbol}] 🔍 VOLATILE DEBUG: strength={trend_strength:.1f}, volatility={volatility_level}")
@@ -660,8 +660,8 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
                     logger.info(f"[{symbol}] ✅ FALLBACK: Exceptional range detected ({range_analysis.get('confidence', 0):.1%}) -> MR")
                 elif (trend_strength >= 40 and                     # Very strong trend required
                       volatility_level == "low"):                  # Only in low volatility
-                    recommended_strategy = "pullback"
-                    logger.info(f"[{symbol}] ✅ FALLBACK: Exceptional trend detected ({trend_strength:.1f}) -> Pullback")
+                    recommended_strategy = "trend"
+                    logger.info(f"[{symbol}] ✅ FALLBACK: Exceptional trend detected ({trend_strength:.1f}) -> Trend")
                 else:
                     # No weak signals allowed - prefer safety
                     recommended_strategy = "none"

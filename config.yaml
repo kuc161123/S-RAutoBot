@@ -69,10 +69,6 @@ trade:
   rr: 2.5
   both_hit_rule: SL_FIRST
   confirmation_candles: 2
-  use_mtf_sr: true
-  mtf_weight: 2.0
-  mtf_min_strength: 3.0
-  mtf_update_interval: 100
   use_ml_scoring: true
   ml_min_score: 70.0
   enable_ml_evolution: false
@@ -111,12 +107,6 @@ trend:
     timeout_hours: 36
     enable_virtual_snapshots: true
     snapshots_delta: 5
-  htf:
-    enabled: true
-    min_dist_atr: 0.25        # avoid trades when nearest opposing HTF level is closer than this (in ATR)
-    strength_min: 3.0         # consider only HTF levels with at least this strength
-    clear_buffer_atr: 0.10    # consider HTF level cleared if price is beyond by this ATR buffer
-    threshold_bonus: 3        # reduce ML threshold by this when HTF cleared
 
 ml:
   fail_open_on_error: false   # if true, allow execution on ML errors; else skip and record phantom

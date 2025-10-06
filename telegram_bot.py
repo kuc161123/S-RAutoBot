@@ -59,8 +59,6 @@ class TGBot:
         self.app.add_handler(CommandHandler("clusters", self.cluster_status))
         self.app.add_handler(CommandHandler("update_clusters", self.update_clusters))
         self.app.add_handler(CommandHandler("set_ml_threshold", self.set_ml_threshold))
-        self.app.add_handler(CommandHandler("htf_sr", self.htf_sr_status))
-        self.app.add_handler(CommandHandler("update_htf_sr", self.update_htf_sr))
         self.app.add_handler(CommandHandler("mr_ml", self.mr_ml_stats))
         self.app.add_handler(CommandHandler("mr_retrain", self.mr_retrain))
         self.app.add_handler(CommandHandler("enhanced_mr", self.enhanced_mr_stats))
@@ -701,8 +699,7 @@ class TGBot:
 /parallel_performance – Compare strategy performance
 
 🧱 Support/Resistance
-/htf_sr [SYMBOL] – HTF S/R snapshot
-/update_htf_sr – Force HTF S/R update
+HTF S/R module disabled
 
 ⚙️ Risk & Controls
 /risk – Current risk settings
@@ -1539,12 +1536,9 @@ class TGBot:
                 await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
             elif data.startswith("ui:htf:status"):
                 await query.answer()
-                fake_update = type('obj', (object,), {'message': query.message})
-                await self.htf_sr_status(fake_update, ctx)
+                await query.edit_message_text("HTF S/R module disabled.")
             elif data.startswith("ui:htf:update"):
-                await query.answer("Updating…")
-                fake_update = type('obj', (object,), {'message': query.message})
-                await self.update_htf_sr(fake_update, ctx)
+                await query.answer("Disabled")
             else:
                 await query.answer("Unknown action")
         except Exception as e:
@@ -2991,7 +2985,9 @@ class TGBot:
             await update.message.reply_text("Error updating ML threshold")
     
     async def htf_sr_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Show HTF support/resistance status"""
+        """Show HTF support/resistance status (disabled)."""
+        await self.safe_reply(update, "HTF S/R module disabled.")
+        return
         try:
             from multi_timeframe_sr import mtf_sr
             
@@ -3067,7 +3063,9 @@ class TGBot:
             await update.message.reply_text("Error fetching HTF S/R status")
     
     async def update_htf_sr(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Force update HTF support/resistance levels"""
+        """Force update HTF support/resistance levels (disabled)."""
+        await self.safe_reply(update, "HTF S/R module disabled.")
+        return
         try:
             # Get frames data
             frames = self.shared.get("frames", {})

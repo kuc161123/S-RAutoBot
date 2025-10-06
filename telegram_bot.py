@@ -2617,26 +2617,26 @@ class TGBot:
                             feat_name = feat.replace('_',' ').title()
                             bar_len = max(1, min(10, int(float(imp)/10)))
                             bar = '█'*bar_len + '░'*(10-bar_len)
-                            response_text += f"  {i}. {feat_name}\n     {bar} {float(imp):.1f}%\n"
+                            response_text += f"  {i}. {esc(feat_name)}\n     {esc(bar)} {float(imp):.1f}%\n"
                     tp = (sp or {}).get('time_patterns', {})
                     if tp:
                         response_text += "\n  ⏰ *Time-Based (Scalp)*\n"
                         if tp.get('best_hours'):
                             response_text += "  🌟 *Best Hours*\n"
                             for h, txt in list(tp['best_hours'].items())[:5]:
-                                response_text += f"  • {h}: {txt}\n"
+                                response_text += f"  • {esc(h)}: {esc(txt)}\n"
                         if tp.get('session_performance'):
                             response_text += "  🌍 *Sessions*\n"
                             for s, txt in tp['session_performance'].items():
-                                response_text += f"  • {s}: {txt}\n"
+                                response_text += f"  • {esc(s)}: {esc(txt)}\n"
                     mc = (sp or {}).get('market_conditions', {})
                     if mc:
                         response_text += "\n  🌡️ *Conditions (Scalp)*\n"
                         for k, v in mc.items():
                             title = k.replace('_',' ').title()
-                            response_text += f"  {title}:\n"
+                            response_text += f"  {esc(title)}:\n"
                             for bk, txt in v.items():
-                                response_text += f"   • {bk}: {txt}\n"
+                                response_text += f"   • {esc(bk)}: {esc(txt)}\n"
                     response_text += "\n"
                 except Exception:
                     response_text += "🩳 *Scalp ML Insights*\n  ❌ Not available\n\n"

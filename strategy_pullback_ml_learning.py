@@ -622,7 +622,18 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
         if df["close"].iloc[-1] > df["open"].iloc[-1]:
             state.confirmation_count += 1
             try:
-                logger.info(f"{symbol}: HL confirmation {state.confirmation_count}/{settings.confirmation_candles}")
+                # Verbose confirmation metrics
+                o = float(df["open"].iloc[-1]); cl = float(df["close"].iloc[-1])
+                hi = float(df["high"].iloc[-1]); lo = float(df["low"].iloc[-1])
+                body = abs(cl - o); rng = max(1e-9, hi - lo)
+                body_ratio = body / rng * 100.0
+                atr_recent = float(atr[-1]) if len(atr) else rng
+                candle_range_atr = (rng / atr_recent * 100.0) if atr_recent > 0 else 0.0
+                try:
+                    vol_ratio = float(df['volume'].iloc[-1] / df['volume'].rolling(20).mean().iloc[-1])
+                except Exception:
+                    vol_ratio = 1.0
+                logger.info(f"{symbol}: HL confirmation {state.confirmation_count}/{settings.confirmation_candles} | Body {body_ratio:.1f}% | Range/ATR {candle_range_atr:.1f}% | Vol× {vol_ratio:.2f}")
             except Exception:
                 pass
         
@@ -718,7 +729,18 @@ def get_ml_learning_signals(df:pd.DataFrame, settings:MinimalSettings = None,
         if df["close"].iloc[-1] < df["open"].iloc[-1]:
             state.confirmation_count += 1
             try:
-                logger.info(f"{symbol}: LH confirmation {state.confirmation_count}/{settings.confirmation_candles}")
+                # Verbose confirmation metrics
+                o = float(df["open"].iloc[-1]); cl = float(df["close"].iloc[-1])
+                hi = float(df["high"].iloc[-1]); lo = float(df["low"].iloc[-1])
+                body = abs(cl - o); rng = max(1e-9, hi - lo)
+                body_ratio = body / rng * 100.0
+                atr_recent = float(atr[-1]) if len(atr) else rng
+                candle_range_atr = (rng / atr_recent * 100.0) if atr_recent > 0 else 0.0
+                try:
+                    vol_ratio = float(df['volume'].iloc[-1] / df['volume'].rolling(20).mean().iloc[-1])
+                except Exception:
+                    vol_ratio = 1.0
+                logger.info(f"{symbol}: LH confirmation {state.confirmation_count}/{settings.confirmation_candles} | Body {body_ratio:.1f}% | Range/ATR {candle_range_atr:.1f}% | Vol× {vol_ratio:.2f}")
             except Exception:
                 pass
         

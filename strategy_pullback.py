@@ -359,10 +359,23 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     elif state.state == "HL_FORMED":
         # Count confirmation candles for long
         confirmations = count_confirmation_candles(df, "long", s.confirmation_candles)
-        # Log each confirmation candle as it accrues (until signal fires)
+        # Verbose per-candle confirmation diagnostics
         try:
             if confirmations > 0 and confirmations < s.confirmation_candles:
-                logger.info(f"[{symbol}] HL confirmation {confirmations}/{s.confirmation_candles}")
+                o = float(df["open"].iloc[-1]); cl = float(df["close"].iloc[-1])
+                hi = float(df["high"].iloc[-1]); lo = float(df["low"].iloc[-1])
+                body = abs(cl - o); rng = max(1e-9, hi - lo)
+                body_ratio = body / rng * 100.0
+                try:
+                    atr_recent = float(_atr(df, s.atr_len)[-1])
+                except Exception:
+                    atr_recent = rng
+                candle_range_atr = (rng / atr_recent * 100.0) if atr_recent > 0 else 0.0
+                try:
+                    vol_ratio = float(df['volume'].iloc[-1] / df['volume'].rolling(20).mean().iloc[-1])
+                except Exception:
+                    vol_ratio = 1.0
+                logger.info(f"[{symbol}] HL confirmation {confirmations}/{s.confirmation_candles} | Body {body_ratio:.1f}% | Range/ATR {candle_range_atr:.1f}% | Vol× {vol_ratio:.2f}")
         except Exception:
             pass
         
@@ -430,6 +443,25 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     elif state.state == "LH_FORMED":
         # Count confirmation candles for short
         confirmations = count_confirmation_candles(df, "short", s.confirmation_candles)
+        # Verbose per-candle confirmation diagnostics
+        try:
+            if confirmations > 0 and confirmations < s.confirmation_candles:
+                o = float(df["open"].iloc[-1]); cl = float(df["close"].iloc[-1])
+                hi = float(df["high"].iloc[-1]); lo = float(df["low"].iloc[-1])
+                body = abs(cl - o); rng = max(1e-9, hi - lo)
+                body_ratio = body / rng * 100.0
+                try:
+                    atr_recent = float(_atr(df, s.atr_len)[-1])
+                except Exception:
+                    atr_recent = rng
+                candle_range_atr = (rng / atr_recent * 100.0) if atr_recent > 0 else 0.0
+                try:
+                    vol_ratio = float(df['volume'].iloc[-1] / df['volume'].rolling(20).mean().iloc[-1])
+                except Exception:
+                    vol_ratio = 1.0
+                logger.info(f"[{symbol}] LH confirmation {confirmations}/{s.confirmation_candles} | Body {body_ratio:.1f}% | Range/ATR {candle_range_atr:.1f}% | Vol× {vol_ratio:.2f}")
+        except Exception:
+            pass
         # Log each confirmation candle as it accrues (until signal fires)
         try:
             if confirmations > 0 and confirmations < s.confirmation_candles:

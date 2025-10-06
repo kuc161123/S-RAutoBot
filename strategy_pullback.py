@@ -359,6 +359,12 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     elif state.state == "HL_FORMED":
         # Count confirmation candles for long
         confirmations = count_confirmation_candles(df, "long", s.confirmation_candles)
+        # Log each confirmation candle as it accrues (until signal fires)
+        try:
+            if confirmations > 0 and confirmations < s.confirmation_candles:
+                logger.info(f"[{symbol}] HL confirmation {confirmations}/{s.confirmation_candles}")
+        except Exception:
+            pass
         
         if confirmations >= s.confirmation_candles:
             # Generate LONG signal
@@ -424,6 +430,12 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     elif state.state == "LH_FORMED":
         # Count confirmation candles for short
         confirmations = count_confirmation_candles(df, "short", s.confirmation_candles)
+        # Log each confirmation candle as it accrues (until signal fires)
+        try:
+            if confirmations > 0 and confirmations < s.confirmation_candles:
+                logger.info(f"[{symbol}] LH confirmation {confirmations}/{s.confirmation_candles}")
+        except Exception:
+            pass
         
         if confirmations >= s.confirmation_candles:
             # Generate SHORT signal

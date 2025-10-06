@@ -2487,7 +2487,7 @@ class TGBot:
                                 emoji = '✅' if wr >= 50 else '❌'
                             else:
                                 emoji = '➖'
-                            response_text += f"  {emoji} {vol_type.title()}: {stats}\n"
+                            response_text += f"  {emoji} {esc(vol_type.title())}: {esc(stats)}\n"
                         response_text += "\n"
                     
                     if market_conditions.get('volume_impact'):
@@ -2499,7 +2499,7 @@ class TGBot:
                                 emoji = '✅' if wr >= 50 else '❌'
                             else:
                                 emoji = '➖'
-                            response_text += f"  {emoji} {vol_name}: {stats}\n"
+                            response_text += f"  {emoji} {esc(vol_name)}: {esc(stats)}\n"
                         response_text += "\n"
                     
                     if market_conditions.get('trend_impact'):
@@ -2511,7 +2511,7 @@ class TGBot:
                                 emoji = '✅' if wr >= 50 else '❌'
                             else:
                                 emoji = '➖'
-                            response_text += f"  {emoji} {trend_name}: {stats}\n"
+                            response_text += f"  {emoji} {esc(trend_name)}: {esc(stats)}\n"
                         response_text += "\n"
                 
                 # Winning vs Losing Patterns
@@ -2521,13 +2521,13 @@ class TGBot:
                     if patterns.get('winning_patterns'):
                         response_text += "  ✅ *Common in Winners*\n"
                         for pattern in patterns['winning_patterns']:
-                            response_text += f"  • {pattern}\n"
+                            response_text += f"  • {esc(pattern)}\n"
                         response_text += "\n"
                     
                     if patterns.get('losing_patterns'):
                         response_text += "  ❌ *Common in Losers*\n"
                         for pattern in patterns['losing_patterns']:
-                            response_text += f"  • {pattern}\n"
+                            response_text += f"  • {esc(pattern)}\n"
                         response_text += "\n"
                 
                 # Summary insights
@@ -2556,7 +2556,7 @@ class TGBot:
                             feat_name = feat.replace('_', ' ').title()
                             bar_len = max(1, min(10, int(float(imp)/10)))
                             bar = '█' * bar_len + '░' * (10 - bar_len)
-                        response_text += f"  {i}. {esc(feat_name)}\n     {esc(bar)} {float(imp):.1f}%\n"
+                            response_text += f"  {i}. {esc(feat_name)}\n     {esc(bar)} {float(imp):.1f}%\n"
                     tp = emr_patterns.get('time_patterns', {})
                     if tp:
                         response_text += "\n  ⏰ *Time-Based Insights*\n"

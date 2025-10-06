@@ -1456,8 +1456,8 @@ class TradingBot:
             
             # Check if ready to retrain
             if retrain_info['can_train'] and retrain_info['trades_until_next_retrain'] == 0:
-                logger.info(f"🔄 ML retrain triggered after real trade completion - "
-                           f"{retrain_info['total_combined']} total trades available")
+                total_trades = retrain_info.get('total_combined', retrain_info.get('total_records', retrain_info.get('total_trades', 'N/A')))
+                logger.info(f"🔄 ML retrain triggered after real trade completion - {total_trades} total trades available")
                 
                 # Trigger retrain
                 retrain_result = ml_scorer.startup_retrain()

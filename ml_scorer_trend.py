@@ -211,6 +211,17 @@ class TrendMLScorer:
         logger.info("Trend ML retrained")
         return True
 
+    def startup_retrain(self) -> bool:
+        """Compatibility retrain entrypoint used by the bot.
+
+        Attempts to retrain if enough data is present; returns True on success.
+        """
+        try:
+            return bool(self._retrain())
+        except Exception as e:
+            logger.debug(f"Trend startup retrain skipped: {e}")
+            return False
+
     def get_retrain_info(self) -> Dict:
         data_len = 0
         if self.redis_client:

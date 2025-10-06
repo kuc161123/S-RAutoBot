@@ -1223,12 +1223,12 @@ class TradingBot:
                             if use_enhanced and shared_enhanced_mr:
                                 # Enhanced parallel system - STRICT routing guard
                                 logger.info(f"[{symbol}] 🎯 ML ROUTING: strategy_name='{pos.strategy_name}', outcome='{outcome}'")
-                                    if pos.strategy_name == "enhanced_mr":
-                                        try:
-                                            signal_data['was_executed'] = True
-                                        except Exception:
-                                            pass
-                                        shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
+                                if pos.strategy_name == "enhanced_mr":
+                                    try:
+                                        signal_data['was_executed'] = True
+                                    except Exception:
+                                        pass
+                                    shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
                                     logger.info(f"[{symbol}] ✅ Enhanced MR ML updated with outcome.")
                                 elif pos.strategy_name == "mean_reversion":
                                     # Guard: do NOT route 'mean_reversion' to Enhanced MR to avoid accidental increments

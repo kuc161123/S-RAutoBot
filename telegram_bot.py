@@ -1480,7 +1480,7 @@ HTF S/R module disabled
                     wins = losses = 0
                     for t in trades:
                         strat = (getattr(t, 'strategy_name', '') or '').lower()
-                grp = 'trend' if ('trend' in strat or 'pullback' in strat) else 'enhanced_mr' if ('mr' in strat or 'reversion' in strat) else None
+                        grp = 'trend' if ('trend' in strat or 'pullback' in strat) else 'enhanced_mr' if ('mr' in strat or 'reversion' in strat) else None
                         if grp == key:
                             pnl = float(getattr(t, 'pnl_usd', 0))
                             if pnl > 0:
@@ -1490,14 +1490,14 @@ HTF S/R module disabled
                     total = wins + losses
                     wr = (wins/total*100.0) if total else 0.0
                     return wins, losses, total, wr
-            pbw, pbl, pbt, pbwr = _baseline_for('trend')
+                pbw, pbl, pbt, pbwr = _baseline_for('trend')
                 mrw, mrl, mrt, mrwr = _baseline_for('enhanced_mr')
                 msg = [
                     "🧪 *Shadow vs Baseline*",
                     "",
-                "🔵 Trend",
+                    "🔵 Trend",
                     f"• Baseline: W {pbw} / L {pbl} (WR {pbwr:.1f}%)",
-                f"• Shadow:   W {s_stats.get('trend',{}).get('wins',0)} / L {s_stats.get('trend',{}).get('losses',0)} (WR {s_stats.get('trend',{}).get('wr',0.0):.1f}%)",
+                    f"• Shadow:   W {s_stats.get('trend',{}).get('wins',0)} / L {s_stats.get('trend',{}).get('losses',0)} (WR {s_stats.get('trend',{}).get('wr',0.0):.1f}%)",
                     "",
                     "🌀 Mean Reversion",
                     f"• Baseline: W {mrw} / L {mrl} (WR {mrwr:.1f}%)",

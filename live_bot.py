@@ -2846,7 +2846,7 @@ class TradingBot:
                                                         vol_reg_tmp = getattr(regime_analysis, 'volatility_level', 'normal')
                                                         if vol_reg_tmp == 'high':
                                                             # Blend adjusted minima back toward base minima (dampen relax)
-                                                            damp = 0.5  # keep at most 50% of relax effect in high vol
+                                                            damp = 0.35  # keep at most 35% of relax effect in high vol
                                                             ts_min = base_ts_min - (base_ts_min - adj['trend_min']) * damp
                                                             conf_min = base_conf_min - (base_conf_min - adj['confirm_min']) * damp
                                                             mtf_min = base_mtf_min - (base_mtf_min - adj['mtf_min']) * damp

@@ -99,8 +99,8 @@ pullback:
     enabled: true
     # Relaxed, phantom-only gates to increase sample flow (execution unchanged)
     trend_strength_min: 38         # was 50 — allow moderate trends
-    confirmation_strength_min: 0.10 # was 0.2 — lighter confirmation
-    mtf_level_strength_min: 0.30    # was 0.5 — accept weaker MTF S/R
+    confirmation_strength_min: 0.05 # loosen to allow more confirmations
+    mtf_level_strength_min: 0.20    # loosen to accept weaker MTF S/R
     allow_volatility_high: true
     timeout_hours: 36              # auto-close phantom after 36h for learning
     enable_virtual_snapshots: true
@@ -161,8 +161,8 @@ phantom_flow:
   relax_limits:
     pullback:
       trend: 15.0           # reduce trend_min by up to 15 points
-      confirm: 0.15         # reduce confirmation_min by up to 0.15
-      mtf: 0.30             # reduce mtf_min by up to 0.30
+      confirm: 0.20         # reduce confirmation_min by up to 0.20
+      mtf: 0.40             # reduce mtf_min by up to 0.40
     mr:
       rc: 0.30              # reduce rc_min by up to 0.30
       touches: 3            # reduce touches_min by up to 3

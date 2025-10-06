@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from typing import Optional, Dict
 import numpy as np
 import pandas as pd
+import logging
+from strategy_pullback import _pivot_low, _pivot_high  # reuse robust pivot helpers
 
 
 @dataclass
@@ -38,6 +40,7 @@ def _ema(series: pd.Series, n: int) -> float:
 
 
 def detect_signal(df: pd.DataFrame, s: TrendSettings, symbol: str = "") -> Optional[Signal]:
+    logger = logging.getLogger(__name__)
     if df is None or len(df) < max(60, s.channel_len + 2):
         return None
 
@@ -51,7 +54,11 @@ def detect_signal(df: pd.DataFrame, s: TrendSettings, symbol: str = "") -> Optio
     if not np.isfinite(hh) or not np.isfinite(ll):
         return None
 
-    atr = _atr(df, s.atr_len)
+    # ATR and ATR series (for volatility percentile)
+    prev = close.shift()
+    trarr = np.maximum(high - low, np.maximum((high - prev).abs(), (low - prev).abs()))
+    atr_series = trarr.rolling(s.atr_len).mean()
+    atr = float(atr_series.iloc[-1]) if not pd.isna(atr_series.iloc[-1]) else float(trarr.iloc[-1])
     price = float(close.iloc[-1])
     k = s.breakout_k_atr
 
@@ -73,26 +80,119 @@ def detect_signal(df: pd.DataFrame, s: TrendSettings, symbol: str = "") -> Optio
     # Long breakout
     if price > hh + k * atr and ema_ok:
         entry = price
-        sl = entry - s.sl_atr_mult * atr
-        R = entry - sl
+        # Volatility-aware SL buffer (hybrid, similar to MR)
+        try:
+            vol_pct = 0.5
+            valid = atr_series.dropna()
+            if len(valid) >= 30:
+                current_atr = float(atr)
+                vol_pct = float((valid < current_atr).sum() / len(valid))
+            if vol_pct > 0.8:
+                vol_mult = 1.4
+            elif vol_pct > 0.6:
+                vol_mult = 1.2
+            elif vol_pct < 0.2:
+                vol_mult = 0.8
+            else:
+                vol_mult = 1.0
+        except Exception:
+            vol_mult = 1.0
+        adjusted = float(s.sl_atr_mult) * float(vol_mult)
+
+        # Hybrid SL options
+        # 1) Breakout level (HH) with small buffer
+        sl_opt1 = float(hh) - (adjusted * 0.3 * float(atr))
+        # 2) ATR-based from entry
+        sl_opt2 = float(entry) - (adjusted * float(atr))
+        # 3) Structural: recent pivot low with larger buffer
+        try:
+            pl = pd.Series(_pivot_low(low, 5, 5), index=df.index).dropna()
+            pivot_low_val = float(pl.iloc[-1]) if len(pl) else float(low.rolling(10).min().iloc[-1])
+        except Exception:
+            pivot_low_val = float(low.rolling(10).min().iloc[-1])
+        sl_opt3 = float(pivot_low_val) - (adjusted * float(atr))
+
+        sl = min(sl_opt1, sl_opt2, sl_opt3)
+        # Enforce minimum stop distance (1%)
+        min_stop = float(entry) * 0.01
+        if (entry - sl) < min_stop:
+            sl = float(entry) - min_stop
+            try:
+                logger.info(f"[{symbol}] Trend SL adjusted to minimum distance (1% from entry)")
+            except Exception:
+                pass
+
+        R = float(entry) - float(sl)
         if R <= 0:
             return None
-        tp = entry + s.rr * R
+        fee_adjustment = 1.00165
+        tp = float(entry) + float(s.rr) * R * fee_adjustment
         reason = f"Donchian breakout LONG > HH({s.channel_len}) + {k}*ATR"
         meta.update({'breakout_dist_atr': float((price - hh) / max(1e-9, atr))})
+        try:
+            which = 'pivot' if sl == sl_opt3 else ('atr' if sl == sl_opt2 else 'breakout')
+            logger.info(f"[{symbol}] Trend LONG SL method: {which} | entry={entry:.4f} sl={sl:.4f} tp={tp:.4f}")
+        except Exception:
+            pass
         return Signal('long', float(entry), float(sl), float(tp), reason, meta)
 
     # Short breakout
     if price < ll - k * atr and ema_ok:
         entry = price
-        sl = entry + s.sl_atr_mult * atr
-        R = sl - entry
+        # Volatility-aware SL buffer (hybrid)
+        try:
+            vol_pct = 0.5
+            valid = atr_series.dropna()
+            if len(valid) >= 30:
+                current_atr = float(atr)
+                vol_pct = float((valid < current_atr).sum() / len(valid))
+            if vol_pct > 0.8:
+                vol_mult = 1.4
+            elif vol_pct > 0.6:
+                vol_mult = 1.2
+            elif vol_pct < 0.2:
+                vol_mult = 0.8
+            else:
+                vol_mult = 1.0
+        except Exception:
+            vol_mult = 1.0
+        adjusted = float(s.sl_atr_mult) * float(vol_mult)
+
+        # Hybrid SL options
+        # 1) Breakout level (LL) with small buffer
+        sl_opt1 = float(ll) + (adjusted * 0.3 * float(atr))
+        # 2) ATR-based from entry
+        sl_opt2 = float(entry) + (adjusted * float(atr))
+        # 3) Structural: recent pivot high with larger buffer
+        try:
+            ph = pd.Series(_pivot_high(high, 5, 5), index=df.index).dropna()
+            pivot_high_val = float(ph.iloc[-1]) if len(ph) else float(high.rolling(10).max().iloc[-1])
+        except Exception:
+            pivot_high_val = float(high.rolling(10).max().iloc[-1])
+        sl_opt3 = float(pivot_high_val) + (adjusted * float(atr))
+
+        sl = max(sl_opt1, sl_opt2, sl_opt3)
+        # Enforce minimum stop distance (1%)
+        min_stop = float(entry) * 0.01
+        if (sl - entry) < min_stop:
+            sl = float(entry) + min_stop
+            try:
+                logger.info(f"[{symbol}] Trend SL adjusted to minimum distance (1% from entry)")
+            except Exception:
+                pass
+
+        R = float(sl) - float(entry)
         if R <= 0:
             return None
-        tp = entry - s.rr * R
+        fee_adjustment = 1.00165
+        tp = float(entry) - float(s.rr) * R * fee_adjustment
         reason = f"Donchian breakout SHORT < LL({s.channel_len}) - {k}*ATR"
         meta.update({'breakout_dist_atr': float((ll - price) / max(1e-9, atr))})
+        try:
+            which = 'pivot' if sl == sl_opt3 else ('atr' if sl == sl_opt2 else 'breakout')
+            logger.info(f"[{symbol}] Trend SHORT SL method: {which} | entry={entry:.4f} sl={sl:.4f} tp={tp:.4f}")
+        except Exception:
+            pass
         return Signal('short', float(entry), float(sl), float(tp), reason, meta)
 
     return None
-

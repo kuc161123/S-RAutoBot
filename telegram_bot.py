@@ -243,6 +243,24 @@ class TGBot:
             except Exception as exc:
                 logger.debug(f"Unable to fetch MR ML stats: {exc}")
 
+        # Trend ML
+        try:
+            from ml_scorer_trend import get_trend_scorer
+            tr_scorer = get_trend_scorer()
+            lines.append("")
+            lines.append("📈 *Trend ML*")
+            ready = '✅ Ready' if getattr(tr_scorer, 'is_ml_ready', False) else '⏳ Training'
+            lines.append(f"• Status: {ready}")
+            try:
+                tstats = tr_scorer.get_retrain_info()
+                lines.append(f"• Records: {tstats.get('total_records',0)}")
+                lines.append(f"• Next retrain in: {tstats.get('trades_until_next_retrain',0)} trades")
+                lines.append(f"• Threshold: {getattr(tr_scorer, 'min_score', 70):.0f}")
+            except Exception:
+                pass
+        except Exception as exc:
+            logger.debug(f"Trend ML not available: {exc}")
+
         # Scalp ML
         try:
             from ml_scorer_scalp import get_scalp_scorer
@@ -2414,6 +2432,13 @@ class TGBot:
             scorers = {}
             if pullback_scorer:
                 scorers["Pullback Strategy"] = pullback_scorer
+            try:
+                from ml_scorer_trend import get_trend_scorer
+                tr = get_trend_scorer()
+                if tr:
+                    scorers["Trend Breakout"] = tr
+            except Exception:
+                pass
             # Original MR disabled per configuration; do not include in patterns
 
             for strategy_name, scorer in scorers.items():

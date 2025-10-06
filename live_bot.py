@@ -56,6 +56,7 @@ try:
     from phantom_trade_tracker import get_phantom_tracker
     from enhanced_mr_scorer import get_enhanced_mr_scorer
     from mr_phantom_tracker import get_mr_phantom_tracker
+    from ml_scorer_trend import get_trend_scorer
     from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
     from ml_scorer_mean_reversion import get_mean_reversion_scorer
     logger = logging.getLogger(__name__)
@@ -72,6 +73,10 @@ except ImportError as e:
         from ml_signal_scorer_immediate import get_immediate_scorer
         from phantom_trade_tracker import get_phantom_tracker
         from ml_scorer_mean_reversion import get_mean_reversion_scorer
+        try:
+            from ml_scorer_trend import get_trend_scorer
+        except Exception:
+            get_trend_scorer = None
         ML_AVAILABLE = True
         logger.info("Using Original ML Scorer only")
     except ImportError as e2:
@@ -1784,6 +1789,7 @@ class TradingBot:
         
         # Import strategies for parallel system
         from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion
+        from strategy_trend_breakout import detect_signal as detect_trend_signal, TrendSettings as TrendSettingsTB
         use_enhanced_parallel = cfg["trade"].get("use_enhanced_parallel", True) and ENHANCED_ML_AVAILABLE
         use_regime_switching = cfg["trade"].get("use_regime_switching", False)
 
@@ -1821,7 +1827,17 @@ class TradingBot:
             both_hit_rule=cfg["trade"]["both_hit_rule"],
             confirmation_candles=cfg["trade"].get("confirmation_candles", 2)
         )
-        
+        # Trend breakout settings
+        tr_cfg = cfg.get('trend', {}) or {}
+        trend_settings = TrendSettingsTB(
+            channel_len=int(tr_cfg.get('channel_len', 20)),
+            atr_len=int(tr_cfg.get('atr_len', 14)),
+            breakout_k_atr=float(tr_cfg.get('breakout_k_atr', 0.3)),
+            sl_atr_mult=float(tr_cfg.get('sl_atr_mult', 1.5)),
+            rr=float(tr_cfg.get('rr', 2.5)),
+            use_ema_stack=bool(tr_cfg.get('use_ema_stack', True))
+        )
+
         # Initialize components
         risk = RiskConfig(
             risk_usd=cfg["trade"]["risk_usd"],
@@ -2109,6 +2125,7 @@ class TradingBot:
             "enhanced_mr_scorer": enhanced_mr_scorer,
             "mr_phantom_tracker": mr_phantom_tracker,
             "mean_reversion_scorer": mean_reversion_scorer,
+            "trend_scorer": get_trend_scorer() if 'get_trend_scorer' in globals() and get_trend_scorer is not None else None,
             "phantom_tracker": phantom_tracker,
             "use_enhanced_parallel": use_enhanced_parallel,
             # Phantom flow controller (adaptive phantom-only acceptance)
@@ -2883,7 +2900,7 @@ class TradingBot:
                             # Else start with recommended and optionally override later after signal detection
 
                         # Router override using per-strategy regime scores
-                        if (not handled) and router_choice in ("enhanced_mr", "pullback"):
+                        if (not handled) and router_choice in ("enhanced_mr", "pullback", "trend_breakout"):
                             if router_choice == "enhanced_mr":
                                 logger.debug(f"🟢 [{sym}] ROUTER OVERRIDE → ENHANCED MR ANALYSIS:")
                                 sig = detect_signal_mean_reversion(df.copy(), settings, sym)
@@ -2897,7 +2914,7 @@ class TradingBot:
                                 except Exception:
                                     pass
                                 handled = True
-                            else:
+                            elif router_choice == "pullback":
                                 logger.debug(f"🔵 [{sym}] ROUTER OVERRIDE → PULLBACK ANALYSIS:")
                                 sig = get_pullback_signals(df.copy(), settings, sym)
                                 selected_strategy = "pullback"
@@ -2909,6 +2926,99 @@ class TradingBot:
                                 except Exception:
                                     pass
                                 handled = True
+                            else:
+                                logger.debug(f"🟣 [{sym}] ROUTER OVERRIDE → TREND BREAKOUT ANALYSIS:")
+                                sig = detect_trend_signal(df.copy(), trend_settings, sym)
+                                selected_strategy = "trend_breakout"
+                                selected_ml_scorer = get_trend_scorer() if 'get_trend_scorer' in globals() and get_trend_scorer is not None else None
+                                selected_phantom_tracker = phantom_tracker
+                                try:
+                                    routing_state[sym] = {'strategy': selected_strategy, 'last_idx': candles_processed}
+                                    shared['routing_state'] = routing_state
+                                except Exception:
+                                    pass
+                                handled = True
+
+                        if (not handled) and selected_strategy == "trend_breakout":
+                            # Trend breakout strategy scoring and gating
+                            if sig is None:
+                                sig = detect_trend_signal(df.copy(), trend_settings, sym)
+                            if sig:
+                                # Build trend features for ML
+                                try:
+                                    # trend features
+                                    cl = df['close']
+                                    price = float(cl.iloc[-1])
+                                    x = np.arange(min(20, len(cl)))
+                                    ys = cl.tail(20).values if len(cl) >= 20 else cl.values
+                                    slope = 0.0
+                                    try:
+                                        slope = np.polyfit(np.arange(len(ys)), ys, 1)[0]
+                                    except Exception:
+                                        pass
+                                    trend_slope_pct = float((slope / price) * 100.0) if price else 0.0
+                                    ema20 = cl.ewm(span=20, adjust=False).mean().iloc[-1]
+                                    ema50 = cl.ewm(span=50, adjust=False).mean().iloc[-1] if len(cl) >= 50 else ema20
+                                    ema_stack_score = 100.0 if (price > ema20 > ema50 or price < ema20 < ema50) else 50.0 if (ema20 != ema50) else 0.0
+                                    rng_today = float(df['high'].iloc[-1] - df['low'].iloc[-1])
+                                    med_range = float((df['high'] - df['low']).rolling(20).median().iloc[-1]) if len(df) >= 20 else rng_today
+                                    range_expansion = float(rng_today / max(1e-9, med_range))
+                                    prev = cl.shift(); tr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                                    atr = float(tr.rolling(14).mean().iloc[-1]) if len(tr) >= 14 else float(tr.iloc[-1])
+                                    atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
+                                    close_vs_ema20_pct = float(((price - ema20) / max(1e-9, ema20)) * 100.0) if ema20 else 0.0
+                                    bb_width_pct = 0.0
+                                    if len(cl) >= 20:
+                                        ma = cl.rolling(20).mean(); sd = cl.rolling(20).std()
+                                        upper = float(ma.iloc[-1] + 2*sd.iloc[-1]); lower = float(ma.iloc[-1] - 2*sd.iloc[-1])
+                                        bb_width_pct = float((upper - lower) / max(1e-9, price))
+                                    # cluster id not readily available here; default 3
+                                    trend_features = {
+                                        'trend_slope_pct': trend_slope_pct,
+                                        'ema_stack_score': ema_stack_score,
+                                        'atr_pct': atr_pct,
+                                        'range_expansion': range_expansion,
+                                        'breakout_dist_atr': float(sig.meta.get('breakout_dist_atr', 0.0)) if getattr(sig, 'meta', None) else 0.0,
+                                        'close_vs_ema20_pct': close_vs_ema20_pct,
+                                        'bb_width_pct': bb_width_pct,
+                                        'session': 'us',
+                                        'symbol_cluster': 3,
+                                        'volatility_regime': regime_analysis.volatility_level if hasattr(regime_analysis, 'volatility_level') else 'normal'
+                                    }
+                                except Exception:
+                                    trend_features = {}
+
+                                # Score
+                                trend_scorer = get_trend_scorer() if 'get_trend_scorer' in globals() and get_trend_scorer is not None else None
+                                ml_score = 0.0; should_take_trade = True; ml_reason = 'Trend ML disabled'
+                                if trend_scorer is not None:
+                                    try:
+                                        ml_score, ml_reason = trend_scorer.score_signal(sig.__dict__, trend_features)
+                                        threshold = getattr(trend_scorer, 'min_score', 70)
+                                        should_take_trade = ml_score >= threshold
+                                        if should_take_trade:
+                                            logger.info(f"   ✅ DECISION: EXECUTE TRADE - Trend ML {ml_score:.1f} ≥ {threshold}")
+                                        else:
+                                            logger.info(f"   ❌ DECISION: REJECT TRADE - Trend ML {ml_score:.1f} < {threshold}")
+                                    except Exception as e:
+                                        logger.warning(f"Trend ML scoring error: {e}")
+                                        should_take_trade = False
+                                        ml_score = 0.0
+                                # Record phantom for trend before continue if not executing
+                                logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed={should_take_trade})")
+                                phantom_tracker.record_signal(
+                                    symbol=sym,
+                                    signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                    ml_score=float(ml_score or 0.0),
+                                    was_executed=should_take_trade,
+                                    features=trend_features,
+                                    strategy_name='trend_breakout'
+                                )
+                                if not should_take_trade:
+                                    # Skip execution, continue to next symbol
+                                    continue
+                            else:
+                                logger.info(f"   ❌ No Trend Signal: Breakout conditions not met")
 
                         if (not handled) and regime_analysis.recommended_strategy == "enhanced_mr":
                             # Use Enhanced Mean Reversion System

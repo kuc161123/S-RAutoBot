@@ -94,7 +94,18 @@ strategy_regimes:
   mr:
     threshold: 65    # min score for Mean Reversion to be considered (lowered for more flow)
     min_hold: 3
+  trend:
+    threshold: 60
+    min_hold: 3
   tie_breaker_margin: 7  # within this margin, prefer previous route (more stability)
+
+trend:
+  channel_len: 20
+  atr_len: 14
+  breakout_k_atr: 0.3
+  sl_atr_mult: 1.5
+  rr: 2.5
+  use_ema_stack: true
 
 ml:
   fail_open_on_error: false   # if true, allow execution on ML errors; else skip and record phantom

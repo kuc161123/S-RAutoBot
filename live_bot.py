@@ -2821,7 +2821,7 @@ class TradingBot:
                             chosen = None
                             if soft_sig_tr and tr_margin >= 0 and (tr_margin >= (mr_margin if mr_margin is not None else -999)):
                                 chosen = ('trend_breakout', soft_sig_tr)
-                            if soft_sig_mr and mr_margin >= 0 and (mr_margin > (pb_margin if pb_margin is not None else -999)):
+                            if soft_sig_mr and mr_margin >= 0 and (mr_margin > (tr_margin if tr_margin is not None else -999)):
                                 chosen = ('enhanced_mr', soft_sig_mr)
 
                             if chosen is None:
@@ -3172,7 +3172,7 @@ class TradingBot:
                                         mr_score, _ = enhanced_mr_scorer.score_signal(alt_mr_sig.__dict__, alt_ef, df)
                                         mr_thr = getattr(enhanced_mr_scorer, 'min_score', 75)
                                         if mr_score >= mr_thr + 5:
-                                logger.info(f"[{sym}] 🔀 OVERRIDE: MR ML {mr_score:.1f} ≥ {mr_thr+5:.0f} → prefer MR over Trend")
+                                            logger.info(f"[{sym}] 🔀 OVERRIDE: MR ML {mr_score:.1f} ≥ {mr_thr+5:.0f} → prefer MR over Trend")
                                             selected_strategy = 'enhanced_mr'
                                             selected_ml_scorer = enhanced_mr_scorer
                                             selected_phantom_tracker = mr_phantom_tracker

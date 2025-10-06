@@ -2036,6 +2036,52 @@ class TradingBot:
                     def mr_notifier(trade, scope='Mean Reversion'):
                         self._create_task(self._notify_phantom_trade(scope, trade))
                     mr_phantom_tracker.set_notifier(mr_notifier)
+                # One-time backfill of MR phantom outcomes into Enhanced MR ML (avoid duplicates via Redis flag)
+                try:
+                    if enhanced_mr_scorer is not None:
+                        backfilled_mr = False
+                        client = getattr(enhanced_mr_scorer, 'redis_client', None)
+                        if client is not None:
+                            try:
+                                if client.get('ml:backfill:enhanced_mr:done') == '1':
+                                    backfilled_mr = True
+                            except Exception:
+                                pass
+                        if not backfilled_mr:
+                            fed_mr = 0
+                            try:
+                                from mr_phantom_tracker import get_mr_phantom_tracker
+                                mrpt = get_mr_phantom_tracker()
+                                for rec in mrpt.get_learning_data():
+                                    try:
+                                        outcome = 'win' if int(rec.get('outcome', 0)) == 1 else 'loss'
+                                        sig = {
+                                            'features': rec.get('features', {}),
+                                            'enhanced_features': rec.get('enhanced_features', {}),
+                                            'score': float(rec.get('score', 0) or 0.0),
+                                            'symbol': rec.get('symbol', 'UNKNOWN')
+                                        }
+                                        enhanced_mr_scorer.record_outcome(sig, outcome, float(rec.get('pnl_percent', 0.0) or 0.0))
+                                        fed_mr += 1
+                                    except Exception:
+                                        pass
+                                if client is not None:
+                                    try:
+                                        client.set('ml:backfill:enhanced_mr:done', '1')
+                                    except Exception:
+                                        pass
+                                if fed_mr > 0:
+                                    logger.info(f"🌀 MR ML backfill: fed {fed_mr} phantom outcomes into Enhanced MR ML store")
+                                # Attempt a startup retrain after backfill if trainable
+                                try:
+                                    ok = enhanced_mr_scorer.startup_retrain()
+                                    logger.info(f"🌀 MR ML startup retrain attempted: {'✅ success' if ok else '⚠️ skipped'}")
+                                except Exception:
+                                    pass
+                            except Exception as e:
+                                logger.debug(f"MR ML backfill error: {e}")
+                except Exception as e:
+                    logger.debug(f"Failed to set MR notifier/backfill: {e}")
                 # Wire scalp phantom notifications to Telegram (if scalp modules available)
                 try:
                     if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:

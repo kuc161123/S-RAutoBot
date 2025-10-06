@@ -1264,40 +1264,44 @@ class EnhancedMeanReversionScorer:
                     return 'high'
                 return 'normal'
 
-            from collections import Counter
-            cond_counts = {}
-            # Volatility regime
-            vr = Counter()
-            # Width buckets
-            wb = Counter()
-            # Touches buckets
-            tb = Counter()
-            # Volume at reversal buckets
-            vb = Counter()
+            from collections import defaultdict
+            # Accumulate wins (w) and count (n) per bucket
+            vr = defaultdict(lambda: {'w': 0, 'n': 0})
+            wb = defaultdict(lambda: {'w': 0, 'n': 0})
+            tb = defaultdict(lambda: {'w': 0, 'n': 0})
+            vb = defaultdict(lambda: {'w': 0, 'n': 0})
             for rec in data:
                 o = _outcome(rec)
                 ef = rec.get('enhanced_features') or rec.get('features') or {}
-                vr[_vol_reg(ef.get('volatility_regime'))] += (o, 1)
-                wb[_bucket_width(ef.get('range_width_atr'))] += (o, 1)
+                # Volatility regime bucket
+                key_vr = _vol_reg(ef.get('volatility_regime'))
+                vr[key_vr]['n'] += 1; vr[key_vr]['w'] += o
+                # Width bucket
+                key_wb = _bucket_width(ef.get('range_width_atr'))
+                wb[key_wb]['n'] += 1; wb[key_wb]['w'] += o
+                # Touches bucket
                 try:
                     t = float(ef.get('touch_count_sr', 0))
                     touch_key = 'touches≥4' if t >= 4 else 'touches≤3'
                 except Exception:
                     touch_key = 'touches≤3'
-                tb[touch_key] += (o, 1)
-                vb[_bucket_volrev(ef.get('volume_at_reversal_ratio'))] += (o, 1)
+                tb[touch_key]['n'] += 1; tb[touch_key]['w'] += o
+                # Volume at reversal bucket
+                key_vb = _bucket_volrev(ef.get('volume_at_reversal_ratio'))
+                vb[key_vb]['n'] += 1; vb[key_vb]['w'] += o
 
-            def _wr_map(counter_obj):
+            def _wr_map(bucket_dict):
                 out = {}
-                for k, (w, n) in counter_obj.items():
+                for k, d in bucket_dict.items():
                     try:
+                        n = int(d.get('n', 0)); w = int(d.get('w', 0))
                         wr = (w / n) * 100.0 if n else 0.0
-                        out[k] = f"WR {wr:.0f}% (N={n})"
+                        out[str(k)] = f"WR {wr:.0f}% (N={n})"
                     except Exception:
-                        out[k] = "WR 0% (N=0)"
+                        out[str(k)] = "WR 0% (N=0)"
                 return out
 
-            # Convert Counters of tuples to dicts
+            # Build market condition maps
             patterns['market_conditions'] = {
                 'volatility_regime': _wr_map(vr),
                 'range_width_atr': _wr_map(wb),

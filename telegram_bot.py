@@ -2378,6 +2378,16 @@ class TGBot:
     async def ml_patterns(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show detailed ML patterns and insights for all strategies (when trained)"""
         try:
+            def esc(s: object) -> str:
+                text = str(s)
+                return (
+                    text.replace("\\", "\\\\")
+                        .replace("_", "\\_")
+                        .replace("*", "\\*")
+                        .replace("[", "\\[")
+                        .replace("`", "\\`")
+                )
+
             response_text = "🧠 *ML Pattern Analysis*\n"
             response_text += "━" * 25 + "\n\n"
 
@@ -2432,8 +2442,8 @@ class TGBot:
                         feat_name = feat.replace('_', ' ').title()
                         bar_length = int(imp / 10)
                         bar = '█' * bar_length + '░' * (10 - bar_length)
-                        response_text += f"  {i}. {feat_name}\n"
-                        response_text += f"     {bar} {imp:.1f}%\n"
+                        response_text += f"  {i}. {esc(feat_name)}\n"
+                        response_text += f"     {esc(bar)} {imp:.1f}%\n"
                     response_text += "\n"
                 
                 # Time Analysis
@@ -2444,13 +2454,13 @@ class TGBot:
                     if time_patterns.get('best_hours'):
                         response_text += "  🌟 *Golden Hours*\n"
                         for hour, stats in list(time_patterns['best_hours'].items())[:5]:
-                            response_text += f"  • {hour} → {stats}\n"
+                            response_text += f"  • {esc(hour)} → {esc(stats)}\n"
                         response_text += "\n"
                     
                     if time_patterns.get('worst_hours'):
                         response_text += "  ⚠️ *Danger Hours*\n"
                         for hour, stats in list(time_patterns['worst_hours'].items())[:5]:
-                            response_text += f"  • {hour} → {stats}\n"
+                            response_text += f"  • {esc(hour)} → {esc(stats)}\n"
                         response_text += "\n"
                     
                     if time_patterns.get('session_performance'):
@@ -2461,7 +2471,7 @@ class TGBot:
                                 emoji = '🟢' if wr >= 50 else '🔴'
                             else:
                                 emoji = '⚪'
-                            response_text += f"  {emoji} {session}: {perf}\n"
+                            response_text += f"  {emoji} {esc(session)}: {esc(perf)}\n"
                         response_text += "\n"
                 
                 # Market Conditions
@@ -2546,40 +2556,40 @@ class TGBot:
                             feat_name = feat.replace('_', ' ').title()
                             bar_len = max(1, min(10, int(float(imp)/10)))
                             bar = '█' * bar_len + '░' * (10 - bar_len)
-                            response_text += f"  {i}. {feat_name}\n     {bar} {float(imp):.1f}%\n"
+                        response_text += f"  {i}. {esc(feat_name)}\n     {esc(bar)} {float(imp):.1f}%\n"
                     tp = emr_patterns.get('time_patterns', {})
                     if tp:
                         response_text += "\n  ⏰ *Time-Based Insights*\n"
                         if tp.get('best_hours'):
                             response_text += "  🌟 *Golden Hours*\n"
                             for h, txt in list(tp['best_hours'].items())[:5]:
-                                response_text += f"  • {h}: {txt}\n"
+                                response_text += f"  • {esc(h)}: {esc(txt)}\n"
                         if tp.get('worst_hours'):
                             response_text += "  ⚠️ *Danger Hours*\n"
                             for h, txt in list(tp['worst_hours'].items())[:5]:
-                                response_text += f"  • {h}: {txt}\n"
+                                response_text += f"  • {esc(h)}: {esc(txt)}\n"
                         if tp.get('session_performance'):
                             response_text += "  🌍 *Market Sessions*\n"
                             for s, txt in tp['session_performance'].items():
-                                response_text += f"  • {s}: {txt}\n"
+                                response_text += f"  • {esc(s)}: {esc(txt)}\n"
                     mc = emr_patterns.get('market_conditions', {})
                     if mc:
                         response_text += "\n  🌡️ *Market Condition Patterns*\n"
                         for k, v in mc.items():
                             title = k.replace('_', ' ').title()
-                            response_text += f"  {title}:\n"
+                            response_text += f"  {esc(title)}:\n"
                             for bk, txt in v.items():
-                                response_text += f"   • {bk}: {txt}\n"
+                                response_text += f"   • {esc(bk)}: {esc(txt)}\n"
                     wp = emr_patterns.get('winning_patterns', [])
                     if wp:
                         response_text += "\n  ✅ *Common in Winners*\n"
                         for p in wp[:5]:
-                            response_text += f"  • {p}\n"
+                            response_text += f"  • {esc(p)}\n"
                     lp = emr_patterns.get('losing_patterns', [])
                     if lp:
                         response_text += "\n  ❌ *Common in Losers*\n"
                         for p in lp[:5]:
-                            response_text += f"  • {p}\n"
+                            response_text += f"  • {esc(p)}\n"
                     response_text += "\n"
                 except Exception:
                     response_text += "🧠 *Enhanced MR (Ensemble) Insights*\n  ❌ Not available\n\n"

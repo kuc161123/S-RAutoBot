@@ -180,50 +180,58 @@ class PostgresCandleStorage:
             session.close()
 
     def save_candles_3m(self, symbol: str, df: pd.DataFrame) -> bool:
-        """Save 3m candles to dedicated table to avoid mixing with 15m."""
-        session = self.Session()
-        try:
-            if df is None or df.empty:
-                return False
-
-            saved_count = 0
-            for idx, row in df.iterrows():
-                if isinstance(idx, pd.Timestamp):
-                    timestamp = int(idx.timestamp() * 1000)
-                else:
-                    timestamp = int(pd.Timestamp(idx).timestamp() * 1000)
-                existing = session.query(Candle3m).filter_by(
-                    symbol=symbol,
-                    timestamp=timestamp
-                ).first()
-                if existing:
-                    existing.open = float(row['open'])
-                    existing.high = float(row['high'])
-                    existing.low = float(row['low'])
-                    existing.close = float(row['close'])
-                    existing.volume = float(row['volume'])
-                else:
-                    candle = Candle3m(
-                        symbol=symbol,
-                        timestamp=timestamp,
-                        open=float(row['open']),
-                        high=float(row['high']),
-                        low=float(row['low']),
-                        close=float(row['close']),
-                        volume=float(row['volume'])
-                    )
-                    session.add(candle)
-                saved_count += 1
-            session.commit()
-            # Reuse summary logger
-            self._update_save_summary(symbol, saved_count)
-            return True
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Failed to save 3m candles for {symbol}: {e}")
+        """Save 3m candles with retry/backoff to handle transient DB issues."""
+        if df is None or df.empty:
             return False
-        finally:
-            session.close()
+        attempts = 0
+        delay = 0.5
+        max_attempts = 3
+        while attempts < max_attempts:
+            session = self.Session()
+            try:
+                saved_count = 0
+                for idx, row in df.iterrows():
+                    if isinstance(idx, pd.Timestamp):
+                        timestamp = int(idx.timestamp() * 1000)
+                    else:
+                        timestamp = int(pd.Timestamp(idx).timestamp() * 1000)
+                    existing = session.query(Candle3m).filter_by(
+                        symbol=symbol,
+                        timestamp=timestamp
+                    ).first()
+                    if existing:
+                        existing.open = float(row['open'])
+                        existing.high = float(row['high'])
+                        existing.low = float(row['low'])
+                        existing.close = float(row['close'])
+                        existing.volume = float(row['volume'])
+                    else:
+                        candle = Candle3m(
+                            symbol=symbol,
+                            timestamp=timestamp,
+                            open=float(row['open']),
+                            high=float(row['high']),
+                            low=float(row['low']),
+                            close=float(row['close']),
+                            volume=float(row['volume'])
+                        )
+                        session.add(candle)
+                    saved_count += 1
+                session.commit()
+                self._update_save_summary(symbol, saved_count)
+                return True
+            except Exception as e:
+                session.rollback()
+                attempts += 1
+                if attempts >= max_attempts:
+                    logger.error(f"Failed to save 3m candles for {symbol}: {e}")
+                    return False
+                else:
+                    logger.warning(f"Retrying 3m save for {symbol} (attempt {attempts}/{max_attempts}) due to: {e}")
+                    time.sleep(delay)
+                    delay *= 2
+            finally:
+                session.close()
 
     def load_candles_3m(self, symbol: str, limit: int = None) -> Optional[pd.DataFrame]:
         """Load 3m candles from database for a symbol"""

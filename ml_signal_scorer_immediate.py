@@ -362,6 +362,7 @@ class ImmediateMLScorer:
     
     def _prepare_features(self, features: dict) -> list:
         """Convert feature dict to vector for ML - simplified high-signal set"""
+        features = features or {}
         # Minimal, de-correlated pullback feature set
         feature_order = [
             'trend_strength',

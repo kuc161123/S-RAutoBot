@@ -86,6 +86,9 @@ trade:
   use_regime_switching: false
   use_enhanced_parallel: true
 
+ml:
+  fail_open_on_error: false   # if true, allow execution on ML errors; else skip and record phantom
+
 # Global exploration toggle
 exploration:
   enabled: true
@@ -1572,3 +1575,7 @@ symbol_meta:
 enhanced_mr:
   diag_dump_on_start: true   # Log first/last executed entries from Redis for auditing
   clear_on_start: false      # DANGER: if true, clears Enhanced MR Redis namespace on start
+execution:
+  stale_feed_guard:
+    enabled: true
+    max_lag_sec: 180         # skip execution if last tick older than this

@@ -3263,23 +3263,28 @@ class TradingBot:
                                 logger.info(f"   🔍 Analysis: {ml_reason}")
                                 logger.info(f"   📈 Key Factors:")
 
-                                # Log important technical factors
+                                # Log important technical factors (null-safe)
                                 try:
                                     key_factors = []
-                                    if 'trend_strength' in basic_features:
-                                        key_factors.append(f"Trend: {basic_features['trend_strength']:.2f}")
-                                    if 'atr_percentile' in basic_features:
-                                        key_factors.append(f"Volatility: {basic_features['atr_percentile']:.2f}")
-                                    if 'volume_ratio' in basic_features:
-                                        key_factors.append(f"Volume: {basic_features['volume_ratio']:.2f}")
-                                    if 'rsi' in basic_features:
-                                        key_factors.append(f"RSI: {basic_features['rsi']:.1f}")
-                                    if 'bb_position' in basic_features:
-                                        key_factors.append(f"BB Pos: {basic_features['bb_position']:.2f}")
+                                    ts_val = (basic_features or {}).get('trend_strength')
+                                    if ts_val is not None:
+                                        key_factors.append(f"Trend: {float(ts_val):.2f}")
+                                    atrp_val = (basic_features or {}).get('atr_percentile')
+                                    if atrp_val is not None:
+                                        key_factors.append(f"Volatility: {float(atrp_val):.2f}")
+                                    volr_val = (basic_features or {}).get('volume_ratio')
+                                    if volr_val is not None:
+                                        key_factors.append(f"Volume: {float(volr_val):.2f}")
+                                    rsi_val = (basic_features or {}).get('rsi')
+                                    if rsi_val is not None:
+                                        key_factors.append(f"RSI: {float(rsi_val):.1f}")
+                                    bbp_val = (basic_features or {}).get('bb_position')
+                                    if bbp_val is not None:
+                                        key_factors.append(f"BB Pos: {float(bbp_val):.2f}")
 
                                     for factor in key_factors[:4]:  # Top 4 factors
                                         logger.info(f"      • {factor}")
-                                except:
+                                except Exception:
                                     logger.info(f"      Trend strength, volume, volatility, momentum indicators")
 
                                 if should_take_trade:
@@ -3316,11 +3321,27 @@ class TradingBot:
 
                         except Exception as e:
                             logger.warning(f"🚨 [{sym}] ML SCORING ERROR: {e}")
-                            logger.warning(f"   🛡️ FALLBACK: Allowing trade for safety (score: 75)")
-                            # Fallback to default behavior
-                            ml_score = 75.0
-                            ml_reason = "ML Error - Using Default Safety Score"
-                            should_take_trade = True
+                            # Telemetry: count errors
+                            try:
+                                tel = shared.get("telemetry", {})
+                                tel['ml_errors'] = tel.get('ml_errors', 0) + 1
+                            except Exception:
+                                pass
+                            # Policy: fail-open or fail-closed
+                            try:
+                                fail_open = bool(self.config.get('ml', {}).get('fail_open_on_error', False))
+                            except Exception:
+                                fail_open = False
+                            if fail_open:
+                                logger.warning(f"   🛡️ FALLBACK: Allowing trade for safety (score: 75)")
+                                ml_score = 75.0
+                                ml_reason = "ML Error - Using Default Safety Score"
+                                should_take_trade = True
+                            else:
+                                logger.warning(f"   🛡️ FAIL-CLOSED: Skipping execution, recording phantom")
+                                ml_score = 0.0
+                                ml_reason = "ML Error - Skipping execution"
+                                should_take_trade = False
 
                     # Update strategy name for position tracking
                     strategy_name = selected_strategy
@@ -3332,14 +3353,60 @@ class TradingBot:
                         sig.__dict__['enhanced_features'] = enhanced_features if 'enhanced_features' in locals() else {}
 
                 except Exception as e:
-                    # Safety: Allow signal if ML fails but log the error
-                    logger.warning(f"[{sym}] ML scoring error: {e}. Allowing signal for safety.")
-                    should_take_trade = True
+                    # Safety policy for unexpected scoring issues
+                    logger.warning(f"[{sym}] ML scoring error: {e}.")
+                    try:
+                        tel = shared.get("telemetry", {})
+                        tel['ml_errors'] = tel.get('ml_errors', 0) + 1
+                    except Exception:
+                        pass
+                    try:
+                        fail_open = bool(self.config.get('ml', {}).get('fail_open_on_error', False))
+                    except Exception:
+                        fail_open = False
+                    if fail_open:
+                        logger.warning(f"   🛡️ FALLBACK: Allowing signal for safety")
+                        should_take_trade = True
+                    else:
+                        logger.warning(f"   🛡️ FAIL-CLOSED: Skipping execution and recording phantom")
+                        should_take_trade = False
 
                 # Ensure we have a valid signal before proceeding
                 if sig is None:
                     logger.warning(f"[{sym}] No valid signal found after processing, skipping")
                     continue
+
+                # Stale-feed guard: skip execution if data is too old (phantom is still recorded above)
+                try:
+                    guard_cfg = self.config.get('execution', {}).get('stale_feed_guard', {}) if hasattr(self, 'config') else {}
+                    if bool(guard_cfg.get('enabled', True)) and should_take_trade:
+                        max_lag = int(guard_cfg.get('max_lag_sec', 180))
+                        last_ts = df.index[-1]
+                        last_sec = int(pd.Timestamp(last_ts).tz_convert('UTC').timestamp() if getattr(last_ts, 'tzinfo', None) else pd.Timestamp(last_ts, tz='UTC').timestamp())
+                        now_sec = int(pd.Timestamp.utcnow().timestamp())
+                        if now_sec - last_sec > max_lag:
+                            logger.warning(f"[{sym}] STALE FEED: last={now_sec-last_sec}s ago (> {max_lag}s). Skipping execution; recording phantom instead.")
+                            try:
+                                if selected_strategy == 'enhanced_mr' and selected_phantom_tracker:
+                                    # MR phantom record
+                                    selected_phantom_tracker.record_mr_signal(
+                                        sym, sig.__dict__, float(ml_score or 0.0), False, {}, enhanced_features if 'enhanced_features' in locals() else {}
+                                    )
+                                elif selected_phantom_tracker:
+                                    # Pullback phantom record
+                                    selected_phantom_tracker.record_signal(
+                                        symbol=sym,
+                                        signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                        ml_score=float(ml_score or 0.0),
+                                        was_executed=False,
+                                        features=basic_features if 'basic_features' in locals() else {},
+                                        strategy_name=selected_strategy
+                                    )
+                            except Exception:
+                                pass
+                            continue
+                except Exception:
+                    pass
 
                 # One position per symbol rule - wait for current position to close
                 # Final trade execution decision logging

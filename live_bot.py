@@ -2374,6 +2374,65 @@ class TradingBot:
                     # Track analysis time
                     last_analysis[sym] = datetime.now()
                 
+                    # Strategy-specific regime routing (active)
+                    # Compute per-strategy regime scores to override the coarse global recommendation
+                    router_choice = None
+                    pb_score = mr_score = 0.0
+                    try:
+                        from strategy_regimes import score_pullback_regime, score_mr_regime
+                        pb_score, _ = score_pullback_regime(df)
+                        mr_score, _ = score_mr_regime(df)
+                    except Exception:
+                        pass
+
+                    # Thresholds and hysteresis
+                    sreg = self.config.get('strategy_regimes', {}) if hasattr(self, 'config') else {}
+                    pb_cfg = sreg.get('pb', {}) if isinstance(sreg, dict) else {}
+                    mr_cfg = sreg.get('mr', {}) if isinstance(sreg, dict) else {}
+                    tie_margin = int(sreg.get('tie_breaker_margin', 5) if isinstance(sreg, dict) else 5)
+                    pb_thr = int(pb_cfg.get('threshold', 60))
+                    mr_thr = int(mr_cfg.get('threshold', 70))
+                    pb_hold = int(pb_cfg.get('min_hold', 3))
+                    mr_hold = int(mr_cfg.get('min_hold', 3))
+
+                    prev_state = shared.get('routing_state', {}).get(sym)
+                    prev_route = prev_state.get('strategy') if isinstance(prev_state, dict) else None
+                    prev_idx = prev_state.get('last_idx') if isinstance(prev_state, dict) else None
+
+                    # Eligible candidates above threshold
+                    candidates = []
+                    if pb_score >= pb_thr:
+                        candidates.append(('pullback', pb_score))
+                    if mr_score >= mr_thr:
+                        candidates.append(('enhanced_mr', mr_score))
+
+                    if candidates:
+                        # Choose best by score
+                        candidates.sort(key=lambda x: x[1], reverse=True)
+                        top, top_score = candidates[0]
+                        # Tie-breaker & hysteresis
+                        if prev_route in ('pullback', 'enhanced_mr'):
+                            # Hold previous for min_hold
+                            hold = pb_hold if prev_route == 'pullback' else mr_hold
+                            try:
+                                if prev_idx is not None and (candles_processed - int(prev_idx)) < hold:
+                                    router_choice = prev_route
+                                elif len(candidates) > 1 and abs(candidates[0][1] - candidates[1][1]) <= tie_margin:
+                                    router_choice = prev_route
+                                else:
+                                    router_choice = top
+                            except Exception:
+                                router_choice = top
+                        else:
+                            router_choice = top
+                    else:
+                        router_choice = 'none'
+
+                    try:
+                        logger.info(f"🧭 Router scores: PB {pb_score:.0f} / {pb_thr}, MR {mr_score:.0f} / {mr_thr} → {router_choice.upper()}")
+                    except Exception:
+                        pass
+
                     # Log summary periodically instead of every candle
                     if (datetime.now() - last_summary_log).total_seconds() > summary_log_interval:
                         logger.info(f"📊 5-min Summary: {candles_processed} candles processed, {signals_detected} signals, {len(book.positions)} positions open")
@@ -2704,6 +2763,34 @@ class TradingBot:
                                     selected_ml_scorer = ml_scorer
                                     selected_phantom_tracker = phantom_tracker
                             # Else start with recommended and optionally override later after signal detection
+
+                        # Router override using per-strategy regime scores
+                        if (not handled) and router_choice in ("enhanced_mr", "pullback"):
+                            if router_choice == "enhanced_mr":
+                                logger.debug(f"🟢 [{sym}] ROUTER OVERRIDE → ENHANCED MR ANALYSIS:")
+                                sig = detect_signal_mean_reversion(df.copy(), settings, sym)
+                                selected_strategy = "enhanced_mr"
+                                selected_ml_scorer = enhanced_mr_scorer
+                                selected_phantom_tracker = mr_phantom_tracker
+                                # Update routing state stickiness
+                                try:
+                                    routing_state[sym] = {'strategy': selected_strategy, 'last_idx': candles_processed}
+                                    shared['routing_state'] = routing_state
+                                except Exception:
+                                    pass
+                                handled = True
+                            else:
+                                logger.debug(f"🔵 [{sym}] ROUTER OVERRIDE → PULLBACK ANALYSIS:")
+                                sig = get_pullback_signals(df.copy(), settings, sym)
+                                selected_strategy = "pullback"
+                                selected_ml_scorer = ml_scorer
+                                selected_phantom_tracker = phantom_tracker
+                                try:
+                                    routing_state[sym] = {'strategy': selected_strategy, 'last_idx': candles_processed}
+                                    shared['routing_state'] = routing_state
+                                except Exception:
+                                    pass
+                                handled = True
 
                         if (not handled) and regime_analysis.recommended_strategy == "enhanced_mr":
                             # Use Enhanced Mean Reversion System

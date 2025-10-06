@@ -121,7 +121,7 @@ mr:
     snapshots_delta: 5
   promotion:
     enabled: true
-    promote_wr: 45.0        # Activate when recent WR ≥ 45%
+    promote_wr: 50.0        # Activate when recent WR ≥ 50%
     demote_wr: 30.0         # Deactivate when recent WR < 30%
     min_recent: 20          # Require at least this many recent MR trades for decision
     min_total_trades: 50    # Require overall MR executed trades to be at least this

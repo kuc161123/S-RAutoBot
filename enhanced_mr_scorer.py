@@ -565,9 +565,14 @@ class EnhancedMeanReversionScorer:
         return vector
 
     def record_outcome(self, signal_data: dict, outcome: str, pnl_percent: float):
-        """Record trade outcome for enhanced MR learning"""
+        """Record trade outcome for enhanced MR learning.
+        Accepts optional signal_data['was_executed'] (default True). Phantom outcomes should
+        be stored via MR phantom tracker and NOT increment executed counters here.
+        """
         try:
-            self.completed_trades += 1
+            was_executed = bool(signal_data.get('was_executed', True))
+            if was_executed:
+                self.completed_trades += 1
 
             # Track recent performance
             outcome_binary = 1 if outcome == 'win' else 0
@@ -588,10 +593,12 @@ class EnhancedMeanReversionScorer:
                 'timestamp': datetime.now().isoformat(),
                 'symbol': signal_data.get('symbol', 'UNKNOWN'),
                 'strategy': 'enhanced_mr',
-                'exit_reason': signal_data.get('exit_reason')
+                'exit_reason': signal_data.get('exit_reason'),
+                'was_executed': was_executed
             }
-
-            self._store_trade_record(trade_record)
+            # Only store executed trades in executed store; phantom data comes from MR phantom tracker
+            if was_executed:
+                self._store_trade_record(trade_record)
 
             # Save state
             self._save_state()
@@ -633,12 +640,18 @@ class EnhancedMeanReversionScorer:
             )
         except Exception as e:
             logger.debug(f"Could not get MR phantom trade count: {e}")
-        
-        total_combined = self.completed_trades + phantom_count
+        # Compute executed via Redis store length when possible to avoid confusion
+        executed_count = self.completed_trades
+        try:
+            if self.redis_client:
+                executed_count = len(self.redis_client.lrange('enhanced_mr:trades', 0, -1))
+        except Exception:
+            pass
+        total_combined = executed_count + phantom_count
         
         info = {
             'is_ml_ready': self.is_ml_ready,
-            'completed_trades': self.completed_trades,
+            'completed_trades': executed_count,
             'phantom_count': phantom_count,
             'total_combined': total_combined,
             'last_train_count': self.last_train_count,
@@ -1041,7 +1054,14 @@ class EnhancedMeanReversionScorer:
             except Exception:
                 pass
 
-            total_combined = self.completed_trades + phantom_count
+            # Compute executed via Redis list length when available
+            executed_count = self.completed_trades
+            try:
+                if self.redis_client:
+                    executed_count = len(self.redis_client.lrange('enhanced_mr:trades', 0, -1))
+            except Exception:
+                pass
+            total_combined = executed_count + phantom_count
 
             # Compute trades_until_retrain consistently with combined counts
             if not self.is_ml_ready:
@@ -1057,7 +1077,7 @@ class EnhancedMeanReversionScorer:
                 'enabled': self.enabled,
                 'is_ml_ready': self.is_ml_ready,
                 'status': status_text,
-                'completed_trades': self.completed_trades,
+                'completed_trades': executed_count,
                 'phantom_count': phantom_count,
                 'total_combined': total_combined,
                 'current_threshold': self.min_score,

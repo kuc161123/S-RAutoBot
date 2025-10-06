@@ -1223,8 +1223,12 @@ class TradingBot:
                             if use_enhanced and shared_enhanced_mr:
                                 # Enhanced parallel system - STRICT routing guard
                                 logger.info(f"[{symbol}] 🎯 ML ROUTING: strategy_name='{pos.strategy_name}', outcome='{outcome}'")
-                                if pos.strategy_name == "enhanced_mr":
-                                    shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
+                                    if pos.strategy_name == "enhanced_mr":
+                                        try:
+                                            signal_data['was_executed'] = True
+                                        except Exception:
+                                            pass
+                                        shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
                                     logger.info(f"[{symbol}] ✅ Enhanced MR ML updated with outcome.")
                                 elif pos.strategy_name == "mean_reversion":
                                     # Guard: do NOT route 'mean_reversion' to Enhanced MR to avoid accidental increments
@@ -2058,7 +2062,8 @@ class TradingBot:
                                             'features': rec.get('features', {}),
                                             'enhanced_features': rec.get('enhanced_features', {}),
                                             'score': float(rec.get('score', 0) or 0.0),
-                                            'symbol': rec.get('symbol', 'UNKNOWN')
+                                            'symbol': rec.get('symbol', 'UNKNOWN'),
+                                            'was_executed': False
                                         }
                                         enhanced_mr_scorer.record_outcome(sig, outcome, float(rec.get('pnl_percent', 0.0) or 0.0))
                                         fed_mr += 1
@@ -2075,6 +2080,15 @@ class TradingBot:
                                 try:
                                     ok = enhanced_mr_scorer.startup_retrain()
                                     logger.info(f"🌀 MR ML startup retrain attempted: {'✅ success' if ok else '⚠️ skipped'}")
+                                    except Exception:
+                                        pass
+                                # Recalibrate executed-count to executed store length
+                                try:
+                                    if client is not None:
+                                        exec_count = len(client.lrange('enhanced_mr:trades', 0, -1))
+                                        enhanced_mr_scorer.completed_trades = exec_count
+                                        client.set('enhanced_mr:completed_trades', str(exec_count))
+                                        logger.info(f"🧮 MR executed count recalibrated to {exec_count} from executed store")
                                 except Exception:
                                     pass
                                 # Immediately evaluate MR promotion after backfill/retrain

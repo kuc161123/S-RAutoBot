@@ -2050,7 +2050,6 @@ class TradingBot:
                         if not backfilled_mr:
                             fed_mr = 0
                             try:
-                                from mr_phantom_tracker import get_mr_phantom_tracker
                                 mrpt = get_mr_phantom_tracker()
                                 for rec in mrpt.get_learning_data():
                                     try:

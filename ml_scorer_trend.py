@@ -255,6 +255,8 @@ class TrendMLScorer:
         """
         recent_wr = 0.0
         total = wins = 0
+        exec_count = 0
+        ph_count = 0
         try:
             if self.redis_client:
                 # Last 200 outcomes as proxy for recent WR
@@ -268,6 +270,17 @@ class TrendMLScorer:
                         pass
                 if total > 0:
                     recent_wr = (wins / total) * 100.0
+                # Overall executed vs phantom counts for clarity
+                all_arr = self.redis_client.lrange('tml:trades', 0, -1) or []
+                for t in all_arr:
+                    try:
+                        rec = json.loads(t)
+                        if int(rec.get('was_executed', 0)):
+                            exec_count += 1
+                        else:
+                            ph_count += 1
+                    except Exception:
+                        pass
         except Exception:
             pass
         models_active = []
@@ -284,6 +297,9 @@ class TrendMLScorer:
             'current_threshold': float(self.min_score),
             'recent_win_rate': float(recent_wr),
             'models_active': models_active,
+            'executed_count': int(exec_count),
+            'phantom_count': int(ph_count),
+            'total_records': int(exec_count + ph_count),
         }
 
     def get_patterns(self) -> Dict:

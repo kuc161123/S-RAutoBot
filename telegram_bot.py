@@ -3391,7 +3391,9 @@ HTF S/R module disabled
 
             msg += "🎯 *Trend Strategy (Breakout):*\n"
             msg += f"• Status: {trend_stats.get('status', 'Unknown')}\n"
-            msg += f"• Trades: {trend_stats.get('completed_trades', 0)}\n"
+            t_exec = trend_stats.get('executed_count', trend_stats.get('completed_trades', 0))
+            t_ph = trend_stats.get('phantom_count', 0)
+            msg += f"• Trades: Executed {t_exec} | Phantom {t_ph}\n"
             msg += f"• Threshold: {trend_stats.get('current_threshold', 70):.0f}%\n"
             if trend_stats.get('recent_win_rate', 0) > 0:
                 msg += f"• Recent WR: {trend_stats.get('recent_win_rate', 0):.1f}%\n"

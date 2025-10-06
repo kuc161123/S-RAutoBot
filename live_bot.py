@@ -2080,8 +2080,8 @@ class TradingBot:
                                 try:
                                     ok = enhanced_mr_scorer.startup_retrain()
                                     logger.info(f"🌀 MR ML startup retrain attempted: {'✅ success' if ok else '⚠️ skipped'}")
-                                    except Exception:
-                                        pass
+                                except Exception:
+                                    pass
                                 # Recalibrate executed-count to executed store length
                                 try:
                                     if client is not None:
@@ -2105,7 +2105,7 @@ class TradingBot:
                                         recent_wr = float(mr_stats.get('recent_win_rate', 0.0))
                                         recent_n = int(mr_stats.get('recent_trades', 0))
                                         total_exec = int(mr_stats.get('completed_trades', 0))
-                                        promote_wr = float(prom_cfg.get('promote_wr', 45.0))
+                                        promote_wr = float(prom_cfg.get('promote_wr', 50.0))
                                         demote_wr = float(prom_cfg.get('demote_wr', 30.0))
                                         min_recent = int(prom_cfg.get('min_recent', 20))
                                         min_total = int(prom_cfg.get('min_total_trades', 50))

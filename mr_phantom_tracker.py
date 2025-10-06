@@ -214,7 +214,7 @@ class MRPhantomTracker:
         from datetime import datetime as _dt
         day = _dt.utcnow().strftime('%Y%m%d')
         # Always track locally
-        day_map = self._blocked_counts.setdefault(day, {'total': 0, 'pullback': 0, 'mr': 0, 'scalp': 0})
+        day_map = self._blocked_counts.setdefault(day, {'total': 0, 'trend': 0, 'mr': 0, 'scalp': 0})
         day_map['total'] += 1
         day_map['mr'] = day_map.get('mr', 0) + 1
         # Best-effort Redis
@@ -230,7 +230,7 @@ class MRPhantomTracker:
         from datetime import datetime as _dt
         if day is None:
             day = _dt.utcnow().strftime('%Y%m%d')
-        return self._blocked_counts.get(day, {'total': 0, 'pullback': 0, 'mr': 0, 'scalp': 0})
+        return self._blocked_counts.get(day, {'total': 0, 'trend': 0, 'mr': 0, 'scalp': 0})
 
     def record_mr_signal(self, symbol: str, signal: dict, ml_score: float,
                         was_executed: bool, features: dict, enhanced_features: dict = None) -> MRPhantomTrade:

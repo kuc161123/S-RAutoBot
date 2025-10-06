@@ -7,7 +7,7 @@ import telegram.error
 import asyncio
 import logging
 
-from ml_signal_scorer_immediate import get_immediate_scorer
+from ml_scorer_trend import get_trend_scorer
 from ml_scorer_mean_reversion import get_mean_reversion_scorer
 from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
 
@@ -198,19 +198,19 @@ class TGBot:
         if getattr(risk, 'use_ml_dynamic_risk', False):
             lines.append("• ML Dynamic Risk: Enabled")
 
-        # Pullback ML
+        # Trend ML
         ml_scorer = self.shared.get("ml_scorer")
         if ml_scorer:
             try:
                 ml_stats = ml_scorer.get_stats()
                 lines.append("")
-                lines.append("🤖 *Pullback ML*")
+                lines.append("🤖 *Trend ML*")
                 lines.append(f"• Status: {ml_stats['status']}")
                 lines.append(f"• Trades used: {ml_stats['completed_trades']}")
                 if ml_stats.get('recent_win_rate'):
                     lines.append(f"• Recent win rate: {ml_stats['recent_win_rate']:.1f}%")
             except Exception as exc:
-                logger.debug(f"Unable to fetch pullback ML stats: {exc}")
+                logger.debug(f"Unable to fetch trend ML stats: {exc}")
 
         # Enhanced MR ML
         enhanced_mr = self.shared.get("enhanced_mr_scorer")
@@ -311,30 +311,35 @@ class TGBot:
             lines.append(f"• Open positions: {len(positions)}")
             lines.append(f"• Estimated risk: ${estimated_risk:.2f}")
             if self.shared.get('use_enhanced_parallel', False):
-                lines.append("• Routing: Enhanced parallel (Pullback + MR)")
+                lines.append("• Routing: Enhanced parallel (Trend + MR)")
         else:
             lines.append("• No open positions")
 
-        # Pullback Phantom (include active via tracker function)
+        # Trend Phantom (aggregate from generic phantom tracker)
         phantom_tracker = self.shared.get("phantom_tracker")
         if phantom_tracker:
             try:
-                stats = phantom_tracker.get_phantom_stats()
-                lines.append("")
-                lines.append("👻 *Pullback Phantom*")
-                lines.append(f"• Rejections tracked: {stats.get('rejected', 0)}")
-                # Timeouts count (pullback)
-                try:
-                    pb_timeouts = 0
-                    for trades in getattr(phantom_tracker, 'phantom_trades', {}).values():
-                        for p in trades:
+                total = 0; wins = 0; losses = 0; timeouts = 0
+                for trades in getattr(phantom_tracker, 'phantom_trades', {}).values():
+                    for p in trades:
+                        try:
+                            if getattr(p, 'strategy_name', '') != 'trend_breakout':
+                                continue
+                            if getattr(p, 'outcome', None) in ('win','loss'):
+                                total += 1
+                                if p.outcome == 'win': wins += 1
+                                else: losses += 1
                             if not getattr(p, 'was_executed', False) and getattr(p, 'exit_reason', None) == 'timeout':
-                                pb_timeouts += 1
-                    lines.append(f"• Timeouts: {pb_timeouts}")
-                except Exception:
-                    pass
+                                timeouts += 1
+                        except Exception:
+                            pass
+                wr = (wins/total*100.0) if total else 0.0
+                lines.append("")
+                lines.append("👻 *Trend Phantom*")
+                lines.append(f"• Tracked: {total} | WR: {wr:.1f}% (W/L {wins}/{losses})")
+                lines.append(f"• Timeouts: {timeouts}")
             except Exception as exc:
-                logger.debug(f"Unable to fetch pullback phantom stats: {exc}")
+                logger.debug(f"Unable to fetch trend phantom stats: {exc}")
 
         # MR Phantom
         mr_phantom = self.shared.get("mr_phantom_tracker")
@@ -354,7 +359,7 @@ class TGBot:
 
         # Phantom + Executed summaries with WR and open/closed
         try:
-            # Pullback phantom summary
+            # Trend phantom summary
             pb_wins = pb_losses = pb_closed = pb_open = 0
             if phantom_tracker:
                 try:
@@ -414,7 +419,7 @@ class TGBot:
 
             # Executed summaries by strategy (closed from trade tracker, open from book)
             exec_stats = {
-                'pullback': {'wins': 0, 'losses': 0, 'closed': 0, 'open': 0},
+                'trend': {'wins': 0, 'losses': 0, 'closed': 0, 'open': 0},
                 'mr': {'wins': 0, 'losses': 0, 'closed': 0, 'open': 0},
                 'scalp': {'wins': 0, 'losses': 0, 'closed': 0, 'open': 0},
             }
@@ -424,7 +429,7 @@ class TGBot:
                 trades = getattr(tt, 'trades', []) or []
                 for t in trades:
                     strat = (getattr(t, 'strategy_name', '') or '').lower()
-                    grp = 'pullback' if 'pullback' in strat else 'mr' if ('mr' in strat or 'reversion' in strat) else 'scalp' if 'scalp' in strat else None
+                    grp = 'trend' if ('trend' in strat or 'pullback' in strat) else 'mr' if ('mr' in strat or 'reversion' in strat) else 'scalp' if 'scalp' in strat else None
                     if grp:
                         exec_stats[grp]['closed'] += 1
                         try:
@@ -441,7 +446,7 @@ class TGBot:
             try:
                 for pos in (self.shared.get('book').positions.values() if self.shared.get('book') else []):
                     strat = (getattr(pos, 'strategy_name', '') or '').lower()
-                    grp = 'pullback' if 'pullback' in strat else 'mr' if ('mr' in strat or 'reversion' in strat) else 'scalp' if 'scalp' in strat else None
+                    grp = 'trend' if ('trend' in strat or 'pullback' in strat) else 'mr' if ('mr' in strat or 'reversion' in strat) else 'scalp' if 'scalp' in strat else None
                     if grp:
                         exec_stats[grp]['open'] += 1
             except Exception:
@@ -449,8 +454,8 @@ class TGBot:
 
             lines.append("")
             lines.append("👻 *Phantom Summary*")
-            # Pullback (phantom)
-            lines.append(f"• 🔵 Pullback")
+            # Trend (phantom)
+            lines.append(f"• 🔵 Trend")
             lines.append(f"  ✅ W: {pb_wins}   ❌ L: {pb_losses}   🎯 WR: {pb_wr:.1f}%")
             lines.append(f"  🟢 Open: {pb_open}   🔒 Closed: {pb_closed}")
             # Mean Reversion (phantom)
@@ -465,10 +470,10 @@ class TGBot:
 
             lines.append("")
             lines.append("✅ *Executed Summary*")
-            # Executed Pullback
-            pbx = exec_stats['pullback']
+            # Executed Trend
+            pbx = exec_stats['trend']
             pbx_wr = (pbx['wins'] / (pbx['wins'] + pbx['losses']) * 100.0) if (pbx['wins'] + pbx['losses']) else 0.0
-            lines.append("• 🔵 Pullback")
+            lines.append("• 🔵 Trend")
             lines.append(f"  ✅ W: {pbx['wins']}   ❌ L: {pbx['losses']}   🎯 WR: {pbx_wr:.1f}%")
             lines.append(f"  🔓 Open: {pbx['open']}   🔒 Closed: {pbx['closed']}")
             # Executed MR
@@ -672,7 +677,7 @@ class TGBot:
 /regime SYMBOL – Market regime for a symbol
 
 📈 Analytics
-/stats [all|pullback|reversion] – Trade statistics
+/stats [all|trend|reversion] – Trade statistics
 /recent [limit] – Recent trade log
 /analysis [symbol] – Recent analysis timestamps
 /mlrankings – Symbol rankings by WR/PnL
@@ -680,7 +685,7 @@ class TGBot:
 /mlpatterns – Learned ML patterns & insights
 
 🤖 ML & Phantoms
-/ml or /mlstatus – Pullback ML status
+/ml or /mlstatus – Trend ML status
 /enhancedmr – Enhanced MR ML status
 /mrphantom – MR phantom stats
 /phantom [strategy] – Phantom trade outcomes
@@ -720,7 +725,7 @@ class TGBot:
 • Risk per trade: {risk_label}
 • Max leverage: {risk_cfg.max_leverage}x
 • Timeframe: {timeframe} minutes
-• Strategies: Pullback ML, Mean Reversion, Scalp (phantom)
+• Strategies: Trend ML, Mean Reversion, Scalp (phantom)
 """
         await self.safe_reply(update, help_text)
 
@@ -732,7 +737,7 @@ class TGBot:
             phantom_wins = tel.get('phantom_wins', 0)
             phantom_losses = tel.get('phantom_losses', 0)
             # Strategy-wise phantom stats
-            pb_total = pb_wins = pb_active = 0
+            tr_total = tr_wins = tr_active = 0
             mr_total = mr_wins = mr_active = 0
             sc_stats = {'total': 0, 'wins': 0, 'wr': 0.0}
             try:
@@ -742,10 +747,10 @@ class TGBot:
                 for trades in pt.phantom_trades.values():
                     for p in trades:
                         if not getattr(p, 'was_executed', False) and getattr(p, 'outcome', None) in ('win','loss'):
-                            pb_total += 1
+                            tr_total += 1
                             if p.outcome == 'win':
-                                pb_wins += 1
-                pb_active = len(pt.active_phantoms or {})
+                                tr_wins += 1
+                tr_active = len(pt.active_phantoms or {})
             except Exception:
                 pass
             try:
@@ -773,18 +778,18 @@ class TGBot:
             # Flow controller overview
             cfg = self.shared.get('config') or {}
             pf = cfg.get('phantom_flow', {})
-            targets = pf.get('daily_target', {'pullback':40,'mr':40,'scalp':40})
+            targets = pf.get('daily_target', {'trend':40,'mr':40,'scalp':40})
             # Attempt to read accepted/relax from Redis; fallback to derived
-            pb_acc = mr_acc = sc_acc = 0
-            pb_relax = mr_relax = sc_relax = 0.0
+            tr_acc = mr_acc = sc_acc = 0
+            tr_relax = mr_relax = sc_relax = 0.0
             try:
                 import os, redis
                 day = __import__('datetime').datetime.utcnow().strftime('%Y%m%d')
                 r = redis.from_url(os.getenv('REDIS_URL'), decode_responses=True)
-                pb_acc = int(r.get(f'phantom:flow:{day}:pullback:accepted') or 0)
+                tr_acc = int(r.get(f'phantom:flow:{day}:trend:accepted') or 0)
                 mr_acc = int(r.get(f'phantom:flow:{day}:mr:accepted') or 0)
                 sc_acc = int(r.get(f'phantom:flow:{day}:scalp:accepted') or 0)
-                pb_relax = float(r.get(f'phantom:flow:{day}:pullback:relax') or 0.0)
+                tr_relax = float(r.get(f'phantom:flow:{day}:trend:relax') or 0.0)
                 mr_relax = float(r.get(f'phantom:flow:{day}:mr:relax') or 0.0)
                 sc_relax = float(r.get(f'phantom:flow:{day}:scalp:relax') or 0.0)
             except Exception:
@@ -792,11 +797,11 @@ class TGBot:
                 try:
                     day = __import__('datetime').datetime.utcnow().strftime('%Y%m%d')
                     # For PB/MR/Scalp derive accepted today similarly to phantom_qa
-                    # PB accepted today
+                    # Trend accepted today
                     from phantom_trade_tracker import get_phantom_tracker
                     pt = get_phantom_tracker()
-                    pb_acc = sum(1 for trades in pt.phantom_trades.values() for p in trades if getattr(p,'signal_time',None) and p.signal_time.strftime('%Y%m%d') == day and not getattr(p,'was_executed', False))
-                    pb_acc += sum(1 for p in pt.active_phantoms.values() if p.signal_time.strftime('%Y%m%d') == day)
+                    tr_acc = sum(1 for trades in pt.phantom_trades.values() for p in trades if getattr(p,'signal_time',None) and p.signal_time.strftime('%Y%m%d') == day and not getattr(p,'was_executed', False))
+                    tr_acc += sum(1 for p in pt.active_phantoms.values() if p.signal_time.strftime('%Y%m%d') == day)
                 except Exception:
                     pass
                 try:
@@ -821,21 +826,21 @@ class TGBot:
                         return min(1.0, deficit / max(1.0, tgt*0.5))
                     except Exception:
                         return 0.0
-                pb_relax = _relax(pb_acc, int(targets.get('pullback',40)))
+                tr_relax = _relax(tr_acc, int(targets.get('trend',40)))
                 mr_relax = _relax(mr_acc, int(targets.get('mr',40)))
                 sc_relax = _relax(sc_acc, int(targets.get('scalp',40)))
 
             # Build output
-            pullback_ml = self.shared.get('ml_scorer')
+            trend_ml = self.shared.get('ml_scorer')
             enhanced_mr = self.shared.get('enhanced_mr_scorer')
             lines = [
                 "🧪 *Telemetry*",
                 f"• ML rejects → phantom: {ml_rejects}",
                 f"• Phantom outcomes (rejected): ✅ {phantom_wins} / ❌ {phantom_losses}",
             ]
-            if pullback_ml:
+            if trend_ml:
                 try:
-                    lines.append(f"• Pullback ML threshold: {pullback_ml.min_score:.0f}")
+                    lines.append(f"• Trend ML threshold: {trend_ml.min_score:.0f}")
                 except Exception:
                     pass
             if enhanced_mr:
@@ -848,7 +853,7 @@ class TGBot:
             lines.extend([
                 "",
                 "👻 *Phantom by Strategy*",
-                f"• Pullback: tracked {pb_total} (+{pb_active} active), WR { _wr(pb_wins, pb_total):.1f}%",
+                f"• Trend: tracked {tr_total} (+{tr_active} active), WR { (tr_wins/tr_total*100.0) if tr_total else 0.0:.1f}%",
                 f"• Mean Reversion: tracked {mr_total} (+{mr_active} active), WR { _wr(mr_wins, mr_total):.1f}%",
                 f"• Scalp: tracked {sc_stats.get('total',0)}, WR {sc_stats.get('wr',0.0):.1f}%",
             ])
@@ -863,14 +868,14 @@ class TGBot:
             except Exception:
                 mr_exec = 0
             lines.extend([
-                f"• Executed (PB/MR): {pb_exec}/{mr_exec}",
+                f"• Executed (Trend/MR): {pb_exec}/{mr_exec}",
             ])
 
             # Flow controller status
             lines.extend([
                 "",
                 "🎛️ *Flow Controller*",
-                f"• Pullback: {pb_acc}/{targets.get('pullback',0)} (relax {pb_relax*100:.0f}%)",
+                f"• Trend: {tr_acc}/{targets.get('trend',0)} (relax {tr_relax*100:.0f}%)",
                 f"• Mean Reversion: {mr_acc}/{targets.get('mr',0)} (relax {mr_relax*100:.0f}%)",
                 f"• Scalp: {sc_acc}/{targets.get('scalp',0)} (relax {sc_relax*100:.0f}%)",
             ])
@@ -1366,7 +1371,7 @@ class TGBot:
             timeframe = self.shared.get("timeframe")
             if timeframe:
                 msg += f"\n*Timeframe:* {timeframe} minutes"
-            msg += "\n*Strategies:* Pullback ML / Mean Reversion"
+            msg += "\n*Strategies:* Trend ML / Mean Reversion"
             
             await self.safe_reply(update, msg)
             
@@ -1442,7 +1447,7 @@ class TGBot:
                 msg = "🤖 *ML Overview*\n"
                 if ml:
                     st = ml.get_stats()
-                    msg += f"• Pullback: {st.get('status')} | Thresh: {st.get('current_threshold')}\n"
+                    msg += f"• Trend: {st.get('status')} | Thresh: {st.get('current_threshold')}\n"
                     calib = None
                     try:
                         import os, redis, json
@@ -1478,7 +1483,7 @@ class TGBot:
                     wins = losses = 0
                     for t in trades:
                         strat = (getattr(t, 'strategy_name', '') or '').lower()
-                        grp = 'pullback' if 'pullback' in strat else 'enhanced_mr' if ('mr' in strat or 'reversion' in strat) else None
+                grp = 'trend' if ('trend' in strat or 'pullback' in strat) else 'enhanced_mr' if ('mr' in strat or 'reversion' in strat) else None
                         if grp == key:
                             pnl = float(getattr(t, 'pnl_usd', 0))
                             if pnl > 0:
@@ -1488,14 +1493,14 @@ class TGBot:
                     total = wins + losses
                     wr = (wins/total*100.0) if total else 0.0
                     return wins, losses, total, wr
-                pbw, pbl, pbt, pbwr = _baseline_for('pullback')
+            pbw, pbl, pbt, pbwr = _baseline_for('trend')
                 mrw, mrl, mrt, mrwr = _baseline_for('enhanced_mr')
                 msg = [
                     "🧪 *Shadow vs Baseline*",
                     "",
-                    "🔵 Pullback",
+                "🔵 Trend",
                     f"• Baseline: W {pbw} / L {pbl} (WR {pbwr:.1f}%)",
-                    f"• Shadow:   W {s_stats.get('pullback',{}).get('wins',0)} / L {s_stats.get('pullback',{}).get('losses',0)} (WR {s_stats.get('pullback',{}).get('wr',0.0):.1f}%)",
+                f"• Shadow:   W {s_stats.get('trend',{}).get('wins',0)} / L {s_stats.get('trend',{}).get('losses',0)} (WR {s_stats.get('trend',{}).get('wr',0.0):.1f}%)",
                     "",
                     "🌀 Mean Reversion",
                     f"• Baseline: W {mrw} / L {mrl} (WR {mrwr:.1f}%)",
@@ -1746,17 +1751,17 @@ class TGBot:
     async def ml_stats(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show ML system statistics and status for a specific strategy."""
         try:
-            strategy_arg = 'pullback' # Default strategy
+            strategy_arg = 'trend' # Default strategy
             if ctx.args:
                 strategy_arg = ctx.args[0].lower()
-                if strategy_arg not in ['pullback', 'reversion']:
-                    await self.safe_reply(update, "Invalid strategy. Choose `pullback` or `reversion`.")
+                if strategy_arg not in ['trend', 'reversion']:
+                    await self.safe_reply(update, "Invalid strategy. Choose `trend` or `reversion`.")
                     return
 
             msg = f"🤖 *ML Status: {strategy_arg.title()} Strategy*\n"
             msg += "━" * 25 + "\n\n"
 
-            if strategy_arg == 'pullback':
+            if strategy_arg == 'trend':
                 ml_scorer = self.shared.get("ml_scorer")
             else:
                 # Placeholder for the future mean reversion scorer
@@ -2099,8 +2104,8 @@ class TGBot:
             strategy_filter = None
             if ctx.args:
                 strategy_filter = ctx.args[0].lower()
-                if strategy_filter not in ['pullback', 'reversion']:
-                    await update.message.reply_text("Invalid strategy. Choose `pullback` or `reversion`.")
+                if strategy_filter not in ['trend', 'reversion']:
+                    await update.message.reply_text("Invalid strategy. Choose `trend` or `reversion`.")
                     return
 
             msg = "👻 *Phantom Trade Statistics*\n"
@@ -2410,12 +2415,12 @@ class TGBot:
             response_text += "━" * 25 + "\n\n"
 
             # Get ML scorers
-            pullback_scorer = None
+            trend_scorer_inst = None
             mean_reversion_scorer = None
             enhanced_mr_scorer = None
             scalp_scorer = None
             try:
-                pullback_scorer = get_immediate_scorer()
+                trend_scorer_inst = get_trend_scorer()
             except Exception:
                 pass
             try:
@@ -2430,15 +2435,8 @@ class TGBot:
                 pass
 
             scorers = {}
-            if pullback_scorer:
-                scorers["Pullback Strategy"] = pullback_scorer
-            try:
-                from ml_scorer_trend import get_trend_scorer
-                tr = get_trend_scorer()
-                if tr:
-                    scorers["Trend Breakout"] = tr
-            except Exception:
-                pass
+            if trend_scorer_inst:
+                scorers["Trend Breakout"] = trend_scorer_inst
             # Original MR disabled per configuration; do not include in patterns
 
             for strategy_name, scorer in scorers.items():
@@ -2562,7 +2560,7 @@ class TGBot:
                 response_text += "  • Adapt to market conditions\n"
                 response_text += "  • Avoid danger patterns\n\n"
             
-            # End of Pullback (classic). Enhanced MR follows.
+            # End of Trend (classic). Enhanced MR follows.
 
             # Enhanced MR insights (now with patterns)
             if enhanced_mr_scorer:
@@ -2689,7 +2687,7 @@ class TGBot:
                 wins = losses = 0
                 for t in trades:
                     strat = (getattr(t, 'strategy_name', '') or '').lower()
-                    grp = 'pullback' if 'pullback' in strat else 'enhanced_mr' if ('mr' in strat or 'reversion' in strat) else None
+                    grp = 'trend' if ('trend' in strat or 'pullback' in strat) else 'enhanced_mr' if ('mr' in strat or 'reversion' in strat) else None
                     if grp == key:
                         pnl = float(getattr(t, 'pnl_usd', 0))
                         if pnl > 0:
@@ -2700,15 +2698,15 @@ class TGBot:
                 wr = (wins/total*100.0) if total else 0.0
                 return wins, losses, total, wr
 
-            pbw, pbl, pbt, pbwr = _baseline_for('pullback')
+                pbw, pbl, pbt, pbwr = _baseline_for('trend')
             mrw, mrl, mrt, mrwr = _baseline_for('enhanced_mr')
 
             lines = [
                 "🧪 *Shadow vs Baseline*",
                 "",
-                "🔵 Pullback",
+                    "🔵 Trend",
                 f"• Baseline: W {pbw} / L {pbl} (WR {pbwr:.1f}%)",
-                f"• Shadow:   W {s_stats.get('pullback',{}).get('wins',0)} / L {s_stats.get('pullback',{}).get('losses',0)} (WR {s_stats.get('pullback',{}).get('wr',0.0):.1f}%)",
+                    f"• Shadow:   W {s_stats.get('trend',{}).get('wins',0)} / L {s_stats.get('trend',{}).get('losses',0)} (WR {s_stats.get('trend',{}).get('wr',0.0):.1f}%)",
                 "",
                 "🌀 Mean Reversion",
                 f"• Baseline: W {mrw} / L {mrl} (WR {mrwr:.1f}%)",
@@ -3377,24 +3375,24 @@ class TGBot:
             # Check if enhanced parallel system is available
             try:
                 from enhanced_mr_scorer import get_enhanced_mr_scorer
-                from ml_signal_scorer_immediate import get_immediate_scorer
+                from ml_scorer_trend import get_trend_scorer
                 enhanced_mr = get_enhanced_mr_scorer()
-                pullback_ml = get_immediate_scorer()
+                trend_ml = get_trend_scorer()
             except ImportError:
                 msg += "❌ *Enhanced parallel system not available*\n"
                 await self.safe_reply(update, msg)
                 return
 
             # Get stats from both systems
-            pullback_stats = pullback_ml.get_stats()
+            trend_stats = trend_ml.get_stats()
             mr_stats = enhanced_mr.get_enhanced_stats()
 
-            msg += "🎯 *Pullback Strategy (Trending Markets):*\n"
-            msg += f"• Status: {pullback_stats.get('status', 'Unknown')}\n"
-            msg += f"• Trades: {pullback_stats.get('completed_trades', 0)}\n"
-            msg += f"• Threshold: {pullback_stats.get('current_threshold', 70):.0f}%\n"
-            if pullback_stats.get('recent_win_rate', 0) > 0:
-                msg += f"• Recent WR: {pullback_stats.get('recent_win_rate', 0):.1f}%\n"
+            msg += "🎯 *Trend Strategy (Breakout):*\n"
+            msg += f"• Status: {trend_stats.get('status', 'Unknown')}\n"
+            msg += f"• Trades: {trend_stats.get('completed_trades', 0)}\n"
+            msg += f"• Threshold: {trend_stats.get('current_threshold', 70):.0f}%\n"
+            if trend_stats.get('recent_win_rate', 0) > 0:
+                msg += f"• Recent WR: {trend_stats.get('recent_win_rate', 0):.1f}%\n"
 
             msg += "\n📉 *Mean Reversion Strategy (Ranging Markets):*\n"
             msg += f"• Status: {mr_stats.get('status', 'Unknown')}\n"
@@ -3404,17 +3402,17 @@ class TGBot:
                 msg += f"• Recent WR: {mr_stats.get('recent_win_rate', 0):.1f}%\n"
 
             # Combined performance
-            total_trades = pullback_stats.get('completed_trades', 0) + mr_stats.get('completed_trades', 0)
+            total_trades = trend_stats.get('completed_trades', 0) + mr_stats.get('completed_trades', 0)
             msg += f"\n📊 *Combined System:*\n"
             msg += f"• Total trades: {total_trades}\n"
             msg += f"• Strategy coverage: Full market conditions\n"
             msg += f"• Adaptive routing: Regime-based selection\n"
 
             # Active models summary
-            pullback_models = len(pullback_stats.get('models_active', []))
+            pullback_models = len(trend_stats.get('models_active', []))
             mr_models = mr_stats.get('model_count', 0)
             msg += f"• Active ML models: {pullback_models + mr_models} total\n"
-            msg += f"  - Pullback: {pullback_models}/3 models\n"
+            msg += f"  - Trend: {pullback_models}/2 models\n"
             msg += f"  - Mean Reversion: {mr_models}/4 models\n"
 
             await self.safe_reply(update, msg)
@@ -3519,7 +3517,7 @@ class TGBot:
                 recent_trades = all_trades[-50:] if len(all_trades) > 50 else all_trades
 
                 # Group by strategy
-                pullback_trades = [t for t in recent_trades if t.strategy_name == "pullback"]
+                pullback_trades = [t for t in recent_trades if t.strategy_name in ("trend_breakout", "pullback")]
                 mr_trades = [t for t in recent_trades if t.strategy_name in ["mean_reversion", "enhanced_mr"]]
 
                 msg += f"📈 *Recent Performance (Last 50 trades):*\n"
@@ -3529,7 +3527,7 @@ class TGBot:
                     pullback_wr = (pullback_wins / len(pullback_trades)) * 100
                     pullback_pnl = sum(t.pnl_usd for t in pullback_trades)
 
-                    msg += f"\n🎯 *Pullback Strategy:*\n"
+                    msg += f"\n🎯 *Trend Strategy:*\n"
                     msg += f"• Trades: {len(pullback_trades)}\n"
                     msg += f"• Win rate: {pullback_wr:.1f}%\n"
                     msg += f"• Total P&L: ${pullback_pnl:.2f}\n"
@@ -3571,7 +3569,7 @@ class TGBot:
                     mr_pct = (len(mr_trades) / total_trades) * 100 if total_trades > 0 else 0
 
                     msg += f"\n📋 *Strategy Distribution:*\n"
-                    msg += f"• Pullback: {pullback_pct:.1f}% of trades\n"
+                    msg += f"• Trend: {pullback_pct:.1f}% of trades\n"
                     msg += f"• Mean Reversion: {mr_pct:.1f}% of trades\n"
 
                 else:
@@ -3596,7 +3594,7 @@ class TGBot:
             # System Architecture
             msg += "🏗️ *System Architecture:*\n"
             msg += "• 🔄 Parallel Strategy Routing\n"
-            msg += "• 🧠 Enhanced ML Scorers (Pullback + MR)\n"
+            msg += "• 🧠 Enhanced ML Scorers (Trend + MR)\n"
             msg += "• 👻 Independent Phantom Tracking\n"
             msg += "• 🎯 Regime-Based Strategy Selection\n\n"
 
@@ -3614,12 +3612,12 @@ class TGBot:
             except:
                 msg += "• ❓ Enhanced Mean Reversion ML (Unknown)\n"
 
-            # Pullback System
+            # Trend System
             ml_scorer = self.shared.get("ml_scorer")
             if ml_scorer:
-                msg += "• ✅ Pullback ML System\n"
+                msg += "• ✅ Trend ML System\n"
             else:
-                msg += "• ⏳ Pullback ML System (Loading)\n"
+                msg += "• ⏳ Trend ML System (Loading)\n"
 
             # Market Regime Detection
             try:
@@ -3631,9 +3629,9 @@ class TGBot:
             # Phantom Trackers
             phantom_tracker = self.shared.get("phantom_tracker")
             if phantom_tracker:
-                msg += "• ✅ Pullback Phantom Tracker\n"
+                msg += "• ✅ Trend Phantom Tracker\n"
             else:
-                msg += "• ⏳ Pullback Phantom Tracker\n"
+                msg += "• ⏳ Trend Phantom Tracker\n"
 
             try:
                 if bot_instance and hasattr(bot_instance, 'mr_phantom_tracker') and bot_instance.mr_phantom_tracker:
@@ -3644,7 +3642,7 @@ class TGBot:
                 msg += "• ❓ MR Phantom Tracker\n"
 
             msg += "\n🎯 *Strategy Selection Logic:*\n"
-            msg += "• 📊 Trending Markets → Pullback Strategy\n"
+            msg += "• 📊 Trending Markets → Trend Strategy\n"
             msg += "• 📦 High-Quality Ranges → Enhanced MR\n"
             msg += "• 🌪️ Volatile Markets → Skip Trading\n"
             msg += "• ⚖️ Independent ML Scoring Per Strategy\n\n"
@@ -3685,7 +3683,7 @@ class TGBot:
 
             # Read counters from Redis if available
             none_used = cl3_used = off_used = dedup_hits = 0
-            blocked_total = blocked_pb = blocked_mr = blocked_scalp = 0
+            blocked_total = blocked_trend = blocked_mr = blocked_scalp = 0
             try:
                 import os, redis
                 r = redis.from_url(os.getenv('REDIS_URL'), decode_responses=True)
@@ -3694,14 +3692,14 @@ class TGBot:
                 off_used = int(r.get(f'phantom:daily:offhours_count:{day}') or 0)
                 dedup_hits = int(r.get(f'phantom:dedup_hits:{day}') or 0)
                 blocked_total = int(r.get(f'phantom:blocked:{day}') or 0)
-                blocked_pb = int(r.get(f'phantom:blocked:{day}:pullback') or 0)
+                blocked_trend = int(r.get(f'phantom:blocked:{day}:trend') or 0)
                 blocked_mr = int(r.get(f'phantom:blocked:{day}:mr') or 0)
                 blocked_scalp = int(r.get(f'phantom:blocked:{day}:scalp') or 0)
                 # Flow controller stats (accepted and relax per strategy)
-                pb_acc = int(r.get(f'phantom:flow:{day}:pullback:accepted') or 0)
+                tr_acc = int(r.get(f'phantom:flow:{day}:trend:accepted') or 0)
                 mr_acc = int(r.get(f'phantom:flow:{day}:mr:accepted') or 0)
                 sc_acc = int(r.get(f'phantom:flow:{day}:scalp:accepted') or 0)
-                pb_relax = float(r.get(f'phantom:flow:{day}:pullback:relax') or 0.0)
+                tr_relax = float(r.get(f'phantom:flow:{day}:trend:relax') or 0.0)
                 mr_relax = float(r.get(f'phantom:flow:{day}:mr:relax') or 0.0)
                 sc_relax = float(r.get(f'phantom:flow:{day}:scalp:relax') or 0.0)
             except Exception:
@@ -3726,19 +3724,19 @@ class TGBot:
 
             # Build a list of all phantom signals recorded today (PB, MR, Scalp)
             derived_none_used = derived_cl3_used = derived_off_used = 0
-            derived_pb_acc = derived_mr_acc = derived_sc_acc = 0
-            derived_blk_total = derived_blk_pb = derived_blk_mr = derived_blk_sc = 0
-            # Pullback
+            derived_tr_acc = derived_mr_acc = derived_sc_acc = 0
+            derived_blk_total = derived_blk_tr = derived_blk_mr = derived_blk_sc = 0
+            # Trend
             try:
                 pt = get_phantom_tracker() if get_phantom_tracker else None
                 if pt:
-                    d_blk_total = 0; d_blk_pb = 0
+                    d_blk_total = 0; d_blk_tr = 0
                     # Completed
                     for trades in pt.phantom_trades.values():
                         for p in trades:
                             if hasattr(p, 'signal_time') and p.signal_time.strftime('%Y%m%d') == day and not getattr(p, 'was_executed', False):
                                 derived_none_used += 1
-                                derived_pb_acc += 1
+                                derived_tr_acc += 1
                                 if clusters_map.get(p.symbol, 0) == 3:
                                     derived_cl3_used += 1
                                 if _is_off_hours(p.signal_time):
@@ -3747,7 +3745,7 @@ class TGBot:
                     for p in pt.active_phantoms.values():
                         if p.signal_time.strftime('%Y%m%d') == day:
                             derived_none_used += 1
-                            derived_pb_acc += 1
+                            derived_tr_acc += 1
                             if clusters_map.get(p.symbol, 0) == 3:
                                 derived_cl3_used += 1
                             if _is_off_hours(p.signal_time):
@@ -3755,7 +3753,7 @@ class TGBot:
                     # Blocked (local fallback)
                     bl = pt.get_blocked_counts(day)
                     derived_blk_total += bl.get('total', 0)
-                    derived_blk_pb += bl.get('pullback', 0)
+                    derived_blk_tr += bl.get('trend', 0)
             except Exception:
                 pass
             # MR
@@ -3830,7 +3828,7 @@ class TGBot:
                 blocked_scalp = derived_blk_sc
 
             # Flow controller: accepted & relax fallback
-            targets = (cfg.get('phantom_flow', {}) or {}).get('daily_target', {'pullback':40,'mr':40,'scalp':40})
+            targets = (cfg.get('phantom_flow', {}) or {}).get('daily_target', {'trend':40,'mr':40,'scalp':40})
             def _relax_from(accepted:int, target:int) -> float:
                 try:
                     h = datetime.utcnow().hour
@@ -3847,7 +3845,7 @@ class TGBot:
             if 'sc_acc' not in locals() or sc_acc == 0:
                 sc_acc = derived_sc_acc
             if 'pb_relax' not in locals() or pb_relax == 0.0:
-                pb_relax = _relax_from(pb_acc, int(targets.get('pullback',40)))
+                pb_relax = _relax_from(pb_acc, int(targets.get('trend',40)))
             if 'mr_relax' not in locals() or mr_relax == 0.0:
                 mr_relax = _relax_from(mr_acc, int(targets.get('mr',40)))
             if 'sc_relax' not in locals() or sc_relax == 0.0:
@@ -3858,7 +3856,7 @@ class TGBot:
             try:
                 total_none = wins_none = 0
                 total_allowed = wins_allowed = 0
-                # Pullback
+                # Trend
                 if get_phantom_tracker:
                     pt = get_phantom_tracker()
                     for r in pt.get_learning_data():
@@ -3905,16 +3903,16 @@ class TGBot:
                 f"• Dedup hits today: {dedup_hits}",
                 f"• WR routing=none: {wr_none:.1f}%",
                 f"• WR routing=allowed: {wr_allowed:.1f}%",
-                f"• Blocked today: {blocked_total} (PB {blocked_pb}, MR {blocked_mr}, Scalp {blocked_scalp})",
+                f"• Blocked today: {blocked_total} (Trend {blocked_trend}, MR {blocked_mr}, Scalp {blocked_scalp})",
             ]
             # Append flow controller section if available
             try:
                 pf = cfg.get('phantom_flow', {})
                 if pf.get('enabled', False):
-                    targets = pf.get('daily_target', {'pullback':40,'mr':40,'scalp':40})
+                    targets = pf.get('daily_target', {'trend':40,'mr':40,'scalp':40})
                     lines.extend([
                         "\n🎛️ *Flow Controller* (phantom-only)",
-                        f"• Pullback: {locals().get('pb_acc',0)}/{targets.get('pullback',0)} (relax {locals().get('pb_relax',0.0)*100:.0f}%)",
+                        f"• Trend: {locals().get('tr_acc',0)}/{targets.get('trend',0)} (relax {locals().get('tr_relax',0.0)*100:.0f}%)",
                         f"• Mean Reversion: {locals().get('mr_acc',0)}/{targets.get('mr',0)} (relax {locals().get('mr_relax',0.0)*100:.0f}%)",
                         f"• Scalp: {locals().get('sc_acc',0)}/{targets.get('scalp',0)} (relax {locals().get('sc_relax',0.0)*100:.0f}%)",
                     ])
@@ -4051,18 +4049,18 @@ class TGBot:
                         import os
                         redis_client = redis.from_url(os.getenv('REDIS_URL'), decode_responses=True)
                         
-                        pullback_model = redis_client.get('ml_scorer:model_data')
+                        pullback_model = redis_client.get('tml:model')
                         mr_model = redis_client.get('enhanced_mr:model_data')
                         
                         if pullback_model and mr_model:
                             msg += "✅ *Existing ML Models Found:*\n"
-                            msg += "• Pullback ML Model: ✅ Trained\n"
+                            msg += "• Trend ML Model: ✅ Trained\n"
                             msg += "• Enhanced MR Model: ✅ Trained\n\n"
                             msg += "🔄 Live bot handles automatic retraining as trades accumulate.\n"
                         else:
                             msg += "❌ *Missing ML Models:*\n"
                             if not pullback_model:
-                                msg += "• Pullback ML Model: ⏳ Missing\n"
+                                msg += "• Trend ML Model: ⏳ Missing\n"
                             if not mr_model:
                                 msg += "• Enhanced MR Model: ⏳ Missing\n"
                             msg += "\n📝 Training should start automatically on next bot restart.\n"
@@ -4090,12 +4088,12 @@ class TGBot:
                 elif current_status == 'completed':
                     msg += "🎉 *Status: Training Complete!*\n\n"
                     
-                    pullback_signals = status.get('pullback_signals', 0)
+                    pullback_signals = status.get('trend_signals', 0)
                     mr_signals = status.get('mr_signals', 0)
                     total_symbols = status.get('total_symbols', 0)
                     
                     msg += f"✅ *Results:*\n"
-                    msg += f"• Pullback Signals: {pullback_signals:,}\n"
+                    msg += f"• Trend Signals: {pullback_signals:,}\n"
                     msg += f"• MR Signals: {mr_signals:,}\n"
                     msg += f"• Total Symbols: {total_symbols}\n\n"
                     
@@ -4131,7 +4129,7 @@ class TGBot:
 
             msg += "\n" + "━" * 35 + "\n"
             msg += "📋 *Available Commands:*\n"
-            msg += "`/ml` - Pullback ML status\n"
+            msg += "`/ml` - Trend ML status\n"
             msg += "`/enhanced_mr` - Enhanced MR status\n"
             msg += "`/phantom` - Phantom tracking stats\n"
             msg += "`/mr_phantom` - MR phantom stats\n"
@@ -4168,7 +4166,7 @@ class TGBot:
                     return base_r
                 except Exception:
                     return 0.0
-            ir_pb = _inst_rel(int(acc.get('pullback',0)), int(targets.get('pullback',0) or 1))
+            ir_pb = _inst_rel(int(acc.get('trend',0)), int(targets.get('trend',0) or 1))
             ir_mr = _inst_rel(int(acc.get('mr',0)), int(targets.get('mr',0) or 1))
             ir_sc = _inst_rel(int(acc.get('scalp',0)), int(targets.get('scalp',0) or 1))
             def _fmt_line(name_key, label, inst_rel):
@@ -4201,7 +4199,7 @@ class TGBot:
                 f"• Enabled: {st.get('enabled', False)}",
                 f"• Smoothing hours: {st.get('smoothing_hours', '?')}",
                 "",
-                _fmt_line('pullback', 'Pullback', ir_pb),
+                _fmt_line('trend', 'Trend', ir_pb),
                 _fmt_line('mr', 'Mean Reversion', ir_mr),
                 _fmt_line('scalp', 'Scalp', ir_sc),
                 "",

@@ -43,7 +43,7 @@ def _slope_strength(series: pd.Series, window: int = 20) -> float:
 
 
 def score_pullback_regime(df: pd.DataFrame) -> Tuple[float, Dict[str, float]]:
-    """Score trend-following (pullback) suitability.
+    """Score trend-following suitability.
 
     Components (weights in brackets):
     - Trend slope % over 20 bars (40)
@@ -84,6 +84,10 @@ def score_pullback_regime(df: pd.DataFrame) -> Tuple[float, Dict[str, float]]:
         'atr_pct': atr_pct,
         'body_atr': body_atr,
     }
+
+# Alias for clarity now that Pullback is retired
+def score_trend_regime(df: pd.DataFrame) -> Tuple[float, Dict[str, float]]:
+    return score_pullback_regime(df)
 
 
 def score_mr_regime(df: pd.DataFrame) -> Tuple[float, Dict[str, float]]:
@@ -129,4 +133,3 @@ def score_mr_regime(df: pd.DataFrame) -> Tuple[float, Dict[str, float]]:
         'in_range_pct': in_range_score,
         'atr_pct': atr_pct,
     }
-

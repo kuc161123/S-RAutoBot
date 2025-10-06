@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-An ML-enhanced automated trading bot for Bybit perpetual futures that monitors the top 50 cryptocurrency pairs by market cap. Uses pullback strategies with pivot-based support/resistance detection, market structure analysis, and machine learning signal scoring for trade execution with strict risk management.
+An ML-enhanced automated trading bot for Bybit perpetual futures that monitors the top 50 cryptocurrency pairs by market cap. Uses a Trend Breakout (Donchian) strategy with ML scoring and a complementary Mean Reversion strategy, with strict risk management.
 
 ## Key Architecture
 
 ### Core Components
 - **live_bot.py**: Main entry point, orchestrates all components, manages WebSocket connections
-- **strategy_pullback_ml_learning.py**: Active ML-enhanced pullback strategy with adaptive learning
-- **ml_signal_scorer_immediate.py**: ML scoring engine with 70% threshold for signal quality
+- **strategy_trend_breakout.py**: Active Trend Breakout strategy
+- **ml_scorer_trend.py**: Trend ML scorer and retraining
 - **phantom_trade_tracker.py**: Tracks all signals (executed and rejected) for ML learning
 - **multi_websocket_handler.py**: Manages multiple WebSocket connections for 263 symbols
 - **position_mgr.py**: Position tracking, risk management, one-per-symbol limit
@@ -30,8 +30,8 @@ An ML-enhanced automated trading bot for Bybit perpetual futures that monitors t
 
 ### Data Flow
 1. Multi-WebSocket streams → top 50 symbols' live klines → frames dict
-2. Strategy analyzes 200+ candles → detects pullback signals
-3. ML scorer evaluates signal → 34 features → score 0-100
+2. Strategy analyzes 200+ candles → detects trend breakout signals
+3. ML scorer evaluates signal → features → score 0-100
 4. Phantom tracker records all signals for learning
 5. Position manager checks risk rules → executes if score ≥ 70
 6. Broker executes orders → TP/SL in Partial mode
@@ -132,7 +132,7 @@ Key parameters in config.yaml:
 ### Current Strategy Settings
 - **Active Strategy**: strategy_pullback_ml_learning.py
 - **ML Scoring**: Immediate scorer with 70% threshold
-- **Pullback Requirements**: 2+ confirmation candles
+- **Trend Requirements**: Donchian breakout + EMA stack
 - **S/R Zones**: 0.3% around levels
 - **Stop Loss**: Hybrid method (most conservative of 3 calculations)
 - **ML Features**: 34 total (22 technical + 12 cluster/MTF)

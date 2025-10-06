@@ -115,7 +115,7 @@ class PhantomTradeTracker:
         # Initialize Redis
         self._init_redis()
         self._load_from_redis()
-        # Default timeout for pullback phantom (can be overridden via config)
+        # Default timeout for trend phantom (can be overridden via config)
         self.timeout_hours: int = 36
     
     def _init_redis(self):
@@ -201,12 +201,12 @@ class PhantomTradeTracker:
         """Register a callback to receive phantom trade events."""
         self.notifier = notifier
 
-    def _incr_blocked(self, strategy: str = 'pullback'):
+    def _incr_blocked(self, strategy: str = 'trend'):
         """Increment daily blocked-counter in Redis for visibility."""
         # Always track locally
         from datetime import datetime as _dt
         day = _dt.utcnow().strftime('%Y%m%d')
-        day_map = self._blocked_counts.setdefault(day, {'total': 0, 'pullback': 0, 'mr': 0, 'scalp': 0})
+        day_map = self._blocked_counts.setdefault(day, {'total': 0, 'trend': 0, 'mr': 0, 'scalp': 0})
         day_map['total'] += 1
         day_map[strategy] = day_map.get(strategy, 0) + 1
         # Best-effort Redis
@@ -222,7 +222,11 @@ class PhantomTradeTracker:
         from datetime import datetime as _dt
         if day is None:
             day = _dt.utcnow().strftime('%Y%m%d')
-        return self._blocked_counts.get(day, {'total': 0, 'pullback': 0, 'mr': 0, 'scalp': 0})
+        # Ensure trend key present for callers
+        d = self._blocked_counts.get(day, {'total': 0, 'trend': 0, 'mr': 0, 'scalp': 0})
+        if 'trend' not in d:
+            d['trend'] = 0
+        return d
 
     def record_signal(self, symbol: str, signal: dict, ml_score: float, 
                      was_executed: bool, features: dict, strategy_name: str = "unknown") -> PhantomTrade:
@@ -239,13 +243,12 @@ class PhantomTradeTracker:
         # Annotate features with feature_version/count for reproducibility
         try:
             if isinstance(features, dict):
-                from ml_signal_scorer_immediate import get_immediate_scorer
-                scorer = get_immediate_scorer()
+                from ml_scorer_trend import get_trend_scorer
+                scorer = get_trend_scorer()
                 features = features.copy()
-                features.setdefault('feature_version', getattr(scorer, 'model_feature_version', 'unknown'))
-                # Derive expected count using scorer's vectorizer on empty dict
+                features.setdefault('feature_version', 'trend_v1')
                 try:
-                    expected = len(scorer._prepare_features({}))
+                    expected = len(scorer._prepare_features({}))  # type: ignore[attr-defined]
                 except Exception:
                     expected = 0
                 features.setdefault('feature_count', expected)
@@ -255,7 +258,7 @@ class PhantomTradeTracker:
         # Enforce single-active-per-symbol for phantom (non-executed) trades
         if symbol in self.active_phantoms and not was_executed:
             logger.info(f"[{symbol}] Phantom blocked: active trade in progress (strategy={strategy_name})")
-            self._incr_blocked(strategy_name if strategy_name else 'pullback')
+            self._incr_blocked(strategy_name if strategy_name else 'trend')
             # Do not overwrite the active phantom; return the existing one
             return self.active_phantoms[symbol]
 
@@ -424,9 +427,13 @@ class PhantomTradeTracker:
             except Exception as e:
                 logger.warning(f"[{symbol}] Failed to record phantom data: {e}")
         
-        # Feed phantom trade outcome to pullback ML for training
+        # Feed phantom trade outcome to Trend ML for training when applicable
         if not phantom.was_executed:
-            self._feed_phantom_to_pullback_ml(phantom)
+            try:
+                if getattr(phantom, 'strategy_name', '') == 'trend_breakout':
+                    self._feed_phantom_to_trend_ml(phantom)
+            except Exception:
+                pass
 
         # Save to Redis
         self._save_to_redis()
@@ -434,8 +441,8 @@ class PhantomTradeTracker:
         # Update rolling WR list for WR guard (skip timeouts)
         try:
             if self.redis_client and getattr(phantom, 'exit_reason', None) != 'timeout':
-                strat = getattr(phantom, 'strategy_name', 'pullback') or 'pullback'
-                key = f"phantom:wr:{'pullback' if strat == 'unknown' else strat}"
+                strat = getattr(phantom, 'strategy_name', 'trend') or 'trend'
+                key = f"phantom:wr:{'trend' if strat == 'unknown' else strat}"
                 val = '1' if outcome == 'win' else '0'
                 self.redis_client.lpush(key, val)
                 self.redis_client.ltrim(key, 0, 199)
@@ -570,13 +577,12 @@ class PhantomTradeTracker:
         # Keeping the method signature for backwards compatibility
         pass
     
-    def _feed_phantom_to_pullback_ml(self, phantom):
-        """Feed completed phantom trade outcome to pullback ML for training"""
+    def _feed_phantom_to_trend_ml(self, phantom):
+        """Feed completed phantom trade outcome to Trend ML for training"""
         try:
-            from ml_signal_scorer_immediate import get_immediate_scorer
-            ml_scorer = get_immediate_scorer()
+            from ml_scorer_trend import get_trend_scorer
+            ml_scorer = get_trend_scorer()
 
-            # Create signal data format expected by ML scorer
             signal_data = {
                 'side': phantom.side,
                 'entry': phantom.entry_price,
@@ -584,51 +590,61 @@ class PhantomTradeTracker:
                 'tp': phantom.take_profit,
                 'symbol': phantom.symbol,
                 'features': phantom.features,
-                'score': phantom.ml_score,  # ML scorer expects 'score' field
+                'score': phantom.ml_score,
                 'timestamp': phantom.signal_time,
+                'was_executed': False,
                 'exit_reason': getattr(phantom, 'exit_reason', None)
             }
 
-            # Determine outcome (win/loss)
             outcome = phantom.outcome
-
-            # Calculate P&L percentage for outcome
             pnl_pct = phantom.pnl_percent if hasattr(phantom, 'pnl_percent') else 0
-
-            # Record phantom trade outcome for ML learning
             ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-
-            logger.debug(f"[{phantom.symbol}] Fed pullback phantom trade outcome to ML: {outcome} "
-                        f"(P&L: {pnl_pct:.2f}%, Score: {phantom.ml_score:.1f})")
+            logger.debug(f"[{phantom.symbol}] Fed trend phantom trade outcome to ML: {outcome} "
+                         f"(P&L: {pnl_pct:.2f}%, Score: {phantom.ml_score:.1f})")
 
         except Exception as e:
-            logger.error(f"Error feeding pullback phantom trade to ML: {e}")
+            logger.error(f"Error feeding trend phantom trade to ML: {e}")
 
     def _check_ml_retrain(self):
         """Check if ML needs retraining after a trade completes"""
         try:
-            from ml_signal_scorer_immediate import get_immediate_scorer
-            ml_scorer = get_immediate_scorer()
-            
-            # Get retrain info
-            retrain_info = ml_scorer.get_retrain_info()
-            
-            # Check if ready to retrain
-            if retrain_info['can_train'] and retrain_info['trades_until_next_retrain'] == 0:
-                logger.info(f"🔄 ML retrain triggered after trade completion - "
-                           f"{retrain_info['total_combined']} total trades available")
-                
-                # Trigger retrain
-                retrain_result = ml_scorer.startup_retrain()
-                if retrain_result:
-                    logger.info("✅ ML models successfully retrained after trade completion")
+            # Prefer Trend scorer
+            try:
+                from ml_scorer_trend import get_trend_scorer
+                tml = get_trend_scorer()
+                info = tml.get_retrain_info()
+                if info.get('can_train') and int(info.get('trades_until_next_retrain', 1)) == 0:
+                    # Best-effort internal retrain
+                    retrain_ok = False
+                    try:
+                        retrain_ok = bool(tml._retrain())  # type: ignore[attr-defined]
+                    except Exception:
+                        retrain_ok = False
+                    if retrain_ok:
+                        logger.info("✅ Trend ML models retrained after trade completion")
+                    else:
+                        logger.debug("Trend ML retrain skipped or failed (insufficient data or no-op)")
                 else:
-                    logger.warning("⚠️ ML retrain attempt failed")
-            else:
-                logger.debug(f"ML retrain check: {retrain_info['trades_until_next_retrain']} trades until next retrain")
-                
+                    logger.debug(f"Trend ML retrain check: {info.get('trades_until_next_retrain', '?')} trades until next retrain")
+                return
+            except Exception:
+                pass
+            # Fallback to legacy immediate scorer (kept for backward compatibility)
+            try:
+                from ml_signal_scorer_immediate import get_immediate_scorer
+                iml = get_immediate_scorer()
+                retrain_info = iml.get_retrain_info()
+                if retrain_info.get('can_train') and int(retrain_info.get('trades_until_next_retrain', 1)) == 0:
+                    try:
+                        ok = iml.startup_retrain()
+                        if ok:
+                            logger.info("✅ Legacy ML retrained after trade completion")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
         except Exception as e:
-            logger.error(f"Error checking ML retrain: {e}")
+            logger.debug(f"ML retrain check failed: {e}")
 
 # Global instance
 _phantom_tracker = None

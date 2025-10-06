@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Core trading logic lives in `live_bot.py`, supported by modular helpers (e.g., `strategy_pullback_ml_learning.py`, `strategy_mean_reversion.py`, `ml_signal_scorer_immediate.py`). Infrastructure-facing modules sit alongside in the repo root: exchange wrapper (`broker_bybit.py`), persistence (`candle_storage_postgres.py`, `trade_tracker_postgres.py`), data services (`symbol_data_collector.py`). Configuration files (`config.yaml`, `.env` variables via Railway) and scripts like `start.py` reside at the top level. SQLite fallback artifacts (e.g., `candles.db`) are checked in for local debugging.
+Core trading logic lives in `live_bot.py`, supported by modular helpers (e.g., `strategy_trend_breakout.py`, `strategy_mean_reversion.py`, `ml_scorer_trend.py`). Infrastructure-facing modules sit alongside in the repo root: exchange wrapper (`broker_bybit.py`), persistence (`candle_storage_postgres.py`, `trade_tracker_postgres.py`), data services (`symbol_data_collector.py`). Configuration files (`config.yaml`, `.env` variables via Railway) and scripts like `start.py` reside at the top level. SQLite fallback artifacts (e.g., `candles.db`) are checked in for local debugging.
 
 ## Build, Test, and Development Commands
 - `python start.py`: single entry point; enforces one running bot, validates Redis models, and launches `live_bot.py`.

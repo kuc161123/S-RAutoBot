@@ -2,7 +2,7 @@
 Enhanced Backtesting Engine - Accurate ML Feature Generation
 
 This enhanced backtester ensures that ML features are generated exactly the same way
-as the live bot for both Pullback and Mean Reversion strategies.
+as the live bot for both Trend (Breakout) and Mean Reversion strategies.
 
 Key improvements:
 1. Generates ML features exactly like live bot
@@ -15,7 +15,7 @@ import logging
 from typing import List, Dict, Callable, Optional
 
 from candle_storage_postgres import CandleStorage
-from strategy_pullback import Settings, Signal
+from strategy_trend_breakout import TrendSettings as Settings, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ class EnhancedBacktester:
     """
     
     def __init__(self, strategy_func: Callable, strategy_settings: Settings, 
-                 reset_state_func: Optional[Callable] = None, strategy_type: str = "pullback"):
+                 reset_state_func: Optional[Callable] = None, strategy_type: str = "trend"):
         """
         Initialize enhanced backtester
         
@@ -33,7 +33,7 @@ class EnhancedBacktester:
             strategy_func: The function that detects signals (e.g., get_ml_learning_signals)
             strategy_settings: The settings for the strategy
             reset_state_func: Function to reset strategy state for a symbol
-            strategy_type: "pullback" or "mean_reversion" - determines feature generation
+            strategy_type: "trend" or "mean_reversion" - determines feature generation
         """
         self.strategy_func = strategy_func
         self.settings = strategy_settings
@@ -70,8 +70,8 @@ class EnhancedBacktester:
         results = []
         
         # Initialize feature generation based on strategy type
-        if self.strategy_type == "pullback":
-            feature_generator = self._generate_pullback_features
+        if self.strategy_type == "trend":
+            feature_generator = self._generate_trend_features
         elif self.strategy_type == "mean_reversion":
             feature_generator = self._generate_mr_features
         else:
@@ -123,49 +123,48 @@ class EnhancedBacktester:
         logger.info(f"[{symbol}] Enhanced backtest complete. Found {len(results)} signals with ML features.")
         return results
     
-    def _generate_pullback_features(self, df: pd.DataFrame, signal: Signal, symbol: str) -> Dict:
-        """Generate ML features for pullback strategy exactly like live bot"""
+    def _generate_trend_features(self, df: pd.DataFrame, signal: Signal, symbol: str) -> Dict:
+        """Generate ML features for trend breakout exactly like live bot"""
         try:
-            from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
-            
-            # Check if features are already in signal meta (strategy generated them)
-            existing_features = signal.meta.get('ml_features', {})
-            if existing_features:
-                logger.debug(f"[{symbol}] Using strategy-generated features ({len(existing_features)} features)")
-                return existing_features
-            
-            # Generate features like live bot does
-            logger.debug(f"[{symbol}] Generating pullback ML features")
-            
-            # Create breakout state (simplified for backtesting)
-            state = BreakoutState()
-            
-            # Calculate retracement (same logic as live bot)
-            if signal.side == "long":
-                retracement = signal.entry
-            else:
-                retracement = signal.entry
-            
-            # Generate basic features (22 features)
-            features = calculate_ml_features(df, state, signal.side, retracement)
-            
-            # Add entry price for MTF calculations
-            features['entry_price'] = signal.entry
-            
-            # Add symbol cluster features (simplified - just use cluster ID)
+            close = df['close']; high = df['high']; low = df['low']
+            price = float(close.iloc[-1])
+            ys = close.tail(20).values if len(close) >= 20 else close.values
+            try:
+                slope = np.polyfit(np.arange(len(ys)), ys, 1)[0]
+            except Exception:
+                slope = 0.0
+            trend_slope_pct = float((slope / price) * 100.0) if price else 0.0
+            ema20 = float(close.ewm(span=20, adjust=False).mean().iloc[-1])
+            ema50 = float(close.ewm(span=50, adjust=False).mean().iloc[-1]) if len(close) >= 50 else ema20
+            ema_stack_score = 100.0 if (price > ema20 > ema50 or price < ema20 < ema50) else 50.0 if (ema20 != ema50) else 0.0
+            rng_today = float(high.iloc[-1] - low.iloc[-1])
+            med_range = float((high - low).rolling(20).median().iloc[-1]) if len(df) >= 20 else rng_today
+            range_expansion = float(rng_today / max(1e-9, med_range))
+            prev = close.shift(); trarr = np.maximum(high - low, np.maximum((high - prev).abs(), (low - prev).abs()))
+            atr = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
+            atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
+            close_vs_ema20_pct = float(((price - ema20) / max(1e-9, ema20)) * 100.0) if ema20 else 0.0
+            features = {
+                'trend_slope_pct': trend_slope_pct,
+                'ema_stack_score': ema_stack_score,
+                'atr_pct': atr_pct,
+                'range_expansion': range_expansion,
+                'breakout_dist_atr': float(signal.meta.get('breakout_dist_atr', 0.0) if getattr(signal, 'meta', None) else 0.0),
+                'close_vs_ema20_pct': close_vs_ema20_pct,
+                'bb_width_pct': 0.0,
+                'session': 'us',
+                'symbol_cluster': 3,
+                'volatility_regime': 'normal'
+            }
             try:
                 from symbol_clustering import load_symbol_clusters
-                symbol_clusters = load_symbol_clusters()
-                cluster_id = symbol_clusters.get(symbol, 3)  # Default cluster 3
-                features['symbol_cluster'] = cluster_id
-            except:
-                features['symbol_cluster'] = 3  # Default cluster
-            
-            logger.debug(f"[{symbol}] Generated {len(features)} pullback features")
+                features['symbol_cluster'] = load_symbol_clusters().get(symbol, 3)
+            except Exception:
+                pass
+            logger.debug(f"[{symbol}] Generated {len(features)} trend features")
             return features
-            
         except Exception as e:
-            logger.error(f"[{symbol}] Error generating pullback features: {e}")
+            logger.error(f"[{symbol}] Error generating trend features: {e}")
             return {}
     
     def _generate_mr_features(self, df: pd.DataFrame, signal: Signal, symbol: str) -> Dict:
@@ -203,7 +202,7 @@ class EnhancedBacktester:
     def _generate_basic_mr_features(self, df: pd.DataFrame, signal: Signal, symbol: str) -> Dict:
         """Generate basic MR features as fallback"""
         try:
-            # Basic features similar to pullback but for ranging markets
+            # Basic features analogous to trend but for ranging markets
             features = {}
             
             # Price position in range

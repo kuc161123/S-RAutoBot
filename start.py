@@ -37,11 +37,11 @@ def kill_existing_bots():
 def check_for_trained_models(redis_client) -> bool:
     """Checks if pre-trained models exist in Redis."""
     try:
-        # Check for Pullback model
-        if not redis_client.exists('iml:models'):
+        # Check for Trend model
+        if not redis_client.exists('tml:model'):
             return False
-        # Check for Mean Reversion model (future, but prepare for it)
-        if not redis_client.exists('ml:model:mean_reversion'): # This key will be used by the new scorer
+        # Check for Enhanced Mean Reversion model
+        if not redis_client.exists('enhanced_mr:model_data'):
             return False
         return True
     except Exception as e:

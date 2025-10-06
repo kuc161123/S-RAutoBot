@@ -2,7 +2,7 @@
 ML Scorer for Mean Reversion Strategy
 
 This is a dedicated ensemble ML scorer for the Mean Reversion strategy,
-separate from the Pullback strategy's scorer. It will be trained on
+separate from the Trend strategy's scorer. It will be trained on
 features specific to ranging markets.
 """
 import numpy as np

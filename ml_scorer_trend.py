@@ -229,6 +229,44 @@ class TrendMLScorer:
             'can_train': data_len >= self.MIN_TRADES_FOR_ML
         }
 
+    def get_stats(self) -> Dict:
+        """Return status summary compatible with UI expectations.
+
+        Keys: status, completed_trades, current_threshold, recent_win_rate, models_active
+        """
+        recent_wr = 0.0
+        total = wins = 0
+        try:
+            if self.redis_client:
+                # Last 200 outcomes as proxy for recent WR
+                arr = self.redis_client.lrange('tml:trades', -200, -1) or []
+                for t in arr:
+                    try:
+                        rec = json.loads(t)
+                        total += 1
+                        wins += int(rec.get('outcome', 0))
+                    except Exception:
+                        pass
+                if total > 0:
+                    recent_wr = (wins / total) * 100.0
+        except Exception:
+            pass
+        models_active = []
+        try:
+            if self.models.get('rf'):
+                models_active.append('rf')
+            if self.models.get('gb'):
+                models_active.append('gb')
+        except Exception:
+            pass
+        return {
+            'status': '✅ Ready' if self.is_ml_ready else '⏳ Training',
+            'completed_trades': int(self.completed_trades),
+            'current_threshold': float(self.min_score),
+            'recent_win_rate': float(recent_wr),
+            'models_active': models_active,
+        }
+
     def get_patterns(self) -> Dict:
         # Light patterns: feature importance from RF and time/session buckets
         out = {'feature_importance': {}, 'time_patterns': {}, 'market_conditions': {}, 'winning_patterns': [], 'losing_patterns': []}
@@ -283,4 +321,3 @@ def get_trend_scorer(enabled: bool = True) -> TrendMLScorer:
     if _trend_scorer is None:
         _trend_scorer = TrendMLScorer(enabled=enabled)
     return _trend_scorer
-

@@ -23,7 +23,6 @@ except Exception:
 # Core trading components
 from broker_bybit import Bybit, BybitConfig
 from candle_storage_postgres import CandleStorage
-from live_bot_selector import get_strategy_module
 from multi_websocket_handler import MultiWebSocketHandler
 from position_mgr import RiskConfig, Book, Position
 from sizer import Sizer
@@ -50,7 +49,7 @@ except ImportError:
     from trade_tracker import TradeTracker, Trade
     USING_POSTGRES_TRACKER = False
 
-# ML scoring system - Enhanced parallel system (Pullback + Mean Reversion)
+# ML scoring system - Enhanced parallel system (Trend + Mean Reversion)
 try:
     from ml_signal_scorer_immediate import get_immediate_scorer
     from phantom_trade_tracker import get_phantom_tracker
@@ -60,7 +59,7 @@ try:
     from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
     from ml_scorer_mean_reversion import get_mean_reversion_scorer
     logger = logging.getLogger(__name__)
-    logger.info("Using Enhanced Parallel ML System (Pullback + Mean Reversion)")
+    logger.info("Using Enhanced Parallel ML System (Trend + Mean Reversion)")
     ML_AVAILABLE = True
     ENHANCED_ML_AVAILABLE = True
 except ImportError as e:
@@ -150,7 +149,7 @@ class FlowController:
         self.cfg = cfg or {}
         self.enabled = bool(self.cfg.get('phantom_flow', {}).get('enabled', False))
         pf = self.cfg.get('phantom_flow', {})
-        self.targets = pf.get('daily_target', {'pullback': 40, 'mr': 40, 'scalp': 40})
+        self.targets = pf.get('daily_target', {'trend': 40, 'mr': 40, 'scalp': 40})
         self.smoothing_hours = int(pf.get('smoothing_hours', 3))
         self.limits = pf.get('relax_limits', {})
         self.guards = pf.get('min_quality_guards', {})
@@ -168,7 +167,7 @@ class FlowController:
                 'max_boost': float(rm.get('catchup', {}).get('max_boost', 0.40)),
             },
             'min_relax': {
-                'pullback': float(rm.get('min_relax', {}).get('pullback', 0.0)),
+                'trend': float(rm.get('min_relax', {}).get('trend', 0.0)),
                 'mr': float(rm.get('min_relax', {}).get('mr', 0.0)),
                 'scalp': float(rm.get('min_relax', {}).get('scalp', 0.0)),
             },
@@ -379,18 +378,22 @@ class FlowController:
         return float(max(0.0, min(1.0, r)))
 
     # --- Per-strategy gate adjustments ---
-    def adjust_pullback(self, trend_min: float, confirm_min: float, mtf_min: float) -> Dict[str, float]:
-        r = self._relax_ratio('pullback')
-        lim = self.limits.get('pullback', {})
-        g = self.guards.get('pullback', {})
-        trend_adj = trend_min - r * float(lim.get('trend', 0.0))
-        confirm_adj = confirm_min - r * float(lim.get('confirm', 0.0))
-        mtf_adj = mtf_min - r * float(lim.get('mtf', 0.0))
+    def adjust_trend(self, slope_min: float, ema_min: float, breakout_min: float) -> Dict[str, float]:
+        r = self._relax_ratio('trend')
+        lim = self.limits.get('trend', {})
+        g = self.guards.get('trend', {})
+        slope_adj = slope_min - r * float(lim.get('slope', 0.0))
+        ema_adj = ema_min - r * float(lim.get('ema_stack', 0.0))
+        br_adj = breakout_min - r * float(lim.get('breakout', 0.0))
         # Apply guards
-        trend_adj = max(float(g.get('trend_min', 0.0)), trend_adj)
-        confirm_adj = max(float(g.get('confirm_min', 0.0)), confirm_adj)
-        mtf_adj = max(float(g.get('mtf_min', 0.0)), mtf_adj)
-        return {'trend_min': trend_adj, 'confirm_min': confirm_adj, 'mtf_min': mtf_adj, 'relax': r}
+        slope_adj = max(float(g.get('slope_min', 0.0)), slope_adj)
+        ema_adj = max(float(g.get('ema_stack_min', 0.0)), ema_adj)
+        br_adj = max(float(g.get('breakout_min', 0.0)), br_adj)
+        return {'slope_min': slope_adj, 'ema_min': ema_adj, 'breakout_min': br_adj, 'relax': r}
+
+    # Backward-compat shim (no-op mapping)
+    def adjust_pullback(self, trend_min: float, confirm_min: float, mtf_min: float) -> Dict[str, float]:
+        return {'trend_min': trend_min, 'confirm_min': confirm_min, 'mtf_min': mtf_min, 'relax': 0.0}
 
     def adjust_mr(self, rc_min: float, touches_min: int, dist_mid_min: float, rev_min: float) -> Dict[str, float]:
         r = self._relax_ratio('mr')
@@ -429,7 +432,7 @@ class FlowController:
         Includes enabled, targets, accepted counts and relax ratios per strategy.
         """
         day = self._day()
-        strategies = ['pullback', 'mr', 'scalp']
+        strategies = ['trend', 'mr', 'scalp']
         out = {
             'enabled': self.enabled,
             'targets': self.targets,
@@ -1379,16 +1382,16 @@ class TradingBot:
                                         else:
                                             logger.warning(f"[{symbol}] ⚠️ Inferred MR outcome not recorded (no original MR scorer; guard active)")
                                     else:
-                                        # Default to pullback ML
+                                        # Default to Trend ML
                                         if ml_scorer is not None:
                                             ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                            logger.info(f"[{symbol}] ⚠️ Pullback ML updated with outcome (recovered position, defaulted).")
+                                            logger.info(f"[{symbol}] ⚠️ Trend ML updated with outcome (recovered position, defaulted).")
                                 else:
-                                    # Pullback strategy
-                                    logger.info(f"[{symbol}] 🔵 PULLBACK STRATEGY detected")
+                                    # Trend strategy
+                                    logger.info(f"[{symbol}] 🔵 TREND STRATEGY detected")
                                     if ml_scorer is not None:
                                         ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                        logger.info(f"[{symbol}] Pullback ML updated with outcome.")
+                                        logger.info(f"[{symbol}] Trend ML updated with outcome.")
                             else:
                                 # Original system - record in appropriate ML scorer
                                 if pos.strategy_name == "mean_reversion" and shared_mr_scorer:
@@ -1396,7 +1399,7 @@ class TradingBot:
                                     logger.info(f"[{symbol}] Mean Reversion ML updated with outcome.")
                                 elif ml_scorer is not None:
                                     ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                    logger.info(f"[{symbol}] Pullback ML updated with outcome.")
+                                    logger.info(f"[{symbol}] Trend ML updated with outcome.")
 
                             
                             # Log with clear outcome based on actual P&L and corrected exit reason
@@ -1783,10 +1786,6 @@ class TradingBot:
         logger.info(f"Timeframe: {tf} minutes")
         logger.info("📌 Bot Policy: Existing positions and orders will NOT be modified - they will run their course")
         
-        # Get the appropriate strategy functions
-        use_pullback = cfg["trade"].get("use_pullback_strategy", True)
-        get_pullback_signals, reset_symbol_state = get_strategy_module(use_pullback)
-        
         # Import strategies for parallel system
         from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion
         from strategy_trend_breakout import detect_signal as detect_trend_signal, TrendSettings as TrendSettingsTB
@@ -1795,7 +1794,6 @@ class TradingBot:
 
         # Exploration flags (phantom-only loosening per strategy)
         exploration_enabled = bool(cfg.get('exploration', {}).get('enabled', True))
-        pb_explore = cfg.get('pullback', {}).get('explore', {})
         mr_explore = cfg.get('mr', {}).get('explore', {})
 
         # Phantom config
@@ -1807,11 +1805,11 @@ class TradingBot:
         phantom_virtual_delta = int(phantom_cfg.get('virtual_snapshots_delta', 5))
 
         if use_enhanced_parallel:
-            strategy_type = "Enhanced Parallel (Pullback + Mean Reversion with ML)"
+            strategy_type = "Enhanced Parallel (Trend + Mean Reversion with ML)"
             logger.info(f"📊 Strategy: {strategy_type}")
             logger.info("🧠 Using Enhanced Parallel ML System with regime-based strategy routing")
         else:
-            strategy_type = "Pullback (HL/LH + Confirmation)" if use_pullback else "Immediate Breakout"
+            strategy_type = "Trend Breakout"
             logger.info(f"📊 Strategy: {strategy_type}")
         
         # Initialize strategy settings
@@ -1875,22 +1873,22 @@ class TradingBot:
             try:
                 if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
                     # Initialize Enhanced Parallel ML System
-                    ml_scorer = get_immediate_scorer()  # Pullback ML
-                    phantom_tracker = get_phantom_tracker()  # Pullback phantom tracker
+                    ml_scorer = get_trend_scorer() if ('get_trend_scorer' in globals() and get_trend_scorer is not None) else None  # Trend ML
+                    phantom_tracker = get_phantom_tracker()  # Phantom tracker
                     enhanced_mr_scorer = get_enhanced_mr_scorer()  # Enhanced MR ML
                     mr_phantom_tracker = get_mr_phantom_tracker()  # MR phantom tracker
                     mean_reversion_scorer = None  # Not used in enhanced system
 
                     # Get and log stats for both systems
-                    pullback_stats = ml_scorer.get_stats()
+                    trend_stats = ml_scorer.get_stats() if ml_scorer is not None else {'status':'N/A','current_threshold':0,'completed_trades':0,'recent_win_rate':0}
                     mr_stats = enhanced_mr_scorer.get_enhanced_stats()
 
                     logger.info(f"✅ Enhanced Parallel ML System initialized")
-                    logger.info(f"   Pullback ML: {pullback_stats['status']} (threshold: {pullback_stats['current_threshold']:.0f}, trades: {pullback_stats['completed_trades']})")
+                    logger.info(f"   Trend ML: {trend_stats['status']} (threshold: {trend_stats['current_threshold']:.0f}, trades: {trend_stats['completed_trades']})")
                     logger.info(f"   Mean Reversion ML: {mr_stats['status']} (threshold: {mr_stats['current_threshold']:.0f}, trades: {mr_stats['completed_trades']})")
 
-                    if pullback_stats['recent_win_rate'] > 0:
-                        logger.info(f"   Pullback recent WR: {pullback_stats['recent_win_rate']:.1f}%")
+                    if trend_stats['recent_win_rate'] > 0:
+                        logger.info(f"   Trend recent WR: {trend_stats['recent_win_rate']:.1f}%")
                     if mr_stats['recent_win_rate'] > 0:
                         logger.info(f"   MR recent WR: {mr_stats['recent_win_rate']:.1f}%")
 
@@ -1983,9 +1981,9 @@ class TradingBot:
                     if ml_stats.get('models_active'):
                         logger.info(f"   Active models: {', '.join(ml_stats['models_active'])}")
                 elif ml_scorer.is_ml_ready:
-                    logger.info("✅ Pre-trained Pullback ML Model loaded successfully.")
+                    logger.info("✅ Pre-trained Trend ML models loaded successfully.")
                 else:
-                    logger.warning("⚠️ No pre-trained Pullback model found. Starting in online learning mode.")
+                    logger.warning("⚠️ No pre-trained Trend model found. Starting in online learning mode.")
                 
                 
             except Exception as e:
@@ -2055,13 +2053,14 @@ class TradingBot:
                     logger.info(f"MR phantom timeout set to {mr_phantom_tracker.timeout_hours}h (exploration)")
             except Exception as e:
                 logger.debug(f"Could not set MR phantom timeout: {e}")
-            # Apply Pullback phantom timeout override from config (exploration)
+            # Apply Trend phantom timeout override from config (exploration)
             try:
-                if pb_explore and 'timeout_hours' in pb_explore and phantom_tracker is not None:
-                    phantom_tracker.timeout_hours = int(pb_explore['timeout_hours'])
-                    logger.info(f"Pullback phantom timeout set to {phantom_tracker.timeout_hours}h (exploration)")
+                tr_explore = (cfg.get('trend', {}) or {}).get('explore', {})
+                if tr_explore and 'timeout_hours' in tr_explore and phantom_tracker is not None:
+                    phantom_tracker.timeout_hours = int(tr_explore['timeout_hours'])
+                    logger.info(f"Trend phantom timeout set to {phantom_tracker.timeout_hours}h (exploration)")
             except Exception as e:
-                logger.debug(f"Could not set Pullback phantom timeout: {e}")
+                logger.debug(f"Could not set Trend phantom timeout: {e}")
             # Apply Scalp phantom timeout override from config (exploration)
             try:
                 s_cfg = cfg.get('scalp', {}).get('explore', {})
@@ -2166,9 +2165,9 @@ class TradingBot:
                 )
 
                 if phantom_tracker and hasattr(phantom_tracker, 'set_notifier'):
-                    def pullback_notifier(trade, scope='Pullback'):
+                    def trend_notifier(trade, scope='Trend'):
                         self._create_task(self._notify_phantom_trade(scope, trade))
-                    phantom_tracker.set_notifier(pullback_notifier)
+                    phantom_tracker.set_notifier(trend_notifier)
 
                 if mr_phantom_tracker and hasattr(mr_phantom_tracker, 'set_notifier'):
                     def mr_notifier(trade, scope='Mean Reversion'):
@@ -2511,17 +2510,17 @@ class TradingBot:
                     # Strategy-specific regime routing (active)
                     # Compute per-strategy regime scores to override the coarse global recommendation
                     router_choice = None
-                    pb_score = mr_score = 0.0
+                    tr_score = mr_score = 0.0
                     try:
-                        from strategy_regimes import score_pullback_regime, score_mr_regime
-                        pb_score, _ = score_pullback_regime(df)
+                        from strategy_regimes import score_trend_regime, score_mr_regime
+                        tr_score, _ = score_trend_regime(df)
                         mr_score, _ = score_mr_regime(df)
                     except Exception:
                         pass
 
                     # Thresholds and hysteresis
                     sreg = self.config.get('strategy_regimes', {}) if hasattr(self, 'config') else {}
-                    pb_cfg = sreg.get('pb', {}) if isinstance(sreg, dict) else {}
+                    pb_cfg = sreg.get('trend', {}) if isinstance(sreg, dict) else {}
                     mr_cfg = sreg.get('mr', {}) if isinstance(sreg, dict) else {}
                     tie_margin = int(sreg.get('tie_breaker_margin', 5) if isinstance(sreg, dict) else 5)
                     pb_thr = int(pb_cfg.get('threshold', 60))
@@ -2533,10 +2532,12 @@ class TradingBot:
                     prev_route = prev_state.get('strategy') if isinstance(prev_state, dict) else None
                     prev_idx = prev_state.get('last_idx') if isinstance(prev_state, dict) else None
 
+                    # Trend score already computed via score_trend_regime
+
                     # Eligible candidates above threshold
                     candidates = []
-                    if pb_score >= pb_thr:
-                        candidates.append(('pullback', pb_score))
+                    if tr_score >= pb_thr:
+                        candidates.append(('trend_breakout', tr_score))
                     if mr_score >= mr_thr:
                         candidates.append(('enhanced_mr', mr_score))
 
@@ -2545,9 +2546,9 @@ class TradingBot:
                         candidates.sort(key=lambda x: x[1], reverse=True)
                         top, top_score = candidates[0]
                         # Tie-breaker & hysteresis
-                        if prev_route in ('pullback', 'enhanced_mr'):
+                        if prev_route in ('trend_breakout', 'enhanced_mr'):
                             # Hold previous for min_hold
-                            hold = pb_hold if prev_route == 'pullback' else mr_hold
+                            hold = pb_hold if prev_route == 'trend_breakout' else mr_hold
                             try:
                                 if prev_idx is not None and (candles_processed - int(prev_idx)) < hold:
                                     router_choice = prev_route
@@ -2563,7 +2564,7 @@ class TradingBot:
                         router_choice = 'none'
 
                     try:
-                        logger.info(f"🧭 Router scores: PB {pb_score:.0f} / {pb_thr}, MR {mr_score:.0f} / {mr_thr} → {router_choice.upper()}")
+                        logger.info(f"🧭 Router scores: TR {tr_score:.0f} / {pb_thr}, MR {mr_score:.0f} / {mr_thr} → {router_choice.upper()}")
                     except Exception:
                         pass
 
@@ -2582,11 +2583,13 @@ class TradingBot:
                         # Add ML stats to summary
                         if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
                             # Enhanced parallel system stats
-                            if ml_scorer:
-                                pullback_stats = ml_scorer.get_stats()
-                                pullback_retrain = ml_scorer.get_retrain_info()
-                                logger.info(f"🧠 Pullback ML: {pullback_stats.get('completed_trades', 0)} trades, "
-                                           f"{pullback_retrain.get('trades_until_next_retrain', 'N/A')} to retrain")
+                            try:
+                                tr_scorer = shared.get('trend_scorer')
+                                if tr_scorer:
+                                    tr_info = tr_scorer.get_retrain_info()
+                                    logger.info(f"🧠 Trend ML: {tr_info.get('total_records', 0)} records, {tr_info.get('trades_until_next_retrain', 'N/A')} to retrain")
+                            except Exception:
+                                pass
 
                             if enhanced_mr_scorer:
                                 mr_stats = enhanced_mr_scorer.get_enhanced_stats()
@@ -2656,7 +2659,7 @@ class TradingBot:
                             if ml_scorer:
                                 ml_stats = ml_scorer.get_stats()
                                 retrain_info = ml_scorer.get_retrain_info()
-                                logger.info(f"🧠 Pullback ML: {ml_stats.get('completed_trades', 0)} trades, {retrain_info.get('trades_until_next_retrain', 'N/A')} to retrain")
+                                logger.info(f"🧠 Trend ML: {ml_stats.get('completed_trades', 0)} trades, {retrain_info.get('trades_until_next_retrain', 'N/A')} to retrain")
                             # Get mean reversion scorer from shared data for logging
                             shared_mr_scorer_log = shared.get('mean_reversion_scorer') if 'shared' in locals() else None
                             if shared_mr_scorer_log:
@@ -2675,7 +2678,7 @@ class TradingBot:
                 
                     # --- ENHANCED PARALLEL STRATEGY ROUTING ---
                     sig = None
-                    selected_strategy = "pullback"  # Default
+                    selected_strategy = "trend_breakout"  # Default
                     selected_ml_scorer = ml_scorer
                     selected_phantom_tracker = phantom_tracker
 
@@ -2731,31 +2734,57 @@ class TradingBot:
                         handled = False
                         if uncertain:
                             logger.info(f"[{sym}] 🧭 SOFT ROUTING: Uncertain regime (conf={regime_analysis.regime_confidence:.1%}, persist={regime_analysis.regime_persistence:.1%}) → evaluate both strategies")
-                            # Detect both strategies
+                            # Detect MR and Trend both
                             soft_sig_mr = None
-                            soft_sig_pb = None
+                            soft_sig_tr = None
                             try:
                                 soft_sig_mr = detect_signal_mean_reversion(df.copy(), settings, sym)
                             except Exception:
                                 soft_sig_mr = None
                             try:
-                                soft_sig_pb = get_pullback_signals(df.copy(), settings, sym)
+                                soft_sig_tr = detect_trend_signal(df.copy(), trend_settings, sym)
                             except Exception:
-                                soft_sig_pb = None
+                                soft_sig_tr = None
 
                             # Score both with ML (if available)
-                            pb_margin = -999; mr_margin = -999
-                            pb_score = mr_score = 0.0
-                            if soft_sig_pb and ml_scorer:
+                            tr_margin = -999; mr_margin = -999
+                            tr_score = mr_score = 0.0
+                            if soft_sig_tr and ('get_trend_scorer' in globals()) and get_trend_scorer is not None:
                                 try:
-                                    from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
-                                    if sym not in ml_breakout_states:
-                                        ml_breakout_states[sym] = BreakoutState()
-                                    state = ml_breakout_states[sym]
-                                    basic_features = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry) or {}
-                                    pb_score, _ = ml_scorer.score_signal({'side': soft_sig_pb.side, 'entry': soft_sig_pb.entry, 'sl': soft_sig_pb.sl, 'tp': soft_sig_pb.tp}, basic_features)
-                                    pb_thr = getattr(ml_scorer, 'min_score', 75)
-                                    pb_margin = pb_score - pb_thr
+                                    tr_scorer = get_trend_scorer()
+                                    # build basic trend features similar to earlier
+                                    cl = df['close']; price = float(cl.iloc[-1])
+                                    ys = cl.tail(20).values if len(cl) >= 20 else cl.values
+                                    try:
+                                        slope = np.polyfit(np.arange(len(ys)), ys, 1)[0]
+                                    except Exception:
+                                        slope = 0.0
+                                    trend_slope_pct = float((slope / price) * 100.0) if price else 0.0
+                                    ema20 = cl.ewm(span=20, adjust=False).mean().iloc[-1]
+                                    ema50 = cl.ewm(span=50, adjust=False).mean().iloc[-1] if len(cl) >= 50 else ema20
+                                    ema_stack_score = 100.0 if (price > ema20 > ema50 or price < ema20 < ema50) else 50.0 if (ema20 != ema50) else 0.0
+                                    rng_today = float(df['high'].iloc[-1] - df['low'].iloc[-1])
+                                    med_range = float((df['high'] - df['low']).rolling(20).median().iloc[-1]) if len(df) >= 20 else rng_today
+                                    range_expansion = float(rng_today / max(1e-9, med_range))
+                                    prev = cl.shift(); trarr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                                    atr = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
+                                    atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
+                                    close_vs_ema20_pct = float(((price - ema20) / max(1e-9, ema20)) * 100.0) if ema20 else 0.0
+                                    trend_features = {
+                                        'trend_slope_pct': trend_slope_pct,
+                                        'ema_stack_score': ema_stack_score,
+                                        'atr_pct': atr_pct,
+                                        'range_expansion': range_expansion,
+                                        'breakout_dist_atr': float(getattr(soft_sig_tr, 'meta', {}).get('breakout_dist_atr', 0.0)),
+                                        'close_vs_ema20_pct': close_vs_ema20_pct,
+                                        'bb_width_pct': 0.0,
+                                        'session': 'us',
+                                        'symbol_cluster': 3,
+                                        'volatility_regime': getattr(regime_analysis, 'volatility_level', 'normal')
+                                    }
+                                    tr_score, _ = tr_scorer.score_signal(soft_sig_tr.__dict__, trend_features)
+                                    tr_thr = getattr(tr_scorer, 'min_score', 70)
+                                    tr_margin = tr_score - tr_thr
                                 except Exception:
                                     pass
                             if soft_sig_mr and enhanced_mr_scorer:
@@ -2769,35 +2798,30 @@ class TradingBot:
 
                             # Choose by margin if available
                             chosen = None
-                            if soft_sig_pb and pb_margin >= 0 and (pb_margin >= (mr_margin if mr_margin is not None else -999)):
-                                chosen = ('pullback', soft_sig_pb)
+                            if soft_sig_tr and tr_margin >= 0 and (tr_margin >= (mr_margin if mr_margin is not None else -999)):
+                                chosen = ('trend_breakout', soft_sig_tr)
                             if soft_sig_mr and mr_margin >= 0 and (mr_margin > (pb_margin if pb_margin is not None else -999)):
                                 chosen = ('enhanced_mr', soft_sig_mr)
 
                             if chosen is None:
                                 # Record phantoms (if signals exist) and continue to next symbol
                                 try:
-                                    # Enforce per-strategy hourly budget (pullback)
+                                    # Enforce per-strategy hourly budget (trend)
                                     hb = cfg.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
-                                    pb_limit = int(hb.get('pullback', 3))
+                                    pb_limit = int(hb.get('trend', hb.get('pullback', 3)))
                                     if 'phantom_budget' not in shared or not isinstance(shared['phantom_budget'], dict):
                                         shared['phantom_budget'] = {}
-                                    pb_map = shared['phantom_budget'].setdefault('pullback', {})
+                                    pb_map = shared['phantom_budget'].setdefault('trend', {})
                                     now_ts = time.time(); one_hour_ago = now_ts - 3600
                                     pb_list = [ts for ts in pb_map.get(sym, []) if ts > one_hour_ago]
                                     pb_map[sym] = pb_list
-                                    shared['phantom_budget']['pullback'] = pb_map
+                                    shared['phantom_budget']['trend'] = pb_map
                                     pb_remaining = pb_limit - len(pb_list)
-                                    if soft_sig_pb and phantom_tracker and pb_remaining > 0:
-                                        from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
-                                        if sym not in ml_breakout_states:
-                                            ml_breakout_states[sym] = BreakoutState()
-                                        state = ml_breakout_states[sym]
-                                        feats = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry) or {}
-                                        phantom_tracker.record_signal(sym, {'side': soft_sig_pb.side, 'entry': soft_sig_pb.entry, 'sl': soft_sig_pb.sl, 'tp': soft_sig_pb.tp}, float(pb_score or 0.0), False, feats, 'pullback')
+                                    if soft_sig_tr and phantom_tracker and pb_remaining > 0:
+                                        phantom_tracker.record_signal(sym, {'side': soft_sig_tr.side, 'entry': soft_sig_tr.entry, 'sl': soft_sig_tr.sl, 'tp': soft_sig_tr.tp}, float(tr_score or 0.0), False, trend_features, 'trend_breakout')
                                         try:
                                             if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
-                                                self.flow_controller.increment_accepted('pullback', 1)
+                                                self.flow_controller.increment_accepted('trend', 1)
                                         except Exception:
                                             pass
                                         pb_list.append(now_ts)
@@ -2887,15 +2911,15 @@ class TradingBot:
                         # If not uncertain, proceed with recommended strategy with optional override check
                         if not uncertain:
                             # Check hysteresis preference
-                            if keep_prev and prev_state and prev_state.get('strategy') in ('pullback','enhanced_mr'):
+                            if keep_prev and prev_state and prev_state.get('strategy') in ('trend_breakout','enhanced_mr'):
                                 logger.info(f"[{sym}] 🧭 Hysteresis: keeping previous route {prev_state.get('strategy')}")
                                 if prev_state.get('strategy') == 'enhanced_mr':
                                     selected_strategy = 'enhanced_mr'
                                     selected_ml_scorer = enhanced_mr_scorer
                                     selected_phantom_tracker = mr_phantom_tracker
                                 else:
-                                    selected_strategy = 'pullback'
-                                    selected_ml_scorer = ml_scorer
+                                    selected_strategy = 'trend_breakout'
+                                    selected_ml_scorer = get_trend_scorer() if 'get_trend_scorer' in globals() and get_trend_scorer is not None else None
                                     selected_phantom_tracker = phantom_tracker
                             # Else start with recommended and optionally override later after signal detection
 
@@ -2915,10 +2939,11 @@ class TradingBot:
                                     pass
                                 handled = True
                             elif router_choice == "pullback":
-                                logger.debug(f"🔵 [{sym}] ROUTER OVERRIDE → PULLBACK ANALYSIS:")
-                                sig = get_pullback_signals(df.copy(), settings, sym)
-                                selected_strategy = "pullback"
-                                selected_ml_scorer = ml_scorer
+                                # Backward-compat: treat legacy 'pullback' route as Trend Breakout
+                                logger.debug(f"🔵 [{sym}] ROUTER OVERRIDE → TREND BREAKOUT ANALYSIS (legacy pullback route)")
+                                sig = detect_trend_signal(df.copy(), trend_settings, sym)
+                                selected_strategy = "trend_breakout"
+                                selected_ml_scorer = get_trend_scorer() if 'get_trend_scorer' in globals() and get_trend_scorer is not None else None
                                 selected_phantom_tracker = phantom_tracker
                                 try:
                                     routing_state[sym] = {'strategy': selected_strategy, 'last_idx': candles_processed}
@@ -3032,45 +3057,21 @@ class TradingBot:
                                 logger.info(f"   ✅ Range Signal Detected: {sig.side.upper()} at {sig.entry:.4f}")
                                 logger.info(f"   🎯 SL: {sig.sl:.4f} | TP: {sig.tp:.4f} | R:R: {((sig.tp-sig.entry)/(sig.entry-sig.sl) if sig.side=='long' else (sig.entry-sig.tp)/(sig.sl-sig.entry)):.2f}")
                                 logger.info(f"   📝 Reason: {sig.reason}")
-                                # Override: if Pullback ML shows very strong signal, prefer it
-                                try:
-                                    alt_pb_sig = get_pullback_signals(df.copy(), settings, sym)
-                                    if alt_pb_sig and ml_scorer:
-                                        from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
-                                        if sym not in ml_breakout_states:
-                                            ml_breakout_states[sym] = BreakoutState()
-                                        state = ml_breakout_states[sym]
-                                        alt_feats = calculate_ml_features(df, state, alt_pb_sig.side, alt_pb_sig.entry) or {}
-                                        pb_score, _ = ml_scorer.score_signal({'side': alt_pb_sig.side, 'entry': alt_pb_sig.entry, 'sl': alt_pb_sig.sl, 'tp': alt_pb_sig.tp}, alt_feats)
-                                        pb_thr = getattr(ml_scorer, 'min_score', 75)
-                                        if pb_score >= pb_thr + 5:
-                                            logger.info(f"[{sym}] 🔀 OVERRIDE: Pullback ML {pb_score:.1f} ≥ {pb_thr+5:.0f} → prefer Pullback over MR")
-                                            selected_strategy = 'pullback'
-                                            selected_ml_scorer = ml_scorer
-                                            selected_phantom_tracker = phantom_tracker
-                                            sig = alt_pb_sig
-                                            routing_state[sym] = {'strategy': selected_strategy, 'last_idx': candles_processed}
-                                            shared['routing_state'] = routing_state
-                                except Exception:
-                                    pass
+                                # No override towards legacy Pullback; Trend arbitration handled separately
                             else:
                                 logger.info(f"   ❌ No Mean Reversion Signal: Range conditions not met")
                                 logger.info(f"   💡 Range quality: {regime_analysis.range_quality}, confidence: {regime_analysis.regime_confidence:.1%}")
 
                         elif (not handled) and regime_analysis.recommended_strategy == "pullback":
-                            # Use Pullback System
-                            logger.debug(f"🔵 [{sym}] PULLBACK STRATEGY ANALYSIS:")
-                            try:
-                                logger.info(f"🔵 [{sym}] PULLBACK STRUCTURE: checking breakout and HL/LH")
-                            except Exception:
-                                pass
-                            sig = get_pullback_signals(df.copy(), settings, sym)
-                            selected_strategy = "pullback"
-                            selected_ml_scorer = ml_scorer
+                            # Treat legacy pullback recommendation as Trend Breakout
+                            logger.debug(f"🔵 [{sym}] TREND BREAKOUT ANALYSIS (legacy pullback route):")
+                            sig = detect_trend_signal(df.copy(), trend_settings, sym)
+                            selected_strategy = "trend_breakout"
+                            selected_ml_scorer = get_trend_scorer() if 'get_trend_scorer' in globals() and get_trend_scorer is not None else None
                             selected_phantom_tracker = phantom_tracker
 
                             if sig:
-                                logger.info(f"   ✅ Pullback Signal Detected: {sig.side.upper()} at {sig.entry:.4f}")
+                                logger.info(f"   ✅ Trend Signal Detected: {sig.side.upper()} at {sig.entry:.4f}")
                                 logger.info(f"   🎯 SL: {sig.sl:.4f} | TP: {sig.tp:.4f} | R:R: {((sig.tp-sig.entry)/(sig.entry-sig.sl) if sig.side=='long' else (sig.entry-sig.tp)/(sig.sl-sig.entry)):.2f}")
                                 logger.info(f"   📝 Reason: {sig.reason}")
                                 # Override: if MR ML shows very strong signal, prefer it
@@ -3081,7 +3082,7 @@ class TradingBot:
                                         mr_score, _ = enhanced_mr_scorer.score_signal(alt_mr_sig.__dict__, alt_ef, df)
                                         mr_thr = getattr(enhanced_mr_scorer, 'min_score', 75)
                                         if mr_score >= mr_thr + 5:
-                                            logger.info(f"[{sym}] 🔀 OVERRIDE: MR ML {mr_score:.1f} ≥ {mr_thr+5:.0f} → prefer MR over Pullback")
+                                logger.info(f"[{sym}] 🔀 OVERRIDE: MR ML {mr_score:.1f} ≥ {mr_thr+5:.0f} → prefer MR over Trend")
                                             selected_strategy = 'enhanced_mr'
                                             selected_ml_scorer = enhanced_mr_scorer
                                             selected_phantom_tracker = mr_phantom_tracker
@@ -3091,7 +3092,7 @@ class TradingBot:
                                 except Exception:
                                     pass
                             else:
-                                logger.info(f"   ❌ No Pullback Signal: Trend structure insufficient")
+                                logger.info(f"   ❌ No Trend Signal: Breakout structure insufficient")
                                 logger.info(f"   💡 Trend strength: {regime_analysis.trend_strength:.1f}, volatility: {regime_analysis.volatility_level}")
 
                         elif (not handled):
@@ -3197,11 +3198,11 @@ class TradingBot:
                             # Ensure per-strategy hourly budget maps
                             if 'phantom_budget' not in shared or not isinstance(shared['phantom_budget'], dict):
                                 shared['phantom_budget'] = {}
-                            pb_budget_map = shared['phantom_budget'].setdefault('pullback', {})
+                            pb_budget_map = shared['phantom_budget'].setdefault('trend', {})
                             mr_budget_map = shared['phantom_budget'].setdefault('mr', {})
                             # Configured per-strategy hourly budgets (defaults)
                             hb = cfg.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
-                            pb_limit = int(hb.get('pullback', 3))
+                            pb_limit = int(hb.get('trend', hb.get('pullback', 3)))
                             mr_limit = int(hb.get('mr', 3))
                             now_ts = time.time()
                             one_hour_ago = now_ts - 3600
@@ -3210,7 +3211,7 @@ class TradingBot:
                             mr_budget = [ts for ts in mr_budget_map.get(sym, []) if ts > one_hour_ago]
                             pb_budget_map[sym] = pb_budget
                             mr_budget_map[sym] = mr_budget
-                            shared['phantom_budget'] = {'pullback': pb_budget_map, 'mr': mr_budget_map}
+                            shared['phantom_budget'] = {'trend': pb_budget_map, 'mr': mr_budget_map}
 
                             # Per-symbol phantom cooldown (8 candles)
                             phantom_cd_map = shared['phantom_cooldown']
@@ -3227,9 +3228,9 @@ class TradingBot:
                                 cluster_id = 3
                             # Per-strategy daily caps
                             mr_caps_reached = _daily_capped('mr', sym, cluster_id)
-                            pb_caps_reached = _daily_capped('pullback', sym, cluster_id)
+                            pb_caps_reached = _daily_capped('trend', sym, cluster_id)
                             if mr_caps_reached and pb_caps_reached:
-                                logger.debug(f"[{sym}] Daily caps reached for MR and PB; skipping both")
+                                logger.debug(f"[{sym}] Daily caps reached for MR and Trend; skipping both")
                             # Try MR phantom (exploration gating)
                             try:
                                 sig_mr = detect_signal_mean_reversion(df.copy(), settings, sym)
@@ -3309,91 +3310,81 @@ class TradingBot:
                             except Exception:
                                 pass
 
-                            # Try Pullback phantom (exploration gating)
+                            # Try Trend phantom (exploration gating)
                             if not pb_caps_reached:
                                 try:
-                                    sig_pb = get_pullback_signals(df.copy(), settings, sym)
+                                    sig_tr = detect_trend_signal(df.copy(), trend_settings, sym)
                                     pb_remaining = pb_limit - len(pb_budget)
-                                    if pb_remaining > 0 and sig_pb and _not_duplicate('pullback', sym, sig_pb):
-                                        from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
-                                        if sym not in ml_breakout_states:
-                                            ml_breakout_states[sym] = BreakoutState()
-                                        state = ml_breakout_states[sym]
-                                        retracement = sig_pb.entry
-                                        feats = calculate_ml_features(df, state, sig_pb.side, retracement) or {}
-                                        feats['routing'] = 'none'
-                                        # Exploration gate for Pullback
+                                    if pb_remaining > 0 and sig_tr and _not_duplicate('trend', sym, sig_tr):
+                                        # Build basic trend features
+                                        cl = df['close']; price = float(cl.iloc[-1])
+                                        ys = cl.tail(20).values if len(cl) >= 20 else cl.values
+                                        try:
+                                            slope = np.polyfit(np.arange(len(ys)), ys, 1)[0]
+                                        except Exception:
+                                            slope = 0.0
+                                        trend_slope_pct = float((slope / price) * 100.0) if price else 0.0
+                                        ema20 = cl.ewm(span=20, adjust=False).mean().iloc[-1]
+                                        ema50 = cl.ewm(span=50, adjust=False).mean().iloc[-1] if len(cl) >= 50 else ema20
+                                        ema_stack_score = 100.0 if (price > ema20 > ema50 or price < ema20 < ema50) else 50.0 if (ema20 != ema50) else 0.0
+                                        rng_today = float(df['high'].iloc[-1] - df['low'].iloc[-1])
+                                        med_range = float((df['high'] - df['low']).rolling(20).median().iloc[-1]) if len(df) >= 20 else rng_today
+                                        range_expansion = float(rng_today / max(1e-9, med_range))
+                                        prev = cl.shift(); trarr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                                        atr = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
+                                        atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
+                                        trend_features = {
+                                            'trend_slope_pct': trend_slope_pct,
+                                            'ema_stack_score': ema_stack_score,
+                                            'atr_pct': atr_pct,
+                                            'range_expansion': range_expansion,
+                                            'breakout_dist_atr': float(getattr(sig_tr, 'meta', {}).get('breakout_dist_atr', 0.0) if getattr(sig_tr, 'meta', None) else 0.0),
+                                            'close_vs_ema20_pct': float(((price - ema20) / max(1e-9, ema20)) * 100.0) if ema20 else 0.0,
+                                            'bb_width_pct': 0.0,
+                                            'session': 'us',
+                                            'symbol_cluster': 3,
+                                            'volatility_regime': getattr(regime_analysis, 'volatility_level', 'normal')
+                                        }
+                                        # Trend exploration gate
                                         meets_gate = True
                                         reasons = []
                                         try:
-                                            if exploration_enabled and pb_explore.get('enabled', True):
-                                                base_ts_min = float(pb_explore.get('trend_strength_min', 50))
-                                                base_conf_min = float(pb_explore.get('confirmation_strength_min', 0.2))
-                                                base_mtf_min = float(pb_explore.get('mtf_level_strength_min', 0.5))
-                                                allow_high = bool(pb_explore.get('allow_volatility_high', True))
-                                                # Apply adaptive relax (phantom-only)
-                                                ts_min = base_ts_min; conf_min = base_conf_min; mtf_min = base_mtf_min
-                                                try:
-                                                    if self.flow_controller and self.flow_controller.enabled:
-                                                        adj = self.flow_controller.adjust_pullback(ts_min, conf_min, mtf_min)
-                                                        # Apply volatility-aware damping to relax under high volatility
-                                                        vol_reg_tmp = getattr(regime_analysis, 'volatility_level', 'normal')
-                                                        if vol_reg_tmp == 'high':
-                                                            # Blend adjusted minima back toward base minima (dampen relax)
-                                                            damp = 0.35  # keep at most 35% of relax effect in high vol
-                                                            ts_min = base_ts_min - (base_ts_min - adj['trend_min']) * damp
-                                                            conf_min = base_conf_min - (base_conf_min - adj['confirm_min']) * damp
-                                                            mtf_min = base_mtf_min - (base_mtf_min - adj['mtf_min']) * damp
-                                                        else:
-                                                            ts_min = adj['trend_min']; conf_min = adj['confirm_min']; mtf_min = adj['mtf_min']
-                                                except Exception:
-                                                    pass
-                                                ts = float(feats.get('trend_strength', 0))
-                                                conf = float(feats.get('confirmation_candle_strength', 0))
-                                                # Derive a conservative MTF/SR strength proxy if mtf_level_strength is missing
-                                                mtf = float(feats.get('mtf_level_strength', 0))
-                                                if mtf <= 0:
-                                                    # Use support_resistance_strength (0..5) normalized
-                                                    srs = float(feats.get('support_resistance_strength', 0))
-                                                    mtf = min(1.0, max(0.0, srs / 5.0))
-                                                    # Consider near_major flags as a strong signal
-                                                    try:
-                                                        if int(feats.get('near_major_resistance', 0)) == 1 or int(feats.get('near_major_support', 0)) == 1:
-                                                            mtf = max(mtf, 1.0)
-                                                    except Exception:
-                                                        pass
+                                            tr_explore = (cfg.get('trend', {}) or {}).get('explore', {})
+                                            if exploration_enabled and tr_explore.get('enabled', True):
+                                                slope_min = float(tr_explore.get('slope_min', 3.0))
+                                                ema_min = float(tr_explore.get('ema_stack_min', 40.0))
+                                                br_min = float(tr_explore.get('breakout_dist_atr_min', 0.1))
+                                                allow_high = bool(tr_explore.get('allow_volatility_high', True))
                                                 vol_reg = getattr(regime_analysis, 'volatility_level', 'normal')
-                                                if ts < ts_min:
-                                                    meets_gate = False; reasons.append(f"trend {ts:.1f}<{ts_min}")
-                                                if conf < conf_min:
-                                                    meets_gate = False; reasons.append(f"confirm {conf:.2f}<{conf_min}")
-                                                if mtf < mtf_min:
-                                                    meets_gate = False; reasons.append(f"mtf {mtf:.2f}<{mtf_min}")
+                                                if abs(trend_features['trend_slope_pct']) < slope_min:
+                                                    meets_gate = False; reasons.append(f"slope {trend_features['trend_slope_pct']:.1f}<{slope_min}")
+                                                if trend_features['ema_stack_score'] < ema_min:
+                                                    meets_gate = False; reasons.append(f"ema {trend_features['ema_stack_score']:.0f}<{ema_min}")
+                                                if trend_features['breakout_dist_atr'] < br_min:
+                                                    meets_gate = False; reasons.append(f"br {trend_features['breakout_dist_atr']:.2f}<{br_min}")
                                                 if vol_reg == 'high' and not allow_high:
                                                     meets_gate = False; reasons.append("vol=high disallowed")
                                         except Exception:
                                             pass
                                         if not meets_gate:
-                                            logger.info(f"[{sym}] 👻 Pullback explore skip: {', '.join(reasons) if reasons else 'gate fail'}")
+                                            logger.info(f"[{sym}] 👻 Trend explore skip: {', '.join(reasons) if reasons else 'gate fail'}")
                                         else:
-                                            logger.info(f"[{sym}] 👻 Phantom-only (Pullback none): {sig_pb.side.upper()} @ {sig_pb.entry:.4f}")
+                                            logger.info(f"[{sym}] 👻 Phantom-only (Trend none): {sig_tr.side.upper()} @ {sig_tr.entry:.4f}")
                                             if phantom_tracker:
                                                 phantom_tracker.record_signal(
                                                     symbol=sym,
-                                                    signal={'side': sig_pb.side, 'entry': sig_pb.entry, 'sl': sig_pb.sl, 'tp': sig_pb.tp},
+                                                    signal={'side': sig_tr.side, 'entry': sig_tr.entry, 'sl': sig_tr.sl, 'tp': sig_tr.tp},
                                                     ml_score=0.0,
                                                     was_executed=False,
-                                                    features=feats,
-                                                    strategy_name='pullback'
+                                                    features=trend_features,
+                                                    strategy_name='trend_breakout'
                                                 )
-                                                # Count accepted Pullback phantom for flow pacing
                                                 try:
                                                     if self.flow_controller:
-                                                        self.flow_controller.increment_accepted('pullback', 1)
+                                                        self.flow_controller.increment_accepted('trend', 1)
                                                 except Exception:
                                                     pass
-                                                _increment_daily('pullback', sym, cluster_id, 'none')
-                                            # Consume PB hourly budget
+                                                _increment_daily('trend', sym, cluster_id, 'none')
                                             pb_budget.append(now_ts)
                                             pb_budget_map[sym] = pb_budget
                                 except Exception:
@@ -3461,29 +3452,7 @@ class TradingBot:
                                     # Use available scorer thresholds; fallback to 75
                                     pb_thr = getattr(ml_scorer, 'min_score', 75) if ml_scorer else 75
                                     mr_thr = getattr(enhanced_mr_scorer, 'min_score', 75) if enhanced_mr_scorer else 75
-                                    # Pullback snapshots
-                                    if exploration_enabled and pb_explore.get('enable_virtual_snapshots', False):
-                                        delta_pb = int(pb_explore.get('snapshots_delta', phantom_virtual_delta))
-                                        for delta in (-delta_pb, +delta_pb):
-                                            vthr_pb = max(60, min(90, pb_thr + delta))
-                                            if sig_pb and phantom_tracker and not _daily_capped(sym, cluster_id):
-                                                feats2 = feats.copy()
-                                                feats2['routing'] = 'none'
-                                                feats2['virtual_threshold'] = vthr_pb
-                                                phantom_tracker.record_signal(
-                                                    symbol=sym,
-                                                    signal={'side': sig_pb.side, 'entry': sig_pb.entry, 'sl': sig_pb.sl, 'tp': sig_pb.tp},
-                                                    ml_score=0.0,
-                                                    was_executed=False,
-                                                    features=feats2,
-                                                    strategy_name='pullback'
-                                                )
-                                                try:
-                                                    if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
-                                                        self.flow_controller.increment_accepted('pullback', 1)
-                                                except Exception:
-                                                    pass
-                                                _increment_daily(sym, cluster_id, 'none')
+                                    # Trend snapshots (none)
                                     # MR snapshots
                                     if exploration_enabled and mr_explore.get('enable_virtual_snapshots', False):
                                         delta_mr = int(mr_explore.get('snapshots_delta', phantom_virtual_delta))
@@ -3519,13 +3488,13 @@ class TradingBot:
                             sig = detect_signal_mean_reversion(df.copy(), settings, sym)
                             selected_strategy = "mean_reversion"
                         else:
-                            sig = get_pullback_signals(df.copy(), settings, sym)
-                            selected_strategy = "pullback"
+                            sig = detect_trend_signal(df.copy(), trend_settings, sym)
+                            selected_strategy = "trend_breakout"
 
                     else:
-                        # Default pullback strategy
-                        sig = get_pullback_signals(df.copy(), settings, sym)
-                        selected_strategy = "pullback"
+                        # Default trend strategy
+                        sig = detect_trend_signal(df.copy(), trend_settings, sym)
+                        selected_strategy = "trend_breakout"
                     # --- END PARALLEL STRATEGY ROUTING ---
 
                     if sig is None:
@@ -3680,10 +3649,10 @@ class TradingBot:
                                     continue
 
                             else:
-                                # Use pullback features (original system)
-                                from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState
+                                # Use trend features (fallback system)
+                                from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState  # legacy import; not used if enhanced
 
-                                logger.info(f"🧠 [{sym}] PULLBACK ML ANALYSIS:")
+                                logger.info(f"🧠 [{sym}] TREND ML ANALYSIS:")
 
                                 # Get or create state for this symbol
                                 if sym not in ml_breakout_states:
@@ -3696,60 +3665,63 @@ class TradingBot:
                                 else:
                                     retracement = sig.entry
 
-                                # Calculate basic features (22 features for original ML)
-                                basic_features = calculate_ml_features(df, state, sig.side, retracement)
-                                logger.info(f"   📊 Core Features: {len(basic_features)} pullback features calculated")
-
-                                # Add entry price for MTF feature calculation
-                                basic_features['entry_price'] = sig.entry
-
-                                # Add symbol cluster features with enhanced confidence scores
+                                # Calculate Trend features (fallback)
+                                cl = df['close']; price = float(cl.iloc[-1])
+                                ys = cl.tail(20).values if len(cl) >= 20 else cl.values
                                 try:
-                                    from cluster_feature_enhancer import enhance_ml_features
-                                    basic_features = enhance_ml_features(basic_features, sym)
-                                    logger.info(f"   🎯 Enhanced with cluster features for symbol group analysis")
-                                except Exception as e:
-                                    logger.debug(f"[{sym}] Enhanced clustering not available: {e}")
-                                    # Fallback to simple clustering
-                                    from symbol_clustering import load_symbol_clusters
-                                    symbol_clusters = load_symbol_clusters()
-                                    cluster_id = symbol_clusters.get(sym, 3)
-                                    basic_features['symbol_cluster'] = cluster_id
-                                    logger.info(f"   🏷️ Basic cluster ID: {cluster_id}")
+                                    slope = np.polyfit(np.arange(len(ys)), ys, 1)[0]
+                                except Exception:
+                                    slope = 0.0
+                                trend_slope_pct = float((slope / price) * 100.0) if price else 0.0
+                                ema20 = cl.ewm(span=20, adjust=False).mean().iloc[-1]
+                                ema50 = cl.ewm(span=50, adjust=False).mean().iloc[-1] if len(cl) >= 50 else ema20
+                                ema_stack_score = 100.0 if (price > ema20 > ema50 or price < ema20 < ema50) else 50.0 if (ema20 != ema50) else 0.0
+                                rng_today = float(df['high'].iloc[-1] - df['low'].iloc[-1])
+                                med_range = float((df['high'] - df['low']).rolling(20).median().iloc[-1]) if len(df) >= 20 else rng_today
+                                range_expansion = float(rng_today / max(1e-9, med_range))
+                                prev = cl.shift(); trarr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                                atr = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
+                                atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
+                                close_vs_ema20_pct = float(((price - ema20) / max(1e-9, ema20)) * 100.0) if ema20 else 0.0
+                                basic_features = {
+                                    'trend_slope_pct': trend_slope_pct,
+                                    'ema_stack_score': ema_stack_score,
+                                    'atr_pct': atr_pct,
+                                    'range_expansion': range_expansion,
+                                    'breakout_dist_atr': float(getattr(sig, 'meta', {}).get('breakout_dist_atr', 0.0) if getattr(sig, 'meta', None) else 0.0),
+                                    'close_vs_ema20_pct': close_vs_ema20_pct,
+                                    'bb_width_pct': 0.0,
+                                    'session': 'us',
+                                    'symbol_cluster': 3,
+                                    'volatility_regime': getattr(regime_analysis, 'volatility_level', 'normal')
+                                }
 
-                                # Score using pullback ML system
-                                # Pre-ML guardrails for Pullback to boost live WR (phantom will still track rejects)
+                                # Score using Trend ML system
+                                # Pre-ML guardrails for Trend to boost live WR (phantom will still track rejects)
                                 pb_policy_reason = None
                                 try:
-                                    ts = float(basic_features.get('trend_strength', 0))
-                                    htf = float(basic_features.get('higher_tf_alignment', 50))
-                                    atrp = float(basic_features.get('atr_percentile', 50))
-                                    cra = float(basic_features.get('candle_range_atr', 0))
-                                    srs = float(basic_features.get('support_resistance_strength', 0))
-                                    pbd = float(basic_features.get('pullback_depth', 0))
-
-                                    if ts < 60:
-                                        pb_policy_reason = f"Weak trend_strength {ts:.1f}"
-                                    elif htf < 75:
-                                        pb_policy_reason = f"Poor HTF alignment {htf:.1f}"
-                                    elif not (35 <= atrp <= 80):
-                                        pb_policy_reason = f"ATR percentile out of band {atrp:.1f}"
-                                    elif cra > 1.5:
-                                        pb_policy_reason = f"Large candle_range_atr {cra:.2f}"
-                                    elif srs < 2:
-                                        pb_policy_reason = f"Weak S/R strength {srs:.0f}"
-                                    elif not (30 <= pbd <= 65):
-                                        pb_policy_reason = f"Pullback depth {pbd:.1f}% outside [30,65]"
+                                    slope_min = 3.0
+                                    ema_min = 40.0
+                                    br_min = 0.10
+                                    vol_reg = getattr(regime_analysis, 'volatility_level', 'normal')
+                                    if abs(basic_features.get('trend_slope_pct', 0.0)) < slope_min:
+                                        pb_policy_reason = f"Weak slope {basic_features.get('trend_slope_pct',0.0):.1f}% < {slope_min}%"
+                                    elif basic_features.get('ema_stack_score', 0.0) < ema_min:
+                                        pb_policy_reason = f"Weak EMA stack {basic_features.get('ema_stack_score',0.0):.0f} < {ema_min}"
+                                    elif basic_features.get('breakout_dist_atr', 0.0) < br_min:
+                                        pb_policy_reason = f"Breakout too small {basic_features.get('breakout_dist_atr',0.0):.2f} ATR < {br_min}"
+                                    elif vol_reg == 'high' and getattr((cfg.get('trend', {}) or {}).get('explore', {}), 'allow_volatility_high', True) is False:
+                                        pb_policy_reason = "High volatility disallowed"
                                 except Exception:
                                     pb_policy_reason = None
 
                                 if pb_policy_reason is not None:
-                                    logger.info(f"   ⛔ Policy Reject (Pullback): {pb_policy_reason}")
+                                    logger.info(f"   ⛔ Policy Reject (Trend): {pb_policy_reason}")
                                     # Record as phantom so learning continues
                                     try:
                                         if self.tg:
                                             await self.tg.send_message(
-                                                f"🚫 *Policy Reject* {sym} {sig.side.upper()} (Pullback)\n{pb_policy_reason} — tracking via phantom"
+                                                f"🚫 *Policy Reject* {sym} {sig.side.upper()} (Trend)\n{pb_policy_reason} — tracking via phantom"
                                             )
                                     except Exception:
                                         pass
@@ -3821,7 +3793,7 @@ class TradingBot:
                                     logger.info(f"   💡 Rejection reason: {ml_reason}")
 
                                 # Record in phantom tracker BEFORE continue (for both executed and rejected)
-                                logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Pullback phantom tracker recording (executed={should_take_trade})")
+                                logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed={should_take_trade})")
                                 selected_phantom_tracker.record_signal(
                                     symbol=sym,
                                     signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
@@ -3840,7 +3812,7 @@ class TradingBot:
                                         pass
                                     if self.tg:
                                         reject_msg = (
-                                            f"🤖 *ML Reject* {sym} {sig.side.upper()} (Pullback)\n"
+                                            f"🤖 *ML Reject* {sym} {sig.side.upper()} (Trend)\n"
                                             f"Score {ml_score:.1f} < {threshold:.0f}. Tracking via phantom."
                                         )
                                         await self.tg.send_message(reject_msg)
@@ -3920,7 +3892,7 @@ class TradingBot:
                                         sym, sig.__dict__, float(ml_score or 0.0), False, {}, enhanced_features if 'enhanced_features' in locals() else {}
                                     )
                                 elif selected_phantom_tracker:
-                                    # Pullback phantom record
+                                    # Trend phantom record
                                     selected_phantom_tracker.record_signal(
                                         symbol=sym,
                                         signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
@@ -4150,7 +4122,7 @@ class TradingBot:
                     # Record shadow simulation (phantom-only) for ML-informed adjustments
                     try:
                         base_features = {}
-                        if selected_strategy == 'pullback':
+                        if selected_strategy == 'trend_breakout':
                             base_features = basic_features if 'basic_features' in locals() else {}
                         elif selected_strategy == 'enhanced_mr':
                             base_features = enhanced_features if 'enhanced_features' in locals() else {}

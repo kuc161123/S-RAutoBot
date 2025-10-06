@@ -7,7 +7,7 @@ Once complete, the live bot's existing retraining system takes over for incremen
 
 This trainer:
 1. Runs in a separate process to avoid interfering with live trading
-2. Backtests both Pullback and Enhanced Mean Reversion strategies
+2. Backtests both Trend (Breakout) and Enhanced Mean Reversion strategies
 3. Trains initial ML models using historical data
 4. Reports progress via Telegram (if available)
 5. Exits once training is complete
@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 
 # Import existing components
 from enhanced_backtester import EnhancedBacktester  # Use enhanced backtester for accurate ML features
-from strategy_pullback_ml_learning import get_ml_learning_signals, MinimalSettings as PullbackSettings, reset_symbol_state as reset_pullback_state
+from strategy_trend_breakout import detect_signal as detect_trend_signal, TrendSettings
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +62,8 @@ class BackgroundInitialTrainer:
             return True  # Safe default - run training
         
         try:
-            # Check if pullback ML model exists
-            pullback_model = self.redis_client.get('ml_scorer:model_data')
+            # Check if Trend ML model exists
+            pullback_model = self.redis_client.get('tml:model')
             
             # Check if enhanced MR model exists  
             mr_model = self.redis_client.get('enhanced_mr:model_data')
@@ -94,7 +94,7 @@ class BackgroundInitialTrainer:
         await self._notify_telegram(
             "🚀 *Starting Background ML Training*\n\n"
             "Training initial models from historical data:\n"
-            "• Pullback Strategy\n"
+            "• Trend Breakout Strategy\n"
             "• Enhanced Mean Reversion Strategy\n\n"
             "This will run in background while live trading continues.\n"
             "Use /training_status to check progress."
@@ -161,32 +161,32 @@ class BackgroundInitialTrainer:
             
             logger.info(f"📊 Will train on {total_symbols} symbols")
             
-            # Phase 1: Pullback Strategy Training
-            logger.info("\n🎯 Phase 1: Pullback Strategy Training")
-            update_progress("Initializing Pullback Backtester", "", 0, total_symbols)
+            # Phase 1: Trend Strategy Training
+            logger.info("\n🎯 Phase 1: Trend Strategy Training")
+            update_progress("Initializing Trend Backtester", "", 0, total_symbols)
             
             pullback_backtester = EnhancedBacktester(
-                get_ml_learning_signals, 
-                PullbackSettings(), 
-                reset_state_func=reset_pullback_state,
-                strategy_type="pullback"
+                detect_trend_signal, 
+                TrendSettings(), 
+                reset_state_func=None,
+                strategy_type="trend"
             )
             
-            all_pullback_data = []
+            all_trend_data = []
             for i, symbol in enumerate(symbols):
-                update_progress("Backtesting Pullback", symbol, i+1, total_symbols)
+                update_progress("Backtesting Trend", symbol, i+1, total_symbols)
                 try:
                     results = pullback_backtester.run(symbol)
-                    all_pullback_data.extend(results)
+                    all_trend_data.extend(results)
                     logger.info(f"  ✅ {symbol}: {len(results)} signals")
                 except Exception as e:
                     logger.error(f"  ❌ {symbol}: {e}")
             
-            logger.info(f"📈 Pullback backtesting complete: {len(all_pullback_data)} total signals")
+            logger.info(f"📈 Trend backtesting complete: {len(all_trend_data)} total signals")
             
-            # Train pullback model
-            update_progress("Training Pullback Model", "", total_symbols, total_symbols)
-            self._train_pullback_model(all_pullback_data)
+            # Train Trend model
+            update_progress("Training Trend Model", "", total_symbols, total_symbols)
+            self._train_trend_model(all_trend_data)
             
             # Phase 2: Mean Reversion Strategy Training 
             logger.info("\n🎯 Phase 2: Mean Reversion Strategy Training")
@@ -225,7 +225,7 @@ class BackgroundInitialTrainer:
                 'stage': 'completed',
                 'timestamp': datetime.now().isoformat(),
                 'status': 'completed',
-                'pullback_signals': len(all_pullback_data),
+                'trend_signals': len(all_trend_data),
                 'mr_signals': len(all_mr_data),
                 'total_symbols': total_symbols
             }
@@ -237,7 +237,7 @@ class BackgroundInitialTrainer:
                     pass
             
             logger.info("🎉 Background ML Training Complete!")
-            logger.info(f"   📊 Pullback signals: {len(all_pullback_data)}")
+            logger.info(f"   📊 Trend signals: {len(all_trend_data)}")
             logger.info(f"   📊 MR signals: {len(all_mr_data)}")
             logger.info("   ✅ Models trained and saved to Redis")
             logger.info("   🔄 Live bot will now handle incremental retraining")
@@ -259,33 +259,37 @@ class BackgroundInitialTrainer:
                 except:
                     pass
     
-    def _train_pullback_model(self, training_data: List[Dict]):
-        """Train pullback ML model"""
+    def _train_trend_model(self, training_data: List[Dict]):
+        """Train Trend ML model"""
         if not training_data:
-            logger.warning("No training data for pullback model")
+            logger.warning("No training data for Trend model")
             return
         
-        logger.info(f"🧠 Training Pullback ML model on {len(training_data)} signals...")
+        logger.info(f"🧠 Training Trend ML model on {len(training_data)} signals...")
         
         try:
-            from ml_signal_scorer_immediate import get_immediate_scorer
-            
-            scorer = get_immediate_scorer(enabled=True)
-            
-            # Load data for training
-            scorer.memory_storage = {'trades': training_data, 'phantoms': []}
-            scorer.completed_trades = len(training_data)
-            
-            # Train model
-            success = scorer.startup_retrain()
-            
-            if success and scorer.is_ml_ready:
-                logger.info("✅ Pullback ML model trained successfully")
+            from ml_scorer_trend import get_trend_scorer
+            scorer = get_trend_scorer(enabled=True)
+            # Feed data into scorer's training store (Redis-backed)
+            for rec in training_data:
+                sig = {
+                    'features': rec.get('features', {}),
+                    'was_executed': True,
+                }
+                outcome = 'win' if int(rec.get('outcome', 0)) == 1 else 'loss'
+                scorer.record_outcome(sig, outcome, float(rec.get('features', {}).get('pnl_percent', 0.0) if isinstance(rec.get('features'), dict) else 0.0))
+            # Trigger retrain
+            ok = False
+            try:
+                ok = bool(scorer._retrain())
+            except Exception:
+                ok = False
+            if ok and scorer.is_ml_ready:
+                logger.info("✅ Trend ML model trained successfully")
             else:
-                logger.error("❌ Pullback ML model training failed")
-                
+                logger.error("❌ Trend ML model training failed")
         except Exception as e:
-            logger.error(f"Error training pullback model: {e}")
+            logger.error(f"Error training Trend model: {e}")
     
     def _train_enhanced_mr_model(self, training_data: List[Dict]):
         """Train Enhanced MR ML model"""
@@ -370,7 +374,7 @@ class BackgroundInitialTrainer:
                 
                 # Send update if significant progress
                 if stage != last_stage or (symbol and symbol != last_symbol):
-                    if stage in ['Backtesting Pullback', 'Backtesting Enhanced MR', 'Backtesting Mean Reversion']:
+                    if stage in ['Backtesting Trend', 'Backtesting Enhanced MR', 'Backtesting Mean Reversion']:
                         if progress % 20 == 0 or progress == total:  # Update every 20 symbols or at completion
                             await self._notify_telegram(
                                 f"📊 *Training Progress*\n\n"
@@ -378,7 +382,7 @@ class BackgroundInitialTrainer:
                                 f"Progress: {progress}/{total} symbols\n"
                                 f"Current: {symbol}"
                             )
-                    elif stage in ['Training Pullback Model', 'Training Enhanced MR Model', 'Training MR Model']:
+                    elif stage in ['Training Trend Model', 'Training Enhanced MR Model', 'Training MR Model']:
                         await self._notify_telegram(f"🧠 *{stage}*\nAnalyzing signals and building ML models...")
                     
                     last_stage = stage
@@ -388,7 +392,7 @@ class BackgroundInitialTrainer:
                 if status == 'completed':
                     await self._notify_telegram(
                         "🎉 *Background ML Training Complete!*\n\n"
-                        f"✅ Pullback signals: {progress_data.get('pullback_signals', 0)}\n"
+                        f"✅ Trend signals: {progress_data.get('trend_signals', 0)}\n"
                         f"✅ MR signals: {progress_data.get('mr_signals', 0)}\n"
                         f"✅ Total symbols: {progress_data.get('total_symbols', 0)}\n\n"
                         "🔄 Live bot will now handle automatic retraining as new trades accumulate.\n"

@@ -1,6 +1,6 @@
 """
 Multi-Timeframe Support/Resistance Detection
-Finds major S/R levels from higher timeframes for better pullback entries
+Finds major S/R levels from higher timeframes for better trend/MR entries
 """
 import pandas as pd
 import numpy as np

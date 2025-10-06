@@ -68,7 +68,6 @@ trade:
   sl_buf_atr: 1.5
   rr: 2.5
   both_hit_rule: SL_FIRST
-  use_pullback_strategy: true
   confirmation_candles: 2
   use_mtf_sr: true
   mtf_weight: 2.0
@@ -88,9 +87,6 @@ trade:
 
 # Strategy-specific regime thresholds and hysteresis
 strategy_regimes:
-  pb:
-    threshold: 55    # min score for Pullback to be considered (lowered for more flow)
-    min_hold: 3      # candles to keep route unless strongly outscored
   mr:
     threshold: 65    # min score for Mean Reversion to be considered (lowered for more flow)
     min_hold: 3
@@ -106,6 +102,15 @@ trend:
   sl_atr_mult: 1.5
   rr: 2.5
   use_ema_stack: true
+  explore:
+    enabled: true
+    slope_min: 3.0
+    ema_stack_min: 50.0
+    breakout_dist_atr_min: 0.15
+    allow_volatility_high: true
+    timeout_hours: 36
+    enable_virtual_snapshots: true
+    snapshots_delta: 5
 
 ml:
   fail_open_on_error: false   # if true, allow execution on ML errors; else skip and record phantom
@@ -114,18 +119,7 @@ ml:
 exploration:
   enabled: true
 
-# Pullback exploration (phantom-only loosening; execution remains strict)
-pullback:
-  explore:
-    enabled: true
-    # Relaxed, phantom-only gates to increase sample flow (execution unchanged)
-    trend_strength_min: 38         # was 50 — allow moderate trends
-    confirmation_strength_min: 0.05 # loosen to allow more confirmations
-    mtf_level_strength_min: 0.20    # loosen to accept weaker MTF S/R
-    allow_volatility_high: true
-    timeout_hours: 36              # auto-close phantom after 36h for learning
-    enable_virtual_snapshots: true
-    snapshots_delta: 5
+# (Pullback exploration removed)
 
 # Mean Reversion exploration (phantom-only loosening; execution remains strict)
 mr:
@@ -158,12 +152,12 @@ phantom:
   offhours_cap: 30       # was 20 — higher off-hours cap
   # Per-strategy hourly per-symbol budgets (more aggressive)
   hourly_symbol_budget:
-    pullback: 3
+    trend: 3
     mr: 3
     scalp: 4
   # Per-strategy daily caps (UTC) — isolation across strategies
   caps:
-    pullback:
+    trend:
       none: 180
       cluster3: 45
       offhours: 30
@@ -183,15 +177,15 @@ phantom:
 phantom_flow:
   enabled: true
   daily_target:
-    pullback: 80
+    trend: 80
     mr: 80
     scalp: 80
   smoothing_hours: 2
   relax_limits:
-    pullback:
-      trend: 15.0           # reduce trend_min by up to 15 points
-      confirm: 0.20         # reduce confirmation_min by up to 0.20
-      mtf: 0.40             # reduce mtf_min by up to 0.40
+    trend:
+      slope: 3.0            # reduce slope_min by up to 3 pct-points
+      ema_stack: 30.0       # reduce ema_stack_min by up to 30 points
+      breakout: 0.20        # reduce breakout_dist_atr_min by up to 0.20 ATR
     mr:
       rc: 0.30              # reduce rc_min by up to 0.30
       touches: 3            # reduce touches_min by up to 3
@@ -212,7 +206,7 @@ phantom_flow:
       boost_slope: 0.02
       max_boost: 0.40
     min_relax:
-      pullback: 0.60
+      trend: 0.60
       mr: 0.80
       scalp: 0.60
     wr_guard:
@@ -226,10 +220,10 @@ strategy_isolation:
   enabled: true               # isolate analysis/learning per strategy and arbitrate execution
   execution_policy: arbitrate # pick best candidate when multiple strategies fire on same symbol
   min_quality_guards:
-    pullback:
-      trend_min: 30.0
-      confirm_min: 0.05
-      mtf_min: 0.20
+    trend:
+      slope_min: 3.0
+      ema_stack_min: 40.0
+      breakout_min: 0.10
     mr:
       rc_min: 0.45
       touches_min: 3

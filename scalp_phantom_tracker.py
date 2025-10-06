@@ -128,7 +128,7 @@ class ScalpPhantomTracker:
             try:
                 from datetime import datetime as _dt
                 day = _dt.utcnow().strftime('%Y%m%d')
-                day_map = self._blocked_counts.setdefault(day, {'total': 0, 'pullback': 0, 'mr': 0, 'scalp': 0})
+                day_map = self._blocked_counts.setdefault(day, {'total': 0, 'trend': 0, 'mr': 0, 'scalp': 0})
                 day_map['total'] += 1
                 day_map['scalp'] = day_map.get('scalp', 0) + 1
             except Exception:
@@ -157,7 +157,7 @@ class ScalpPhantomTracker:
         from datetime import datetime as _dt
         if day is None:
             day = _dt.utcnow().strftime('%Y%m%d')
-        return self._blocked_counts.get(day, {'total': 0, 'pullback': 0, 'mr': 0, 'scalp': 0})
+        return self._blocked_counts.get(day, {'total': 0, 'trend': 0, 'mr': 0, 'scalp': 0})
 
     def update_scalp_phantom_prices(self, symbol: str, current_price: float, df: Optional[pd.DataFrame] = None):  # type: ignore
         if symbol not in self.active:

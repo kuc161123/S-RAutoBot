@@ -224,9 +224,14 @@ class TrendMLScorer:
 
     def get_retrain_info(self) -> Dict:
         data_len = 0
+        exec_count = 0
+        ph_count = 0
         if self.redis_client:
             try:
-                data_len = len(self._load_training_data())
+                data = self._load_training_data()
+                data_len = len(data)
+                exec_count = sum(1 for d in data if d.get('was_executed'))
+                ph_count = max(0, data_len - exec_count)
             except Exception:
                 pass
         next_at = self.last_train_count + self.RETRAIN_INTERVAL
@@ -235,6 +240,9 @@ class TrendMLScorer:
             'is_ml_ready': bool(self.is_ml_ready),
             'completed_trades': int(self.completed_trades),
             'total_records': int(data_len),
+            'total_combined': int(data_len),
+            'executed_count': int(exec_count),
+            'phantom_count': int(ph_count),
             'trades_until_next_retrain': int(left),
             'next_retrain_at': int(next_at),
             'can_train': data_len >= self.MIN_TRADES_FOR_ML

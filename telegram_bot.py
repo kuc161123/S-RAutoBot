@@ -251,8 +251,12 @@ class TGBot:
             lines.append(f"• Status: {ready}")
             try:
                 tstats = tr_scorer.get_retrain_info()
-                lines.append(f"• Records: {tstats.get('total_records',0)}")
+                total = tstats.get('total_records', 0)
+                exec_n = tstats.get('executed_count', 0)
+                ph_n = tstats.get('phantom_count', 0)
+                lines.append(f"• Trades (exec + phantom): {total}")
                 lines.append(f"• Next retrain in: {tstats.get('trades_until_next_retrain',0)} trades")
+                lines.append(f"• Executed: {exec_n} | Phantom: {ph_n}")
                 lines.append(f"• Threshold: {getattr(tr_scorer, 'min_score', 70):.0f}")
             except Exception:
                 pass

@@ -2456,6 +2456,8 @@ class TradingBot:
                                 except Exception:
                                     pass
                                 logger.info(f"[{sym}] 🧭 SOFT ROUTING: No strategy exceeded ML threshold — recorded phantoms, skipping execution")
+                                # Skip further processing for this symbol; no selected strategy/signal set
+                                continue
                             else:
                                 # Strategy isolation arbitration: pick chosen and proceed to execution
                                 try:
@@ -2902,6 +2904,8 @@ class TradingBot:
                                             pb_budget_map[sym] = pb_budget
                                 except Exception:
                                     pass
+                            # After phantom-only sampling, continue to next symbol
+                            continue
 
                             # Scalp phantom (Phase 0) — allow in low/normal/high volatility (block only extreme)
                             if use_scalp and SCALP_AVAILABLE and detect_scalp_signal is not None:

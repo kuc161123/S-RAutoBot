@@ -2770,6 +2770,26 @@ class TradingBot:
                                     atr = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
                                     atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
                                     close_vs_ema20_pct = float(((price - ema20) / max(1e-9, ema20)) * 100.0) if ema20 else 0.0
+                                    # Add HTF context (distances/strength) for ML features
+                                    htf_feats = {}
+                                    try:
+                                        from multi_timeframe_sr import mtf_sr
+                                        nearest = mtf_sr.get_nearest_levels(sym, price, above_count=1, below_count=1)
+                                        res_level = (nearest.get('resistance') or [None])[0]
+                                        sup_level = (nearest.get('support') or [None])[0]
+                                        htf_res_strength = mtf_sr.get_level_strength(sym, res_level) if res_level else 0.0
+                                        htf_sup_strength = mtf_sr.get_level_strength(sym, sup_level) if sup_level else 0.0
+                                        res_dist_atr = float(((res_level - price) / max(1e-9, atr))) if res_level else None
+                                        sup_dist_atr = float(((price - sup_level) / max(1e-9, atr))) if sup_level else None
+                                        htf_feats = {
+                                            'htf_res_dist_atr': float(res_dist_atr) if res_dist_atr is not None else None,
+                                            'htf_res_strength': float(htf_res_strength),
+                                            'htf_sup_dist_atr': float(sup_dist_atr) if sup_dist_atr is not None else None,
+                                            'htf_sup_strength': float(htf_sup_strength),
+                                        }
+                                    except Exception:
+                                        htf_feats = {}
+
                                     trend_features = {
                                         'trend_slope_pct': trend_slope_pct,
                                         'ema_stack_score': ema_stack_score,
@@ -2780,7 +2800,8 @@ class TradingBot:
                                         'bb_width_pct': 0.0,
                                         'session': 'us',
                                         'symbol_cluster': 3,
-                                        'volatility_regime': getattr(regime_analysis, 'volatility_level', 'normal')
+                                        'volatility_regime': getattr(regime_analysis, 'volatility_level', 'normal'),
+                                        **htf_feats,
                                     }
                                     tr_score, _ = tr_scorer.score_signal(soft_sig_tr.__dict__, trend_features)
                                     tr_thr = getattr(tr_scorer, 'min_score', 70)
@@ -3013,6 +3034,45 @@ class TradingBot:
                                 except Exception:
                                     trend_features = {}
 
+                                # HTF S/R context for breakout quality and ML features
+                                try:
+                                    htf_cfg = (cfg.get('trend', {}) or {}).get('htf', {}) if 'cfg' in locals() else {}
+                                    htf_enabled = bool(htf_cfg.get('enabled', True))
+                                except Exception:
+                                    htf_cfg = {}
+                                    htf_enabled = False
+                                htf_bonus_applied = False
+                                if htf_enabled:
+                                    try:
+                                        from multi_timeframe_sr import mtf_sr
+                                        nearest = mtf_sr.get_nearest_levels(sym, price, above_count=1, below_count=1)
+                                        res_level = (nearest.get('resistance') or [None])[0]
+                                        sup_level = (nearest.get('support') or [None])[0]
+                                        htf_res_strength = mtf_sr.get_level_strength(sym, res_level) if res_level else 0.0
+                                        htf_sup_strength = mtf_sr.get_level_strength(sym, sup_level) if sup_level else 0.0
+                                        # Distances in ATR units (non-negative)
+                                        htf_res_dist_atr = float(((res_level - price) / max(1e-9, atr))) if res_level else None
+                                        htf_sup_dist_atr = float(((price - sup_level) / max(1e-9, atr))) if sup_level else None
+                                        # Add to features for ML context
+                                        trend_features['htf_res_dist_atr'] = float(htf_res_dist_atr) if htf_res_dist_atr is not None else None
+                                        trend_features['htf_res_strength'] = float(htf_res_strength)
+                                        trend_features['htf_sup_dist_atr'] = float(htf_sup_dist_atr) if htf_sup_dist_atr is not None else None
+                                        trend_features['htf_sup_strength'] = float(htf_sup_strength)
+                                        # Post-breakout validation: threshold bonus if cleared strong HTF level
+                                        try:
+                                            strength_min = float(htf_cfg.get('strength_min', 3.0))
+                                            clear_buf = float(htf_cfg.get('clear_buffer_atr', 0.10))
+                                            if sig.side == 'long' and res_level and htf_res_strength >= strength_min:
+                                                if price > float(res_level) + clear_buf * float(atr):
+                                                    htf_bonus_applied = True
+                                            elif sig.side == 'short' and sup_level and htf_sup_strength >= strength_min:
+                                                if price < float(sup_level) - clear_buf * float(atr):
+                                                    htf_bonus_applied = True
+                                        except Exception:
+                                            htf_bonus_applied = False
+                                    except Exception:
+                                        pass
+
                                 # Score
                                 trend_scorer = get_trend_scorer() if 'get_trend_scorer' in globals() and get_trend_scorer is not None else None
                                 ml_score = 0.0; should_take_trade = True; ml_reason = 'Trend ML disabled'
@@ -3020,6 +3080,14 @@ class TradingBot:
                                     try:
                                         ml_score, ml_reason = trend_scorer.score_signal(sig.__dict__, trend_features)
                                         threshold = getattr(trend_scorer, 'min_score', 70)
+                                        # Apply HTF threshold bonus if level cleared
+                                        try:
+                                            if htf_enabled and htf_bonus_applied:
+                                                thr_bonus = float(htf_cfg.get('threshold_bonus', 3.0))
+                                                threshold = max(0.0, threshold - thr_bonus)
+                                                logger.info(f"   🎯 HTF cleared: lowering threshold by {thr_bonus:.1f} → {threshold:.1f}")
+                                        except Exception:
+                                            pass
                                         should_take_trade = ml_score >= threshold
                                         if should_take_trade:
                                             logger.info(f"   ✅ DECISION: EXECUTE TRADE - Trend ML {ml_score:.1f} ≥ {threshold}")
@@ -3029,6 +3097,28 @@ class TradingBot:
                                         logger.warning(f"Trend ML scoring error: {e}")
                                         should_take_trade = False
                                         ml_score = 0.0
+
+                                # Breakout quality filter: avoid breaking into nearby opposing HTF level
+                                try:
+                                    if htf_enabled:
+                                        min_dist = float(htf_cfg.get('min_dist_atr', 0.25))
+                                        strength_min = float(htf_cfg.get('strength_min', 3.0))
+                                        # Default distances if not computed
+                                        if sig.side == 'long':
+                                            # resistance check
+                                            dist = trend_features.get('htf_res_dist_atr')
+                                            strn = trend_features.get('htf_res_strength', 0.0)
+                                            if (dist is not None) and (dist >= 0) and (strn >= strength_min) and (dist < min_dist):
+                                                logger.info(f"   ⛔ HTF Filter: resistance too close ({dist:.2f} ATR, strength {strn:.1f})")
+                                                should_take_trade = False
+                                        else:
+                                            dist = trend_features.get('htf_sup_dist_atr')
+                                            strn = trend_features.get('htf_sup_strength', 0.0)
+                                            if (dist is not None) and (dist >= 0) and (strn >= strength_min) and (dist < min_dist):
+                                                logger.info(f"   ⛔ HTF Filter: support too close ({dist:.2f} ATR, strength {strn:.1f})")
+                                                should_take_trade = False
+                                except Exception:
+                                    pass
                                 # Record phantom for trend before continue if not executing
                                 logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed={should_take_trade})")
                                 phantom_tracker.record_signal(

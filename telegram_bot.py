@@ -234,10 +234,18 @@ class TGBot:
             sc_scorer = get_scalp_scorer()
             lines.append("")
             lines.append("🩳 *Scalp ML*")
-            lines.append(f"• Samples: {getattr(sc_scorer, 'completed_trades', 0)}")
             ready = '✅ Ready' if getattr(sc_scorer, 'is_ml_ready', False) else '⏳ Training'
             lines.append(f"• Status: {ready}")
-            lines.append(f"• Threshold: {getattr(sc_scorer, 'min_score', 75):.0f}")
+            # Stats and retrain info
+            try:
+                s_stats = sc_scorer.get_stats()
+                s_ret = sc_scorer.get_retrain_info()
+                lines.append(f"• Records: {s_stats.get('total_records',0)} | Trainable: {s_ret.get('trainable_size',0)}")
+                lines.append(f"• Next retrain in: {s_ret.get('trades_until_next_retrain',0)} trades")
+                lines.append(f"• Threshold: {getattr(sc_scorer, 'min_score', 75):.0f}")
+            except Exception:
+                lines.append(f"• Samples: {getattr(sc_scorer, 'completed_trades', 0)}")
+                lines.append(f"• Threshold: {getattr(sc_scorer, 'min_score', 75):.0f}")
         except Exception as exc:
             logger.debug(f"Scalp ML not available: {exc}")
 
@@ -2561,17 +2569,50 @@ class TGBot:
                 except Exception:
                     response_text += "🧠 *Enhanced MR (Ensemble) Insights*\n  ❌ Not available\n\n"
 
-            # Scalp insights (status + placeholder until ML is trained)
+            # Scalp insights (status + patterns when available)
             if scalp_scorer:
                 try:
                     response_text += "🩳 *Scalp ML Insights*\n"
-                    response_text += f"• Status: {'✅ Ready' if getattr(scalp_scorer,'is_ml_ready',False) else '⏳ Training'}\n"
-                    response_text += f"• Samples: {getattr(scalp_scorer,'completed_trades',0)}\n"
-                    if getattr(scalp_scorer,'is_ml_ready',False):
-                        response_text += f"• Threshold: {getattr(scalp_scorer,'min_score',75)}\n"
-                        response_text += "_Feature importance and pattern mining will appear as scalp transitions to execution._\n\n"
-                    else:
-                        response_text += "_Patterns will appear once Scalp ML has sufficient samples._\n\n"
+                    ready = getattr(scalp_scorer,'is_ml_ready',False)
+                    response_text += f"• Status: {'✅ Ready' if ready else '⏳ Training'}\n"
+                    try:
+                        ri = scalp_scorer.get_retrain_info()
+                        response_text += f"• Records: {ri.get('total_records',0)} | Trainable: {ri.get('trainable_size',0)}\n"
+                        response_text += f"• Next retrain in: {ri.get('trades_until_next_retrain',0)} trades\n"
+                    except Exception:
+                        response_text += f"• Samples: {getattr(scalp_scorer,'completed_trades',0)}\n"
+                    response_text += f"• Threshold: {getattr(scalp_scorer,'min_score',75)}\n"
+
+                    # Patterns (when RF trained)
+                    sp = scalp_scorer.get_patterns() if ready else {}
+                    fi = (sp or {}).get('feature_importance', {})
+                    if fi:
+                        response_text += "\n  📊 *Feature Importance (Scalp)*\n"
+                        for i, (feat, imp) in enumerate(list(fi.items())[:8], 1):
+                            feat_name = feat.replace('_',' ').title()
+                            bar_len = max(1, min(10, int(float(imp)/10)))
+                            bar = '█'*bar_len + '░'*(10-bar_len)
+                            response_text += f"  {i}. {feat_name}\n     {bar} {float(imp):.1f}%\n"
+                    tp = (sp or {}).get('time_patterns', {})
+                    if tp:
+                        response_text += "\n  ⏰ *Time-Based (Scalp)*\n"
+                        if tp.get('best_hours'):
+                            response_text += "  🌟 *Best Hours*\n"
+                            for h, txt in list(tp['best_hours'].items())[:5]:
+                                response_text += f"  • {h}: {txt}\n"
+                        if tp.get('session_performance'):
+                            response_text += "  🌍 *Sessions*\n"
+                            for s, txt in tp['session_performance'].items():
+                                response_text += f"  • {s}: {txt}\n"
+                    mc = (sp or {}).get('market_conditions', {})
+                    if mc:
+                        response_text += "\n  🌡️ *Conditions (Scalp)*\n"
+                        for k, v in mc.items():
+                            title = k.replace('_',' ').title()
+                            response_text += f"  {title}:\n"
+                            for bk, txt in v.items():
+                                response_text += f"   • {bk}: {txt}\n"
+                    response_text += "\n"
                 except Exception:
                     response_text += "🩳 *Scalp ML Insights*\n  ❌ Not available\n\n"
 
@@ -3845,13 +3886,20 @@ class TGBot:
             losses = st.get('losses', 0)
             wr = st.get('wr', 0.0)
             # Scalp ML stats
-            ml_ready = False; thr = 75; samples = 0
+            ml_ready = False; thr = 75; samples = 0; nxt = None; trainable = None; total_rec = None
             try:
                 from ml_scorer_scalp import get_scalp_scorer
                 s = get_scalp_scorer()
                 ml_ready = bool(getattr(s, 'is_ml_ready', False))
                 thr = getattr(s, 'min_score', 75)
                 samples = getattr(s, 'completed_trades', 0)
+                try:
+                    ri = s.get_retrain_info()
+                    nxt = ri.get('trades_until_next_retrain')
+                    trainable = ri.get('trainable_size')
+                    total_rec = ri.get('total_records')
+                except Exception:
+                    nxt = None
             except Exception:
                 pass
             # Scalp shadow stats
@@ -3867,7 +3915,8 @@ class TGBot:
                 pass
             msg = [
                 "🩳 *Scalp QA*",
-                f"• ML: {'✅ Ready' if ml_ready else '⏳ Training'} | Samples: {samples} | Thr: {thr}",
+                f"• ML: {'✅ Ready' if ml_ready else '⏳ Training'} | Records: {total_rec if total_rec is not None else samples} | Trainable: {trainable if trainable is not None else '-'} | Thr: {thr}",
+                f"• Next retrain in: {nxt if nxt is not None else '-'} trades",
                 f"• Phantom recorded: {total} | WR: {wr:.1f}% (W/L {wins}/{losses})",
                 f"• Shadow (ML-based): {int(sh_total)} | WR: {sh_wr:.1f}% (W/L {sh_w}/{sh_l})",
                 "_Scalp runs phantom-only; shadow sim reflects ML decision quality_"

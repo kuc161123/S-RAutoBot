@@ -2080,6 +2080,14 @@ class TradingBot:
                                     pass
                                 if fed > 0:
                                     logger.info(f"🩳 Scalp ML backfill: fed {fed} phantom outcomes into ML store")
+                                # Attempt a startup retrain after backfill if trainable
+                                try:
+                                    ri = s_scorer.get_retrain_info()
+                                    if ri.get('trainable_size', 0) >= getattr(s_scorer, 'MIN_TRADES_FOR_ML', 50):
+                                        ok = s_scorer.startup_retrain()
+                                        logger.info(f"🩳 Scalp ML startup retrain attempted: {'✅ success' if ok else '⚠️ skipped'}")
+                                except Exception:
+                                    pass
                         except Exception as e:
                             logger.debug(f"Scalp ML backfill error: {e}")
                 except Exception as e:
@@ -2302,9 +2310,15 @@ class TradingBot:
                             if SCALP_AVAILABLE and get_scalp_scorer is not None:
                                 try:
                                     sc_scorer = get_scalp_scorer()
+                                    info = {}
+                                    try:
+                                        info = sc_scorer.get_retrain_info()
+                                    except Exception:
+                                        info = {}
+                                    nxt = info.get('trades_until_next_retrain', 'N/A')
                                     logger.info(
-                                        f"🩳 Scalp ML: {sc_scorer.completed_trades} samples, threshold: {sc_scorer.min_score:.0f}, "
-                                        f"ready: {'yes' if sc_scorer.is_ml_ready else 'no'}"
+                                        f"🩳 Scalp ML: {getattr(sc_scorer,'completed_trades',0)} samples, threshold: {sc_scorer.min_score:.0f}, "
+                                        f"ready: {'yes' if sc_scorer.is_ml_ready else 'no'}, next retrain in: {nxt} trades"
                                     )
                                 except Exception:
                                     pass

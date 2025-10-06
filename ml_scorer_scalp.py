@@ -23,6 +23,9 @@ class ScalpMLScorer:
     MIN_TRADES_FOR_ML = 50
     RETRAIN_INTERVAL = 50
     INITIAL_THRESHOLD = 75
+    # Allow phantom-only bootstrap when there are no executed scalp trades yet
+    PHANTOM_BOOTSTRAP_MIN = 100  # train from phantom-only once we have this many records
+    PHANTOM_BOOTSTRAP_MAX = 500  # cap bootstrap training set size to avoid bloat
 
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
@@ -142,9 +145,17 @@ class ScalpMLScorer:
                 logger.error(f"Scalp record outcome error: {e}")
         # Auto-retrain when enough new trades have accumulated
         try:
-            data_len = len(self._load_training_data())
-            if data_len >= self.MIN_TRADES_FOR_ML and (data_len - self.last_train_count) >= self.RETRAIN_INTERVAL:
-                logger.info(f"Scalp ML retrain trigger: {data_len - self.last_train_count} new trades")
+            data = self._load_training_data()
+            # Estimate trainable set size under current policy
+            exec_count = sum(1 for d in data if d.get('was_executed'))
+            phantom_count = len(data) - exec_count
+            if exec_count == 0 and len(data) >= self.PHANTOM_BOOTSTRAP_MIN:
+                trainable = min(len(data), self.PHANTOM_BOOTSTRAP_MAX)
+            else:
+                trainable = exec_count + min(int(exec_count * 1.5), phantom_count)
+
+            if trainable >= self.MIN_TRADES_FOR_ML and (trainable - self.last_train_count) >= self.RETRAIN_INTERVAL:
+                logger.info(f"Scalp ML retrain trigger: {trainable - self.last_train_count} new trades (trainable={trainable})")
                 self._retrain()
         except Exception as e:
             logger.debug(f"Scalp auto-retrain check failed: {e}")
@@ -172,10 +183,20 @@ class ScalpMLScorer:
         exec_count = sum(1 for d in data if d.get('was_executed'))
         ph = [d for d in data if not d.get('was_executed')]
         ex = [d for d in data if d.get('was_executed')]
-        max_ph = int(max(1, exec_count) * 1.5)
-        if len(ph) > max_ph:
-            ph = ph[-max_ph:]
-        mix = ex + ph
+        # Training set selection with phantom bootstrap when no executed data
+        if exec_count == 0:
+            # Use phantom-only bootstrap with a capped, recent subset
+            ph = ph[-min(len(ph), self.PHANTOM_BOOTSTRAP_MAX):]
+            mix = ph
+        else:
+            max_ph = int(exec_count * 1.5)
+            if len(ph) > max_ph:
+                ph = ph[-max_ph:]
+            mix = ex + ph
+
+        if len(mix) < self.MIN_TRADES_FOR_ML:
+            logger.info(f"Scalp ML trainable set below minimum after policy: {len(mix)}/{self.MIN_TRADES_FOR_ML} (exec={exec_count})")
+            return False
         for d in mix:
             f = d.get('features', {})
             X.append(self._prepare_features(f))
@@ -234,6 +255,157 @@ class ScalpMLScorer:
                 'is_ml_ready': bool(self.is_ml_ready),
                 'current_threshold': float(self.min_score)
             }
+
+    def get_retrain_info(self) -> Dict:
+        """Report readiness and trades until next retrain under current policy."""
+        try:
+            data = self._load_training_data()
+            exec_count = sum(1 for d in data if d.get('was_executed'))
+            phantom_count = len(data) - exec_count
+            if exec_count == 0 and len(data) >= self.PHANTOM_BOOTSTRAP_MIN:
+                trainable = min(len(data), self.PHANTOM_BOOTSTRAP_MAX)
+            else:
+                trainable = exec_count + min(int(exec_count * 1.5), phantom_count)
+
+            info = {
+                'is_ml_ready': bool(self.is_ml_ready),
+                'completed_trades': int(self.completed_trades),
+                'total_records': int(len(data)),
+                'trainable_size': int(trainable),
+                'last_train_count': int(self.last_train_count),
+                'trades_until_next_retrain': 0,
+                'next_retrain_at': 0,
+                'can_train': False
+            }
+
+            if not self.is_ml_ready:
+                info['can_train'] = trainable >= self.MIN_TRADES_FOR_ML
+                info['trades_until_next_retrain'] = max(0, self.MIN_TRADES_FOR_ML - trainable)
+                info['next_retrain_at'] = self.MIN_TRADES_FOR_ML
+            else:
+                since_last = trainable - self.last_train_count
+                info['can_train'] = True
+                info['trades_until_next_retrain'] = max(0, self.RETRAIN_INTERVAL - max(0, since_last))
+                info['next_retrain_at'] = self.last_train_count + self.RETRAIN_INTERVAL
+            return info
+        except Exception:
+            return {
+                'is_ml_ready': bool(self.is_ml_ready),
+                'completed_trades': int(self.completed_trades),
+                'total_records': 0,
+                'trainable_size': 0,
+                'last_train_count': int(self.last_train_count),
+                'trades_until_next_retrain': 0,
+                'next_retrain_at': 0,
+                'can_train': False
+            }
+
+    def get_patterns(self) -> Dict:
+        """Basic scalp ML pattern mining: feature importances + simple time/condition patterns.
+        Returns a dict similar to other scorers.
+        """
+        out = {
+            'feature_importance': {},
+            'time_patterns': {},
+            'market_conditions': {},
+            'winning_patterns': [],
+            'losing_patterns': []
+        }
+        try:
+            # Feature importance from RF if available
+            rf = self.models.get('rf') if self.models else None
+            if rf and hasattr(rf, 'feature_importances_'):
+                names = [
+                    'atr_pct','bb_width_pct','impulse_ratio','ema_slope_fast','ema_slope_slow',
+                    'volume_ratio','upper_wick_ratio','lower_wick_ratio','vwap_dist_atr',
+                    'session','symbol_cluster','volatility_regime'
+                ]
+                imps = getattr(rf, 'feature_importances_', [])
+                if len(imps) > 0:
+                    if len(imps) != len(names):
+                        names = names[:len(imps)]
+                    pairs = list(zip(names, imps))
+                    pairs.sort(key=lambda x: x[1], reverse=True)
+                    for feat, imp in pairs[:10]:
+                        out['feature_importance'][feat] = round(float(imp) * 100.0, 1)
+
+            # Pull recent training data for simple patterns
+            data = self._load_training_data()[-500:]
+            if not data:
+                return out
+
+            from collections import defaultdict
+            by_hour = defaultdict(lambda: {'w':0,'n':0})
+            by_sess = defaultdict(lambda: {'w':0,'n':0})
+            vol_bk = defaultdict(lambda: {'w':0,'n':0})
+            vwap_bk = defaultdict(lambda: {'w':0,'n':0})
+            bbw_bk = defaultdict(lambda: {'w':0,'n':0})
+
+            def _out(rec):
+                o = rec.get('outcome', 0)
+                try:
+                    return int(o)
+                except Exception:
+                    return 1 if str(o).lower()=='win' else 0
+
+            for rec in data:
+                try:
+                    ts = rec.get('timestamp')
+                    from datetime import datetime as _dt
+                    hr = _dt.fromisoformat(str(ts).replace('Z','')).hour if ts else 0
+                except Exception:
+                    hr = 0
+                by_hour[hr]['n'] += 1
+                by_hour[hr]['w'] += _out(rec)
+                f = rec.get('features', {}) or {}
+                sess = f.get('session','off_hours')
+                by_sess[sess]['n'] += 1
+                by_sess[sess]['w'] += _out(rec)
+                # Buckets
+                vr = str(f.get('volatility_regime','normal'))
+                vol_bk[vr]['n'] += 1; vol_bk[vr]['w'] += _out(rec)
+                try:
+                    vda = float(f.get('vwap_dist_atr', 0))
+                except Exception:
+                    vda = 0.0
+                vwap_key = 'near(<=0.4)' if vda <= 0.4 else 'mid(0.4-0.8)' if vda <= 0.8 else 'far(>0.8)'
+                vwap_bk[vwap_key]['n'] += 1; vwap_bk[vwap_key]['w'] += _out(rec)
+                try:
+                    bbw = float(f.get('bb_width_pct', 0))
+                except Exception:
+                    bbw = 0.0
+                bbw_key = 'narrow(<=0.5)' if bbw <= 0.5 else 'normal(0.5-0.8)' if bbw <= 0.8 else 'wide(>0.8)'
+                bbw_bk[bbw_key]['n'] += 1; bbw_bk[bbw_key]['w'] += _out(rec)
+
+            def _wr_map(d):
+                m = {}
+                for k,v in d.items():
+                    n = v['n']; w = v['w']
+                    wr = (w/n*100.0) if n else 0.0
+                    m[str(k)] = f"WR {wr:.0f}% (N={n})"
+                return m
+
+            out['time_patterns'] = {
+                'best_hours': {str(h): f"WR {v['w']/v['n']*100:.0f}% (N={v['n']})" for h,v in sorted(by_hour.items(), key=lambda x: (x[1]['w']/x[1]['n']) if x[1]['n'] else 0, reverse=True)[:5] if v['n']>=3},
+                'worst_hours': {str(h): f"WR {v['w']/v['n']*100:.0f}% (N={v['n']})" for h,v in sorted(by_hour.items(), key=lambda x: (x[1]['w']/x[1]['n']) if x[1]['n'] else 0)[:5] if v['n']>=3},
+                'session_performance': _wr_map(by_sess)
+            }
+            out['market_conditions'] = {
+                'volatility_regime': _wr_map(vol_bk),
+                'vwap_dist_atr': _wr_map(vwap_bk),
+                'bb_width_pct': _wr_map(bbw_bk)
+            }
+
+            # Simple narrative
+            try:
+                top_sess = max(out['time_patterns']['session_performance'].items(), key=lambda x: float(x[1].split('%')[0].split()[-1])) if out['time_patterns'].get('session_performance') else None
+                if top_sess:
+                    out['winning_patterns'].append(f"Best session: {top_sess[0]} {top_sess[1]}")
+            except Exception:
+                pass
+            return out
+        except Exception:
+            return out
 
 
 _scalp_scorer = None

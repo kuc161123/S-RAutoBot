@@ -2379,7 +2379,7 @@ class TradingBot:
                                     if sym not in ml_breakout_states:
                                         ml_breakout_states[sym] = BreakoutState()
                                     state = ml_breakout_states[sym]
-                                    basic_features = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry)
+                                    basic_features = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry) or {}
                                     pb_score, _ = ml_scorer.score_signal({'side': soft_sig_pb.side, 'entry': soft_sig_pb.entry, 'sl': soft_sig_pb.sl, 'tp': soft_sig_pb.tp}, basic_features)
                                     pb_thr = getattr(ml_scorer, 'min_score', 75)
                                     pb_margin = pb_score - pb_thr
@@ -2420,7 +2420,7 @@ class TradingBot:
                                         if sym not in ml_breakout_states:
                                             ml_breakout_states[sym] = BreakoutState()
                                         state = ml_breakout_states[sym]
-                                        feats = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry)
+                                        feats = calculate_ml_features(df, state, soft_sig_pb.side, soft_sig_pb.entry) or {}
                                         phantom_tracker.record_signal(sym, {'side': soft_sig_pb.side, 'entry': soft_sig_pb.entry, 'sl': soft_sig_pb.sl, 'tp': soft_sig_pb.tp}, float(pb_score or 0.0), False, feats, 'pullback')
                                         try:
                                             if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
@@ -2544,7 +2544,7 @@ class TradingBot:
                                         if sym not in ml_breakout_states:
                                             ml_breakout_states[sym] = BreakoutState()
                                         state = ml_breakout_states[sym]
-                                        alt_feats = calculate_ml_features(df, state, alt_pb_sig.side, alt_pb_sig.entry)
+                                        alt_feats = calculate_ml_features(df, state, alt_pb_sig.side, alt_pb_sig.entry) or {}
                                         pb_score, _ = ml_scorer.score_signal({'side': alt_pb_sig.side, 'entry': alt_pb_sig.entry, 'sl': alt_pb_sig.sl, 'tp': alt_pb_sig.tp}, alt_feats)
                                         pb_thr = getattr(ml_scorer, 'min_score', 75)
                                         if pb_score >= pb_thr + 5:
@@ -2824,7 +2824,7 @@ class TradingBot:
                                             ml_breakout_states[sym] = BreakoutState()
                                         state = ml_breakout_states[sym]
                                         retracement = sig_pb.entry
-                                        feats = calculate_ml_features(df, state, sig_pb.side, retracement)
+                                        feats = calculate_ml_features(df, state, sig_pb.side, retracement) or {}
                                         feats['routing'] = 'none'
                                         # Exploration gate for Pullback
                                         meets_gate = True
@@ -2923,10 +2923,11 @@ class TradingBot:
 
                                         sc_sig = detect_scalp_signal(df_for_scalp.copy(), ScalpSettings(), sym)
                                         if sc_sig and _not_duplicate(sym, sc_sig):
+                                            sc_meta = getattr(sc_sig, 'meta', {}) or {}
                                             sc_feats = {
                                                 'routing': 'none',
-                                                'vwap_dist_atr': sc_sig.meta.get('dist_vwap_atr', 0),
-                                                'volume_ratio': sc_sig.meta.get('vol_ratio', 1),
+                                                'vwap_dist_atr': sc_meta.get('dist_vwap_atr', 0),
+                                                'volume_ratio': sc_meta.get('vol_ratio', 1),
                                                 'symbol_cluster': cluster_id,
                                                 'volatility_regime': regime_analysis.volatility_level
                                             }
@@ -3051,8 +3052,12 @@ class TradingBot:
                             # Different feature extraction based on strategy
                             if selected_strategy == "enhanced_mr":
                                 # Use enhanced MR features
-                                # Use basic MR features from signal meta  
-                                enhanced_features = sig.meta.get('mr_features', {})
+                                # Normalize meta and extract MR features safely
+                                try:
+                                    sig.meta = getattr(sig, 'meta', {}) or {}
+                                except Exception:
+                                    sig.meta = {}
+                                enhanced_features = (sig.meta or {}).get('mr_features', {}) or {}
                                 logger.info(f"🧠 [{sym}] ENHANCED MR ML ANALYSIS:")
                                 logger.info(f"   📊 Features: {len(enhanced_features)} basic MR features")
 

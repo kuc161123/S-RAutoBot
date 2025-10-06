@@ -526,6 +526,13 @@ class TradingBot:
                 df.loc[row.index[0]] = row.iloc[0]
                 df.sort_index(inplace=True)
                 self.frames_3m[sym] = df.tail(1000)
+                # Update shadow simulator with 3m close to improve shadow trade lifecycle
+                try:
+                    from shadow_trade_simulator import get_shadow_tracker
+                    last_close_3m = float(row.iloc[0]['close'])
+                    get_shadow_tracker().update_prices(sym, last_close_3m)
+                except Exception:
+                    pass
                 # Persist the latest 3m candle row
                 try:
                     self.storage.save_candles_3m(sym, row)

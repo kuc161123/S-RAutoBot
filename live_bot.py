@@ -2719,6 +2719,12 @@ class TradingBot:
                         independence_enabled = False
 
                     if independence_enabled and ENHANCED_ML_AVAILABLE:
+                        # Take a regime snapshot once for per-strategy filters
+                        try:
+                            regime_analysis = get_enhanced_market_regime(df, sym)
+                        except Exception:
+                            regime_analysis = None
+
                         # Helper to attempt execution for a given signal; returns True if executed
                         async def _try_execute(strategy_name: str, sig_obj, ml_score: float = 0.0, threshold: float = 75.0):
                             nonlocal book, bybit, sizer
@@ -2850,7 +2856,24 @@ class TradingBot:
                                         pass
                             except Exception:
                                 pass
-                            if mr_should:
+                            # MR regime filter: require ranging regime unless promotion_bypass is active
+                            try:
+                                mr_reg = (cfg.get('mr', {}) or {}).get('regime', {})
+                                mr_reg_enabled = bool(mr_reg.get('enabled', True))
+                                prim = getattr(regime_analysis, 'primary_regime', 'unknown') if regime_analysis else 'unknown'
+                                conf = float(getattr(regime_analysis, 'regime_confidence', 1.0)) if regime_analysis else 1.0
+                                persist = float(getattr(regime_analysis, 'regime_persistence', 1.0)) if regime_analysis else 1.0
+                                mr_conf_req = float(mr_reg.get('min_conf', 0.60))
+                                mr_persist_req = float(mr_reg.get('min_persist', 0.0))
+                                promotion_bypass = bool(mr_reg.get('promotion_bypass', True))
+                                mr_pass_regime = (not mr_reg_enabled) or ((prim == 'ranging') and (conf >= mr_conf_req) and (persist >= mr_persist_req))
+                                if not mr_pass_regime and not (promotion_bypass and recent_wr >= promote_wr):
+                                    if mr_phantom_tracker:
+                                        mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+                                    sig_mr_ind = None
+                            except Exception:
+                                pass
+                            if mr_should and sig_mr_ind is not None:
                                 executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
                                 if not executed and mr_phantom_tracker:
                                     # Record phantom when position exists or execution not possible
@@ -2908,13 +2931,42 @@ class TradingBot:
                                     tr_should = ml_score_tr >= thr_tr
                             except Exception:
                                 pass
-                            if tr_should:
-                                executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
-                                if not executed and phantom_tracker:
-                                    phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
-                            else:
+                            # Trend regime filter and exec bootstrapping (phantom-only until ready)
+                            try:
+                                tr_reg = (cfg.get('trend', {}) or {}).get('regime', {})
+                                tr_exec = (cfg.get('trend', {}) or {}).get('exec', {})
+                                tr_reg_enabled = bool(tr_reg.get('enabled', True))
+                                prim = getattr(regime_analysis, 'primary_regime', 'unknown') if regime_analysis else 'unknown'
+                                conf = float(getattr(regime_analysis, 'regime_confidence', 1.0)) if regime_analysis else 1.0
+                                vol = getattr(regime_analysis, 'volatility_level', 'normal') if regime_analysis else 'normal'
+                                tr_conf_req = float(tr_reg.get('min_conf', 0.60))
+                                tr_allowed_vol = set(tr_reg.get('allowed_vol', ['low','normal']))
+                                tr_pass_regime = (not tr_reg_enabled) or ((prim == 'trending') and (conf >= tr_conf_req) and (vol in tr_allowed_vol))
+                                # Exec readiness gates
+                                trend_exec_enabled = False
+                                if tr_exec.get('bootstrap_phantom_only', True):
+                                    if tr_scorer is not None and ((not tr_exec.get('require_ready', True)) or getattr(tr_scorer, 'is_ml_ready', False)):
+                                        info = tr_scorer.get_retrain_info() if hasattr(tr_scorer, 'get_retrain_info') else {}
+                                        total = int(info.get('total_records', 0))
+                                        if total >= int(tr_exec.get('min_train_records', 300)):
+                                            min_wr = float(tr_exec.get('min_recent_wr', 0.0))
+                                            trend_exec_enabled = (min_wr <= 0.0) or (((tr_scorer.get_stats() or {}).get('recent_win_rate', 0.0)) >= min_wr)
+                                else:
+                                    trend_exec_enabled = True
+                            except Exception:
+                                tr_pass_regime = True; trend_exec_enabled = False
+
+                            if (not tr_pass_regime) or (not trend_exec_enabled):
                                 if phantom_tracker:
                                     phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                            else:
+                                if tr_should:
+                                    executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
+                                    if not executed and phantom_tracker:
+                                        phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                                else:
+                                    if phantom_tracker:
+                                        phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
 
                         # Done with independence for this symbol
                         continue

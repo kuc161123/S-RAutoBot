@@ -98,6 +98,16 @@ trend:
   sl_atr_mult: 1.5
   rr: 2.5
   use_ema_stack: true
+  regime:
+    enabled: true
+    min_conf: 0.60
+    allowed_vol: [low, normal]
+    phantom_on_filter_fail: true
+  exec:
+    bootstrap_phantom_only: true
+    min_train_records: 300
+    require_ready: true
+    min_recent_wr: 0.0
   explore:
     enabled: true
     slope_min: 3.0
@@ -138,6 +148,12 @@ mr:
     min_total_trades: 50    # Require overall MR executed trades to be at least this
     daily_exec_cap: 20      # Max promotion-forced MR executions per UTC day
     block_extreme_vol: true # Do not promote in extreme volatility
+  regime:
+    enabled: true
+    min_conf: 0.60
+    min_persist: 0.60
+    phantom_on_filter_fail: true
+    promotion_bypass: true
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}

@@ -158,54 +158,58 @@ class ScalpPhantomTracker:
             return
         act_list = list(self.active.get(symbol, []))
         remaining: List[ScalpPhantomTrade] = []
-        # Track extremes
+        from datetime import datetime as _dt, timedelta as _td
         for ph in act_list:
-            if ph.side == 'long':
-                ph.max_favorable = max(ph.max_favorable or current_price, current_price)
-                ph.max_adverse = min(ph.max_adverse or current_price, current_price)
-                if current_price >= ph.take_profit:
-                    ph.exit_reason = 'tp'
-                    self._close(symbol, ph, current_price, 'win')
-                    continue
-                elif current_price <= ph.stop_loss:
-                    ph.exit_reason = 'sl'
-                    self._close(symbol, ph, current_price, 'loss')
-                    continue
-            else:
-                ph.max_favorable = min(ph.max_favorable or current_price, current_price)
-                ph.max_adverse = max(ph.max_adverse or current_price, current_price)
-                if current_price <= ph.take_profit:
-                    ph.exit_reason = 'tp'
-                    self._close(symbol, ph, current_price, 'win')
-                    continue
-                elif current_price >= ph.stop_loss:
-                    ph.exit_reason = 'sl'
-                    self._close(symbol, ph, current_price, 'loss')
-                    continue
+            try:
+                # Track extremes
+                if ph.side == 'long':
+                    ph.max_favorable = max(ph.max_favorable or current_price, current_price)
+                    ph.max_adverse = min(ph.max_adverse or current_price, current_price)
+                    # TP/SL checks
+                    if current_price >= ph.take_profit:
+                        ph.exit_reason = 'tp'
+                        self._close(symbol, ph, current_price, 'win')
+                        continue
+                    if current_price <= ph.stop_loss:
+                        ph.exit_reason = 'sl'
+                        self._close(symbol, ph, current_price, 'loss')
+                        continue
+                else:
+                    ph.max_favorable = min(ph.max_favorable or current_price, current_price)
+                    ph.max_adverse = max(ph.max_adverse or current_price, current_price)
+                    if current_price <= ph.take_profit:
+                        ph.exit_reason = 'tp'
+                        self._close(symbol, ph, current_price, 'win')
+                        continue
+                    if current_price >= ph.stop_loss:
+                        ph.exit_reason = 'sl'
+                        self._close(symbol, ph, current_price, 'loss')
+                        continue
 
-        # Timeout handling
-        try:
-            if symbol in self.active and self.timeout_hours and ph.signal_time:
-                from datetime import datetime as _dt, timedelta as _td
-                if _dt.utcnow() - ph.signal_time > _td(hours=int(self.timeout_hours)):
-                    # Outcome by PnL sign at timeout
-                    try:
-                        if ph.side == 'long':
-                            pnl_pct_now = (current_price - ph.entry_price) / ph.entry_price * 100
-                        else:
-                            pnl_pct_now = (ph.entry_price - current_price) / ph.entry_price * 100
-                        outc = 'win' if pnl_pct_now >= 0 else 'loss'
-                    except Exception:
-                        outc = 'loss'
-                    ph.exit_reason = 'timeout'
-                    self._close(symbol, ph, current_price, outc)
-                    continue
-        except Exception:
-            pass
-        # Keep remaining
-        for ph2 in act_list:
-            if any(getattr(ph2,'phantom_id','') == getattr(t,'phantom_id','') for t in self.active.get(symbol, [])):
-                remaining.append(ph2)
+                # Timeout handling (per-phantom)
+                try:
+                    if self.timeout_hours and ph.signal_time:
+                        if _dt.utcnow() - ph.signal_time > _td(hours=int(self.timeout_hours)):
+                            try:
+                                if ph.side == 'long':
+                                    pnl_pct_now = (current_price - ph.entry_price) / ph.entry_price * 100
+                                else:
+                                    pnl_pct_now = (ph.entry_price - current_price) / ph.entry_price * 100
+                                outc = 'win' if pnl_pct_now >= 0 else 'loss'
+                            except Exception:
+                                outc = 'loss'
+                            ph.exit_reason = 'timeout'
+                            self._close(symbol, ph, current_price, outc)
+                            continue
+                except Exception:
+                    pass
+
+                # Keep active if not closed by TP/SL/timeout
+                remaining.append(ph)
+            except Exception:
+                # On error, keep the phantom to try again next tick
+                remaining.append(ph)
+
         if remaining:
             self.active[symbol] = remaining
         else:

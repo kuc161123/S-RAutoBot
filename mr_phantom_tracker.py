@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
 from typing import Callable, Dict, List, Optional, Tuple
+import uuid
 
 import asyncio
 import numpy as np
@@ -46,6 +47,7 @@ class MRPhantomTrade:
     features: Dict  # Enhanced MR features
     enhanced_features: Dict  # Additional enhanced features
     strategy_name: str = "enhanced_mr"
+    phantom_id: str = ""
 
     # Range-specific data
     range_upper: Optional[float] = None
@@ -111,8 +113,8 @@ class MRPhantomTracker:
 
     def __init__(self):
         self.redis_client = None
-        self.mr_phantom_trades = {}  # symbol -> list of MR phantom trades
-        self.active_mr_phantoms = {}  # symbol -> MRPhantomTrade
+        self.mr_phantom_trades: Dict[str, List[MRPhantomTrade]] = {}
+        self.active_mr_phantoms: Dict[str, List[MRPhantomTrade]] = {}
         self.notifier: Optional[Callable] = None
         # Local blocked counters fallback: day (YYYYMMDD) -> counts
         self._blocked_counts: Dict[str, Dict[str, int]] = {}
@@ -149,9 +151,24 @@ class MRPhantomTracker:
             active_data = self.redis_client.get('mr_phantom:active')
             if active_data:
                 active_dict = json.loads(active_data)
-                for symbol, trade_dict in active_dict.items():
-                    self.active_mr_phantoms[symbol] = MRPhantomTrade.from_dict(trade_dict)
-                logger.info(f"Loaded {len(self.active_mr_phantoms)} active MR phantom trades")
+                cnt = 0
+                for symbol, rec in active_dict.items():
+                    items: List[MRPhantomTrade] = []
+                    if isinstance(rec, list):
+                        for t in rec:
+                            try:
+                                items.append(MRPhantomTrade.from_dict(t))
+                            except Exception:
+                                pass
+                    elif isinstance(rec, dict):
+                        try:
+                            items.append(MRPhantomTrade.from_dict(rec))
+                        except Exception:
+                            pass
+                    if items:
+                        self.active_mr_phantoms[symbol] = items
+                        cnt += len(items)
+                logger.info(f"Loaded {cnt} active MR phantoms across {len(self.active_mr_phantoms)} symbols")
 
             # Load completed MR phantoms
             completed_data = self.redis_client.get('mr_phantom:completed')
@@ -176,10 +193,9 @@ class MRPhantomTracker:
 
         try:
             # Save active MR phantoms
-            active_dict = {
-                symbol: trade.to_dict()
-                for symbol, trade in self.active_mr_phantoms.items()
-            }
+            active_dict = {}
+            for symbol, trades in self.active_mr_phantoms.items():
+                active_dict[symbol] = [t.to_dict() for t in trades]
             self.redis_client.set('mr_phantom:active',
                                 json.dumps(active_dict, cls=MRNumpyJSONEncoder))
 
@@ -255,11 +271,7 @@ class MRPhantomTracker:
             features: Basic MR features
             enhanced_features: Enhanced feature set from enhanced_mr_features.py
         """
-        # Enforce single-active-per-symbol for MR phantom (non-executed) signals
-        if symbol in self.active_mr_phantoms and not was_executed:
-            logger.info(f"[{symbol}] MR phantom blocked: active trade in progress")
-            self._incr_blocked()
-            return self.active_mr_phantoms[symbol]
+        # Allow multiple active MR phantoms per symbol
 
         # Extract range information from signal meta
         meta = signal.get('meta', {})
@@ -315,12 +327,14 @@ class MRPhantomTracker:
             range_lower=range_lower,
             range_confidence=range_confidence,
             range_position=range_position,
-            strategy_name="enhanced_mr"
+            strategy_name="enhanced_mr",
+            phantom_id=(uuid.uuid4().hex[:8])
         )
 
         # Only set active for phantom (non-executed) records
         if not was_executed:
-            self.active_mr_phantoms[symbol] = phantom
+            lst = self.active_mr_phantoms.setdefault(symbol, [])
+            lst.append(phantom)
 
         # Initialize list if needed
         if symbol not in self.mr_phantom_trades:
@@ -355,8 +369,48 @@ class MRPhantomTracker:
         """Update MR phantom trade with range-specific tracking"""
         if symbol not in self.active_mr_phantoms:
             return
-
-        phantom = self.active_mr_phantoms[symbol]
+        act_list = list(self.active_mr_phantoms.get(symbol, []))
+        remaining: List[MRPhantomTrade] = []
+        for ph in act_list:
+            try:
+                if ph.side == "long":
+                    ph.max_favorable = max(ph.max_favorable or current_price, current_price)
+                    ph.max_adverse = min(ph.max_adverse or current_price, current_price)
+                    if current_price >= ph.take_profit:
+                        self._close_mr_phantom(symbol, ph, current_price, "win", "tp")
+                        continue
+                    elif current_price <= ph.stop_loss:
+                        self._close_mr_phantom(symbol, ph, current_price, "loss", "sl")
+                        continue
+                else:
+                    ph.max_favorable = min(ph.max_favorable or current_price, current_price)
+                    ph.max_adverse = max(ph.max_adverse or current_price, current_price)
+                    if current_price <= ph.take_profit:
+                        self._close_mr_phantom(symbol, ph, current_price, "win", "tp")
+                        continue
+                    elif current_price >= ph.stop_loss:
+                        self._close_mr_phantom(symbol, ph, current_price, "loss", "sl")
+                        continue
+                # Timeout
+                time_elapsed = datetime.now() - ph.signal_time
+                if time_elapsed > timedelta(hours=self.timeout_hours):
+                    try:
+                        pnl_pct_now = ((current_price - ph.entry_price) / ph.entry_price) * 100 if ph.side=='long' else ((ph.entry_price - current_price) / ph.entry_price) * 100
+                        outc = 'win' if pnl_pct_now >= 0 else 'loss'
+                    except Exception:
+                        outc = 'loss'
+                    self._close_mr_phantom(symbol, ph, current_price, outc, "timeout")
+                    continue
+                remaining.append(ph)
+            except Exception:
+                remaining.append(ph)
+        if remaining:
+            self.active_mr_phantoms[symbol] = remaining
+        else:
+            try:
+                del self.active_mr_phantoms[symbol]
+            except Exception:
+                pass
 
         # Track maximum favorable and adverse excursions
         if phantom.side == "long":
@@ -403,12 +457,8 @@ class MRPhantomTracker:
                 outcome_timeout = 'loss'
             self._close_mr_phantom(symbol, current_price, outcome_timeout, "timeout")
 
-    def _close_mr_phantom(self, symbol: str, exit_price: float, outcome: str, exit_reason: str):
-        """Close MR phantom trade with range-specific analysis"""
-        if symbol not in self.active_mr_phantoms:
-            return
-
-        phantom = self.active_mr_phantoms[symbol]
+    def _close_mr_phantom(self, symbol: str, phantom: MRPhantomTrade, exit_price: float, outcome: str, exit_reason: str):
+        """Close specific MR phantom trade with range-specific analysis"""
         phantom.outcome = outcome
         phantom.exit_price = exit_price
         phantom.exit_time = datetime.now()
@@ -447,7 +497,12 @@ class MRPhantomTracker:
         if symbol not in self.mr_phantom_trades:
             self.mr_phantom_trades[symbol] = []
         self.mr_phantom_trades[symbol].append(phantom)
-        del self.active_mr_phantoms[symbol]
+        try:
+            self.active_mr_phantoms[symbol] = [p for p in self.active_mr_phantoms.get(symbol, []) if getattr(p, 'phantom_id','') != getattr(phantom,'phantom_id','')]
+            if not self.active_mr_phantoms[symbol]:
+                del self.active_mr_phantoms[symbol]
+        except Exception:
+            pass
 
         # Log outcome with MR-specific details
         status = "EXECUTED" if phantom.was_executed else f"PHANTOM (score: {phantom.ml_score:.1f})"

@@ -185,6 +185,8 @@ phantom:
   # Virtual snapshot settings (for calibration around threshold)
   enable_virtual_snapshots: false
   virtual_snapshots_delta: 5   # Create variants at (threshold ± delta)
+  # Whether to cancel phantoms on execution for same symbol/strategy
+  cancel_on_execute: false
 
 # Adaptive daily phantom flow controller (phantom-only; execution unaffected)
 phantom_flow:

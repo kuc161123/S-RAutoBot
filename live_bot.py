@@ -856,12 +856,14 @@ class TradingBot:
             # Open notification (no outcome yet)
             if not outcome:
                 prefix = "👻" if not was_exec else "🟢"
-                lines = [
-                    f"{prefix} *{label} Phantom Opened*",
-                    f"{symbol} {side} | ML {ml_score:.1f}",
-                    f"Entry: {entry_price:.4f}",
-                    f"TP / SL: {tp:.4f} / {sl:.4f}"
-                ]
+            pid = getattr(phantom, 'phantom_id', '')
+            pid_suffix = f" [#{pid}]" if isinstance(pid, str) and pid else ""
+            lines = [
+                f"{prefix} *{label} Phantom Opened*{pid_suffix}",
+                f"{symbol} {side} | ML {ml_score:.1f}",
+                f"Entry: {entry_price:.4f}",
+                f"TP / SL: {tp:.4f} / {sl:.4f}"
+            ]
                 if label == "Mean Reversion":
                     try:
                         ru = getattr(phantom, 'range_upper', None)
@@ -885,8 +887,10 @@ class TradingBot:
             pnl_percent = float(getattr(phantom, 'pnl_percent', 0.0) or 0.0)
             exit_price = float(getattr(phantom, 'exit_price', 0.0) or 0.0)
 
+            pid = getattr(phantom, 'phantom_id', '')
+            pid_suffix = f" [#{pid}]" if isinstance(pid, str) and pid else ""
             lines = [
-                f"{prefix} *{label} Phantom {outcome_emoji}*",
+                f"{prefix} *{label} Phantom {outcome_emoji}*{pid_suffix}",
                 f"{symbol} {side} | ML {ml_score:.1f}",
                 f"Entry → Exit: {entry_price:.4f} → {exit_price:.4f}",
                 f"P&L: {pnl_percent:+.2f}% ({exit_label})"
@@ -2818,12 +2822,14 @@ class TradingBot:
                                 entry_time=datetime.now(),
                                 strategy_name=strategy_name
                             )
-                            # Cancel any active phantom for this symbol for the same strategy
+                            # Optionally cancel active phantoms on execution (config)
                             try:
-                                if strategy_name == 'enhanced_mr' and mr_phantom_tracker:
-                                    mr_phantom_tracker.cancel_active(sym)
-                                elif strategy_name == 'trend_breakout' and phantom_tracker:
-                                    phantom_tracker.cancel_active(sym)
+                                ph_cfg = cfg.get('phantom', {}) if 'cfg' in locals() else {}
+                                if bool(ph_cfg.get('cancel_on_execute', False)):
+                                    if strategy_name == 'enhanced_mr' and mr_phantom_tracker:
+                                        mr_phantom_tracker.cancel_active(sym)
+                                    elif strategy_name == 'trend_breakout' and phantom_tracker:
+                                        phantom_tracker.cancel_active(sym)
                             except Exception:
                                 pass
                             # Notify
@@ -4687,12 +4693,14 @@ class TradingBot:
                         ml_score=float(ml_score),
                         ml_reason=ml_reason if isinstance(ml_reason, str) else ""
                     )
-                    # Cancel any active phantom for this symbol for the same strategy to avoid mismatched phantom closures
+                    # Optionally cancel phantoms on exec (config-controlled)
                     try:
-                        if selected_strategy == 'enhanced_mr' and mr_phantom_tracker:
-                            mr_phantom_tracker.cancel_active(sym)
-                        elif selected_strategy in ('trend_breakout','pullback') and phantom_tracker:
-                            phantom_tracker.cancel_active(sym)
+                        ph_cfg = cfg.get('phantom', {}) if 'cfg' in locals() else {}
+                        if bool(ph_cfg.get('cancel_on_execute', False)):
+                            if selected_strategy == 'enhanced_mr' and mr_phantom_tracker:
+                                mr_phantom_tracker.cancel_active(sym)
+                            elif selected_strategy in ('trend_breakout','pullback') and phantom_tracker:
+                                phantom_tracker.cancel_active(sym)
                     except Exception:
                         pass
                     # Persist runtime hint of strategy for recovery after restarts

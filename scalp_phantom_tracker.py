@@ -7,6 +7,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, asdict
+import uuid
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -39,6 +40,7 @@ class ScalpPhantomTrade:
     two_r_hit: Optional[bool] = None
     realized_rr: Optional[float] = None
     exit_reason: Optional[str] = None
+    phantom_id: str = ""
 
     def to_dict(self):
         d = asdict(self)
@@ -67,7 +69,8 @@ class ScalpPhantomTracker:
                     self.redis_client.ping()
             except Exception as e:
                 logger.warning(f"Scalp Phantom Redis unavailable: {e}")
-        self.active: Dict[str, ScalpPhantomTrade] = {}
+        # Allow multiple active scalp phantoms per symbol
+        self.active: Dict[str, List[ScalpPhantomTrade]] = {}
         self.completed: Dict[str, List[ScalpPhantomTrade]] = {}
         # Local blocked counters fallback: day (YYYYMMDD) -> counts
         self._blocked_counts: Dict[str, Dict[str, int]] = {}
@@ -83,7 +86,20 @@ class ScalpPhantomTracker:
             if act:
                 data = json.loads(act)
                 for sym, rec in data.items():
-                    self.active[sym] = ScalpPhantomTrade.from_dict(rec)
+                    items: List[ScalpPhantomTrade] = []
+                    if isinstance(rec, list):
+                        for t in rec:
+                            try:
+                                items.append(ScalpPhantomTrade.from_dict(t))
+                            except Exception:
+                                pass
+                    elif isinstance(rec, dict):
+                        try:
+                            items.append(ScalpPhantomTrade.from_dict(rec))
+                        except Exception:
+                            pass
+                    if items:
+                        self.active[sym] = items
             comp = self.redis_client.get('scalp_phantom:completed')
             if comp:
                 arr = json.loads(comp)
@@ -97,7 +113,7 @@ class ScalpPhantomTracker:
         if not self.redis_client:
             return
         try:
-            act = {sym: t.to_dict() for sym, t in self.active.items()}
+            act = {sym: [t.to_dict() for t in lst] for sym, lst in self.active.items()}
             self.redis_client.set('scalp_phantom:active', json.dumps(act))
             comp_all = []
             cutoff = datetime.utcnow() - timedelta(days=30)
@@ -111,30 +127,7 @@ class ScalpPhantomTracker:
             logger.error(f"Scalp Phantom save error: {e}")
 
     def record_scalp_signal(self, symbol: str, signal: Dict, ml_score: float, was_executed: bool, features: Dict) -> ScalpPhantomTrade:
-        # Enforce single-active-per-symbol for scalp phantom signals
-        if symbol in self.active:
-            try:
-                import os, redis
-                url = os.getenv('REDIS_URL')
-                r = redis.from_url(url, decode_responses=True) if url else None
-                if r:
-                    from datetime import datetime as _dt
-                    day = _dt.utcnow().strftime('%Y%m%d')
-                    r.incr(f'phantom:blocked:{day}')
-                    r.incr(f'phantom:blocked:{day}:scalp')
-            except Exception:
-                pass
-            # Track locally as well
-            try:
-                from datetime import datetime as _dt
-                day = _dt.utcnow().strftime('%Y%m%d')
-                day_map = self._blocked_counts.setdefault(day, {'total': 0, 'trend': 0, 'mr': 0, 'scalp': 0})
-                day_map['total'] += 1
-                day_map['scalp'] = day_map.get('scalp', 0) + 1
-            except Exception:
-                pass
-            logger.info(f"[{symbol}] Scalp phantom blocked: active trade in progress")
-            return self.active[symbol]
+        # Allow multiple active phantoms per symbol
 
         ph = ScalpPhantomTrade(
             symbol=symbol,
@@ -145,9 +138,10 @@ class ScalpPhantomTracker:
             signal_time=datetime.utcnow(),
             ml_score=ml_score,
             was_executed=was_executed,
-            features=features or {}
+            features=features or {},
+            phantom_id=(uuid.uuid4().hex[:8])
         )
-        self.active[symbol] = ph
+        self.active.setdefault(symbol, []).append(ph)
         self._save()
         logger.info(f"[{symbol}] Scalp phantom recorded: {signal['side'].upper()} {signal['entry']:.4f}")
         return ph
@@ -162,30 +156,36 @@ class ScalpPhantomTracker:
     def update_scalp_phantom_prices(self, symbol: str, current_price: float, df: Optional[pd.DataFrame] = None):  # type: ignore
         if symbol not in self.active:
             return
-        ph = self.active[symbol]
+        act_list = list(self.active.get(symbol, []))
+        remaining: List[ScalpPhantomTrade] = []
         # Track extremes
-        if ph.side == 'long':
-            ph.max_favorable = max(ph.max_favorable or current_price, current_price)
-            ph.max_adverse = min(ph.max_adverse or current_price, current_price)
-            if current_price >= ph.take_profit:
-                ph.exit_reason = 'tp'
-                self._close(symbol, current_price, 'win')
-            elif current_price <= ph.stop_loss:
-                ph.exit_reason = 'sl'
-                self._close(symbol, current_price, 'loss')
-        else:
-            ph.max_favorable = min(ph.max_favorable or current_price, current_price)
-            ph.max_adverse = max(ph.max_adverse or current_price, current_price)
-            if current_price <= ph.take_profit:
-                ph.exit_reason = 'tp'
-                self._close(symbol, current_price, 'win')
-            elif current_price >= ph.stop_loss:
-                ph.exit_reason = 'sl'
-                self._close(symbol, current_price, 'loss')
+        for ph in act_list:
+            if ph.side == 'long':
+                ph.max_favorable = max(ph.max_favorable or current_price, current_price)
+                ph.max_adverse = min(ph.max_adverse or current_price, current_price)
+                if current_price >= ph.take_profit:
+                    ph.exit_reason = 'tp'
+                    self._close(symbol, ph, current_price, 'win')
+                    continue
+                elif current_price <= ph.stop_loss:
+                    ph.exit_reason = 'sl'
+                    self._close(symbol, ph, current_price, 'loss')
+                    continue
+            else:
+                ph.max_favorable = min(ph.max_favorable or current_price, current_price)
+                ph.max_adverse = max(ph.max_adverse or current_price, current_price)
+                if current_price <= ph.take_profit:
+                    ph.exit_reason = 'tp'
+                    self._close(symbol, ph, current_price, 'win')
+                    continue
+                elif current_price >= ph.stop_loss:
+                    ph.exit_reason = 'sl'
+                    self._close(symbol, ph, current_price, 'loss')
+                    continue
 
         # Timeout handling
         try:
-            if self.timeout_hours and ph.signal_time:
+            if symbol in self.active and self.timeout_hours and ph.signal_time:
                 from datetime import datetime as _dt, timedelta as _td
                 if _dt.utcnow() - ph.signal_time > _td(hours=int(self.timeout_hours)):
                     # Outcome by PnL sign at timeout
@@ -198,15 +198,23 @@ class ScalpPhantomTracker:
                     except Exception:
                         outc = 'loss'
                     ph.exit_reason = 'timeout'
-                    self._close(symbol, current_price, outc)
-                    return
+                    self._close(symbol, ph, current_price, outc)
+                    continue
         except Exception:
             pass
+        # Keep remaining
+        for ph2 in act_list:
+            if any(getattr(ph2,'phantom_id','') == getattr(t,'phantom_id','') for t in self.active.get(symbol, [])):
+                remaining.append(ph2)
+        if remaining:
+            self.active[symbol] = remaining
+        else:
+            try:
+                del self.active[symbol]
+            except Exception:
+                pass
 
-    def _close(self, symbol: str, exit_price: float, outcome: str):
-        if symbol not in self.active:
-            return
-        ph = self.active[symbol]
+    def _close(self, symbol: str, ph: ScalpPhantomTrade, exit_price: float, outcome: str):
         ph.outcome = outcome
         ph.exit_price = exit_price
         ph.exit_time = datetime.utcnow()
@@ -229,7 +237,12 @@ class ScalpPhantomTracker:
             ph.two_r_hit = bool((ph.max_favorable or ph.entry_price) <= two_r)
 
         self.completed.setdefault(symbol, []).append(ph)
-        del self.active[symbol]
+        try:
+            self.active[symbol] = [t for t in self.active.get(symbol, []) if getattr(t,'phantom_id','') != getattr(ph,'phantom_id','')]
+            if not self.active[symbol]:
+                del self.active[symbol]
+        except Exception:
+            pass
         self._save()
         logger.info(f"[{symbol}] Scalp PHANTOM closed: {'✅ WIN' if outcome=='win' else '❌ LOSS'} ({ph.pnl_percent:+.2f}%)")
 

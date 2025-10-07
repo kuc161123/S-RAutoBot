@@ -9,6 +9,7 @@ import os
 import time
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
+import uuid
 from typing import Callable, Dict, List, Optional, Tuple
 
 import asyncio
@@ -46,6 +47,7 @@ class PhantomTrade:
     was_executed: bool  # Whether this became a real trade
     features: Dict  # All ML features for this signal
     strategy_name: str = "unknown" # The strategy that generated the signal
+    phantom_id: str = ""  # Unique ID for concurrent phantom distinction
     
     # Outcome tracking (filled in later)
     outcome: Optional[str] = None  # "win", "loss", or "active"
@@ -106,8 +108,9 @@ class PhantomTradeTracker:
     
     def __init__(self):
         self.redis_client = None
-        self.phantom_trades = {}  # symbol -> list of phantom trades
-        self.active_phantoms = {}  # symbol -> PhantomTrade
+        self.phantom_trades: Dict[str, List[PhantomTrade]] = {}  # symbol -> list of completed phantoms
+        # Allow multiple active phantoms per symbol
+        self.active_phantoms: Dict[str, List[PhantomTrade]] = {}
         self.notifier: Optional[Callable] = None
         # Local blocked counters fallback: day (YYYYMMDD) -> counts
         self._blocked_counts: Dict[str, Dict[str, int]] = {}
@@ -138,13 +141,28 @@ class PhantomTradeTracker:
             return
             
         try:
-            # Load active phantoms
+            # Load active phantoms (list per symbol)
             active_data = self.redis_client.get('phantom:active')
             if active_data:
                 active_dict = json.loads(active_data)
-                for symbol, trade_dict in active_dict.items():
-                    self.active_phantoms[symbol] = PhantomTrade.from_dict(trade_dict)
-                logger.info(f"Loaded {len(self.active_phantoms)} active phantom trades")
+                cnt = 0
+                for symbol, rec in active_dict.items():
+                    items: List[PhantomTrade] = []
+                    if isinstance(rec, list):
+                        for t in rec:
+                            try:
+                                items.append(PhantomTrade.from_dict(t))
+                            except Exception:
+                                pass
+                    elif isinstance(rec, dict):
+                        try:
+                            items.append(PhantomTrade.from_dict(rec))
+                        except Exception:
+                            pass
+                    if items:
+                        self.active_phantoms[symbol] = items
+                        cnt += len(items)
+                logger.info(f"Loaded {cnt} active phantom trades across {len(self.active_phantoms)} symbols")
             
             # Load completed phantoms (last 1000)
             completed_data = self.redis_client.get('phantom:completed')
@@ -167,11 +185,10 @@ class PhantomTradeTracker:
             return
             
         try:
-            # Save active phantoms
-            active_dict = {
-                symbol: trade.to_dict() 
-                for symbol, trade in self.active_phantoms.items()
-            }
+            # Save active phantoms as lists per symbol
+            active_dict = {}
+            for symbol, trades in self.active_phantoms.items():
+                active_dict[symbol] = [t.to_dict() for t in trades]
             self.redis_client.set('phantom:active', json.dumps(active_dict, cls=NumpyJSONEncoder))
             
             # Save completed phantoms (keep last 1000, and drop >30d old)
@@ -265,12 +282,7 @@ class PhantomTradeTracker:
         except Exception:
             pass
 
-        # Enforce single-active-per-symbol for phantom (non-executed) trades
-        if symbol in self.active_phantoms and not was_executed:
-            logger.info(f"[{symbol}] Phantom blocked: active trade in progress (strategy={strategy_name})")
-            self._incr_blocked(strategy_name if strategy_name else 'trend')
-            # Do not overwrite the active phantom; return the existing one
-            return self.active_phantoms[symbol]
+        # Allow multiple active phantoms per symbol
 
         phantom = PhantomTrade(
             symbol=symbol,
@@ -282,12 +294,14 @@ class PhantomTradeTracker:
             ml_score=ml_score,
             was_executed=was_executed,
             features=features,
-            strategy_name=strategy_name
+            strategy_name=strategy_name,
+            phantom_id=(uuid.uuid4().hex[:8])
         )
         
         # Only set as active if this is a phantom (non-executed) record
         if not was_executed:
-            self.active_phantoms[symbol] = phantom
+            lst = self.active_phantoms.setdefault(symbol, [])
+            lst.append(phantom)
         
         # Initialize list if needed
         if symbol not in self.phantom_trades:
@@ -320,59 +334,70 @@ class PhantomTradeTracker:
         """
         if symbol not in self.active_phantoms:
             return
-            
-        phantom = self.active_phantoms[symbol]
-        
-        # Track maximum favorable and adverse excursions
-        if phantom.side == "long":
-            if phantom.max_favorable is None or current_price > phantom.max_favorable:
-                phantom.max_favorable = current_price
-            if phantom.max_adverse is None or current_price < phantom.max_adverse:
-                phantom.max_adverse = current_price
-                
-            # Check if hit TP or SL
-            if current_price >= phantom.take_profit:
-                self._close_phantom(symbol, current_price, "win", df, btc_price, symbol_collector, exit_reason='tp')
-            elif current_price <= phantom.stop_loss:
-                self._close_phantom(symbol, current_price, "loss", df, btc_price, symbol_collector, exit_reason='sl')
-                
-        else:  # short
-            if phantom.max_favorable is None or current_price < phantom.max_favorable:
-                phantom.max_favorable = current_price
-            if phantom.max_adverse is None or current_price > phantom.max_adverse:
-                phantom.max_adverse = current_price
-                
-            # Check if hit TP or SL
-            if current_price <= phantom.take_profit:
-                self._close_phantom(symbol, current_price, "win", df, btc_price, symbol_collector, exit_reason='tp')
-            elif current_price >= phantom.stop_loss:
-                self._close_phantom(symbol, current_price, "loss", df, btc_price, symbol_collector, exit_reason='sl')
+        act_list = list(self.active_phantoms.get(symbol, []))
+        remaining: List[PhantomTrade] = []
+        for ph in act_list:
+            try:
+                # Extremes
+                if ph.side == 'long':
+                    ph.max_favorable = (ph.max_favorable if ph.max_favorable is not None else ph.entry_price)
+                    ph.max_adverse = (ph.max_adverse if ph.max_adverse is not None else ph.entry_price)
+                    if current_price > ph.max_favorable:
+                        ph.max_favorable = current_price
+                    if current_price < ph.max_adverse:
+                        ph.max_adverse = current_price
+                    if current_price >= ph.take_profit:
+                        self._close_phantom(symbol, ph, current_price, 'win', df, btc_price, symbol_collector, exit_reason='tp')
+                        continue
+                    if current_price <= ph.stop_loss:
+                        self._close_phantom(symbol, ph, current_price, 'loss', df, btc_price, symbol_collector, exit_reason='sl')
+                        continue
+                else:
+                    ph.max_favorable = (ph.max_favorable if ph.max_favorable is not None else ph.entry_price)
+                    ph.max_adverse = (ph.max_adverse if ph.max_adverse is not None else ph.entry_price)
+                    if current_price < ph.max_favorable:
+                        ph.max_favorable = current_price
+                    if current_price > ph.max_adverse:
+                        ph.max_adverse = current_price
+                    if current_price <= ph.take_profit:
+                        self._close_phantom(symbol, ph, current_price, 'win', df, btc_price, symbol_collector, exit_reason='tp')
+                        continue
+                    if current_price >= ph.stop_loss:
+                        self._close_phantom(symbol, ph, current_price, 'loss', df, btc_price, symbol_collector, exit_reason='sl')
+                        continue
 
-        # Timeout handling: close after configured hours
-        try:
-            if self.timeout_hours and phantom.signal_time:
-                from datetime import datetime as _dt, timedelta as _td
-                if _dt.now() - phantom.signal_time > _td(hours=int(self.timeout_hours)):
-                    try:
-                        if phantom.side == 'long':
-                            pnl_pct_now = ((current_price - phantom.entry_price) / phantom.entry_price) * 100
-                        else:
-                            pnl_pct_now = ((phantom.entry_price - current_price) / phantom.entry_price) * 100
-                        outcome_timeout = 'win' if pnl_pct_now >= 0 else 'loss'
-                    except Exception:
-                        outcome_timeout = 'loss'
-                    self._close_phantom(symbol, current_price, outcome_timeout, df, btc_price, symbol_collector, exit_reason='timeout')
-                    return
-        except Exception:
-            pass
+                # Timeout
+                try:
+                    if self.timeout_hours and ph.signal_time:
+                        from datetime import datetime as _dt, timedelta as _td
+                        if _dt.now() - ph.signal_time > _td(hours=int(self.timeout_hours)):
+                            try:
+                                if ph.side == 'long':
+                                    pnl_pct_now = ((current_price - ph.entry_price) / ph.entry_price) * 100
+                                else:
+                                    pnl_pct_now = ((ph.entry_price - current_price) / ph.entry_price) * 100
+                                outcome_timeout = 'win' if pnl_pct_now >= 0 else 'loss'
+                            except Exception:
+                                outcome_timeout = 'loss'
+                            self._close_phantom(symbol, ph, current_price, outcome_timeout, df, btc_price, symbol_collector, exit_reason='timeout')
+                            continue
+                except Exception:
+                    pass
+                remaining.append(ph)
+            except Exception:
+                remaining.append(ph)
+        if remaining:
+            self.active_phantoms[symbol] = remaining
+        else:
+            try:
+                del self.active_phantoms[symbol]
+            except Exception:
+                pass
+        self._save_to_redis()
     
-    def _close_phantom(self, symbol: str, exit_price: float, outcome: str, 
+    def _close_phantom(self, symbol: str, phantom: PhantomTrade, exit_price: float, outcome: str, 
                        df=None, btc_price: float = None, symbol_collector=None, exit_reason: Optional[str] = None):
-        """Close a phantom trade and record its outcome"""
-        if symbol not in self.active_phantoms:
-            return
-            
-        phantom = self.active_phantoms[symbol]
+        """Close a specific phantom trade and record its outcome"""
         phantom.outcome = outcome
         phantom.exit_price = exit_price
         phantom.exit_time = datetime.now()
@@ -412,7 +437,13 @@ class PhantomTradeTracker:
         if symbol not in self.phantom_trades:
             self.phantom_trades[symbol] = []
         self.phantom_trades[symbol].append(phantom)
-        del self.active_phantoms[symbol]
+        # Remove only this phantom from active list
+        try:
+            self.active_phantoms[symbol] = [p for p in self.active_phantoms.get(symbol, []) if getattr(p, 'phantom_id', '') != getattr(phantom, 'phantom_id', '')]
+            if not self.active_phantoms[symbol]:
+                del self.active_phantoms[symbol]
+        except Exception:
+            pass
         
         # Log the outcome
         status = "EXECUTED" if phantom.was_executed else f"PHANTOM (score: {phantom.ml_score:.1f})"

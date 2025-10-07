@@ -2998,6 +2998,101 @@ class TradingBot:
                                         else:
                                             sig_obj.tp = actual_entry - (rr * risk_distance * fee_adjustment)
                                         logger.info(f"[{sym}] {strategy_name.upper()} TP adjusted for actual entry: {sig_obj.tp:.4f}")
+                                        # Recalc SL for slippage to preserve risk (MR & Trend)
+                                        try:
+                                            if strategy_name == 'trend_breakout':
+                                                sl_cfg = (cfg.get('trend', {}) or {}).get('exec', {}).get('slippage_recalc', {}) if 'cfg' in locals() else {}
+                                                enabled = bool(sl_cfg.get('enabled', True))
+                                                min_pct = float(sl_cfg.get('min_pct', 0.001))
+                                                if enabled and qty > 0:
+                                                    slip_pct = abs(actual_entry - sig_obj.entry) / max(1e-9, sig_obj.entry)
+                                                    if slip_pct >= min_pct:
+                                                        target_dist = float(risk_amount) / float(qty)
+                                                        if sig_obj.side == 'long':
+                                                            new_sl = actual_entry - target_dist
+                                                            pivot = None
+                                                            try:
+                                                                if isinstance(sig_obj.meta, dict):
+                                                                    pivot = float(sig_obj.meta.get('pivot_low'))
+                                                            except Exception:
+                                                                pivot = None
+                                                            if pivot is not None:
+                                                                atr = float(sig_obj.meta.get('atr', 0.0)) if isinstance(sig_obj.meta, dict) else 0.0
+                                                                buffer = 0.05 * atr
+                                                                new_sl = min(new_sl, pivot - buffer)
+                                                            min_stop = actual_entry * 0.01
+                                                            if (actual_entry - new_sl) < min_stop:
+                                                                new_sl = actual_entry - min_stop
+                                                            if new_sl < actual_entry:
+                                                                sig_obj.sl = new_sl
+                                                        else:
+                                                            new_sl = actual_entry + target_dist
+                                                            pivot = None
+                                                            try:
+                                                                if isinstance(sig_obj.meta, dict):
+                                                                    pivot = float(sig_obj.meta.get('pivot_high'))
+                                                            except Exception:
+                                                                pivot = None
+                                                            if pivot is not None:
+                                                                atr = float(sig_obj.meta.get('atr', 0.0)) if isinstance(sig_obj.meta, dict) else 0.0
+                                                                buffer = 0.05 * atr
+                                                                new_sl = max(new_sl, pivot + buffer)
+                                                            min_stop = actual_entry * 0.01
+                                                            if (new_sl - actual_entry) < min_stop:
+                                                                new_sl = actual_entry + min_stop
+                                                            if new_sl > actual_entry:
+                                                                sig_obj.sl = new_sl
+                                                        logger.info(f"[{sym}] TREND SL recalc for slippage: SL -> {sig_obj.sl:.4f}")
+                                            elif strategy_name == 'enhanced_mr':
+                                                sl_cfg = (cfg.get('mr', {}) or {}).get('exec', {}).get('slippage_recalc', {}) if 'cfg' in locals() else {}
+                                                enabled = bool(sl_cfg.get('enabled', True))
+                                                min_pct = float(sl_cfg.get('min_pct', 0.001))
+                                                pivot_buf_atr = float(sl_cfg.get('pivot_buffer_atr', 0.05))
+                                                if enabled and qty > 0:
+                                                    slip_pct = abs(actual_entry - sig_obj.entry) / max(1e-9, sig_obj.entry)
+                                                    if slip_pct >= min_pct:
+                                                        target_dist = float(risk_amount) / float(qty)
+                                                        # Compute ATR quickly for buffer
+                                                        try:
+                                                            prev = df['close'].shift()
+                                                            tr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                                                            atr_len = int(getattr(settings, 'atr_len', 14) or 14)
+                                                            atr_val = float(tr.rolling(atr_len).mean().iloc[-1]) if len(tr) >= atr_len else float(tr.iloc[-1])
+                                                        except Exception:
+                                                            atr_val = 0.0
+                                                        if sig_obj.side == 'long':
+                                                            new_sl = actual_entry - target_dist
+                                                            pivot = None
+                                                            try:
+                                                                if isinstance(sig_obj.meta, dict):
+                                                                    pivot = float(sig_obj.meta.get('range_lower'))
+                                                            except Exception:
+                                                                pivot = None
+                                                            if pivot is not None and atr_val > 0:
+                                                                new_sl = min(new_sl, pivot - (pivot_buf_atr * atr_val))
+                                                            min_stop = actual_entry * 0.01
+                                                            if (actual_entry - new_sl) < min_stop:
+                                                                new_sl = actual_entry - min_stop
+                                                            if new_sl < actual_entry:
+                                                                sig_obj.sl = new_sl
+                                                        else:
+                                                            new_sl = actual_entry + target_dist
+                                                            pivot = None
+                                                            try:
+                                                                if isinstance(sig_obj.meta, dict):
+                                                                    pivot = float(sig_obj.meta.get('range_upper'))
+                                                            except Exception:
+                                                                pivot = None
+                                                            if pivot is not None and atr_val > 0:
+                                                                new_sl = max(new_sl, pivot + (pivot_buf_atr * atr_val))
+                                                            min_stop = actual_entry * 0.01
+                                                            if (new_sl - actual_entry) < min_stop:
+                                                                new_sl = actual_entry + min_stop
+                                                            if new_sl > actual_entry:
+                                                                sig_obj.sl = new_sl
+                                                        logger.info(f"[{sym}] MR SL recalc for slippage: SL -> {sig_obj.sl:.4f}")
+                                        except Exception as _slerr:
+                                            logger.debug(f"[{sym}] SL recalc skipped: {_slerr}")
                                         # Optional: Recalc SL to preserve risk when slippage exceeds threshold (Trend only)
                                         try:
                                             if strategy_name == 'trend_breakout':
@@ -4899,6 +4994,58 @@ class TradingBot:
                                 tp_adjustment_pct = ((new_tp - sig.tp) / sig.tp) * 100
                                 logger.info(f"[{sym}] Adjusting TP from {sig.tp:.4f} to {new_tp:.4f} ({tp_adjustment_pct:+.2f}%) to maintain {settings.rr}:1 R:R")
                                 sig.tp = new_tp
+                                # MR: Recalc SL for slippage to preserve risk, bounded by range pivots
+                                try:
+                                    if selected_strategy == 'enhanced_mr':
+                                        sl_cfg = (cfg.get('mr', {}) or {}).get('exec', {}).get('slippage_recalc', {}) if 'cfg' in locals() else {}
+                                        enabled = bool(sl_cfg.get('enabled', True))
+                                        min_pct = float(sl_cfg.get('min_pct', 0.001))
+                                        pivot_buf_atr = float(sl_cfg.get('pivot_buffer_atr', 0.05))
+                                        if enabled and qty > 0:
+                                            slip_pct = abs(actual_entry - sig.entry) / max(1e-9, sig.entry)
+                                            if slip_pct >= min_pct:
+                                                target_dist = float(risk_amount) / float(qty)
+                                                # Compute ATR quickly for buffer
+                                                try:
+                                                    prev = df['close'].shift()
+                                                    tr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                                                    atr_len = int(getattr(settings, 'atr_len', 14) or 14)
+                                                    atr_val = float(tr.rolling(atr_len).mean().iloc[-1]) if len(tr) >= atr_len else float(tr.iloc[-1])
+                                                except Exception:
+                                                    atr_val = 0.0
+                                                if sig.side == 'long':
+                                                    new_sl = actual_entry - target_dist
+                                                    pivot = None
+                                                    try:
+                                                        if isinstance(sig.meta, dict):
+                                                            pivot = float(sig.meta.get('range_lower'))
+                                                    except Exception:
+                                                        pivot = None
+                                                    if pivot is not None and atr_val > 0:
+                                                        new_sl = min(new_sl, pivot - (pivot_buf_atr * atr_val))
+                                                    min_stop = actual_entry * 0.01
+                                                    if (actual_entry - new_sl) < min_stop:
+                                                        new_sl = actual_entry - min_stop
+                                                    if new_sl < actual_entry:
+                                                        sig.sl = new_sl
+                                                else:
+                                                    new_sl = actual_entry + target_dist
+                                                    pivot = None
+                                                    try:
+                                                        if isinstance(sig.meta, dict):
+                                                            pivot = float(sig.meta.get('range_upper'))
+                                                    except Exception:
+                                                        pivot = None
+                                                    if pivot is not None and atr_val > 0:
+                                                        new_sl = max(new_sl, pivot + (pivot_buf_atr * atr_val))
+                                                    min_stop = actual_entry * 0.01
+                                                    if (new_sl - actual_entry) < min_stop:
+                                                        new_sl = actual_entry + min_stop
+                                                    if new_sl > actual_entry:
+                                                        sig.sl = new_sl
+                                                logger.info(f"[{sym}] MR SL recalc for slippage: SL -> {sig.sl:.4f}")
+                                except Exception as _mre:
+                                    logger.debug(f"[{sym}] MR SL recalc skipped: {_mre}")
                     except Exception as e:
                         logger.warning(f"[{sym}] Could not get actual entry price: {e}. Using signal entry.")
                     

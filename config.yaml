@@ -159,6 +159,11 @@ mr:
     min_persist: 0.60
     phantom_on_filter_fail: true
     promotion_bypass: true
+  exec:
+    slippage_recalc:
+      enabled: true
+      min_pct: 0.001          # 0.1% slippage threshold to trigger SL recalc
+      pivot_buffer_atr: 0.05  # keep SL beyond range pivot by 0.05 ATR
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}

@@ -856,14 +856,14 @@ class TradingBot:
             # Open notification (no outcome yet)
             if not outcome:
                 prefix = "👻" if not was_exec else "🟢"
-            pid = getattr(phantom, 'phantom_id', '')
-            pid_suffix = f" [#{pid}]" if isinstance(pid, str) and pid else ""
-            lines = [
-                f"{prefix} *{label} Phantom Opened*{pid_suffix}",
-                f"{symbol} {side} | ML {ml_score:.1f}",
-                f"Entry: {entry_price:.4f}",
-                f"TP / SL: {tp:.4f} / {sl:.4f}"
-            ]
+                pid = getattr(phantom, 'phantom_id', '')
+                pid_suffix = f" [#{pid}]" if isinstance(pid, str) and pid else ""
+                lines = [
+                    f"{prefix} *{label} Phantom Opened*{pid_suffix}",
+                    f"{symbol} {side} | ML {ml_score:.1f}",
+                    f"Entry: {entry_price:.4f}",
+                    f"TP / SL: {tp:.4f} / {sl:.4f}"
+                ]
                 if label == "Mean Reversion":
                     try:
                         ru = getattr(phantom, 'range_upper', None)

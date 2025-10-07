@@ -837,32 +837,60 @@ class TradingBot:
 
         try:
             outcome = getattr(phantom, 'outcome', None)
+            was_exec = bool(getattr(phantom, 'was_executed', False))
+            symbol = getattr(phantom, 'symbol', '?')
+            side = getattr(phantom, 'side', '?').upper()
+            entry_price = float(getattr(phantom, 'entry_price', 0.0) or 0.0)
+            sl = float(getattr(phantom, 'stop_loss', 0.0) or 0.0)
+            tp = float(getattr(phantom, 'take_profit', 0.0) or 0.0)
+            ml_score = float(getattr(phantom, 'ml_score', 0.0) or 0.0)
+
+            # Open notification (no outcome yet)
             if not outcome:
+                prefix = "👻" if not was_exec else "🟢"
+                lines = [
+                    f"{prefix} *{label} Phantom Opened*",
+                    f"{symbol} {side} | ML {ml_score:.1f}",
+                    f"Entry: {entry_price:.4f}",
+                    f"TP / SL: {tp:.4f} / {sl:.4f}"
+                ]
+                if label == "Mean Reversion":
+                    try:
+                        ru = getattr(phantom, 'range_upper', None)
+                        rl = getattr(phantom, 'range_lower', None)
+                        if isinstance(ru, (int,float)) and isinstance(rl, (int,float)) and rl and ru:
+                            width_pct = (float(ru) - float(rl)) / float(rl) * 100.0
+                            lines.append(f"Range: {rl:.4f}-{ru:.4f} ({width_pct:.1f}% width)")
+                        pos = getattr(phantom, 'range_position', None)
+                        if isinstance(pos, (int,float)):
+                            lines.append(f"Range pos: {float(pos):.2f}")
+                    except Exception:
+                        pass
+                await self.tg.send_message("\n".join([l for l in lines if l]))
                 return
 
+            # Close notification
             outcome_emoji = "✅" if outcome == "win" else "❌"
-            prefix = "👻" if not getattr(phantom, 'was_executed', False) else "🔁"
+            prefix = "👻" if not was_exec else "🔁"
             exit_reason = getattr(phantom, 'exit_reason', 'unknown')
-            exit_label = exit_reason.replace('_', ' ').title()
-            pnl_percent = getattr(phantom, 'pnl_percent', 0.0) or 0.0
-            entry_price = getattr(phantom, 'entry_price', 0.0)
-            exit_price = getattr(phantom, 'exit_price', 0.0)
-            ml_score = getattr(phantom, 'ml_score', 0.0)
+            exit_label = str(exit_reason).replace('_', ' ').title()
+            pnl_percent = float(getattr(phantom, 'pnl_percent', 0.0) or 0.0)
+            exit_price = float(getattr(phantom, 'exit_price', 0.0) or 0.0)
 
             lines = [
                 f"{prefix} *{label} Phantom {outcome_emoji}*",
-                f"{phantom.symbol} {phantom.side.upper()} | ML {ml_score:.1f}",
+                f"{symbol} {side} | ML {ml_score:.1f}",
                 f"Entry → Exit: {entry_price:.4f} → {exit_price:.4f}",
                 f"P&L: {pnl_percent:+.2f}% ({exit_label})"
             ]
 
             if label == "Mean Reversion":
                 range_conf = getattr(phantom, 'range_confidence', None)
-                if range_conf is not None:
-                    lines.append(f"Range confidence: {range_conf:.2f}")
+                if isinstance(range_conf, (int,float)):
+                    lines.append(f"Range confidence: {float(range_conf):.2f}")
                 range_pos = getattr(phantom, 'range_position', None)
-                if range_pos is not None:
-                    lines.append(f"Range position: {range_pos:.2f}")
+                if isinstance(range_pos, (int,float)):
+                    lines.append(f"Range position: {float(range_pos):.2f}")
 
             await self.tg.send_message("\n".join(lines))
 

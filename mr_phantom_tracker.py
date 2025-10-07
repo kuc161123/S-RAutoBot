@@ -330,6 +330,15 @@ class MRPhantomTracker:
         # Save to Redis
         self._save_to_redis()
 
+        # Notify on open immediately (phantom recorded)
+        if self.notifier:
+            try:
+                res = self.notifier(phantom)
+                if asyncio.iscoroutine(res):
+                    asyncio.create_task(res)
+            except Exception:
+                pass
+
         return phantom
 
     def update_mr_phantom_prices(self, symbol: str, current_price: float, df=None):

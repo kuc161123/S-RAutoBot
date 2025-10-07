@@ -290,6 +290,15 @@ class PhantomTradeTracker:
         
         # Save to Redis (only active set changed for phantom; still OK to write unified snapshot)
         self._save_to_redis()
+
+        # Notify on open immediately (phantom recorded)
+        if self.notifier:
+            try:
+                res = self.notifier(phantom)
+                if asyncio.iscoroutine(res):
+                    asyncio.create_task(res)
+            except Exception:
+                pass
         
         return phantom
     

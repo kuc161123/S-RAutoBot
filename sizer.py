@@ -4,9 +4,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 class Sizer:
-    def __init__(self, risk:RiskConfig, account_balance:float=None):
+    def __init__(self, risk:RiskConfig, account_balance:float=None, fee_total_pct:float=0.0, include_fees:bool=False):
         self.risk = risk
         self.account_balance = account_balance
+        self.fee_total_pct = float(fee_total_pct or 0.0)
+        self.include_fees = bool(include_fees)
 
     def qty_for(self, entry:float, sl:float, qty_step:float, min_qty:float, min_order_value:float=5.0, ml_score:float=None) -> float:
         R = abs(entry - sl)
@@ -40,8 +42,21 @@ class Sizer:
         else:
             # Fall back to fixed USD risk
             risk_amount = self.risk.risk_usd
-            
-        raw = risk_amount / R
+        
+        # Incorporate estimated fees if enabled (approx entry + exit)
+        if self.include_fees and self.fee_total_pct > 0.0:
+            try:
+                expected_exit = sl  # worst-case exit at stop
+                fee_per_unit = self.fee_total_pct * max(0.0, (float(entry) + float(expected_exit)))
+                denom = R + fee_per_unit
+                if denom > 0:
+                    raw = risk_amount / denom
+                else:
+                    raw = risk_amount / R
+            except Exception:
+                raw = risk_amount / R
+        else:
+            raw = risk_amount / R
         q = round_step(raw, qty_step)
         
         # Ensure minimum quantity and minimum order value

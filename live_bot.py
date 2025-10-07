@@ -1892,7 +1892,13 @@ class TradingBot:
             ml_risk_min_percent=1.0,
             ml_risk_max_percent=5.0
         )
-        sizer = Sizer(risk)
+        # Initialize sizer with fee-aware sizing to better match risk at SL
+        fee_total_pct = 0.00165
+        try:
+            fee_total_pct = float(cfg.get('trade', {}).get('fee_total_pct', 0.00165))
+        except Exception:
+            pass
+        sizer = Sizer(risk, fee_total_pct=fee_total_pct, include_fees=True)
         book = Book()
         panic_list:list[str] = []
         

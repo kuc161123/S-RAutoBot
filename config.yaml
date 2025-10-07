@@ -234,6 +234,8 @@ scalp:
   timeframe: 3           # Future: stream 3m for scalps; current uses main tf
   use_ml: true
   threshold: 75
+  independent: true      # When true, Scalp runs fully independent of regime/router
+  block_regime: false    # Do not block by regime (e.g., extreme volatility)
   session_only: ["us", "european"]
   promote_enabled: false
   promote_min_samples: 200

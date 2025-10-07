@@ -685,17 +685,25 @@ class TradingBot:
                 if not use_scalp or detect_scalp_signal is None:
                     continue
 
-                # Gate by volatility only: allow low/normal/high; block extreme
-                vol_level = 'unknown'
-                if 'frames' in dir(self) and sym in self.frames and not self.frames[sym].empty and ENHANCED_ML_AVAILABLE:
-                    try:
-                        analysis = get_enhanced_market_regime(self.frames[sym].tail(200), sym)
-                        vol_level = analysis.volatility_level
-                        if vol_level == 'extreme':
-                            logger.debug(f"[{sym}] 🩳 Scalp(3m) skipped: volatility={vol_level}")
-                            continue
-                    except Exception:
-                        pass
+                # Regime independence: if scalp.independent=true, do NOT gate by regime/volatility
+                vol_level = 'normal'
+                try:
+                    scalp_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+                    scalp_independent = bool(scalp_cfg.get('independent', False))
+                except Exception:
+                    scalp_independent = False
+                if not scalp_independent:
+                    # Legacy behavior: block extreme volatility
+                    vol_level = 'unknown'
+                    if 'frames' in dir(self) and sym in self.frames and not self.frames[sym].empty and ENHANCED_ML_AVAILABLE:
+                        try:
+                            analysis = get_enhanced_market_regime(self.frames[sym].tail(200), sym)
+                            vol_level = analysis.volatility_level
+                            if vol_level == 'extreme':
+                                logger.debug(f"[{sym}] 🩳 Scalp(3m) skipped: volatility={vol_level}")
+                                continue
+                        except Exception:
+                            pass
 
                 # Per-symbol cooldown: require ~8 bars (≈24 minutes) between scalp records
                 last_ts = self._scalp_cooldown.get(sym)
@@ -707,7 +715,7 @@ class TradingBot:
                     except Exception:
                         pass
 
-                # Run scalper on 3m df
+                # Run scalper on 3m df (independent of regime)
                 # Build ScalpSettings, applying phantom-only relaxed thresholds if enabled
                 try:
                     sc_settings = ScalpSettings()
@@ -3670,12 +3678,15 @@ class TradingBot:
                             # After phantom-only sampling, continue to next symbol
                             continue
 
-                            # Scalp phantom (Phase 0) — allow in low/normal/high volatility (block only extreme)
+                            # Scalp phantom (Phase 0)
+                            # If scalp.independent=true, this router-driven scalp is disabled to avoid duplication
                             if use_scalp and SCALP_AVAILABLE and detect_scalp_signal is not None:
-                                if getattr(regime_analysis, 'volatility_level', 'unknown') == 'extreme':
-                                    logger.info(f"[{sym}] 🩳 Scalp skipped: volatility=extreme")
-                                else:
-                                    try:
+                                try:
+                                    s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+                                    if bool(s_cfg.get('independent', False)):
+                                        # Skip here; independent 3m stream handles Scalp
+                                        pass
+                                    else:
                                         # Prefer 3m frames when available
                                         df3 = self.frames_3m.get(sym)
                                         if df3 is not None and not df3.empty and len(df3) >= 120:
@@ -3715,8 +3726,8 @@ class TradingBot:
                                             # Scalp is exempt from daily caps; do not increment daily counters
                                         else:
                                             logger.info(f"[{sym}] 🩳 No Scalp Signal (filters not met)")
-                                    except Exception as e:
-                                        logger.debug(f"[{sym}] Scalp detection error: {e}")
+                                except Exception as e:
+                                    logger.debug(f"[{sym}] Scalp detection error: {e}")
                             else:
                                 if not use_scalp:
                                     logger.info("🩳 Scalp disabled by config")

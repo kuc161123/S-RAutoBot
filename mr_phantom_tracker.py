@@ -412,50 +412,7 @@ class MRPhantomTracker:
             except Exception:
                 pass
 
-        # Track maximum favorable and adverse excursions
-        if phantom.side == "long":
-            if phantom.max_favorable is None or current_price > phantom.max_favorable:
-                phantom.max_favorable = current_price
-            if phantom.max_adverse is None or current_price < phantom.max_adverse:
-                phantom.max_adverse = current_price
-
-            # Check if hit TP or SL
-            if current_price >= phantom.take_profit:
-                self._close_mr_phantom(symbol, current_price, "win", "tp")
-            elif current_price <= phantom.stop_loss:
-                self._close_mr_phantom(symbol, current_price, "loss", "sl")
-
-        else:  # short
-            if phantom.max_favorable is None or current_price < phantom.max_favorable:
-                phantom.max_favorable = current_price
-            if phantom.max_adverse is None or current_price > phantom.max_adverse:
-                phantom.max_adverse = current_price
-
-            # Check if hit TP or SL
-            if current_price <= phantom.take_profit:
-                self._close_mr_phantom(symbol, current_price, "win", "tp")
-            elif current_price >= phantom.stop_loss:
-                self._close_mr_phantom(symbol, current_price, "loss", "sl")
-
-        # Check for range breakout
-        if phantom.range_upper and phantom.range_lower:
-            if current_price > phantom.range_upper * 1.01 or current_price < phantom.range_lower * 0.99:
-                phantom.range_breakout_occurred = True
-                logger.debug(f"[{symbol}] Range breakout detected during MR phantom trade")
-
-        # Check for timeout (longer timeout for ranging markets)
-        time_elapsed = datetime.now() - phantom.signal_time
-        if time_elapsed > timedelta(hours=self.timeout_hours):
-            logger.info(f"[{symbol}] MR phantom trade timed out after {self.timeout_hours} hours")
-            try:
-                if phantom.side == 'long':
-                    pnl_pct_now = ((current_price - phantom.entry_price) / phantom.entry_price) * 100
-                else:
-                    pnl_pct_now = ((phantom.entry_price - current_price) / phantom.entry_price) * 100
-                outcome_timeout = 'win' if pnl_pct_now >= 0 else 'loss'
-            except Exception:
-                outcome_timeout = 'loss'
-            self._close_mr_phantom(symbol, current_price, outcome_timeout, "timeout")
+        # Legacy single-phantom block removed; handled above per phantom instance
 
     def _close_mr_phantom(self, symbol: str, phantom: MRPhantomTrade, exit_price: float, outcome: str, exit_reason: str):
         """Close specific MR phantom trade with range-specific analysis"""

@@ -3264,9 +3264,133 @@ class TradingBot:
                             pb_caps_reached = _daily_capped('trend', sym, cluster_id)
                             if mr_caps_reached and pb_caps_reached:
                                 logger.debug(f"[{sym}] Daily caps reached for MR and Trend; skipping both")
-                            # Try MR phantom (exploration gating)
+                            # Try MR phantom (exploration gating) or force-execute via MR Promotion
                             try:
                                 sig_mr = detect_signal_mean_reversion(df.copy(), settings, sym)
+                                # Force execution when MR recent WR ≥ promote threshold (bypass all guards)
+                                promotion_forced = False
+                                try:
+                                    prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
+                                    promote_wr = float(prom_cfg.get('promote_wr', 50.0))
+                                    mr_stats = enhanced_mr_scorer.get_enhanced_stats() if enhanced_mr_scorer else {}
+                                    recent_wr = float(mr_stats.get('recent_win_rate', 0.0))
+                                    if sig_mr and recent_wr >= promote_wr:
+                                        promotion_forced = True
+                                except Exception:
+                                    promotion_forced = False
+
+                                # If promotion is forced and we have a signal, execute immediately
+                                if sig_mr and promotion_forced:
+                                    try:
+                                        if self.tg:
+                                            try:
+                                                await self.tg.send_message(f"🌀 MR Promotion: Force executing {sym} {sig_mr.side.upper()} (WR ≥ {promote_wr:.0f}%)")
+                                            except Exception:
+                                                pass
+                                        # Prevent duplicate position on same symbol
+                                        if sym in book.positions:
+                                            logger.info(f"[{sym}] Promotion forced, but position already open. Skipping duplicate execution.")
+                                            raise Exception("position_exists")
+
+                                        # Get symbol metadata and round TP/SL
+                                        m = meta_for(sym, shared["meta"])
+                                        from position_mgr import round_step
+                                        tick_size = m.get("tick_size", 0.000001)
+                                        original_tp = sig_mr.tp; original_sl = sig_mr.sl
+                                        sig_mr.tp = round_step(sig_mr.tp, tick_size)
+                                        sig_mr.sl = round_step(sig_mr.sl, tick_size)
+                                        if original_tp != sig_mr.tp or original_sl != sig_mr.sl:
+                                            logger.info(f"[{sym}] Rounded TP/SL to tick size {tick_size}. TP: {original_tp:.6f} -> {sig_mr.tp:.6f}, SL: {original_sl:.6f} -> {sig_mr.sl:.6f}")
+
+                                        # Balance and sizing
+                                        current_balance = bybit.get_balance()
+                                        if current_balance:
+                                            sizer.account_balance = current_balance
+                                            shared["last_balance"] = current_balance
+                                        risk_amount = sizer.account_balance * (risk.risk_percent / 100.0) if risk.use_percent_risk and sizer.account_balance else risk.risk_usd
+                                        qty = sizer.qty_for(sig_mr.entry, sig_mr.sl, m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=0.0)
+                                        if qty <= 0:
+                                            logger.info(f"[{sym}] Promotion forced, but qty calc invalid -> skip")
+                                            raise Exception("invalid_qty")
+
+                                        # Stop-loss sanity (prevent exchange error)
+                                        current_price = df['close'].iloc[-1]
+                                        if (sig_mr.side == "long" and sig_mr.sl >= current_price) or (sig_mr.side == "short" and sig_mr.sl <= current_price):
+                                            logger.warning(f"[{sym}] Promotion forced, but SL invalid relative to current price -> skip")
+                                            raise Exception("invalid_sl")
+
+                                        # Set leverage and place market order
+                                        max_lev = int(m.get("max_leverage", 10))
+                                        bybit.set_leverage(sym, max_lev)
+                                        side = "Buy" if sig_mr.side == "long" else "Sell"
+                                        logger.info(f"[{sym}] MR Promotion placing {side} order for {qty} units")
+                                        order_result = bybit.place_market(sym, side, qty, reduce_only=False)
+
+                                        # Adjust TP to actual entry
+                                        actual_entry = sig_mr.entry
+                                        try:
+                                            await asyncio.sleep(0.5)
+                                            position = bybit.get_position(sym)
+                                            if position and position.get("avgPrice"):
+                                                actual_entry = float(position["avgPrice"])
+                                                if actual_entry != sig_mr.entry:
+                                                    fee_adjustment = 1.00165
+                                                    risk_distance = abs(actual_entry - sig_mr.sl)
+                                                    if sig_mr.side == "long":
+                                                        sig_mr.tp = actual_entry + (settings.rr * risk_distance * fee_adjustment)
+                                                    else:
+                                                        sig_mr.tp = actual_entry - (settings.rr * risk_distance * fee_adjustment)
+                                                    logger.info(f"[{sym}] MR Promotion TP adjusted for actual entry: {sig_mr.tp:.4f}")
+                                        except Exception:
+                                            pass
+
+                                        # Set TP/SL
+                                        bybit.set_tpsl(sym, take_profit=sig_mr.tp, stop_loss=sig_mr.sl, qty=qty)
+
+                                        # Update book and notify standard open message
+                                        book.positions[sym] = Position(
+                                            sig_mr.side,
+                                            qty,
+                                            entry=actual_entry,
+                                            sl=sig_mr.sl,
+                                            tp=sig_mr.tp,
+                                            entry_time=datetime.now(),
+                                            strategy_name='enhanced_mr'
+                                        )
+                                        # Mark promotion on meta for accounting
+                                        try:
+                                            if not sig_mr.meta:
+                                                sig_mr.meta = {}
+                                            sig_mr.meta['promotion_forced'] = True
+                                        except Exception:
+                                            pass
+
+                                        # Standard execution notification
+                                        if self.tg:
+                                            try:
+                                                emoji = '📈'
+                                                strategy_label = 'Enhanced Mr'
+                                                msg = (
+                                                    f"{emoji} *{sym} {sig_mr.side.upper()}* ({strategy_label})\n\n"
+                                                    f"Entry: {actual_entry:.4f}\n"
+                                                    f"Stop Loss: {sig_mr.sl:.4f}\n"
+                                                    f"Take Profit: {sig_mr.tp:.4f}\n"
+                                                    f"Quantity: {qty}\n"
+                                                    f"Risk: {risk.risk_percent if risk.use_percent_risk else risk.risk_usd}{'%' if risk.use_percent_risk else ''} (${risk_amount:.2f})\n"
+                                                    f"Promotion: FORCED (WR ≥ {promote_wr:.0f}%)\n"
+                                                    f"Reason: Mean Reversion (Promotion)"
+                                                )
+                                                await self.tg.send_message(msg)
+                                            except Exception:
+                                                pass
+                                        # Skip the rest of phantom sampling for this symbol
+                                        continue
+                                    except Exception as e:
+                                        if str(e) not in ("position_exists","invalid_qty","invalid_sl"):
+                                            logger.debug(f"[{sym}] Promotion forced execution error: {e}")
+                                        # Fall through to phantom sampling if execution failed
+
+                                # Regular phantom-only sampling path (when not promotion-forced)
                                 mr_remaining = mr_limit - len(mr_budget)
                                 if (not mr_caps_reached) and mr_remaining > 0 and sig_mr and _not_duplicate('mr', sym, sig_mr):
                                     ef = sig_mr.meta.get('mr_features', {}).copy() if sig_mr.meta else {}
@@ -3632,16 +3756,14 @@ class TradingBot:
                                     logger.info(f"   ❌ DECISION: REJECT TRADE - ML score {ml_score:.1f} below threshold {threshold}")
                                     logger.info(f"   💡 Rejection reason: {ml_reason}")
 
-                                # MR Promotion override: execute despite ML below threshold when active and within caps
+                                # MR Promotion override: execute despite ML below threshold (bypass all guards when WR ≥ promote_wr)
                                 try:
                                     prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
                                     if prom_cfg.get('enabled', False) and not should_take_trade:
-                                        mp = shared.get('mr_promotion', {})
-                                        # Block in extreme volatility if configured
-                                        block_extreme = bool(prom_cfg.get('block_extreme_vol', True))
-                                        vol_ok = (getattr(regime_analysis, 'volatility_level', 'normal') != 'extreme') or (not block_extreme)
-                                        cap = int(prom_cfg.get('daily_exec_cap', 20))
-                                        if mp.get('active') and int(mp.get('count', 0)) < cap and vol_ok:
+                                        promote_wr = float(prom_cfg.get('promote_wr', 50.0))
+                                        mr_stats = enhanced_mr_scorer.get_enhanced_stats() if enhanced_mr_scorer else {}
+                                        recent_wr = float(mr_stats.get('recent_win_rate', 0.0))
+                                        if recent_wr >= promote_wr:
                                             should_take_trade = True
                                             promotion_forced = True
                                             # Mark on signal meta for post-exec accounting
@@ -3651,7 +3773,7 @@ class TradingBot:
                                                 sig.meta['promotion_forced'] = True
                                             except Exception:
                                                 pass
-                                            logger.info(f"   🚀 MR Promotion override: executing despite ML {ml_score:.1f} < {threshold:.0f} (cap {mp.get('count',0)+1}/{cap})")
+                                            logger.info(f"   🚀 MR Promotion override: executing despite ML {ml_score:.1f} < {threshold:.0f} (WR {recent_wr:.1f}% ≥ {promote_wr:.0f}%)")
                                             if self.tg:
                                                 try:
                                                     await self.tg.send_message(f"🌀 MR Promotion: Executing {sym} {sig.side.upper()} despite ML {ml_score:.1f} < {threshold:.0f}")

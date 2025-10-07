@@ -29,17 +29,31 @@ from sizer import Sizer
 from strategy_pullback import Settings  # Settings are the same for both strategies
 from telegram_bot import TGBot
 
-# Optional scalping modules
+# Optional scalping modules (import granularly; ML scorer optional)
+detect_scalp_signal = None
+ScalpSettings = None
+get_scalp_phantom_tracker = None
+get_scalp_scorer = None
+SCALP_AVAILABLE = False
 try:
     from strategy_scalp import detect_scalp_signal, ScalpSettings
-    from ml_scorer_scalp import get_scalp_scorer
+except Exception as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Scalp import: strategy_scalp unavailable: {e}")
+try:
     from scalp_phantom_tracker import get_scalp_phantom_tracker
-    SCALP_AVAILABLE = True
-except Exception:
-    SCALP_AVAILABLE = False
-    detect_scalp_signal = None
-    get_scalp_scorer = None
-    get_scalp_phantom_tracker = None
+except Exception as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Scalp import: scalp_phantom_tracker unavailable: {e}")
+try:
+    # ML scorer is optional for phantom recording
+    from ml_scorer_scalp import get_scalp_scorer
+except Exception as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Scalp import: ml_scorer_scalp unavailable: {e}")
+
+# Consider Scalp available if signal detection and tracker are present
+SCALP_AVAILABLE = bool(detect_scalp_signal is not None and get_scalp_phantom_tracker is not None)
 
 # Trade tracking with PostgreSQL fallback
 try:

@@ -3281,6 +3281,7 @@ class TradingBot:
 
                                 # If promotion is forced and we have a signal, execute immediately
                                 if sig_mr and promotion_forced:
+                                    promotion_attempted = True
                                     try:
                                         if self.tg:
                                             try:
@@ -3386,9 +3387,14 @@ class TradingBot:
                                         # Skip the rest of phantom sampling for this symbol
                                         continue
                                     except Exception as e:
-                                        if str(e) not in ("position_exists","invalid_qty","invalid_sl"):
-                                            logger.debug(f"[{sym}] Promotion forced execution error: {e}")
-                                        # Fall through to phantom sampling if execution failed
+                                        # Announce forced execution failure and skip phantom record to avoid confusion
+                                        logger.warning(f"[{sym}] MR Promotion forced execution failed: {e}")
+                                        if self.tg:
+                                            try:
+                                                await self.tg.send_message(f"🛑 MR Promotion: Failed to execute {sym} {sig_mr.side.upper()} — {str(e)[:120]}")
+                                            except Exception:
+                                                pass
+                                        continue
 
                                 # Regular phantom-only sampling path (when not promotion-forced)
                                 mr_remaining = mr_limit - len(mr_budget)

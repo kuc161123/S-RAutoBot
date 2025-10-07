@@ -4421,7 +4421,12 @@ class TradingBot:
 
                 except Exception as e:
                     # Safety policy for unexpected scoring issues
-                    logger.warning(f"[{sym}] ML scoring error: {e}.")
+                    try:
+                        import traceback
+                        logger.exception(f"[{sym}] ML scoring error: {e}")
+                        logger.debug(traceback.format_exc())
+                    except Exception:
+                        logger.warning(f"[{sym}] ML scoring error: {e}.")
                     try:
                         tel = shared.get("telemetry", {})
                         tel['ml_errors'] = tel.get('ml_errors', 0) + 1

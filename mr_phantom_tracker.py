@@ -330,8 +330,8 @@ class MRPhantomTracker:
         # Save to Redis
         self._save_to_redis()
 
-        # Notify on open immediately (phantom recorded)
-        if self.notifier:
+        # Notify on open immediately (phantom-only)
+        if self.notifier and not was_executed:
             try:
                 res = self.notifier(phantom)
                 if asyncio.iscoroutine(res):

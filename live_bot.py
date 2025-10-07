@@ -1380,6 +1380,12 @@ class TradingBot:
                             logger.info(f"[{symbol}] ML ROUTING DEBUG: strategy='{pos.strategy_name}', use_enhanced={shared.get('use_enhanced_parallel', False) if 'shared' in locals() else False}")
 
                             # Record outcome in appropriate ML scorer based on strategy (NO DUPLICATION)
+                            # IMPORTANT: skip ML training updates for manual closes
+                            skip_ml_update_manual = False
+                            if str(exit_reason).lower() == 'manual':
+                                logger.info(f"[{symbol}] ML SKIP: Manual close — not used for training (strategy={pos.strategy_name})")
+                                # Still log and proceed without training updates
+                                skip_ml_update_manual = True
                             # Get shared data components for ML scorers
                             shared_enhanced_mr = shared.get('enhanced_mr_scorer') if 'shared' in locals() else None
                             shared_mr_scorer = shared.get('mean_reversion_scorer') if 'shared' in locals() else None
@@ -1388,7 +1394,9 @@ class TradingBot:
                             logger.info(f"[{symbol}] ML COMPONENTS: enhanced_mr={shared_enhanced_mr is not None}, mr_scorer={shared_mr_scorer is not None}, use_enhanced={use_enhanced}")
                             logger.info(f"[{symbol}] ML ROUTING DECISION: Enhanced system active: {use_enhanced and shared_enhanced_mr}, Strategy: '{pos.strategy_name}'")
 
-                            if use_enhanced and shared_enhanced_mr:
+                            if skip_ml_update_manual:
+                                pass
+                            elif use_enhanced and shared_enhanced_mr:
                                 # Enhanced parallel system - STRICT routing guard
                                 logger.info(f"[{symbol}] 🎯 ML ROUTING: strategy_name='{pos.strategy_name}', outcome='{outcome}'")
                                 if pos.strategy_name == "enhanced_mr":
@@ -1437,12 +1445,13 @@ class TradingBot:
                                         logger.info(f"[{symbol}] Trend ML updated with outcome.")
                             else:
                                 # Original system - record in appropriate ML scorer
-                                if pos.strategy_name == "mean_reversion" and shared_mr_scorer:
-                                    shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                    logger.info(f"[{symbol}] Mean Reversion ML updated with outcome.")
-                                elif ml_scorer is not None:
-                                    ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                    logger.info(f"[{symbol}] Trend ML updated with outcome.")
+                                if 'skip_ml_update_manual' not in locals():
+                                    if pos.strategy_name == "mean_reversion" and shared_mr_scorer:
+                                        shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                        logger.info(f"[{symbol}] Mean Reversion ML updated with outcome.")
+                                    elif ml_scorer is not None:
+                                        ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                        logger.info(f"[{symbol}] Trend ML updated with outcome.")
 
                             
                             # Log with clear outcome based on actual P&L and corrected exit reason

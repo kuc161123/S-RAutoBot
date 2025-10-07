@@ -2711,6 +2711,194 @@ class TradingBot:
                             # Skip silently - no need to log every cooldown
                             continue
                 
+                    # Strategy independence: run Trend and MR fully independently (single-per-symbol concurrency)
+                    try:
+                        indep_cfg = cfg.get('strategy_independence', {}) if 'cfg' in locals() else {}
+                        independence_enabled = bool(indep_cfg.get('enabled', False))
+                    except Exception:
+                        independence_enabled = False
+
+                    if independence_enabled and ENHANCED_ML_AVAILABLE:
+                        # Helper to attempt execution for a given signal; returns True if executed
+                        async def _try_execute(strategy_name: str, sig_obj, ml_score: float = 0.0, threshold: float = 75.0):
+                            nonlocal book, bybit, sizer
+                            # Enforce one-way mode: only one position per symbol at a time
+                            if sym in book.positions:
+                                return False
+                            # Get symbol metadata and round TP/SL
+                            m = meta_for(sym, shared["meta"])
+                            from position_mgr import round_step
+                            tick_size = m.get("tick_size", 0.000001)
+                            original_tp = sig_obj.tp; original_sl = sig_obj.sl
+                            sig_obj.tp = round_step(sig_obj.tp, tick_size)
+                            sig_obj.sl = round_step(sig_obj.sl, tick_size)
+                            if original_tp != sig_obj.tp or original_sl != sig_obj.sl:
+                                logger.info(f"[{sym}] Rounded TP/SL to tick size {tick_size}. TP: {original_tp:.6f} -> {sig_obj.tp:.6f}, SL: {original_sl:.6f} -> {sig_obj.sl:.6f}")
+                            # Balance and sizing
+                            current_balance = bybit.get_balance()
+                            if current_balance:
+                                sizer.account_balance = current_balance
+                                shared["last_balance"] = current_balance
+                            risk_amount = sizer.account_balance * (risk.risk_percent / 100.0) if risk.use_percent_risk and sizer.account_balance else risk.risk_usd
+                            qty = sizer.qty_for(sig_obj.entry, sig_obj.sl, m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
+                            if qty <= 0:
+                                logger.info(f"[{sym}] {strategy_name} qty calc invalid -> skip execution")
+                                return False
+                            # SL sanity
+                            current_price = df['close'].iloc[-1]
+                            if (sig_obj.side == "long" and sig_obj.sl >= current_price) or (sig_obj.side == "short" and sig_obj.sl <= current_price):
+                                logger.warning(f"[{sym}] {strategy_name} SL invalid relative to current price -> skip execution")
+                                return False
+                            # Set leverage and place order
+                            max_lev = int(m.get("max_leverage", 10))
+                            bybit.set_leverage(sym, max_lev)
+                            side = "Buy" if sig_obj.side == "long" else "Sell"
+                            logger.info(f"[{sym}] {strategy_name.upper()} placing {side} order for {qty} units")
+                            _ = bybit.place_market(sym, side, qty, reduce_only=False)
+                            # Adjust TP to actual entry
+                            actual_entry = sig_obj.entry
+                            try:
+                                await asyncio.sleep(0.5)
+                                position = bybit.get_position(sym)
+                                if position and position.get("avgPrice"):
+                                    actual_entry = float(position["avgPrice"])
+                                    if actual_entry != sig_obj.entry:
+                                        fee_adjustment = 1.00165
+                                        risk_distance = abs(actual_entry - sig_obj.sl)
+                                        rr = settings.rr if strategy_name == 'enhanced_mr' else trend_settings.rr
+                                        if sig_obj.side == "long":
+                                            sig_obj.tp = actual_entry + (rr * risk_distance * fee_adjustment)
+                                        else:
+                                            sig_obj.tp = actual_entry - (rr * risk_distance * fee_adjustment)
+                                        logger.info(f"[{sym}] {strategy_name.upper()} TP adjusted for actual entry: {sig_obj.tp:.4f}")
+                            except Exception:
+                                pass
+                            # Set TP/SL
+                            bybit.set_tpsl(sym, take_profit=sig_obj.tp, stop_loss=sig_obj.sl, qty=qty)
+                            # Update book
+                            book.positions[sym] = Position(
+                                sig_obj.side,
+                                qty,
+                                entry=actual_entry,
+                                sl=sig_obj.sl,
+                                tp=sig_obj.tp,
+                                entry_time=datetime.now(),
+                                strategy_name=strategy_name
+                            )
+                            # Notify
+                            try:
+                                if self.tg:
+                                    emoji = '📈'
+                                    strategy_label = 'Enhanced Mr' if strategy_name=='enhanced_mr' else 'Trend Breakout'
+                                    msg = (
+                                        f"{emoji} *{sym} {sig_obj.side.upper()}* ({strategy_label})\n\n"
+                                        f"Entry: {actual_entry:.4f}\n"
+                                        f"Stop Loss: {sig_obj.sl:.4f}\n"
+                                        f"Take Profit: {sig_obj.tp:.4f}\n"
+                                        f"Quantity: {qty}\n"
+                                        f"Risk: {risk.risk_percent if risk.use_percent_risk else risk.risk_usd}{'%' if risk.use_percent_risk else ''} (${risk_amount:.2f})\n"
+                                    )
+                                    await self.tg.send_message(msg)
+                            except Exception:
+                                pass
+                            return True
+
+                        # 1) Mean Reversion independent
+                        try:
+                            sig_mr_ind = detect_signal_mean_reversion(df.copy(), settings, sym)
+                        except Exception:
+                            sig_mr_ind = None
+                        if sig_mr_ind is not None:
+                            ef = sig_mr_ind.meta.get('mr_features', {}) if sig_mr_ind.meta else {}
+                            ml_score_mr = 0.0; thr_mr = 75.0; mr_should = True
+                            try:
+                                if enhanced_mr_scorer:
+                                    ml_score_mr, _ = enhanced_mr_scorer.score_signal(sig_mr_ind.__dict__, ef, df)
+                                    thr_mr = getattr(enhanced_mr_scorer, 'min_score', 75)
+                                    mr_should = ml_score_mr >= thr_mr
+                                # Promotion override regardless of earlier guards
+                                prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
+                                promote_wr = float(prom_cfg.get('promote_wr', 50.0))
+                                mr_stats = enhanced_mr_scorer.get_enhanced_stats() if enhanced_mr_scorer else {}
+                                recent_wr = float(mr_stats.get('recent_win_rate', 0.0))
+                                if recent_wr >= promote_wr:
+                                    mr_should = True
+                                    try:
+                                        if self.tg:
+                                            await self.tg.send_message(f"🌀 MR Promotion: Force executing {sym} {sig_mr_ind.side.upper()} (WR ≥ {promote_wr:.0f}%)")
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                pass
+                            if mr_should:
+                                executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
+                                if not executed and mr_phantom_tracker:
+                                    # Record phantom when position exists or execution not possible
+                                    mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+                            else:
+                                # Phantom record when below threshold
+                                if mr_phantom_tracker:
+                                    mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+
+                        # 2) Trend independent
+                        try:
+                            sig_tr_ind = detect_trend_signal(df.copy(), trend_settings, sym)
+                        except Exception:
+                            sig_tr_ind = None
+                        if sig_tr_ind is not None:
+                            # Build trend features (regime-independent)
+                            try:
+                                cl = df['close']; price = float(cl.iloc[-1])
+                                ys = cl.tail(20).values if len(cl) >= 20 else cl.values
+                                try:
+                                    slope = np.polyfit(np.arange(len(ys)), ys, 1)[0]
+                                except Exception:
+                                    slope = 0.0
+                                trend_slope_pct = float((slope / price) * 100.0) if price else 0.0
+                                ema20 = cl.ewm(span=20, adjust=False).mean().iloc[-1]
+                                ema50 = cl.ewm(span=50, adjust=False).mean().iloc[-1] if len(cl) >= 50 else ema20
+                                ema_stack_score = 100.0 if (price > ema20 > ema50 or price < ema20 < ema50) else 50.0 if (ema20 != ema50) else 0.0
+                                rng_today = float(df['high'].iloc[-1] - df['low'].iloc[-1])
+                                med_range = float((df['high'] - df['low']).rolling(20).median().iloc[-1]) if len(df) >= 20 else rng_today
+                                range_expansion = float(rng_today / max(1e-9, med_range))
+                                prev = cl.shift(); trarr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                                atr = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
+                                atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
+                                close_vs_ema20_pct = float(((price - ema20) / max(1e-9, ema20)) * 100.0) if ema20 else 0.0
+                                trend_features = {
+                                    'trend_slope_pct': trend_slope_pct,
+                                    'ema_stack_score': ema_stack_score,
+                                    'atr_pct': atr_pct,
+                                    'range_expansion': range_expansion,
+                                    'breakout_dist_atr': float(getattr(sig_tr_ind, 'meta', {}).get('breakout_dist_atr', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0),
+                                    'close_vs_ema20_pct': close_vs_ema20_pct,
+                                    'bb_width_pct': 0.0,
+                                    'session': 'us',
+                                    'symbol_cluster': 3,
+                                    'volatility_regime': 'normal'
+                                }
+                            except Exception:
+                                trend_features = {}
+                            tr_should = True; ml_score_tr = 0.0; thr_tr = 70.0
+                            try:
+                                tr_scorer = get_trend_scorer() if 'get_trend_scorer' in globals() and get_trend_scorer is not None else None
+                                if tr_scorer is not None:
+                                    ml_score_tr, _ = tr_scorer.score_signal(sig_tr_ind.__dict__, trend_features)
+                                    thr_tr = getattr(tr_scorer, 'min_score', 70)
+                                    tr_should = ml_score_tr >= thr_tr
+                            except Exception:
+                                pass
+                            if tr_should:
+                                executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
+                                if not executed and phantom_tracker:
+                                    phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                            else:
+                                if phantom_tracker:
+                                    phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+
+                        # Done with independence for this symbol
+                        continue
+
                     # --- ENHANCED PARALLEL STRATEGY ROUTING ---
                     sig = None
                     selected_strategy = "trend_breakout"  # Default

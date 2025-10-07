@@ -213,8 +213,8 @@ phantom_flow:
 
 # Strategy isolation and execution arbitrator
 strategy_isolation:
-  enabled: true               # isolate analysis/learning per strategy and arbitrate execution
-  execution_policy: arbitrate # pick best candidate when multiple strategies fire on same symbol
+  enabled: false              # superseded by strategy_independence
+  execution_policy: arbitrate
   min_quality_guards:
     trend:
       slope_min: 3.0
@@ -1600,3 +1600,6 @@ execution:
   stale_feed_guard:
     enabled: true
     max_lag_sec: 180         # skip execution if last tick older than this
+strategy_independence:
+  enabled: true               # Run Trend and MR fully independently (single-per-symbol concurrency)
+  concurrency: single_per_symbol

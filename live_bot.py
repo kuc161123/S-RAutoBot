@@ -2831,6 +2831,121 @@ class TradingBot:
                                 chosen = ('enhanced_mr', soft_sig_mr)
 
                             if chosen is None:
+                                # MR Promotion: force execute MR even if ML thresholds not met (bypass guards) when recent WR ≥ promote_wr
+                                try:
+                                    prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
+                                    promote_wr = float(prom_cfg.get('promote_wr', 50.0))
+                                    mr_stats = enhanced_mr_scorer.get_enhanced_stats() if enhanced_mr_scorer else {}
+                                    recent_wr = float(mr_stats.get('recent_win_rate', 0.0))
+                                    if soft_sig_mr and recent_wr >= promote_wr:
+                                        # Execute MR now (ignore ML thresholds/caps)
+                                        try:
+                                            if self.tg:
+                                                try:
+                                                    await self.tg.send_message(f"🌀 MR Promotion: Force executing {sym} {soft_sig_mr.side.upper()} (WR ≥ {promote_wr:.0f}%)")
+                                                except Exception:
+                                                    pass
+                                            # Prevent duplicate
+                                            if sym in book.positions:
+                                                logger.info(f"[{sym}] Promotion forced (soft routing), but position already open. Skipping duplicate.")
+                                                raise Exception("position_exists")
+                                            # Meta and TP/SL rounding
+                                            m = meta_for(sym, shared["meta"])
+                                            from position_mgr import round_step
+                                            tick_size = m.get("tick_size", 0.000001)
+                                            original_tp = soft_sig_mr.tp; original_sl = soft_sig_mr.sl
+                                            soft_sig_mr.tp = round_step(soft_sig_mr.tp, tick_size)
+                                            soft_sig_mr.sl = round_step(soft_sig_mr.sl, tick_size)
+                                            if original_tp != soft_sig_mr.tp or original_sl != soft_sig_mr.sl:
+                                                logger.info(f"[{sym}] Rounded TP/SL to tick size {tick_size}. TP: {original_tp:.6f} -> {soft_sig_mr.tp:.6f}, SL: {original_sl:.6f} -> {soft_sig_mr.sl:.6f}")
+                                            # Balance and sizing
+                                            current_balance = bybit.get_balance()
+                                            if current_balance:
+                                                sizer.account_balance = current_balance
+                                                shared["last_balance"] = current_balance
+                                            risk_amount = sizer.account_balance * (risk.risk_percent / 100.0) if risk.use_percent_risk and sizer.account_balance else risk.risk_usd
+                                            qty = sizer.qty_for(soft_sig_mr.entry, soft_sig_mr.sl, m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=0.0)
+                                            if qty <= 0:
+                                                logger.info(f"[{sym}] Promotion forced (soft routing), but qty calc invalid -> skip")
+                                                raise Exception("invalid_qty")
+                                            # SL sanity
+                                            current_price = df['close'].iloc[-1]
+                                            if (soft_sig_mr.side == "long" and soft_sig_mr.sl >= current_price) or (soft_sig_mr.side == "short" and soft_sig_mr.sl <= current_price):
+                                                logger.warning(f"[{sym}] Promotion forced (soft routing), but SL invalid relative to current price -> skip")
+                                                raise Exception("invalid_sl")
+                                            # Set leverage and place order
+                                            max_lev = int(m.get("max_leverage", 10))
+                                            bybit.set_leverage(sym, max_lev)
+                                            side = "Buy" if soft_sig_mr.side == "long" else "Sell"
+                                            logger.info(f"[{sym}] MR Promotion (soft) placing {side} order for {qty} units")
+                                            order_result = bybit.place_market(sym, side, qty, reduce_only=False)
+                                            # Adjust TP to actual entry
+                                            actual_entry = soft_sig_mr.entry
+                                            try:
+                                                await asyncio.sleep(0.5)
+                                                position = bybit.get_position(sym)
+                                                if position and position.get("avgPrice"):
+                                                    actual_entry = float(position["avgPrice"])
+                                                    if actual_entry != soft_sig_mr.entry:
+                                                        fee_adjustment = 1.00165
+                                                        risk_distance = abs(actual_entry - soft_sig_mr.sl)
+                                                        if soft_sig_mr.side == "long":
+                                                            soft_sig_mr.tp = actual_entry + (settings.rr * risk_distance * fee_adjustment)
+                                                        else:
+                                                            soft_sig_mr.tp = actual_entry - (settings.rr * risk_distance * fee_adjustment)
+                                                        logger.info(f"[{sym}] MR Promotion (soft) TP adjusted for actual entry: {soft_sig_mr.tp:.4f}")
+                                            except Exception:
+                                                pass
+                                            # Set TP/SL
+                                            bybit.set_tpsl(sym, take_profit=soft_sig_mr.tp, stop_loss=soft_sig_mr.sl, qty=qty)
+                                            # Update book
+                                            book.positions[sym] = Position(
+                                                soft_sig_mr.side,
+                                                qty,
+                                                entry=actual_entry,
+                                                sl=soft_sig_mr.sl,
+                                                tp=soft_sig_mr.tp,
+                                                entry_time=datetime.now(),
+                                                strategy_name='enhanced_mr'
+                                            )
+                                            # Mark promotion flag
+                                            try:
+                                                if not soft_sig_mr.meta:
+                                                    soft_sig_mr.meta = {}
+                                                soft_sig_mr.meta['promotion_forced'] = True
+                                            except Exception:
+                                                pass
+                                            # Standard open message
+                                            if self.tg:
+                                                try:
+                                                    emoji = '📈'
+                                                    strategy_label = 'Enhanced Mr'
+                                                    msg = (
+                                                        f"{emoji} *{sym} {soft_sig_mr.side.upper()}* ({strategy_label})\n\n"
+                                                        f"Entry: {actual_entry:.4f}\n"
+                                                        f"Stop Loss: {soft_sig_mr.sl:.4f}\n"
+                                                        f"Take Profit: {soft_sig_mr.tp:.4f}\n"
+                                                        f"Quantity: {qty}\n"
+                                                        f"Risk: {risk.risk_percent if risk.use_percent_risk else risk.risk_usd}{'%' if risk.use_percent_risk else ''} (${risk_amount:.2f})\n"
+                                                        f"Promotion: FORCED (WR ≥ {promote_wr:.0f}%)\n"
+                                                        f"Reason: Mean Reversion (Promotion)"
+                                                    )
+                                                    await self.tg.send_message(msg)
+                                                except Exception:
+                                                    pass
+                                            # Done with this symbol
+                                            continue
+                                        except Exception as e:
+                                            logger.warning(f"[{sym}] MR Promotion forced execution (soft routing) failed: {e}")
+                                            if self.tg:
+                                                try:
+                                                    await self.tg.send_message(f"🛑 MR Promotion: Failed to execute {sym} {soft_sig_mr.side.upper()} — {str(e)[:120]}")
+                                                except Exception:
+                                                    pass
+                                            # Fallthrough to phantom recording if execution fails
+                                            pass
+                                except Exception:
+                                    pass
                                 # Record phantoms (if signals exist) and continue to next symbol
                                 try:
                                     # Enforce per-strategy hourly budget (trend)
@@ -3765,7 +3880,7 @@ class TradingBot:
                                 # MR Promotion override: execute despite ML below threshold (bypass all guards when WR ≥ promote_wr)
                                 try:
                                     prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
-                                    if prom_cfg.get('enabled', False) and not should_take_trade:
+                                    if not should_take_trade:
                                         promote_wr = float(prom_cfg.get('promote_wr', 50.0))
                                         mr_stats = enhanced_mr_scorer.get_enhanced_stats() if enhanced_mr_scorer else {}
                                         recent_wr = float(mr_stats.get('recent_win_rate', 0.0))

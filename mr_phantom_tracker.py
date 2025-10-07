@@ -331,10 +331,9 @@ class MRPhantomTracker:
             phantom_id=(uuid.uuid4().hex[:8])
         )
 
-        # Only set active for phantom (non-executed) records
-        if not was_executed:
-            lst = self.active_mr_phantoms.setdefault(symbol, [])
-            lst.append(phantom)
+        # Track active for both phantom and executed signals so closures align with TP/SL
+        lst = self.active_mr_phantoms.setdefault(symbol, [])
+        lst.append(phantom)
 
         # Initialize list if needed
         if symbol not in self.mr_phantom_trades:

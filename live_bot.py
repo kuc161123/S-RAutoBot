@@ -4874,6 +4874,19 @@ class TradingBot:
                         ml_score=float(ml_score),
                         ml_reason=ml_reason if isinstance(ml_reason, str) else ""
                     )
+                    # Record an executed MR phantom mirror with exact exchange-aligned values
+                    try:
+                        if selected_strategy == 'enhanced_mr' and mr_phantom_tracker is not None:
+                            mr_phantom_tracker.record_mr_signal(
+                                sym,
+                                {'side': sig.side, 'entry': float(actual_entry), 'sl': float(sig.sl), 'tp': float(sig.tp), 'meta': getattr(sig, 'meta', {}) or {}},
+                                float(ml_score or 0.0),
+                                True,
+                                {},
+                                enhanced_features if 'enhanced_features' in locals() else {}
+                            )
+                    except Exception as e:
+                        logger.debug(f"[{sym}] MR executed phantom mirror record failed: {e}")
                     # Optionally cancel phantoms on exec (config-controlled)
                     try:
                         ph_cfg = cfg.get('phantom', {}) if 'cfg' in locals() else {}

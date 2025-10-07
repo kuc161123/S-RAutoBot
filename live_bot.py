@@ -476,6 +476,11 @@ class TradingBot:
         self.ws = None
         self.frames: Dict[str, pd.DataFrame] = {}
         self.frames_3m: Dict[str, pd.DataFrame] = {}
+        # Scalp secondary stream state + health
+        self._scalp_secondary_started: bool = False
+        self._scalp_last_confirm: Dict[str, pd.Timestamp] = {}
+        self._scalp_stream_tf: Optional[str] = None
+        self._scalp_fallback_warned: Dict[str, bool] = {}
         self.tg: Optional[TGBot] = None
         self.bybit = None
         self.storage = CandleStorage()  # Will use DATABASE_URL from environment
@@ -635,6 +640,11 @@ class TradingBot:
     async def _collect_secondary_stream(self, ws_url: str, timeframe: str, symbols: list[str]):
         """Collect a secondary timeframe (e.g., 3m) for scalp detection."""
         handler = MultiWebSocketHandler(ws_url, self.running)
+        # Track the configured TF for diagnostics
+        try:
+            self._scalp_stream_tf = str(timeframe)
+        except Exception:
+            self._scalp_stream_tf = None
         topics = [f"{timeframe}.{s}" for s in symbols]
         async for sym, k in handler.multi_kline_stream(topics):
             try:
@@ -675,6 +685,11 @@ class TradingBot:
                     confirm = False
                 if not confirm:
                     continue
+                # Mark last confirm per-symbol for health/fallback
+                try:
+                    self._scalp_last_confirm[sym] = row.index[0]
+                except Exception:
+                    pass
 
                 # Guard: scalper enabled and modules available
                 try:
@@ -838,6 +853,135 @@ class TradingBot:
                     logger.debug(f"[{sym}] Scalp(3m) record error: {e}")
             except Exception as e:
                 logger.debug(f"Secondary stream update error for {sym}: {e}")
+
+    def _scalp_secondary_stale(self, sym: str, stale_minutes: int = 30) -> bool:
+        """Return True if the 3m scalp stream appears stale/missing for a symbol."""
+        try:
+            last = self._scalp_last_confirm.get(sym)
+            if last is None:
+                return True
+            # If no confirm in the last 'stale_minutes', consider stale
+            delta = (pd.Timestamp.utcnow().tz_localize('UTC') - last) if last.tzinfo else (pd.Timestamp.utcnow() - last)
+            return delta.total_seconds() > stale_minutes * 60
+        except Exception:
+            return True
+
+    def _maybe_run_scalp_fallback(self, sym: str, df: pd.DataFrame, regime_analysis, cluster_id: Optional[int]):
+        """Run Scalp detection on main/3m frames when the secondary stream is unavailable or stale.
+
+        This preserves Scalp independence by only engaging when the 3m loop isn't producing confirms.
+        """
+        # Guards
+        try:
+            s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+        except Exception:
+            s_cfg = {}
+        use_scalp = bool(s_cfg.get('enabled', False) and SCALP_AVAILABLE and detect_scalp_signal is not None)
+        if not use_scalp:
+            return
+
+        scalp_independent = bool(s_cfg.get('independent', False))
+        # Only fallback when 3m stream not started or appears stale
+        if scalp_independent and self._scalp_secondary_started and not self._scalp_secondary_stale(sym):
+            return
+
+        # Prefer 3m frames if we have enough, else use main tf
+        try:
+            df3 = self.frames_3m.get(sym)
+        except Exception:
+            df3 = None
+        if df3 is not None and not df3.empty and len(df3) >= 120:
+            df_for_scalp = df3
+            logger.info(f"[{sym}] 🩳 Fallback Scalp using 3m frames ({len(df3)} bars)")
+        else:
+            df_for_scalp = df
+            if df3 is None or df3.empty:
+                logger.info(f"[{sym}] 🩳 Fallback Scalp using main tf: 3m unavailable")
+            else:
+                logger.info(f"[{sym}] 🩳 Fallback Scalp using main tf: 3m sparse ({len(df3)} bars)")
+
+        # Run detection
+        try:
+            sc_sig = detect_scalp_signal(df_for_scalp.copy(), ScalpSettings(), sym)
+        except Exception as e:
+            logger.debug(f"[{sym}] Scalp fallback detection error: {e}")
+            sc_sig = None
+        if not sc_sig:
+            return
+
+        # Redis dedup
+        dedup_ok = True
+        try:
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            r = scpt.redis_client
+            if r is not None:
+                key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),4)}:{round(float(sc_sig.sl),4)}:{round(float(sc_sig.tp),4)}"
+                if r.exists(f"phantom:dedup:scalp:{key}"):
+                    dedup_ok = False
+                else:
+                    r.setex(f"phantom:dedup:scalp:{key}", 7*24*3600, '1')
+        except Exception:
+            pass
+        if not dedup_ok:
+            logger.debug(f"[{sym}] 🩳 Scalp fallback dedup: duplicate signal skipped")
+            return
+
+        # Build features and record phantom with pacing
+        sc_meta = getattr(sc_sig, 'meta', {}) or {}
+        try:
+            vol_level = getattr(regime_analysis, 'volatility_level', 'normal') if regime_analysis else 'normal'
+        except Exception:
+            vol_level = 'normal'
+        sc_feats = self._build_scalp_features(df_for_scalp, sc_meta, vol_level, cluster_id)
+        sc_feats['routing'] = 'fallback'
+
+        try:
+            scpt = get_scalp_phantom_tracker()
+            hb = self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
+            sc_limit = int(hb.get('scalp', 4))
+            if not hasattr(self, '_scalp_budget'):
+                self._scalp_budget = {}
+            now_ts = pd.Timestamp.utcnow().timestamp()
+            blist = [ts for ts in self._scalp_budget.get(sym, []) if (now_ts - ts) < 3600]
+            self._scalp_budget[sym] = blist
+            sc_remaining = sc_limit - len(blist)
+            # Daily cap (none) per strategy for scalp
+            daily_ok = True
+            n_key = None
+            try:
+                if scpt.redis_client is not None:
+                    day = pd.Timestamp.utcnow().strftime('%Y%m%d')
+                    caps_cfg = (self.config.get('phantom', {}).get('caps', {}) or {}).get('scalp', {})
+                    none_cap = int(caps_cfg.get('none', 200))
+                    n_key = f"phantom:daily:none_count:{day}:scalp"
+                    n_val = int(scpt.redis_client.get(n_key) or 0)
+                    daily_ok = n_val < none_cap
+            except Exception:
+                pass
+            if sc_remaining > 0 and daily_ok:
+                scpt.record_scalp_signal(
+                    sym,
+                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                    0.0,
+                    False,
+                    sc_feats
+                )
+                try:
+                    if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                        self.flow_controller.increment_accepted('scalp', 1)
+                except Exception:
+                    pass
+                try:
+                    if scpt.redis_client is not None and n_key is not None:
+                        scpt.redis_client.incr(n_key)
+                except Exception:
+                    pass
+                logger.info(f"[{sym}] 👻 Phantom-only (Scalp fallback): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                blist.append(now_ts)
+                self._scalp_budget[sym] = blist
+        except Exception as e:
+            logger.debug(f"[{sym}] Scalp fallback record error: {e}")
 
     async def _notify_phantom_trade(self, label: str, phantom):
         if not self.tg:
@@ -1841,6 +1985,18 @@ class TradingBot:
         logger.info(f"Trading symbols: {symbols}")
         logger.info(f"Timeframe: {tf} minutes")
         logger.info("📌 Bot Policy: Existing positions and orders will NOT be modified - they will run their course")
+
+        # Scalp configuration diagnostics (early visibility)
+        try:
+            scalp_cfg_diag = cfg.get('scalp', {})
+            scalp_enabled = bool(scalp_cfg_diag.get('enabled', False))
+            scalp_independent = bool(scalp_cfg_diag.get('independent', False))
+            scalp_tf = str(scalp_cfg_diag.get('timeframe', '3'))
+            logger.info(
+                f"🩳 Scalp config: enabled={scalp_enabled}, independent={scalp_independent}, tf={scalp_tf}m, modules={'OK' if SCALP_AVAILABLE else 'MISSING'}"
+            )
+        except Exception:
+            pass
         
         # Import strategies for parallel system
         from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion
@@ -2451,6 +2607,7 @@ class TradingBot:
         if use_scalp and SCALP_AVAILABLE and scalp_stream_tf:
             try:
                 self._create_task(self._collect_secondary_stream(cfg['bybit']['ws_public'], scalp_stream_tf, symbols))
+                self._scalp_secondary_started = True
                 logger.info(f"🩳 Scalp secondary stream started (tf={scalp_stream_tf}m)")
             except Exception as e:
                 logger.warning(f"Failed to start scalp secondary stream: {e}")
@@ -3956,7 +4113,12 @@ class TradingBot:
                                             pb_budget_map[sym] = pb_budget
                                 except Exception:
                                     pass
-                            # After phantom-only sampling, continue to next symbol
+                            # Before continuing, ensure Scalp fallback runs if 3m stream is unavailable/stale
+                            try:
+                                self._maybe_run_scalp_fallback(sym, df, regime_analysis, cluster_id)
+                            except Exception:
+                                pass
+                            # After phantom-only sampling + optional Scalp fallback, continue to next symbol
                             continue
 
                             # Scalp phantom (Phase 0)

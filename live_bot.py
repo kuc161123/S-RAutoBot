@@ -2998,6 +2998,53 @@ class TradingBot:
                                         else:
                                             sig_obj.tp = actual_entry - (rr * risk_distance * fee_adjustment)
                                         logger.info(f"[{sym}] {strategy_name.upper()} TP adjusted for actual entry: {sig_obj.tp:.4f}")
+                                        # Optional: Recalc SL to preserve risk when slippage exceeds threshold (Trend only)
+                                        try:
+                                            if strategy_name == 'trend_breakout':
+                                                sl_cfg = (cfg.get('trend', {}) or {}).get('exec', {}).get('slippage_recalc', {}) if 'cfg' in locals() else {}
+                                                enabled = bool(sl_cfg.get('enabled', True))
+                                                min_pct = float(sl_cfg.get('min_pct', 0.001))  # 0.1%
+                                                if enabled and qty > 0:
+                                                    slip_pct = abs(actual_entry - sig_obj.entry) / max(1e-9, sig_obj.entry)
+                                                    if slip_pct >= min_pct:
+                                                        target_dist = float(risk_amount) / float(qty)
+                                                        if sig_obj.side == 'long':
+                                                            new_sl = actual_entry - target_dist
+                                                            pivot = None
+                                                            try:
+                                                                if isinstance(sig_obj.meta, dict):
+                                                                    pivot = float(sig_obj.meta.get('pivot_low'))
+                                                            except Exception:
+                                                                pivot = None
+                                                            if pivot is not None:
+                                                                atr = float(sig_obj.meta.get('atr', 0.0)) if isinstance(sig_obj.meta, dict) else 0.0
+                                                                buffer = 0.05 * atr
+                                                                new_sl = min(new_sl, pivot - buffer)
+                                                            min_stop = actual_entry * 0.01
+                                                            if (actual_entry - new_sl) < min_stop:
+                                                                new_sl = actual_entry - min_stop
+                                                            if new_sl < actual_entry:
+                                                                sig_obj.sl = new_sl
+                                                        else:
+                                                            new_sl = actual_entry + target_dist
+                                                            pivot = None
+                                                            try:
+                                                                if isinstance(sig_obj.meta, dict):
+                                                                    pivot = float(sig_obj.meta.get('pivot_high'))
+                                                            except Exception:
+                                                                pivot = None
+                                                            if pivot is not None:
+                                                                atr = float(sig_obj.meta.get('atr', 0.0)) if isinstance(sig_obj.meta, dict) else 0.0
+                                                                buffer = 0.05 * atr
+                                                                new_sl = max(new_sl, pivot + buffer)
+                                                            min_stop = actual_entry * 0.01
+                                                            if (new_sl - actual_entry) < min_stop:
+                                                                new_sl = actual_entry + min_stop
+                                                            if new_sl > actual_entry:
+                                                                sig_obj.sl = new_sl
+                                                        logger.info(f"[{sym}] TREND SL recalc for slippage: SL -> {sig_obj.sl:.4f}")
+                                        except Exception as _slerr:
+                                            logger.debug(f"[{sym}] SL recalc skipped: {_slerr}")
                             except Exception:
                                 pass
                             # Set TP/SL
@@ -4905,6 +4952,21 @@ class TradingBot:
                         ml_score=float(ml_score),
                         ml_reason=ml_reason if isinstance(ml_reason, str) else ""
                     )
+                    # For Trend: if slippage caused a SL recalc earlier, ensure TP/SL have been read back and adjusted; otherwise, adjust here too
+                    try:
+                        if selected_strategy == 'trend_breakout':
+                            # Already set, but re-apply set_tpsl if needed to reflect any SL recalc
+                            bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl, qty=qty)
+                            pos_back = bybit.get_position(sym)
+                            if isinstance(pos_back, dict):
+                                tp_val = pos_back.get('takeProfit')
+                                sl_val = pos_back.get('stopLoss')
+                                if tp_val not in (None, '', '0'):
+                                    sig.tp = float(tp_val)
+                                if sl_val not in (None, '', '0'):
+                                    sig.sl = float(sl_val)
+                    except Exception:
+                        pass
                     # Record MR phantom mirror (executed or promotion-forced phantom) with exchange-aligned values
                     try:
                         if selected_strategy == 'enhanced_mr' and mr_phantom_tracker is not None:

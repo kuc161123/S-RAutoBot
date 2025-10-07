@@ -109,6 +109,10 @@ trend:
     min_train_records: 300
     require_ready: true
     min_recent_wr: 0.0
+    slippage_recalc:
+      enabled: true
+      min_pct: 0.001        # 0.1% slippage threshold to trigger SL recalc
+      pivot_buffer_atr: 0.05  # keep SL beyond pivot by 0.05 ATR
   explore:
     enabled: true
     slope_min: 3.0

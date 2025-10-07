@@ -4,6 +4,12 @@ import numpy as np
 import pandas as pd
 import logging
 from strategy_pullback import _pivot_low, _pivot_high  # reuse robust pivot helpers
+try:
+    # Lightweight HTF S/R filter utilities
+    from multi_timeframe_sr import should_use_mtf_level
+    _HTF_AVAILABLE = True
+except Exception:
+    _HTF_AVAILABLE = False
 
 
 @dataclass
@@ -14,6 +20,7 @@ class TrendSettings:
     sl_atr_mult: float = 1.5      # SL distance in ATR from entry
     rr: float = 2.5               # fixed R:R
     use_ema_stack: bool = True
+    use_htf_sr_filter: bool = True  # Avoid breakouts into nearby 1H/4H SR
 
 
 @dataclass
@@ -128,7 +135,19 @@ def detect_signal(df: pd.DataFrame, s: TrendSettings, symbol: str = "") -> Optio
         fee_adjustment = 1.00165
         tp = float(entry) + float(s.rr) * R * fee_adjustment
         reason = f"Donchian breakout LONG > HH({s.channel_len}) + {k}*ATR"
-        meta.update({'breakout_dist_atr': float((price - hh) / max(1e-9, atr))})
+        meta.update({'breakout_dist_atr': float((price - hh) / max(1e-9, atr)), 'pivot_low': float(low.rolling(10).min().iloc[-1])})
+        # HTF S/R guard: avoid breakouts into nearby resistance
+        try:
+            if s.use_htf_sr_filter and _HTF_AVAILABLE:
+                use_mtf, level, why = should_use_mtf_level(symbol, entry, price, df)
+                if use_mtf and ('resistance' in why.lower()):
+                    logger.info(f"[{symbol}] Trend LONG blocked by HTF filter: {why}")
+                    return None
+                if use_mtf:
+                    meta['htf_level'] = float(level)
+                    meta['htf_reason'] = why
+        except Exception:
+            pass
         try:
             which = 'pivot' if sl == sl_opt3 else ('atr' if sl == sl_opt2 else 'breakout')
             logger.info(f"[{symbol}] Trend LONG SL method: {which} | entry={entry:.4f} sl={sl:.4f} tp={tp:.4f}")
@@ -187,7 +206,19 @@ def detect_signal(df: pd.DataFrame, s: TrendSettings, symbol: str = "") -> Optio
         fee_adjustment = 1.00165
         tp = float(entry) - float(s.rr) * R * fee_adjustment
         reason = f"Donchian breakout SHORT < LL({s.channel_len}) - {k}*ATR"
-        meta.update({'breakout_dist_atr': float((ll - price) / max(1e-9, atr))})
+        meta.update({'breakout_dist_atr': float((ll - price) / max(1e-9, atr)), 'pivot_high': float(high.rolling(10).max().iloc[-1])})
+        # HTF S/R guard: avoid breakouts into nearby support
+        try:
+            if s.use_htf_sr_filter and _HTF_AVAILABLE:
+                use_mtf, level, why = should_use_mtf_level(symbol, entry, price, df)
+                if use_mtf and ('support' in why.lower()):
+                    logger.info(f"[{symbol}] Trend SHORT blocked by HTF filter: {why}")
+                    return None
+                if use_mtf:
+                    meta['htf_level'] = float(level)
+                    meta['htf_reason'] = why
+        except Exception:
+            pass
         try:
             which = 'pivot' if sl == sl_opt3 else ('atr' if sl == sl_opt2 else 'breakout')
             logger.info(f"[{symbol}] Trend SHORT SL method: {which} | entry={entry:.4f} sl={sl:.4f} tp={tp:.4f}")

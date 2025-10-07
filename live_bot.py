@@ -1556,18 +1556,34 @@ class TradingBot:
                             logger.info(f"[{symbol}] ML COMPONENTS: enhanced_mr={shared_enhanced_mr is not None}, mr_scorer={shared_mr_scorer is not None}, use_enhanced={use_enhanced}")
                             logger.info(f"[{symbol}] ML ROUTING DECISION: Enhanced system active: {use_enhanced and shared_enhanced_mr}, Strategy: '{pos.strategy_name}'")
 
+                            # MR Promotion flag from Redis for resilience across restarts
+                            mr_promo_flag = False
+                            try:
+                                if getattr(self, '_redis', None) is not None and pos.strategy_name in ["enhanced_mr", "mean_reversion"]:
+                                    mr_promo_flag = (self._redis.get(f'openpos:mr_promotion:{symbol}') == '1')
+                            except Exception:
+                                mr_promo_flag = False
+
                             if skip_ml_update_manual:
                                 pass
                             elif use_enhanced and shared_enhanced_mr:
                                 # Enhanced parallel system - STRICT routing guard
                                 logger.info(f"[{symbol}] 🎯 ML ROUTING: strategy_name='{pos.strategy_name}', outcome='{outcome}'")
                                 if pos.strategy_name == "enhanced_mr":
-                                    try:
-                                        signal_data['was_executed'] = True
-                                    except Exception:
-                                        pass
-                                    shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
-                                    logger.info(f"[{symbol}] ✅ Enhanced MR ML updated with outcome.")
+                                    if mr_promo_flag:
+                                        logger.info(f"[{symbol}] MR Promotion was active — skipping executed MR ML update (phantom path will learn)")
+                                        try:
+                                            if mr_phantom_tracker is not None:
+                                                mr_phantom_tracker.update_mr_phantom_prices(symbol, exit_price, df=self.frames.get(symbol))
+                                        except Exception:
+                                            pass
+                                    else:
+                                        try:
+                                            signal_data['was_executed'] = True
+                                        except Exception:
+                                            pass
+                                        shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
+                                        logger.info(f"[{symbol}] ✅ Enhanced MR ML updated with outcome.")
                                 elif pos.strategy_name == "mean_reversion":
                                     # Guard: do NOT route 'mean_reversion' to Enhanced MR to avoid accidental increments
                                     if shared_mr_scorer is not None:
@@ -1609,8 +1625,16 @@ class TradingBot:
                                 # Original system - record in appropriate ML scorer
                                 if 'skip_ml_update_manual' not in locals():
                                     if pos.strategy_name == "mean_reversion" and shared_mr_scorer:
-                                        shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                        logger.info(f"[{symbol}] Mean Reversion ML updated with outcome.")
+                                        if mr_promo_flag:
+                                            logger.info(f"[{symbol}] MR Promotion was active — skipping executed MR ML update (phantom path will learn)")
+                                            try:
+                                                if mr_phantom_tracker is not None:
+                                                    mr_phantom_tracker.update_mr_phantom_prices(symbol, exit_price, df=self.frames.get(symbol))
+                                            except Exception:
+                                                pass
+                                        else:
+                                            shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                            logger.info(f"[{symbol}] Mean Reversion ML updated with outcome.")
                                     elif ml_scorer is not None:
                                         ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
                                         logger.info(f"[{symbol}] Trend ML updated with outcome.")
@@ -1640,6 +1664,13 @@ class TradingBot:
                     
                     # Remove from book
                     book.positions.pop(symbol)
+                    # Cleanup runtime hints for this symbol
+                    try:
+                        if getattr(self, '_redis', None) is not None:
+                            self._redis.delete(f'openpos:mr_promotion:{symbol}')
+                            self._redis.delete(f'openpos:reason:{symbol}')
+                    except Exception:
+                        pass
                     logger.info(f"[{symbol}] Position removed from tracking")
                     # Cleanup runtime strategy hint for this symbol
                     try:
@@ -4874,19 +4905,35 @@ class TradingBot:
                         ml_score=float(ml_score),
                         ml_reason=ml_reason if isinstance(ml_reason, str) else ""
                     )
-                    # Record an executed MR phantom mirror with exact exchange-aligned values
+                    # Record MR phantom mirror (executed or promotion-forced phantom) with exchange-aligned values
                     try:
                         if selected_strategy == 'enhanced_mr' and mr_phantom_tracker is not None:
+                            is_promo = False
+                            try:
+                                is_promo = bool(getattr(sig, 'meta', {}) and sig.meta.get('promotion_forced'))
+                            except Exception:
+                                is_promo = False
                             mr_phantom_tracker.record_mr_signal(
                                 sym,
                                 {'side': sig.side, 'entry': float(actual_entry), 'sl': float(sig.sl), 'tp': float(sig.tp), 'meta': getattr(sig, 'meta', {}) or {}},
                                 float(ml_score or 0.0),
-                                True,
+                                False if is_promo else True,
                                 {},
                                 enhanced_features if 'enhanced_features' in locals() else {}
                             )
+                            # Persist promotion flag and reason for restart resilience
+                            try:
+                                if getattr(self, '_redis', None) is not None:
+                                    if is_promo:
+                                        self._redis.set(f'openpos:mr_promotion:{sym}', '1')
+                                        self._redis.set(f'openpos:reason:{sym}', 'Mean Reversion (Promotion)')
+                                    else:
+                                        self._redis.delete(f'openpos:mr_promotion:{sym}')
+                                        self._redis.set(f'openpos:reason:{sym}', 'Mean Reversion (ML)')
+                            except Exception:
+                                pass
                     except Exception as e:
-                        logger.debug(f"[{sym}] MR executed phantom mirror record failed: {e}")
+                        logger.debug(f"[{sym}] MR executed/promotion phantom mirror record failed: {e}")
                     # Optionally cancel phantoms on exec (config-controlled)
                     try:
                         ph_cfg = cfg.get('phantom', {}) if 'cfg' in locals() else {}

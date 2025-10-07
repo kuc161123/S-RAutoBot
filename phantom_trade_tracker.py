@@ -197,6 +197,16 @@ class PhantomTradeTracker:
         except Exception as e:
             logger.error(f"Error saving phantom trades to Redis: {e}")
 
+    def cancel_active(self, symbol: str):
+        """Cancel and remove any active phantom for a symbol (e.g., when a real trade is executed)."""
+        try:
+            if symbol in self.active_phantoms:
+                del self.active_phantoms[symbol]
+                self._save_to_redis()
+                logger.info(f"[{symbol}] Phantom canceled due to executed trade (trend)")
+        except Exception:
+            pass
+
     def set_notifier(self, notifier: Optional[Callable]):
         """Register a callback to receive phantom trade events."""
         self.notifier = notifier

@@ -2775,6 +2775,18 @@ class TradingBot:
                                 pass
                             # Set TP/SL
                             bybit.set_tpsl(sym, take_profit=sig_obj.tp, stop_loss=sig_obj.sl, qty=qty)
+                            # Read back TP/SL from exchange to reflect any server-side rounding
+                            try:
+                                pos_tp_sl = bybit.get_position(sym)
+                                if isinstance(pos_tp_sl, dict):
+                                    tp_val = pos_tp_sl.get('takeProfit')
+                                    sl_val = pos_tp_sl.get('stopLoss')
+                                    if tp_val not in (None, '', '0'):
+                                        sig_obj.tp = float(tp_val)
+                                    if sl_val not in (None, '', '0'):
+                                        sig_obj.sl = float(sl_val)
+                            except Exception:
+                                pass
                             # Update book
                             book.positions[sym] = Position(
                                 sig_obj.side,
@@ -2785,6 +2797,14 @@ class TradingBot:
                                 entry_time=datetime.now(),
                                 strategy_name=strategy_name
                             )
+                            # Cancel any active phantom for this symbol for the same strategy
+                            try:
+                                if strategy_name == 'enhanced_mr' and mr_phantom_tracker:
+                                    mr_phantom_tracker.cancel_active(sym)
+                                elif strategy_name == 'trend_breakout' and phantom_tracker:
+                                    phantom_tracker.cancel_active(sym)
+                            except Exception:
+                                pass
                             # Notify
                             try:
                                 if self.tg:
@@ -4554,6 +4574,18 @@ class TradingBot:
                     logger.info(f"[{sym}] Setting TP={sig.tp:.4f} (Limit), SL={sig.sl:.4f} (Market)")
                     try:
                         bybit.set_tpsl(sym, take_profit=sig.tp, stop_loss=sig.sl, qty=qty)
+                        # Read back TP/SL from exchange to reflect any server-side rounding
+                        try:
+                            pos_back = bybit.get_position(sym)
+                            if isinstance(pos_back, dict):
+                                tp_val = pos_back.get('takeProfit')
+                                sl_val = pos_back.get('stopLoss')
+                                if tp_val not in (None, '', '0'):
+                                    sig.tp = float(tp_val)
+                                if sl_val not in (None, '', '0'):
+                                    sig.sl = float(sl_val)
+                        except Exception:
+                            pass
                         logger.info(f"[{sym}] TP/SL set successfully")
                     except Exception as tpsl_error:
                         logger.critical(f"[{sym}] CRITICAL: Failed to set TP/SL: {tpsl_error}")
@@ -4588,6 +4620,14 @@ class TradingBot:
                         ml_score=float(ml_score),
                         ml_reason=ml_reason if isinstance(ml_reason, str) else ""
                     )
+                    # Cancel any active phantom for this symbol for the same strategy to avoid mismatched phantom closures
+                    try:
+                        if selected_strategy == 'enhanced_mr' and mr_phantom_tracker:
+                            mr_phantom_tracker.cancel_active(sym)
+                        elif selected_strategy in ('trend_breakout','pullback') and phantom_tracker:
+                            phantom_tracker.cancel_active(sym)
+                    except Exception:
+                        pass
                     # Persist runtime hint of strategy for recovery after restarts
                     try:
                         if getattr(self, '_redis', None) is not None:

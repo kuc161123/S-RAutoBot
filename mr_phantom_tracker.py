@@ -207,6 +207,16 @@ class MRPhantomTracker:
         except Exception as e:
             logger.error(f"Error saving MR phantom trades to Redis: {e}")
 
+    def cancel_active(self, symbol: str):
+        """Cancel and remove any active MR phantom for a symbol (e.g., when an executed trade opens)."""
+        try:
+            if symbol in self.active_mr_phantoms:
+                del self.active_mr_phantoms[symbol]
+                self._save_to_redis()
+                logger.info(f"[{symbol}] MR phantom canceled due to executed trade")
+        except Exception:
+            pass
+
     def set_notifier(self, notifier: Optional[Callable]):
         self.notifier = notifier
 

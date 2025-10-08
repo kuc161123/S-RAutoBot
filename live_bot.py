@@ -3177,6 +3177,24 @@ class TradingBot:
                         async def _try_execute(strategy_name: str, sig_obj, ml_score: float = 0.0, threshold: float = 75.0):
                             nonlocal book, bybit, sizer
                             dbg_logger = logging.getLogger(__name__)
+                            # Optional 3m context enforcement (applies to both Trend and MR execution paths)
+                            try:
+                                if strategy_name == 'trend_breakout':
+                                    ctx_cfg = (cfg.get('trend', {}).get('context', {}) or {}) if 'cfg' in locals() else {}
+                                    if bool(ctx_cfg.get('enforce', False)):
+                                        ok3, why3 = self._micro_context_trend(sym, sig_obj.side)
+                                        if not ok3:
+                                            dbg_logger.debug(f"[{sym}] Trend: skip — 3m_ctx_enforce ({why3})")
+                                            return False
+                                elif strategy_name == 'enhanced_mr':
+                                    ctx_cfg = (cfg.get('mr', {}).get('context', {}) or {}) if 'cfg' in locals() else {}
+                                    if bool(ctx_cfg.get('enforce', False)):
+                                        ok3, why3 = self._micro_context_mr(sym, sig_obj.side)
+                                        if not ok3:
+                                            dbg_logger.debug(f"[{sym}] MR: skip — 3m_ctx_enforce ({why3})")
+                                            return False
+                            except Exception:
+                                pass
                             # Enforce one-way mode: only one position per symbol at a time
                             if sym in book.positions:
                                 try:

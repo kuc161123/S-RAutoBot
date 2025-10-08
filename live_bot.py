@@ -4769,8 +4769,43 @@ class TradingBot:
                                         except Exception:
                                             pass
 
-                                        # Set TP/SL
-                                        bybit.set_tpsl(sym, take_profit=sig_mr.tp, stop_loss=sig_mr.sl, qty=qty)
+                                        # Set TP/SL with exchange read-back (parity with general exec path)
+                                        try:
+                                            bybit.set_tpsl(sym, take_profit=sig_mr.tp, stop_loss=sig_mr.sl, qty=qty)
+                                            # Give the exchange a brief moment to register TP/SL, then read back
+                                            try:
+                                                await asyncio.sleep(0.4)
+                                                pos_back = bybit.get_position(sym)
+                                                if isinstance(pos_back, dict):
+                                                    tp_val = pos_back.get('takeProfit')
+                                                    sl_val = pos_back.get('stopLoss')
+                                                    old_tp, old_sl = sig_mr.tp, sig_mr.sl
+                                                    if tp_val not in (None, '', '0'):
+                                                        sig_mr.tp = float(tp_val)
+                                                    if sl_val not in (None, '', '0'):
+                                                        sig_mr.sl = float(sl_val)
+                                                    if (old_tp != sig_mr.tp) or (old_sl != sig_mr.sl):
+                                                        logger.info(f"[{sym}] MR Promotion TP/SL read-back: TP {old_tp:.4f}→{sig_mr.tp:.4f}, SL {old_sl:.4f}→{sig_mr.sl:.4f}")
+                                            except Exception:
+                                                pass
+                                            logger.info(f"[{sym}] MR Promotion TP/SL set successfully")
+                                        except Exception as tpsl_error:
+                                            logger.critical(f"[{sym}] CRITICAL: MR Promotion failed to set TP/SL: {tpsl_error}")
+                                            logger.critical(f"[{sym}] Attempting emergency position closure to prevent unprotected position")
+                                            # Attempt to close the unprotected position immediately
+                                            try:
+                                                emergency_side = "Sell" if sig_mr.side == "long" else "Buy"
+                                                close_result = bybit.place_market(sym, emergency_side, qty, reduce_only=True)
+                                                logger.warning(f"[{sym}] Emergency position closure executed: {close_result}")
+                                                if self.tg:
+                                                    await self.tg.send_message(f"🚨 EMERGENCY CLOSURE: {sym} position closed (MR Promotion) due to TP/SL failure: {str(tpsl_error)[:100]}")
+                                            except Exception as close_error:
+                                                logger.critical(f"[{sym}] FAILED TO CLOSE UNPROTECTED POSITION (MR Promotion): {close_error}")
+                                                if self.tg:
+                                                    await self.tg.send_message(f"🆘 CRITICAL: {sym} position UNPROTECTED! MR Promotion SL/TP failed: {str(tpsl_error)[:100]}")
+                                                    await self.tg.send_message(f"🛑 Bot halted due to unprotected position. Use /resume to restart after manual review.")
+                                            # Prevent adding to book if unprotected
+                                            raise Exception(f"Failed to set TP/SL for {sym} (MR Promotion): {tpsl_error}")
 
                                         # Update book and notify standard open message
                                         book.positions[sym] = Position(

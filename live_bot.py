@@ -518,6 +518,14 @@ class TradingBot:
                         self._redis = None
         except Exception:
             self._redis = None
+
+        # Scalp diagnostics counters (reset periodically in summaries)
+        self._scalp_stats: Dict[str, int] = {
+            'confirms': 0,
+            'signals': 0,
+            'dedup_skips': 0,
+            'cooldown_skips': 0
+        }
         
     def _create_task(self, coro):
         try:
@@ -699,6 +707,11 @@ class TradingBot:
                     confirm = False
                 if not confirm:
                     continue
+                # Count confirmed 3m bar for diagnostics
+                try:
+                    self._scalp_stats['confirms'] = self._scalp_stats.get('confirms', 0) + 1
+                except Exception:
+                    pass
                 # Mark last confirm per-symbol for health/fallback
                 try:
                     self._scalp_last_confirm[sym] = row.index[0]
@@ -750,6 +763,10 @@ class TradingBot:
                 if last_ts is not None:
                     try:
                         if (bar_ts - last_ts).total_seconds() < (cooldown_bars * bar_seconds):
+                            try:
+                                self._scalp_stats['cooldown_skips'] = self._scalp_stats.get('cooldown_skips', 0) + 1
+                            except Exception:
+                                pass
                             continue
                     except Exception:
                         pass
@@ -804,6 +821,10 @@ class TradingBot:
                     pass
                 if not dedup_ok:
                     logger.debug(f"[{sym}] 🩳 Scalp(3m) dedup: duplicate signal skipped")
+                    try:
+                        self._scalp_stats['dedup_skips'] = self._scalp_stats.get('dedup_skips', 0) + 1
+                    except Exception:
+                        pass
                     continue
 
                 # Record phantom to scalp tracker; build full feature set
@@ -841,6 +862,10 @@ class TradingBot:
                             False,
                             sc_feats
                         )
+                        try:
+                            self._scalp_stats['signals'] = self._scalp_stats.get('signals', 0) + 1
+                        except Exception:
+                            pass
                         # Increment Flow Controller accepted counter for scalp (phantom-only pacing)
                         try:
                             if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
@@ -2867,6 +2892,14 @@ class TradingBot:
                             logger.info(f"📈 Telemetry: ML rejects={rej}, Phantom wins={mr}, Phantom losses={ml}")
                         except Exception:
                             pass
+                        # Scalp health snapshot
+                        try:
+                            st = getattr(self, '_scalp_stats', {}) or {}
+                            logger.info(f"🩳 Scalp health: confirms={st.get('confirms',0)}, signals={st.get('signals',0)}, dedup={st.get('dedup_skips',0)}, cooldown={st.get('cooldown_skips',0)}")
+                            # Reset counters for next interval
+                            self._scalp_stats = {'confirms': 0, 'signals': 0, 'dedup_skips': 0, 'cooldown_skips': 0}
+                        except Exception:
+                            pass
                         # Add ML stats to summary
                         if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
                             # Enhanced parallel system stats
@@ -3274,10 +3307,20 @@ class TradingBot:
                                 if not executed and mr_phantom_tracker and sig_mr_ind is not None:
                                     # Record phantom when position exists or execution not possible
                                     mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+                                    try:
+                                        if self.flow_controller and self.flow_controller.enabled:
+                                            self.flow_controller.increment_accepted('mr', 1)
+                                    except Exception:
+                                        pass
                             else:
                                 # Phantom record when below threshold
                                 if mr_phantom_tracker and sig_mr_ind is not None:
                                     mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+                                    try:
+                                        if self.flow_controller and self.flow_controller.enabled:
+                                            self.flow_controller.increment_accepted('mr', 1)
+                                    except Exception:
+                                        pass
 
                         # 2) Trend independent
                         try:
@@ -3355,14 +3398,29 @@ class TradingBot:
                             if (not tr_pass_regime) or (not trend_exec_enabled):
                                 if phantom_tracker:
                                     phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                                    try:
+                                        if self.flow_controller and self.flow_controller.enabled:
+                                            self.flow_controller.increment_accepted('trend', 1)
+                                    except Exception:
+                                        pass
                             else:
                                 if tr_should:
                                     executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
                                     if not executed and phantom_tracker:
                                         phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                                        try:
+                                            if self.flow_controller and self.flow_controller.enabled:
+                                                self.flow_controller.increment_accepted('trend', 1)
+                                        except Exception:
+                                            pass
                                 else:
                                     if phantom_tracker:
                                         phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                                        try:
+                                            if self.flow_controller and self.flow_controller.enabled:
+                                                self.flow_controller.increment_accepted('trend', 1)
+                                        except Exception:
+                                            pass
 
                         # Done with independence for this symbol
                         continue
@@ -4287,7 +4345,7 @@ class TradingBot:
                                             'symbol_cluster': 3,
                                             'volatility_regime': getattr(regime_analysis, 'volatility_level', 'normal')
                                         }
-                                        # Trend exploration gate
+                                        # Trend exploration gate (apply adaptive relax)
                                         meets_gate = True
                                         reasons = []
                                         try:
@@ -4296,6 +4354,15 @@ class TradingBot:
                                                 slope_min = float(tr_explore.get('slope_min', 3.0))
                                                 ema_min = float(tr_explore.get('ema_stack_min', 40.0))
                                                 br_min = float(tr_explore.get('breakout_dist_atr_min', 0.1))
+                                                # Apply FlowController relax if enabled
+                                                try:
+                                                    if self.flow_controller and self.flow_controller.enabled:
+                                                        adj = self.flow_controller.adjust_trend(slope_min, ema_min, br_min)
+                                                        slope_min = adj.get('slope_min', slope_min)
+                                                        ema_min = adj.get('ema_min', ema_min)
+                                                        br_min = adj.get('breakout_min', br_min)
+                                                except Exception:
+                                                    pass
                                                 allow_high = bool(tr_explore.get('allow_volatility_high', True))
                                                 vol_reg = getattr(regime_analysis, 'volatility_level', 'normal')
                                                 if abs(trend_features['trend_slope_pct']) < slope_min:

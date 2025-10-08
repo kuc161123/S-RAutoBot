@@ -167,6 +167,8 @@ class FlowController:
         self.smoothing_hours = int(pf.get('smoothing_hours', 3))
         self.limits = pf.get('relax_limits', {})
         self.guards = pf.get('min_quality_guards', {})
+        self.session_multipliers = pf.get('session_multipliers', {})
+        self.burst_cfg = pf.get('burst', {'enabled': True, 'no_accept_minutes': 30, 'boost': 0.25, 'max_boost': 0.40})
         # Advanced relax behavior (deficit/boost/min_relax)
         rm = pf.get('relax_mode', {})
         self.relax_mode = {
@@ -196,7 +198,7 @@ class FlowController:
         self.redis = redis_client
         # In-memory fallback state to survive Redis outages
         # Structure: {'accepted': {day: {strategy: int}}, 'relax': {day: {strategy: float}}}
-        self._mem = {'accepted': {}, 'relax': {}}
+        self._mem = {'accepted': {}, 'relax': {}, 'accepted_ts': {}}
         if self.redis is None:
             # Best-effort local init; safe to fail if REDIS_URL not present
             try:
@@ -237,6 +239,13 @@ class FlowController:
         try:
             day_map = self._mem['accepted'].setdefault(day, {})
             day_map[strategy] = int(day_map.get(strategy, 0)) + int(amount)
+            # Track timestamps for inactivity burst
+            tsmap = self._mem['accepted_ts'].setdefault(day, {}).setdefault(strategy, [])
+            import time as _t
+            tsmap.append(int(_t.time()))
+            # Keep last 500 entries
+            if len(tsmap) > 500:
+                self._mem['accepted_ts'][day][strategy] = tsmap[-500:]
         except Exception:
             pass
         if self.redis:
@@ -308,6 +317,33 @@ class FlowController:
             r_blend = r_pace
         # Apply boost and clamp
         r_inst = float(max(0.0, min(1.0, r_blend + r_boost)))
+        # Apply inactivity burst if no accepts in recent window
+        try:
+            if bool(self.burst_cfg.get('enabled', True)):
+                window_min = int(self.burst_cfg.get('no_accept_minutes', 30))
+                import time as _t
+                cutoff = int(_t.time()) - window_min * 60
+                recent = False
+                try:
+                    tsmap = self._mem.get('accepted_ts', {}).get(day, {}).get(strategy, [])
+                    if any(t >= cutoff for t in tsmap):
+                        recent = True
+                except Exception:
+                    recent = True
+                if not recent:
+                    burst = float(self.burst_cfg.get('boost', 0.25))
+                    r_inst = min(1.0, r_inst + burst)
+        except Exception:
+            pass
+        # Session multiplier
+        try:
+            mult = 1.0
+            sess_map = self.session_multipliers.get(strategy, {}) if isinstance(self.session_multipliers, dict) else {}
+            sess = self._session_key()
+            mult = float(sess_map.get(sess, 1.0)) if isinstance(sess_map, dict) else 1.0
+            r_inst = max(0.0, min(1.0, r_inst * mult))
+        except Exception:
+            pass
         # Apply per-strategy minimum relax
         try:
             min_map = rm.get('min_relax', {})
@@ -391,6 +427,20 @@ class FlowController:
             pass
         return float(max(0.0, min(1.0, r)))
 
+    def _session_key(self) -> str:
+        try:
+            from datetime import datetime as _dt
+            h = _dt.utcnow().hour
+            if 0 <= h < 8:
+                return 'asian'
+            if 8 <= h < 16:
+                return 'european'
+            if 16 <= h < 24:
+                return 'us'
+            return 'off_hours'
+        except Exception:
+            return 'off_hours'
+
     # --- Per-strategy gate adjustments ---
     def adjust_trend(self, slope_min: float, ema_min: float, breakout_min: float) -> Dict[str, float]:
         r = self._relax_ratio('trend')
@@ -436,6 +486,9 @@ class FlowController:
                                                sc_settings.min_bb_width_pct - r * float(lim.get('bb_width_pct', 0.0)))
             sc_settings.vol_ratio_min = max(float(g.get('vol_ratio_min', 0.0)),
                                             sc_settings.vol_ratio_min - r * float(lim.get('vol_ratio', 0.0)))
+            # New: relax wick ratio
+            if 'wick' in lim:
+                sc_settings.wick_ratio_min = max(0.0, sc_settings.wick_ratio_min - r * float(lim.get('wick', 0.0)))
         except Exception:
             pass
         return sc_settings

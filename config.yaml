@@ -249,6 +249,7 @@ phantom_flow:
       vwap_dist_atr: 0.60   # increase vwap_dist_atr_max by up to 0.60
       bb_width_pct: 0.30    # reduce min_bb_width_pct by up to 0.30
       vol_ratio: 0.40       # reduce vol_ratio_min by up to 0.40
+      wick: 0.15            # reduce wick_ratio_min by up to 0.15
   relax_mode:
     enable_deficit: true
     deficit_scale: 0.30       # fraction of target used to scale deficit
@@ -268,6 +269,16 @@ phantom_flow:
       window: 40              # number of recent phantom closures
       min_wr: 20.0            # threshold (%) below which cap applies
       cap: 0.60               # max relax while guard active
+  # Session-based and inactivity bursts to dynamically adapt flow
+  session_multipliers:
+    trend: {asian: 0.9, european: 1.0, us: 1.1, off_hours: 0.8}
+    mr:    {asian: 0.9, european: 1.1, us: 1.0, off_hours: 0.8}
+    scalp: {asian: 1.0, european: 1.1, us: 1.2, off_hours: 0.9}
+  burst:
+    enabled: true
+    no_accept_minutes: 30
+    boost: 0.25
+    max_boost: 0.40
 
 # Strategy isolation and execution arbitrator
 strategy_isolation:

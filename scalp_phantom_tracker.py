@@ -8,6 +8,8 @@ import logging
 import os
 from dataclasses import dataclass, asdict
 import uuid
+import yaml
+from position_mgr import round_step
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -77,6 +79,28 @@ class ScalpPhantomTracker:
         self._load()
         # Default timeout hours for scalp phantom (config override available)
         self.timeout_hours: int = 24
+        # Symbol meta for tick size
+        self._symbol_meta: Dict[str, Dict] = {}
+        self._load_symbol_meta()
+
+    def _load_symbol_meta(self):
+        try:
+            with open('config.yaml','r') as f:
+                cfg = yaml.safe_load(f)
+            sm = (cfg or {}).get('symbol_meta', {}) or {}
+            if isinstance(sm, dict):
+                self._symbol_meta = sm
+        except Exception as e:
+            logger.debug(f"ScalpPhantom: failed to load symbol meta: {e}")
+
+    def _tick_size_for(self, symbol: str) -> float:
+        try:
+            if symbol in self._symbol_meta and isinstance(self._symbol_meta[symbol], dict):
+                return float(self._symbol_meta[symbol].get('tick_size', 0.000001) or 0.000001)
+            default = self._symbol_meta.get('default', {}) if isinstance(self._symbol_meta, dict) else {}
+            return float(default.get('tick_size', 0.000001) or 0.000001)
+        except Exception:
+            return 0.000001
 
     def _load(self):
         if not self.redis_client:
@@ -127,6 +151,21 @@ class ScalpPhantomTracker:
             logger.error(f"Scalp Phantom save error: {e}")
 
     def record_scalp_signal(self, symbol: str, signal: Dict, ml_score: float, was_executed: bool, features: Dict) -> ScalpPhantomTrade:
+        # Round TP/SL to tick size for better alignment
+        try:
+            ts = self._tick_size_for(symbol)
+            raw_tp = float(signal.get('tp'))
+            raw_sl = float(signal.get('sl'))
+            r_tp = round_step(raw_tp, ts)
+            r_sl = round_step(raw_sl, ts)
+            if r_tp != raw_tp or r_sl != raw_sl:
+                signal = signal.copy()
+                signal['tp'] = r_tp
+                signal['sl'] = r_sl
+                logger.debug(f"[{symbol}] Scalp phantom TP/SL rounded to tick {ts}: TP {raw_tp}→{r_tp}, SL {raw_sl}→{r_sl}")
+        except Exception:
+            pass
+
         # Allow multiple active phantoms per symbol
 
         ph = ScalpPhantomTrade(
@@ -159,6 +198,13 @@ class ScalpPhantomTracker:
         act_list = list(self.active.get(symbol, []))
         remaining: List[ScalpPhantomTrade] = []
         from datetime import datetime as _dt, timedelta as _td
+        # Intrabar extremes (if df provided)
+        try:
+            cur_high = float(df['high'].iloc[-1]) if df is not None else current_price
+            cur_low = float(df['low'].iloc[-1]) if df is not None else current_price
+        except Exception:
+            cur_high = current_price
+            cur_low = current_price
         for ph in act_list:
             try:
                 # Track extremes
@@ -166,22 +212,22 @@ class ScalpPhantomTracker:
                     ph.max_favorable = max(ph.max_favorable or current_price, current_price)
                     ph.max_adverse = min(ph.max_adverse or current_price, current_price)
                     # TP/SL checks
-                    if current_price >= ph.take_profit:
+                    if cur_high >= ph.take_profit:
                         ph.exit_reason = 'tp'
                         self._close(symbol, ph, current_price, 'win')
                         continue
-                    if current_price <= ph.stop_loss:
+                    if cur_low <= ph.stop_loss:
                         ph.exit_reason = 'sl'
                         self._close(symbol, ph, current_price, 'loss')
                         continue
                 else:
                     ph.max_favorable = min(ph.max_favorable or current_price, current_price)
                     ph.max_adverse = max(ph.max_adverse or current_price, current_price)
-                    if current_price <= ph.take_profit:
+                    if cur_low <= ph.take_profit:
                         ph.exit_reason = 'tp'
                         self._close(symbol, ph, current_price, 'win')
                         continue
-                    if current_price >= ph.stop_loss:
+                    if cur_high >= ph.stop_loss:
                         ph.exit_reason = 'sl'
                         self._close(symbol, ph, current_price, 'loss')
                         continue

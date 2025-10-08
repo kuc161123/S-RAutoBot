@@ -1437,12 +1437,14 @@ class TradingBot:
 
                     # Record the trade
                     self.record_closed_trade(symbol, pos, exit_price, exit_reason, leverage)
-                    # Force-close any executed MR phantom mirrors to align with exchange closure
+                    # Force-close executed phantom mirrors to align with exchange closure (Trend + MR)
                     try:
                         if pos.strategy_name in ['enhanced_mr', 'mean_reversion'] and mr_phantom_tracker is not None:
                             mr_phantom_tracker.force_close_executed(symbol, exit_price, exit_reason)
+                        elif pos.strategy_name == 'trend_breakout' and phantom_tracker is not None:
+                            phantom_tracker.force_close_executed(symbol, exit_price, exit_reason)
                     except Exception as _fce:
-                        logger.debug(f"[{symbol}] force_close_executed failed: {_fce}")
+                        logger.debug(f"[{symbol}] phantom force_close_executed failed: {_fce}")
                     
                     # Update symbol data collector with session performance
                     if symbol_collector:
@@ -5000,6 +5002,51 @@ class TradingBot:
                                 tp_adjustment_pct = ((new_tp - sig.tp) / sig.tp) * 100
                                 logger.info(f"[{sym}] Adjusting TP from {sig.tp:.4f} to {new_tp:.4f} ({tp_adjustment_pct:+.2f}%) to maintain {settings.rr}:1 R:R")
                                 sig.tp = new_tp
+                                # Trend: Recalc SL to preserve risk if slippage is material (bounded by pivots)
+                                try:
+                                    if selected_strategy == 'trend_breakout':
+                                        sl_cfg = (cfg.get('trend', {}) or {}).get('exec', {}).get('slippage_recalc', {}) if 'cfg' in locals() else {}
+                                        enabled = bool(sl_cfg.get('enabled', True))
+                                        min_pct = float(sl_cfg.get('min_pct', 0.001))
+                                        if enabled and qty > 0:
+                                            slip_pct = abs(actual_entry - sig.entry) / max(1e-9, sig.entry)
+                                            if slip_pct >= min_pct:
+                                                target_dist = float(risk_amount) / float(qty)
+                                                if sig.side == 'long':
+                                                    new_sl = actual_entry - target_dist
+                                                    pivot = None
+                                                    try:
+                                                        if isinstance(sig.meta, dict):
+                                                            pivot = float(sig.meta.get('pivot_low'))
+                                                    except Exception:
+                                                        pivot = None
+                                                    if pivot is not None:
+                                                        atr = float(sig.meta.get('atr', 0.0)) if isinstance(sig.meta, dict) else 0.0
+                                                        new_sl = min(new_sl, pivot - 0.05 * atr)
+                                                    min_stop = actual_entry * 0.01
+                                                    if (actual_entry - new_sl) < min_stop:
+                                                        new_sl = actual_entry - min_stop
+                                                    if new_sl < actual_entry:
+                                                        sig.sl = new_sl
+                                                else:
+                                                    new_sl = actual_entry + target_dist
+                                                    pivot = None
+                                                    try:
+                                                        if isinstance(sig.meta, dict):
+                                                            pivot = float(sig.meta.get('pivot_high'))
+                                                    except Exception:
+                                                        pivot = None
+                                                    if pivot is not None:
+                                                        atr = float(sig.meta.get('atr', 0.0)) if isinstance(sig.meta, dict) else 0.0
+                                                        new_sl = max(new_sl, pivot + 0.05 * atr)
+                                                    min_stop = actual_entry * 0.01
+                                                    if (new_sl - actual_entry) < min_stop:
+                                                        new_sl = actual_entry + min_stop
+                                                    if new_sl > actual_entry:
+                                                        sig.sl = new_sl
+                                                logger.info(f"[{sym}] TREND SL recalc for slippage: SL -> {sig.sl:.4f}")
+                                except Exception as _tre:
+                                    logger.debug(f"[{sym}] Trend SL recalc skipped: {_tre}")
                                 # MR: Recalc SL for slippage to preserve risk, bounded by range pivots
                                 try:
                                     if selected_strategy == 'enhanced_mr':

@@ -15,6 +15,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 import asyncio
 import numpy as np
 import redis
+import yaml
+from position_mgr import round_step
 
 logger = logging.getLogger(__name__)
 
@@ -114,12 +116,33 @@ class PhantomTradeTracker:
         self.notifier: Optional[Callable] = None
         # Local blocked counters fallback: day (YYYYMMDD) -> counts
         self._blocked_counts: Dict[str, Dict[str, int]] = {}
+        self._symbol_meta: Dict[str, Dict] = {}
         
         # Initialize Redis
         self._init_redis()
         self._load_from_redis()
         # Default timeout for trend phantom (can be overridden via config)
         self.timeout_hours: int = 36
+        self._load_symbol_meta()
+
+    def _load_symbol_meta(self):
+        try:
+            with open('config.yaml','r') as f:
+                cfg = yaml.safe_load(f)
+            sm = (cfg or {}).get('symbol_meta', {}) or {}
+            if isinstance(sm, dict):
+                self._symbol_meta = sm
+        except Exception as e:
+            logger.debug(f"PhantomTracker: failed to load symbol meta: {e}")
+
+    def _tick_size_for(self, symbol: str) -> float:
+        try:
+            if symbol in self._symbol_meta and isinstance(self._symbol_meta[symbol], dict):
+                return float(self._symbol_meta[symbol].get('tick_size', 0.000001) or 0.000001)
+            default = self._symbol_meta.get('default', {}) if isinstance(self._symbol_meta, dict) else {}
+            return float(default.get('tick_size', 0.000001) or 0.000001)
+        except Exception:
+            return 0.000001
     
     def _init_redis(self):
         """Initialize Redis connection"""
@@ -282,6 +305,22 @@ class PhantomTradeTracker:
         except Exception:
             pass
 
+        # Round TP/SL to tick size for non-executed phantoms to align with exchange
+        try:
+            if not was_executed:
+                ts = self._tick_size_for(symbol)
+                raw_tp = float(signal.get('tp'))
+                raw_sl = float(signal.get('sl'))
+                r_tp = round_step(raw_tp, ts)
+                r_sl = round_step(raw_sl, ts)
+                if r_tp != raw_tp or r_sl != raw_sl:
+                    logger.debug(f"[{symbol}] Phantom TP/SL rounded to tick {ts}: TP {raw_tp}→{r_tp}, SL {raw_sl}→{r_sl}")
+                signal = signal.copy()
+                signal['tp'] = r_tp
+                signal['sl'] = r_sl
+        except Exception:
+            pass
+
         # Allow multiple active phantoms per symbol
 
         phantom = PhantomTrade(
@@ -325,6 +364,31 @@ class PhantomTradeTracker:
                 pass
         
         return phantom
+
+    def force_close_executed(self, symbol: str, exit_price: float, exit_reason: str = 'manual'):
+        """Force-close any executed trend phantom mirrors to align with exchange closure."""
+        try:
+            if symbol not in self.active_phantoms:
+                return
+            keep: List[PhantomTrade] = []
+            for ph in list(self.active_phantoms.get(symbol, [])):
+                if getattr(ph, 'was_executed', False):
+                    if ph.side == 'long':
+                        outcome = 'win' if exit_price >= ph.take_profit else ('loss' if exit_price <= ph.stop_loss else ('win' if exit_price > ph.entry_price else 'loss'))
+                    else:
+                        outcome = 'win' if exit_price <= ph.take_profit else ('loss' if exit_price >= ph.stop_loss else ('win' if exit_price < ph.entry_price else 'loss'))
+                    self._close_phantom(symbol, ph, exit_price, outcome, df=None, btc_price=None, symbol_collector=None, exit_reason=exit_reason)
+                else:
+                    keep.append(ph)
+            if keep:
+                self.active_phantoms[symbol] = keep
+            else:
+                try:
+                    del self.active_phantoms[symbol]
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"[{symbol}] trend force_close_executed error: {e}")
     
     def update_phantom_prices(self, symbol: str, current_price: float, 
                              df=None, btc_price: float = None, symbol_collector=None):

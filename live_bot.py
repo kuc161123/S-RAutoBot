@@ -784,6 +784,10 @@ class TradingBot:
                             vol_level = analysis.volatility_level
                             if vol_level == 'extreme':
                                 logger.debug(f"[{sym}] 🩳 Scalp(3m) skipped: volatility={vol_level}")
+                                try:
+                                    logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=volatility_extreme)")
+                                except Exception:
+                                    pass
                                 continue
                         except Exception:
                             pass
@@ -806,6 +810,10 @@ class TradingBot:
                         if (bar_ts - last_ts).total_seconds() < (cooldown_bars * bar_seconds):
                             try:
                                 self._scalp_stats['cooldown_skips'] = self._scalp_stats.get('cooldown_skips', 0) + 1
+                            except Exception:
+                                pass
+                            try:
+                                logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=cooldown)")
                             except Exception:
                                 pass
                             continue
@@ -929,6 +937,10 @@ class TradingBot:
                         self._scalp_stats['dedup_skips'] = self._scalp_stats.get('dedup_skips', 0) + 1
                     except Exception:
                         pass
+                    try:
+                        logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=dedup)")
+                    except Exception:
+                        pass
                     continue
 
                 # Record phantom to scalp tracker; build full feature set
@@ -983,6 +995,10 @@ class TradingBot:
                         except Exception:
                             pass
                         logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                        try:
+                            logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=ok)")
+                        except Exception:
+                            pass
                         self._scalp_cooldown[sym] = bar_ts
                         blist.append(now_ts)
                         self._scalp_budget[sym] = blist
@@ -1008,6 +1024,13 @@ class TradingBot:
                                     logger.debug(f"[{sym}] 🩳 Scalp shadow trade recorded (score {score:.1f} ≥ {thr_sc})")
                         except Exception as se:
                             logger.debug(f"[{sym}] Scalp shadow error: {se}")
+                    else:
+                        # Blocked by hourly per-symbol budget or daily cap
+                        try:
+                            reason = 'hourly_budget' if sc_remaining <= 0 else ('daily_cap' if not daily_ok else 'unknown')
+                            logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason={reason})")
+                        except Exception:
+                            pass
                 except Exception as e:
                     logger.debug(f"[{sym}] Scalp(3m) record error: {e}")
             except Exception as e:

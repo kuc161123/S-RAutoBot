@@ -526,6 +526,41 @@ class TradingBot:
             'dedup_skips': 0,
             'cooldown_skips': 0
         }
+
+    # --- 3m micro-context checks (diagnostic) ---
+    def _micro_context_trend(self, symbol: str, side: str) -> tuple[bool, str]:
+        df3 = self.frames_3m.get(symbol)
+        if df3 is None or len(df3) < 5:
+            return True, 'no_3m'
+        try:
+            tail = df3['close'].tail(4)
+            ema = df3['close'].ewm(span=20, adjust=False).mean().iloc[-1]
+            up_seq = tail.iloc[-1] > tail.iloc[-2] >= tail.iloc[-3]
+            dn_seq = tail.iloc[-1] < tail.iloc[-2] <= tail.iloc[-3]
+            price = float(tail.iloc[-1])
+            if side == 'long':
+                ok = up_seq or (price > float(ema))
+                return ok, ('up_seq' if ok else 'weak_momentum')
+            else:
+                ok = dn_seq or (price < float(ema))
+                return ok, ('dn_seq' if ok else 'weak_momentum')
+        except Exception:
+            return True, 'err'
+
+    def _micro_context_mr(self, symbol: str, side: str) -> tuple[bool, str]:
+        df3 = self.frames_3m.get(symbol)
+        if df3 is None or len(df3) < 4:
+            return True, 'no_3m'
+        try:
+            tail = df3['close'].tail(3)
+            up = tail.iloc[-1] > tail.iloc[-2]
+            dn = tail.iloc[-1] < tail.iloc[-2]
+            if side == 'long':
+                return up, ('up_tick' if up else 'no_up_tick')
+            else:
+                return dn, ('dn_tick' if dn else 'no_dn_tick')
+        except Exception:
+            return True, 'err'
         
     def _create_task(self, coro):
         try:
@@ -2768,11 +2803,18 @@ class TradingBot:
         use_scalp = bool(scalp_cfg.get('enabled', False) and SCALP_AVAILABLE)
         scalp_stream_tf = str(scalp_cfg.get('timeframe', '3'))
         scalp_use_frames_3m = bool(scalp_cfg.get('use_frames_3m_for_detection', True))
-        if use_scalp and SCALP_AVAILABLE and scalp_stream_tf:
+        # Start 3m secondary stream if Scalp needs it OR if Trend/MR 3m context is requested
+        use_3m_for_context = False
+        try:
+            use_3m_for_context = bool((cfg.get('trend', {}).get('context', {}) or {}).get('use_3m_context', False) or
+                                      (cfg.get('mr', {}).get('context', {}) or {}).get('use_3m_context', False))
+        except Exception:
+            use_3m_for_context = False
+        if (use_scalp and SCALP_AVAILABLE and scalp_stream_tf) or (use_3m_for_context and scalp_stream_tf):
             try:
                 self._create_task(self._collect_secondary_stream(cfg['bybit']['ws_public'], scalp_stream_tf, symbols))
                 self._scalp_secondary_started = True
-                logger.info(f"🩳 Scalp secondary stream started (tf={scalp_stream_tf}m)")
+                logger.info(f"🧪 Secondary 3m stream started (tf={scalp_stream_tf}m) — sources: {'Scalp' if use_scalp else ''}{' + ' if use_scalp and use_3m_for_context else ''}{'Context' if use_3m_for_context else ''}")
             except Exception as e:
                 logger.warning(f"Failed to start scalp secondary stream: {e}")
 
@@ -2940,7 +2982,24 @@ class TradingBot:
                         router_choice = 'none'
 
                     try:
-                        logger.info(f"🧭 Router scores: TR {tr_score:.0f} / {pb_thr}, MR {mr_score:.0f} / {mr_thr} → {router_choice.upper()}")
+                        # One-line decision record snapshot (router + signal presence + ML margins if available so far)
+                        tr_ml = '—'; mr_ml = '—'; tr_marg = '—'; mr_marg = '—'
+                        try:
+                            if 'ml_score_tr' in locals() and 'thr_tr' in locals():
+                                tr_ml = f"{float(ml_score_tr):.0f}/{int(thr_tr)}"; tr_marg = f"{float(ml_score_tr - thr_tr):+}" 
+                        except Exception:
+                            pass
+                        try:
+                            if 'ml_score_mr' in locals() and 'thr_mr' in locals():
+                                mr_ml = f"{float(ml_score_mr):.0f}/{int(thr_mr)}"; mr_marg = f"{float(ml_score_mr - thr_mr):+}"
+                        except Exception:
+                            pass
+                        has_tr = 'Y' if ('soft_sig_tr' in locals() and soft_sig_tr) else 'N'
+                        has_mr = 'Y' if ('soft_sig_mr' in locals() and soft_sig_mr) else 'N'
+                        logger.info(
+                            f"[{sym}] 🧮 Decision: router={str(router_choice).upper()} TR {tr_score:.0f}/{pb_thr} MR {mr_score:.0f}/{mr_thr} | "
+                            f"sig TR={has_tr} MR={has_mr} | ML TR={tr_ml}{'' if tr_marg=='—' else f'({tr_marg})'} MR={mr_ml}{'' if mr_marg=='—' else f'({mr_marg})'}"
+                        )
                     except Exception:
                         pass
 
@@ -3441,6 +3500,14 @@ class TradingBot:
                                     except Exception:
                                         pass
                             else:
+                                # Optional 3m context (diagnostic only)
+                                try:
+                                    if bool(((cfg.get('mr', {}).get('context', {}) or {}).get('use_3m_context', False))):
+                                        ok3, why3 = self._micro_context_mr(sym, sig_mr_ind.side)
+                                        logger.debug(f"[{sym}] MR 3m.ctx: {'ok' if ok3 else 'weak'} ({why3})")
+                                except Exception:
+                                    pass
+                            else:
                                 # Phantom record when below threshold
                                 if mr_phantom_tracker and sig_mr_ind is not None:
                                     # ML below threshold
@@ -3508,6 +3575,13 @@ class TradingBot:
                                     logger.debug(f"[{sym}] Trend: ml_score={float(ml_score_tr or 0.0):.1f} thr={thr_tr:.0f} should={tr_should}")
                                 except Exception:
                                     pass
+                            except Exception:
+                                pass
+                            # Optional 3m context (diagnostic only)
+                            try:
+                                if bool(((cfg.get('trend', {}).get('context', {}) or {}).get('use_3m_context', False))):
+                                    ok3, why3 = self._micro_context_trend(sym, sig_tr_ind.side)
+                                    logger.debug(f"[{sym}] Trend 3m.ctx: {'ok' if ok3 else 'weak'} ({why3})")
                             except Exception:
                                 pass
                             # Trend regime filter and exec bootstrapping (phantom-only until ready)

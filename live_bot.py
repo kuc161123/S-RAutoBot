@@ -718,6 +718,12 @@ class TradingBot:
                 except Exception:
                     pass
 
+                # Analysis trace (start)
+                try:
+                    logger.debug(f"[{sym}] 🩳 Scalp(3m) analysis start: tf={timeframe}m")
+                except Exception:
+                    pass
+
                 # Guard: scalper enabled and modules available
                 try:
                     scalp_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
@@ -791,6 +797,14 @@ class TradingBot:
                             sc_settings = self.flow_controller.adjust_scalp(sc_settings)
                     except Exception:
                         pass
+                    # Trace adjusted settings
+                    try:
+                        logger.debug(
+                            f"[{sym}] 🩳 Scalp settings: vwap_max={sc_settings.vwap_dist_atr_max:.2f}, "
+                            f"bb_min={sc_settings.min_bb_width_pct:.2f}, vol_ratio_min={sc_settings.vol_ratio_min:.2f}"
+                        )
+                    except Exception:
+                        pass
                     sc_sig = detect_scalp_signal(self.frames_3m[sym].copy(), sc_settings, sym)
                 except Exception as e:
                     logger.debug(f"[{sym}] Scalp(3m) detection error: {e}")
@@ -798,6 +812,10 @@ class TradingBot:
                 if not sc_sig:
                     # Do not spam logs at 3m; only log positives and regime skips
                     continue
+                try:
+                    logger.info(f"[{sym}] 🩳 Scalp signal: {getattr(sc_sig, 'side','?').upper()} @ {float(getattr(sc_sig,'entry',0.0)):.4f}")
+                except Exception:
+                    pass
 
                 # Dedup via Redis (phantom dedup scope)
                 dedup_ok = True
@@ -1082,6 +1100,11 @@ class TradingBot:
                     except Exception:
                         pass
                 await self.tg.send_message("\n".join([l for l in lines if l]))
+                # Log open event
+                try:
+                    logger.info(f"[{symbol}] 👻 Phantom opened ({label}): {side} @ {entry_price:.4f} TP/SL {tp:.4f}/{sl:.4f} ML {ml_score:.1f}")
+                except Exception:
+                    pass
                 return
 
             # Close notification
@@ -1110,6 +1133,11 @@ class TradingBot:
                     lines.append(f"Range position: {float(range_pos):.2f}")
 
             await self.tg.send_message("\n".join(lines))
+            # Log close event
+            try:
+                logger.info(f"[{symbol}] 👻 Phantom closed ({label}): {side} {outcome.upper()} PnL {pnl_percent:+.2f}% exit {exit_price:.4f} ({exit_label})")
+            except Exception:
+                pass
 
             # Telemetry counters for phantom outcomes (non-executed only)
             try:
@@ -3351,6 +3379,7 @@ class TradingBot:
 
                         # 1) Mean Reversion independent
                         try:
+                            logger.debug(f"[{sym}] MR: analysis start")
                             sig_mr_ind = detect_signal_mean_reversion(df.copy(), settings, sym)
                         except Exception:
                             sig_mr_ind = None
@@ -3364,6 +3393,10 @@ class TradingBot:
                                     ml_score_mr, _ = enhanced_mr_scorer.score_signal(sig_mr_ind.__dict__, ef, df)
                                     thr_mr = getattr(enhanced_mr_scorer, 'min_score', 75)
                                     mr_should = ml_score_mr >= thr_mr
+                                try:
+                                    logger.debug(f"[{sym}] MR: ml_score={float(ml_score_mr or 0.0):.1f} thr={thr_mr:.0f} should={mr_should}")
+                                except Exception:
+                                    pass
                                 # Promotion override regardless of earlier guards
                                 prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
                                 promote_wr = float(prom_cfg.get('promote_wr', 50.0))
@@ -3424,6 +3457,7 @@ class TradingBot:
 
                         # 2) Trend independent
                         try:
+                            logger.debug(f"[{sym}] Trend: analysis start")
                             sig_tr_ind = detect_trend_signal(df.copy(), trend_settings, sym)
                         except Exception:
                             sig_tr_ind = None
@@ -3470,6 +3504,10 @@ class TradingBot:
                                     ml_score_tr, _ = tr_scorer.score_signal(sig_tr_ind.__dict__, trend_features)
                                     thr_tr = getattr(tr_scorer, 'min_score', 70)
                                     tr_should = ml_score_tr >= thr_tr
+                                try:
+                                    logger.debug(f"[{sym}] Trend: ml_score={float(ml_score_tr or 0.0):.1f} thr={thr_tr:.0f} should={tr_should}")
+                                except Exception:
+                                    pass
                             except Exception:
                                 pass
                             # Trend regime filter and exec bootstrapping (phantom-only until ready)

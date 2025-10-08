@@ -3619,6 +3619,11 @@ class TradingBot:
                                         if mr_phantom_tracker:
                                             mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
                                         sig_mr_ind = None
+                                        # Skip MR path after HTF gate
+                                        # Proceed to Trend independent
+                                        
+                                        # Continue outer loop to avoid using cleared signal
+                                        continue
                             except Exception:
                                 pass
                             # MR regime filter: require ranging regime unless promotion_bypass is active
@@ -3753,6 +3758,8 @@ class TradingBot:
                                         if phantom_tracker:
                                             phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
                                         sig_tr_ind = None
+                                        # Skip Trend path after HTF gate
+                                        continue
                             except Exception:
                                 pass
                             # Trend regime filter and exec bootstrapping (phantom-only until ready)
@@ -3814,7 +3821,7 @@ class TradingBot:
                                 except Exception:
                                     pass
                                 # Fall back to phantom record
-                                if phantom_tracker:
+                                if phantom_tracker and sig_tr_ind is not None:
                                     # Log regime/exec gate block
                                     try:
                                         logger.debug(f"[{sym}] Trend: skip — regime/exec gate (reg={tr_pass_regime}, exec={trend_exec_enabled})")
@@ -3833,7 +3840,7 @@ class TradingBot:
                             else:
                                 if tr_should:
                                     executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
-                                    if not executed and phantom_tracker:
+                                    if not executed and phantom_tracker and sig_tr_ind is not None:
                                         logger.debug(f"[{sym}] Trend: skip — execution guard (see prior logs)")
                                         phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
                                         try:

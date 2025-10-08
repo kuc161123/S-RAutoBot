@@ -350,6 +350,20 @@ class TrendMLScorer:
             pass
         return out
 
+    # Backward/forward-compatible API used by Telegram dashboard
+    def get_learned_patterns(self) -> Dict:
+        """Alias for get_patterns() to match UI expectation.
+
+        Telegram's /mlpatterns expects `get_learned_patterns`; this method
+        returns the same structure produced by get_patterns(). When models are
+        not ready, it returns an empty structure—UI will display a collecting
+        data message instead of a hard error.
+        """
+        try:
+            return self.get_patterns()
+        except Exception:
+            return {'feature_importance': {}, 'time_patterns': {}, 'market_conditions': {}, 'winning_patterns': [], 'losing_patterns': []}
+
 
 _trend_scorer = None
 

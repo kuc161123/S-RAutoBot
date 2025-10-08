@@ -1023,6 +1023,11 @@ class TradingBot:
                             daily_ok = n_val < none_cap
                     except Exception:
                         pass
+                    # Visibility into decision inputs
+                    try:
+                        logger.info(f"[{sym}] 🩳 Scalp decision context: dedup={dedup_ok} hourly_remaining={max(0, sc_remaining)} daily_ok={daily_ok}")
+                    except Exception:
+                        pass
                     if sc_remaining > 0 and daily_ok:
                         scpt.record_scalp_signal(
                             sym,
@@ -1085,7 +1090,12 @@ class TradingBot:
                         except Exception:
                             pass
                 except Exception as e:
-                    logger.debug(f"[{sym}] Scalp(3m) record error: {e}")
+                    # Elevate to WARNING so it is visible at default log level
+                    logger.warning(f"[{sym}] Scalp(3m) record error: {e}")
+                    try:
+                        logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=record_error)")
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.debug(f"Secondary stream update error for {sym}: {e}")
 
@@ -1221,8 +1231,23 @@ class TradingBot:
                 logger.info(f"[{sym}] 👻 Phantom-only (Scalp fallback): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
                 blist.append(now_ts)
                 self._scalp_budget[sym] = blist
+                try:
+                    logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=ok_fallback)")
+                except Exception:
+                    pass
+            else:
+                # Blocked by hourly per-symbol budget or daily cap
+                try:
+                    reason = 'hourly_budget' if sc_remaining <= 0 else ('daily_cap' if not daily_ok else 'unknown')
+                    logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason={reason})")
+                except Exception:
+                    pass
         except Exception as e:
-            logger.debug(f"[{sym}] Scalp fallback record error: {e}")
+            logger.warning(f"[{sym}] Scalp fallback record error: {e}")
+            try:
+                logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=record_error)")
+            except Exception:
+                pass
 
     async def _notify_phantom_trade(self, label: str, phantom):
         if not self.tg:

@@ -3016,6 +3016,13 @@ class TradingBot:
                     except Exception:
                         pass
 
+                    # Higher-timeframe gating/bias using enhanced regime (HTF)
+                    htf = None
+                    try:
+                        htf = get_enhanced_market_regime(df, sym)
+                    except Exception:
+                        htf = None
+
                     # Thresholds and hysteresis
                     sreg = self.config.get('strategy_regimes', {}) if hasattr(self, 'config') else {}
                     pb_cfg = sreg.get('trend', {}) if isinstance(sreg, dict) else {}
@@ -3038,6 +3045,31 @@ class TradingBot:
                         candidates.append(('trend_breakout', tr_score))
                     if mr_score >= mr_thr:
                         candidates.append(('enhanced_mr', mr_score))
+
+                    # Apply HTF gating to candidates when enabled (drop misaligned)
+                    try:
+                        htf_cfg = (self.config.get('router', {}) or {}).get('htf_bias', {})
+                        if bool(htf_cfg.get('enabled', False)) and str(htf_cfg.get('mode','gated')).lower() == 'gated' and htf is not None:
+                            gated = []
+                            for name, sc in candidates:
+                                if name == 'trend_breakout':
+                                    min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
+                                    if float(getattr(htf, 'trend_strength', 0.0)) >= min_ts:
+                                        gated.append((name, sc))
+                                    else:
+                                        logger.info(f"[{sym}] 🧮 HTF gate: drop TREND (trend_strength {getattr(htf,'trend_strength',0.0):.1f} < {min_ts:.1f})")
+                                elif name == 'enhanced_mr':
+                                    min_rq = float((htf_cfg.get('mr', {}) or {}).get('min_range_quality', 0.60))
+                                    max_ts = float((htf_cfg.get('mr', {}) or {}).get('max_trend_strength', 40.0))
+                                    rq = float(getattr(htf, 'range_quality', 0.0))
+                                    ts = float(getattr(htf, 'trend_strength', 0.0))
+                                    if (rq >= min_rq) and (ts <= max_ts):
+                                        gated.append((name, sc))
+                                    else:
+                                        logger.info(f"[{sym}] 🧮 HTF gate: drop MR (rq {rq:.2f} < {min_rq:.2f} or ts {ts:.1f} > {max_ts:.1f})")
+                            candidates = gated
+                    except Exception:
+                        pass
 
                     if candidates:
                         # Choose best by score
@@ -3574,6 +3606,21 @@ class TradingBot:
                                         pass
                             except Exception:
                                 pass
+                            # HTF gating for MR (enforced when enabled)
+                            try:
+                                htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
+                                if bool(htf_cfg.get('enabled', False)) and str(htf_cfg.get('mode','gated')).lower() == 'gated' and 'regime_analysis' in locals() and regime_analysis is not None:
+                                    rq = float(getattr(regime_analysis, 'range_quality', 0.0))
+                                    ts = float(getattr(regime_analysis, 'trend_strength', 0.0))
+                                    min_rq = float((htf_cfg.get('mr', {}) or {}).get('min_range_quality', 0.60))
+                                    max_ts = float((htf_cfg.get('mr', {}) or {}).get('max_trend_strength', 40.0))
+                                    if not (rq >= min_rq and ts <= max_ts):
+                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_mr (reason=htf_gate rq={rq:.2f} ts={ts:.1f})")
+                                        if mr_phantom_tracker:
+                                            mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+                                        sig_mr_ind = None
+                            except Exception:
+                                pass
                             # MR regime filter: require ranging regime unless promotion_bypass is active
                             try:
                                 mr_reg = (cfg.get('mr', {}) or {}).get('regime', {})
@@ -3693,6 +3740,19 @@ class TradingBot:
                                 if bool(((cfg.get('trend', {}).get('context', {}) or {}).get('use_3m_context', False))):
                                     ok3, why3 = self._micro_context_trend(sym, sig_tr_ind.side)
                                     logger.debug(f"[{sym}] Trend 3m.ctx: {'ok' if ok3 else 'weak'} ({why3})")
+                            except Exception:
+                                pass
+                            # HTF gating for Trend (enforced when enabled)
+                            try:
+                                htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
+                                if bool(htf_cfg.get('enabled', False)) and str(htf_cfg.get('mode','gated')).lower() == 'gated' and 'regime_analysis' in locals() and regime_analysis is not None:
+                                    ts = float(getattr(regime_analysis, 'trend_strength', 0.0))
+                                    min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
+                                    if not (ts >= min_ts):
+                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=htf_gate ts={ts:.1f}<{min_ts:.1f})")
+                                        if phantom_tracker:
+                                            phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                                        sig_tr_ind = None
                             except Exception:
                                 pass
                             # Trend regime filter and exec bootstrapping (phantom-only until ready)

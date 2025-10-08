@@ -141,6 +141,18 @@ trend:
 ml:
   fail_open_on_error: false   # if true, allow execution on ML errors; else skip and record phantom
 
+# Higher-timeframe router bias and gating (enabled by default)
+router:
+  htf_bias:
+    enabled: true
+    mode: gated          # gated | soft
+    # Thresholds for per-strategy HTF gating
+    trend:
+      min_trend_strength: 60.0  # require HTF trend_strength ≥ this to allow Trend
+    mr:
+      min_range_quality: 0.60   # require HTF range_quality ≥ this to allow MR
+      max_trend_strength: 40.0  # require HTF trend_strength ≤ this to allow MR
+
 # Global exploration toggle
 exploration:
   enabled: true

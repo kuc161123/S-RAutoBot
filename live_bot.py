@@ -3507,7 +3507,6 @@ class TradingBot:
                                         logger.debug(f"[{sym}] MR 3m.ctx: {'ok' if ok3 else 'weak'} ({why3})")
                                 except Exception:
                                     pass
-                            else:
                                 # Phantom record when below threshold
                                 if mr_phantom_tracker and sig_mr_ind is not None:
                                     # ML below threshold

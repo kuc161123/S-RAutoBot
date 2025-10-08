@@ -23,6 +23,7 @@ class ScalpSettings:
     vol_ratio_min: float = 1.3     # 1.3x 20-bar avg
     wick_ratio_min: float = 0.3
     vwap_dist_atr_max: float = 0.6 # max normalized distance to VWAP
+    orb_enabled: bool = False      # Optional ORB continuation filter
 
 
 @dataclass
@@ -103,15 +104,14 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
     cur_atr = float(atr.iloc[-1]) if atr.iloc[-1] > 0 else max(1e-9, rng)
     dist_vwap_atr = abs(c - cur_vwap) / cur_atr
 
-    # ORB filter (first 20 bars): skip if not above/below initial range for continuation bias
-    # Keep simple: only check if enough bars
+    # Optional ORB filter: require price beyond recent 20-bar range for continuation bias
     orb_ok = True
-    if len(df) >= 40:
-        first_high = high.iloc[:20].max()
-        first_low = low.iloc[:20].min()
-        if ema_aligned_up and c <= first_high:
+    if s.orb_enabled and len(df) >= 40:
+        recent_high = float(high.iloc[-20:].max())
+        recent_low = float(low.iloc[-20:].min())
+        if ema_aligned_up and c <= recent_high:
             orb_ok = False
-        if ema_aligned_dn and c >= first_low:
+        if ema_aligned_dn and c >= recent_low:
             orb_ok = False
 
     # Long scalp candidate

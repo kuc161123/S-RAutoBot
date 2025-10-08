@@ -266,6 +266,14 @@ class ScalpPhantomTracker:
 
     def _close(self, symbol: str, ph: ScalpPhantomTrade, exit_price: float, outcome: str):
         ph.outcome = outcome
+        # Snap to exact TP/SL for clearer R:R on labeled tp/sl
+        try:
+            if str(getattr(ph, 'exit_reason', '')).lower() == 'tp':
+                exit_price = float(ph.take_profit)
+            elif str(getattr(ph, 'exit_reason', '')).lower() == 'sl':
+                exit_price = float(ph.stop_loss)
+        except Exception:
+            pass
         ph.exit_price = exit_price
         ph.exit_time = datetime.utcnow()
         # PnL

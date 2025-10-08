@@ -824,6 +824,19 @@ class TradingBot:
                             sc_settings.vwap_dist_atr_max = float(exp.get('vwap_dist_atr_max', sc_settings.vwap_dist_atr_max))
                             sc_settings.min_bb_width_pct = float(exp.get('min_bb_width_pct', sc_settings.min_bb_width_pct))
                             sc_settings.vol_ratio_min = float(exp.get('vol_ratio_min', sc_settings.vol_ratio_min))
+                            # Allow tuning of additional params if provided
+                            if 'wick_ratio_min' in exp:
+                                sc_settings.wick_ratio_min = float(exp.get('wick_ratio_min', sc_settings.wick_ratio_min))
+                            if 'vwap_window' in exp:
+                                sc_settings.vwap_window = int(exp.get('vwap_window', sc_settings.vwap_window))
+                            if 'ema_fast' in exp:
+                                sc_settings.ema_fast = int(exp.get('ema_fast', sc_settings.ema_fast))
+                            if 'ema_slow' in exp:
+                                sc_settings.ema_slow = int(exp.get('ema_slow', sc_settings.ema_slow))
+                            if 'atr_len' in exp:
+                                sc_settings.atr_len = int(exp.get('atr_len', sc_settings.atr_len))
+                            if 'orb_enabled' in exp:
+                                sc_settings.orb_enabled = bool(exp.get('orb_enabled', sc_settings.orb_enabled))
                     except Exception:
                         pass
                     # Apply adaptive flow relax on top of config (phantom-only)
@@ -840,12 +853,50 @@ class TradingBot:
                         )
                     except Exception:
                         pass
-                    sc_sig = detect_scalp_signal(self.frames_3m[sym].copy(), sc_settings, sym)
+                    df3_for_sig = self.frames_3m[sym].copy()
+                    sc_sig = detect_scalp_signal(df3_for_sig, sc_settings, sym)
                 except Exception as e:
                     logger.debug(f"[{sym}] Scalp(3m) detection error: {e}")
                     sc_sig = None
                 if not sc_sig:
-                    # Do not spam logs at 3m; only log positives and regime skips
+                    # Optional: compact gate probe at debug to help tune thresholds
+                    try:
+                        if df3_for_sig is not None and len(df3_for_sig) >= max(sc_settings.vwap_window, 50):
+                            import numpy as _np
+                            _c = df3_for_sig['close']; _h = df3_for_sig['high']; _l = df3_for_sig['low']; _v = df3_for_sig['volume']
+                            _atr = (_h - _l).rolling(sc_settings.atr_len).mean()
+                            _ema_f = _c.ewm(span=sc_settings.ema_fast, adjust=False).mean()
+                            _ema_s = _c.ewm(span=sc_settings.ema_slow, adjust=False).mean()
+                            _tp = (_h + _l + _c) / 3
+                            _pv = _tp * _v.clip(lower=0.0)
+                            _vwap = _pv.rolling(sc_settings.vwap_window).sum() / _v.rolling(sc_settings.vwap_window).sum().replace(0, _np.nan)
+                            _std20 = _c.rolling(20).std(); _bbw = (_std20 / _c).fillna(0)
+                            _bbw_pct = float((_bbw <= float(_bbw.iloc[-1])).mean()) if len(_bbw) else 0.0
+                            _vol20 = _v.rolling(20).mean(); _vol_ratio = float((_v.iloc[-1] / _vol20.iloc[-1]) if _vol20.iloc[-1] > 0 else 1.0)
+                            _rng = max(1e-9, float(_h.iloc[-1] - _l.iloc[-1]))
+                            _o = float(df3_for_sig['open'].iloc[-1]); _cl = float(_c.iloc[-1])
+                            _upper_w = max(0.0, float(_h.iloc[-1]) - max(_cl, _o)) / _rng
+                            _lower_w = max(0.0, min(_cl, _o) - float(_l.iloc[-1])) / _rng
+                            _ema_up = bool(_cl > float(_ema_f.iloc[-1]) > float(_ema_s.iloc[-1]))
+                            _ema_dn = bool(_cl < float(_ema_f.iloc[-1]) < float(_ema_s.iloc[-1]))
+                            _cur_vwap = float(_vwap.iloc[-1]) if _vwap.notna().iloc[-1] else _cl
+                            _cur_atr = float(_atr.iloc[-1]) if _atr.iloc[-1] and _atr.iloc[-1] > 0 else _rng
+                            _dist_vwap_atr = abs(_cl - _cur_vwap) / max(1e-9, _cur_atr)
+                            _orb_ok = True
+                            if len(df3_for_sig) >= 40:
+                                _first_high = float(_h.iloc[:20].max()); _first_low = float(_l.iloc[:20].min())
+                                if _ema_up and _cl <= _first_high:
+                                    _orb_ok = False
+                                if _ema_dn and _cl >= _first_low:
+                                    _orb_ok = False
+                            logger.debug(
+                                f"[{sym}] 🩳 Scalp gates: up={_ema_up} dn={_ema_dn} bbw={_bbw_pct:.2f}>={sc_settings.min_bb_width_pct:.2f} "
+                                f"vol={_vol_ratio:.2f}>={sc_settings.vol_ratio_min:.2f} wickL={_lower_w:.2f}/wickU={_upper_w:.2f}>={sc_settings.wick_ratio_min:.2f} "
+                                f"distVWAP={_dist_vwap_atr:.2f}<={sc_settings.vwap_dist_atr_max:.2f} orb={_orb_ok} -> no_signal"
+                            )
+                    except Exception:
+                        pass
+                    # Do not spam logs at 3m otherwise; only log positives and regime skips
                     continue
                 try:
                     logger.info(f"[{sym}] 🩳 Scalp signal: {getattr(sc_sig, 'side','?').upper()} @ {float(getattr(sc_sig,'entry',0.0)):.4f}")

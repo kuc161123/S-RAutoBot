@@ -3089,8 +3089,13 @@ class TradingBot:
                         # Helper to attempt execution for a given signal; returns True if executed
                         async def _try_execute(strategy_name: str, sig_obj, ml_score: float = 0.0, threshold: float = 75.0):
                             nonlocal book, bybit, sizer
+                            dbg_logger = logging.getLogger(__name__)
                             # Enforce one-way mode: only one position per symbol at a time
                             if sym in book.positions:
+                                try:
+                                    dbg_logger.debug(f"[{sym}] {strategy_name}: skip — position_exists")
+                                except Exception:
+                                    pass
                                 return False
                             # Get symbol metadata and round TP/SL
                             m = meta_for(sym, shared["meta"])
@@ -3110,11 +3115,21 @@ class TradingBot:
                             qty = sizer.qty_for(sig_obj.entry, sig_obj.sl, m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
                             if qty <= 0:
                                 logger.info(f"[{sym}] {strategy_name} qty calc invalid -> skip execution")
+                                try:
+                                    R = abs(float(sig_obj.entry) - float(sig_obj.sl))
+                                    risk_val = (risk.risk_percent if getattr(risk, 'use_percent_risk', False) else getattr(risk, 'risk_usd', 0.0))
+                                    dbg_logger.debug(f"[{sym}] {strategy_name}: skip — sizing_invalid (risk={risk_val}, R={R:.6f})")
+                                except Exception:
+                                    pass
                                 return False
                             # SL sanity
                             current_price = df['close'].iloc[-1]
                             if (sig_obj.side == "long" and sig_obj.sl >= current_price) or (sig_obj.side == "short" and sig_obj.sl <= current_price):
                                 logger.warning(f"[{sym}] {strategy_name} SL invalid relative to current price -> skip execution")
+                                try:
+                                    dbg_logger.debug(f"[{sym}] {strategy_name}: skip — sl_invalid (price={float(current_price):.6f}, sl={float(sig_obj.sl):.6f})")
+                                except Exception:
+                                    pass
                                 return False
                             # Set leverage and place order
                             max_lev = int(m.get("max_leverage", 10))
@@ -3339,6 +3354,8 @@ class TradingBot:
                             sig_mr_ind = detect_signal_mean_reversion(df.copy(), settings, sym)
                         except Exception:
                             sig_mr_ind = None
+                        if sig_mr_ind is None:
+                            logger.debug(f"[{sym}] MR: skip — no_signal")
                         if sig_mr_ind is not None:
                             ef = sig_mr_ind.meta.get('mr_features', {}) if sig_mr_ind.meta else {}
                             ml_score_mr = 0.0; thr_mr = 75.0; mr_should = True
@@ -3373,6 +3390,7 @@ class TradingBot:
                                 promotion_bypass = bool(mr_reg.get('promotion_bypass', True))
                                 mr_pass_regime = (not mr_reg_enabled) or ((prim == 'ranging') and (conf >= mr_conf_req) and (persist >= mr_persist_req))
                                 if not mr_pass_regime and not (promotion_bypass and recent_wr >= promote_wr):
+                                    logger.debug(f"[{sym}] MR: skip — regime gate (prim={prim}, conf={conf:.2f}, persist={persist:.2f})")
                                     if mr_phantom_tracker:
                                         mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
                                     sig_mr_ind = None
@@ -3381,6 +3399,7 @@ class TradingBot:
                             if mr_should and sig_mr_ind is not None:
                                 executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
                                 if not executed and mr_phantom_tracker and sig_mr_ind is not None:
+                                    logger.debug(f"[{sym}] MR: skip — execution guard (see prior logs)")
                                     # Record phantom when position exists or execution not possible
                                     mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
                                     try:
@@ -3391,6 +3410,11 @@ class TradingBot:
                             else:
                                 # Phantom record when below threshold
                                 if mr_phantom_tracker and sig_mr_ind is not None:
+                                    # ML below threshold
+                                    try:
+                                        logger.debug(f"[{sym}] MR: skip — ml<{thr_mr:.0f} (score {float(ml_score_mr or 0.0):.1f})")
+                                    except Exception:
+                                        pass
                                     mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
                                     try:
                                         if self.flow_controller and self.flow_controller.enabled:
@@ -3403,6 +3427,8 @@ class TradingBot:
                             sig_tr_ind = detect_trend_signal(df.copy(), trend_settings, sym)
                         except Exception:
                             sig_tr_ind = None
+                        if sig_tr_ind is None:
+                            logger.debug(f"[{sym}] Trend: skip — no_signal")
                         if sig_tr_ind is not None:
                             # Build trend features (regime-independent)
                             try:
@@ -3506,6 +3532,11 @@ class TradingBot:
                                     pass
                                 # Fall back to phantom record
                                 if phantom_tracker:
+                                    # Log regime/exec gate block
+                                    try:
+                                        logger.debug(f"[{sym}] Trend: skip — regime/exec gate (reg={tr_pass_regime}, exec={trend_exec_enabled})")
+                                    except Exception:
+                                        pass
                                     phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
                                     try:
                                         if self.flow_controller and self.flow_controller.enabled:
@@ -3516,6 +3547,7 @@ class TradingBot:
                                 if tr_should:
                                     executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
                                     if not executed and phantom_tracker:
+                                        logger.debug(f"[{sym}] Trend: skip — execution guard (see prior logs)")
                                         phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
                                         try:
                                             if self.flow_controller and self.flow_controller.enabled:
@@ -3524,6 +3556,10 @@ class TradingBot:
                                             pass
                                 else:
                                     if phantom_tracker:
+                                        try:
+                                            logger.debug(f"[{sym}] Trend: skip — ml<{thr_tr:.0f} (score {float(ml_score_tr or 0.0):.1f})")
+                                        except Exception:
+                                            pass
                                         phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
                                         try:
                                             if self.flow_controller and self.flow_controller.enabled:

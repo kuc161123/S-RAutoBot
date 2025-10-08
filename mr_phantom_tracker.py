@@ -365,29 +365,38 @@ class MRPhantomTracker:
         return phantom
 
     def update_mr_phantom_prices(self, symbol: str, current_price: float, df=None):
-        """Update MR phantom trade with range-specific tracking"""
+        """Update MR phantom trade with range-specific tracking.
+        Uses intrabar highs/lows when available to better mirror exchange fills.
+        """
         if symbol not in self.active_mr_phantoms:
             return
         act_list = list(self.active_mr_phantoms.get(symbol, []))
         remaining: List[MRPhantomTrade] = []
+        # Intrabar extremes if df provided
+        try:
+            cur_high = float(df['high'].iloc[-1]) if df is not None else current_price
+            cur_low = float(df['low'].iloc[-1]) if df is not None else current_price
+        except Exception:
+            cur_high = current_price
+            cur_low = current_price
         for ph in act_list:
             try:
                 if ph.side == "long":
                     ph.max_favorable = max(ph.max_favorable or current_price, current_price)
                     ph.max_adverse = min(ph.max_adverse or current_price, current_price)
-                    if current_price >= ph.take_profit:
+                    if cur_high >= ph.take_profit:
                         self._close_mr_phantom(symbol, ph, current_price, "win", "tp")
                         continue
-                    elif current_price <= ph.stop_loss:
+                    elif cur_low <= ph.stop_loss:
                         self._close_mr_phantom(symbol, ph, current_price, "loss", "sl")
                         continue
                 else:
                     ph.max_favorable = min(ph.max_favorable or current_price, current_price)
                     ph.max_adverse = max(ph.max_adverse or current_price, current_price)
-                    if current_price <= ph.take_profit:
+                    if cur_low <= ph.take_profit:
                         self._close_mr_phantom(symbol, ph, current_price, "win", "tp")
                         continue
-                    elif current_price >= ph.stop_loss:
+                    elif cur_high >= ph.stop_loss:
                         self._close_mr_phantom(symbol, ph, current_price, "loss", "sl")
                         continue
                 # Timeout
@@ -412,6 +421,33 @@ class MRPhantomTracker:
                 pass
 
         # Legacy single-phantom block removed; handled above per phantom instance
+
+    def force_close_executed(self, symbol: str, exit_price: float, exit_reason: str = "manual"):
+        """Force-close any executed MR phantom mirrors for this symbol at the given exit price.
+        Ensures phantom mirrors align exactly with confirmed exchange closures.
+        """
+        try:
+            if symbol not in self.active_mr_phantoms:
+                return
+            keep: List[MRPhantomTrade] = []
+            for ph in list(self.active_mr_phantoms.get(symbol, [])):
+                if getattr(ph, 'was_executed', False):
+                    if ph.side == 'long':
+                        outcome = 'win' if exit_price >= ph.take_profit else ('loss' if exit_price <= ph.stop_loss else ('win' if exit_price > ph.entry_price else 'loss'))
+                    else:
+                        outcome = 'win' if exit_price <= ph.take_profit else ('loss' if exit_price >= ph.stop_loss else ('win' if exit_price < ph.entry_price else 'loss'))
+                    self._close_mr_phantom(symbol, ph, exit_price, outcome, exit_reason or 'manual')
+                else:
+                    keep.append(ph)
+            if keep:
+                self.active_mr_phantoms[symbol] = keep
+            else:
+                try:
+                    del self.active_mr_phantoms[symbol]
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"[{symbol}] force_close_executed error: {e}")
 
     def _close_mr_phantom(self, symbol: str, phantom: MRPhantomTrade, exit_price: float, outcome: str, exit_reason: str):
         """Close specific MR phantom trade with range-specific analysis"""

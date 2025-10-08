@@ -1437,6 +1437,12 @@ class TradingBot:
 
                     # Record the trade
                     self.record_closed_trade(symbol, pos, exit_price, exit_reason, leverage)
+                    # Force-close any executed MR phantom mirrors to align with exchange closure
+                    try:
+                        if pos.strategy_name in ['enhanced_mr', 'mean_reversion'] and mr_phantom_tracker is not None:
+                            mr_phantom_tracker.force_close_executed(symbol, exit_price, exit_reason)
+                    except Exception as _fce:
+                        logger.debug(f"[{symbol}] force_close_executed failed: {_fce}")
                     
                     # Update symbol data collector with session performance
                     if symbol_collector:

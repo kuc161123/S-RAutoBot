@@ -336,6 +336,13 @@ class PhantomTradeTracker:
             return
         act_list = list(self.active_phantoms.get(symbol, []))
         remaining: List[PhantomTrade] = []
+        # Use intrabar extremes if df provided
+        try:
+            cur_high = float(df['high'].iloc[-1]) if df is not None else current_price
+            cur_low = float(df['low'].iloc[-1]) if df is not None else current_price
+        except Exception:
+            cur_high = current_price
+            cur_low = current_price
         for ph in act_list:
             try:
                 # Extremes
@@ -346,10 +353,10 @@ class PhantomTradeTracker:
                         ph.max_favorable = current_price
                     if current_price < ph.max_adverse:
                         ph.max_adverse = current_price
-                    if current_price >= ph.take_profit:
+                    if cur_high >= ph.take_profit:
                         self._close_phantom(symbol, ph, current_price, 'win', df, btc_price, symbol_collector, exit_reason='tp')
                         continue
-                    if current_price <= ph.stop_loss:
+                    if cur_low <= ph.stop_loss:
                         self._close_phantom(symbol, ph, current_price, 'loss', df, btc_price, symbol_collector, exit_reason='sl')
                         continue
                 else:
@@ -359,10 +366,10 @@ class PhantomTradeTracker:
                         ph.max_favorable = current_price
                     if current_price > ph.max_adverse:
                         ph.max_adverse = current_price
-                    if current_price <= ph.take_profit:
+                    if cur_low <= ph.take_profit:
                         self._close_phantom(symbol, ph, current_price, 'win', df, btc_price, symbol_collector, exit_reason='tp')
                         continue
-                    if current_price >= ph.stop_loss:
+                    if cur_high >= ph.stop_loss:
                         self._close_phantom(symbol, ph, current_price, 'loss', df, btc_price, symbol_collector, exit_reason='sl')
                         continue
 

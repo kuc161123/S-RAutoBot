@@ -1500,10 +1500,20 @@ class TradingBot:
                     strategy_label = getattr(pos, 'strategy_name', 'unknown')
                     if isinstance(strategy_label, str):
                         strategy_label = strategy_label.replace('_', ' ').title()
+                    # Include realized R multiple for clarity vs 1% risk
+                    realized_r = None
+                    try:
+                        R = (pos.entry - pos.sl) if pos.side == 'long' else (pos.sl - pos.entry)
+                        if R and R != 0:
+                            realized_r = (exit_price - pos.entry)/R if pos.side=='long' else (pos.entry - exit_price)/R
+                    except Exception:
+                        realized_r = None
+                    rr_line = f"Realized R: {realized_r:.2f}R\n" if isinstance(realized_r, float) else ""
                     message = (
                         f"{outcome_emoji} *Trade Closed* {symbol} {pos.side.upper()}\n\n"
                         f"Exit Price: {exit_price:.4f}\n"
                         f"PnL: ${pnl_usd:.2f} ({pnl_percent:.2f}%)\n"
+                        f"{rr_line}"
                         f"Hold: {hold_minutes}m\n"
                         f"Exit: {exit_label}\n"
                         f"Strategy: {strategy_label}\n"
@@ -1579,14 +1589,14 @@ class TradingBot:
                             
                             if trigger_price > 0:
                                 if pos.side == "long":
-                                    if trigger_price >= pos.tp * 0.98:  # Within 2% of TP
+                                    if trigger_price >= pos.tp * 0.997:  # Within 0.3% of TP
                                         exit_reason = "tp"
-                                    elif trigger_price <= pos.sl * 1.02:  # Within 2% of SL
+                                    elif trigger_price <= pos.sl * 1.003:  # Within 0.3% of SL
                                         exit_reason = "sl"
                                 else:  # short
-                                    if trigger_price <= pos.tp * 1.02:
+                                    if trigger_price <= pos.tp * 1.003:
                                         exit_reason = "tp"
-                                    elif trigger_price >= pos.sl * 0.98:
+                                    elif trigger_price >= pos.sl * 0.997:
                                         exit_reason = "sl"
                             
                             # Check orderType as fallback
@@ -1602,28 +1612,40 @@ class TradingBot:
                                 logger.debug(f"[{symbol}] Checking exit price {exit_price:.4f} vs targets - TP: {pos.tp:.4f}, SL: {pos.sl:.4f}, Side: {pos.side}")
                                 
                                 if pos.side == "long":
-                                    if exit_price >= pos.tp * 0.98:
+                                    if exit_price >= pos.tp * 0.997:
                                         exit_reason = "tp"
-                                        logger.debug(f"[{symbol}] Long TP hit: exit {exit_price:.4f} >= TP {pos.tp:.4f} * 0.98")
-                                    elif exit_price <= pos.sl * 1.02:
+                                        logger.debug(f"[{symbol}] Long TP hit: exit {exit_price:.4f} >= TP {pos.tp:.4f} * 0.997")
+                                    elif exit_price <= pos.sl * 1.003:
                                         exit_reason = "sl"
-                                        logger.debug(f"[{symbol}] Long SL hit: exit {exit_price:.4f} <= SL {pos.sl:.4f} * 1.02")
+                                        logger.debug(f"[{symbol}] Long SL hit: exit {exit_price:.4f} <= SL {pos.sl:.4f} * 1.003")
                                     else:
                                         exit_reason = "manual"
                                         logger.debug(f"[{symbol}] Long manual close: exit {exit_price:.4f} between SL {pos.sl:.4f} and TP {pos.tp:.4f}")
                                 else:  # short
-                                    if exit_price <= pos.tp * 1.02:
+                                    if exit_price <= pos.tp * 1.003:
                                         exit_reason = "tp"
-                                        logger.debug(f"[{symbol}] Short TP hit: exit {exit_price:.4f} <= TP {pos.tp:.4f} * 1.02")
-                                    elif exit_price >= pos.sl * 0.98:
+                                        logger.debug(f"[{symbol}] Short TP hit: exit {exit_price:.4f} <= TP {pos.tp:.4f} * 1.003")
+                                    elif exit_price >= pos.sl * 0.997:
                                         exit_reason = "sl"
-                                        logger.debug(f"[{symbol}] Short SL hit: exit {exit_price:.4f} >= SL {pos.sl:.4f} * 0.98")
+                                        logger.debug(f"[{symbol}] Short SL hit: exit {exit_price:.4f} >= SL {pos.sl:.4f} * 0.997")
                                     else:
                                         exit_reason = "manual"
                                         logger.debug(f"[{symbol}] Short manual close: exit {exit_price:.4f} between TP {pos.tp:.4f} and SL {pos.sl:.4f}")
                             break
                     
-                    # Only add to confirmed closed if we found evidence
+                    # Re-confirm with live position size to avoid false positives due to API lag/partials
+                    if found_close:
+                        try:
+                            pos_live = self.bybit.get_position(symbol)
+                            live_size = 0.0
+                            if isinstance(pos_live, dict):
+                                live_size = float(pos_live.get('size', 0) or 0)
+                            if live_size > 0:
+                                logger.info(f"[{symbol}] Close evidence found but size still {live_size}; skipping record this cycle")
+                                found_close = False
+                        except Exception as _cp:
+                            logger.debug(f"[{symbol}] Live size check failed: {_cp}")
+                    # Only add to confirmed closed if we found evidence and have exit price
                     if found_close and exit_price > 0:
                         logger.info(f"[{symbol}] Position CONFIRMED closed at {exit_price:.4f} ({exit_reason})")
                         confirmed_closed.append((symbol, pos, exit_price, exit_reason))

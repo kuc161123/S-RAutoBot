@@ -126,7 +126,7 @@ trend:
     daily_exec_cap: 20      # max forced Trend executions per UTC day
     block_extreme_vol: true # do not force execute when volatility is extreme
   context:
-    use_3m_context: false   # Use 3-minute micro context for diagnostics/logging
+    use_3m_context: true    # Use 3-minute micro context for diagnostics/logging
   explore:
     enabled: true
     slope_min: 3.0
@@ -179,7 +179,7 @@ mr:
       min_pct: 0.001          # 0.1% slippage threshold to trigger SL recalc
       pivot_buffer_atr: 0.05  # keep SL beyond range pivot by 0.05 ATR
   context:
-    use_3m_context: false     # Use 3-minute micro context for diagnostics/logging
+    use_3m_context: true      # Use 3-minute micro context for diagnostics/logging
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}

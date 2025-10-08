@@ -3434,6 +3434,12 @@ class TradingBot:
                                     await self.tg.send_message(msg)
                             except Exception:
                                 pass
+                            # Decision final (independence branch)
+                            try:
+                                promo = bool(getattr(sig_obj, 'meta', {}) and sig_obj.meta.get('promotion_forced')) if isinstance(getattr(sig_obj, 'meta', {}), dict) else False
+                                logger.info(f"[{sym}] 🧮 Decision final: exec_{'mr' if strategy_name=='enhanced_mr' else 'trend'} (reason={'promotion' if promo else 'ok'})")
+                            except Exception:
+                                pass
                             return True
 
                         # 1) Mean Reversion independent
@@ -3495,6 +3501,10 @@ class TradingBot:
                                     # Record phantom when position exists or execution not possible
                                     mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
                                     try:
+                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_mr (reason=exec_guard)")
+                                    except Exception:
+                                        pass
+                                    try:
                                         if self.flow_controller and self.flow_controller.enabled:
                                             self.flow_controller.increment_accepted('mr', 1)
                                     except Exception:
@@ -3515,6 +3525,10 @@ class TradingBot:
                                     except Exception:
                                         pass
                                     mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+                                    try:
+                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_mr (reason=ml<thr)")
+                                    except Exception:
+                                        pass
                                     try:
                                         if self.flow_controller and self.flow_controller.enabled:
                                             self.flow_controller.increment_accepted('mr', 1)
@@ -3650,6 +3664,10 @@ class TradingBot:
                                         pass
                                     phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
                                     try:
+                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=regime/exec_gate)")
+                                    except Exception:
+                                        pass
+                                    try:
                                         if self.flow_controller and self.flow_controller.enabled:
                                             self.flow_controller.increment_accepted('trend', 1)
                                     except Exception:
@@ -3660,6 +3678,10 @@ class TradingBot:
                                     if not executed and phantom_tracker:
                                         logger.debug(f"[{sym}] Trend: skip — execution guard (see prior logs)")
                                         phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                                        try:
+                                            logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=exec_guard)")
+                                        except Exception:
+                                            pass
                                         try:
                                             if self.flow_controller and self.flow_controller.enabled:
                                                 self.flow_controller.increment_accepted('trend', 1)
@@ -3672,6 +3694,10 @@ class TradingBot:
                                         except Exception:
                                             pass
                                         phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                                        try:
+                                            logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=ml<thr)")
+                                        except Exception:
+                                            pass
                                         try:
                                             if self.flow_controller and self.flow_controller.enabled:
                                                 self.flow_controller.increment_accepted('trend', 1)

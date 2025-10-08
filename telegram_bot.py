@@ -362,7 +362,8 @@ class TGBot:
         # Phantom + Executed summaries with WR and open/closed
         try:
             # Trend phantom summary
-            pb_wins = pb_losses = pb_closed = pb_open = 0
+            pb_wins = pb_losses = pb_closed = 0
+            pb_open_trades = pb_open_syms = 0
             if phantom_tracker:
                 try:
                     for trades in phantom_tracker.phantom_trades.values():
@@ -373,13 +374,19 @@ class TGBot:
                                     pb_wins += 1
                                 else:
                                     pb_losses += 1
-                    pb_open = len(getattr(phantom_tracker, 'active_phantoms', {}) or {})
+                    act = getattr(phantom_tracker, 'active_phantoms', {}) or {}
+                    pb_open_syms = len(act)
+                    try:
+                        pb_open_trades = sum(len(lst) for lst in act.values())
+                    except Exception:
+                        pb_open_trades = pb_open_syms
                 except Exception:
                     pass
             pb_wr = (pb_wins / (pb_wins + pb_losses) * 100.0) if (pb_wins + pb_losses) else 0.0
 
             # MR phantom summary
-            mr_wins = mr_losses = mr_closed = mr_open = 0
+            mr_wins = mr_losses = mr_closed = 0
+            mr_open_trades = mr_open_syms = 0
             if mr_phantom:
                 try:
                     for trades in mr_phantom.mr_phantom_trades.values():
@@ -390,13 +397,19 @@ class TGBot:
                                     mr_wins += 1
                                 else:
                                     mr_losses += 1
-                    mr_open = len(getattr(mr_phantom, 'active_mr_phantoms', {}) or {})
+                    act_mr = getattr(mr_phantom, 'active_mr_phantoms', {}) or {}
+                    mr_open_syms = len(act_mr)
+                    try:
+                        mr_open_trades = sum(len(lst) for lst in act_mr.values())
+                    except Exception:
+                        mr_open_trades = mr_open_syms
                 except Exception:
                     pass
             mr_wr = (mr_wins / (mr_wins + mr_losses) * 100.0) if (mr_wins + mr_losses) else 0.0
 
             # Scalp phantom summary
-            sc_wins = sc_losses = sc_closed = sc_open = 0
+            sc_wins = sc_losses = sc_closed = 0
+            sc_open_trades = sc_open_syms = 0
             sc_timeouts = 0
             try:
                 from scalp_phantom_tracker import get_scalp_phantom_tracker
@@ -412,7 +425,12 @@ class TGBot:
                                     sc_losses += 1
                                 if getattr(p, 'exit_reason', None) == 'timeout':
                                     sc_timeouts += 1
-                    sc_open = len(getattr(scpt, 'active', {}) or {})
+                    act_sc = getattr(scpt, 'active', {}) or {}
+                    sc_open_syms = len(act_sc)
+                    try:
+                        sc_open_trades = sum(len(lst) for lst in act_sc.values())
+                    except Exception:
+                        sc_open_trades = sc_open_syms
                 except Exception:
                     pass
             except Exception:
@@ -459,15 +477,15 @@ class TGBot:
             # Trend (phantom)
             lines.append(f"• 🔵 Trend")
             lines.append(f"  ✅ W: {pb_wins}   ❌ L: {pb_losses}   🎯 WR: {pb_wr:.1f}%")
-            lines.append(f"  🟢 Open: {pb_open}   🔒 Closed: {pb_closed}")
+            lines.append(f"  🟢 Open: {pb_open_trades} ({pb_open_syms} syms)   🔒 Closed: {pb_closed}")
             # Mean Reversion (phantom)
             lines.append(f"• 🌀 Mean Reversion")
             lines.append(f"  ✅ W: {mr_wins}   ❌ L: {mr_losses}   🎯 WR: {mr_wr:.1f}%")
-            lines.append(f"  🟢 Open: {mr_open}   🔒 Closed: {mr_closed}")
+            lines.append(f"  🟢 Open: {mr_open_trades} ({mr_open_syms} syms)   🔒 Closed: {mr_closed}")
             # Scalp (phantom)
             lines.append(f"• 🩳 Scalp")
             lines.append(f"  ✅ W: {sc_wins}   ❌ L: {sc_losses}   🎯 WR: {sc_wr:.1f}%")
-            lines.append(f"  🟢 Open: {sc_open}   🔒 Closed: {sc_closed}")
+            lines.append(f"  🟢 Open: {sc_open_trades} ({sc_open_syms} syms)   🔒 Closed: {sc_closed}")
             lines.append(f"  ⏱️ Timeouts: {sc_timeouts}")
 
             lines.append("")

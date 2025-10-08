@@ -287,6 +287,10 @@ strategy_isolation:
       vwap_dist_atr_max: 1.20
       min_bb_width_pct: 0.40
       vol_ratio_min: 0.90
+
+# Run Trend and MR independently (bypasses central router)
+strategy_independence:
+  enabled: true
 scalp:
   enabled: true
   timeframe: 3           # Future: stream 3m for scalps; current uses main tf

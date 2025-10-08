@@ -255,6 +255,7 @@ class TrendMLScorer:
         """
         recent_wr = 0.0
         total = wins = 0
+        recent_trades = 0
         exec_count = 0
         ph_count = 0
         try:
@@ -270,6 +271,7 @@ class TrendMLScorer:
                         pass
                 if total > 0:
                     recent_wr = (wins / total) * 100.0
+                recent_trades = total
                 # Overall executed vs phantom counts for clarity
                 all_arr = self.redis_client.lrange('tml:trades', 0, -1) or []
                 for t in all_arr:
@@ -296,6 +298,7 @@ class TrendMLScorer:
             'completed_trades': int(self.completed_trades),
             'current_threshold': float(self.min_score),
             'recent_win_rate': float(recent_wr),
+            'recent_trades': int(recent_trades),
             'models_active': models_active,
             'executed_count': int(exec_count),
             'phantom_count': int(ph_count),

@@ -99,13 +99,11 @@ trend:
   sl_atr_mult: 1.5
   rr: 2.5
   use_ema_stack: true
-  regime:
-    enabled: true
-    min_conf: 0.60
-    allowed_vol: [low, normal]
-    phantom_on_filter_fail: true
   exec:
+    # When true, bot may run Trend in phantom-only mode during cold start.
+    # Corking (promotion) can override this if allow_cork_override is true.
     bootstrap_phantom_only: true
+    allow_cork_override: true
     min_train_records: 300
     require_ready: true
     min_recent_wr: 0.0
@@ -113,6 +111,20 @@ trend:
       enabled: true
       min_pct: 0.001        # 0.1% slippage threshold to trigger SL recalc
       pivot_buffer_atr: 0.05  # keep SL beyond pivot by 0.05 ATR
+  regime:
+    enabled: true
+    min_conf: 0.60
+    allowed_vol: [low, normal]
+    phantom_on_filter_fail: true
+  # Trend corking (promotion) system — analogous to MR promotion
+  promotion:
+    enabled: false          # master toggle
+    promote_wr: 55.0        # activate when recent WR ≥ this
+    demote_wr: 35.0         # deactivate when recent WR < this
+    min_recent: 30          # require at least this many recent trades
+    min_total_trades: 100   # require overall executed trades at least this many
+    daily_exec_cap: 20      # max forced Trend executions per UTC day
+    block_extreme_vol: true # do not force execute when volatility is extreme
   explore:
     enabled: true
     slope_min: 3.0

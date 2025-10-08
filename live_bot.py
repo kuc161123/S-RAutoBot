@@ -2445,6 +2445,12 @@ class TradingBot:
                 "day": datetime.utcnow().strftime('%Y%m%d'),
                 "count": 0
             },
+            # Trend corking state (phantom→execute override for Trend when WR strong)
+            "trend_promotion": {
+                "active": False,
+                "day": datetime.utcnow().strftime('%Y%m%d'),
+                "count": 0
+            },
             # Routing stickiness state per symbol
             "routing_state": {},
             # Simple telemetry counters
@@ -2561,6 +2567,36 @@ class TradingBot:
                                                 except Exception:
                                                     pass
                                         shared['mr_promotion'] = mp
+                                except Exception:
+                                    pass
+                                # Immediately evaluate Trend promotion (corking) after startup
+                                try:
+                                    tr_cfg = (self.config.get('trend', {}) or {}).get('promotion', {})
+                                    if tr_cfg.get('enabled', False):
+                                        tp = shared.get('trend_promotion', {})
+                                        from datetime import datetime as _dt
+                                        cur_day = _dt.utcnow().strftime('%Y%m%d')
+                                        if tp.get('day') != cur_day:
+                                            tp['day'] = cur_day
+                                            tp['count'] = 0
+                                        tr_scorer = shared.get('trend_scorer')
+                                        tr_stats = tr_scorer.get_stats() if tr_scorer else {}
+                                        recent_wr = float(tr_stats.get('recent_win_rate', 0.0))
+                                        recent_n = int(tr_stats.get('recent_trades', 0))
+                                        total_exec = int(tr_stats.get('executed_count', 0))
+                                        promote_wr = float(tr_cfg.get('promote_wr', 55.0))
+                                        demote_wr = float(tr_cfg.get('demote_wr', 35.0))
+                                        min_recent = int(tr_cfg.get('min_recent', 30))
+                                        min_total = int(tr_cfg.get('min_total_trades', 100))
+                                        if (not tp.get('active')) and recent_n >= min_recent and total_exec >= min_total and recent_wr >= promote_wr:
+                                            tp['active'] = True
+                                            logger.info(f"🚀 Trend Promotion activated (startup eval) WR {recent_wr:.1f}% (N={recent_n})")
+                                            if self.tg:
+                                                try:
+                                                    await self.tg.send_message(f"🚀 Trend Promotion: Activated (WR {recent_wr:.1f}% ≥ {promote_wr:.0f}%) [startup]")
+                                                except Exception:
+                                                    pass
+                                        shared['trend_promotion'] = tp
                                 except Exception:
                                     pass
                             except Exception as e:
@@ -2908,6 +2944,46 @@ class TradingBot:
                                 if tr_scorer:
                                     tr_info = tr_scorer.get_retrain_info()
                                     logger.info(f"🧠 Trend ML: {tr_info.get('total_records', 0)} records, {tr_info.get('trades_until_next_retrain', 'N/A')} to retrain")
+                            except Exception:
+                                pass
+                            # Trend Promotion toggling based on recent WR
+                            try:
+                                tr_cfg = (self.config.get('trend', {}) or {}).get('promotion', {})
+                                if tr_cfg.get('enabled', False):
+                                    tp = shared.get('trend_promotion', {})
+                                    # Reset daily counter on UTC day change
+                                    from datetime import datetime as _dt
+                                    cur_day = _dt.utcnow().strftime('%Y%m%d')
+                                    if tp.get('day') != cur_day:
+                                        tp['day'] = cur_day
+                                        tp['count'] = 0
+                                    tr_scorer = shared.get('trend_scorer')
+                                    tr_stats = tr_scorer.get_stats() if tr_scorer else {}
+                                    recent_wr = float(tr_stats.get('recent_win_rate', 0.0))
+                                    recent_n = int(tr_stats.get('recent_trades', 0))
+                                    total_exec = int(tr_stats.get('executed_count', 0))
+                                    promote_wr = float(tr_cfg.get('promote_wr', 55.0))
+                                    demote_wr = float(tr_cfg.get('demote_wr', 35.0))
+                                    min_recent = int(tr_cfg.get('min_recent', 30))
+                                    min_total = int(tr_cfg.get('min_total_trades', 100))
+                                    logger.info(f"   Trend recent WR: {recent_wr:.1f}% (N={recent_n}) | active={tp.get('active')} cap_used={tp.get('count',0)}")
+                                    if (not tp.get('active')) and recent_n >= min_recent and total_exec >= min_total and recent_wr >= promote_wr:
+                                        tp['active'] = True
+                                        logger.info(f"🚀 Trend Promotion activated (WR {recent_wr:.1f}% ≥ {promote_wr:.1f}%, N={recent_n})")
+                                        if self.tg:
+                                            try:
+                                                await self.tg.send_message(f"🚀 Trend Promotion: Activated (WR {recent_wr:.1f}% ≥ {promote_wr:.0f}%)")
+                                            except Exception:
+                                                pass
+                                    elif tp.get('active') and recent_wr < demote_wr:
+                                        tp['active'] = False
+                                        logger.info(f"🛑 Trend Promotion deactivated (WR {recent_wr:.1f}% < {demote_wr:.1f}%)")
+                                        if self.tg:
+                                            try:
+                                                await self.tg.send_message(f"🚦 Trend Promotion: Deactivated (WR {recent_wr:.1f}% < {demote_wr:.0f}%)")
+                                            except Exception:
+                                                pass
+                                    shared['trend_promotion'] = tp
                             except Exception:
                                 pass
 
@@ -3396,6 +3472,39 @@ class TradingBot:
                                 tr_pass_regime = True; trend_exec_enabled = False
 
                             if (not tr_pass_regime) or (not trend_exec_enabled):
+                                # Try Trend promotion (corking) override if active
+                                try:
+                                    tr_cfg = (self.config.get('trend', {}) or {}).get('promotion', {})
+                                    tp = shared.get('trend_promotion', {})
+                                    cap = int(tr_cfg.get('daily_exec_cap', 20))
+                                    allow_tr = True
+                                    if bool(tr_cfg.get('block_extreme_vol', True)):
+                                        allow_tr = getattr(regime_analysis, 'volatility_level', 'normal') != 'extreme'
+                                    if tp.get('active') and int(tp.get('count', 0)) < cap and allow_tr and sym not in book.positions:
+                                        # Respect allow_cork_override for bootstrap phantom mode
+                                        try:
+                                            exec_cfg = (cfg.get('trend', {}) or {}).get('exec', {})
+                                            if bool(exec_cfg.get('bootstrap_phantom_only', False)) and not bool(exec_cfg.get('allow_cork_override', True)):
+                                                raise Exception('Trend bootstrap phantom mode without cork override')
+                                        except Exception:
+                                            pass
+                                        executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr or 0.0, threshold=thr_tr if 'thr_tr' in locals() else 70)
+                                        if executed:
+                                            try:
+                                                if not sig_tr_ind.meta:
+                                                    sig_tr_ind.meta = {}
+                                                sig_tr_ind.meta['promotion_forced'] = True
+                                                tp['count'] = int(tp.get('count', 0)) + 1
+                                                shared['trend_promotion'] = tp
+                                                if self.tg:
+                                                    await self.tg.send_message(f"🚀 Trend Promotion: Force executing {sym} {sig_tr_ind.side.upper()} (cap {tp['count']}/{cap})")
+                                            except Exception:
+                                                pass
+                                            # skip phantom record since executed
+                                            continue
+                                except Exception:
+                                    pass
+                                # Fall back to phantom record
                                 if phantom_tracker:
                                     phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
                                     try:
@@ -3553,6 +3662,46 @@ class TradingBot:
                                 chosen = ('enhanced_mr', soft_sig_mr)
 
                             if chosen is None:
+                                # Trend Promotion: force execute Trend when corking is active and caps allow
+                                try:
+                                    tr_cfg = (self.config.get('trend', {}) or {}).get('promotion', {})
+                                    tp = shared.get('trend_promotion', {})
+                                    cap = int(tr_cfg.get('daily_exec_cap', 20))
+                                    # Volatility block if configured
+                                    allow_tr = True
+                                    if bool(tr_cfg.get('block_extreme_vol', True)):
+                                        allow_tr = getattr(regime_analysis, 'volatility_level', 'normal') != 'extreme'
+                                    if soft_sig_tr and tp.get('active') and int(tp.get('count', 0)) < cap and allow_tr:
+                                        # One-way per symbol guard
+                                        if sym not in book.positions:
+                                            # Respect allow_cork_override for bootstrap phantom mode
+                                            try:
+                                                exec_cfg = (cfg.get('trend', {}) or {}).get('exec', {})
+                                                if bool(exec_cfg.get('bootstrap_phantom_only', False)) and not bool(exec_cfg.get('allow_cork_override', True)):
+                                                    raise Exception('Trend bootstrap phantom mode without cork override')
+                                            except Exception:
+                                                pass
+                                            # Execute trend now (bypass ML/regime gates)
+                                            executed = await _try_execute('trend_breakout', soft_sig_tr, ml_score=tr_score if 'tr_score' in locals() and tr_score is not None else 0.0, threshold=tr_thr if 'tr_thr' in locals() else 70)
+                                            if executed:
+                                                # Mark promotion for this symbol and increment cap
+                                                try:
+                                                    # Tag signal meta
+                                                    if not soft_sig_tr.meta:
+                                                        soft_sig_tr.meta = {}
+                                                    soft_sig_tr.meta['promotion_forced'] = True
+                                                    # Increment cap count
+                                                    tp['count'] = int(tp.get('count', 0)) + 1
+                                                    shared['trend_promotion'] = tp
+                                                    # Telegram announce
+                                                    if self.tg:
+                                                        await self.tg.send_message(f"🚀 Trend Promotion: Force executing {sym} {soft_sig_tr.side.upper()} (cap {tp['count']}/{cap})")
+                                                except Exception:
+                                                    pass
+                                                # Move on to next symbol after executing
+                                                continue
+                                except Exception:
+                                    pass
                                 # MR Promotion: force execute MR even if ML thresholds not met (bypass guards) when recent WR ≥ promote_wr
                                 try:
                                     prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
@@ -5286,6 +5435,69 @@ class TradingBot:
                                 pass
                     except Exception as e:
                         logger.debug(f"[{sym}] MR executed/promotion phantom mirror record failed: {e}")
+                    # Record Trend phantom mirror (executed or promotion-forced) with exchange-aligned values
+                    try:
+                        if selected_strategy == 'trend_breakout' and phantom_tracker is not None:
+                            is_promo = False
+                            try:
+                                is_promo = bool(getattr(sig, 'meta', {}) and sig.meta.get('promotion_forced'))
+                            except Exception:
+                                is_promo = False
+                            # Build basic trend features if available
+                            trend_features = {}
+                            try:
+                                cl = df['close']; price = float(cl.iloc[-1])
+                                ys = cl.tail(20).values if len(cl) >= 20 else cl.values
+                                try:
+                                    slope = np.polyfit(np.arange(len(ys)), ys, 1)[0]
+                                except Exception:
+                                    slope = 0.0
+                                trend_slope_pct = float((slope / price) * 100.0) if price else 0.0
+                                ema20 = cl.ewm(span=20, adjust=False).mean().iloc[-1]
+                                ema50 = cl.ewm(span=50, adjust=False).mean().iloc[-1] if len(cl) >= 50 else ema20
+                                ema_stack_score = 100.0 if (price > ema20 > ema50 or price < ema20 < ema50) else 50.0 if (ema20 != ema50) else 0.0
+                                rng_today = float(df['high'].iloc[-1] - df['low'].iloc[-1])
+                                med_range = float((df['high'] - df['low']).rolling(20).median().iloc[-1]) if len(df) >= 20 else rng_today
+                                range_expansion = float(rng_today / max(1e-9, med_range))
+                                prev = cl.shift(); trarr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                                atr = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
+                                atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
+                                close_vs_ema20_pct = float(((price - ema20) / max(1e-9, ema20)) * 100.0) if ema20 else 0.0
+                                trend_features = {
+                                    'trend_slope_pct': trend_slope_pct,
+                                    'ema_stack_score': ema_stack_score,
+                                    'atr_pct': atr_pct,
+                                    'range_expansion': range_expansion,
+                                    'breakout_dist_atr': float(getattr(sig, 'meta', {}).get('breakout_dist_atr', 0.0)) if getattr(sig, 'meta', None) else 0.0,
+                                    'close_vs_ema20_pct': close_vs_ema20_pct,
+                                    'bb_width_pct': 0.0,
+                                    'session': 'us',
+                                    'symbol_cluster': 3,
+                                    'volatility_regime': getattr(regime_analysis, 'volatility_level', 'normal') if 'regime_analysis' in locals() else 'normal',
+                                }
+                            except Exception:
+                                trend_features = {}
+                            phantom_tracker.record_signal(
+                                sym,
+                                {'side': sig.side, 'entry': float(actual_entry), 'sl': float(sig.sl), 'tp': float(sig.tp), 'meta': getattr(sig, 'meta', {}) or {}},
+                                float(ml_score or 0.0),
+                                False if is_promo else True,
+                                trend_features,
+                                'trend_breakout'
+                            )
+                            # Persist promotion flag and reason for restart resilience
+                            try:
+                                if getattr(self, '_redis', None) is not None:
+                                    if is_promo:
+                                        self._redis.set(f'openpos:trend_promotion:{sym}', '1')
+                                        self._redis.set(f'openpos:reason:{sym}', 'Trend (Promotion)')
+                                    else:
+                                        self._redis.delete(f'openpos:trend_promotion:{sym}')
+                                        self._redis.set(f'openpos:reason:{sym}', 'Trend (ML)')
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        logger.debug(f"[{sym}] Trend executed/promotion phantom mirror record failed: {e}")
                     # Optionally cancel phantoms on exec (config-controlled)
                     try:
                         ph_cfg = cfg.get('phantom', {}) if 'cfg' in locals() else {}

@@ -79,6 +79,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("phantomqa", self.phantom_qa))
         self.app.add_handler(CommandHandler("scalpqa", self.scalp_qa))
         self.app.add_handler(CommandHandler("scalppromote", self.scalp_promotion_status))
+        self.app.add_handler(CommandHandler("trendpromote", self.trend_promotion_status))
         self.app.add_handler(CallbackQueryHandler(self.ui_callback, pattern=r"^ui:"))
         self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
         self.app.add_handler(CommandHandler("panicclose", self.panic_close))
@@ -258,6 +259,19 @@ class TGBot:
                 lines.append(f"• Next retrain in: {tstats.get('trades_until_next_retrain',0)} trades")
                 lines.append(f"• Executed: {exec_n} | Phantom: {ph_n}")
                 lines.append(f"• Threshold: {getattr(tr_scorer, 'min_score', 70):.0f}")
+            except Exception:
+                pass
+            # Trend Promotion status
+            try:
+                cfg = self.shared.get('config', {}) or {}
+                tr_cfg = (cfg.get('trend', {}) or {}).get('promotion', {})
+                tp = self.shared.get('trend_promotion', {}) or {}
+                cap = int(tr_cfg.get('daily_exec_cap', 20))
+                stats = tr_scorer.get_stats() if tr_scorer else {}
+                lines.append("")
+                lines.append("🚀 *Trend Promotion*")
+                lines.append(f"• Status: {'✅ Active' if tp.get('active') else 'Off'} | Used: {tp.get('count',0)}/{cap}")
+                lines.append(f"• Promote/Demote: {float(tr_cfg.get('promote_wr',55.0)):.0f}%/{float(tr_cfg.get('demote_wr',35.0)):.0f}% | Recent WR: {float(stats.get('recent_win_rate',0.0)):.1f}%")
             except Exception:
                 pass
         except Exception as exc:
@@ -712,6 +726,7 @@ class TGBot:
 /phantomqa – Phantom caps & WR QA
 /scalpqa – Scalp phantom QA
 /scalppromote – Scalp promotion readiness
+/trendpromote – Trend promotion (corking) status
 /trainingstatus – Background training progress
 
 🧭 Regime & System
@@ -3641,6 +3656,16 @@ HTF S/R module disabled
             else:
                 msg += "• ⏳ Trend ML System (Loading)\n"
 
+            # Trend Promotion status summary
+            try:
+                cfg = self.shared.get('config', {}) or {}
+                tr_cfg = (cfg.get('trend', {}) or {}).get('promotion', {})
+                tp = self.shared.get('trend_promotion', {}) or {}
+                cap = int(tr_cfg.get('daily_exec_cap', 20))
+                msg += f"• 🚀 Trend Promotion: {'Active' if tp.get('active') else 'Off'} ({tp.get('count',0)}/{cap})\n"
+            except Exception:
+                pass
+
             # Market Regime Detection
             try:
                 from enhanced_market_regime import get_enhanced_market_regime
@@ -4046,6 +4071,45 @@ HTF S/R module disabled
         except Exception as e:
             logger.error(f"Error in scalp_promotion_status: {e}")
             await update.message.reply_text("Error getting scalp promotion status")
+
+    async def trend_promotion_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Summarize Trend promotion (corking) status and readiness."""
+        try:
+            cfg = self.shared.get('config') or {}
+            tr_cfg = (cfg.get('trend', {}) or {}).get('promotion', {})
+            tp = self.shared.get('trend_promotion', {}) or {}
+            cap = int(tr_cfg.get('daily_exec_cap', 20))
+            promote_wr = float(tr_cfg.get('promote_wr', 55.0))
+            demote_wr = float(tr_cfg.get('demote_wr', 35.0))
+            min_recent = int(tr_cfg.get('min_recent', 30))
+            min_total = int(tr_cfg.get('min_total_trades', 100))
+            block_extreme = bool(tr_cfg.get('block_extreme_vol', True))
+
+            # Trend ML stats
+            tr_wr = 0.0; tr_recent = 0; total_exec = 0
+            try:
+                tr_scorer = self.shared.get('trend_scorer') or get_trend_scorer()
+                stats = tr_scorer.get_stats() if tr_scorer else {}
+                tr_wr = float(stats.get('recent_win_rate', 0.0))
+                tr_recent = int(stats.get('recent_trades', 0))
+                total_exec = int(stats.get('executed_count', 0))
+            except Exception:
+                pass
+
+            ready = (tr_recent >= min_recent) and (total_exec >= min_total) and (tr_wr >= promote_wr)
+            lines = [
+                "📈 *Trend Promotion (Corking)*",
+                f"• Status: {'✅ Active' if tp.get('active') else 'Off'} | Used: {tp.get('count',0)}/{cap}",
+                f"• Promote/Demote: {promote_wr:.0f}%/{demote_wr:.0f}%",
+                f"• Recent WR: {tr_wr:.1f}% (N={tr_recent}) | Total exec: {total_exec}",
+                f"• Blocks: Extreme Volatility={'ON' if block_extreme else 'OFF'}",
+                f"• Gate: N ≥ {min_recent}, Total ≥ {min_total}, WR ≥ {promote_wr:.0f}%",
+                f"• Recommendation: {'🟢 Ready' if ready else '🟡 Not ready'}",
+            ]
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"Error in trend_promotion_status: {e}")
+            await update.message.reply_text("Error getting trend promotion status")
 
     async def training_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show background ML training status"""

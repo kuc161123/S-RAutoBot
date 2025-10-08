@@ -14,6 +14,8 @@ import uuid
 import asyncio
 import numpy as np
 import redis
+import yaml
+from position_mgr import round_step
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +120,8 @@ class MRPhantomTracker:
         self.notifier: Optional[Callable] = None
         # Local blocked counters fallback: day (YYYYMMDD) -> counts
         self._blocked_counts: Dict[str, Dict[str, int]] = {}
+        # Symbol meta (tick size, qty step, etc.)
+        self._symbol_meta: Dict[str, Dict] = {}
 
         # Range tracking data
         self.range_performance = {}  # Track performance by range characteristics
@@ -126,6 +130,27 @@ class MRPhantomTracker:
         # Initialize Redis with MR-specific keys
         self._init_redis()
         self._load_from_redis()
+        self._load_symbol_meta()
+
+    def _load_symbol_meta(self):
+        try:
+            with open('config.yaml','r') as f:
+                cfg = yaml.safe_load(f)
+            sm = (cfg or {}).get('symbol_meta', {}) or {}
+            # Normalize to dict of dict
+            if isinstance(sm, dict):
+                self._symbol_meta = sm
+        except Exception as e:
+            logger.debug(f"MRPhantomTracker: failed to load symbol meta: {e}")
+
+    def _tick_size_for(self, symbol: str) -> float:
+        try:
+            if symbol in self._symbol_meta and isinstance(self._symbol_meta[symbol], dict):
+                return float(self._symbol_meta[symbol].get('tick_size', 0.000001) or 0.000001)
+            default = self._symbol_meta.get('default', {}) if isinstance(self._symbol_meta, dict) else {}
+            return float(default.get('tick_size', 0.000001) or 0.000001)
+        except Exception:
+            return 0.000001
 
     def _init_redis(self):
         """Initialize Redis connection with MR namespace"""
@@ -309,6 +334,23 @@ class MRPhantomTracker:
                 except Exception:
                     expected = 0
                 features.setdefault('feature_count', expected)
+        except Exception:
+            pass
+
+        # Round TP/SL to tick size for non-executed (phantom) records to better align with exchange
+        try:
+            if not was_executed:
+                ts = self._tick_size_for(symbol)
+                raw_tp = float(signal.get('tp'))
+                raw_sl = float(signal.get('sl'))
+                r_tp = round_step(raw_tp, ts)
+                r_sl = round_step(raw_sl, ts)
+                # Only adjust if rounding changed the value
+                if r_tp != raw_tp or r_sl != raw_sl:
+                    logger.debug(f"[{symbol}] MR phantom TP/SL rounded to tick {ts}: TP {raw_tp}→{r_tp}, SL {raw_sl}→{r_sl}")
+                signal = signal.copy()
+                signal['tp'] = r_tp
+                signal['sl'] = r_sl
         except Exception:
             pass
 

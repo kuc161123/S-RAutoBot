@@ -734,12 +734,22 @@ class TradingBot:
                         except Exception:
                             pass
 
-                # Per-symbol cooldown: require ~8 bars (≈24 minutes) between scalp records
+                # Per-symbol cooldown: configurable bars between scalp records
                 last_ts = self._scalp_cooldown.get(sym)
                 bar_ts = row.index[0]
+                try:
+                    s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+                    cooldown_bars = int(s_cfg.get('cooldown_bars', 8))
+                except Exception:
+                    cooldown_bars = 8
+                # Convert timeframe string to seconds
+                try:
+                    bar_seconds = int(timeframe) * 60
+                except Exception:
+                    bar_seconds = 180
                 if last_ts is not None:
                     try:
-                        if (bar_ts - last_ts).total_seconds() < (8 * 180):
+                        if (bar_ts - last_ts).total_seconds() < (cooldown_bars * bar_seconds):
                             continue
                     except Exception:
                         pass
@@ -779,11 +789,17 @@ class TradingBot:
                     scpt = get_scalp_phantom_tracker()
                     r = scpt.redis_client
                     if r is not None:
-                        key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),4)}:{round(float(sc_sig.sl),4)}:{round(float(sc_sig.tp),4)}"
+                        key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),6)}:{round(float(sc_sig.sl),6)}:{round(float(sc_sig.tp),6)}"
+                        # TTL configurable
+                        try:
+                            s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+                            dedup_hours = int(s_cfg.get('dedup_hours', 8))
+                        except Exception:
+                            dedup_hours = 8
                         if r.exists(f"phantom:dedup:scalp:{key}"):
                             dedup_ok = False
                         else:
-                            r.setex(f"phantom:dedup:scalp:{key}", 7*24*3600, '1')
+                            r.setex(f"phantom:dedup:scalp:{key}", max(1, dedup_hours) * 3600, '1')
                 except Exception:
                     pass
                 if not dedup_ok:
@@ -930,11 +946,17 @@ class TradingBot:
             scpt = get_scalp_phantom_tracker()
             r = scpt.redis_client
             if r is not None:
-                key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),4)}:{round(float(sc_sig.sl),4)}:{round(float(sc_sig.tp),4)}"
+                key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),6)}:{round(float(sc_sig.sl),6)}:{round(float(sc_sig.tp),6)}"
+                # TTL configurable
+                try:
+                    s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+                    dedup_hours = int(s_cfg.get('dedup_hours', 8))
+                except Exception:
+                    dedup_hours = 8
                 if r.exists(f"phantom:dedup:scalp:{key}"):
                     dedup_ok = False
                 else:
-                    r.setex(f"phantom:dedup:scalp:{key}", 7*24*3600, '1')
+                    r.setex(f"phantom:dedup:scalp:{key}", max(1, dedup_hours) * 3600, '1')
         except Exception:
             pass
         if not dedup_ok:
@@ -2722,7 +2744,8 @@ class TradingBot:
                             try:
                                 from scalp_phantom_tracker import get_scalp_phantom_tracker
                                 scpt = get_scalp_phantom_tracker()
-                                scpt.update_scalp_phantom_prices(sym, current_price)
+                                df3u = self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None
+                                scpt.update_scalp_phantom_prices(sym, current_price, df=df3u if df3u is not None and not df3u.empty else df)
                             except Exception:
                                 pass
                         else:
@@ -3248,12 +3271,12 @@ class TradingBot:
                                 pass
                             if mr_should and sig_mr_ind is not None:
                                 executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
-                                if not executed and mr_phantom_tracker:
+                                if not executed and mr_phantom_tracker and sig_mr_ind is not None:
                                     # Record phantom when position exists or execution not possible
                                     mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
                             else:
                                 # Phantom record when below threshold
-                                if mr_phantom_tracker:
+                                if mr_phantom_tracker and sig_mr_ind is not None:
                                     mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
 
                         # 2) Trend independent

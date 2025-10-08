@@ -265,6 +265,8 @@ scalp:
   independent: true      # When true, Scalp runs fully independent of regime/router
   block_regime: false    # Do not block by regime (e.g., extreme volatility)
   session_only: ["us", "european"]
+  dedup_hours: 8         # Redis dedup window for identical scalp signals
+  cooldown_bars: 8       # Per-symbol cooldown in bars between scalp records
   promote_enabled: false
   promote_min_samples: 200
   promote_min_wr: 55.0

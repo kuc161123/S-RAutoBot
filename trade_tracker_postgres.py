@@ -5,6 +5,10 @@ Ensures trades are never lost, even on crashes or restarts
 import json
 import os
 import psycopg2
+try:
+    import redis
+except Exception:
+    redis = None
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
@@ -65,6 +69,7 @@ class TradeTrackerPostgres:
         self.trades: List[Trade] = []
         self.conn = None
         self.use_db = False
+        self.redis_client = None
         
         # Try to connect to database
         if self._connect_db():
@@ -74,6 +79,39 @@ class TradeTrackerPostgres:
         else:
             logger.warning("Using JSON file fallback for trade history")
             self.load_trades_from_file()
+
+        # Initialize Redis for resilient backup across restarts (Railway-safe)
+        self._init_redis()
+
+        # If DB has no records (cold start) try to recover from Redis backup
+        try:
+            if self.use_db and len(self.trades) == 0:
+                recovered = self.load_trades_from_redis()
+                if recovered:
+                    logger.info(f"Recovered {len(self.trades)} executed trades from Redis backup; seeding DB")
+                    for t in self.trades:
+                        # Seed DB quietly; ignore duplicates as DB is empty
+                        try:
+                            with self.conn.cursor() as cur:
+                                cur.execute(
+                                    """
+                                    INSERT INTO trades (
+                                        symbol, side, entry_price, exit_price, quantity,
+                                        entry_time, exit_time, pnl_usd, pnl_percent,
+                                        exit_reason, leverage, strategy_name
+                                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                    """,
+                                    (
+                                        str(t.symbol)[:100], str(t.side)[:20], t.entry_price, t.exit_price,
+                                        t.quantity, t.entry_time, t.exit_time,
+                                        t.pnl_usd, t.pnl_percent, str(t.exit_reason)[:100], t.leverage, str(t.strategy_name)[:100]
+                                    )
+                                )
+                            self.conn.commit()
+                        except Exception as e:
+                            logger.debug(f"Seed insert failed (ignored): {e}")
+        except Exception as e:
+            logger.debug(f"Redis recovery/seed skipped: {e}")
     
     def _connect_db(self) -> bool:
         """Connect to PostgreSQL database"""
@@ -101,6 +139,24 @@ class TradeTrackerPostgres:
         except Exception as e:
             logger.warning(f"Could not connect to database: {e}")
             return False
+
+    def _init_redis(self):
+        """Initialize Redis client for executed-trade backup."""
+        if self.redis_client is not None:
+            return
+        if not redis:
+            return
+        try:
+            url = os.getenv('REDIS_URL')
+            if url:
+                self.redis_client = redis.from_url(url, decode_responses=True)
+                self.redis_client.ping()
+                logger.info("TradeTracker: Redis backup enabled for executed trades")
+            else:
+                logger.warning("TradeTracker: No REDIS_URL; executed trades will not survive restarts without DB")
+        except Exception as e:
+            self.redis_client = None
+            logger.warning(f"TradeTracker: Redis unavailable for backup: {e}")
     
     def _init_tables(self):
         """Create tables if they don't exist"""
@@ -184,6 +240,30 @@ class TradeTrackerPostgres:
         except Exception as e:
             logger.error(f"Failed to load trades from database: {e}")
             self.trades = []
+
+    def load_trades_from_redis(self) -> bool:
+        """Recover executed trades from Redis backup. Returns True if any loaded."""
+        if not self.redis_client:
+            return False
+        try:
+            raw = self.redis_client.get('trade_history:executed')
+            if not raw:
+                return False
+            data = json.loads(raw)
+            recs: List[Trade] = []
+            for d in data:
+                try:
+                    recs.append(Trade.from_dict(d))
+                except Exception:
+                    continue
+            if recs:
+                self.trades = recs
+                logger.info(f"Loaded {len(self.trades)} executed trades from Redis backup")
+                return True
+            return False
+        except Exception as e:
+            logger.debug(f"Failed to load trades from Redis: {e}")
+            return False
     
     def load_trades_from_file(self):
         """Load trade history from JSON file (fallback)"""
@@ -208,6 +288,18 @@ class TradeTrackerPostgres:
             logger.debug(f"Saved {len(self.trades)} trades to JSON file")
         except Exception as e:
             logger.error(f"Failed to save trade history to file: {e}")
+
+    def save_trades_to_redis(self):
+        """Save executed trades to Redis for restart resilience."""
+        if not self.redis_client:
+            return
+        try:
+            # Keep a rolling window to avoid unbounded growth
+            window = self.trades[-3000:] if len(self.trades) > 3000 else self.trades
+            payload = [t.to_dict() for t in window]
+            self.redis_client.set('trade_history:executed', json.dumps(payload))
+        except Exception as e:
+            logger.debug(f"Failed to save executed trades to Redis: {e}")
     
     def add_trade(self, trade: Trade):
         """Add a completed trade to both database and memory"""
@@ -236,15 +328,21 @@ class TradeTrackerPostgres:
                 
                 # Also save to file as backup
                 self.save_trades_to_file()
+                # Save to Redis backup as well
+                self.save_trades_to_redis()
                 
             except Exception as e:
                 logger.error(f"Failed to save trade to database: {e}")
                 self.conn.rollback()
                 # Fallback to file only
                 self.save_trades_to_file()
+                # Best-effort Redis backup
+                self.save_trades_to_redis()
         else:
             # No database, save to file
             self.save_trades_to_file()
+            # Best-effort Redis backup
+            self.save_trades_to_redis()
         
         logger.info(f"Trade recorded: {trade.symbol} {trade.side} PnL: ${trade.pnl_usd:.2f} ({trade.pnl_percent:.2f}%)")
     

@@ -494,6 +494,14 @@ class MRPhantomTracker:
     def _close_mr_phantom(self, symbol: str, phantom: MRPhantomTrade, exit_price: float, outcome: str, exit_reason: str):
         """Close specific MR phantom trade with range-specific analysis"""
         phantom.outcome = outcome
+        # Align exit to exact TP/SL for clearer R:R accounting
+        try:
+            if str(exit_reason).lower() == 'tp':
+                exit_price = float(phantom.take_profit)
+            elif str(exit_reason).lower() == 'sl':
+                exit_price = float(phantom.stop_loss)
+        except Exception:
+            pass
         phantom.exit_price = exit_price
         phantom.exit_time = datetime.now()
         phantom.exit_reason = exit_reason

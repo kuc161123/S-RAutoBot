@@ -1149,6 +1149,7 @@ class TradingBot:
             exit_label = str(exit_reason).replace('_', ' ').title()
             pnl_percent = float(getattr(phantom, 'pnl_percent', 0.0) or 0.0)
             exit_price = float(getattr(phantom, 'exit_price', 0.0) or 0.0)
+            realized_rr = getattr(phantom, 'realized_rr', None)
 
             pid = getattr(phantom, 'phantom_id', '')
             pid_suffix = f" [#{pid}]" if isinstance(pid, str) and pid else ""
@@ -1158,6 +1159,11 @@ class TradingBot:
                 f"Entry → Exit: {entry_price:.4f} → {exit_price:.4f}",
                 f"P&L: {pnl_percent:+.2f}% ({exit_label})"
             ]
+            try:
+                if isinstance(realized_rr, (int, float)):
+                    lines.append(f"Realized R: {float(realized_rr):.2f}R")
+            except Exception:
+                pass
 
             if label == "Mean Reversion":
                 range_conf = getattr(phantom, 'range_confidence', None)

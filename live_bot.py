@@ -4321,6 +4321,59 @@ class TradingBot:
                                             except Exception:
                                                 pass
 
+                        # 3) Scalp independent (promotion-only execution)
+                        try:
+                            s_cfg = cfg.get('scalp', {}) if 'cfg' in locals() else {}
+                            promote_en = bool(s_cfg.get('promote_enabled', False))
+                            if promote_en and SCALP_AVAILABLE and detect_scalp_signal is not None:
+                                # Promotion readiness from phantom stats
+                                try:
+                                    from scalp_phantom_tracker import get_scalp_phantom_tracker
+                                    scpt = get_scalp_phantom_tracker()
+                                    st = scpt.get_scalp_phantom_stats() or {}
+                                    samples = int(st.get('total', 0))
+                                    wr = float(st.get('wr', 0.0))
+                                except Exception:
+                                    samples = 0; wr = 0.0
+                                min_samples = int(s_cfg.get('promote_min_samples', 200))
+                                min_wr = float(s_cfg.get('promote_min_wr', 50.0))
+                                cap = int(s_cfg.get('daily_exec_cap', 20))
+                                sp = shared.get('scalp_promotion', {}) if 'shared' in locals() else {}
+                                if not isinstance(sp, dict):
+                                    sp = {}
+                                # Daily cap check
+                                used = int(sp.get('count', 0))
+                                ready = (samples >= min_samples) and (wr >= min_wr)
+                                # Try detect scalp signal on 3m frames; fallback to main tf
+                                sc_sig = None
+                                try:
+                                    df3 = self.frames_3m.get(sym)
+                                    src_df = df3 if (df3 is not None and len(df3) >= 120) else df
+                                    sc_sig = detect_scalp_signal(src_df.copy(), ScalpSettings(), sym)
+                                except Exception:
+                                    sc_sig = None
+                                if ready and used < cap and sc_sig and sym not in book.positions:
+                                    try:
+                                        if self.tg:
+                                            try:
+                                                await self.tg.send_message(f"🩳 Scalp Promotion: Force executing {sym} {sc_sig.side.upper()} (WR ≥ {min_wr:.0f}%)")
+                                            except Exception:
+                                                pass
+                                        executed = await _try_execute('scalp', sc_sig, ml_score=0.0, threshold=0.0)
+                                        if executed:
+                                            try:
+                                                sp['count'] = int(sp.get('count', 0)) + 1
+                                                sp['active'] = True
+                                                shared['scalp_promotion'] = sp
+                                            except Exception:
+                                                pass
+                                            # Skip phantom path for this symbol this loop
+                                            continue
+                                    except Exception as se:
+                                        logger.info(f"[{sym}] Scalp Promotion failed: {se}")
+                        except Exception:
+                            pass
+
                         # Done with independence for this symbol
                         continue
 

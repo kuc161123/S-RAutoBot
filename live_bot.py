@@ -699,6 +699,92 @@ class TradingBot:
             pass
         return task
 
+    async def _execute_scalp_trade(self, sym: str, sig_obj) -> bool:
+        """Execute a Scalp trade immediately (used by 3m stream promotion).
+        Returns True if executed, False if blocked by guards.
+        """
+        try:
+            bybit = self.bybit
+            book = self.book
+            sizer = getattr(self, 'sizer', None)
+            cfg = getattr(self, 'config', {}) or {}
+            shared = getattr(self, 'shared', {}) or {}
+            # One position per symbol
+            if sym in book.positions:
+                return False
+            # Round TP/SL to tick size
+            m = meta_for(sym, cfg.get('symbol_meta', {}))
+            from position_mgr import round_step
+            tick_size = m.get("tick_size", 0.000001)
+            sig_obj.tp = round_step(float(sig_obj.tp), tick_size)
+            sig_obj.sl = round_step(float(sig_obj.sl), tick_size)
+            # Update sizer balance
+            try:
+                bal = bybit.get_balance()
+                if bal:
+                    sizer.account_balance = bal
+                    shared["last_balance"] = bal
+            except Exception:
+                pass
+            # Sizing
+            qty = sizer.qty_for(float(sig_obj.entry), float(sig_obj.sl), m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=0.0)
+            if qty <= 0:
+                return False
+            # SL sanity
+            current_price = float(self.frames.get(sym)['close'].iloc[-1]) if (self.frames.get(sym) is not None and len(self.frames.get(sym))>0) else float(sig_obj.entry)
+            if (sig_obj.side == "long" and float(sig_obj.sl) >= current_price) or (sig_obj.side == "short" and float(sig_obj.sl) <= current_price):
+                return False
+            # Leverage and market order
+            max_lev = int(m.get("max_leverage", 10))
+            bybit.set_leverage(sym, max_lev)
+            side = "Buy" if sig_obj.side == "long" else "Sell"
+            _ = bybit.place_market(sym, side, qty, reduce_only=False)
+            # Read back avg entry and set TP/SL
+            actual_entry = float(sig_obj.entry)
+            try:
+                await asyncio.sleep(0.4)
+                position = bybit.get_position(sym)
+                if position and position.get("avgPrice"):
+                    actual_entry = float(position["avgPrice"]) or actual_entry
+            except Exception:
+                pass
+            # Set TP/SL
+            try:
+                bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
+            except Exception:
+                # try once more without qty (Full mode)
+                try:
+                    bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
+                except Exception:
+                    return False
+            # Update book
+            self.book.positions[sym] = Position(
+                sig_obj.side,
+                qty,
+                entry=actual_entry,
+                sl=float(sig_obj.sl),
+                tp=float(sig_obj.tp),
+                entry_time=datetime.now(),
+                strategy_name='scalp'
+            )
+            # Telegram notify
+            try:
+                if self.tg:
+                    msg = (
+                        f"🩳 Scalp Promotion: Force executing {sym} {sig_obj.side.upper()}\n\n"
+                        f"Entry: {actual_entry:.4f}\n"
+                        f"Stop Loss: {float(sig_obj.sl):.4f}\n"
+                        f"Take Profit: {float(sig_obj.tp):.4f}\n"
+                        f"Quantity: {qty}"
+                    )
+                    await self.tg.send_message(msg)
+            except Exception:
+                pass
+            return True
+        except Exception as e:
+            logger.info(f"[{sym}] Scalp stream execute error: {e}")
+            return False
+
     # --- Scalp feature builder for ML/phantom ---
     def _build_scalp_features(self, df: pd.DataFrame, sc_meta: dict | None = None,
                               vol_level: str | None = None, cluster_id: int | None = None) -> dict:
@@ -2694,6 +2780,10 @@ class TradingBot:
             pass
         sizer = Sizer(risk, fee_total_pct=fee_total_pct, include_fees=True)
         book = Book()
+        # Expose for stream-side execution
+        self.risk = risk
+        self.sizer = sizer
+        self.book = book
         panic_list:list[str] = []
         
         # Initialize ALL ML components (including enhanced ones)
@@ -2986,7 +3076,9 @@ class TradingBot:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), shared)
+        self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), shared)
+        # Keep shared available to stream
+        self.shared = shared
                 await self.tg.start_polling()
                 # Send shorter startup message for 20 symbols
                 # Format risk display

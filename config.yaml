@@ -277,15 +277,15 @@ phantom:
 phantom_flow:
   enabled: true
   daily_target:
-    trend: 80
+    trend: 60
     mr: 80
     scalp: 80
   smoothing_hours: 2
   relax_limits:
     trend:
-      slope: 3.0            # reduce slope_min by up to 3 pct-points
-      ema_stack: 30.0       # reduce ema_stack_min by up to 30 points
-      breakout: 0.20        # reduce breakout_dist_atr_min by up to 0.20 ATR
+      slope: 1.5            # reduce slope_min by up to 1.5 pct-points
+      ema_stack: 15.0       # reduce ema_stack_min by up to 15 points
+      breakout: 0.08        # reduce breakout_dist_atr_min by up to 0.08 ATR
     mr:
       rc: 0.30              # reduce rc_min by up to 0.30
       touches: 3            # reduce touches_min by up to 3
@@ -307,17 +307,17 @@ phantom_flow:
       boost_slope: 0.02
       max_boost: 0.40
     min_relax:
-      trend: 0.60
+      trend: 0.40
       mr: 0.80
       scalp: 0.60
     wr_guard:
       enabled: true           # Enabled: cap relax when WR is low
       window: 40              # number of recent phantom closures
-      min_wr: 20.0            # threshold (%) below which cap applies
-      cap: 0.60               # max relax while guard active
+      min_wr: 35.0            # threshold (%) below which cap applies
+      cap: 0.50               # max relax while guard active
   # Session-based and inactivity bursts to dynamically adapt flow
   session_multipliers:
-    trend: {asian: 0.9, european: 1.0, us: 1.1, off_hours: 0.8}
+    trend: {asian: 0.8, european: 1.0, us: 1.1, off_hours: 0.7}
     mr:    {asian: 0.9, european: 1.1, us: 1.0, off_hours: 0.8}
     scalp: {asian: 1.0, european: 1.1, us: 1.2, off_hours: 0.9}
   burst:

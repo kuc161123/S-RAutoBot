@@ -947,6 +947,12 @@ class TradingBot:
                     try:
                         s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
                         exp = s_cfg.get('explore', {})
+                        # Apply minimum 1R distance if configured
+                        try:
+                            if 'min_r_pct' in s_cfg:
+                                sc_settings.min_r_pct = float(s_cfg.get('min_r_pct'))
+                        except Exception:
+                            pass
                         if exp.get('relax_enabled', False):
                             # Apply relaxed thresholds for phantom exploration only
                             sc_settings.vwap_dist_atr_max = float(exp.get('vwap_dist_atr_max', sc_settings.vwap_dist_atr_max))
@@ -1309,7 +1315,14 @@ class TradingBot:
 
         # Run detection
         try:
-            sc_sig = detect_scalp_signal(df_for_scalp.copy(), ScalpSettings(), sym)
+            sc_set = ScalpSettings()
+            try:
+                s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+                if 'min_r_pct' in s_cfg:
+                    sc_set.min_r_pct = float(s_cfg.get('min_r_pct'))
+            except Exception:
+                pass
+            sc_sig = detect_scalp_signal(df_for_scalp.copy(), sc_set, sym)
         except Exception as e:
             logger.debug(f"[{sym}] Scalp fallback detection error: {e}")
             sc_sig = None

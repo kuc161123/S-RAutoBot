@@ -24,6 +24,8 @@ class ScalpSettings:
     wick_ratio_min: float = 0.3
     vwap_dist_atr_max: float = 0.6 # max normalized distance to VWAP
     orb_enabled: bool = False      # Optional ORB continuation filter
+    # Enforce minimum 1R distance (as % of price) so fees don’t erode R
+    min_r_pct: float = 0.005
 
 
 @dataclass
@@ -124,8 +126,8 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
             buf_mult = 1.0
         sl = min(cur_vwap, ema_s.iloc[-1]) - buf_mult * cur_atr
         entry = c
-        # Enforce minimum stop distance to avoid micro-stops on 3m
-        min_dist = max(entry * 0.002, 0.6 * cur_atr)  # 0.2% of price or 0.6*ATR
+        # Enforce minimum stop distance to avoid micro-stops on 3m and ensure 1R ≥ min_r_pct
+        min_dist = max(entry * s.min_r_pct, 0.6 * cur_atr, entry * 0.002)
         if entry - sl < min_dist:
             sl = entry - min_dist
         if entry <= sl:
@@ -152,8 +154,8 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
             buf_mult = 1.0
         sl = max(cur_vwap, ema_s.iloc[-1]) + buf_mult * cur_atr
         entry = c
-        # Enforce minimum stop distance
-        min_dist = max(entry * 0.002, 0.6 * cur_atr)
+        # Enforce minimum stop distance and ensure 1R ≥ min_r_pct
+        min_dist = max(entry * s.min_r_pct, 0.6 * cur_atr, entry * 0.002)
         if sl - entry < min_dist:
             sl = entry + min_dist
         if sl <= entry:

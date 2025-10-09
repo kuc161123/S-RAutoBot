@@ -3981,6 +3981,30 @@ class TradingBot:
                                     logger.debug(f"[{sym}] MR: ml_score={float(ml_score_mr or 0.0):.1f} thr={thr_mr:.0f} should={mr_should}")
                                 except Exception:
                                     pass
+                                # Extreme ML override (force execution bypassing router/regime/micro gates)
+                                try:
+                                    mr_hi_force = float((((cfg.get('mr', {}) or {}).get('exec', {}) or {}).get('high_ml_force', 90.0)))
+                                except Exception:
+                                    mr_hi_force = 90.0
+                                if ml_score_mr >= mr_hi_force:
+                                    try:
+                                        if not sig_mr_ind.meta:
+                                            sig_mr_ind.meta = {}
+                                    except Exception:
+                                        sig_mr_ind.meta = {}
+                                    sig_mr_ind.meta['promotion_forced'] = True
+                                    executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
+                                    if executed:
+                                        try:
+                                            logger.info(f"[{sym}] 🧮 Decision final: exec_mr (reason=ml_extreme {ml_score_mr:.1f}>={mr_hi_force:.0f})")
+                                        except Exception:
+                                            pass
+                                        continue
+                                    else:
+                                        try:
+                                            logger.info(f"[{sym}] 🛑 MR High-ML override blocked: reason=exec_guard")
+                                        except Exception:
+                                            pass
                                 # Promotion override regardless of earlier guards
                                 prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
                                 promote_wr = float(prom_cfg.get('promote_wr', 50.0))
@@ -4212,6 +4236,30 @@ class TradingBot:
                                     except Exception:
                                         pass
                                     tr_should = ml_score_tr >= thr_tr
+                                    # Extreme ML override (force execution bypassing router/regime/micro gates)
+                                    try:
+                                        tr_hi_force = float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('high_ml_force', 92.0)))
+                                    except Exception:
+                                        tr_hi_force = 92.0
+                                    if ml_score_tr >= tr_hi_force:
+                                        try:
+                                            if not sig_tr_ind.meta:
+                                                sig_tr_ind.meta = {}
+                                        except Exception:
+                                            sig_tr_ind.meta = {}
+                                        sig_tr_ind.meta['promotion_forced'] = True
+                                        executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
+                                        if executed:
+                                            try:
+                                                logger.info(f"[{sym}] 🧮 Decision final: exec_trend (reason=ml_extreme {ml_score_tr:.1f}>={tr_hi_force:.0f})")
+                                            except Exception:
+                                                pass
+                                            continue
+                                        else:
+                                            try:
+                                                logger.info(f"[{sym}] 🛑 Trend High-ML override blocked: reason=exec_guard")
+                                            except Exception:
+                                                pass
                                 try:
                                     logger.debug(f"[{sym}] Trend: ml_score={float(ml_score_tr or 0.0):.1f} thr={thr_tr:.0f} should={tr_should}")
                                 except Exception:

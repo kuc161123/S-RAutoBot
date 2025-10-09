@@ -114,6 +114,8 @@ trend:
       enabled: true
       min_pct: 0.001        # 0.1% slippage threshold to trigger SL recalc
       pivot_buffer_atr: 0.05  # keep SL beyond pivot by 0.05 ATR
+    # Force execution when ML score is extremely high
+    high_ml_force: 92
   regime:
     enabled: true
     min_conf: 0.60
@@ -239,6 +241,8 @@ mr:
       enabled: true
       min_pct: 0.001          # 0.1% slippage threshold to trigger SL recalc
       pivot_buffer_atr: 0.05  # keep SL beyond range pivot by 0.05 ATR
+    # Force execution when ML score is extremely high
+    high_ml_force: 90
   context:
     use_3m_context: true      # Use 3-minute micro context for diagnostics/logging
     enforce: true             # If true, block execution when 3m context is weak

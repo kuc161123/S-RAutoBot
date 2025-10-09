@@ -1,5 +1,10 @@
 FROM python:3.11-slim
 
+# Build identifier to help force rebuilds and fingerprint deployments
+ARG BUILD_ID="2025-10-09T15:05Z"
+ENV BUILD_ID=${BUILD_ID}
+LABEL org.opencontainers.image.created=${BUILD_ID}
+
 WORKDIR /app
 
 # Install system dependencies including gcc for compilation
@@ -20,6 +25,7 @@ COPY . .
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV TZ=UTC
+ENV BUILD_ID=${BUILD_ID}
 
 # Make start script executable
 RUN chmod +x start.py

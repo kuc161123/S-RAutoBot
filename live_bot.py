@@ -2556,7 +2556,8 @@ class TradingBot:
             except Exception:
                 sha = 'unknown'
         try:
-            logger.info(f"🧬 Build: {sha} ver={VERSION} @ {datetime.utcnow().isoformat()}Z")
+            build_id = os.getenv('BUILD_ID', 'n/a')
+            logger.info(f"🧬 Build: {sha} ver={VERSION} id={build_id} @ {datetime.utcnow().isoformat()}Z")
         except Exception:
             pass
         

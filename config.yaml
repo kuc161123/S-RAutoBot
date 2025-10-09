@@ -369,6 +369,7 @@ scalp:
   # Promotion metric config: use recent WR over last N phantoms
   promote_metric: recent   # recent | overall
   promote_window: 50       # number of recent phantoms for WR (when metric=recent)
+  promote_recent_secs: 30  # reuse 3m detection within this window for promotion
   context:
     use_3m_context: true
     enforce: false

@@ -3987,12 +3987,32 @@ class TradingBot:
                                 mr_stats = enhanced_mr_scorer.get_enhanced_stats() if enhanced_mr_scorer else {}
                                 recent_wr = float(mr_stats.get('recent_win_rate', 0.0))
                                 if recent_wr >= promote_wr:
-                                    mr_should = True
+                                    # Force execute immediately — bypass HTF, regime, micro gates. Only hard exec guards apply.
+                                    try:
+                                        if not sig_mr_ind.meta:
+                                            sig_mr_ind.meta = {}
+                                    except Exception:
+                                        sig_mr_ind.meta = {}
+                                    sig_mr_ind.meta['promotion_forced'] = True
                                     try:
                                         if self.tg:
                                             await self.tg.send_message(f"🌀 MR Promotion: Force executing {sym} {sig_mr_ind.side.upper()} (WR ≥ {promote_wr:.0f}%)")
                                     except Exception:
                                         pass
+                                    executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
+                                    if executed:
+                                        try:
+                                            logger.info(f"[{sym}] 🧮 Decision final: exec_mr (reason=promotion)")
+                                        except Exception:
+                                            pass
+                                        # Skip further MR gates/phantom for this symbol this loop
+                                        continue
+                                    else:
+                                        try:
+                                            logger.info(f"[{sym}] 🛑 MR Promotion blocked: reason=exec_guard")
+                                        except Exception:
+                                            pass
+                                        # Fall through to normal handling if exchange/risk guard blocked
                             except Exception:
                                 pass
                             # HTF gating for MR (gated/soft), composite + persistence + promotion bypass

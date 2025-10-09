@@ -3974,6 +3974,17 @@ class TradingBot:
                             sig_mr_ind = None
                         if sig_mr_ind is None:
                             logger.debug(f"[{sym}] MR: skip — no_signal")
+                            # In simple mode, log promotion readiness even when no signal present
+                            try:
+                                if getattr(self, 'simple_mode', False) and enhanced_mr_scorer:
+                                    prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
+                                    promote_wr = float(prom_cfg.get('promote_wr', 50.0))
+                                    mr_stats = enhanced_mr_scorer.get_enhanced_stats()
+                                    recent_wr = float(mr_stats.get('recent_win_rate', 0.0))
+                                    if recent_wr >= promote_wr:
+                                        logger.info(f"[{sym}] 🛑 MR Promotion blocked: reason=signal_absent")
+                            except Exception:
+                                pass
                         if sig_mr_ind is not None:
                             ef = sig_mr_ind.meta.get('mr_features', {}) if sig_mr_ind.meta else {}
                             ml_score_mr = 0.0; thr_mr = 75.0; mr_should = True
@@ -3986,18 +3997,47 @@ class TradingBot:
                                     logger.debug(f"[{sym}] MR: ml_score={float(ml_score_mr or 0.0):.1f} thr={thr_mr:.0f} should={mr_should}")
                                 except Exception:
                                     pass
-                                # Promotion override regardless of earlier guards
+                                # Promotion override regardless of earlier gates
                                 prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
                                 promote_wr = float(prom_cfg.get('promote_wr', 50.0))
                                 mr_stats = enhanced_mr_scorer.get_enhanced_stats() if enhanced_mr_scorer else {}
                                 recent_wr = float(mr_stats.get('recent_win_rate', 0.0))
                                 if recent_wr >= promote_wr:
-                                    mr_should = True
-                                    try:
-                                        if self.tg:
-                                            await self.tg.send_message(f"🌀 MR Promotion: Force executing {sym} {sig_mr_ind.side.upper()} (WR ≥ {promote_wr:.0f}%)")
-                                    except Exception:
-                                        pass
+                                    if getattr(self, 'simple_mode', False):
+                                        # In simple mode: bypass all gates and force execute immediately
+                                        try:
+                                            if not sig_mr_ind.meta:
+                                                sig_mr_ind.meta = {}
+                                        except Exception:
+                                            sig_mr_ind.meta = {}
+                                        sig_mr_ind.meta['promotion_forced'] = True
+                                        try:
+                                            if self.tg:
+                                                await self.tg.send_message(f"🌀 MR Promotion: Force executing {sym} {sig_mr_ind.side.upper()} (WR ≥ {promote_wr:.0f}%)")
+                                        except Exception:
+                                            pass
+                                        executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
+                                        if executed:
+                                            try:
+                                                logger.info(f"[{sym}] 🧮 Decision final: exec_mr (reason=promotion_simple)")
+                                            except Exception:
+                                                pass
+                                            # Skip further MR gates/phantom for this symbol this loop
+                                            continue
+                                        else:
+                                            try:
+                                                logger.info(f"[{sym}] 🛑 MR Promotion blocked: reason=exec_guard")
+                                            except Exception:
+                                                pass
+                                            # fall through to normal handling
+                                    else:
+                                        # Non-simple: allow override of ML threshold only
+                                        mr_should = True
+                                        try:
+                                            if self.tg:
+                                                await self.tg.send_message(f"🌀 MR Promotion: Force executing {sym} {sig_mr_ind.side.upper()} (WR ≥ {promote_wr:.0f}%)")
+                                        except Exception:
+                                            pass
                             except Exception:
                                 pass
                             # HTF gating for MR (gated/soft), composite + persistence + promotion bypass

@@ -665,6 +665,22 @@ class TradingBot:
                 return dn, ('dn_tick' if dn else 'no_dn_tick')
         except Exception:
             return True, 'err'
+
+    def _micro_context_scalp(self, symbol: str, side: str) -> tuple[bool, str]:
+        """Simple 3m micro context for Scalp: require immediate momentum with side."""
+        df3 = self.frames_3m.get(symbol)
+        if df3 is None or len(df3) < 3:
+            return True, 'no_3m'
+        try:
+            tail = df3['close'].tail(3)
+            up = tail.iloc[-1] > tail.iloc[-2]
+            dn = tail.iloc[-1] < tail.iloc[-2]
+            if side == 'long':
+                return up, ('up_tick' if up else 'no_up_tick')
+            else:
+                return dn, ('dn_tick' if dn else 'no_dn_tick')
+        except Exception:
+            return True, 'err'
         
     def _create_task(self, coro):
         try:
@@ -3605,6 +3621,13 @@ class TradingBot:
                                         ok3, why3 = self._micro_context_mr(sym, sig_obj.side)
                                         if not ok3:
                                             dbg_logger.debug(f"[{sym}] MR: skip — 3m_ctx_enforce ({why3})")
+                                            return False
+                                elif strategy_name == 'scalp':
+                                    sctx = (cfg.get('scalp', {}).get('context', {}) or {}) if 'cfg' in locals() else {}
+                                    if bool(sctx.get('enforce', False)):
+                                        ok3, why3 = self._micro_context_scalp(sym, sig_obj.side)
+                                        if not ok3:
+                                            dbg_logger.debug(f"[{sym}] Scalp: skip — 3m_ctx_enforce ({why3})")
                                             return False
                             except Exception:
                                 pass

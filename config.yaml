@@ -364,6 +364,9 @@ scalp:
   promote_min_samples: 200
   promote_min_wr: 50.0
   daily_exec_cap: 20
+  context:
+    use_3m_context: true
+    enforce: true
   explore:
     relax_enabled: true
     # Relaxed, phantom-only thresholds to widen net (execution unchanged)

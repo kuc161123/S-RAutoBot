@@ -353,6 +353,8 @@ scalp:
   session_only: ["us", "european"]
   dedup_hours: 2         # Redis dedup window for identical scalp signals (loosened for exploration)
   cooldown_bars: 2       # Per-symbol cooldown in bars between scalp records (loosened for exploration)
+  debug:
+    force_accept: true   # TEMP: force-record scalp phantoms to verify acceptance path
   promote_enabled: false
   promote_min_samples: 200
   promote_min_wr: 55.0

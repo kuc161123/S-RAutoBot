@@ -579,6 +579,8 @@ class TradingBot:
             'dedup_skips': 0,
             'cooldown_skips': 0
         }
+        # Cache of latest scalp detections per symbol (for promotion timing)
+        self._scalp_last_signal: Dict[str, Dict[str, object]] = {}
         # HTF gating persistence (per-strategy per-symbol)
         self._htf_hold: Dict[str, Dict[str, Dict[str, object]]] = {
             'mr': {},
@@ -1039,6 +1041,18 @@ class TradingBot:
 
                 # Ensure a decision-final line is always emitted for visibility
                 _scalp_decision_logged = False
+
+                # Cache latest scalp detection for promotion timing
+                try:
+                    self._scalp_last_signal[sym] = {
+                        'ts': pd.Timestamp.utcnow(),
+                        'side': getattr(sc_sig, 'side', ''),
+                        'entry': float(getattr(sc_sig, 'entry', 0.0) or 0.0),
+                        'sl': float(getattr(sc_sig, 'sl', 0.0) or 0.0),
+                        'tp': float(getattr(sc_sig, 'tp', 0.0) or 0.0)
+                    }
+                except Exception:
+                    pass
 
                 # EARLY debug force-accept: record immediately to prove acceptance path
                 try:
@@ -4430,6 +4444,19 @@ class TradingBot:
                                     sc_sig = detect_scalp_signal(src_df.copy(), ScalpSettings(), sym)
                                 except Exception:
                                     sc_sig = None
+                                # If no signal, allow reuse of latest 3m detection within recent_secs
+                                if sc_sig is None and ready:
+                                    try:
+                                        recent_secs = int(s_cfg.get('promote_recent_secs', 10))
+                                        last = self._scalp_last_signal.get(sym)
+                                        if last and (pd.Timestamp.utcnow() - last.get('ts', pd.Timestamp.utcnow())).total_seconds() <= recent_secs:
+                                            class _Tmp:
+                                                side = last.get('side'); entry = last.get('entry'); sl = last.get('sl'); tp = last.get('tp'); meta = {}
+                                            sc_sig = _Tmp()
+                                        else:
+                                            logger.info(f"[{sym}] Scalp Promotion: ready but no valid signal this bar")
+                                    except Exception:
+                                        pass
                                 if ready and used < cap and sc_sig and sym not in book.positions:
                                     try:
                                         if self.tg:
@@ -4447,8 +4474,13 @@ class TradingBot:
                                                 pass
                                             # Skip phantom path for this symbol this loop
                                             continue
+                                        else:
+                                            logger.info(f"[{sym}] 🛑 Scalp Promotion blocked: reason=exec_guard")
                                     except Exception as se:
                                         logger.info(f"[{sym}] Scalp Promotion failed: {se}")
+                                elif ready and used < cap and sc_sig is None:
+                                    # Already logged above; ensure visibility
+                                    logger.info(f"[{sym}] 🛑 Scalp Promotion blocked: reason=signal_absent")
                         except Exception:
                             pass
 

@@ -371,7 +371,7 @@ scalp:
   promote_window: 50       # number of recent phantoms for WR (when metric=recent)
   context:
     use_3m_context: true
-    enforce: true
+    enforce: false
   explore:
     relax_enabled: true
     # Relaxed, phantom-only thresholds to widen net (execution unchanged)

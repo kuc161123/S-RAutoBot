@@ -3959,6 +3959,13 @@ class TradingBot:
                                 if tr_scorer is not None:
                                     ml_score_tr, _ = tr_scorer.score_signal(sig_tr_ind.__dict__, trend_features)
                                     thr_tr = getattr(tr_scorer, 'min_score', 70)
+                                    # Apply execution ML floor from config
+                                    try:
+                                        exec_floor = float(((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('min_ml', 0))
+                                        if thr_tr < exec_floor:
+                                            thr_tr = exec_floor
+                                    except Exception:
+                                        pass
                                     tr_should = ml_score_tr >= thr_tr
                                 try:
                                     logger.debug(f"[{sym}] Trend: ml_score={float(ml_score_tr or 0.0):.1f} thr={thr_tr:.0f} should={tr_should}")
@@ -4155,16 +4162,27 @@ class TradingBot:
                                             logger.debug(f"[{sym}] Trend: skip — ml<{thr_tr:.0f} (score {float(ml_score_tr or 0.0):.1f})")
                                         except Exception:
                                             pass
-                                        phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                                        # Only record phantom if ML ≥ trend.phantom.min_ml
                                         try:
-                                            logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=ml<thr)")
+                                            ph_min = float(((cfg.get('trend', {}) or {}).get('phantom', {}) or {}).get('min_ml', 0))
                                         except Exception:
-                                            pass
-                                        try:
-                                            if self.flow_controller and self.flow_controller.enabled:
-                                                self.flow_controller.increment_accepted('trend', 1)
-                                        except Exception:
-                                            pass
+                                            ph_min = 0.0
+                                        if ml_score_tr >= ph_min:
+                                            phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                                            try:
+                                                logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=ml<thr)")
+                                            except Exception:
+                                                pass
+                                            try:
+                                                if self.flow_controller and self.flow_controller.enabled:
+                                                    self.flow_controller.increment_accepted('trend', 1)
+                                            except Exception:
+                                                pass
+                                        else:
+                                            try:
+                                                logger.info(f"[{sym}] 🧮 Decision final: skip_trend_phantom (reason=ml<trend_phantom_min {ml_score_tr:.1f}<{ph_min:.0f})")
+                                            except Exception:
+                                                pass
 
                         # Done with independence for this symbol
                         continue

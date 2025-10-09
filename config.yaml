@@ -107,6 +107,8 @@ trend:
     min_train_records: 300
     require_ready: true
     min_recent_wr: 0.0
+    # Minimum ML score floor for execution (in addition to model threshold)
+    min_ml: 75
     slippage_recalc:
       enabled: true
       min_pct: 0.001        # 0.1% slippage threshold to trigger SL recalc
@@ -116,6 +118,9 @@ trend:
     min_conf: 0.60
     allowed_vol: [low, normal]
     phantom_on_filter_fail: true
+  phantom:
+    # Minimum ML score to record Trend phantoms (filter out noisy low-ML phantoms)
+    min_ml: 72
   # Trend corking (promotion) system — analogous to MR promotion
   promotion:
     enabled: false          # master toggle
@@ -130,9 +135,9 @@ trend:
     enforce: true           # If true, block execution when 3m context is weak
   explore:
     enabled: true
-    slope_min: 3.0
-    ema_stack_min: 50.0
-    breakout_dist_atr_min: 0.15
+    slope_min: 4.0
+    ema_stack_min: 60.0
+    breakout_dist_atr_min: 0.20
     allow_volatility_high: true
     timeout_hours: 36
     enable_virtual_snapshots: true
@@ -148,7 +153,7 @@ router:
     mode: gated          # gated | soft
     # Thresholds for per-strategy HTF gating
     trend:
-      min_trend_strength: 60.0  # require HTF trend_strength ≥ this to allow Trend
+      min_trend_strength: 68.0  # require HTF trend_strength ≥ this to allow Trend (tighter)
     mr:
       min_range_quality: 0.60   # require HTF range_quality ≥ this to allow MR
       max_trend_strength: 40.0  # require HTF trend_strength ≤ this to allow MR
@@ -240,13 +245,13 @@ phantom:
   offhours_cap: 30       # was 20 — higher off-hours cap
   # Per-strategy hourly per-symbol budgets (more aggressive)
   hourly_symbol_budget:
-    trend: 3
+    trend: 2
     mr: 3
     scalp: 12
   # Per-strategy daily caps (UTC) — isolation across strategies
   caps:
     trend:
-      none: 180
+      none: 120
       cluster3: 45
       offhours: 30
     mr:

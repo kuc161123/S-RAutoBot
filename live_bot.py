@@ -1442,7 +1442,7 @@ class TradingBot:
         except Exception:
             return True
 
-    def _maybe_run_scalp_fallback(self, sym: str, df: pd.DataFrame, regime_analysis, cluster_id: Optional[int]):
+    async def _maybe_run_scalp_fallback(self, sym: str, df: pd.DataFrame, regime_analysis, cluster_id: Optional[int]):
         """Run Scalp detection on main/3m frames when the secondary stream is unavailable or stale.
 
         This preserves Scalp independence by only engaging when the 3m loop isn't producing confirms.
@@ -1629,7 +1629,7 @@ class TradingBot:
                 blist.append(now_ts)
                 self._scalp_budget[sym] = blist
                 try:
-                    logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=ok_fallback)")
+                            logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=ok_fallback)")
                 except Exception:
                     pass
             else:
@@ -5788,7 +5788,7 @@ class TradingBot:
                                     pass
                             # Before continuing, ensure Scalp fallback runs if 3m stream is unavailable/stale
                             try:
-                                self._maybe_run_scalp_fallback(sym, df, regime_analysis, cluster_id)
+                                await self._maybe_run_scalp_fallback(sym, df, regime_analysis, cluster_id)
                             except Exception:
                                 pass
                             # After phantom-only sampling + optional Scalp fallback, continue to next symbol

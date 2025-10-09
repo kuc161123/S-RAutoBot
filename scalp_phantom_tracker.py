@@ -11,7 +11,7 @@ import uuid
 import yaml
 from position_mgr import round_step
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -76,12 +76,18 @@ class ScalpPhantomTracker:
         self.completed: Dict[str, List[ScalpPhantomTrade]] = {}
         # Local blocked counters fallback: day (YYYYMMDD) -> counts
         self._blocked_counts: Dict[str, Dict[str, int]] = {}
+        # Optional notifier (e.g., Telegram) for open/close events
+        self.notifier: Optional[Callable] = None
         self._load()
         # Default timeout hours for scalp phantom (config override available)
         self.timeout_hours: int = 24
         # Symbol meta for tick size
         self._symbol_meta: Dict[str, Dict] = {}
         self._load_symbol_meta()
+
+    def set_notifier(self, notifier: Optional[Callable]):
+        """Attach a notifier callable(trade) for open/close events."""
+        self.notifier = notifier
 
     def _load_symbol_meta(self):
         try:
@@ -183,6 +189,15 @@ class ScalpPhantomTracker:
         self.active.setdefault(symbol, []).append(ph)
         self._save()
         logger.info(f"[{symbol}] Scalp phantom recorded: {signal['side'].upper()} {signal['entry']:.4f}")
+        # Notify on open immediately (phantom-only)
+        try:
+            if self.notifier and not was_executed:
+                res = self.notifier(ph)
+                import asyncio
+                if asyncio.iscoroutine(res):
+                    asyncio.create_task(res)
+        except Exception:
+            pass
         return ph
 
     def get_blocked_counts(self, day: Optional[str] = None) -> Dict[str, int]:
@@ -303,6 +318,16 @@ class ScalpPhantomTracker:
             pass
         self._save()
         logger.info(f"[{symbol}] Scalp PHANTOM closed: {'✅ WIN' if outcome=='win' else '❌ LOSS'} ({ph.pnl_percent:+.2f}%)")
+
+        # Notify on close
+        try:
+            if self.notifier:
+                res = self.notifier(ph)
+                import asyncio
+                if asyncio.iscoroutine(res):
+                    asyncio.create_task(res)
+        except Exception:
+            pass
 
         # Update rolling WR list for WR guard (Scalp) — skip timeouts
         try:

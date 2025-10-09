@@ -386,6 +386,10 @@ scalp:
     min_bb_width_pct: 0.50   # was 0.6 — accept narrower bands
     vol_ratio_min: 1.00      # was 1.15 — lower volume spike requirement
     timeout_hours: 24        # auto-close scalp phantoms after 24h for learning
+  exec:
+    # Allow stream-side immediate execution for extremely high ML scores
+    allow_stream_high_ml: true
+    high_ml_force: 92
 symbol_meta:
   default:
     qty_step: 0.001

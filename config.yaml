@@ -124,7 +124,7 @@ trend:
   # Trend corking (promotion) system — analogous to MR promotion
   promotion:
     enabled: false          # master toggle
-    promote_wr: 55.0        # activate when recent WR ≥ this
+    promote_wr: 31.0        # activate when recent WR ≥ this
     demote_wr: 35.0         # deactivate when recent WR < this
     min_recent: 30          # require at least this many recent trades
     min_total_trades: 100   # require overall executed trades at least this many
@@ -138,6 +138,11 @@ trend:
     slope_min: 4.0
     ema_stack_min: 60.0
     breakout_dist_atr_min: 0.20
+    # New entry quality filters
+    require_range_expansion: true
+    range_expansion_min: 1.2
+    require_retest: true
+    retest_max_dist_atr: 0.5
     allow_volatility_high: true
     timeout_hours: 36
     enable_virtual_snapshots: true

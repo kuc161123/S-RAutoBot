@@ -2574,7 +2574,11 @@ class TradingBot:
             breakout_k_atr=float(tr_cfg.get('breakout_k_atr', 0.3)),
             sl_atr_mult=float(tr_cfg.get('sl_atr_mult', 1.5)),
             rr=float(tr_cfg.get('rr', 2.5)),
-            use_ema_stack=bool(tr_cfg.get('use_ema_stack', True))
+            use_ema_stack=bool(tr_cfg.get('use_ema_stack', True)),
+            require_range_expansion=bool(tr_cfg.get('explore', {}).get('require_range_expansion', True)),
+            range_expansion_min=float(tr_cfg.get('explore', {}).get('range_expansion_min', 1.2)),
+            require_retest=bool(tr_cfg.get('explore', {}).get('require_retest', True)),
+            retest_max_dist_atr=float(tr_cfg.get('explore', {}).get('retest_max_dist_atr', 0.5)),
         )
 
         # Initialize components

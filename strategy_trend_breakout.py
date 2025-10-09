@@ -18,9 +18,14 @@ class TrendSettings:
     atr_len: int = 14
     breakout_k_atr: float = 0.3   # buffer over channel by ATR
     sl_atr_mult: float = 1.5      # SL distance in ATR from entry
-    rr: float = 2.5               # fixed R:R
+    rr: float = 2.5               # base R:R (will be adjusted by volatility schedule)
     use_ema_stack: bool = True
     use_htf_sr_filter: bool = True  # Avoid breakouts into nearby 1H/4H SR
+    # Entry quality filters
+    require_range_expansion: bool = True
+    range_expansion_min: float = 1.2  # today's range vs 20-bar median
+    require_retest: bool = True
+    retest_max_dist_atr: float = 0.5  # breakout distance (ATR) upper bound for retest-style entries
 
 
 @dataclass
@@ -84,8 +89,23 @@ def detect_signal(df: pd.DataFrame, s: TrendSettings, symbol: str = "") -> Optio
         'ema_ok': bool(ema_ok),
     }
 
-    # Long breakout
+    # Compute daily range expansion vs 20-bar median
+    try:
+        rng_today = float(high.iloc[-1] - low.iloc[-1])
+        med_range = float((high - low).rolling(20).median().iloc[-1]) if len(df) >= 20 else rng_today
+        range_expansion = rng_today / max(1e-9, med_range)
+    except Exception:
+        range_expansion = 1.0
+
+    # Long breakout (with filters)
     if price > hh + k * atr and ema_ok:
+        # Range expansion filter
+        if s.require_range_expansion and not (range_expansion >= s.range_expansion_min):
+            return None
+        # Retest-style proximity filter (avoid late chase far from HH)
+        bdist_atr = (price - float(hh)) / max(1e-9, float(atr))
+        if s.require_retest and not (bdist_atr <= s.retest_max_dist_atr):
+            return None
         entry = price
         # Volatility-aware SL buffer (hybrid, similar to MR)
         try:
@@ -132,10 +152,28 @@ def detect_signal(df: pd.DataFrame, s: TrendSettings, symbol: str = "") -> Optio
         R = float(entry) - float(sl)
         if R <= 0:
             return None
+        # Volatility-aware RR schedule
         fee_adjustment = 1.00165
-        tp = float(entry) + float(s.rr) * R * fee_adjustment
+        rr_eff = float(s.rr)
+        try:
+            # vol_pct ~ ATR percentile (higher means current ATR high vs history)
+            vol_pct = 0.5
+            valid = atr_series.dropna()
+            if len(valid) >= 30:
+                current_atr = float(atr)
+                vol_pct = float((valid < current_atr).sum() / len(valid))
+            # Map: low vol -> higher RR, high vol -> lower RR
+            if vol_pct < 0.3:
+                rr_eff = max(rr_eff, 3.0)
+            elif vol_pct > 0.7:
+                rr_eff = min(rr_eff, 2.0)
+            else:
+                rr_eff = float(s.rr)
+        except Exception:
+            rr_eff = float(s.rr)
+        tp = float(entry) + rr_eff * R * fee_adjustment
         reason = f"Donchian breakout LONG > HH({s.channel_len}) + {k}*ATR"
-        meta.update({'breakout_dist_atr': float((price - hh) / max(1e-9, atr)), 'pivot_low': float(low.rolling(10).min().iloc[-1])})
+        meta.update({'breakout_dist_atr': float(bdist_atr), 'pivot_low': float(low.rolling(10).min().iloc[-1]), 'range_expansion': float(range_expansion), 'rr_eff': float(rr_eff)})
         # HTF S/R guard: avoid breakouts into nearby resistance
         try:
             if s.use_htf_sr_filter and _HTF_AVAILABLE:
@@ -155,8 +193,15 @@ def detect_signal(df: pd.DataFrame, s: TrendSettings, symbol: str = "") -> Optio
             pass
         return Signal('long', float(entry), float(sl), float(tp), reason, meta)
 
-    # Short breakout
+    # Short breakout (with filters)
     if price < ll - k * atr and ema_ok:
+        # Range expansion filter
+        if s.require_range_expansion and not (range_expansion >= s.range_expansion_min):
+            return None
+        # Retest-style proximity filter
+        bdist_atr = (float(ll) - price) / max(1e-9, float(atr))
+        if s.require_retest and not (bdist_atr <= s.retest_max_dist_atr):
+            return None
         entry = price
         # Volatility-aware SL buffer (hybrid)
         try:
@@ -204,9 +249,24 @@ def detect_signal(df: pd.DataFrame, s: TrendSettings, symbol: str = "") -> Optio
         if R <= 0:
             return None
         fee_adjustment = 1.00165
-        tp = float(entry) - float(s.rr) * R * fee_adjustment
+        rr_eff = float(s.rr)
+        try:
+            vol_pct = 0.5
+            valid = atr_series.dropna()
+            if len(valid) >= 30:
+                current_atr = float(atr)
+                vol_pct = float((valid < current_atr).sum() / len(valid))
+            if vol_pct < 0.3:
+                rr_eff = max(rr_eff, 3.0)
+            elif vol_pct > 0.7:
+                rr_eff = min(rr_eff, 2.0)
+            else:
+                rr_eff = float(s.rr)
+        except Exception:
+            rr_eff = float(s.rr)
+        tp = float(entry) - rr_eff * R * fee_adjustment
         reason = f"Donchian breakout SHORT < LL({s.channel_len}) - {k}*ATR"
-        meta.update({'breakout_dist_atr': float((ll - price) / max(1e-9, atr)), 'pivot_high': float(high.rolling(10).max().iloc[-1])})
+        meta.update({'breakout_dist_atr': float(bdist_atr), 'pivot_high': float(high.rolling(10).max().iloc[-1]), 'range_expansion': float(range_expansion), 'rr_eff': float(rr_eff)})
         # HTF S/R guard: avoid breakouts into nearby support
         try:
             if s.use_htf_sr_filter and _HTF_AVAILABLE:

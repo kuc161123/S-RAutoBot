@@ -2547,6 +2547,11 @@ class TradingBot:
         
         # Store config as instance variable
         self.config = cfg
+        # Simple mode toggle: drastically simplify gating for clearer behavior
+        try:
+            self.simple_mode = bool(cfg.get('simple_mode', True))
+        except Exception:
+            self.simple_mode = True
         # Startup build fingerprint (commit hash + timestamp)
         try:
             sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
@@ -2557,7 +2562,7 @@ class TradingBot:
                 sha = 'unknown'
         try:
             build_id = os.getenv('BUILD_ID', 'n/a')
-            logger.info(f"🧬 Build: {sha} ver={VERSION} id={build_id} @ {datetime.utcnow().isoformat()}Z")
+            logger.info(f"🧬 Build: {sha} ver={VERSION} id={build_id} simple_mode={getattr(self, 'simple_mode', False)} @ {datetime.utcnow().isoformat()}Z")
         except Exception:
             pass
         
@@ -4000,6 +4005,10 @@ class TradingBot:
                                 htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
                                 if bool(htf_cfg.get('enabled', False)):
                                     mode = str(htf_cfg.get('mode', 'gated')).lower()
+                                    if getattr(self, 'simple_mode', False):
+                                        mode = 'soft'
+                                    if getattr(self, 'simple_mode', False):
+                                        mode = 'soft'
                                     comp = (htf_cfg.get('composite', {}) or {})
                                     metrics = self._get_htf_metrics(sym, df)
                                     min_rq = float((htf_cfg.get('mr', {}) or {}).get('min_range_quality', 0.60))
@@ -4074,7 +4083,11 @@ class TradingBot:
                                 mr_conf_req = float(mr_reg.get('min_conf', 0.60))
                                 mr_persist_req = float(mr_reg.get('min_persist', 0.0))
                                 promotion_bypass = bool(mr_reg.get('promotion_bypass', True))
-                                mr_pass_regime = (not mr_reg_enabled) or ((prim == 'ranging') and (conf >= mr_conf_req) and (persist >= mr_persist_req))
+                                # In simple mode, bypass MR regime gate entirely
+                                if getattr(self, 'simple_mode', False):
+                                    mr_pass_regime = True
+                                else:
+                                    mr_pass_regime = (not mr_reg_enabled) or ((prim == 'ranging') and (conf >= mr_conf_req) and (persist >= mr_persist_req))
                                 if not mr_pass_regime and not (promotion_bypass and recent_wr >= promote_wr):
                                     logger.debug(f"[{sym}] MR: skip — regime gate (prim={prim}, conf={conf:.2f}, persist={persist:.2f})")
                                     if mr_phantom_tracker:
@@ -4105,6 +4118,8 @@ class TradingBot:
                                         ok3, why3 = self._micro_context_mr(sym, sig_mr_ind.side)
                                         logger.debug(f"[{sym}] MR 3m.ctx: {'ok' if ok3 else 'weak'} ({why3})")
                                         enforce3 = bool(((cfg.get('router', {}) or {}).get('htf_bias', {}).get('micro_context', {}) or {}).get('mr_enforce', False) or mctx.get('enforce', False))
+                                        if getattr(self, 'simple_mode', False):
+                                            enforce3 = False
                                         if enforce3 and not ok3:
                                             logger.info(f"[{sym}] 🧮 Decision final: phantom_mr (reason=micro_ctx {why3})")
                                             if mr_phantom_tracker:
@@ -4186,9 +4201,10 @@ class TradingBot:
                                     thr_tr = getattr(tr_scorer, 'min_score', 70)
                                     # Apply execution ML floor from config
                                     try:
-                                        exec_floor = float(((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('min_ml', 0))
-                                        if thr_tr < exec_floor:
-                                            thr_tr = exec_floor
+                                        if not getattr(self, 'simple_mode', False):
+                                            exec_floor = float(((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('min_ml', 0))
+                                            if thr_tr < exec_floor:
+                                                thr_tr = exec_floor
                                     except Exception:
                                         pass
                                     tr_should = ml_score_tr >= thr_tr
@@ -4283,6 +4299,8 @@ class TradingBot:
                                     ok3, why3 = self._micro_context_trend(sym, sig_tr_ind.side)
                                     logger.debug(f"[{sym}] Trend 3m.ctx: {'ok' if ok3 else 'weak'} ({why3})")
                                     enforce3 = bool(((cfg.get('router', {}) or {}).get('htf_bias', {}).get('micro_context', {}) or {}).get('trend_enforce', False) or tctx.get('enforce', False))
+                                    if getattr(self, 'simple_mode', False):
+                                        enforce3 = False
                                     if enforce3 and not ok3:
                                         logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=micro_ctx {why3})")
                                         if phantom_tracker:
@@ -4301,7 +4319,11 @@ class TradingBot:
                                 vol = getattr(regime_analysis, 'volatility_level', 'normal') if regime_analysis else 'normal'
                                 tr_conf_req = float(tr_reg.get('min_conf', 0.60))
                                 tr_allowed_vol = set(tr_reg.get('allowed_vol', ['low','normal']))
-                                tr_pass_regime = (not tr_reg_enabled) or ((prim == 'trending') and (conf >= tr_conf_req) and (vol in tr_allowed_vol))
+                                # In simple mode, bypass Trend regime gate entirely
+                                if getattr(self, 'simple_mode', False):
+                                    tr_pass_regime = True
+                                else:
+                                    tr_pass_regime = (not tr_reg_enabled) or ((prim == 'trending') and (conf >= tr_conf_req) and (vol in tr_allowed_vol))
                                 # Exec readiness gates
                                 trend_exec_enabled = False
                                 if tr_exec.get('bootstrap_phantom_only', True):
@@ -4312,6 +4334,9 @@ class TradingBot:
                                             min_wr = float(tr_exec.get('min_recent_wr', 0.0))
                                             trend_exec_enabled = (min_wr <= 0.0) or (((tr_scorer.get_stats() or {}).get('recent_win_rate', 0.0)) >= min_wr)
                                 else:
+                                    trend_exec_enabled = True
+                                # In simple mode, always allow Trend execution path (subject to ML threshold and exec guards)
+                                if getattr(self, 'simple_mode', False):
                                     trend_exec_enabled = True
                             except Exception:
                                 tr_pass_regime = True; trend_exec_enabled = False

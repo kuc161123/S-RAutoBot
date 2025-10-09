@@ -82,6 +82,9 @@ trade:
   use_enhanced_parallel: true
   fee_total_pct: 0.00165   # Estimated total fee fraction for entry+exit (0.165%) used for fee-aware sizing
 
+# Simplified gating preset
+simple_mode: true
+
 # Strategy-specific regime thresholds and hysteresis
 strategy_regimes:
   mr:
@@ -123,9 +126,11 @@ trend:
     min_ml: 72
   # Trend corking (promotion) system — analogous to MR promotion
   promotion:
-    enabled: false          # master toggle
+    enabled: true           # master toggle (enabled in simple mode)
     promote_wr: 31.0        # activate when recent WR ≥ this
     demote_wr: 35.0         # deactivate when recent WR < this
+    min_recent: 0           # simplify activation criteria
+    min_total_trades: 0     # simplify activation criteria
     min_recent: 30          # require at least this many recent trades
     min_total_trades: 100   # require overall executed trades at least this many
     daily_exec_cap: 20      # max forced Trend executions per UTC day
@@ -222,8 +227,8 @@ mr:
     enabled: true
     promote_wr: 31.0        # Activate when recent WR ≥ 31%
     demote_wr: 30.0         # Deactivate when recent WR < 30%
-    min_recent: 20          # Require at least this many recent MR trades for decision
-    min_total_trades: 50    # Require overall MR executed trades to be at least this
+    min_recent: 0           # simplify activation criteria
+    min_total_trades: 0     # simplify activation criteria
     daily_exec_cap: 20      # Max promotion-forced MR executions per UTC day
     block_extreme_vol: true # Do not promote in extreme volatility
   regime:

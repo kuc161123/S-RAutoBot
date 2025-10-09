@@ -307,6 +307,18 @@ class TGBot:
             lines.append(f"• Recorded: {st.get('total', 0)} | WR: {st.get('wr', 0.0):.1f}%")
         except Exception as exc:
             logger.debug(f"Scalp phantom not available: {exc}")
+        # Scalp Promotion status
+        try:
+            cfg2 = self.shared.get('config', {}) or {}
+            sc_cfg = (cfg2.get('scalp', {}) or {})
+            sp = self.shared.get('scalp_promotion', {}) or {}
+            cap = int(sc_cfg.get('daily_exec_cap', 20))
+            lines.append("")
+            lines.append("🩳 *Scalp Promotion*")
+            lines.append(f"• Status: {'✅ Active' if sp.get('active') else 'Off'} | Used: {sp.get('count',0)}/{cap}")
+            lines.append(f"• Promote WR: {float(sc_cfg.get('promote_min_wr',50.0)):.0f}% | Gate: WR only")
+        except Exception:
+            pass
 
         # Scalp Shadow (ML-based)
         try:
@@ -725,7 +737,7 @@ class TGBot:
 /phantom [strategy] – Phantom trade outcomes
 /phantomqa – Phantom caps & WR QA
 /scalpqa – Scalp phantom QA
-/scalppromote – Scalp promotion readiness
+/scalppromote – Scalp promotion status (WR-based)
 /trendpromote – Trend promotion (corking) status
 /trainingstatus – Background training progress
 
@@ -760,6 +772,8 @@ HTF S/R module disabled
 • Max leverage: {risk_cfg.max_leverage}x
 • Timeframe: {timeframe} minutes
 • Strategies: Trend ML, Mean Reversion, Scalp (phantom)
+• Promotions: MR (≥31% WR), Trend (≥31% WR), Scalp (≥50% WR)
+• Micro‑context: Trend/MR/Scalp 3m enforce enabled
 """
         await self.safe_reply(update, help_text)
 
@@ -4022,16 +4036,14 @@ HTF S/R module disabled
             await update.message.reply_text("Error getting scalp QA")
 
     async def scalp_promotion_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Summarize scalp phantom sample size and WR to assess promotion readiness."""
+        """Summarize Scalp promotion readiness (WR-based only)."""
         try:
             # Config thresholds (defaults)
-            min_samples = 200
-            target_wr = 55.0
+            target_wr = 50.0
             cfg = self.shared.get('config') or {}
             scalp_cfg = cfg.get('scalp', {})
             thr = scalp_cfg.get('threshold', 75)
             # Override from config if provided
-            min_samples = int(scalp_cfg.get('promote_min_samples', min_samples))
             target_wr = float(scalp_cfg.get('promote_min_wr', target_wr))
             promote_enabled = bool(scalp_cfg.get('promote_enabled', False))
 
@@ -4055,17 +4067,17 @@ HTF S/R module disabled
 
             total = st.get('total', 0)
             wr = st.get('wr', 0.0)
-            ready = (total >= min_samples) and (wr >= target_wr)
+            ready = (wr >= target_wr)
 
             lines = [
                 "🩳 *Scalp Promotion Status*",
-                f"• Phantom samples: {total} (wins {st.get('wins',0)}, losses {st.get('losses',0)})",
-                f"• Phantom WR (proxy): {wr:.1f}%",
+                f"• Phantom recorded: {total} (W/L {st.get('wins',0)}/{st.get('losses',0)})",
+                f"• Phantom WR: {wr:.1f}%",
                 f"• ML Ready: {'✅' if ml_ready else '⏳'} | Threshold: {thr}",
-                f"• Gate: N ≥ {min_samples}, WR ≥ {target_wr:.1f}%",
+                f"• Gate: WR ≥ {target_wr:.1f}% (samples not required)",
                 f"• Promotion toggle: {'ON' if promote_enabled else 'OFF'}",
-                f"• Recommendation: {'🟢 Ready' if ready else '🟡 Keep collecting'}",
-                "_Note: precision@threshold is proxied by phantom WR until executed data and model scores are available._"
+                f"• Recommendation: {'🟢 Ready' if ready else '🟡 Not ready'}",
+                "_Promotion executes when phantom WR meets target; micro-context enforced._"
             ]
             await self.safe_reply(update, "\n".join(lines))
         except Exception as e:

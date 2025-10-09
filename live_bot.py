@@ -4358,7 +4358,7 @@ class TradingBot:
                                     wr = float(st.get('wr', 0.0))
                                 except Exception:
                                     samples = 0; wr = 0.0
-                                min_samples = int(s_cfg.get('promote_min_samples', 200))
+                                # Only WR matters for Scalp promotion
                                 min_wr = float(s_cfg.get('promote_min_wr', 50.0))
                                 cap = int(s_cfg.get('daily_exec_cap', 20))
                                 sp = shared.get('scalp_promotion', {}) if 'shared' in locals() else {}
@@ -4366,7 +4366,7 @@ class TradingBot:
                                     sp = {}
                                 # Daily cap check
                                 used = int(sp.get('count', 0))
-                                ready = (samples >= min_samples) and (wr >= min_wr)
+                                ready = (wr >= min_wr)
                                 # Try detect scalp signal on 3m frames; fallback to main tf
                                 sc_sig = None
                                 try:

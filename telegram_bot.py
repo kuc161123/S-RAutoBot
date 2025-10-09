@@ -307,15 +307,39 @@ class TGBot:
             lines.append(f"• Recorded: {st.get('total', 0)} | WR: {st.get('wr', 0.0):.1f}%")
         except Exception as exc:
             logger.debug(f"Scalp phantom not available: {exc}")
-        # Scalp Promotion status
+        # Scalp Promotion status (include current and recent WR)
         try:
             cfg2 = self.shared.get('config', {}) or {}
             sc_cfg = (cfg2.get('scalp', {}) or {})
             sp = self.shared.get('scalp_promotion', {}) or {}
             cap = int(sc_cfg.get('daily_exec_cap', 20))
+            # Current overall WR from phantom stats
+            cur_wr = 0.0
+            try:
+                cur_wr = float(st.get('wr', 0.0))
+            except Exception:
+                cur_wr = 0.0
+            # Recent WR over last 50 scalp phantoms
+            recent_wr = cur_wr
+            try:
+                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                scpt2 = get_scalp_phantom_tracker()
+                recents = []
+                for trades in getattr(scpt2, 'completed', {}).values():
+                    for p in trades:
+                        if getattr(p, 'outcome', None) in ('win','loss'):
+                            recents.append(p)
+                recents.sort(key=lambda x: getattr(x, 'exit_time', None) or getattr(x, 'signal_time', None))
+                recents = recents[-50:]
+                if recents:
+                    rw = sum(1 for p in recents if getattr(p, 'outcome', None) == 'win')
+                    recent_wr = (rw / len(recents)) * 100.0
+            except Exception:
+                recent_wr = cur_wr
             lines.append("")
             lines.append("🩳 *Scalp Promotion*")
             lines.append(f"• Status: {'✅ Active' if sp.get('active') else 'Off'} | Used: {sp.get('count',0)}/{cap}")
+            lines.append(f"• Current WR: {cur_wr:.1f}% | Recent WR(50): {recent_wr:.1f}%")
             lines.append(f"• Promote WR: {float(sc_cfg.get('promote_min_wr',50.0)):.0f}% | Gate: WR only")
         except Exception:
             pass
@@ -4067,12 +4091,29 @@ HTF S/R module disabled
 
             total = st.get('total', 0)
             wr = st.get('wr', 0.0)
+            # Recent WR(50)
+            recent_wr = wr
+            try:
+                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                scpt = get_scalp_phantom_tracker()
+                recents = []
+                for trades in getattr(scpt, 'completed', {}).values():
+                    for p in trades:
+                        if getattr(p, 'outcome', None) in ('win','loss'):
+                            recents.append(p)
+                recents.sort(key=lambda x: getattr(x, 'exit_time', None) or getattr(x, 'signal_time', None))
+                recents = recents[-50:]
+                if recents:
+                    rw = sum(1 for p in recents if getattr(p, 'outcome', None) == 'win')
+                    recent_wr = (rw / len(recents)) * 100.0
+            except Exception:
+                pass
             ready = (wr >= target_wr)
 
             lines = [
                 "🩳 *Scalp Promotion Status*",
                 f"• Phantom recorded: {total} (W/L {st.get('wins',0)}/{st.get('losses',0)})",
-                f"• Phantom WR: {wr:.1f}%",
+                f"• Phantom WR: {wr:.1f}% | Recent(50): {recent_wr:.1f}%",
                 f"• ML Ready: {'✅' if ml_ready else '⏳'} | Threshold: {thr}",
                 f"• Gate: WR ≥ {target_wr:.1f}% (samples not required)",
                 f"• Promotion toggle: {'ON' if promote_enabled else 'OFF'}",

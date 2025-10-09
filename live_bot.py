@@ -118,6 +118,9 @@ if USING_POSTGRES_TRACKER:
 else:
     logger.info("Using JSON trade tracker")
 
+# Bot build/version tag (bump to trigger deploys and visible in logs)
+VERSION = "2025.10.09.2"
+
 # Load environment variables
 load_dotenv()
 
@@ -2553,7 +2556,7 @@ class TradingBot:
             except Exception:
                 sha = 'unknown'
         try:
-            logger.info(f"🧬 Build: {sha} @ {datetime.utcnow().isoformat()}Z")
+            logger.info(f"🧬 Build: {sha} ver={VERSION} @ {datetime.utcnow().isoformat()}Z")
         except Exception:
             pass
         

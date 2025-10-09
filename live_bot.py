@@ -1112,6 +1112,15 @@ class TradingBot:
                         pass
                     continue
 
+                # One active phantom per symbol guard
+                try:
+                    if scpt.has_active(sym):
+                        logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=active_symbol)")
+                        _scalp_decision_logged = True
+                        continue
+                except Exception:
+                    pass
+
                 # Record phantom to scalp tracker; build full feature set
                 # Choose a source df safely without boolean evaluation on DataFrames
                 _df_src2 = None
@@ -1352,6 +1361,14 @@ class TradingBot:
         if not dedup_ok:
             logger.debug(f"[{sym}] 🩳 Scalp fallback dedup: duplicate signal skipped")
             return
+
+        # One active phantom per symbol guard (fallback)
+        try:
+            if scpt.has_active(sym):
+                logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=active_symbol)")
+                return
+        except Exception:
+            pass
 
         # Build features and record phantom with pacing
         sc_meta = getattr(sc_sig, 'meta', {}) or {}

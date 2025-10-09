@@ -99,6 +99,13 @@ class ScalpPhantomTracker:
         except Exception as e:
             logger.debug(f"ScalpPhantom: failed to load symbol meta: {e}")
 
+    def has_active(self, symbol: str) -> bool:
+        """Return True if there is an active scalp phantom for the symbol."""
+        try:
+            return bool(self.active.get(symbol))
+        except Exception:
+            return False
+
     def _tick_size_for(self, symbol: str) -> float:
         try:
             if symbol in self._symbol_meta and isinstance(self._symbol_meta[symbol], dict):

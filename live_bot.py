@@ -7,6 +7,7 @@ import signal
 import sys
 import time
 import yaml
+import subprocess
 from datetime import datetime
 from typing import Dict, Optional, Tuple
 
@@ -2667,6 +2668,18 @@ class TradingBot:
         
         # Store config as instance variable
         self.config = cfg
+        # Startup build fingerprint (commit hash + timestamp)
+        try:
+            sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
+        except Exception:
+            try:
+                sha = os.getenv('BUILD_SHA') or 'unknown'
+            except Exception:
+                sha = 'unknown'
+        try:
+            logger.info(f"🧬 Build: {sha} @ {datetime.utcnow().isoformat()}Z")
+        except Exception:
+            pass
         
         # Extract configuration
         symbols = [s.upper() for s in cfg["trade"]["symbols"]]
@@ -3076,9 +3089,9 @@ class TradingBot:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-        self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), shared)
-        # Keep shared available to stream
-        self.shared = shared
+                self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), shared)
+                # Keep shared available to stream
+                self.shared = shared
                 await self.tg.start_polling()
                 # Send shorter startup message for 20 symbols
                 # Format risk display
@@ -4151,13 +4164,6 @@ class TradingBot:
                                     rc_ok = (metrics['rc15'] >= min_rq) and ((metrics['rc60'] == 0.0) or (metrics['rc60'] >= min_rq))
                                     ts_ok = (metrics['ts15'] <= max_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] <= max_ts))
                                     allowed = rc_ok and ts_ok
-                                    # Unconditional HTF bypass when MR promotion is forcing
-                                    try:
-                                        if mr_should and not allowed:
-                                            logger.info(f"[{sym}] 🧮 HTF bypass (MR Promotion): rc15={metrics['rc15']:.2f}/rc60={metrics['rc60']:.2f} ts15={metrics['ts15']:.1f}/ts60={metrics['ts60']:.1f}")
-                                            allowed = True
-                                    except Exception:
-                                        pass
                                     mild = False
                                     # Soft tolerance window
                                     try:

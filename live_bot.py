@@ -1018,6 +1018,35 @@ class TradingBot:
                 # Ensure a decision-final line is always emitted for visibility
                 _scalp_decision_logged = False
 
+                # EARLY debug force-accept: record immediately to prove acceptance path
+                try:
+                    fa_cfg = (self.config.get('scalp', {}).get('debug', {}) or {}) if hasattr(self, 'config') else {}
+                    if bool(fa_cfg.get('force_accept', False)):
+                        try:
+                            from scalp_phantom_tracker import get_scalp_phantom_tracker
+                            scpt = get_scalp_phantom_tracker()
+                            sc_feats_early = self._build_scalp_features(self.frames_3m.get(sym) or self.frames.get(sym) or df, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                            scpt.record_scalp_signal(
+                                sym,
+                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                0.0,
+                                False,
+                                sc_feats_early
+                            )
+                            try:
+                                self._scalp_stats['signals'] = self._scalp_stats.get('signals', 0) + 1
+                            except Exception:
+                                pass
+                            logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                            logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=debug_force_early)")
+                            _scalp_decision_logged = True
+                            # Skip the rest to avoid double-recording
+                            continue
+                        except Exception as _fae:
+                            logger.warning(f"[{sym}] Scalp debug force-accept error: {_fae}")
+                except Exception:
+                    pass
+
                 # Dedup via Redis (phantom dedup scope)
                 dedup_ok = True
                 try:

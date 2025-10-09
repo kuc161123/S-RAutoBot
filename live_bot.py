@@ -1088,7 +1088,34 @@ class TradingBot:
                         logger.info(f"[{sym}] 🩳 Scalp decision context: dedup={dedup_ok} hourly_remaining={max(0, sc_remaining)} daily_ok={daily_ok}")
                     except Exception:
                         pass
-                    if sc_remaining > 0 and daily_ok:
+                    # Debug: force-accept path for diagnostics
+                    force_accept = False
+                    try:
+                        force_accept = bool(((self.config.get('scalp', {}).get('debug', {}) or {}).get('force_accept', False)))
+                    except Exception:
+                        force_accept = False
+                    if force_accept:
+                        scpt.record_scalp_signal(
+                            sym,
+                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                            0.0,
+                            False,
+                            sc_feats
+                        )
+                        try:
+                            self._scalp_stats['signals'] = self._scalp_stats.get('signals', 0) + 1
+                        except Exception:
+                            pass
+                        logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                        try:
+                            logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=debug_force)")
+                            _scalp_decision_logged = True
+                        except Exception:
+                            pass
+                        self._scalp_cooldown[sym] = bar_ts
+                        blist.append(now_ts)
+                        self._scalp_budget[sym] = blist
+                    elif sc_remaining > 0 and daily_ok:
                         scpt.record_scalp_signal(
                             sym,
                             {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
@@ -1280,6 +1307,28 @@ class TradingBot:
                     daily_ok = n_val < none_cap
             except Exception:
                 pass
+            # Debug: force accept path for fallback
+            force_accept = False
+            try:
+                force_accept = bool(((self.config.get('scalp', {}).get('debug', {}) or {}).get('force_accept', False)))
+            except Exception:
+                force_accept = False
+            if force_accept:
+                scpt.record_scalp_signal(
+                    sym,
+                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                    0.0,
+                    False,
+                    sc_feats
+                )
+                logger.info(f"[{sym}] 👻 Phantom-only (Scalp fallback): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                try:
+                    logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=debug_force)")
+                except Exception:
+                    pass
+                blist.append(now_ts)
+                self._scalp_budget[sym] = blist
+                return
             if sc_remaining > 0 and daily_ok:
                 scpt.record_scalp_signal(
                     sym,
@@ -2407,6 +2456,22 @@ class TradingBot:
             scalp_tf = str(scalp_cfg_diag.get('timeframe', '3'))
             logger.info(
                 f"🩳 Scalp config: enabled={scalp_enabled}, independent={scalp_independent}, tf={scalp_tf}m, modules={'OK' if SCALP_AVAILABLE else 'MISSING'}"
+            )
+            # Startup fingerprint for scalp acceptance plumbing
+            try:
+                central_enabled = bool(((cfg.get('router', {}) or {}).get('central_enabled', False)))
+            except Exception:
+                central_enabled = False
+            try:
+                hb = (cfg.get('phantom', {}).get('hourly_symbol_budget', {}) or {}).get('scalp', 'n/a')
+                cap_none = (cfg.get('phantom', {}).get('caps', {}).get('scalp', {}) or {}).get('none', 'n/a')
+                ddh = (cfg.get('scalp', {}) or {}).get('dedup_hours', 'n/a')
+                cdb = (cfg.get('scalp', {}) or {}).get('cooldown_bars', 'n/a')
+                dbg_force = bool(((cfg.get('scalp', {}).get('debug', {}) or {}).get('force_accept', False)) if isinstance(cfg.get('scalp', {}), dict) else False)
+            except Exception:
+                hb = cap_none = ddh = cdb = 'n/a'; dbg_force = False
+            logger.info(
+                f"🔎 Startup fingerprint: central_router={central_enabled} scalp.hourly={hb} scalp.daily_none={cap_none} dedup_hours={ddh} cooldown_bars={cdb} debug.force_accept={dbg_force} backstop=ON"
             )
         except Exception:
             pass

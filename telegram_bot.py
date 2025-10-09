@@ -339,8 +339,14 @@ class TGBot:
             lines.append("")
             lines.append("🩳 *Scalp Promotion*")
             lines.append(f"• Status: {'✅ Active' if sp.get('active') else 'Off'} | Used: {sp.get('count',0)}/{cap}")
-            lines.append(f"• Current WR: {cur_wr:.1f}% | Recent WR(50): {recent_wr:.1f}%")
-            lines.append(f"• Promote WR: {float(sc_cfg.get('promote_min_wr',50.0)):.0f}% | Gate: WR only")
+            # Gate description depending on metric
+            metric = str(sc_cfg.get('promote_metric', 'recent')).lower()
+            window = int(sc_cfg.get('promote_window', 50))
+            lines.append(f"• Current WR: {cur_wr:.1f}% | Recent WR({window}): {recent_wr:.1f}%")
+            if metric == 'recent':
+                lines.append(f"• Promote WR: {float(sc_cfg.get('promote_min_wr',50.0)):.0f}% | Gate: Recent({window})")
+            else:
+                lines.append(f"• Promote WR: {float(sc_cfg.get('promote_min_wr',50.0)):.0f}% | Gate: Overall")
         except Exception:
             pass
 
@@ -4091,7 +4097,7 @@ HTF S/R module disabled
 
             total = st.get('total', 0)
             wr = st.get('wr', 0.0)
-            # Recent WR(50)
+            # Recent WR(window)
             recent_wr = wr
             try:
                 from scalp_phantom_tracker import get_scalp_phantom_tracker
@@ -4102,20 +4108,23 @@ HTF S/R module disabled
                         if getattr(p, 'outcome', None) in ('win','loss'):
                             recents.append(p)
                 recents.sort(key=lambda x: getattr(x, 'exit_time', None) or getattr(x, 'signal_time', None))
-                recents = recents[-50:]
+                window = int(scalp_cfg.get('promote_window', 50))
+                recents = recents[-window:]
                 if recents:
                     rw = sum(1 for p in recents if getattr(p, 'outcome', None) == 'win')
                     recent_wr = (rw / len(recents)) * 100.0
             except Exception:
                 pass
-            ready = (wr >= target_wr)
+            metric = str(scalp_cfg.get('promote_metric', 'recent')).lower()
+            wr_for_gate = recent_wr if metric == 'recent' else wr
+            ready = (wr_for_gate >= target_wr)
 
             lines = [
                 "🩳 *Scalp Promotion Status*",
                 f"• Phantom recorded: {total} (W/L {st.get('wins',0)}/{st.get('losses',0)})",
-                f"• Phantom WR: {wr:.1f}% | Recent(50): {recent_wr:.1f}%",
+                f"• Phantom WR: {wr:.1f}% | Recent({int(scalp_cfg.get('promote_window',50))}): {recent_wr:.1f}%",
                 f"• ML Ready: {'✅' if ml_ready else '⏳'} | Threshold: {thr}",
-                f"• Gate: WR ≥ {target_wr:.1f}% (samples not required)",
+                f"• Gate: {'Recent' if metric=='recent' else 'Overall'} WR ≥ {target_wr:.1f}% (no sample gate)",
                 f"• Promotion toggle: {'ON' if promote_enabled else 'OFF'}",
                 f"• Recommendation: {'🟢 Ready' if ready else '🟡 Not ready'}",
                 "_Promotion executes when phantom WR meets target; micro-context enforced._"

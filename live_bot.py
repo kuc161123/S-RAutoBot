@@ -3972,6 +3972,13 @@ class TradingBot:
                                     rc_ok = (metrics['rc15'] >= min_rq) and ((metrics['rc60'] == 0.0) or (metrics['rc60'] >= min_rq))
                                     ts_ok = (metrics['ts15'] <= max_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] <= max_ts))
                                     allowed = rc_ok and ts_ok
+                                    # Unconditional HTF bypass when MR promotion is forcing
+                                    try:
+                                        if mr_should and not allowed:
+                                            logger.info(f"[{sym}] 🧮 HTF bypass (MR Promotion): rc15={metrics['rc15']:.2f}/rc60={metrics['rc60']:.2f} ts15={metrics['ts15']:.1f}/ts60={metrics['ts60']:.1f}")
+                                            allowed = True
+                                    except Exception:
+                                        pass
                                     mild = False
                                     # Soft tolerance window
                                     try:
@@ -4379,15 +4386,33 @@ class TradingBot:
                             s_cfg = cfg.get('scalp', {}) if 'cfg' in locals() else {}
                             promote_en = bool(s_cfg.get('promote_enabled', False))
                             if promote_en and SCALP_AVAILABLE and detect_scalp_signal is not None:
-                                # Promotion readiness from phantom stats
+                                # Promotion readiness from phantom stats (supports recent WR)
                                 try:
                                     from scalp_phantom_tracker import get_scalp_phantom_tracker
                                     scpt = get_scalp_phantom_tracker()
                                     st = scpt.get_scalp_phantom_stats() or {}
                                     samples = int(st.get('total', 0))
-                                    wr = float(st.get('wr', 0.0))
+                                    overall_wr = float(st.get('wr', 0.0))
                                 except Exception:
-                                    samples = 0; wr = 0.0
+                                    samples = 0; overall_wr = 0.0
+                                # Compute metric
+                                metric = str(s_cfg.get('promote_metric', 'recent')).lower()
+                                window = int(s_cfg.get('promote_window', 50))
+                                wr = overall_wr
+                                if metric == 'recent':
+                                    try:
+                                        recents = []
+                                        for trades in getattr(scpt, 'completed', {}).values():
+                                            for p in trades:
+                                                if getattr(p, 'outcome', None) in ('win','loss'):
+                                                    recents.append(p)
+                                        recents.sort(key=lambda x: getattr(x, 'exit_time', None) or getattr(x, 'signal_time', None))
+                                        recents = recents[-window:]
+                                        if recents:
+                                            rw = sum(1 for p in recents if getattr(p, 'outcome', None) == 'win')
+                                            wr = (rw / len(recents)) * 100.0
+                                    except Exception:
+                                        wr = overall_wr
                                 # Only WR matters for Scalp promotion
                                 min_wr = float(s_cfg.get('promote_min_wr', 50.0))
                                 cap = int(s_cfg.get('daily_exec_cap', 20))

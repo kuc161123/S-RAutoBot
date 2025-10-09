@@ -1015,6 +1015,9 @@ class TradingBot:
                 except Exception:
                     pass
 
+                # Ensure a decision-final line is always emitted for visibility
+                _scalp_decision_logged = False
+
                 # Dedup via Redis (phantom dedup scope)
                 dedup_ok = True
                 try:
@@ -1043,6 +1046,7 @@ class TradingBot:
                         pass
                     try:
                         logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=dedup)")
+                        _scalp_decision_logged = True
                     except Exception:
                         pass
                     continue
@@ -1079,6 +1083,11 @@ class TradingBot:
                         logger.info(f"[{sym}] 🩳 Scalp decision context: dedup={dedup_ok} hourly_remaining={max(0, sc_remaining)} daily_ok={daily_ok}")
                     except Exception:
                         pass
+                    # Visibility into decision inputs
+                    try:
+                        logger.info(f"[{sym}] 🩳 Scalp decision context: dedup={dedup_ok} hourly_remaining={max(0, sc_remaining)} daily_ok={daily_ok}")
+                    except Exception:
+                        pass
                     if sc_remaining > 0 and daily_ok:
                         scpt.record_scalp_signal(
                             sym,
@@ -1106,6 +1115,7 @@ class TradingBot:
                         logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
                         try:
                             logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=ok)")
+                            _scalp_decision_logged = True
                         except Exception:
                             pass
                         self._scalp_cooldown[sym] = bar_ts
@@ -1138,6 +1148,7 @@ class TradingBot:
                         try:
                             reason = 'hourly_budget' if sc_remaining <= 0 else ('daily_cap' if not daily_ok else 'unknown')
                             logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason={reason})")
+                            _scalp_decision_logged = True
                         except Exception:
                             pass
                 except Exception as e:
@@ -1145,6 +1156,14 @@ class TradingBot:
                     logger.warning(f"[{sym}] Scalp(3m) record error: {e}")
                     try:
                         logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=record_error)")
+                        _scalp_decision_logged = True
+                    except Exception:
+                        pass
+                finally:
+                    # Backstop: ensure a decision-final line is always emitted
+                    try:
+                        if not _scalp_decision_logged:
+                            logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=unknown_path)")
                     except Exception:
                         pass
             except Exception as e:

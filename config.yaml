@@ -185,7 +185,9 @@ router:
       r2:
         enabled: false
         trend_min: 0.02
-        mr_max: 0.01
+      mr_max: 0.01
+  # Disable central router; rely on independent strategy flows
+  central_enabled: false
 
 # Global exploration toggle
 exploration:

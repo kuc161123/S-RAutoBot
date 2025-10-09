@@ -3156,16 +3156,23 @@ class TradingBot:
                     # Track analysis time
                     last_analysis[sym] = datetime.now()
                 
-                    # Strategy-specific regime routing (active)
-                    # Compute per-strategy regime scores to override the coarse global recommendation
-                    router_choice = None
+                    # Strategy-specific regime routing (central router) — DISABLED by default
+                    # When central router is disabled, we rely solely on independent MR/Trend flows
+                    router_choice = 'none'
                     tr_score = mr_score = 0.0
+                    central_router_enabled = False
                     try:
-                        from strategy_regimes import score_trend_regime, score_mr_regime
-                        tr_score, _ = score_trend_regime(df)
-                        mr_score, _ = score_mr_regime(df)
+                        cr = (self.config.get('router', {}) or {})
+                        central_router_enabled = bool(cr.get('central_enabled', False))
                     except Exception:
-                        pass
+                        central_router_enabled = False
+                    if central_router_enabled:
+                        try:
+                            from strategy_regimes import score_trend_regime, score_mr_regime
+                            tr_score, _ = score_trend_regime(df)
+                            mr_score, _ = score_mr_regime(df)
+                        except Exception:
+                            pass
 
                     # Higher-timeframe gating/bias using enhanced regime (HTF)
                     htf = None
@@ -3190,42 +3197,44 @@ class TradingBot:
 
                     # Trend score already computed via score_trend_regime
 
-                    # Eligible candidates above threshold
+                    # Eligible candidates above threshold (central router only)
                     candidates = []
-                    if tr_score >= pb_thr:
-                        candidates.append(('trend_breakout', tr_score))
-                    if mr_score >= mr_thr:
-                        candidates.append(('enhanced_mr', mr_score))
+                    if central_router_enabled:
+                        if tr_score >= pb_thr:
+                            candidates.append(('trend_breakout', tr_score))
+                        if mr_score >= mr_thr:
+                            candidates.append(('enhanced_mr', mr_score))
 
                     # Apply HTF gating to candidates when enabled (drop misaligned). Use composite RC/TS.
-                    try:
-                        htf_cfg = (self.config.get('router', {}) or {}).get('htf_bias', {})
-                        mode = str(htf_cfg.get('mode', 'gated')).lower()
-                        if bool(htf_cfg.get('enabled', False)):
-                            metrics = self._get_htf_metrics(sym, df)
-                            min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
-                            min_rq = float((htf_cfg.get('mr', {}) or {}).get('min_range_quality', 0.60))
-                            max_ts = float((htf_cfg.get('mr', {}) or {}).get('max_trend_strength', 40.0))
-                            gated = []
-                            for name, sc in candidates:
-                                if name == 'trend_breakout':
-                                    ts_ok = (metrics['ts15'] >= min_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] >= min_ts))
-                                    if ts_ok or mode == 'soft':
-                                        gated.append((name, sc))
-                                    else:
-                                        logger.info(f"[{sym}] 🧮 HTF gate: drop TREND ts15={metrics['ts15']:.1f} ts60={metrics['ts60']:.1f} < {min_ts:.1f}")
-                                elif name == 'enhanced_mr':
-                                    rc_ok = (metrics['rc15'] >= min_rq) and ((metrics['rc60'] == 0.0) or (metrics['rc60'] >= min_rq))
-                                    ts_ok = (metrics['ts15'] <= max_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] <= max_ts))
-                                    if (rc_ok and ts_ok) or mode == 'soft':
-                                        gated.append((name, sc))
-                                    else:
-                                        logger.info(f"[{sym}] 🧮 HTF gate: drop MR rc15={metrics['rc15']:.2f}/rc60={metrics['rc60']:.2f} ts15={metrics['ts15']:.1f}/ts60={metrics['ts60']:.1f} (need rc≥{min_rq:.2f} & ts≤{max_ts:.1f})")
-                            candidates = gated
-                    except Exception:
-                        pass
+                    if central_router_enabled:
+                        try:
+                            htf_cfg = (self.config.get('router', {}) or {}).get('htf_bias', {})
+                            mode = str(htf_cfg.get('mode', 'gated')).lower()
+                            if bool(htf_cfg.get('enabled', False)):
+                                metrics = self._get_htf_metrics(sym, df)
+                                min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
+                                min_rq = float((htf_cfg.get('mr', {}) or {}).get('min_range_quality', 0.60))
+                                max_ts = float((htf_cfg.get('mr', {}) or {}).get('max_trend_strength', 40.0))
+                                gated = []
+                                for name, sc in candidates:
+                                    if name == 'trend_breakout':
+                                        ts_ok = (metrics['ts15'] >= min_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] >= min_ts))
+                                        if ts_ok or mode == 'soft':
+                                            gated.append((name, sc))
+                                        else:
+                                            logger.info(f"[{sym}] 🧮 HTF gate: drop TREND ts15={metrics['ts15']:.1f} ts60={metrics['ts60']:.1f} < {min_ts:.1f}")
+                                    elif name == 'enhanced_mr':
+                                        rc_ok = (metrics['rc15'] >= min_rq) and ((metrics['rc60'] == 0.0) or (metrics['rc60'] >= min_rq))
+                                        ts_ok = (metrics['ts15'] <= max_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] <= max_ts))
+                                        if (rc_ok and ts_ok) or mode == 'soft':
+                                            gated.append((name, sc))
+                                        else:
+                                            logger.info(f"[{sym}] 🧮 HTF gate: drop MR rc15={metrics['rc15']:.2f}/rc60={metrics['rc60']:.2f} ts15={metrics['ts15']:.1f}/ts60={metrics['ts60']:.1f} (need rc≥{min_rq:.2f} & ts≤{max_ts:.1f})")
+                                candidates = gated
+                        except Exception:
+                            pass
 
-                    if candidates:
+                    if central_router_enabled and candidates:
                         # Choose best by score
                         candidates.sort(key=lambda x: x[1], reverse=True)
                         top, top_score = candidates[0]
@@ -3247,27 +3256,28 @@ class TradingBot:
                     else:
                         router_choice = 'none'
 
-                    try:
-                        # One-line decision record snapshot (router + signal presence + ML margins if available so far)
-                        tr_ml = '—'; mr_ml = '—'; tr_marg = '—'; mr_marg = '—'
+                    if central_router_enabled:
                         try:
-                            if 'ml_score_tr' in locals() and 'thr_tr' in locals():
-                                tr_ml = f"{float(ml_score_tr):.0f}/{int(thr_tr)}"; tr_marg = f"{float(ml_score_tr - thr_tr):+}" 
+                            # One-line decision record snapshot (router + signal presence + ML margins)
+                            tr_ml = '—'; mr_ml = '—'; tr_marg = '—'; mr_marg = '—'
+                            try:
+                                if 'ml_score_tr' in locals() and 'thr_tr' in locals():
+                                    tr_ml = f"{float(ml_score_tr):.0f}/{int(thr_tr)}"; tr_marg = f"{float(ml_score_tr - thr_tr):+}" 
+                            except Exception:
+                                pass
+                            try:
+                                if 'ml_score_mr' in locals() and 'thr_mr' in locals():
+                                    mr_ml = f"{float(ml_score_mr):.0f}/{int(thr_mr)}"; mr_marg = f"{float(ml_score_mr - thr_mr):+}"
+                            except Exception:
+                                pass
+                            has_tr = 'Y' if ('soft_sig_tr' in locals() and soft_sig_tr) else 'N'
+                            has_mr = 'Y' if ('soft_sig_mr' in locals() and soft_sig_mr) else 'N'
+                            logger.info(
+                                f"[{sym}] 🧮 Decision: router={str(router_choice).upper()} TR {tr_score:.0f}/{pb_thr} MR {mr_score:.0f}/{mr_thr} | "
+                                f"sig TR={has_tr} MR={has_mr} | ML TR={tr_ml}{'' if tr_marg=='—' else f'({tr_marg})'} MR={mr_ml}{'' if mr_marg=='—' else f'({mr_marg})'}"
+                            )
                         except Exception:
                             pass
-                        try:
-                            if 'ml_score_mr' in locals() and 'thr_mr' in locals():
-                                mr_ml = f"{float(ml_score_mr):.0f}/{int(thr_mr)}"; mr_marg = f"{float(ml_score_mr - thr_mr):+}"
-                        except Exception:
-                            pass
-                        has_tr = 'Y' if ('soft_sig_tr' in locals() and soft_sig_tr) else 'N'
-                        has_mr = 'Y' if ('soft_sig_mr' in locals() and soft_sig_mr) else 'N'
-                        logger.info(
-                            f"[{sym}] 🧮 Decision: router={str(router_choice).upper()} TR {tr_score:.0f}/{pb_thr} MR {mr_score:.0f}/{mr_thr} | "
-                            f"sig TR={has_tr} MR={has_mr} | ML TR={tr_ml}{'' if tr_marg=='—' else f'({tr_marg})'} MR={mr_ml}{'' if mr_marg=='—' else f'({mr_marg})'}"
-                        )
-                    except Exception:
-                        pass
 
                     # Log summary periodically instead of every candle
                     if (datetime.now() - last_summary_log).total_seconds() > summary_log_interval:

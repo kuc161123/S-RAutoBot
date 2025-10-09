@@ -1025,7 +1025,17 @@ class TradingBot:
                         try:
                             from scalp_phantom_tracker import get_scalp_phantom_tracker
                             scpt = get_scalp_phantom_tracker()
-                            sc_feats_early = self._build_scalp_features(self.frames_3m.get(sym) or self.frames.get(sym) or df, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                            # Choose a source df safely without boolean evaluation on DataFrames
+                            _df_src = None
+                            try:
+                                _df_src = self.frames_3m.get(sym)
+                                if _df_src is None or getattr(_df_src, 'empty', True):
+                                    _df_src = self.frames.get(sym)
+                                if _df_src is None or getattr(_df_src, 'empty', True):
+                                    _df_src = df
+                            except Exception:
+                                _df_src = df
+                            sc_feats_early = self._build_scalp_features(_df_src, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
                             scpt.record_scalp_signal(
                                 sym,
                                 {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
@@ -1081,7 +1091,17 @@ class TradingBot:
                     continue
 
                 # Record phantom to scalp tracker; build full feature set
-                sc_feats = self._build_scalp_features(self.frames_3m.get(sym) or self.frames.get(sym) or df, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                # Choose a source df safely without boolean evaluation on DataFrames
+                _df_src2 = None
+                try:
+                    _df_src2 = self.frames_3m.get(sym)
+                    if _df_src2 is None or getattr(_df_src2, 'empty', True):
+                        _df_src2 = self.frames.get(sym)
+                    if _df_src2 is None or getattr(_df_src2, 'empty', True):
+                        _df_src2 = df
+                except Exception:
+                    _df_src2 = df
+                sc_feats = self._build_scalp_features(_df_src2, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
                 sc_feats['routing'] = 'none'
                 try:
                     scpt = get_scalp_phantom_tracker()

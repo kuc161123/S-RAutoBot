@@ -454,6 +454,12 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
         range_analysis = _detect_range_quality(df, lookback=80)
         range_quality = range_analysis['quality']
         range_confidence = range_analysis['confidence']
+        try:
+            # Expose range_confidence via feature_snapshot for downstream gates
+            if isinstance(feature_snapshot, dict):
+                feature_snapshot['range_confidence'] = float(range_confidence)
+        except Exception:
+            pass
 
         # ===== REGIME CLASSIFICATION =====
 

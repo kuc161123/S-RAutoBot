@@ -127,7 +127,7 @@ trend:
     block_extreme_vol: true # do not force execute when volatility is extreme
   context:
     use_3m_context: true    # Use 3-minute micro context for diagnostics/logging
-    enforce: false          # If true, block execution when 3m context is weak
+    enforce: true           # If true, block execution when 3m context is weak
   explore:
     enabled: true
     slope_min: 3.0
@@ -152,6 +152,40 @@ router:
     mr:
       min_range_quality: 0.60   # require HTF range_quality ≥ this to allow MR
       max_trend_strength: 40.0  # require HTF trend_strength ≤ this to allow MR
+    # Composite and enforcement options
+    composite:
+      enabled: true
+      timeframes: [15, 60]
+      min_hold_bars: 2
+      soft_tolerance:
+        trend:
+          trend_strength: 5.0
+        mr:
+          range_quality: 0.05
+          trend_strength: 5.0
+      soft_penalty:
+        trend: 5
+        mr: 5
+      promotion_bypass:
+        trend:
+          enabled: true
+          trend_strength_tol: 5.0
+        mr:
+          enabled: true
+          range_quality_tol: 0.05
+          trend_strength_tol: 5.0
+    micro_context:
+      trend_enforce: true
+      mr_enforce: true
+    advanced:
+      hurst:
+        enabled: false
+        trend_min: 0.52
+        mr_max: 0.48
+      r2:
+        enabled: false
+        trend_min: 0.02
+        mr_max: 0.01
 
 # Global exploration toggle
 exploration:
@@ -193,7 +227,7 @@ mr:
       pivot_buffer_atr: 0.05  # keep SL beyond range pivot by 0.05 ATR
   context:
     use_3m_context: true      # Use 3-minute micro context for diagnostics/logging
-    enforce: false            # If true, block execution when 3m context is weak
+    enforce: true             # If true, block execution when 3m context is weak
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}

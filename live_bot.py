@@ -579,6 +579,57 @@ class TradingBot:
             'dedup_skips': 0,
             'cooldown_skips': 0
         }
+        # HTF gating persistence (per-strategy per-symbol)
+        self._htf_hold: Dict[str, Dict[str, Dict[str, object]]] = {
+            'mr': {},
+            'trend': {}
+        }
+
+    def _resample_ohlcv(self, df: pd.DataFrame, minutes: int) -> pd.DataFrame:
+        try:
+            rule = f"{int(minutes)}T"
+            agg = {
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            }
+            rdf = df.resample(rule).agg(agg).dropna()
+            return rdf
+        except Exception:
+            return df
+
+    def _get_htf_metrics(self, symbol: str, df: pd.DataFrame) -> Dict[str, float]:
+        """Return composite HTF metrics for gating: rc15, ts15, rc60, ts60."""
+        out = {'rc15': 0.0, 'ts15': 0.0, 'rc60': 0.0, 'ts60': 0.0}
+        try:
+            htf15 = get_enhanced_market_regime(df, symbol)
+            out['ts15'] = float(getattr(htf15, 'trend_strength', 0.0) or 0.0)
+            try:
+                snap = getattr(htf15, 'feature_snapshot', {}) or {}
+                out['rc15'] = float(snap.get('range_confidence', 0.0) or 0.0)
+            except Exception:
+                out['rc15'] = 0.0
+        except Exception:
+            pass
+        # 60m composite if enabled
+        try:
+            cfg = getattr(self, 'config', {}) or {}
+            hcfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
+            comp = (hcfg.get('composite', {}) or {}).get('enabled', False)
+            if comp:
+                df60 = self._resample_ohlcv(df, 60)
+                htf60 = get_enhanced_market_regime(df60, symbol)
+                out['ts60'] = float(getattr(htf60, 'trend_strength', 0.0) or 0.0)
+                try:
+                    snap60 = getattr(htf60, 'feature_snapshot', {}) or {}
+                    out['rc60'] = float(snap60.get('range_confidence', 0.0) or 0.0)
+                except Exception:
+                    out['rc60'] = 0.0
+        except Exception:
+            pass
+        return out
 
     # --- 3m micro-context checks (diagnostic) ---
     def _micro_context_trend(self, symbol: str, side: str) -> tuple[bool, str]:
@@ -3146,27 +3197,30 @@ class TradingBot:
                     if mr_score >= mr_thr:
                         candidates.append(('enhanced_mr', mr_score))
 
-                    # Apply HTF gating to candidates when enabled (drop misaligned)
+                    # Apply HTF gating to candidates when enabled (drop misaligned). Use composite RC/TS.
                     try:
                         htf_cfg = (self.config.get('router', {}) or {}).get('htf_bias', {})
-                        if bool(htf_cfg.get('enabled', False)) and str(htf_cfg.get('mode','gated')).lower() == 'gated' and htf is not None:
+                        mode = str(htf_cfg.get('mode', 'gated')).lower()
+                        if bool(htf_cfg.get('enabled', False)):
+                            metrics = self._get_htf_metrics(sym, df)
+                            min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
+                            min_rq = float((htf_cfg.get('mr', {}) or {}).get('min_range_quality', 0.60))
+                            max_ts = float((htf_cfg.get('mr', {}) or {}).get('max_trend_strength', 40.0))
                             gated = []
                             for name, sc in candidates:
                                 if name == 'trend_breakout':
-                                    min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
-                                    if float(getattr(htf, 'trend_strength', 0.0)) >= min_ts:
+                                    ts_ok = (metrics['ts15'] >= min_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] >= min_ts))
+                                    if ts_ok or mode == 'soft':
                                         gated.append((name, sc))
                                     else:
-                                        logger.info(f"[{sym}] 🧮 HTF gate: drop TREND (trend_strength {getattr(htf,'trend_strength',0.0):.1f} < {min_ts:.1f})")
+                                        logger.info(f"[{sym}] 🧮 HTF gate: drop TREND ts15={metrics['ts15']:.1f} ts60={metrics['ts60']:.1f} < {min_ts:.1f}")
                                 elif name == 'enhanced_mr':
-                                    min_rq = float((htf_cfg.get('mr', {}) or {}).get('min_range_quality', 0.60))
-                                    max_ts = float((htf_cfg.get('mr', {}) or {}).get('max_trend_strength', 40.0))
-                                    rq = float(getattr(htf, 'range_quality', 0.0))
-                                    ts = float(getattr(htf, 'trend_strength', 0.0))
-                                    if (rq >= min_rq) and (ts <= max_ts):
+                                    rc_ok = (metrics['rc15'] >= min_rq) and ((metrics['rc60'] == 0.0) or (metrics['rc60'] >= min_rq))
+                                    ts_ok = (metrics['ts15'] <= max_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] <= max_ts))
+                                    if (rc_ok and ts_ok) or mode == 'soft':
                                         gated.append((name, sc))
                                     else:
-                                        logger.info(f"[{sym}] 🧮 HTF gate: drop MR (rq {rq:.2f} < {min_rq:.2f} or ts {ts:.1f} > {max_ts:.1f})")
+                                        logger.info(f"[{sym}] 🧮 HTF gate: drop MR rc15={metrics['rc15']:.2f}/rc60={metrics['rc60']:.2f} ts15={metrics['ts15']:.1f}/ts60={metrics['ts60']:.1f} (need rc≥{min_rq:.2f} & ts≤{max_ts:.1f})")
                             candidates = gated
                     except Exception:
                         pass
@@ -3706,24 +3760,73 @@ class TradingBot:
                                         pass
                             except Exception:
                                 pass
-                            # HTF gating for MR (enforced when enabled)
+                            # HTF gating for MR (gated/soft), composite + persistence + promotion bypass
                             try:
                                 htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
-                                if bool(htf_cfg.get('enabled', False)) and str(htf_cfg.get('mode','gated')).lower() == 'gated' and 'regime_analysis' in locals() and regime_analysis is not None:
-                                    rq = float(getattr(regime_analysis, 'range_quality', 0.0))
-                                    ts = float(getattr(regime_analysis, 'trend_strength', 0.0))
+                                if bool(htf_cfg.get('enabled', False)):
+                                    mode = str(htf_cfg.get('mode', 'gated')).lower()
+                                    comp = (htf_cfg.get('composite', {}) or {})
+                                    metrics = self._get_htf_metrics(sym, df)
                                     min_rq = float((htf_cfg.get('mr', {}) or {}).get('min_range_quality', 0.60))
                                     max_ts = float((htf_cfg.get('mr', {}) or {}).get('max_trend_strength', 40.0))
-                                    if not (rq >= min_rq and ts <= max_ts):
-                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_mr (reason=htf_gate rq={rq:.2f} ts={ts:.1f})")
-                                        if mr_phantom_tracker:
-                                            mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
-                                        sig_mr_ind = None
-                                        # Skip MR path after HTF gate
-                                        # Proceed to Trend independent
-                                        
-                                        # Continue outer loop to avoid using cleared signal
-                                        continue
+                                    rc_ok = (metrics['rc15'] >= min_rq) and ((metrics['rc60'] == 0.0) or (metrics['rc60'] >= min_rq))
+                                    ts_ok = (metrics['ts15'] <= max_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] <= max_ts))
+                                    allowed = rc_ok and ts_ok
+                                    mild = False
+                                    # Soft tolerance window
+                                    try:
+                                        tol = (comp.get('soft_tolerance', {}) or {}).get('mr', {})
+                                        rq_tol = float(tol.get('range_quality', 0.05))
+                                        ts_tol = float(tol.get('trend_strength', 5.0))
+                                        mild = ((metrics['rc15'] >= (min_rq - rq_tol)) and (metrics['ts15'] <= (max_ts + ts_tol)))
+                                    except Exception:
+                                        mild = False
+                                    # Promotion bypass tolerance
+                                    try:
+                                        pbx = (comp.get('promotion_bypass', {}) or {}).get('mr', {})
+                                        pbx_en = bool(pbx.get('enabled', True))
+                                        rq_bt = float(pbx.get('range_quality_tol', 0.05))
+                                        ts_bt = float(pbx.get('trend_strength_tol', 5.0))
+                                    except Exception:
+                                        pbx_en = True; rq_bt = 0.05; ts_bt = 5.0
+                                    promo_bypass_ok = pbx_en and (metrics['rc15'] >= (min_rq - rq_bt)) and (metrics['ts15'] <= (max_ts + ts_bt))
+                                    # Persistence hold before flipping to allow
+                                    try:
+                                        min_hold = int((comp.get('min_hold_bars', 0)) or 0)
+                                        if min_hold > 0:
+                                            state = self._htf_hold.setdefault('mr', {}).setdefault(sym, {'last_allow': False, 'last_change_at': None})
+                                            now_idx = df.index[-1]
+                                            prev_allow = bool(state.get('last_allow', False))
+                                            last_change = state.get('last_change_at')
+                                            if allowed and not prev_allow:
+                                                # Require hold window
+                                                if last_change is None or (now_idx - last_change).total_seconds() < (min_hold * int(cfg['trade']['timeframe']) * 60):
+                                                    allowed = False
+                                                    logger.info(f"[{sym}] 🧮 HTF hold: delaying MR allow (hold={min_hold} bars)")
+                                                else:
+                                                    state['last_allow'] = True
+                                            elif not allowed and prev_allow:
+                                                state['last_allow'] = False
+                                                state['last_change_at'] = now_idx
+                                            elif (last_change is None):
+                                                state['last_change_at'] = now_idx
+                                    except Exception:
+                                        pass
+                                    if not allowed:
+                                        if mode == 'gated' and not (mr_should and promo_bypass_ok):
+                                            logger.info(f"[{sym}] 🧮 Decision final: phantom_mr (reason=htf_gate rc15={metrics['rc15']:.2f}/rc60={metrics['rc60']:.2f} ts15={metrics['ts15']:.1f}/ts60={metrics['ts60']:.1f})")
+                                            if mr_phantom_tracker:
+                                                mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+                                            sig_mr_ind = None
+                                            continue
+                                        elif mode == 'soft' and mild:
+                                            # Apply soft penalty to ML threshold
+                                            try:
+                                                pen = int((comp.get('soft_penalty', {}) or {}).get('mr', 5))
+                                                thr_mr = float(thr_mr) + float(pen)
+                                                logger.info(f"[{sym}] 🧮 HTF soft: MR thr +{pen} → {thr_mr:.0f} (mild misalignment)")
+                                            except Exception:
+                                                pass
                             except Exception:
                                 pass
                             # MR regime filter: require ranging regime unless promotion_bypass is active
@@ -3760,11 +3863,24 @@ class TradingBot:
                                     except Exception:
                                         pass
                             else:
-                                # Optional 3m context (diagnostic only)
+                            # Optional 3m context (enforce if configured)
                                 try:
-                                    if bool(((cfg.get('mr', {}).get('context', {}) or {}).get('use_3m_context', False))):
+                                    mctx = (cfg.get('mr', {}).get('context', {}) or {})
+                                    if bool(mctx.get('use_3m_context', False)):
                                         ok3, why3 = self._micro_context_mr(sym, sig_mr_ind.side)
                                         logger.debug(f"[{sym}] MR 3m.ctx: {'ok' if ok3 else 'weak'} ({why3})")
+                                        enforce3 = bool(((cfg.get('router', {}) or {}).get('htf_bias', {}).get('micro_context', {}) or {}).get('mr_enforce', False) or mctx.get('enforce', False))
+                                        if enforce3 and not ok3:
+                                            logger.info(f"[{sym}] 🧮 Decision final: phantom_mr (reason=micro_ctx {why3})")
+                                            if mr_phantom_tracker:
+                                                mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+                                            sig_mr_ind = None
+                                            try:
+                                                if self.flow_controller and self.flow_controller.enabled:
+                                                    self.flow_controller.increment_accepted('mr', 1)
+                                            except Exception:
+                                                pass
+                                            continue
                                 except Exception:
                                     pass
                                 # Phantom record when below threshold
@@ -3847,18 +3963,89 @@ class TradingBot:
                                     logger.debug(f"[{sym}] Trend 3m.ctx: {'ok' if ok3 else 'weak'} ({why3})")
                             except Exception:
                                 pass
-                            # HTF gating for Trend (enforced when enabled)
+                            # HTF gating for Trend (gated/soft), composite + persistence + promotion bypass
                             try:
                                 htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
-                                if bool(htf_cfg.get('enabled', False)) and str(htf_cfg.get('mode','gated')).lower() == 'gated' and 'regime_analysis' in locals() and regime_analysis is not None:
-                                    ts = float(getattr(regime_analysis, 'trend_strength', 0.0))
+                                if bool(htf_cfg.get('enabled', False)):
+                                    mode = str(htf_cfg.get('mode', 'gated')).lower()
+                                    comp = (htf_cfg.get('composite', {}) or {})
+                                    metrics = self._get_htf_metrics(sym, df)
                                     min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
-                                    if not (ts >= min_ts):
-                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=htf_gate ts={ts:.1f}<{min_ts:.1f})")
+                                    ts_ok = (metrics['ts15'] >= min_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] >= min_ts))
+                                    allowed = ts_ok
+                                    mild = False
+                                    # Soft tolerance window
+                                    try:
+                                        tol = (comp.get('soft_tolerance', {}) or {}).get('trend', {})
+                                        ts_tol = float(tol.get('trend_strength', 5.0))
+                                        mild = (metrics['ts15'] >= (min_ts - ts_tol))
+                                    except Exception:
+                                        mild = False
+                                    # Promotion bypass tolerance
+                                    try:
+                                        pbx = (comp.get('promotion_bypass', {}) or {}).get('trend', {})
+                                        pbx_en = bool(pbx.get('enabled', True))
+                                        ts_bt = float(pbx.get('trend_strength_tol', 5.0))
+                                    except Exception:
+                                        pbx_en = True; ts_bt = 5.0
+                                    # Is trend promotion active? (corking)
+                                    tr_promo_active = False
+                                    try:
+                                        tp = shared.get('trend_promotion', {}) if 'shared' in locals() else {}
+                                        tr_promo_active = bool(tp.get('active'))
+                                    except Exception:
+                                        tr_promo_active = False
+                                    promo_bypass_ok = pbx_en and tr_promo_active and (metrics['ts15'] >= (min_ts - ts_bt))
+                                    # Persistence hold before flipping to allow
+                                    try:
+                                        min_hold = int((comp.get('min_hold_bars', 0)) or 0)
+                                        if min_hold > 0:
+                                            state = self._htf_hold.setdefault('trend', {}).setdefault(sym, {'last_allow': False, 'last_change_at': None})
+                                            now_idx = df.index[-1]
+                                            prev_allow = bool(state.get('last_allow', False))
+                                            last_change = state.get('last_change_at')
+                                            if allowed and not prev_allow:
+                                                if last_change is None or (now_idx - last_change).total_seconds() < (min_hold * int(cfg['trade']['timeframe']) * 60):
+                                                    allowed = False
+                                                    logger.info(f"[{sym}] 🧮 HTF hold: delaying TREND allow (hold={min_hold} bars)")
+                                                else:
+                                                    state['last_allow'] = True
+                                            elif not allowed and prev_allow:
+                                                state['last_allow'] = False
+                                                state['last_change_at'] = now_idx
+                                            elif (last_change is None):
+                                                state['last_change_at'] = now_idx
+                                    except Exception:
+                                        pass
+                                    if not allowed:
+                                        if mode == 'gated' and not promo_bypass_ok:
+                                            logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=htf_gate ts15={metrics['ts15']:.1f} ts60={metrics['ts60']:.1f} < {min_ts:.1f})")
+                                            if phantom_tracker:
+                                                phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                                            sig_tr_ind = None
+                                            continue
+                                        elif mode == 'soft' and mild:
+                                            # Apply soft penalty to Trend ML threshold
+                                            try:
+                                                pen = int((comp.get('soft_penalty', {}) or {}).get('trend', 5))
+                                                thr_tr = float(thr_tr) + float(pen) if 'thr_tr' in locals() else float(pen)
+                                                logger.info(f"[{sym}] 🧮 HTF soft: TR thr +{pen} → {thr_tr:.0f} (mild misalignment)")
+                                            except Exception:
+                                                pass
+                            except Exception:
+                                pass
+                            # Optional 3m context enforce for Trend
+                            try:
+                                tctx = (cfg.get('trend', {}).get('context', {}) or {})
+                                if bool(tctx.get('use_3m_context', False)):
+                                    ok3, why3 = self._micro_context_trend(sym, sig_tr_ind.side)
+                                    logger.debug(f"[{sym}] Trend 3m.ctx: {'ok' if ok3 else 'weak'} ({why3})")
+                                    enforce3 = bool(((cfg.get('router', {}) or {}).get('htf_bias', {}).get('micro_context', {}) or {}).get('trend_enforce', False) or tctx.get('enforce', False))
+                                    if enforce3 and not ok3:
+                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=micro_ctx {why3})")
                                         if phantom_tracker:
                                             phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
                                         sig_tr_ind = None
-                                        # Skip Trend path after HTF gate
                                         continue
                             except Exception:
                                 pass

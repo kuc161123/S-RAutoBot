@@ -1077,10 +1077,18 @@ class TradingBot:
                             except Exception:
                                 _df_src = df
                             sc_feats_early = self._build_scalp_features(_df_src, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                            # Compute Scalp ML score for visibility (heuristic if model not ready)
+                            ml_s_early = 0.0
+                            try:
+                                from ml_scorer_scalp import get_scalp_scorer
+                                _scorer = get_scalp_scorer()
+                                ml_s_early, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats_early)
+                            except Exception:
+                                ml_s_early = 0.0
                             scpt.record_scalp_signal(
                                 sym,
                                 {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                0.0,
+                                float(ml_s_early or 0.0),
                                 False,
                                 sc_feats_early
                             )
@@ -1155,6 +1163,14 @@ class TradingBot:
                 sc_feats['routing'] = 'none'
                 try:
                     scpt = get_scalp_phantom_tracker()
+                    # Compute Scalp ML score if scorer is available
+                    ml_s = 0.0
+                    try:
+                        from ml_scorer_scalp import get_scalp_scorer
+                        _scorer = get_scalp_scorer()
+                        ml_s, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats)
+                    except Exception:
+                        ml_s = 0.0
                     # Enforce per-strategy hourly per-symbol budget for scalp
                     hb = self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
                     sc_limit = int(hb.get('scalp', 4))
@@ -1192,7 +1208,7 @@ class TradingBot:
                         scpt.record_scalp_signal(
                             sym,
                             {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                            0.0,
+                            float(ml_s or 0.0),
                             False,
                             sc_feats
                         )
@@ -1213,7 +1229,7 @@ class TradingBot:
                         scpt.record_scalp_signal(
                             sym,
                             {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                            0.0,
+                            float(ml_s or 0.0),
                             False,
                             sc_feats
                         )
@@ -1426,7 +1442,7 @@ class TradingBot:
                 scpt.record_scalp_signal(
                     sym,
                     {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                    0.0,
+                    float(ml_s or 0.0) if 'ml_s' in locals() else 0.0,
                     False,
                     sc_feats
                 )
@@ -1442,7 +1458,7 @@ class TradingBot:
                 scpt.record_scalp_signal(
                     sym,
                     {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                    0.0,
+                    float(ml_s or 0.0) if 'ml_s' in locals() else 0.0,
                     False,
                     sc_feats
                 )
@@ -5655,10 +5671,18 @@ class TradingBot:
                                             try:
                                                 from scalp_phantom_tracker import get_scalp_phantom_tracker
                                                 scpt = get_scalp_phantom_tracker()
+                                                # Compute ML for router-driven scalp phantom
+                                                ml_s = 0.0
+                                                try:
+                                                    from ml_scorer_scalp import get_scalp_scorer
+                                                    _scorer = get_scalp_scorer()
+                                                    ml_s, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats)
+                                                except Exception:
+                                                    ml_s = 0.0
                                                 scpt.record_scalp_signal(
                                                     sym,
                                                     {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                                    0.0,
+                                                    float(ml_s or 0.0),
                                                     False,
                                                     sc_feats
                                                 )

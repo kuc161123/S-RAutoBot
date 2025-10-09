@@ -242,7 +242,7 @@ phantom:
   hourly_symbol_budget:
     trend: 3
     mr: 3
-    scalp: 4
+    scalp: 12
   # Per-strategy daily caps (UTC) — isolation across strategies
   caps:
     trend:
@@ -254,9 +254,9 @@ phantom:
       cluster3: 45
       offhours: 30
     scalp:
-      none: 200
-      cluster3: 60
-      offhours: 40
+      none: 600
+      cluster3: 120
+      offhours: 80
   # Virtual snapshot settings (for calibration around threshold)
   enable_virtual_snapshots: false
   virtual_snapshots_delta: 5   # Create variants at (threshold ± delta)
@@ -346,8 +346,8 @@ scalp:
   independent: true      # When true, Scalp runs fully independent of regime/router
   block_regime: false    # Do not block by regime (e.g., extreme volatility)
   session_only: ["us", "european"]
-  dedup_hours: 8         # Redis dedup window for identical scalp signals
-  cooldown_bars: 8       # Per-symbol cooldown in bars between scalp records
+  dedup_hours: 2         # Redis dedup window for identical scalp signals (loosened for exploration)
+  cooldown_bars: 2       # Per-symbol cooldown in bars between scalp records (loosened for exploration)
   promote_enabled: false
   promote_min_samples: 200
   promote_min_wr: 55.0

@@ -581,6 +581,8 @@ class TradingBot:
         }
         # Cache of latest scalp detections per symbol (for promotion timing)
         self._scalp_last_signal: Dict[str, Dict[str, object]] = {}
+        # Queue for 3m-triggered scalp promotion executions to be processed in main loop
+        self._scalp_exec_queue: List[Dict[str, object]] = []
         # HTF gating persistence (per-strategy per-symbol)
         self._htf_hold: Dict[str, Dict[str, Dict[str, object]]] = {
             'mr': {},
@@ -1051,6 +1053,38 @@ class TradingBot:
                         'sl': float(getattr(sc_sig, 'sl', 0.0) or 0.0),
                         'tp': float(getattr(sc_sig, 'tp', 0.0) or 0.0)
                     }
+                except Exception:
+                    pass
+
+                # If promotion-ready and within reuse window, enqueue execution for main loop
+                try:
+                    s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+                    if bool(s_cfg.get('promote_enabled', False)):
+                        # Compute WR metric
+                        from scalp_phantom_tracker import get_scalp_phantom_tracker
+                        scpt = get_scalp_phantom_tracker()
+                        st = scpt.get_scalp_phantom_stats() or {}
+                        overall_wr = float(st.get('wr', 0.0))
+                        metric = str(s_cfg.get('promote_metric', 'recent')).lower()
+                        window = int(s_cfg.get('promote_window', 50))
+                        wr = overall_wr
+                        if metric == 'recent':
+                            try:
+                                recents = []
+                                for trades in getattr(scpt, 'completed', {}).values():
+                                    for p in trades:
+                                        if getattr(p, 'outcome', None) in ('win','loss'):
+                                            recents.append(p)
+                                recents.sort(key=lambda x: getattr(x, 'exit_time', None) or getattr(x, 'signal_time', None))
+                                recents = recents[-window:]
+                                if recents:
+                                    rw = sum(1 for p in recents if getattr(p, 'outcome', None) == 'win')
+                                    wr = (rw / len(recents)) * 100.0
+                            except Exception:
+                                wr = overall_wr
+                        if wr >= float(s_cfg.get('promote_min_wr', 50.0)):
+                            # Enqueue
+                            self._scalp_exec_queue.append({'symbol': sym, 'side': sc_sig.side, 'entry': float(sc_sig.entry), 'sl': float(sc_sig.sl), 'tp': float(sc_sig.tp), 'ts': pd.Timestamp.utcnow()})
                 except Exception:
                     pass
 
@@ -3939,6 +3973,45 @@ class TradingBot:
                             except Exception:
                                 pass
                             return True
+
+                        # Process any queued 3m-triggered Scalp promotion for this symbol
+                        try:
+                            if hasattr(self, '_scalp_exec_queue') and self._scalp_exec_queue:
+                                recent_secs = int(((cfg.get('scalp', {}) or {}).get('promote_recent_secs', 10)))
+                                pending = [q for q in list(self._scalp_exec_queue) if q.get('symbol') == sym]
+                                for q in pending:
+                                    try:
+                                        # Check freshness window
+                                        if (pd.Timestamp.utcnow() - q.get('ts', pd.Timestamp.utcnow())).total_seconds() > recent_secs:
+                                            self._scalp_exec_queue.remove(q)
+                                            continue
+                                        # Build a signal-like object
+                                        class _Sig:
+                                            side = q.get('side'); entry = q.get('entry'); sl = q.get('sl'); tp = q.get('tp'); meta = {}
+                                        executed = await _try_execute('scalp', _Sig(), ml_score=0.0, threshold=0.0)
+                                        if executed:
+                                            # Mark promotion used
+                                            sp = shared.get('scalp_promotion', {}) if 'shared' in locals() else {}
+                                            if not isinstance(sp, dict): sp = {}
+                                            sp['count'] = int(sp.get('count', 0)) + 1
+                                            sp['active'] = True
+                                            if 'shared' in locals():
+                                                shared['scalp_promotion'] = sp
+                                            self._scalp_exec_queue.remove(q)
+                                            # Skip further processing for this symbol this loop
+                                            raise Exception('scalp_promo_executed')
+                                        else:
+                                            logger.info(f"[{sym}] 🛑 Scalp Promotion blocked: reason=exec_guard")
+                                            self._scalp_exec_queue.remove(q)
+                                    except Exception as _qe:
+                                        if 'scalp_promo_executed' in str(_qe):
+                                            raise
+                                        try:
+                                            self._scalp_exec_queue.remove(q)
+                                        except Exception:
+                                            pass
+                        except Exception:
+                            pass
 
                         # 1) Mean Reversion independent
                         try:

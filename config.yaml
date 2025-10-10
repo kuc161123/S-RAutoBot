@@ -390,6 +390,8 @@ scalp:
     # Allow stream-side immediate execution for extremely high ML scores
     allow_stream_high_ml: true
     high_ml_force: 92
+    # Optionally cancel any active scalp phantom on high-ML execution to avoid duplicate tracking
+    cancel_active_on_high_ml: true
 symbol_meta:
   default:
     qty_step: 0.001

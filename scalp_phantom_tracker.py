@@ -85,6 +85,19 @@ class ScalpPhantomTracker:
         self._symbol_meta: Dict[str, Dict] = {}
         self._load_symbol_meta()
 
+    def cancel_active(self, symbol: str):
+        """Cancel and remove any active scalp phantoms for a symbol.
+
+        Used when a high-ML execution occurs to avoid duplicate tracking.
+        """
+        try:
+            if symbol in self.active:
+                del self.active[symbol]
+                self._save()
+                logger.info(f"[{symbol}] Scalp phantom canceled due to executed trade")
+        except Exception:
+            pass
+
     def set_notifier(self, notifier: Optional[Callable]):
         """Attach a notifier callable(trade) for open/close events."""
         self.notifier = notifier

@@ -3,6 +3,11 @@ from datetime import datetime, timezone
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import UpdateType, ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
+try:
+    # Use HTTPXRequest to tune timeouts and reduce httpx.ReadError during polling
+    from telegram.request import HTTPXRequest
+except Exception:
+    HTTPXRequest = None
 import telegram.error
 import asyncio
 import logging
@@ -16,7 +21,20 @@ logger = logging.getLogger(__name__)
 class TGBot:
     def __init__(self, token:str, chat_id:int, shared:dict):
         # shared contains {"risk": RiskConfig, "book": Book, "panic": list, "meta": dict}
-        self.app = Application.builder().token(token).build()
+        # Build Application with a resilient HTTPX client when available
+        if HTTPXRequest is not None:
+            try:
+                request = HTTPXRequest(
+                    connect_timeout=10.0,
+                    read_timeout=35.0,
+                    write_timeout=35.0,
+                    pool_timeout=10.0
+                )
+                self.app = Application.builder().token(token).request(request).build()
+            except Exception:
+                self.app = Application.builder().token(token).build()
+        else:
+            self.app = Application.builder().token(token).build()
         self.chat_id = chat_id
         self.shared = shared
         # Simple per-command cooldown

@@ -1,7 +1,7 @@
 FROM python:3.11-slim
 
 # Build identifier to help force rebuilds and fingerprint deployments
-ARG BUILD_ID="2025-10-10T06:10Z"
+ARG BUILD_ID="2025-10-10T06:22Z"
 ENV BUILD_ID=${BUILD_ID}
 LABEL org.opencontainers.image.created=${BUILD_ID}
 

@@ -2767,60 +2767,7 @@ class TradingBot:
         except Exception:
             pass
 
-    def _flush_deferred_mr(self, enhanced_mr_scorer_ref=None, original_mr_scorer_ref=None, max_items: int = 50) -> int:
-        """Flush deferred MR outcomes from Redis into available scorers.
-
-        Returns number of flushed items.
-        """
-        try:
-            if getattr(self, '_redis', None) is None:
-                return 0
-            flushed = 0
-            import json
-            for _ in range(max_items):
-                item = self._redis.lpop('ml:deferred:mr_outcomes')
-                if not item:
-                    break
-                try:
-                    rec = json.loads(item)
-                    signal_data = {
-                        'symbol': rec.get('symbol',''),
-                        'features': rec.get('features', {}) or {},
-                        'score': 0,
-                        'was_executed': True,
-                        'meta': {}
-                    }
-                    outcome = rec.get('outcome', 'loss')
-                    pnl_pct = float(rec.get('pnl_pct', 0.0) or 0.0)
-                    routed = False
-                    if enhanced_mr_scorer_ref is not None:
-                        try:
-                            enhanced_mr_scorer_ref.record_outcome(signal_data, outcome, pnl_pct)
-                            routed = True
-                        except Exception:
-                            routed = False
-                    if (not routed) and (original_mr_scorer_ref is not None):
-                        try:
-                            original_mr_scorer_ref.record_outcome(signal_data, outcome, pnl_pct)
-                            routed = True
-                        except Exception:
-                            routed = False
-                    if not routed:
-                        # Push back and stop flushing until scorer is available
-                        self._redis.lpush('ml:deferred:mr_outcomes', item)
-                        break
-                    flushed += 1
-                except Exception:
-                    # Skip malformed item
-                    continue
-            if flushed:
-                try:
-                    logger.info(f"MR deferred queue flushed: {flushed} item(s)")
-                except Exception:
-                    pass
-            return flushed
-        except Exception:
-            return 0
+        # (removed duplicated helper definition mistakenly inserted here)
 
         logger.info(f"Trading symbols: {symbols}")
         logger.info(f"Timeframe: {tf} minutes")

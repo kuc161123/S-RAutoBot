@@ -3988,11 +3988,22 @@ class TradingBot:
                             try:
                                 if strategy_name == 'trend_breakout':
                                     ctx_cfg = (cfg.get('trend', {}).get('context', {}) or {}) if 'cfg' in locals() else {}
-                                    if bool(ctx_cfg.get('enforce', False)):
+                                    # Bypass micro-context enforcement for HIGH-ML trend executions
+                                    is_high_ml = False
+                                    try:
+                                        is_high_ml = isinstance(getattr(sig_obj, 'meta', {}), dict) and bool(sig_obj.meta.get('high_ml'))
+                                    except Exception:
+                                        is_high_ml = False
+                                    if bool(ctx_cfg.get('enforce', False)) and not is_high_ml:
                                         ok3, why3 = self._micro_context_trend(sym, sig_obj.side)
                                         if not ok3:
                                             dbg_logger.debug(f"[{sym}] Trend: skip — 3m_ctx_enforce ({why3})")
                                             return False
+                                    elif bool(ctx_cfg.get('enforce', False)) and is_high_ml:
+                                        try:
+                                            logger.info(f"[{sym}] 🧮 Trend 3m.ctx bypass: HIGH-ML execution")
+                                        except Exception:
+                                            pass
                                 elif strategy_name == 'enhanced_mr':
                                     ctx_cfg = (cfg.get('mr', {}).get('context', {}) or {}) if 'cfg' in locals() else {}
                                     if bool(ctx_cfg.get('enforce', False)):

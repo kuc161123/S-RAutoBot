@@ -22,6 +22,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Sanity check: ensure live_bot.py parses in this image
+RUN python -m py_compile live_bot.py
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV TZ=UTC

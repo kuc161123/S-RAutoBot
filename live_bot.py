@@ -793,6 +793,7 @@ class TradingBot:
             logger.info(f"[{sym}] Scalp stream execute error: {e}")
             return False
 
+
     # --- Scalp feature builder for ML/phantom ---
     def _build_scalp_features(self, df: pd.DataFrame, sc_meta: dict | None = None,
                               vol_level: str | None = None, cluster_id: int | None = None) -> dict:

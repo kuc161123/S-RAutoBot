@@ -3306,15 +3306,9 @@ class TradingBot:
                     "_Use /dashboard for full status_"
                 )
 
-                if phantom_tracker and hasattr(phantom_tracker, 'set_notifier'):
-                    def trend_notifier(trade, scope='Trend'):
-                        self._create_task(self._notify_phantom_trade(scope, trade))
-                    phantom_tracker.set_notifier(trend_notifier)
+                # Phantom notifications are disabled (only executed high-ML opens + all closes sent elsewhere)
 
-                if mr_phantom_tracker and hasattr(mr_phantom_tracker, 'set_notifier'):
-                    def mr_notifier(trade, scope='Mean Reversion'):
-                        self._create_task(self._notify_phantom_trade(scope, trade))
-                    mr_phantom_tracker.set_notifier(mr_notifier)
+                # MR phantom notifier disabled
                 # One-time backfill of MR phantom outcomes into Enhanced MR ML (avoid duplicates via Redis flag)
                 try:
                     if enhanced_mr_scorer is not None:
@@ -3398,6 +3392,8 @@ class TradingBot:
                                 # Immediately evaluate Trend promotion (corking) after startup
                                 try:
                                     tr_cfg = (self.config.get('trend', {}) or {}).get('promotion', {})
+                                    if not bool(tr_cfg.get('enabled', False)):
+                                        raise Exception('Trend promotion disabled')
                                     if tr_cfg.get('enabled', False):
                                         tp = shared.get('trend_promotion', {})
                                         from datetime import datetime as _dt
@@ -3433,10 +3429,7 @@ class TradingBot:
                 try:
                     if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
                         scpt = get_scalp_phantom_tracker()
-                        if hasattr(scpt, 'set_notifier'):
-                            def scalp_notifier(trade, scope='Scalp'):
-                                self._create_task(self._notify_phantom_trade(scope, trade))
-                            scpt.set_notifier(scalp_notifier)
+                        # Scalp phantom notifier disabled
                         # Compute promotion readiness from config and stats
                         try:
                             scalp_cfg = cfg.get('scalp', {})
@@ -4333,10 +4326,11 @@ class TradingBot:
                                             pass
                                 # Promotion override regardless of earlier guards
                                 prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
+                                promote_enabled = bool(prom_cfg.get('enabled', False))
                                 promote_wr = float(prom_cfg.get('promote_wr', 50.0))
                                 mr_stats = enhanced_mr_scorer.get_enhanced_stats() if enhanced_mr_scorer else {}
                                 recent_wr = float(mr_stats.get('recent_win_rate', 0.0))
-                                if recent_wr >= promote_wr:
+                                if promote_enabled and recent_wr >= promote_wr:
                                     # Force execute immediately — bypass HTF, regime, micro gates. Only hard exec guards apply.
                                     try:
                                         if not sig_mr_ind.meta:
@@ -6184,7 +6178,7 @@ class TradingBot:
                                 # MR Promotion override: execute despite ML below threshold (bypass all guards when WR ≥ promote_wr)
                                 try:
                                     prom_cfg = (self.config.get('mr', {}) or {}).get('promotion', {})
-                                    if not should_take_trade:
+                                    if not should_take_trade and bool(prom_cfg.get('enabled', False)):
                                         promote_wr = float(prom_cfg.get('promote_wr', 50.0))
                                         mr_stats = enhanced_mr_scorer.get_enhanced_stats() if enhanced_mr_scorer else {}
                                         recent_wr = float(mr_stats.get('recent_win_rate', 0.0))

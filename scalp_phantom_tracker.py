@@ -102,6 +102,71 @@ class ScalpPhantomTracker:
         """Attach a notifier callable(trade) for open/close events."""
         self.notifier = notifier
 
+    def backfill_active(self, fetch_klines: Optional[Callable[[str, int, Optional[int]], list]] = None) -> int:
+        """Retro-close active scalp phantoms by scanning historical candles.
+
+        Args:
+            fetch_klines: function(symbol, start_ms, end_ms) -> list of bars with
+                          dict-like items containing 'high' and 'low' floats.
+                          If None, no backfill is performed.
+
+        Returns:
+            Number of phantoms closed by backfill.
+        """
+        if not fetch_klines or not self.active:
+            return 0
+        closed = 0
+        from datetime import datetime as _dt
+        now_ms = int(_dt.utcnow().timestamp() * 1000)
+        for symbol in list(self.active.keys()):
+            items = list(self.active.get(symbol, []))
+            remaining: List[ScalpPhantomTrade] = []
+            for ph in items:
+                try:
+                    start_ms = int(ph.signal_time.timestamp() * 1000)
+                    bars = fetch_klines(symbol, start_ms, now_ms) or []
+                    outcome = None
+                    for b in bars:
+                        try:
+                            hi = float(b.get('high'))
+                            lo = float(b.get('low'))
+                        except Exception:
+                            try:
+                                hi = float(b[2])
+                                lo = float(b[3])
+                            except Exception:
+                                continue
+                        if ph.side == 'long':
+                            hit_sl = lo <= ph.stop_loss
+                            hit_tp = hi >= ph.take_profit
+                            if hit_sl or hit_tp:
+                                outcome = 'loss' if hit_sl else 'win'
+                                break
+                        else:
+                            hit_sl = hi >= ph.stop_loss
+                            hit_tp = lo <= ph.take_profit
+                            if hit_sl or hit_tp:
+                                outcome = 'loss' if hit_sl else 'win'
+                                break
+                    if outcome:
+                        exit_reason = 'tp' if outcome == 'win' else 'sl'
+                        self._close(symbol, ph, ph.take_profit if outcome=='win' else ph.stop_loss, outcome)
+                        closed += 1
+                    else:
+                        remaining.append(ph)
+                except Exception:
+                    remaining.append(ph)
+            if remaining:
+                self.active[symbol] = remaining
+            else:
+                try:
+                    del self.active[symbol]
+                except Exception:
+                    pass
+        if closed:
+            self._save()
+        return closed
+
     def _load_symbol_meta(self):
         try:
             with open('config.yaml','r') as f:

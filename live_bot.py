@@ -3429,6 +3429,27 @@ class TradingBot:
                 try:
                     if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
                         scpt = get_scalp_phantom_tracker()
+                        # Downtime backfill for Scalp phantoms using exchange klines
+                        try:
+                            if hasattr(scpt, 'backfill_active') and self.bybit is not None:
+                                def _fetch3(sym: str, start_ms: int, end_ms: Optional[int] = None):
+                                    try:
+                                        rows = self.bybit.get_klines(sym, '3', limit=200, start=start_ms, end=end_ms) or []
+                                        out = []
+                                        for r in rows:
+                                            # Bybit v5 kline list: [start, open, high, low, close, volume, turnover]
+                                            try:
+                                                out.append({'high': float(r[2]), 'low': float(r[3])})
+                                            except Exception:
+                                                pass
+                                        return out
+                                    except Exception:
+                                        return []
+                                closed = scpt.backfill_active(_fetch3)
+                                if closed:
+                                    logger.info(f"🩳 Scalp phantom backfill: closed {closed} due to downtime recovery")
+                        except Exception as _bf:
+                            logger.debug(f"Scalp phantom backfill skipped: {_bf}")
                         # Scalp phantom notifier disabled
                         # Compute promotion readiness from config and stats
                         try:

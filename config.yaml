@@ -283,9 +283,9 @@ phantom:
 phantom_flow:
   enabled: true
   daily_target:
-    trend: 60
-    mr: 80
-    scalp: 80
+    trend: 200
+    mr: 200
+    scalp: 200
   smoothing_hours: 2
   relax_limits:
     trend:

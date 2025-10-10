@@ -119,7 +119,7 @@ else:
     logger.info("Using JSON trade tracker")
 
 # Bot build/version tag (bump to trigger deploys and visible in logs)
-VERSION = "2025.10.09.3"
+VERSION = "2025.10.10.1"
 
 # Load environment variables
 load_dotenv()

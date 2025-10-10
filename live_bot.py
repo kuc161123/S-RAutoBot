@@ -2313,9 +2313,10 @@ class TradingBot:
                                         ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
                                         logger.info(f"[{symbol}] Trend ML updated with outcome.")
                             else:
-                                # Original system - record in appropriate ML scorer
-                                if 'skip_ml_update_manual' not in locals():
-                                    if pos.strategy_name == "mean_reversion" and shared_mr_scorer:
+                                # Robust routing by strategy_name when enhanced path isn't active
+                                if not skip_ml_update_manual:
+                                    is_mr_trade = str(getattr(pos, 'strategy_name', '')).lower() in ("enhanced_mr", "mean_reversion")
+                                    if is_mr_trade:
                                         if mr_promo_flag:
                                             logger.info(f"[{symbol}] MR Promotion was active — skipping executed MR ML update (phantom path will learn)")
                                             try:
@@ -2324,11 +2325,50 @@ class TradingBot:
                                             except Exception:
                                                 pass
                                         else:
-                                            shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                            logger.info(f"[{symbol}] Mean Reversion ML updated with outcome.")
-                                    elif ml_scorer is not None:
-                                        ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                        logger.info(f"[{symbol}] Trend ML updated with outcome.")
+                                            routed = False
+                                            # Prefer Enhanced MR scorer if available even when use_enhanced flag is false
+                                            if shared_enhanced_mr is not None:
+                                                try:
+                                                    shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
+                                                    logger.info(f"[{symbol}] Enhanced MR ML updated with outcome (fallback path).")
+                                                    routed = True
+                                                except Exception as e:
+                                                    logger.warning(f"[{symbol}] Enhanced MR ML update failed: {e}")
+                                            if (not routed) and (shared_mr_scorer is not None):
+                                                try:
+                                                    shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                                    logger.info(f"[{symbol}] Original MR ML updated with outcome (fallback path).")
+                                                    routed = True
+                                                except Exception as e:
+                                                    logger.warning(f"[{symbol}] Original MR ML update failed: {e}")
+                                            if not routed:
+                                                try:
+                                                    if getattr(self, '_redis', None) is not None:
+                                                        import json
+                                                        rec = {
+                                                            'symbol': symbol,
+                                                            'outcome': outcome,
+                                                            'pnl_pct': float(pnl_pct),
+                                                            'features': signal_data.get('features', {}),
+                                                            'ts': datetime.utcnow().isoformat(),
+                                                            'was_executed': True
+                                                        }
+                                                        self._redis.rpush('ml:deferred:mr_outcomes', json.dumps(rec))
+                                                        self._redis.ltrim('ml:deferred:mr_outcomes', -1000, -1)
+                                                        logger.info(f"[{symbol}] MR ML skipped: no scorer attached — deferred to Redis queue")
+                                                    else:
+                                                        logger.warning(f"[{symbol}] MR ML skipped: no scorer attached and no Redis available")
+                                                except Exception as e:
+                                                    logger.warning(f"[{symbol}] MR deferred enqueue failed: {e}")
+                                    else:
+                                        # Trend strategy
+                                        logger.info(f"[{symbol}] 🔵 TREND STRATEGY detected")
+                                        if ml_scorer is not None:
+                                            try:
+                                                ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                                logger.info(f"[{symbol}] Trend ML updated with outcome.")
+                                            except Exception as e:
+                                                logger.warning(f"[{symbol}] Trend ML update failed: {e}")
 
                             
                             # Log with clear outcome based on actual P&L and corrected exit reason
@@ -2725,6 +2765,61 @@ class TradingBot:
             logger.info(f"🧬 Build: {sha} ver={VERSION} id={build_id} @ {datetime.utcnow().isoformat()}Z")
         except Exception:
             pass
+
+    def _flush_deferred_mr(self, enhanced_mr_scorer_ref=None, original_mr_scorer_ref=None, max_items: int = 50) -> int:
+        """Flush deferred MR outcomes from Redis into available scorers.
+
+        Returns number of flushed items.
+        """
+        try:
+            if getattr(self, '_redis', None) is None:
+                return 0
+            flushed = 0
+            import json
+            for _ in range(max_items):
+                item = self._redis.lpop('ml:deferred:mr_outcomes')
+                if not item:
+                    break
+                try:
+                    rec = json.loads(item)
+                    signal_data = {
+                        'symbol': rec.get('symbol',''),
+                        'features': rec.get('features', {}) or {},
+                        'score': 0,
+                        'was_executed': True,
+                        'meta': {}
+                    }
+                    outcome = rec.get('outcome', 'loss')
+                    pnl_pct = float(rec.get('pnl_pct', 0.0) or 0.0)
+                    routed = False
+                    if enhanced_mr_scorer_ref is not None:
+                        try:
+                            enhanced_mr_scorer_ref.record_outcome(signal_data, outcome, pnl_pct)
+                            routed = True
+                        except Exception:
+                            routed = False
+                    if (not routed) and (original_mr_scorer_ref is not None):
+                        try:
+                            original_mr_scorer_ref.record_outcome(signal_data, outcome, pnl_pct)
+                            routed = True
+                        except Exception:
+                            routed = False
+                    if not routed:
+                        # Push back and stop flushing until scorer is available
+                        self._redis.lpush('ml:deferred:mr_outcomes', item)
+                        break
+                    flushed += 1
+                except Exception:
+                    # Skip malformed item
+                    continue
+            if flushed:
+                try:
+                    logger.info(f"MR deferred queue flushed: {flushed} item(s)")
+                except Exception:
+                    pass
+            return flushed
+        except Exception:
+            return 0
         
         # Extract configuration
         symbols = [s.upper() for s in cfg["trade"]["symbols"]]
@@ -2940,6 +3035,11 @@ class TradingBot:
                             logger.info("✅ Enhanced MR Redis keys cleared and counters reset")
                     except Exception as e:
                         logger.debug(f"Enhanced MR diagnostics/clear failed: {e}")
+                    # Flush any deferred MR outcomes now that scorers are available
+                    try:
+                        self._flush_deferred_mr(enhanced_mr_scorer_ref=enhanced_mr_scorer, original_mr_scorer_ref=None)
+                    except Exception:
+                        pass
 
                 else:
                     # Initialize original ML system
@@ -2959,7 +3059,11 @@ class TradingBot:
                         logger.info(f"   Recent win rate: {ml_stats['recent_win_rate']:.1f}%")
                     if ml_stats['models_active']:
                         logger.info(f"   Active models: {', '.join(ml_stats['models_active'])}")
-                    
+                    # Flush any deferred MR outcomes using original MR scorer
+                    try:
+                        self._flush_deferred_mr(enhanced_mr_scorer_ref=None, original_mr_scorer_ref=mean_reversion_scorer)
+                    except Exception:
+                        pass
                 # Phantom trades now expire naturally on TP/SL - no timeout needed
                 
                 # Perform startup retrain with all available data

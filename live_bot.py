@@ -4382,6 +4382,25 @@ class TradingBot:
                                     except Exception:
                                         pbx_en = True; rq_bt = 0.05; ts_bt = 5.0
                                     promo_bypass_ok = pbx_en and (metrics['rc15'] >= (min_rq - rq_bt)) and (metrics['ts15'] <= (max_ts + ts_bt))
+
+                                    # New: Unconditional bypass of MR HTF gate when promotion is active
+                                    # or when ML is in the high-ML band. This ensures promotions and
+                                    # high-ML signals reach execution even if HTF metrics disagree.
+                                    try:
+                                        is_promo_active = bool((shared.get('mr_promotion', {}) or {}).get('active'))
+                                    except Exception:
+                                        is_promo_active = False
+                                    try:
+                                        hi_force = float((((cfg.get('mr', {}) or {}).get('exec', {}) or {}).get('high_ml_force', 90.0)))
+                                    except Exception:
+                                        hi_force = 90.0
+                                    if not allowed and (is_promo_active or float(ml_score_mr or 0.0) >= hi_force):
+                                        allowed = True
+                                        try:
+                                            reason = 'promotion' if is_promo_active else f"ml_extreme {float(ml_score_mr or 0.0):.1f}>={hi_force:.0f}"
+                                            logger.info(f"[{sym}] 🧮 HTF gate bypass (MR): allow due to {reason}")
+                                        except Exception:
+                                            pass
                                     # Persistence hold before flipping to allow
                                     try:
                                         min_hold = int((comp.get('min_hold_bars', 0)) or 0)

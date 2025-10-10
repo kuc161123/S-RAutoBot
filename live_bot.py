@@ -2767,11 +2767,6 @@ class TradingBot:
         except Exception:
             pass
 
-        # Extract configuration
-        symbols = [s.upper() for s in cfg["trade"]["symbols"]]
-        tf = cfg["trade"]["timeframe"]
-        topics = [f"{tf}.{s}" for s in symbols]
-
     def _flush_deferred_mr(self, enhanced_mr_scorer_ref=None, original_mr_scorer_ref=None, max_items: int = 50) -> int:
         """Flush deferred MR outcomes from Redis into available scorers.
 
@@ -2826,12 +2821,7 @@ class TradingBot:
             return flushed
         except Exception:
             return 0
-        
-        # Extract configuration
-        symbols = [s.upper() for s in cfg["trade"]["symbols"]]
-        tf = cfg["trade"]["timeframe"]
-        topics = [f"{tf}.{s}" for s in symbols]
-        
+
         logger.info(f"Trading symbols: {symbols}")
         logger.info(f"Timeframe: {tf} minutes")
         logger.info("📌 Bot Policy: Existing positions and orders will NOT be modified - they will run their course")

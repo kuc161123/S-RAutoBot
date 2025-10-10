@@ -5820,8 +5820,14 @@ class TradingBot:
                                                 # Compute ML for router-driven scalp phantom
                                                 ml_s = 0.0
                                                 try:
-                                                _scorer = get_scalp_scorer() if get_scalp_scorer is not None else None
-                                                ml_s, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats)
+                                                    _scorer = get_scalp_scorer() if get_scalp_scorer is not None else None
+                                                    if _scorer:
+                                                        ml_s, _ = _scorer.score_signal(
+                                                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                                            sc_feats
+                                                        )
+                                                    else:
+                                                        ml_s = 0.0
                                                 except Exception:
                                                     ml_s = 0.0
                                                 scpt.record_scalp_signal(

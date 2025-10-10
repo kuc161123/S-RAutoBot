@@ -773,7 +773,8 @@ class TradingBot:
                 sl=float(sig_obj.sl),
                 tp=float(sig_obj.tp),
                 entry_time=datetime.now(),
-                strategy_name='scalp'
+                strategy_name='scalp',
+                ml_score=float(ml_score or 0.0)
             )
             # Telegram notify
             try:
@@ -1131,8 +1132,9 @@ class TradingBot:
                         pass
                     # Do not spam logs at 3m otherwise; only log positives and regime skips
                     continue
+                # Suppress non-high-ML chatter; only log minimal detection
                 try:
-                    logger.info(f"[{sym}] 🩳 Scalp signal: {getattr(sc_sig, 'side','?').upper()} @ {float(getattr(sc_sig,'entry',0.0)):.4f}")
+                    logger.debug(f"[{sym}] 🩳 Scalp signal det: {getattr(sc_sig, 'side','?').upper()} @ {float(getattr(sc_sig,'entry',0.0)):.4f}")
                 except Exception:
                     pass
 
@@ -1396,7 +1398,7 @@ class TradingBot:
                         logger.info(f"[{sym}] 🩳 Scalp decision context: dedup={dedup_ok} hourly_remaining={max(0, sc_remaining)} daily_ok={daily_ok}")
                     except Exception:
                         pass
-                    # Debug: force-accept path for diagnostics
+                    # Force-accept disabled in high-ML-only mode
                     force_accept = False
                     try:
                         force_accept = bool(((self.config.get('scalp', {}).get('debug', {}) or {}).get('force_accept', False)))
@@ -4236,7 +4238,8 @@ class TradingBot:
                                 sl=sig_obj.sl,
                                 tp=sig_obj.tp,
                                 entry_time=datetime.now(),
-                                strategy_name=strategy_name
+                                strategy_name=strategy_name,
+                                ml_score=float(ml_score or 0.0)
                             )
                             # Optionally cancel active phantoms on execution (config)
                             try:
@@ -4248,18 +4251,17 @@ class TradingBot:
                                         phantom_tracker.cancel_active(sym)
                             except Exception:
                                 pass
-                            # Notify
+                            # Notify only for high-ML executions (Trend/MR)
                             try:
-                                if self.tg:
+                                if self.tg and isinstance(getattr(sig_obj, 'meta', {}), dict) and sig_obj.meta.get('high_ml'):
                                     emoji = '📈'
                                     strategy_label = 'Enhanced Mr' if strategy_name=='enhanced_mr' else 'Trend Breakout'
                                     msg = (
-                                        f"{emoji} *{sym} {sig_obj.side.upper()}* ({strategy_label})\n\n"
+                                        f"🔥 HIGH-ML EXECUTE: {emoji} *{sym} {sig_obj.side.upper()}* ({strategy_label})\n\n"
                                         f"Entry: {actual_entry:.4f}\n"
                                         f"Stop Loss: {sig_obj.sl:.4f}\n"
                                         f"Take Profit: {sig_obj.tp:.4f}\n"
-                                        f"Quantity: {qty}\n"
-                                        f"Risk: {risk.risk_percent if risk.use_percent_risk else risk.risk_usd}{'%' if risk.use_percent_risk else ''} (${risk_amount:.2f})\n"
+                                        f"Quantity: {qty}"
                                     )
                                     await self.tg.send_message(msg)
                             except Exception:
@@ -4459,20 +4461,14 @@ class TradingBot:
                             except Exception:
                                 pass
                             if mr_should and sig_mr_ind is not None:
-                                executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
-                                if not executed and mr_phantom_tracker and sig_mr_ind is not None:
-                                    logger.debug(f"[{sym}] MR: skip — execution guard (see prior logs)")
-                                    # Record phantom when position exists or execution not possible
+                                # Disable normal MR execution – only high-ML executes
+                                if mr_phantom_tracker:
                                     mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
                                     try:
-                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_mr (reason=exec_guard)")
+                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_mr (reason=ml_below_high_ml)")
                                     except Exception:
                                         pass
-                                    try:
-                                        if self.flow_controller and self.flow_controller.enabled:
-                                            self.flow_controller.increment_accepted('mr', 1)
-                                    except Exception:
-                                        pass
+                                continue
                             else:
                             # Optional 3m context (enforce if configured)
                                 try:
@@ -4580,6 +4576,7 @@ class TradingBot:
                                         except Exception:
                                             sig_tr_ind.meta = {}
                                         sig_tr_ind.meta['promotion_forced'] = True
+                                        sig_tr_ind.meta['high_ml'] = True
                                         executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
                                         if executed:
                                             try:
@@ -4767,20 +4764,15 @@ class TradingBot:
                                     except Exception:
                                         pass
                             else:
-                                if tr_should:
-                                    executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
-                                    if not executed and phantom_tracker and sig_tr_ind is not None:
-                                        logger.debug(f"[{sym}] Trend: skip — execution guard (see prior logs)")
-                                        phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
-                                        try:
-                                            logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=exec_guard)")
-                                        except Exception:
-                                            pass
-                                        try:
-                                            if self.flow_controller and self.flow_controller.enabled:
-                                                self.flow_controller.increment_accepted('trend', 1)
-                                        except Exception:
-                                            pass
+                            if tr_should:
+                                # Disable normal Trend execution – only high-ML executes
+                                if phantom_tracker and sig_tr_ind is not None:
+                                    phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                                    try:
+                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=ml_below_high_ml)")
+                                    except Exception:
+                                        pass
+                                continue
                                 else:
                                     if phantom_tracker:
                                         try:

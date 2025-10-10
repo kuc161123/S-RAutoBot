@@ -222,7 +222,7 @@ mr:
     enable_virtual_snapshots: true
     snapshots_delta: 5
   promotion:
-    enabled: true
+    enabled: false
     promote_wr: 3.0         # Activate when recent WR ≥ 3%
     demote_wr: 0.0          # Deactivate when recent WR < 0%
     min_recent: 20          # Require at least this many recent MR trades for decision
@@ -368,7 +368,7 @@ scalp:
   cooldown_bars: 2       # Per-symbol cooldown in bars between scalp records (loosened for exploration)
   debug:
     force_accept: false  # Off: return to normal acceptance with decision reasons
-  promote_enabled: true
+  promote_enabled: false
   promote_min_samples: 200
   promote_min_wr: 50.0
   daily_exec_cap: 20

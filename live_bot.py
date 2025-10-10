@@ -2768,6 +2768,11 @@ class TradingBot:
             pass
 
         # (removed duplicated helper definition mistakenly inserted here)
+        
+        # Extract configuration
+        symbols = [s.upper() for s in cfg["trade"]["symbols"]]
+        tf = cfg["trade"]["timeframe"]
+        topics = [f"{tf}.{s}" for s in symbols]
 
         logger.info(f"Trading symbols: {symbols}")
         logger.info(f"Timeframe: {tf} minutes")

@@ -104,7 +104,7 @@ class MultiWebSocketHandler:
                 
                 async with websockets.connect(
                     self.ws_url,
-                    ping_interval=30,
+                    ping_interval=25,
                     ping_timeout=20
                 ) as ws:
                     # Reset backoff on successful connection
@@ -118,7 +118,7 @@ class MultiWebSocketHandler:
                     last_warn_ts = 0.0
                     while self._is_running():
                         try:
-                            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=45))
+                            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=90))
                             timeouts = 0  # reset timeout counter on message
                             last_msg_ts = time.monotonic()
                             
@@ -153,7 +153,8 @@ class MultiWebSocketHandler:
                                 logger.warning(f"[WS-{conn_id}] Repeated timeouts ({timeouts}), reconnecting...")
                                 break
                         except websockets.exceptions.ConnectionClosed:
-                            logger.warning(f"[WS-{conn_id}] Connection closed, reconnecting...")
+                            # Throttle warning frequency; log INFO if recent
+                            logger.info(f"[WS-{conn_id}] Connection closed, reconnecting…")
                             break
                         except asyncio.CancelledError:
                             logger.debug(f"[WS-{conn_id}] Task cancelled")

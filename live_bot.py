@@ -2570,42 +2570,65 @@ class TradingBot:
             logger.error(f"Failed to recover positions: {e}")
     
     async def kline_stream(self, ws_url:str, topics:list[str]):
-        """Stream klines from Bybit WebSocket"""
+        """Stream klines from Bybit WebSocket (main 15m stream) with resilient keepalive/backoff."""
         sub = {"op":"subscribe","args":[f"kline.{t}" for t in topics]}
+        backoff = 3.0
+        max_backoff = 30.0
+        last_warn = 0.0
         
         while self.running:
             try:
                 logger.info(f"Connecting to WebSocket: {ws_url}")
-                async with websockets.connect(ws_url, ping_interval=20, ping_timeout=10) as ws:
+                # Slightly longer recv timeout; steadier ping cadence
+                async with websockets.connect(ws_url, ping_interval=25, ping_timeout=20) as ws:
                     self.ws = ws
                     await ws.send(json.dumps(sub))
                     logger.info(f"Subscribed to topics: {topics}")
-                    
+                    backoff = 3.0  # reset after successful connect
+                    last_msg = time.monotonic()
+
                     while self.running:
                         try:
-                            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=30))
-                            
+                            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=90))
+                            last_msg = time.monotonic()
                             if msg.get("success") == False:
-                                logger.error(f"Subscription failed: {msg}")
+                                if "already subscribed" in msg.get("ret_msg", ""):
+                                    logger.debug("Already subscribed; continuing")
+                                else:
+                                    logger.error(f"Subscription failed: {msg}")
                                 continue
-                                
                             topic = msg.get("topic","")
                             if topic.startswith("kline."):
                                 sym = topic.split(".")[-1]
                                 for k in msg.get("data", []):
                                     yield sym, k
-                                    
                         except asyncio.TimeoutError:
-                            logger.debug("WebSocket timeout, sending ping")
-                            await ws.ping()
+                            # Keepalive ping after idle
+                            try:
+                                await ws.ping()
+                                logger.debug("WebSocket idle ping sent")
+                            except Exception:
+                                now = time.monotonic()
+                                if now - last_warn > 120:
+                                    logger.warning("WebSocket ping failed after timeout, reconnecting...")
+                                    last_warn = now
+                                break
                         except websockets.exceptions.ConnectionClosed:
-                            logger.warning("WebSocket connection closed, reconnecting...")
+                            now = time.monotonic()
+                            if now - last_warn > 120:
+                                logger.warning("WebSocket connection closed, reconnecting...")
+                                last_warn = now
+                            else:
+                                logger.info("WebSocket connection closed, reconnecting…")
                             break
-                            
             except Exception as e:
                 logger.error(f"WebSocket error: {e}")
-                if self.running:
-                    await asyncio.sleep(5)  # Wait before reconnecting
+            # Backoff between reconnects while running
+            if self.running:
+                import random
+                sleep_s = min(max_backoff, backoff * (1.0 + random.uniform(-0.2, 0.2)))
+                await asyncio.sleep(sleep_s)
+                backoff = min(max_backoff, backoff * 1.6)
 
     async def auto_generate_enhanced_clusters(self):
         """Auto-generate or update enhanced clusters if needed"""

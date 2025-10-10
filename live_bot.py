@@ -1156,7 +1156,6 @@ class TradingBot:
                     fa_cfg = (self.config.get('scalp', {}).get('debug', {}) or {}) if hasattr(self, 'config') else {}
                     if bool(fa_cfg.get('force_accept', False)):
                         try:
-                            from scalp_phantom_tracker import get_scalp_phantom_tracker
                             scpt = get_scalp_phantom_tracker()
                             # Choose a source df safely without boolean evaluation on DataFrames
                             _df_src = None
@@ -1201,7 +1200,6 @@ class TradingBot:
                 # Dedup via Redis (phantom dedup scope)
                 dedup_ok = True
                 try:
-                    from scalp_phantom_tracker import get_scalp_phantom_tracker
                     scpt = get_scalp_phantom_tracker()
                     r = scpt.redis_client
                     if r is not None:
@@ -1384,8 +1382,7 @@ class TradingBot:
                         self._scalp_budget[sym] = blist
                         # Shadow execute Scalp if ML is trained and score ≥ threshold
                         try:
-                            from ml_scorer_scalp import get_scalp_scorer
-                            scorer = get_scalp_scorer()
+                            scorer = get_scalp_scorer() if get_scalp_scorer is not None else None
                             if getattr(scorer, 'is_ml_ready', False):
                                 score, _ = scorer.score_signal({'side': sc_sig.side}, sc_feats)
                                 thr_sc = getattr(scorer, 'min_score', 75)
@@ -1495,7 +1492,6 @@ class TradingBot:
         # Redis dedup
         dedup_ok = True
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             r = scpt.redis_client
             if r is not None:
@@ -3055,7 +3051,6 @@ class TradingBot:
             try:
                 s_cfg = cfg.get('scalp', {}).get('explore', {})
                 if s_cfg and 'timeout_hours' in s_cfg and SCALP_AVAILABLE:
-                    from scalp_phantom_tracker import get_scalp_phantom_tracker
                     scpt = get_scalp_phantom_tracker()
                     scpt.timeout_hours = int(s_cfg['timeout_hours'])
                     logger.info(f"Scalp phantom timeout set to {scpt.timeout_hours}h (exploration)")
@@ -3489,7 +3484,6 @@ class TradingBot:
                             mr_phantom_tracker.update_mr_phantom_prices(sym, current_price, df=df)
                             # Scalp phantom tracker price updates (if available)
                             try:
-                                from scalp_phantom_tracker import get_scalp_phantom_tracker
                                 scpt = get_scalp_phantom_tracker()
                                 df3u = self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None
                                 scpt.update_scalp_phantom_prices(sym, current_price, df=df3u if df3u is not None and not df3u.empty else df)
@@ -4653,7 +4647,6 @@ class TradingBot:
                             if promote_en and SCALP_AVAILABLE and detect_scalp_signal is not None:
                                 # Promotion readiness from phantom stats (supports recent WR)
                                 try:
-                                    from scalp_phantom_tracker import get_scalp_phantom_tracker
                                     scpt = get_scalp_phantom_tracker()
                                     st = scpt.get_scalp_phantom_stats() or {}
                                     samples = int(st.get('total', 0))
@@ -5827,9 +5820,8 @@ class TradingBot:
                                                 # Compute ML for router-driven scalp phantom
                                                 ml_s = 0.0
                                                 try:
-                                                    from ml_scorer_scalp import get_scalp_scorer
-                                                    _scorer = get_scalp_scorer()
-                                                    ml_s, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats)
+                                                _scorer = get_scalp_scorer() if get_scalp_scorer is not None else None
+                                                ml_s, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats)
                                                 except Exception:
                                                     ml_s = 0.0
                                                 scpt.record_scalp_signal(

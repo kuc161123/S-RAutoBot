@@ -72,6 +72,13 @@ class Bybit:
                 j = r.json()
 
                 if str(j.get("retCode")) != "0":
+                    # Treat specific non-critical cases as success
+                    try:
+                        if path == "/v5/position/set-leverage" and str(j.get("retCode")) == "110043":
+                            logger.debug("Leverage not modified — already set; treating as success")
+                            return j
+                    except Exception:
+                        pass
                     # Retry only for likely transient messages
                     msg = str(j.get('retMsg', '')).lower()
                     if any(k in msg for k in ["timeout", "limit", "too many", "system busy", "server error"]):

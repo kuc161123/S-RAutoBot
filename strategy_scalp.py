@@ -14,7 +14,7 @@ import numpy as np
 
 @dataclass
 class ScalpSettings:
-    rr: float = 1.6
+    rr: float = 1.8
     atr_len: int = 7
     ema_fast: int = 8
     ema_slow: int = 21

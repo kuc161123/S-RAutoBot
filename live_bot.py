@@ -816,13 +816,13 @@ class TradingBot:
                 pass
             # Set TP/SL: prioritize trading-stop TP/SL (visible in UI), fallback to reduce-only TP
             try:
-                # First try: trading-stop with TP limit + SL market (Partial with qty)
+                # First try: trading-stop Full mode (no qty) — avoids duplicate partial TP/SL on retries
                 try:
-                    bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
+                    bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
                 except Exception:
-                    # Second try: trading-stop Full mode (no qty)
+                    # Second try: Partial with qty (only if Full fails)
                     try:
-                        bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
+                        bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
                     except Exception:
                         # Final fallback: reduce-only PostOnly TP + SL-only
                         tp_side = "Sell" if sig_obj.side == "long" else "Buy"
@@ -832,7 +832,7 @@ class TradingBot:
                 # Post-verify TP/SL exist; retry up to 3 times if missing
                 try:
                     for _ in range(3):
-                        await asyncio.sleep(0.35)
+                        await asyncio.sleep(0.6)
                         pos = bybit.get_position(sym)
                         tp_ok = False; sl_ok = False
                         try:
@@ -844,22 +844,11 @@ class TradingBot:
                             tp_ok = sl_ok = False
                         if tp_ok and sl_ok:
                             break
-                        # Re-apply TP/SL if missing
+                        # Re-apply TP/SL if missing — use Full mode only to avoid duplicate partials
                         try:
-                            bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
+                            bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
                         except Exception:
-                            try:
-                                bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
-                            except Exception:
-                                tp_side = "Sell" if sig_obj.side == "long" else "Buy"
-                                try:
-                                    bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
-                                except Exception:
-                                    pass
-                                try:
-                                    bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
-                                except Exception:
-                                    pass
+                            pass
                     else:
                         # After loop, still missing
                         try:

@@ -557,7 +557,8 @@ class PhantomTradeTracker:
                 logger.warning(f"[{symbol}] Failed to record phantom data: {e}")
         
         # Feed phantom trade outcome to Trend ML for training when applicable
-        if not phantom.was_executed:
+        # Feed Trend ML only for non-timeout outcomes
+        if not phantom.was_executed and str(getattr(phantom, 'exit_reason', '')) != 'timeout':
             try:
                 if getattr(phantom, 'strategy_name', '') == 'trend_breakout':
                     self._feed_phantom_to_trend_ml(phantom)

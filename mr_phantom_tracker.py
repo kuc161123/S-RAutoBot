@@ -583,8 +583,8 @@ class MRPhantomTracker:
         # Save to Redis
         self._save_to_redis()
 
-        # Feed phantom trade outcome to MR ML for training
-        if not phantom.was_executed:
+        # Feed phantom trade outcome to MR ML for training (skip timeouts)
+        if not phantom.was_executed and str(getattr(phantom, 'exit_reason', '')) != 'timeout':
             self._feed_phantom_to_mr_ml(phantom)
 
         # Check if ML needs retraining

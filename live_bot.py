@@ -780,7 +780,7 @@ class TradingBot:
             try:
                 if self.tg:
                     msg = (
-                        f"🩳 Scalp High-ML: Executing {sym} {sig_obj.side.upper()}\n\n"
+                        f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()}\n\n"
                         f"Entry: {actual_entry:.4f}\n"
                         f"Stop Loss: {float(sig_obj.sl):.4f}\n"
                         f"Take Profit: {float(sig_obj.tp):.4f}\n"
@@ -1153,9 +1153,9 @@ class TradingBot:
                 except Exception:
                     pass
 
-                # High-ML immediate execution override BEFORE phantom guards
+                # Immediate execution for ALL Scalp detections (phantom path becomes executed mirror)
                 try:
-                    # Build features for scoring
+                    # Build features for record
                     _df_src_hi = None
                     try:
                         _df_src_hi = self.frames_3m.get(sym)
@@ -1166,55 +1166,42 @@ class TradingBot:
                     except Exception:
                         _df_src_hi = df
                     sc_feats_hi = self._build_scalp_features(_df_src_hi, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
-                    ml_s_hi = 0.0
-                    try:
-                        _scorer = get_scalp_scorer() if get_scalp_scorer is not None else None
-                        if _scorer:
-                            ml_s_hi, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats_hi)
-                    except Exception:
-                        ml_s_hi = 0.0
-                    # Config knobs
-                    e_cfg = (self.config.get('scalp', {}) or {}).get('exec', {}) if hasattr(self, 'config') else {}
-                    allow_hi = bool(e_cfg.get('allow_stream_high_ml', True))
-                    hi_thr = float(e_cfg.get('high_ml_force', 92))
-                    if allow_hi and float(ml_s_hi or 0.0) >= hi_thr:
-                        if sym in self.book.positions:
-                            logger.info(f"[{sym}] 🛑 Scalp High-ML blocked: reason=position_exists")
-                        else:
+                    if sym in self.book.positions:
+                        logger.info(f"[{sym}] 🛑 Scalp execute blocked: reason=position_exists")
+                    else:
+                        executed = False
+                        try:
+                            executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=0.0)
+                        except Exception as _ee:
+                            logger.info(f"[{sym}] Scalp execute error: {_ee}")
+                            executed = False
+                        # Record executed phantom for learning
+                        try:
+                            scpt = get_scalp_phantom_tracker()
+                            # Optionally cancel any pre-existing active scalp phantom to avoid duplicate tracking
                             try:
-                                executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s_hi or 0.0))
-                            except Exception as _ee:
-                                logger.info(f"[{sym}] Scalp High-ML execute error: {_ee}")
-                                executed = False
-                            # Record executed phantom for learning
-                            try:
-                                scpt = get_scalp_phantom_tracker()
-                                # Optionally cancel any pre-existing active scalp phantom to avoid duplicate tracking
-                                try:
-                                    cancel_on_hi = bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('cancel_active_on_high_ml', True))
-                                except Exception:
-                                    cancel_on_hi = True
-                                if bool(executed) and cancel_on_hi:
-                                    try:
-                                        scpt.cancel_active(sym)
-                                    except Exception:
-                                        pass
-                                # Record executed phantom for learning
-                                scpt.record_scalp_signal(
-                                    sym,
-                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                    float(ml_s_hi or 0.0),
-                                    bool(executed),
-                                    sc_feats_hi
-                                )
+                                cancel_on_hi = bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('cancel_active_on_high_ml', True))
                             except Exception:
-                                pass
-                            if executed:
-                                logger.info(f"[{sym}] 🧮 Scalp decision final: exec_scalp (reason=ml_extreme {float(ml_s_hi or 0.0):.1f}>={hi_thr:.0f})")
-                                # Skip further guards/phantom handling for this detection
-                                continue
-                            else:
-                                logger.info(f"[{sym}] 🛑 Scalp High-ML override blocked: reason=exec_guard")
+                                cancel_on_hi = True
+                            if bool(executed) and cancel_on_hi:
+                                try:
+                                    scpt.cancel_active(sym)
+                                except Exception:
+                                    pass
+                            scpt.record_scalp_signal(
+                                sym,
+                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                0.0,
+                                bool(executed),
+                                sc_feats_hi
+                            )
+                        except Exception:
+                            pass
+                        if executed:
+                            logger.info(f"[{sym}] 🧮 Scalp decision final: exec_scalp (reason=immediate)")
+                            continue
+                        else:
+                            logger.info(f"[{sym}] 🛑 Scalp immediate execute blocked: reason=exec_guard")
                 except Exception:
                     pass
 
@@ -1565,6 +1552,51 @@ class TradingBot:
             sc_sig = None
         if not sc_sig:
             return
+
+        # Immediate execution for ALL Scalp detections in fallback
+        try:
+            # Build features
+            sc_meta = getattr(sc_sig, 'meta', {}) or {}
+            try:
+                vol_level = getattr(regime_analysis, 'volatility_level', 'normal') if regime_analysis else 'normal'
+            except Exception:
+                vol_level = 'normal'
+            sc_feats = self._build_scalp_features(df_for_scalp, sc_meta, vol_level, cluster_id)
+            if sym in self.book.positions:
+                logger.info(f"[{sym}] 🛑 Scalp fallback execute blocked: reason=position_exists")
+                return
+            executed = False
+            try:
+                executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=0.0)
+            except Exception as _ee:
+                logger.info(f"[{sym}] Scalp fallback execute error: {_ee}")
+                executed = False
+            try:
+                scpt = get_scalp_phantom_tracker()
+                # Cancel actives if configured
+                try:
+                    cancel_on_hi = bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('cancel_active_on_high_ml', True))
+                except Exception:
+                    cancel_on_hi = True
+                if bool(executed) and cancel_on_hi:
+                    try:
+                        scpt.cancel_active(sym)
+                    except Exception:
+                        pass
+                scpt.record_scalp_signal(
+                    sym,
+                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                    0.0,
+                    bool(executed),
+                    sc_feats
+                )
+            except Exception:
+                pass
+            if executed:
+                logger.info(f"[{sym}] 🧮 Scalp fallback decision: exec_scalp (reason=immediate)")
+                return
+        except Exception:
+            pass
 
         # Redis dedup
         dedup_ok = True

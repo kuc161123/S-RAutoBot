@@ -1298,11 +1298,10 @@ class TradingBot:
                     continue
 
                 # One active phantom per symbol guard
+                # Allow multiple active phantoms per symbol for Scalp learning (no active_symbol block)
                 try:
                     if scpt.has_active(sym):
-                        logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=active_symbol)")
-                        _scalp_decision_logged = True
-                        continue
+                        logger.debug(f"[{sym}] 🧮 Scalp decision note: active phantom exists — allowing additional phantom for learning")
                 except Exception:
                     pass
 
@@ -1590,11 +1589,10 @@ class TradingBot:
             logger.debug(f"[{sym}] 🩳 Scalp fallback dedup: duplicate signal skipped")
             return
 
-        # One active phantom per symbol guard (fallback)
+        # Allow multiple active phantoms per symbol for fallback learning (no active_symbol block)
         try:
             if scpt.has_active(sym):
-                logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=active_symbol)")
-                return
+                logger.debug(f"[{sym}] 🧮 Scalp fallback note: active phantom exists — allowing additional phantom for learning")
         except Exception:
             pass
 

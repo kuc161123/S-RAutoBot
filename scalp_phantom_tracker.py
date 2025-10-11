@@ -84,6 +84,16 @@ class ScalpPhantomTracker:
         # Symbol meta for tick size
         self._symbol_meta: Dict[str, Dict] = {}
         self._load_symbol_meta()
+        # Configurable timeout override from config.yaml (scalp.explore.timeout_hours)
+        try:
+            with open('config.yaml','r') as f:
+                cfg = yaml.safe_load(f) or {}
+            sc_cfg = cfg.get('scalp', {}) or {}
+            exp = sc_cfg.get('explore', {}) or {}
+            to = int(exp.get('timeout_hours', self.timeout_hours))
+            self.timeout_hours = max(1, to)
+        except Exception as _e:
+            logger.debug(f"ScalpPhantom: using default timeout {self.timeout_hours}h ({_e})")
 
     def cancel_active(self, symbol: str):
         """Cancel and remove any active scalp phantoms for a symbol.

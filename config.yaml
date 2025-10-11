@@ -135,7 +135,7 @@ trend:
     block_extreme_vol: true # do not force execute when volatility is extreme
   context:
     use_3m_context: true    # Use 3-minute micro context for diagnostics/logging
-    enforce: true           # If true, block execution when 3m context is weak
+    enforce: false          # Do not block execution by 3m micro-context (phantoms free to learn)
   explore:
     enabled: true
     slope_min: 4.0
@@ -188,8 +188,8 @@ router:
           range_quality_tol: 0.05
           trend_strength_tol: 5.0
     micro_context:
-      trend_enforce: true
-      mr_enforce: true
+      trend_enforce: false
+      mr_enforce: false
     advanced:
       hurst:
         enabled: false
@@ -245,7 +245,7 @@ mr:
     high_ml_force: 90
   context:
     use_3m_context: true      # Use 3-minute micro context for diagnostics/logging
-    enforce: true             # If true, block execution when 3m context is weak
+    enforce: false            # Do not block execution by 3m micro-context (phantoms free to learn)
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}

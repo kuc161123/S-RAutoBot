@@ -4677,7 +4677,8 @@ class TradingBot:
                                 mr_persist_req = float(mr_reg.get('min_persist', 0.0))
                                 promotion_bypass = bool(mr_reg.get('promotion_bypass', True))
                                 mr_pass_regime = (not mr_reg_enabled) or ((prim == 'ranging') and (conf >= mr_conf_req) and (persist >= mr_persist_req))
-                                if not mr_pass_regime and not (promotion_bypass and recent_wr >= promote_wr):
+                                # Regime gate disabled for MR phantom flow; allow ML to decide execution (high-ML only)
+                                if False and (not mr_pass_regime and not (promotion_bypass and recent_wr >= promote_wr)):
                                     logger.debug(f"[{sym}] MR: skip — regime gate (prim={prim}, conf={conf:.2f}, persist={persist:.2f})")
                                     if mr_phantom_tracker:
                                         mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
@@ -4937,7 +4938,7 @@ class TradingBot:
                             except Exception:
                                 tr_pass_regime = True; trend_exec_enabled = False
 
-                            if (not tr_pass_regime) or (not trend_exec_enabled):
+                            if False and ((not tr_pass_regime) or (not trend_exec_enabled)):
                                 # Try Trend promotion (corking) override if active
                                 try:
                                     tr_cfg = (self.config.get('trend', {}) or {}).get('promotion', {})

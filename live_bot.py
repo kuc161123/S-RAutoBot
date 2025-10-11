@@ -4800,7 +4800,7 @@ class TradingBot:
                                                 sig_tr_ind.meta = {}
                                         except Exception:
                                             sig_tr_ind.meta = {}
-                                        sig_tr_ind.meta['promotion_forced'] = True
+                                        # High-ML execution marker only
                                         sig_tr_ind.meta['high_ml'] = True
                                         executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
                                         if executed:
@@ -5253,7 +5253,7 @@ class TradingBot:
                                     allow_tr = True
                                     if bool(tr_cfg.get('block_extreme_vol', True)):
                                         allow_tr = getattr(regime_analysis, 'volatility_level', 'normal') != 'extreme'
-                                    if soft_sig_tr and tp.get('active') and int(tp.get('count', 0)) < cap and allow_tr:
+                                    if False and soft_sig_tr and tp.get('active') and int(tp.get('count', 0)) < cap and allow_tr:
                                         # One-way per symbol guard
                                         if sym not in book.positions:
                                             # Respect allow_cork_override for bootstrap phantom mode

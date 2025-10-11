@@ -814,21 +814,20 @@ class TradingBot:
                     pass
             except Exception:
                 pass
-            # Set TP/SL: try reduce-only PostOnly TP with SL-only trading-stop; fallback to standard tpsl
+            # Set TP/SL: prioritize trading-stop TP/SL (visible in UI), fallback to reduce-only TP
             try:
-                tp_side = "Sell" if sig_obj.side == "long" else "Buy"
-                # Place reduce-only TP limit first (best effort)
+                # First try: trading-stop with TP limit + SL market (Partial with qty)
                 try:
-                    bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
-                    # Then set SL only
-                    bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
+                    bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
                 except Exception:
-                    # Fallback: standard TP/SL placement
+                    # Second try: trading-stop Full mode (no qty)
                     try:
-                        bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
-                    except Exception:
-                        # try once more without qty (Full mode)
                         bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
+                    except Exception:
+                        # Final fallback: reduce-only PostOnly TP + SL-only
+                        tp_side = "Sell" if sig_obj.side == "long" else "Buy"
+                        bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
+                        bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
             except Exception:
                 return False
             # Update book
@@ -850,7 +849,7 @@ class TradingBot:
                         Rv = (actual_entry - float(sig_obj.sl)) if sig_obj.side == 'long' else (float(sig_obj.sl) - actual_entry)
                         target_rr = max(0.1, (float(sig_obj.tp) - actual_entry)/Rv) if sig_obj.side=='long' else max(0.1, (actual_entry - float(sig_obj.tp))/Rv)
                     except Exception:
-                        target_rr = 1.8
+                        target_rr = 1.9
                     msg = (
                         f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()}\n\n"
                         f"Entry: {actual_entry:.4f}\n"

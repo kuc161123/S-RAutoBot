@@ -112,6 +112,74 @@ class ScalpPhantomTracker:
         """Attach a notifier callable(trade) for open/close events."""
         self.notifier = notifier
 
+    def force_close_executed(self, symbol: str, exit_price: float, exit_reason: str = 'manual'):
+        """Force-close any executed scalp phantom mirrors to align with exchange closure.
+
+        Determines win/loss relative to original TP/SL/entry and closes the mirror so
+        the active phantom list reflects reality after downtime or reconnection.
+        """
+        try:
+            if symbol not in self.active:
+                return
+            keep: List[ScalpPhantomTrade] = []
+            for ph in list(self.active.get(symbol, [])):
+                if getattr(ph, 'was_executed', False):
+                    # Decide outcome based on TP/SL proximity if exit_reason known, otherwise by P&L
+                    if ph.side == 'long':
+                        outcome = 'win' if exit_price >= ph.take_profit else ('loss' if exit_price <= ph.stop_loss else ('win' if exit_price > ph.entry_price else 'loss'))
+                    else:
+                        outcome = 'win' if exit_price <= ph.take_profit else ('loss' if exit_price >= ph.stop_loss else ('win' if exit_price < ph.entry_price else 'loss'))
+                    self._close(symbol, ph, exit_price, outcome)
+                else:
+                    keep.append(ph)
+            if keep:
+                self.active[symbol] = keep
+            else:
+                try:
+                    del self.active[symbol]
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"[{symbol}] scalp force_close_executed error: {e}")
+
+    def sweep_timeouts(self) -> int:
+        """Cancel any active scalp phantoms that exceeded timeout without requiring price updates.
+
+        Returns number of phantoms cancelled.
+        """
+        try:
+            if not self.active or not self.timeout_hours:
+                return 0
+            from datetime import datetime as _dt, timedelta as _td
+            cutoff = _dt.utcnow() - _td(hours=int(self.timeout_hours))
+            cancelled = 0
+            for symbol in list(self.active.keys()):
+                items = list(self.active.get(symbol, []))
+                remaining: List[ScalpPhantomTrade] = []
+                for ph in items:
+                    try:
+                        if ph.signal_time and ph.signal_time < cutoff:
+                            ph.exit_reason = 'timeout'
+                            # Close at entry price to avoid biasing P&L
+                            self._close(symbol, ph, ph.entry_price, 'timeout')
+                            cancelled += 1
+                        else:
+                            remaining.append(ph)
+                    except Exception:
+                        remaining.append(ph)
+                if remaining:
+                    self.active[symbol] = remaining
+                else:
+                    try:
+                        del self.active[symbol]
+                    except Exception:
+                        pass
+            if cancelled:
+                self._save()
+            return cancelled
+        except Exception:
+            return 0
+
     def backfill_active(self, fetch_klines: Optional[Callable[[str, int, Optional[int]], list]] = None) -> int:
         """Retro-close active scalp phantoms by scanning historical candles.
 

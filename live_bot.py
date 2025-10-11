@@ -2234,6 +2234,13 @@ class TradingBot:
                             mr_phantom_tracker.force_close_executed(symbol, exit_price, exit_reason)
                         elif pos.strategy_name == 'trend_breakout' and phantom_tracker is not None:
                             phantom_tracker.force_close_executed(symbol, exit_price, exit_reason)
+                        elif pos.strategy_name == 'scalp':
+                            try:
+                                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                                scpt = get_scalp_phantom_tracker()
+                                scpt.force_close_executed(symbol, exit_price, exit_reason)
+                            except Exception as _sce:
+                                logger.debug(f"[{symbol}] scalp force_close_executed failed: {_sce}")
                     except Exception as _fce:
                         logger.debug(f"[{symbol}] phantom force_close_executed failed: {_fce}")
                     
@@ -3459,7 +3466,7 @@ class TradingBot:
                 try:
                     if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
                         scpt = get_scalp_phantom_tracker()
-                        # Downtime backfill for Scalp phantoms using exchange klines
+                        # Downtime backfill for Scalp phantoms using exchange klines + periodic sweeper
                         try:
                             if hasattr(scpt, 'backfill_active') and self.bybit is not None:
                                 def _fetch3(sym: str, start_ms: int, end_ms: Optional[int] = None):
@@ -3480,6 +3487,21 @@ class TradingBot:
                                     logger.info(f"🩳 Scalp phantom backfill: closed {closed} due to downtime recovery")
                         except Exception as _bf:
                             logger.debug(f"Scalp phantom backfill skipped: {_bf}")
+                        # Periodic timeout sweep to ensure stale phantoms are cancelled
+                        try:
+                            async def _scalp_timeout_sweeper():
+                                while self.running:
+                                    try:
+                                        if hasattr(scpt, 'sweep_timeouts'):
+                                            cnt = scpt.sweep_timeouts()
+                                            if cnt:
+                                                logger.info(f"🩳 Scalp timeout sweep: cancelled {cnt} stale phantoms")
+                                    except Exception:
+                                        pass
+                                    await asyncio.sleep(60)
+                            self._create_task(_scalp_timeout_sweeper())
+                        except Exception:
+                            pass
                         # Scalp phantom notifier disabled
                         # Compute promotion readiness from config and stats
                         try:

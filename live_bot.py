@@ -756,6 +756,35 @@ class TradingBot:
                     actual_entry = float(position["avgPrice"]) or actual_entry
             except Exception:
                 pass
+            # Adjust TP to achieve target R:R net of fees and slippage
+            try:
+                fee_total_pct = float((self.config.get('trade', {}) or {}).get('fee_total_pct', 0.00165)) if hasattr(self, 'config') else 0.00165
+                slip_pct = 0.0005
+                try:
+                    slip_pct = float((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('slippage_pct', 0.0005)))
+                except Exception:
+                    pass
+                # Compute current RR from signal and adjust TP distance to include fees/slippage
+                rr = None
+                try:
+                    if sig_obj.side == 'long':
+                        R = max(1e-9, float(actual_entry) - float(sig_obj.sl))
+                        rr = max(0.1, (float(sig_obj.tp) - float(actual_entry)) / R)
+                        gross = rr * R * (1.0 + fee_total_pct + slip_pct)
+                        new_tp = float(actual_entry) + gross
+                    else:
+                        R = max(1e-9, float(sig_obj.sl) - float(actual_entry))
+                        rr = max(0.1, (float(actual_entry) - float(sig_obj.tp)) / R)
+                        gross = rr * R * (1.0 + fee_total_pct + slip_pct)
+                        new_tp = float(actual_entry) - gross
+                    # Round TP to tick size
+                    from position_mgr import round_step
+                    new_tp = round_step(new_tp, tick_size)
+                    sig_obj.tp = float(new_tp)
+                except Exception:
+                    pass
+            except Exception:
+                pass
             # Set TP/SL
             try:
                 bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)

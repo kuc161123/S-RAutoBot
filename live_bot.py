@@ -828,6 +828,47 @@ class TradingBot:
                         tp_side = "Sell" if sig_obj.side == "long" else "Buy"
                         bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
                         bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
+
+                # Post-verify TP/SL exist; retry up to 3 times if missing
+                try:
+                    for _ in range(3):
+                        await asyncio.sleep(0.35)
+                        pos = bybit.get_position(sym)
+                        tp_ok = False; sl_ok = False
+                        try:
+                            tpv = pos.get('takeProfit') if pos else None
+                            slv = pos.get('stopLoss') if pos else None
+                            tp_ok = (tpv not in (None, '', '0')) and (float(tpv) > 0)
+                            sl_ok = (slv not in (None, '', '0')) and (float(slv) > 0)
+                        except Exception:
+                            tp_ok = sl_ok = False
+                        if tp_ok and sl_ok:
+                            break
+                        # Re-apply TP/SL if missing
+                        try:
+                            bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
+                        except Exception:
+                            try:
+                                bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
+                            except Exception:
+                                tp_side = "Sell" if sig_obj.side == "long" else "Buy"
+                                try:
+                                    bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
+                                except Exception:
+                                    pass
+                                try:
+                                    bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
+                                except Exception:
+                                    pass
+                    else:
+                        # After loop, still missing
+                        try:
+                            if self.tg:
+                                await self.tg.send_message(f"🆘 CRITICAL: {sym} position TP/SL verification failed — manual check advised.")
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
             except Exception:
                 return False
             # Update book
@@ -849,7 +890,7 @@ class TradingBot:
                         Rv = (actual_entry - float(sig_obj.sl)) if sig_obj.side == 'long' else (float(sig_obj.sl) - actual_entry)
                         target_rr = max(0.1, (float(sig_obj.tp) - actual_entry)/Rv) if sig_obj.side=='long' else max(0.1, (actual_entry - float(sig_obj.tp))/Rv)
                     except Exception:
-                        target_rr = 1.6
+                        target_rr = 1.9
                     msg = (
                         f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()}\n\n"
                         f"Entry: {actual_entry:.4f}\n"

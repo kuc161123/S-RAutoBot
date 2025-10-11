@@ -346,16 +346,9 @@ class ScalpPhantomTracker:
                 try:
                     if self.timeout_hours and ph.signal_time:
                         if _dt.utcnow() - ph.signal_time > _td(hours=int(self.timeout_hours)):
-                            try:
-                                if ph.side == 'long':
-                                    pnl_pct_now = (current_price - ph.entry_price) / ph.entry_price * 100
-                                else:
-                                    pnl_pct_now = (ph.entry_price - current_price) / ph.entry_price * 100
-                                outc = 'win' if pnl_pct_now >= 0 else 'loss'
-                            except Exception:
-                                outc = 'loss'
+                            # Cancel phantoms exceeding timeout; do not feed ML
                             ph.exit_reason = 'timeout'
-                            self._close(symbol, ph, current_price, outc)
+                            self._close(symbol, ph, current_price, 'timeout')
                             continue
                 except Exception:
                     pass
@@ -434,16 +427,17 @@ class ScalpPhantomTracker:
         except Exception:
             pass
 
-        # Feed outcome to Scalp ML scorer for learning
+        # Feed outcome to Scalp ML scorer for learning — skip timeouts/cancels
         try:
-            from ml_scorer_scalp import get_scalp_scorer
-            scorer = get_scalp_scorer()
-            signal = {
-                'features': ph.features or {},
-                'was_executed': False,
-                'exit_reason': getattr(ph, 'exit_reason', None)
-            }
-            scorer.record_outcome(signal, outcome, float(ph.pnl_percent or 0.0))
+            if str(getattr(ph, 'exit_reason', '')) != 'timeout' and outcome in ('win','loss'):
+                from ml_scorer_scalp import get_scalp_scorer
+                scorer = get_scalp_scorer()
+                signal = {
+                    'features': ph.features or {},
+                    'was_executed': False,
+                    'exit_reason': getattr(ph, 'exit_reason', None)
+                }
+                scorer.record_outcome(signal, outcome, float(ph.pnl_percent or 0.0))
         except Exception as e:
             logger.debug(f"Scalp ML feed error: {e}")
 

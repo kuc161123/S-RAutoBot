@@ -243,6 +243,58 @@ class Bybit:
             }
         
         return self._request("POST", "/v5/position/trading-stop", data)
+
+    def set_sl_only(self, symbol: str, stop_loss: float, qty: float = None) -> Dict[str, Any]:
+        """Set only Stop Loss for a position using trading-stop.
+
+        Uses Partial mode when qty provided, otherwise Full mode.
+        """
+        try:
+            if qty:
+                data = {
+                    "category": "linear",
+                    "symbol": symbol,
+                    "stopLoss": str(stop_loss),
+                    "slSize": str(qty),
+                    "slTriggerBy": "LastPrice",
+                    "tpslMode": "Partial",
+                    "slOrderType": "Market",
+                    "positionIdx": 0,
+                }
+            else:
+                data = {
+                    "category": "linear",
+                    "symbol": symbol,
+                    "stopLoss": str(stop_loss),
+                    "slTriggerBy": "LastPrice",
+                    "tpslMode": "Full",
+                    "slOrderType": "Market",
+                    "positionIdx": 0,
+                }
+            return self._request("POST", "/v5/position/trading-stop", data)
+        except Exception as e:
+            logger.error(f"Failed to set SL-only for {symbol}: {e}")
+            raise
+
+    def place_reduce_only_limit(self, symbol: str, side: str, qty: float, price: float,
+                                 post_only: bool = True, reduce_only: bool = True) -> Dict[str, Any]:
+        """Place a reduce-only limit order (optionally PostOnly) for TP purposes.
+
+        side: "Buy" or "Sell" relative to order direction. For long TP use "Sell"; for short TP use "Buy".
+        """
+        tif = "PostOnly" if post_only else "GTC"
+        data = {
+            "category": "linear",
+            "symbol": symbol,
+            "side": side.capitalize(),
+            "orderType": "Limit",
+            "qty": str(qty),
+            "price": str(price),
+            "timeInForce": tif,
+            "reduceOnly": reduce_only,
+            "positionIdx": 0,
+        }
+        return self._request("POST", "/v5/order/create", data)
     
     def get_positions(self) -> list:
         """Get open positions"""

@@ -80,7 +80,7 @@ trade:
   ml_risk_max_percent: 4.0
   use_regime_switching: false
   use_enhanced_parallel: true
-  fee_total_pct: 0.00165   # Estimated total fee fraction for entry+exit (0.165%) used for fee-aware sizing
+  fee_total_pct: 0.00110   # Estimated total fee fraction for entry+exit (~0.11%) used for fee-aware sizing (aligns with screenshots)
 
 
 # Strategy-specific regime thresholds and hysteresis

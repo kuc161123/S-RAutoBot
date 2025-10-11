@@ -756,7 +756,7 @@ class TradingBot:
                     actual_entry = float(position["avgPrice"]) or actual_entry
             except Exception:
                 pass
-            # Update dynamic slippage EWMA from fills
+            # Update dynamic slippage EWMA from fills (per-symbol)
             try:
                 inst_slip = 0.0
                 try:
@@ -764,7 +764,7 @@ class TradingBot:
                 except Exception:
                     inst_slip = 0.0
                 if hasattr(self, '_redis') and self._redis is not None:
-                    key_s = 'scalp:slip:ewma'; key_n = 'scalp:slip:n'
+                    key_s = f'scalp:slip:ewma:{sym}'; key_n = f'scalp:slip:n:{sym}'
                     prev = float(self._redis.get(key_s) or 0.0)
                     n = int(self._redis.get(key_n) or 0)
                     alpha = 0.2  # EWMA weight
@@ -785,7 +785,7 @@ class TradingBot:
                     pass
                 try:
                     if hasattr(self, '_redis') and self._redis is not None:
-                        ewma = float(self._redis.get('scalp:slip:ewma') or 0.0)
+                        ewma = float(self._redis.get(f'scalp:slip:ewma:{sym}') or 0.0)
                         slip_pct = max(slip_pct, min(0.003, ewma))
                 except Exception:
                     pass
@@ -814,15 +814,23 @@ class TradingBot:
                     pass
             except Exception:
                 pass
-            # Set TP/SL
+            # Set TP/SL: try reduce-only PostOnly TP with SL-only trading-stop; fallback to standard tpsl
             try:
-                bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
-            except Exception:
-                # try once more without qty (Full mode)
+                tp_side = "Sell" if sig_obj.side == "long" else "Buy"
+                # Place reduce-only TP limit first (best effort)
                 try:
-                    bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
+                    bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
+                    # Then set SL only
+                    bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
                 except Exception:
-                    return False
+                    # Fallback: standard TP/SL placement
+                    try:
+                        bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
+                    except Exception:
+                        # try once more without qty (Full mode)
+                        bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
+            except Exception:
+                return False
             # Update book
             self.book.positions[sym] = Position(
                 sig_obj.side,
@@ -1231,12 +1239,20 @@ class TradingBot:
                     except Exception:
                         _df_src_hi = df
                     sc_feats_hi = self._build_scalp_features(_df_src_hi, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                    # Score ML for learning even though we execute immediately
+                    ml_s_immediate = 0.0
+                    try:
+                        from ml_scorer_scalp import get_scalp_scorer
+                        _scorer = get_scalp_scorer()
+                        ml_s_immediate, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats_hi)
+                    except Exception:
+                        ml_s_immediate = 0.0
                     if sym in self.book.positions:
                         logger.info(f"[{sym}] 🛑 Scalp execute blocked: reason=position_exists")
                     else:
                         executed = False
                         try:
-                            executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=0.0)
+                            executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s_immediate or 0.0))
                         except Exception as _ee:
                             logger.info(f"[{sym}] Scalp execute error: {_ee}")
                             executed = False
@@ -1256,7 +1272,7 @@ class TradingBot:
                             scpt.record_scalp_signal(
                                 sym,
                                 {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                0.0,
+                                float(ml_s_immediate or 0.0),
                                 bool(executed),
                                 sc_feats_hi
                             )
@@ -1627,12 +1643,20 @@ class TradingBot:
             except Exception:
                 vol_level = 'normal'
             sc_feats = self._build_scalp_features(df_for_scalp, sc_meta, vol_level, cluster_id)
+            # Score Scalp ML for learning even on immediate executes
+            ml_s_immediate = 0.0
+            try:
+                from ml_scorer_scalp import get_scalp_scorer
+                _scorer = get_scalp_scorer()
+                ml_s_immediate, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats)
+            except Exception:
+                ml_s_immediate = 0.0
             if sym in self.book.positions:
                 logger.info(f"[{sym}] 🛑 Scalp fallback execute blocked: reason=position_exists")
                 return
             executed = False
             try:
-                executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=0.0)
+                executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s_immediate or 0.0))
             except Exception as _ee:
                 logger.info(f"[{sym}] Scalp fallback execute error: {_ee}")
                 executed = False
@@ -1651,7 +1675,7 @@ class TradingBot:
                 scpt.record_scalp_signal(
                     sym,
                     {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                    0.0,
+                    float(ml_s_immediate or 0.0),
                     bool(executed),
                     sc_feats
                 )

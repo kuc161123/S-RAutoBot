@@ -849,7 +849,7 @@ class TradingBot:
                         Rv = (actual_entry - float(sig_obj.sl)) if sig_obj.side == 'long' else (float(sig_obj.sl) - actual_entry)
                         target_rr = max(0.1, (float(sig_obj.tp) - actual_entry)/Rv) if sig_obj.side=='long' else max(0.1, (actual_entry - float(sig_obj.tp))/Rv)
                     except Exception:
-                        target_rr = 1.9
+                        target_rr = 1.6
                     msg = (
                         f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()}\n\n"
                         f"Entry: {actual_entry:.4f}\n"

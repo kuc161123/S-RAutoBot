@@ -756,12 +756,37 @@ class TradingBot:
                     actual_entry = float(position["avgPrice"]) or actual_entry
             except Exception:
                 pass
+            # Update dynamic slippage EWMA from fills
+            try:
+                inst_slip = 0.0
+                try:
+                    inst_slip = abs(actual_entry - float(sig_obj.entry)) / max(1e-9, float(sig_obj.entry))
+                except Exception:
+                    inst_slip = 0.0
+                if hasattr(self, '_redis') and self._redis is not None:
+                    key_s = 'scalp:slip:ewma'; key_n = 'scalp:slip:n'
+                    prev = float(self._redis.get(key_s) or 0.0)
+                    n = int(self._redis.get(key_n) or 0)
+                    alpha = 0.2  # EWMA weight
+                    ewma = prev if n > 0 else inst_slip
+                    ewma = (1 - alpha) * ewma + alpha * inst_slip
+                    self._redis.set(key_s, str(ewma))
+                    self._redis.set(key_n, str(min(n + 1, 100000)))
+            except Exception:
+                pass
             # Adjust TP to achieve target R:R net of fees and slippage
             try:
                 fee_total_pct = float((self.config.get('trade', {}) or {}).get('fee_total_pct', 0.00165)) if hasattr(self, 'config') else 0.00165
+                # Use the higher of configured slippage and dynamic EWMA
                 slip_pct = 0.0005
                 try:
                     slip_pct = float((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('slippage_pct', 0.0005)))
+                except Exception:
+                    pass
+                try:
+                    if hasattr(self, '_redis') and self._redis is not None:
+                        ewma = float(self._redis.get('scalp:slip:ewma') or 0.0)
+                        slip_pct = max(slip_pct, min(0.003, ewma))
                 except Exception:
                     pass
                 # Compute current RR from signal and adjust TP distance to include fees/slippage
@@ -781,6 +806,10 @@ class TradingBot:
                     from position_mgr import round_step
                     new_tp = round_step(new_tp, tick_size)
                     sig_obj.tp = float(new_tp)
+                    try:
+                        logger.debug(f"[{sym}] Scalp TP adj: rr={rr:.2f} fee={fee_total_pct*100:.2f}bps slip={slip_pct*100:.2f}bps -> TP {new_tp:.4f}")
+                    except Exception:
+                        pass
                 except Exception:
                     pass
             except Exception:
@@ -808,12 +837,19 @@ class TradingBot:
             # Telegram notify
             try:
                 if self.tg:
+                    # Compute target RR for visibility
+                    try:
+                        Rv = (actual_entry - float(sig_obj.sl)) if sig_obj.side == 'long' else (float(sig_obj.sl) - actual_entry)
+                        target_rr = max(0.1, (float(sig_obj.tp) - actual_entry)/Rv) if sig_obj.side=='long' else max(0.1, (actual_entry - float(sig_obj.tp))/Rv)
+                    except Exception:
+                        target_rr = 1.6
                     msg = (
                         f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()}\n\n"
                         f"Entry: {actual_entry:.4f}\n"
                         f"Stop Loss: {float(sig_obj.sl):.4f}\n"
                         f"Take Profit: {float(sig_obj.tp):.4f}\n"
-                        f"Quantity: {qty}"
+                        f"Quantity: {qty}\n"
+                        f"Target RR: {target_rr:.2f}"
                     )
                     await self.tg.send_message(msg)
             except Exception:
@@ -4413,7 +4449,9 @@ class TradingBot:
                                             sig_mr_ind.meta = {}
                                     except Exception:
                                         sig_mr_ind.meta = {}
+                                    # Mark as high-ML for telemetry/notifications and bypass gates
                                     sig_mr_ind.meta['promotion_forced'] = True
+                                    sig_mr_ind.meta['high_ml'] = True
                                     executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
                                     if executed:
                                         try:
@@ -6316,12 +6354,7 @@ class TradingBot:
                                         logger.debug(f"Telemetry: ML rejects so far = {shared['telemetry']['ml_rejects']}")
                                     except Exception:
                                         pass
-                                    if self.tg:
-                                        reject_msg = (
-                                            f"🤖 *ML Reject* {sym} {sig.side.upper()} (Enhanced MR)\n"
-                                            f"Score {ml_score:.1f} < {threshold:.0f}. Tracking via phantom."
-                                        )
-                                        await self.tg.send_message(reject_msg)
+                                    # Suppress Telegram notifications for MR ML rejects (phantom-only)
                                     continue
 
                             else:
@@ -6486,12 +6519,7 @@ class TradingBot:
                                         logger.debug(f"Telemetry: ML rejects so far = {shared['telemetry']['ml_rejects']}")
                                     except Exception:
                                         pass
-                                    if self.tg:
-                                        reject_msg = (
-                                            f"🤖 *ML Reject* {sym} {sig.side.upper()} (Trend)\n"
-                                            f"Score {ml_score:.1f} < {threshold:.0f}. Tracking via phantom."
-                                        )
-                                        await self.tg.send_message(reject_msg)
+                                    # Suppress Telegram notifications for Trend ML rejects (phantom-only)
                                     continue
 
                         except Exception as e:
@@ -6712,13 +6740,11 @@ class TradingBot:
                 current_price = df['close'].iloc[-1]
                 if sig.side == "short" and sig.sl <= current_price:
                     logger.error(f"[{sym}] Invalid SL for SHORT: {sig.sl:.4f} must be > current price {current_price:.4f}")
-                    if self.tg:
-                        await self.tg.send_message(f"❌ {sym} SHORT rejected: SL {sig.sl:.4f} too low (current: {current_price:.4f})")
+                    # Suppress Telegram for invalid SL rejection; keep log only
                     continue
                 elif sig.side == "long" and sig.sl >= current_price:
                     logger.error(f"[{sym}] Invalid SL for LONG: {sig.sl:.4f} must be < current price {current_price:.4f}")
-                    if self.tg:
-                        await self.tg.send_message(f"❌ {sym} LONG rejected: SL {sig.sl:.4f} too high (current: {current_price:.4f})")
+                    # Suppress Telegram for invalid SL rejection; keep log only
                     continue
 
                 # Place market order AFTER leverage is set

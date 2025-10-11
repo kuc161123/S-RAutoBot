@@ -157,7 +157,7 @@ ml:
 # Higher-timeframe router bias and gating (enabled by default)
 router:
   htf_bias:
-    enabled: true
+    enabled: false
     mode: gated          # gated | soft
     # Thresholds for per-strategy HTF gating
     trend:

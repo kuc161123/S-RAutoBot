@@ -4182,9 +4182,9 @@ class TradingBot:
                             dbg_logger = logging.getLogger(__name__)
                             # Optional 3m context enforcement (applies to both Trend and MR execution paths)
                             try:
+                                # Trend micro-context (bypass for HIGH-ML)
                                 if strategy_name == 'trend_breakout':
                                     ctx_cfg = (cfg.get('trend', {}).get('context', {}) or {}) if 'cfg' in locals() else {}
-                                    # Bypass micro-context enforcement for HIGH-ML trend executions
                                     is_high_ml = False
                                     try:
                                         is_high_ml = isinstance(getattr(sig_obj, 'meta', {}), dict) and bool(sig_obj.meta.get('high_ml'))
@@ -4200,14 +4200,28 @@ class TradingBot:
                                             logger.info(f"[{sym}] 🧮 Trend 3m.ctx bypass: HIGH-ML execution")
                                         except Exception:
                                             pass
-                                elif strategy_name == 'enhanced_mr':
+
+                                # MR micro-context (bypass for HIGH-ML)
+                                if strategy_name == 'enhanced_mr':
                                     ctx_cfg = (cfg.get('mr', {}).get('context', {}) or {}) if 'cfg' in locals() else {}
-                                    if bool(ctx_cfg.get('enforce', False)):
+                                    is_high_ml = False
+                                    try:
+                                        is_high_ml = isinstance(getattr(sig_obj, 'meta', {}), dict) and bool(sig_obj.meta.get('high_ml'))
+                                    except Exception:
+                                        is_high_ml = False
+                                    if bool(ctx_cfg.get('enforce', False)) and not is_high_ml:
                                         ok3, why3 = self._micro_context_mr(sym, sig_obj.side)
                                         if not ok3:
                                             dbg_logger.debug(f"[{sym}] MR: skip — 3m_ctx_enforce ({why3})")
                                             return False
-                                elif strategy_name == 'scalp':
+                                    elif bool(ctx_cfg.get('enforce', False)) and is_high_ml:
+                                        try:
+                                            logger.info(f"[{sym}] 🧮 MR 3m.ctx bypass: HIGH-ML execution")
+                                        except Exception:
+                                            pass
+
+                                # Scalp micro-context (if enabled)
+                                if strategy_name == 'scalp':
                                     sctx = (cfg.get('scalp', {}).get('context', {}) or {}) if 'cfg' in locals() else {}
                                     if bool(sctx.get('enforce', False)):
                                         ok3, why3 = self._micro_context_scalp(sym, sig_obj.side)

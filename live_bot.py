@@ -1041,6 +1041,46 @@ class TradingBot:
                     df.index = df.index.tz_localize('UTC')
                 elif df.index.tz is not None and row.index.tz is None:
                     row.index = row.index.tz_localize('UTC')
+                # Gap fill if we missed bars while disconnected
+                try:
+                    if len(df) > 0:
+                        last_ts = df.index[-1]
+                        try:
+                            exp_delta = pd.Timedelta(minutes=int(timeframe))
+                        except Exception:
+                            exp_delta = pd.Timedelta(minutes=3)
+                        if (row.index[0] - last_ts) > (exp_delta + pd.Timedelta(seconds=5)) and self.bybit is not None:
+                            try:
+                                start_ms = int(((last_ts + pd.Timedelta(seconds=1)).tz_convert('UTC').timestamp() if last_ts.tzinfo else (last_ts + pd.Timedelta(seconds=1)).timestamp()) * 1000)
+                            except Exception:
+                                start_ms = None
+                            end_ms = int((row.index[0].tz_convert('UTC').timestamp() if row.index[0].tzinfo else row.index[0].timestamp()) * 1000)
+                            if start_ms is not None and end_ms:
+                                try:
+                                    kl = self.bybit.get_klines(sym, timeframe, limit=200, start=start_ms, end=end_ms) or []
+                                    fill_rows = []
+                                    for kr in kl:
+                                        try:
+                                            ts2 = int(kr[0]) if isinstance(kr, (list, tuple)) else int(kr.get('start'))
+                                            idx2 = pd.to_datetime(ts2, unit='ms', utc=True)
+                                            o2 = float(kr[1] if isinstance(kr, (list, tuple)) else kr.get('open'))
+                                            h2 = float(kr[2] if isinstance(kr, (list, tuple)) else kr.get('high'))
+                                            l2 = float(kr[3] if isinstance(kr, (list, tuple)) else kr.get('low'))
+                                            c2 = float(kr[4] if isinstance(kr, (list, tuple)) else kr.get('close'))
+                                            v2 = float(kr[5] if isinstance(kr, (list, tuple)) else kr.get('volume'))
+                                            fill_rows.append((idx2, o2, h2, l2, c2, v2))
+                                        except Exception:
+                                            continue
+                                    if fill_rows:
+                                        fdf = pd.DataFrame([(o, h, l, c, v) for (_, o, h, l, c, v) in fill_rows],
+                                                           index=[ix for (ix, *_r) in fill_rows],
+                                                           columns=["open","high","low","close","volume"]).sort_index()
+                                        df = pd.concat([df, fdf])
+                                except Exception:
+                                    pass
+                except Exception:
+                    pass
+                # Append current row
                 df.loc[row.index[0]] = row.iloc[0]
                 df.sort_index(inplace=True)
                 self.frames_3m[sym] = df.tail(1000)
@@ -2863,7 +2903,7 @@ class TradingBot:
             try:
                 logger.info(f"Connecting to WebSocket: {ws_url}")
                 # Steady ping cadence; dynamic recv timeout per timeframe
-                async with websockets.connect(ws_url, ping_interval=25, ping_timeout=20) as ws:
+                async with websockets.connect(ws_url, ping_interval=30, ping_timeout=40) as ws:
                     self.ws = ws
                     await ws.send(json.dumps(sub))
                     logger.info(f"Subscribed to topics: {topics}")

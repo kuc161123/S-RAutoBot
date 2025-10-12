@@ -125,8 +125,8 @@ class MultiWebSocketHandler:
                 
                 async with websockets.connect(
                     self.ws_url,
-                    ping_interval=25,
-                    ping_timeout=20
+                    ping_interval=30,
+                    ping_timeout=40
                 ) as ws:
                     # Reset backoff on successful connection
                     backoff = 2.0

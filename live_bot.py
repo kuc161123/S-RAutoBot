@@ -4474,7 +4474,8 @@ class TradingBot:
                                 pass
                             # Notify only for high-ML executions (Trend/MR)
                             try:
-                                if self.tg and isinstance(getattr(sig_obj, 'meta', {}), dict) and sig_obj.meta.get('high_ml'):
+                                is_high_ml = bool(isinstance(getattr(sig_obj, 'meta', {}), dict) and sig_obj.meta.get('high_ml'))
+                                if self.tg and is_high_ml:
                                     emoji = '📈'
                                     strategy_label = 'Enhanced Mr' if strategy_name=='enhanced_mr' else 'Trend Breakout'
                                     msg = (
@@ -4487,10 +4488,11 @@ class TradingBot:
                                     await self.tg.send_message(msg)
                             except Exception:
                                 pass
-                            # Decision final (independence branch)
+                            # Decision final (avoid duplicate logs for high-ML — specific log already printed)
                             try:
-                                promo = bool(getattr(sig_obj, 'meta', {}) and sig_obj.meta.get('promotion_forced')) if isinstance(getattr(sig_obj, 'meta', {}), dict) else False
-                                logger.info(f"[{sym}] 🧮 Decision final: exec_{'mr' if strategy_name=='enhanced_mr' else 'trend'} (reason={'promotion' if promo else 'ok'})")
+                                is_high_ml = bool(isinstance(getattr(sig_obj, 'meta', {}), dict) and sig_obj.meta.get('high_ml'))
+                                if not is_high_ml:
+                                    logger.info(f"[{sym}] 🧮 Decision final: exec_{'mr' if strategy_name=='enhanced_mr' else 'trend'} (reason=ok)")
                             except Exception:
                                 pass
                             return True

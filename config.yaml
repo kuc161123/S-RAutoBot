@@ -238,6 +238,7 @@ mr:
     phantom_on_filter_fail: true
     promotion_bypass: true
   exec:
+    enabled: true
     enabled: false
     slippage_recalc:
       enabled: true

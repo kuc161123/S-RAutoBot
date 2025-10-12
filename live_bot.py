@@ -4748,12 +4748,16 @@ class TradingBot:
                                     sig_mr_ind = None
                             except Exception:
                                 pass
-                            if mr_should and sig_mr_ind is not None:
-                                # Disable normal MR execution – only high-ML executes
+                            if sig_mr_ind is not None and float(ml_score_mr or 0.0) < float((((cfg.get('mr', {}) or {}).get('exec', {}) or {}).get('high_ml_force', 90.0))):
+                                # Below high-ML execution threshold: record phantom with explicit reason
                                 if mr_phantom_tracker:
                                     mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
                                     try:
-                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_mr (reason=ml_below_high_ml)")
+                                        try:
+                                            hi_force_dbg = float((((cfg.get('mr', {}) or {}).get('exec', {}) or {}).get('high_ml_force', 90.0)))
+                                        except Exception:
+                                            hi_force_dbg = 90.0
+                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_mr (reason=ml<thr {float(ml_score_mr or 0.0):.1f}<{hi_force_dbg:.0f})")
                                     except Exception:
                                         pass
                                 continue

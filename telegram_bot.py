@@ -521,14 +521,16 @@ class TGBot:
                 try:
                     for trades in scpt.completed.values():
                         for p in trades:
+                            # Count timeouts regardless of outcome bucket
+                            if str(getattr(p, 'exit_reason', '')).lower() == 'timeout':
+                                sc_timeouts += 1
+                            # Closed wins/losses (phantom-only)
                             if getattr(p, 'outcome', None) in ('win','loss') and not getattr(p, 'was_executed', False):
                                 sc_closed += 1
                                 if p.outcome == 'win':
                                     sc_wins += 1
                                 else:
                                     sc_losses += 1
-                                if getattr(p, 'exit_reason', None) == 'timeout':
-                                    sc_timeouts += 1
                     act_sc = getattr(scpt, 'active', {}) or {}
                     sc_open_syms = len(act_sc)
                     try:

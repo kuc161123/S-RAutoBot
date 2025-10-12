@@ -1097,6 +1097,14 @@ class TradingBot:
                 except Exception as e:
                     logger.debug(f"3m candle persist error for {sym}: {e}")
 
+                # Update any active Scalp phantoms for this symbol using the latest bar extremes
+                try:
+                    if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
+                        scpt = get_scalp_phantom_tracker()
+                        scpt.update_scalp_phantom_prices(sym, float(row['close'].iloc[0]), df=self.frames_3m.get(sym))
+                except Exception:
+                    pass
+
                 # On 3m bar close, attempt phantom-only scalp detection for NONE regime
                 try:
                     confirm = bool(k.get("confirm", False))

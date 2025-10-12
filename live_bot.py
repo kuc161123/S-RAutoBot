@@ -558,6 +558,12 @@ class TradingBot:
         self.last_save_time = datetime.now()
         self.trade_tracker = TradeTracker()  # Initialize trade tracker
         self._tasks = set()
+        # Background DB write queue for 3m candles to avoid blocking the event loop
+        try:
+            import asyncio as _asyncio
+            self._db_queue: Optional[_asyncio.Queue] = _asyncio.Queue()
+        except Exception:
+            self._db_queue = None
         # Per-symbol cooldown for 3m scalp detections (timestamp of last recorded attempt)
         self._scalp_cooldown: Dict[str, pd.Timestamp] = {}
         # Store per-symbol ML features at execution time to record outcomes later
@@ -1091,9 +1097,12 @@ class TradingBot:
                     get_shadow_tracker().update_prices(sym, last_close_3m)
                 except Exception:
                     pass
-                # Persist the latest 3m candle row
+                # Persist the latest 3m candle row (offload to DB writer if available)
                 try:
-                    self.storage.save_candles_3m(sym, row)
+                    if getattr(self, '_db_queue', None) is not None:
+                        await self._db_queue.put(('3m', sym, row))
+                    else:
+                        self.storage.save_candles_3m(sym, row)
                 except Exception as e:
                     logger.debug(f"3m candle persist error for {sym}: {e}")
 
@@ -2124,8 +2133,10 @@ class TradingBot:
         """Save all candles to database"""
         try:
             if self.frames:
-                self.storage.save_all_frames(self.frames)
-                logger.info("Auto-saved all candles to database")
+                loop = asyncio.get_running_loop()
+                # Offload full save to a background thread to avoid blocking event loop
+                await loop.run_in_executor(None, self.storage.save_all_frames, self.frames)
+                logger.info("Auto-saved all candles to database (bg thread)")
         except Exception as e:
             logger.error(f"Failed to auto-save candles: {e}")
 
@@ -3867,6 +3878,25 @@ class TradingBot:
         # Start the weekly updater task
         self._create_task(weekly_cluster_updater())
         logger.info("📅 Started weekly cluster update scheduler")
+
+        # Start DB writer task if a queue is available (offloads blocking DB writes)
+        try:
+            if getattr(self, '_db_queue', None) is not None:
+                async def _db_writer():
+                    loop = asyncio.get_running_loop()
+                    while self.running:
+                        try:
+                            item = await self._db_queue.get()
+                            if not item:
+                                continue
+                            kind, sym, row = item
+                            if kind == '3m' and self.storage is not None:
+                                await loop.run_in_executor(None, self.storage.save_candles_3m, sym, row)
+                        except Exception:
+                            await asyncio.sleep(0.05)
+                self._create_task(_db_writer())
+        except Exception:
+            pass
         
         # Use multi-websocket handler if >190 topics
         if len(topics) > 190:

@@ -4560,9 +4560,15 @@ class TradingBot:
                                     except Exception:
                                         sig_mr_ind.meta = {}
                                     # Mark as high-ML for telemetry/notifications and bypass gates
-                                    sig_mr_ind.meta['promotion_forced'] = True
                                     sig_mr_ind.meta['high_ml'] = True
-                                    executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
+                                    # Allow/disallow MR execution via config (default: disabled)
+                                    try:
+                                        allow_mr_exec = bool((((cfg.get('mr', {}) or {}).get('exec', {}) or {}).get('enabled', False)))
+                                    except Exception:
+                                        allow_mr_exec = False
+                                    executed = False
+                                    if allow_mr_exec:
+                                        executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
                                     if executed:
                                         try:
                                             logger.info(f"[{sym}] 🧮 Decision final: exec_mr (reason=ml_extreme {ml_score_mr:.1f}>={mr_hi_force:.0f})")
@@ -4571,7 +4577,13 @@ class TradingBot:
                                         continue
                                     else:
                                         try:
-                                            logger.info(f"[{sym}] 🛑 MR High-ML override blocked: reason=exec_guard")
+                                            if not allow_mr_exec:
+                                                if mr_phantom_tracker:
+                                                    mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+                                                logger.info(f"[{sym}] 🧮 Decision final: phantom_mr (reason=exec_disabled)")
+                                                continue
+                                            else:
+                                                logger.info(f"[{sym}] 🛑 MR High-ML override blocked: reason=exec_guard")
                                         except Exception:
                                             pass
                                 # Promotion override regardless of earlier guards
@@ -4833,7 +4845,14 @@ class TradingBot:
                                             sig_tr_ind.meta = {}
                                         # High-ML execution marker only
                                         sig_tr_ind.meta['high_ml'] = True
-                                        executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
+                                        # Allow/disallow Trend execution via config (default: disabled)
+                                        try:
+                                            allow_tr_exec = bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('enabled', False)))
+                                        except Exception:
+                                            allow_tr_exec = False
+                                        executed = False
+                                        if allow_tr_exec:
+                                            executed = await _try_execute('trend_breakout', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
                                         if executed:
                                             try:
                                                 logger.info(f"[{sym}] 🧮 Decision final: exec_trend (reason=ml_extreme {ml_score_tr:.1f}>={tr_hi_force:.0f})")
@@ -4842,7 +4861,13 @@ class TradingBot:
                                             continue
                                         else:
                                             try:
-                                                logger.info(f"[{sym}] 🛑 Trend High-ML override blocked: reason=exec_guard")
+                                                if not allow_tr_exec:
+                                                    if phantom_tracker and sig_tr_ind is not None:
+                                                        phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
+                                                    logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=exec_disabled)")
+                                                    continue
+                                                else:
+                                                    logger.info(f"[{sym}] 🛑 Trend High-ML override blocked: reason=exec_guard")
                                             except Exception:
                                                 pass
                                 try:

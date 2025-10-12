@@ -192,12 +192,42 @@ class TGBot:
                     logger.warning(f"Error refreshing balance: {exc}")
             if balance is not None:
                 lines.append(f"• Balance: ${balance:.2f} USDT")
+            # API key expiry (robust to different field names and formats)
             try:
                 api_info = broker.get_api_key_info()
-                if api_info and api_info.get("expiredAt"):
-                    expiry_timestamp = int(api_info["expiredAt"]) / 1000
-                    expiry_date = datetime.fromtimestamp(expiry_timestamp)
-                    days_remaining = (expiry_date - datetime.now()).days
+                expiry_val = None
+                if api_info:
+                    for k in ("expiredAt", "expireAt", "expireTime", "expirationTime"):
+                        if k in api_info:
+                            expiry_val = api_info.get(k)
+                            break
+                days_remaining = None
+                if expiry_val is None:
+                    # Unknown or non-expiring key
+                    pass
+                else:
+                    try:
+                        # Numeric: seconds or ms
+                        ts = int(str(expiry_val))
+                        if ts == 0:
+                            days_remaining = None  # non-expiring
+                        else:
+                            if ts > 10_000_000_000:  # ms
+                                ts = ts / 1000.0
+                            expiry_date = datetime.fromtimestamp(ts)
+                            days_remaining = (expiry_date - datetime.now()).days
+                    except Exception:
+                        # ISO string fallback
+                        try:
+                            iso = str(expiry_val).replace('Z', '+00:00')
+                            expiry_date = datetime.fromisoformat(iso)
+                            days_remaining = (expiry_date - datetime.now(expiry_date.tzinfo) if expiry_date.tzinfo else expiry_date - datetime.now()).days
+                        except Exception:
+                            days_remaining = None
+
+                if days_remaining is None:
+                    lines.append("🔑 API Key: no expiry")
+                else:
                     if days_remaining < 14:
                         lines.append(f"⚠️ *API Key:* expires in {days_remaining} days")
                     else:

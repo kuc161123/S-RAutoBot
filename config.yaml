@@ -147,7 +147,7 @@ trend:
     require_retest: true
     retest_max_dist_atr: 0.5
     allow_volatility_high: true
-    timeout_hours: 36
+    timeout_hours: 50
     enable_virtual_snapshots: true
     snapshots_delta: 5
 

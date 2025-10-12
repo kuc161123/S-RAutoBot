@@ -1553,7 +1553,19 @@ class TradingBot:
                             pass
                         logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
                         try:
-                            logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=ok)")
+                            # Explain why not executed: ML below threshold vs budget/cap
+                            reason = 'unknown'
+                            try:
+                                if not daily_ok:
+                                    reason = 'daily_cap'
+                                elif sc_remaining <= 0:
+                                    reason = 'hourly_budget'
+                                else:
+                                    # default: below high-ML threshold
+                                    reason = f"ml<thr {float(ml_s or 0.0):.1f}<{hi_thr:.0f}"
+                            except Exception:
+                                pass
+                            logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason={reason})")
                             _scalp_decision_logged = True
                         except Exception:
                             pass
@@ -1863,7 +1875,18 @@ class TradingBot:
                 blist.append(now_ts)
                 self._scalp_budget[sym] = blist
                 try:
-                            logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=ok_fallback)")
+                            # Explain fallback phantom reason (usually ML below threshold vs budget/cap)
+                            reason_fb = 'unknown'
+                            try:
+                                if not daily_ok:
+                                    reason_fb = 'daily_cap'
+                                elif sc_remaining <= 0:
+                                    reason_fb = 'hourly_budget'
+                                else:
+                                    reason_fb = f"ml<thr {float(ml_s or 0.0):.1f}<{hi_thr:.0f}"
+                            except Exception:
+                                pass
+                            logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason={reason_fb})")
                 except Exception:
                     pass
             else:

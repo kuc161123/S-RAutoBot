@@ -1135,7 +1135,7 @@ class TradingBot:
                             except Exception:
                                 pass
                             try:
-                                logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=cooldown)")
+                                logger.debug(f"[{sym}] 🧮 Scalp decision final: blocked (reason=cooldown)")
                             except Exception:
                                 pass
                             continue
@@ -3642,17 +3642,14 @@ class TradingBot:
                                         for s in list(act.keys()):
                                             try:
                                                 df3 = self.frames_3m.get(s) if hasattr(self, 'frames_3m') else None
-                                                if df3 is not None and not df3.empty:
-                                                    hi = float(df3['high'].iloc[-1]); lo = float(df3['low'].iloc[-1])
-                                                else:
-                                                    dfm = self.frames.get(s)
-                                                    if dfm is None or dfm.empty:
-                                                        continue
-                                                    hi = float(dfm['high'].iloc[-1]); lo = float(dfm['low'].iloc[-1])
-                                                if hasattr(scpt, 'update_with_bar'):
-                                                    closed = scpt.update_with_bar(s, hi, lo)
-                                                    if closed:
-                                                        logger.debug(f"🩳 Scalp phantom updater: {s} closed {closed} phantoms on bar")
+                                                dfm = self.frames.get(s)
+                                                src_df = df3 if (df3 is not None and not df3.empty) else dfm
+                                                if src_df is None or getattr(src_df, 'empty', True):
+                                                    continue
+                                                # Use last close as current_price for labeling; pass full frame for extremes
+                                                cur_price = float(src_df['close'].iloc[-1])
+                                                if hasattr(scpt, 'update_scalp_phantom_prices'):
+                                                    scpt.update_scalp_phantom_prices(s, cur_price, df=src_df)
                                             except Exception:
                                                 pass
                                     except Exception:

@@ -4888,7 +4888,11 @@ class TradingBot:
                                                 if not allow_tr_exec:
                                                     if phantom_tracker and sig_tr_ind is not None:
                                                         phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
-                                                    logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=exec_disabled)")
+                                                    try:
+                                                        log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
+                                                    except Exception:
+                                                        log_flag = False
+                                                    (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=exec_disabled)")
                                                     continue
                                                 else:
                                                     logger.info(f"[{sym}] 🛑 Trend High-ML override blocked: reason=exec_guard")
@@ -4963,7 +4967,11 @@ class TradingBot:
                                         pass
                                     if not allowed:
                                         if mode == 'gated' and not promo_bypass_ok:
-                                            logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=htf_gate ts15={metrics['ts15']:.1f} ts60={metrics['ts60']:.1f} < {min_ts:.1f})")
+                                            try:
+                                                log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
+                                            except Exception:
+                                                log_flag = False
+                                            (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=htf_gate ts15={metrics['ts15']:.1f} ts60={metrics['ts60']:.1f} < {min_ts:.1f})")
                                             if phantom_tracker:
                                                 phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
                                             sig_tr_ind = None
@@ -4986,7 +4994,11 @@ class TradingBot:
                                     logger.debug(f"[{sym}] Trend 3m.ctx: {'ok' if ok3 else 'weak'} ({why3})")
                                     enforce3 = bool(((cfg.get('router', {}) or {}).get('htf_bias', {}).get('micro_context', {}) or {}).get('trend_enforce', False) or tctx.get('enforce', False))
                                     if enforce3 and not ok3:
-                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=micro_ctx {why3})")
+                                        try:
+                                            log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
+                                        except Exception:
+                                            log_flag = False
+                                        (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=micro_ctx {why3})")
                                         if phantom_tracker:
                                             phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
                                         sig_tr_ind = None
@@ -5060,7 +5072,11 @@ class TradingBot:
                                         pass
                                     phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
                                     try:
-                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=regime/exec_gate)")
+                                        try:
+                                            log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
+                                        except Exception:
+                                            log_flag = False
+                                        (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=regime/exec_gate)")
                                     except Exception:
                                         pass
                                     try:
@@ -5073,7 +5089,11 @@ class TradingBot:
                                 if phantom_tracker and sig_tr_ind is not None:
                                     phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_breakout')
                                     try:
-                                        logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=ml_below_high_ml)")
+                                        try:
+                                            log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
+                                        except Exception:
+                                            log_flag = False
+                                        (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=ml_below_high_ml)")
                                     except Exception:
                                         pass
                                 continue
@@ -5092,7 +5112,11 @@ class TradingBot:
                                     'trend_breakout'
                                 )
                                 try:
-                                    logger.info(f"[{sym}] 🧮 Decision final: phantom_trend (reason=ml<thr)")
+                                    try:
+                                        log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
+                                    except Exception:
+                                        log_flag = False
+                                    (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=ml<thr)")
                                 except Exception:
                                     pass
                                 try:

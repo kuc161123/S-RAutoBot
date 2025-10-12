@@ -98,6 +98,27 @@ class MultiWebSocketHandler:
         
         backoff = 2.0  # seconds
         max_backoff = 30.0
+        # Derive a sensible recv timeout based on the largest timeframe in this connection.
+        # Bybit kline streams can be silent for the entire bar; using a fixed 90s timeout
+        # causes unnecessary reconnects for 3m/15m topics. Compute per-connection timeout
+        # as max(120s, max_tf_minutes*60 + 30s).
+        def _compute_timeout() -> float:
+            try:
+                tf_secs = 0
+                for t in topics:
+                    try:
+                        tf = t.split(".")[0]
+                        tf_i = int(tf)
+                        tf_secs = max(tf_secs, tf_i * 60)
+                    except Exception:
+                        # Non-integer timeframe (e.g., '1') fallback handled by default
+                        continue
+                # Default to 60s if nothing parsed
+                base = tf_secs if tf_secs > 0 else 60
+                return max(120.0, float(base + 30))
+            except Exception:
+                return 120.0
+
         while self._is_running():
             try:
                 logger.info(f"[WS-{conn_id}] Connecting with {len(topics)} topics...")
@@ -116,9 +137,11 @@ class MultiWebSocketHandler:
                     timeouts = 0
                     last_msg_ts = time.monotonic()
                     last_warn_ts = 0.0
+                    # Compute connection-specific timeout once per connect
+                    recv_timeout = _compute_timeout()
                     while self._is_running():
                         try:
-                            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=90))
+                            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=recv_timeout))
                             timeouts = 0  # reset timeout counter on message
                             last_msg_ts = time.monotonic()
                             
@@ -137,20 +160,21 @@ class MultiWebSocketHandler:
                                     await queue.put((sym, k))
                                     
                         except asyncio.TimeoutError:
+                            # No message within recv_timeout. Send an explicit ping to keepalive.
                             timeouts += 1
                             try:
                                 await ws.ping()
                             except Exception:
                                 logger.warning(f"[WS-{conn_id}] Ping failed after timeout, reconnecting...")
                                 break
-                            # Stale feed warning if no data for > 60 seconds
+                            # Stale feed warning if no data for > recv_timeout
                             now = time.monotonic()
-                            if now - last_msg_ts > 60 and (now - last_warn_ts > 60):
-                                logger.warning(f"[WS-{conn_id}] No data received for {int(now - last_msg_ts)}s; monitoring…")
+                            if now - last_msg_ts > recv_timeout and (now - last_warn_ts > 60):
+                                logger.warning(f"[WS-{conn_id}] No data received for {int(now - last_msg_ts)}s (timeout={int(recv_timeout)}s); monitoring…")
                                 last_warn_ts = now
-                            # If repeated timeouts, force reconnect
-                            if timeouts >= 3:
-                                logger.warning(f"[WS-{conn_id}] Repeated timeouts ({timeouts}), reconnecting...")
+                            # If severely idle (3x timeout), reconnect to refresh subscription
+                            if (now - last_msg_ts) > (3 * recv_timeout):
+                                logger.warning(f"[WS-{conn_id}] Prolonged idle ({int(now - last_msg_ts)}s), reconnecting...")
                                 break
                         except websockets.exceptions.ConnectionClosed:
                             # Throttle warning frequency; log INFO if recent

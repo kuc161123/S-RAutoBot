@@ -2837,26 +2837,43 @@ class TradingBot:
             logger.error(f"Failed to recover positions: {e}")
     
     async def kline_stream(self, ws_url:str, topics:list[str]):
-        """Stream klines from Bybit WebSocket (main 15m stream) with resilient keepalive/backoff."""
+        """Stream klines from Bybit WebSocket (main stream) with timeframe-aware idle handling."""
         sub = {"op":"subscribe","args":[f"kline.{t}" for t in topics]}
         backoff = 3.0
         max_backoff = 30.0
         last_warn = 0.0
+
+        def _compute_timeout() -> float:
+            """Compute a sensible recv timeout based on the largest timeframe in topics."""
+            try:
+                tf_secs = 0
+                for t in topics:
+                    try:
+                        tf = str(t).split(".")[0]
+                        tf_i = int(tf)
+                        tf_secs = max(tf_secs, tf_i * 60)
+                    except Exception:
+                        continue
+                base = tf_secs if tf_secs > 0 else 60
+                return max(120.0, float(base + 30))
+            except Exception:
+                return 120.0
         
         while self.running:
             try:
                 logger.info(f"Connecting to WebSocket: {ws_url}")
-                # Slightly longer recv timeout; steadier ping cadence
+                # Steady ping cadence; dynamic recv timeout per timeframe
                 async with websockets.connect(ws_url, ping_interval=25, ping_timeout=20) as ws:
                     self.ws = ws
                     await ws.send(json.dumps(sub))
                     logger.info(f"Subscribed to topics: {topics}")
                     backoff = 3.0  # reset after successful connect
                     last_msg = time.monotonic()
+                    recv_timeout = _compute_timeout()
 
                     while self.running:
                         try:
-                            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=90))
+                            msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=recv_timeout))
                             last_msg = time.monotonic()
                             if msg.get("success") == False:
                                 if "already subscribed" in msg.get("ret_msg", ""):
@@ -2870,15 +2887,20 @@ class TradingBot:
                                 for k in msg.get("data", []):
                                     yield sym, k
                         except asyncio.TimeoutError:
-                            # Keepalive ping after idle
+                            # Idle: send ping. Reconnect only after prolonged idle (> 3x timeout) or ping failure.
                             try:
                                 await ws.ping()
-                                logger.debug("WebSocket idle ping sent")
+                                logger.debug(f"WebSocket idle ping sent (timeout={int(recv_timeout)}s)")
                             except Exception:
                                 now = time.monotonic()
                                 if now - last_warn > 120:
                                     logger.warning("WebSocket ping failed after timeout, reconnecting...")
                                     last_warn = now
+                                break
+                            # If prolonged idle without any message, refresh connection
+                            now = time.monotonic()
+                            if (now - last_msg) > (3 * recv_timeout):
+                                logger.warning(f"WebSocket prolonged idle ({int(now - last_msg)}s), reconnecting...")
                                 break
                         except websockets.exceptions.ConnectionClosed:
                             now = time.monotonic()

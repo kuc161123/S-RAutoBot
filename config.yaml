@@ -122,8 +122,8 @@ trend:
     allowed_vol: [low, normal]
     phantom_on_filter_fail: true
   phantom:
-    # Minimum ML score to record Trend phantoms (filter out noisy low-ML phantoms)
-    min_ml: 72
+    # Record all Trend phantoms (no minimum ML filter)
+    min_ml: 0
   # Trend corking (promotion) system — analogous to MR promotion
   promotion:
     enabled: false          # master toggle

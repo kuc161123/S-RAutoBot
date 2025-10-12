@@ -245,6 +245,65 @@ class ScalpPhantomTracker:
             self._save()
         return closed
 
+    def update_with_bar(self, symbol: str, high: float, low: float, bar_time: Optional[datetime] = None) -> int:
+        """Update active phantoms for a symbol with a single bar's high/low.
+
+        Closes phantoms that hit TP/SL and updates max_favorable/adverse. Returns
+        the number of phantoms closed by this update.
+        """
+        try:
+            if symbol not in self.active:
+                return 0
+            closed = 0
+            items = list(self.active.get(symbol, []))
+            remaining: List[ScalpPhantomTrade] = []
+            for ph in items:
+                try:
+                    # Track excursion metrics
+                    if ph.side == 'long':
+                        try:
+                            ph.max_favorable = max(ph.max_favorable or ph.entry_price, high)
+                            ph.max_adverse = min(ph.max_adverse or ph.entry_price, low)
+                        except Exception:
+                            pass
+                        hit_sl = low <= ph.stop_loss
+                        hit_tp = high >= ph.take_profit
+                        if hit_sl or hit_tp:
+                            ph.exit_reason = 'sl' if hit_sl else 'tp'
+                            exit_price = ph.stop_loss if hit_sl else ph.take_profit
+                            self._close(symbol, ph, exit_price, 'loss' if hit_sl else 'win')
+                            closed += 1
+                            continue
+                    else:
+                        try:
+                            ph.max_favorable = min(ph.max_favorable or ph.entry_price, low)
+                            ph.max_adverse = max(ph.max_adverse or ph.entry_price, high)
+                        except Exception:
+                            pass
+                        hit_sl = high >= ph.stop_loss
+                        hit_tp = low <= ph.take_profit
+                        if hit_sl or hit_tp:
+                            ph.exit_reason = 'sl' if hit_sl else 'tp'
+                            exit_price = ph.stop_loss if hit_sl else ph.take_profit
+                            self._close(symbol, ph, exit_price, 'loss' if hit_sl else 'win')
+                            closed += 1
+                            continue
+                    remaining.append(ph)
+                except Exception:
+                    remaining.append(ph)
+            if remaining:
+                self.active[symbol] = remaining
+            else:
+                try:
+                    del self.active[symbol]
+                except Exception:
+                    pass
+            if closed:
+                self._save()
+            return closed
+        except Exception:
+            return 0
+
     def _load_symbol_meta(self):
         try:
             with open('config.yaml','r') as f:

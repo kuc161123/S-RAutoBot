@@ -3632,6 +3632,35 @@ class TradingBot:
                             self._create_task(_scalp_timeout_sweeper())
                         except Exception:
                             pass
+                        # Periodic active-phantom updater to close on TP/SL using latest bars
+                        try:
+                            async def _scalp_active_updater():
+                                while self.running:
+                                    try:
+                                        # Snapshot active symbols to avoid holding lock
+                                        act = dict(scpt.active) if isinstance(getattr(scpt, 'active', None), dict) else {}
+                                        for s in list(act.keys()):
+                                            try:
+                                                df3 = self.frames_3m.get(s) if hasattr(self, 'frames_3m') else None
+                                                if df3 is not None and not df3.empty:
+                                                    hi = float(df3['high'].iloc[-1]); lo = float(df3['low'].iloc[-1])
+                                                else:
+                                                    dfm = self.frames.get(s)
+                                                    if dfm is None or dfm.empty:
+                                                        continue
+                                                    hi = float(dfm['high'].iloc[-1]); lo = float(dfm['low'].iloc[-1])
+                                                if hasattr(scpt, 'update_with_bar'):
+                                                    closed = scpt.update_with_bar(s, hi, lo)
+                                                    if closed:
+                                                        logger.debug(f"🩳 Scalp phantom updater: {s} closed {closed} phantoms on bar")
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
+                                    await asyncio.sleep(10)
+                            self._create_task(_scalp_active_updater())
+                        except Exception:
+                            pass
                         # Scalp phantom notifier disabled
                         # Compute promotion readiness from config and stats
                         try:

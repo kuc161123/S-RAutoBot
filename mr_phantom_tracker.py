@@ -224,22 +224,12 @@ class MRPhantomTracker:
             self.redis_client.set('mr_phantom:active',
                                 json.dumps(active_dict, cls=MRNumpyJSONEncoder))
 
-            # Save completed MR phantoms (keep last 1500, and drop >30d old)
-            from datetime import datetime, timedelta
-            cutoff = datetime.now() - timedelta(days=30)
+            # Save completed MR phantoms with no trimming to keep full history for retraining
             all_completed = []
             for trades in self.mr_phantom_trades.values():
                 for trade in trades:
                     if trade.outcome in ['win', 'loss']:
-                        try:
-                            if trade.exit_time and trade.exit_time < cutoff:
-                                continue
-                        except Exception:
-                            pass
                         all_completed.append(trade.to_dict())
-
-            # Keep only last 1500 for storage efficiency
-            all_completed = all_completed[-1500:]
             self.redis_client.set('mr_phantom:completed',
                                 json.dumps(all_completed, cls=MRNumpyJSONEncoder))
 

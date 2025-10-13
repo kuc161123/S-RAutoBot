@@ -556,11 +556,8 @@ class MLScorerMeanReversion:
                     'was_executed': 1
                 }
 
-                # Store in Redis list with strategy-specific key
+                # Store full history without trimming to allow unlimited retraining data
                 self.redis_client.lpush('ml:trades:mean_reversion', json.dumps(trade_record))
-
-                # Keep only last 1000 trades to prevent memory bloat
-                self.redis_client.ltrim('ml:trades:mean_reversion', 0, 999)
 
             else:
                 # Memory fallback

@@ -773,15 +773,14 @@ class EnhancedMeanReversionScorer:
         """Store trade record for training"""
         try:
             if self.redis_client:
+                # Append without trimming to keep full history for retraining (no limits)
                 self.redis_client.rpush('enhanced_mr:trades',
                                       json.dumps(trade_record, cls=NumpyJSONEncoder))
-                # Keep only last 2000 trades
-                self.redis_client.ltrim('enhanced_mr:trades', -2000, -1)
             else:
                 if 'trades' not in self.memory_storage:
                     self.memory_storage['trades'] = []
                 self.memory_storage['trades'].append(trade_record)
-                self.memory_storage['trades'] = self.memory_storage['trades'][-1000:]
+                # Do not trim in memory either; keep all
 
         except Exception as e:
             logger.error(f"Error storing Enhanced MR trade record: {e}")
@@ -799,12 +798,7 @@ class EnhancedMeanReversionScorer:
             # Load training data
             training_data = self._load_training_data(include_phantoms=include_phantoms)
 
-            # Cap training set size (keep most recent)
-            MAX_TRAINING_SAMPLES = 5000
-            if len(training_data) > MAX_TRAINING_SAMPLES:
-                discarded = len(training_data) - MAX_TRAINING_SAMPLES
-                training_data = training_data[-MAX_TRAINING_SAMPLES:]
-                logger.info(f"Capped Enhanced MR training set to {MAX_TRAINING_SAMPLES} (discarded {discarded})")
+            # No cap: use full training set (executed + phantom)
 
             if len(training_data) < self.MIN_TRADES_FOR_ML:
                 logger.warning(f"Not enough Enhanced MR data for training: {len(training_data)} < {self.MIN_TRADES_FOR_ML}")

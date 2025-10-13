@@ -145,8 +145,8 @@ class TrendMLScorer:
                 'was_executed': 1 if signal.get('was_executed') else 0
             }
             if r:
+                # Append without trimming to keep full history for retraining (no limits)
                 r.rpush('tml:trades', json.dumps(rec))
-                r.ltrim('tml:trades', -5000, -1)
             self._save_state()
         except Exception as e:
             logger.error(f"Trend record outcome error: {e}")
@@ -179,13 +179,8 @@ class TrendMLScorer:
             logger.info(f"Trend ML not enough data: {len(data)}/{self.MIN_TRADES_FOR_ML}")
             return False
         X, y, w = [], [], []
-        exec_count = sum(1 for d in data if d.get('was_executed'))
-        ph = [d for d in data if not d.get('was_executed')]
-        ex = [d for d in data if d.get('was_executed')]
-        max_ph = int(max(1, exec_count) * 1.5)
-        if len(ph) > max_ph:
-            ph = ph[-max_ph:]
-        mix = ex + ph
+        # Use entire dataset (executed + phantom) without caps
+        mix = data
         for d in mix:
             f = d.get('features', {})
             X.append(self._prepare_features(f))

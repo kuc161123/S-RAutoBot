@@ -1518,6 +1518,17 @@ class TradingBot:
                     _df_src2 = df
                 sc_feats = self._build_scalp_features(_df_src2, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
                 sc_feats['routing'] = 'none'
+                # Ensure hourly per-symbol pacing vars exist before any High-ML early exit uses them
+                try:
+                    hb = self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
+                    sc_limit = int(hb.get('scalp', 4))
+                except Exception:
+                    sc_limit = 4
+                if not hasattr(self, '_scalp_budget'):
+                    self._scalp_budget = {}
+                now_ts = pd.Timestamp.utcnow().timestamp()
+                blist = [ts for ts in self._scalp_budget.get(sym, []) if (now_ts - ts) < 3600]
+                self._scalp_budget[sym] = blist
                 try:
                     scpt = get_scalp_phantom_tracker()
                     # Compute Scalp ML score if scorer is available
@@ -1572,9 +1583,8 @@ class TradingBot:
                             logger.info(f"[{sym}] Scalp High-ML override error: {_ee}")
                     # Enforce per-strategy hourly per-symbol budget for scalp
                     hb = self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
-                    sc_limit = int(hb.get('scalp', 4))
-                    if not hasattr(self, '_scalp_budget'):
-                        self._scalp_budget = {}
+                    sc_limit = int(hb.get('scalp', sc_limit))
+                    # now_ts and blist already initialized above; refresh list for safety
                     now_ts = pd.Timestamp.utcnow().timestamp()
                     blist = [ts for ts in self._scalp_budget.get(sym, []) if (now_ts - ts) < 3600]
                     self._scalp_budget[sym] = blist

@@ -4317,6 +4317,21 @@ class TradingBot:
                             if SCALP_AVAILABLE and get_scalp_scorer is not None:
                                 try:
                                     sc_scorer = get_scalp_scorer()
+                                    # Sync scorer threshold with config for accurate dashboard display
+                                    try:
+                                        cfg_thr = None
+                                        try:
+                                            cfg_thr = float((self.config.get('scalp', {}) or {}).get('threshold', None))
+                                        except Exception:
+                                            cfg_thr = None
+                                        if cfg_thr is not None and abs(float(sc_scorer.min_score) - float(cfg_thr)) > 1e-6:
+                                            sc_scorer.min_score = float(cfg_thr)
+                                            try:
+                                                sc_scorer._save_state()
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        pass
                                     info = {}
                                     try:
                                         info = sc_scorer.get_retrain_info()

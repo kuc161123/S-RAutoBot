@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Dict, Tuple, List
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
@@ -24,8 +25,9 @@ class ScalpMLScorer:
     RETRAIN_INTERVAL = 50
     INITIAL_THRESHOLD = 75
     # Allow phantom-only bootstrap when there are no executed scalp trades yet
-    PHANTOM_BOOTSTRAP_MIN = 100  # train from phantom-only once we have this many records
-    PHANTOM_BOOTSTRAP_MAX = 500  # cap bootstrap training set size to avoid bloat
+    # Unlimited phantom usage policy for training (no cap)
+    PHANTOM_BOOTSTRAP_MIN = 0
+    PHANTOM_BOOTSTRAP_MAX = 10_000_000
 
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
@@ -120,6 +122,11 @@ class ScalpMLScorer:
                 preds.append(self.models['rf'].predict_proba(xs)[:,1])
             if self.models.get('gb'):
                 preds.append(self.models['gb'].predict_proba(xs)[:,1])
+            if self.models.get('nn'):
+                try:
+                    preds.append(self.models['nn'].predict_proba(xs)[:,1])
+                except Exception:
+                    pass
             if preds:
                 p = float(np.mean(preds))
                 return p*100.0, 'Scalp ML Ensemble'
@@ -146,13 +153,8 @@ class ScalpMLScorer:
         # Auto-retrain when enough new trades have accumulated
         try:
             data = self._load_training_data()
-            # Estimate trainable set size under current policy
-            exec_count = sum(1 for d in data if d.get('was_executed'))
-            phantom_count = len(data) - exec_count
-            if exec_count == 0 and len(data) >= self.PHANTOM_BOOTSTRAP_MIN:
-                trainable = min(len(data), self.PHANTOM_BOOTSTRAP_MAX)
-            else:
-                trainable = exec_count + min(int(exec_count * 1.5), phantom_count)
+            # Unlimited phantoms: trainable set is the full dataset
+            trainable = len(data)
 
             if trainable >= self.MIN_TRADES_FOR_ML and (trainable - self.last_train_count) >= self.RETRAIN_INTERVAL:
                 logger.info(f"Scalp ML retrain trigger: {trainable - self.last_train_count} new trades (trainable={trainable})")
@@ -180,19 +182,8 @@ class ScalpMLScorer:
             logger.info(f"Scalp ML not enough data: {len(data)}/{self.MIN_TRADES_FOR_ML}")
             return False
         X, y, w = [], [], []
-        exec_count = sum(1 for d in data if d.get('was_executed'))
-        ph = [d for d in data if not d.get('was_executed')]
-        ex = [d for d in data if d.get('was_executed')]
-        # Training set selection with phantom bootstrap when no executed data
-        if exec_count == 0:
-            # Use phantom-only bootstrap with a capped, recent subset
-            ph = ph[-min(len(ph), self.PHANTOM_BOOTSTRAP_MAX):]
-            mix = ph
-        else:
-            max_ph = int(exec_count * 1.5)
-            if len(ph) > max_ph:
-                ph = ph[-max_ph:]
-            mix = ex + ph
+        # Use the entire dataset (executed + phantoms) without caps
+        mix = data
 
         if len(mix) < self.MIN_TRADES_FOR_ML:
             logger.info(f"Scalp ML trainable set below minimum after policy: {len(mix)}/{self.MIN_TRADES_FOR_ML} (exec={exec_count})")
@@ -214,15 +205,27 @@ class ScalpMLScorer:
         self.scaler.fit(X)
         XS = self.scaler.transform(X)
         self.models = {
-            'rf': RandomForestClassifier(n_estimators=100, max_depth=7, min_samples_split=5, random_state=42),
-            'gb': GradientBoostingClassifier(n_estimators=100, max_depth=4, learning_rate=0.1, subsample=0.8, random_state=42)
+            'rf': RandomForestClassifier(n_estimators=200, max_depth=8, min_samples_split=5, random_state=42),
+            'gb': GradientBoostingClassifier(n_estimators=150, max_depth=3, learning_rate=0.08, subsample=0.8, random_state=42),
+            # New neural network head; uses the scaled features
+            'nn': MLPClassifier(hidden_layer_sizes=(64, 32), activation='relu', solver='adam', alpha=5e-4,
+                                batch_size=64, learning_rate='adaptive', max_iter=200, random_state=42)
         }
         try:
             self.models['rf'].fit(XS, y, sample_weight=w)
             self.models['gb'].fit(XS, y, sample_weight=w)
+            try:
+                self.models['nn'].fit(XS, y, sample_weight=w)
+            except TypeError:
+                # Older sklearn without sample_weight support on MLP
+                self.models['nn'].fit(XS, y)
         except Exception:
             self.models['rf'].fit(XS, y)
             self.models['gb'].fit(XS, y)
+            try:
+                self.models['nn'].fit(XS, y)
+            except Exception:
+                pass
         self.is_ml_ready = True
         self.last_train_count = len(mix)
         self._save_state()

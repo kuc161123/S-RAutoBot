@@ -561,7 +561,8 @@ class ScalpPhantomTracker:
                 scorer = get_scalp_scorer()
                 signal = {
                     'features': ph.features or {},
-                    'was_executed': False,
+                    # Preserve whether this phantom mirrors an executed trade (for weighting/analysis)
+                    'was_executed': bool(getattr(ph, 'was_executed', False)),
                     'exit_reason': getattr(ph, 'exit_reason', None)
                 }
                 scorer.record_outcome(signal, outcome, float(ph.pnl_percent or 0.0))

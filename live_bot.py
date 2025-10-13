@@ -742,10 +742,10 @@ class TradingBot:
                     return False
             # Round TP/SL to tick size
                 m = meta_for(sym, cfg.get('symbol_meta', {}))
-            from position_mgr import round_step
-            tick_size = m.get("tick_size", 0.000001)
-            sig_obj.tp = round_step(float(sig_obj.tp), tick_size)
-            sig_obj.sl = round_step(float(sig_obj.sl), tick_size)
+                from position_mgr import round_step
+                tick_size = m.get("tick_size", 0.000001)
+                sig_obj.tp = round_step(float(sig_obj.tp), tick_size)
+                sig_obj.sl = round_step(float(sig_obj.sl), tick_size)
             # Update sizer balance
                 try:
                     bal = bybit.get_balance()
@@ -799,43 +799,43 @@ class TradingBot:
                 except Exception:
                     pass
             # Adjust TP to achieve target R:R net of fees/slippage with optional bias
-            try:
-                fee_total_pct = float((self.config.get('trade', {}) or {}).get('fee_total_pct', 0.00165)) if hasattr(self, 'config') else 0.00165
-                # Use the higher of configured slippage and dynamic EWMA
-                slip_pct = 0.0005
                 try:
-                    slip_pct = float((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('slippage_pct', 0.0005)))
-                except Exception:
-                    pass
-                try:
-                    if hasattr(self, '_redis') and self._redis is not None:
-                        ewma = float(self._redis.get(f'scalp:slip:ewma:{sym}') or 0.0)
-                        slip_pct = max(slip_pct, min(0.003, ewma))
-                except Exception:
-                    pass
-                # Optional RR bias to slightly extend TP to counter fee/slippage underfills
-                rr_bias_pct = 0.0
-                try:
-                    rr_bias_pct = float((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('rr_bias_pct', 0.0)))
-                except Exception:
+                    fee_total_pct = float((self.config.get('trade', {}) or {}).get('fee_total_pct', 0.00165)) if hasattr(self, 'config') else 0.00165
+                    # Use the higher of configured slippage and dynamic EWMA
+                    slip_pct = 0.0005
+                    try:
+                        slip_pct = float((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('slippage_pct', 0.0005)))
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(self, '_redis') and self._redis is not None:
+                            ewma = float(self._redis.get(f'scalp:slip:ewma:{sym}') or 0.0)
+                            slip_pct = max(slip_pct, min(0.003, ewma))
+                    except Exception:
+                        pass
+                    # Optional RR bias to slightly extend TP to counter fee/slippage underfills
                     rr_bias_pct = 0.0
-                # Compute current RR from signal and adjust TP distance to include fees/slippage
-                rr = None
-                try:
-                    if sig_obj.side == 'long':
-                        R = max(1e-9, float(actual_entry) - float(sig_obj.sl))
-                        rr = max(0.1, (float(sig_obj.tp) - float(actual_entry)) / R)
-                        gross = rr * R * (1.0 + fee_total_pct + slip_pct) * (1.0 + max(-0.25, min(0.25, rr_bias_pct)))
-                        new_tp = float(actual_entry) + gross
-                    else:
-                        R = max(1e-9, float(sig_obj.sl) - float(actual_entry))
-                        rr = max(0.1, (float(actual_entry) - float(sig_obj.tp)) / R)
-                        gross = rr * R * (1.0 + fee_total_pct + slip_pct) * (1.0 + max(-0.25, min(0.25, rr_bias_pct)))
-                        new_tp = float(actual_entry) - gross
-                    # Round TP to tick size
-                    from position_mgr import round_step
-                    new_tp = round_step(new_tp, tick_size)
-                    sig_obj.tp = float(new_tp)
+                    try:
+                        rr_bias_pct = float((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('rr_bias_pct', 0.0)))
+                    except Exception:
+                        rr_bias_pct = 0.0
+                    # Compute current RR from signal and adjust TP distance to include fees/slippage
+                    rr = None
+                    try:
+                        if sig_obj.side == 'long':
+                            R = max(1e-9, float(actual_entry) - float(sig_obj.sl))
+                            rr = max(0.1, (float(sig_obj.tp) - float(actual_entry)) / R)
+                            gross = rr * R * (1.0 + fee_total_pct + slip_pct) * (1.0 + max(-0.25, min(0.25, rr_bias_pct)))
+                            new_tp = float(actual_entry) + gross
+                        else:
+                            R = max(1e-9, float(sig_obj.sl) - float(actual_entry))
+                            rr = max(0.1, (float(actual_entry) - float(sig_obj.tp)) / R)
+                            gross = rr * R * (1.0 + fee_total_pct + slip_pct) * (1.0 + max(-0.25, min(0.25, rr_bias_pct)))
+                            new_tp = float(actual_entry) - gross
+                        # Round TP to tick size
+                        from position_mgr import round_step
+                        new_tp = round_step(new_tp, tick_size)
+                        sig_obj.tp = float(new_tp)
                         try:
                             logger.debug(f"[{sym}] Scalp TP adj: rr={rr:.2f} fee={fee_total_pct*100:.2f}bps slip={slip_pct*100:.2f}bps -> TP {new_tp:.4f}")
                         except Exception:

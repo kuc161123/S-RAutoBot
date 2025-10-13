@@ -399,6 +399,8 @@ scalp:
     cancel_active_on_high_ml: true
     # Estimated slippage fraction to achieve target R:R net of fees and slippage
     slippage_pct: 0.0005
+    # Small bias to extend TP distance to better match net realized R after fees/slippage
+    rr_bias_pct: 0.03
 symbol_meta:
   default:
     qty_step: 0.001

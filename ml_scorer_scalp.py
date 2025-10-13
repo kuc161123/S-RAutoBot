@@ -145,8 +145,8 @@ class ScalpMLScorer:
                     'timestamp': datetime.utcnow().isoformat(),
                     'was_executed': 1 if signal.get('was_executed') else 0
                 }
+                # Append without trimming to keep full history for retraining (no limits)
                 self.redis_client.rpush('ml:trades:scalp', json.dumps(record))
-                self.redis_client.ltrim('ml:trades:scalp', -5000, -1)
                 self._save_state()
             except Exception as e:
                 logger.error(f"Scalp record outcome error: {e}")
@@ -263,12 +263,8 @@ class ScalpMLScorer:
         """Report readiness and trades until next retrain under current policy."""
         try:
             data = self._load_training_data()
-            exec_count = sum(1 for d in data if d.get('was_executed'))
-            phantom_count = len(data) - exec_count
-            if exec_count == 0 and len(data) >= self.PHANTOM_BOOTSTRAP_MIN:
-                trainable = min(len(data), self.PHANTOM_BOOTSTRAP_MAX)
-            else:
-                trainable = exec_count + min(int(exec_count * 1.5), phantom_count)
+            # Trainable set equals total records (executed + phantom)
+            trainable = len(data)
 
             info = {
                 'is_ml_ready': bool(self.is_ml_ready),

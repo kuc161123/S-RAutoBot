@@ -589,6 +589,14 @@ class TradingBot:
             'dedup_skips': 0,
             'cooldown_skips': 0
         }
+        # Per-symbol execution locks to avoid concurrent duplicate opens/TP/SL
+        try:
+            import asyncio as _asyncio
+            self._exec_locks: Dict[str, _asyncio.Lock] = {}
+        except Exception:
+            self._exec_locks = {}
+        # Track if TP/SL has been applied for a symbol (best-effort idempotency)
+        self._tpsl_applied: Dict[str, float] = {}
         # Cache of latest scalp detections per symbol (for promotion timing)
         self._scalp_last_signal: Dict[str, Dict[str, object]] = {}
         # HTF gating persistence (per-strategy per-symbol)
@@ -714,190 +722,216 @@ class TradingBot:
         (existing position, invalid SL/TP, sizing, exchange errors).
         """
         try:
-            bybit = self.bybit
-            book = self.book
-            sizer = getattr(self, 'sizer', None)
-            cfg = getattr(self, 'config', {}) or {}
-            shared = getattr(self, 'shared', {}) or {}
+            # Ensure only one execution path runs per symbol to avoid duplicate TP/SL placements
+            try:
+                lock = self._exec_locks.get(sym)
+            except Exception:
+                lock = None
+            if lock is None:
+                import asyncio as _asyncio
+                lock = _asyncio.Lock()
+                self._exec_locks[sym] = lock
+            async with lock:
+                bybit = self.bybit
+                book = self.book
+                sizer = getattr(self, 'sizer', None)
+                cfg = getattr(self, 'config', {}) or {}
+                shared = getattr(self, 'shared', {}) or {}
             # One position per symbol
-            if sym in book.positions:
-                return False
+                if sym in book.positions:
+                    return False
             # Round TP/SL to tick size
-            m = meta_for(sym, cfg.get('symbol_meta', {}))
+                m = meta_for(sym, cfg.get('symbol_meta', {}))
             from position_mgr import round_step
             tick_size = m.get("tick_size", 0.000001)
             sig_obj.tp = round_step(float(sig_obj.tp), tick_size)
             sig_obj.sl = round_step(float(sig_obj.sl), tick_size)
             # Update sizer balance
-            try:
-                bal = bybit.get_balance()
-                if bal:
-                    sizer.account_balance = bal
-                    shared["last_balance"] = bal
-            except Exception:
-                pass
+                try:
+                    bal = bybit.get_balance()
+                    if bal:
+                        sizer.account_balance = bal
+                        shared["last_balance"] = bal
+                except Exception:
+                    pass
             # Sizing
-            qty = sizer.qty_for(float(sig_obj.entry), float(sig_obj.sl), m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
-            if qty <= 0:
-                return False
+                qty = sizer.qty_for(float(sig_obj.entry), float(sig_obj.sl), m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
+                if qty <= 0:
+                    return False
             # SL sanity
-            try:
-                df_main = self.frames.get(sym)
-                current_price = float(df_main['close'].iloc[-1]) if (df_main is not None and len(df_main)>0) else float(sig_obj.entry)
-            except Exception:
-                current_price = float(sig_obj.entry)
-            if (sig_obj.side == "long" and float(sig_obj.sl) >= current_price) or (sig_obj.side == "short" and float(sig_obj.sl) <= current_price):
-                return False
+                try:
+                    df_main = self.frames.get(sym)
+                    current_price = float(df_main['close'].iloc[-1]) if (df_main is not None and len(df_main)>0) else float(sig_obj.entry)
+                except Exception:
+                    current_price = float(sig_obj.entry)
+                if (sig_obj.side == "long" and float(sig_obj.sl) >= current_price) or (sig_obj.side == "short" and float(sig_obj.sl) <= current_price):
+                    return False
             # Leverage and market order
-            max_lev = int(m.get("max_leverage", 10))
-            bybit.set_leverage(sym, max_lev)
-            side = "Buy" if sig_obj.side == "long" else "Sell"
-            _ = bybit.place_market(sym, side, qty, reduce_only=False)
+                max_lev = int(m.get("max_leverage", 10))
+                bybit.set_leverage(sym, max_lev)
+                side = "Buy" if sig_obj.side == "long" else "Sell"
+                _ = bybit.place_market(sym, side, qty, reduce_only=False)
             # Read back avg entry and set TP/SL
-            actual_entry = float(sig_obj.entry)
-            try:
-                await asyncio.sleep(0.4)
-                position = bybit.get_position(sym)
-                if position and position.get("avgPrice"):
-                    actual_entry = float(position["avgPrice"]) or actual_entry
-            except Exception:
-                pass
+                actual_entry = float(sig_obj.entry)
+                try:
+                    await asyncio.sleep(0.4)
+                    position = bybit.get_position(sym)
+                    if position and position.get("avgPrice"):
+                        actual_entry = float(position["avgPrice"]) or actual_entry
+                except Exception:
+                    pass
             # Update dynamic slippage EWMA from fills (per-symbol)
-            try:
-                inst_slip = 0.0
                 try:
-                    inst_slip = abs(actual_entry - float(sig_obj.entry)) / max(1e-9, float(sig_obj.entry))
-                except Exception:
                     inst_slip = 0.0
-                if hasattr(self, '_redis') and self._redis is not None:
-                    key_s = f'scalp:slip:ewma:{sym}'; key_n = f'scalp:slip:n:{sym}'
-                    prev = float(self._redis.get(key_s) or 0.0)
-                    n = int(self._redis.get(key_n) or 0)
-                    alpha = 0.2  # EWMA weight
-                    ewma = prev if n > 0 else inst_slip
-                    ewma = (1 - alpha) * ewma + alpha * inst_slip
-                    self._redis.set(key_s, str(ewma))
-                    self._redis.set(key_n, str(min(n + 1, 100000)))
-            except Exception:
-                pass
-            # Adjust TP to achieve target R:R net of fees and slippage
-            try:
-                fee_total_pct = float((self.config.get('trade', {}) or {}).get('fee_total_pct', 0.00165)) if hasattr(self, 'config') else 0.00165
-                # Use the higher of configured slippage and dynamic EWMA
-                slip_pct = 0.0005
-                try:
-                    slip_pct = float((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('slippage_pct', 0.0005)))
-                except Exception:
-                    pass
-                try:
-                    if hasattr(self, '_redis') and self._redis is not None:
-                        ewma = float(self._redis.get(f'scalp:slip:ewma:{sym}') or 0.0)
-                        slip_pct = max(slip_pct, min(0.003, ewma))
-                except Exception:
-                    pass
-                # Compute current RR from signal and adjust TP distance to include fees/slippage
-                rr = None
-                try:
-                    if sig_obj.side == 'long':
-                        R = max(1e-9, float(actual_entry) - float(sig_obj.sl))
-                        rr = max(0.1, (float(sig_obj.tp) - float(actual_entry)) / R)
-                        gross = rr * R * (1.0 + fee_total_pct + slip_pct)
-                        new_tp = float(actual_entry) + gross
-                    else:
-                        R = max(1e-9, float(sig_obj.sl) - float(actual_entry))
-                        rr = max(0.1, (float(actual_entry) - float(sig_obj.tp)) / R)
-                        gross = rr * R * (1.0 + fee_total_pct + slip_pct)
-                        new_tp = float(actual_entry) - gross
-                    # Round TP to tick size
-                    from position_mgr import round_step
-                    new_tp = round_step(new_tp, tick_size)
-                    sig_obj.tp = float(new_tp)
                     try:
-                        logger.debug(f"[{sym}] Scalp TP adj: rr={rr:.2f} fee={fee_total_pct*100:.2f}bps slip={slip_pct*100:.2f}bps -> TP {new_tp:.4f}")
+                        inst_slip = abs(actual_entry - float(sig_obj.entry)) / max(1e-9, float(sig_obj.entry))
+                    except Exception:
+                        inst_slip = 0.0
+                    if hasattr(self, '_redis') and self._redis is not None:
+                        key_s = f'scalp:slip:ewma:{sym}'; key_n = f'scalp:slip:n:{sym}'
+                        prev = float(self._redis.get(key_s) or 0.0)
+                        n = int(self._redis.get(key_n) or 0)
+                        alpha = 0.2  # EWMA weight
+                        ewma = prev if n > 0 else inst_slip
+                        ewma = (1 - alpha) * ewma + alpha * inst_slip
+                        self._redis.set(key_s, str(ewma))
+                        self._redis.set(key_n, str(min(n + 1, 100000)))
+                except Exception:
+                    pass
+            # Adjust TP to achieve target R:R net of fees and slippage
+                try:
+                    fee_total_pct = float((self.config.get('trade', {}) or {}).get('fee_total_pct', 0.00165)) if hasattr(self, 'config') else 0.00165
+                    # Use the higher of configured slippage and dynamic EWMA
+                    slip_pct = 0.0005
+                    try:
+                        slip_pct = float((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('slippage_pct', 0.0005)))
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(self, '_redis') and self._redis is not None:
+                            ewma = float(self._redis.get(f'scalp:slip:ewma:{sym}') or 0.0)
+                            slip_pct = max(slip_pct, min(0.003, ewma))
+                    except Exception:
+                        pass
+                    # Compute current RR from signal and adjust TP distance to include fees/slippage
+                    rr = None
+                    try:
+                        if sig_obj.side == 'long':
+                            R = max(1e-9, float(actual_entry) - float(sig_obj.sl))
+                            rr = max(0.1, (float(sig_obj.tp) - float(actual_entry)) / R)
+                            gross = rr * R * (1.0 + fee_total_pct + slip_pct)
+                            new_tp = float(actual_entry) + gross
+                        else:
+                            R = max(1e-9, float(sig_obj.sl) - float(actual_entry))
+                            rr = max(0.1, (float(actual_entry) - float(sig_obj.tp)) / R)
+                            gross = rr * R * (1.0 + fee_total_pct + slip_pct)
+                            new_tp = float(actual_entry) - gross
+                        # Round TP to tick size
+                        from position_mgr import round_step
+                        new_tp = round_step(new_tp, tick_size)
+                        sig_obj.tp = float(new_tp)
+                        try:
+                            logger.debug(f"[{sym}] Scalp TP adj: rr={rr:.2f} fee={fee_total_pct*100:.2f}bps slip={slip_pct*100:.2f}bps -> TP {new_tp:.4f}")
+                        except Exception:
+                            pass
                     except Exception:
                         pass
                 except Exception:
                     pass
-            except Exception:
-                pass
-            # Set TP/SL: prioritize trading-stop TP/SL (visible in UI), fallback to reduce-only TP
-            try:
-                # First try: trading-stop Full mode (no qty) — avoids duplicate partial TP/SL on retries
+            # Set TP/SL exactly once: prefer Partial mode, fallback to Full, final fallback reduce-only limit + SL
                 try:
-                    bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
-                except Exception:
-                    # Second try: Partial with qty (only if Full fails)
+                    applied_mode = None  # 'partial' | 'full' | 'reduce_only'
                     try:
+                        # Prefer Partial (qty-aware, limit TP)
                         bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
+                        applied_mode = 'partial'
                     except Exception:
-                        # Final fallback: reduce-only PostOnly TP + SL-only
-                        tp_side = "Sell" if sig_obj.side == "long" else "Buy"
-                        bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
-                        bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
-
-                # Post-verify TP/SL exist; retry up to 3 times if missing
-                try:
-                    for _ in range(3):
-                        await asyncio.sleep(0.6)
-                        pos = bybit.get_position(sym)
-                        tp_ok = False; sl_ok = False
                         try:
-                            tpv = pos.get('takeProfit') if pos else None
-                            slv = pos.get('stopLoss') if pos else None
-                            tp_ok = (tpv not in (None, '', '0')) and (float(tpv) > 0)
-                            sl_ok = (slv not in (None, '', '0')) and (float(slv) > 0)
-                        except Exception:
-                            tp_ok = sl_ok = False
-                        if tp_ok and sl_ok:
-                            break
-                        # Re-apply TP/SL if missing — use Full mode only to avoid duplicate partials
-                        try:
+                            # Fallback to Full (no qty); does not place limit TP orders
                             bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
+                            applied_mode = 'full'
                         except Exception:
-                            pass
-                    else:
-                        # After loop, still missing
+                            # Final fallback: place a single reduce-only limit TP and SL-only
+                            tp_side = "Sell" if sig_obj.side == "long" else "Buy"
+                            bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
+                            bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
+                            applied_mode = 'reduce_only'
+
+                    # Best-effort verification without reapplying (to avoid duplicate TP/SL sets)
+                    try:
+                        checks = 0
+                        while checks < 3:
+                            await asyncio.sleep(0.6)
+                            pos = bybit.get_position(sym)
+                            tp_ok = False; sl_ok = False
+                            try:
+                                tpv = pos.get('takeProfit') if pos else None
+                                slv = pos.get('stopLoss') if pos else None
+                                tp_ok = (tpv not in (None, '', '0')) and (float(tpv) > 0)
+                                sl_ok = (slv not in (None, '', '0')) and (float(slv) > 0)
+                            except Exception:
+                                tp_ok = sl_ok = False
+                            if tp_ok and sl_ok:
+                                break
+                            checks += 1
+
+                        # If still missing and we used Full mode, one single re-apply try
+                        if checks >= 3 and applied_mode == 'full':
+                            try:
+                                bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
+                            except Exception:
+                                pass
+                        elif checks >= 3 and applied_mode in ('partial', 'reduce_only'):
+                            # Avoid reapplying for partial/reduce_only to prevent duplicate limit orders
+                            try:
+                                logger.warning(f"[{sym}] TP/SL verification inconclusive after apply mode={applied_mode}; not reapplying to avoid duplicates")
+                                if self.tg:
+                                    await self.tg.send_message(f"🆘 {sym} TP/SL check inconclusive (mode={applied_mode}). Manual verify once.")
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+
+                    # Mark TP/SL applied to help future idempotency checks
+                    try:
+                        from time import time as _now
+                        self._tpsl_applied[sym] = float(_now())
+                    except Exception:
+                        pass
+                except Exception:
+                    return False
+            # Update book
+                self.book.positions[sym] = Position(
+                    sig_obj.side,
+                    qty,
+                    entry=actual_entry,
+                    sl=float(sig_obj.sl),
+                    tp=float(sig_obj.tp),
+                    entry_time=datetime.now(),
+                    strategy_name='scalp',
+                    ml_score=float(ml_score or 0.0)
+                )
+            # Telegram notify
+                try:
+                    if self.tg:
+                        # Compute target RR for visibility
                         try:
-                            if self.tg:
-                                await self.tg.send_message(f"🆘 CRITICAL: {sym} position TP/SL verification failed — manual check advised.")
+                            Rv = (actual_entry - float(sig_obj.sl)) if sig_obj.side == 'long' else (float(sig_obj.sl) - actual_entry)
+                            target_rr = max(0.1, (float(sig_obj.tp) - actual_entry)/Rv) if sig_obj.side=='long' else max(0.1, (actual_entry - float(sig_obj.tp))/Rv)
                         except Exception:
-                            pass
+                            target_rr = 1.5
+                        msg = (
+                            f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()}\n\n"
+                            f"Entry: {actual_entry:.4f}\n"
+                            f"Stop Loss: {float(sig_obj.sl):.4f}\n"
+                            f"Take Profit: {float(sig_obj.tp):.4f}\n"
+                            f"Quantity: {qty}\n"
+                            f"Target RR: {target_rr:.2f}"
+                        )
+                        await self.tg.send_message(msg)
                 except Exception:
                     pass
-            except Exception:
-                return False
-            # Update book
-            self.book.positions[sym] = Position(
-                sig_obj.side,
-                qty,
-                entry=actual_entry,
-                sl=float(sig_obj.sl),
-                tp=float(sig_obj.tp),
-                entry_time=datetime.now(),
-                strategy_name='scalp',
-                ml_score=float(ml_score or 0.0)
-            )
-            # Telegram notify
-            try:
-                if self.tg:
-                    # Compute target RR for visibility
-                    try:
-                        Rv = (actual_entry - float(sig_obj.sl)) if sig_obj.side == 'long' else (float(sig_obj.sl) - actual_entry)
-                        target_rr = max(0.1, (float(sig_obj.tp) - actual_entry)/Rv) if sig_obj.side=='long' else max(0.1, (actual_entry - float(sig_obj.tp))/Rv)
-                    except Exception:
-                        target_rr = 1.5
-                    msg = (
-                        f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()}\n\n"
-                        f"Entry: {actual_entry:.4f}\n"
-                        f"Stop Loss: {float(sig_obj.sl):.4f}\n"
-                        f"Take Profit: {float(sig_obj.tp):.4f}\n"
-                        f"Quantity: {qty}\n"
-                        f"Target RR: {target_rr:.2f}"
-                    )
-                    await self.tg.send_message(msg)
-            except Exception:
-                pass
-            return True
+                return True
         except Exception as e:
             logger.info(f"[{sym}] Scalp stream execute error: {e}")
             return False

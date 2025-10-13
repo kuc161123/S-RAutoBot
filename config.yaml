@@ -101,7 +101,7 @@ trend:
   rr: 2.5
   use_ema_stack: true
   exec:
-    enabled: false
+    enabled: true
     # When true, bot may run Trend in phantom-only mode during cold start.
     # Corking (promotion) can override this if allow_cork_override is true.
     bootstrap_phantom_only: true
@@ -116,7 +116,7 @@ trend:
       min_pct: 0.001        # 0.1% slippage threshold to trigger SL recalc
       pivot_buffer_atr: 0.05  # keep SL beyond pivot by 0.05 ATR
     # Force execution when ML score is extremely high
-    high_ml_force: 92
+    high_ml_force: 95
   regime:
     enabled: true
     min_conf: 0.60

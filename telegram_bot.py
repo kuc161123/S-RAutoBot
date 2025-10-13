@@ -105,6 +105,10 @@ class TGBot:
         self.app.add_handler(CommandHandler("shadowstats", self.shadow_stats))
         self.app.add_handler(CommandHandler("flowdebug", self.flow_debug))
         self.app.add_handler(CommandHandler("flowstatus", self.flow_debug))
+        # High-ML threshold controls per strategy
+        self.app.add_handler(CommandHandler("scalp_highml", self.set_scalp_highml))
+        self.app.add_handler(CommandHandler("mr_highml", self.set_mr_highml))
+        self.app.add_handler(CommandHandler("trend_highml", self.set_trend_highml))
 
         self.running = False
 
@@ -820,6 +824,11 @@ class TGBot:
 /scalppromote – Scalp promotion status (WR-based)
 /trendpromote – Trend promotion (corking) status
 /trainingstatus – Background training progress
+
+⚡ High‑ML Controls
+/scalp_highml V – Set Scalp high‑ML execute threshold (e.g., 80)
+/mr_highml V – Set Mean Reversion high‑ML execute threshold (e.g., 80)
+/trend_highml V – Set Trend high‑ML execute threshold (e.g., 95)
 
 🧭 Regime & System
 /system – Parallel routing status
@@ -3114,6 +3123,66 @@ HTF S/R module disabled
         except Exception as e:
             logger.error(f"Error in set_ml_threshold: {e}")
             await update.message.reply_text("Error updating ML threshold")
+
+    async def _set_highml_common(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, strat_key: str, default_key_path: list[str]):
+        try:
+            if not ctx.args:
+                await update.message.reply_text(f"Usage: /{strat_key}_highml <value> (0-100)")
+                return
+            val = float(ctx.args[0])
+            if val < 0 or val > 100:
+                await update.message.reply_text("❌ Value must be between 0 and 100")
+                return
+            # Update in-memory config
+            cfg = self.shared.get("config", {}) or {}
+            # Navigate/create path like ['scalp','exec','high_ml_force']
+            node = cfg
+            for ki in default_key_path[:-1]:
+                if ki not in node or not isinstance(node[ki], dict):
+                    node[ki] = {}
+                node = node[ki]
+            old = node.get(default_key_path[-1])
+            node[default_key_path[-1]] = float(val)
+            # Keep reference parity with bot instance
+            try:
+                bot = self.shared.get('bot_instance')
+                if bot is not None:
+                    bot.config = cfg
+            except Exception:
+                pass
+            # Best-effort persist hint in Redis for visibility across restarts
+            try:
+                r = self.shared.get('bot_instance')._redis if self.shared.get('bot_instance') else None
+                if r is not None:
+                    r.set(f"cfg:{strat_key}:high_ml_force", str(val))
+            except Exception:
+                pass
+            await self.safe_reply(update, f"✅ {strat_key.upper()} high‑ML threshold updated: {old} → {val}")
+        except ValueError:
+            await update.message.reply_text("❌ Invalid number. Example: 80")
+        except Exception as e:
+            logger.error(f"set_highml_common error: {e}")
+            await update.message.reply_text("Error updating threshold")
+
+    async def set_scalp_highml(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        await self._set_highml_common(update, ctx, 'scalp', ['scalp','exec','high_ml_force'])
+
+    async def set_mr_highml(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        await self._set_highml_common(update, ctx, 'mr', ['mr','exec','high_ml_force'])
+
+    async def set_trend_highml(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        # Ensure Trend execution is enabled when user updates threshold
+        try:
+            cfg = self.shared.get("config", {}) or {}
+            if not isinstance(cfg.get('trend', {}).get('exec', {}), dict):
+                cfg.setdefault('trend',{}).setdefault('exec',{})
+            cfg['trend']['exec']['enabled'] = True
+            bot = self.shared.get('bot_instance')
+            if bot is not None:
+                bot.config = cfg
+        except Exception:
+            pass
+        await self._set_highml_common(update, ctx, 'trend', ['trend','exec','high_ml_force'])
     
     async def htf_sr_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show HTF support/resistance status (disabled)."""

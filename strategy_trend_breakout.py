@@ -1,31 +1,21 @@
 from dataclasses import dataclass
-from typing import Optional, Dict
+from typing import Optional
 import numpy as np
 import pandas as pd
 import logging
-from strategy_pullback import _pivot_low, _pivot_high  # reuse robust pivot helpers
-try:
-    # Lightweight HTF S/R filter utilities
-    from multi_timeframe_sr import should_use_mtf_level
-    _HTF_AVAILABLE = True
-except Exception:
-    _HTF_AVAILABLE = False
+from strategy_pullback import _pivot_low, _pivot_high  # reuse pivot helpers
 
 
 @dataclass
 class TrendSettings:
-    channel_len: int = 20
     atr_len: int = 14
-    breakout_k_atr: float = 0.3   # buffer over channel by ATR
-    sl_atr_mult: float = 1.5      # SL distance in ATR from entry
-    rr: float = 2.5               # base R:R (will be adjusted by volatility schedule)
-    use_ema_stack: bool = True
-    use_htf_sr_filter: bool = True  # Avoid breakouts into nearby 1H/4H SR
-    # Entry quality filters
-    require_range_expansion: bool = True
-    range_expansion_min: float = 1.2  # today's range vs 20-bar median
-    require_retest: bool = True
-    retest_max_dist_atr: float = 0.5  # breakout distance (ATR) upper bound for retest-style entries
+    rr: float = 2.5               # 1:2.5 R:R
+    sl_atr_mult: float = 1.5      # ATR leg for hybrid SL
+    confirm_candles: int = 2      # require 2 bullish/bearish candles
+    pivot_l: int = 3              # pivot sensitivity for HL/LH
+    pivot_r: int = 3
+    breakout_buffer_atr: float = 0.1  # require break beyond S/R by this ATR
+    pivot_buffer_atr: float = 0.05    # SL buffer beyond pivot (hybrid)
 
 
 @dataclass
@@ -45,245 +35,115 @@ def _atr(df: pd.DataFrame, n: int = 14) -> float:
     return float(atr) if pd.notna(atr) else float(tr.iloc[-1])
 
 
-def _ema(series: pd.Series, n: int) -> float:
-    if len(series) < n:
-        return float(series.iloc[-1])
-    return float(series.ewm(span=n, adjust=False).mean().iloc[-1])
+def _last_break_levels(df: pd.DataFrame, L: int, R: int) -> tuple[float, float]:
+    """Return most recent pivot-based resistance and support levels (zones simplified to last pivot)."""
+    high, low = df['high'], df['low']
+    ph = pd.Series(_pivot_high(high, L, R), index=df.index).dropna()
+    pl = pd.Series(_pivot_low(low, L, R), index=df.index).dropna()
+    last_res = float(ph.iloc[-1]) if len(ph) else float(high.rolling(L+R+1).max().iloc[-1])
+    last_sup = float(pl.iloc[-1]) if len(pl) else float(low.rolling(L+R+1).min().iloc[-1])
+    return last_res, last_sup
+
+
+def _two_candle_confirmation(df: pd.DataFrame, side: str, n: int) -> bool:
+    o = df['open'].iloc[-n:]
+    c = df['close'].iloc[-n:]
+    if len(o) < n:
+        return False
+    if side == 'long':
+        return bool(((c > o).sum() == n))
+    else:
+        return bool(((c < o).sum() == n))
 
 
 def detect_signal(df: pd.DataFrame, s: TrendSettings, symbol: str = "") -> Optional[Signal]:
+    """Trend Pullback: Break S/R → HL/LH → 2 candles confirm → enter.
+
+    - Works on 15m bars (assumes df is 15m window)
+    - Hybrid SL: pivot-based with ATR buffer vs ATR leg; choose conservative
+    - TP: rr=2.5
+    """
     logger = logging.getLogger(__name__)
-    if df is None or len(df) < max(60, s.channel_len + 2):
+    if df is None or len(df) < 80:
         return None
 
-    close = df['close']
-    high = df['high']
-    low = df['low']
-
-    # Donchian channel excluding current bar (to avoid lookahead)
-    hh = high.shift(1).rolling(s.channel_len).max().iloc[-1]
-    ll = low.shift(1).rolling(s.channel_len).min().iloc[-1]
-    if not np.isfinite(hh) or not np.isfinite(ll):
-        return None
-
-    # ATR and ATR series (for volatility percentile)
-    prev = close.shift()
-    trarr = np.maximum(high - low, np.maximum((high - prev).abs(), (low - prev).abs()))
-    atr_series = trarr.rolling(s.atr_len).mean()
-    atr = float(atr_series.iloc[-1]) if not pd.isna(atr_series.iloc[-1]) else float(trarr.iloc[-1])
+    high, low, close = df['high'], df['low'], df['close']
     price = float(close.iloc[-1])
-    k = s.breakout_k_atr
+    atr = _atr(df, s.atr_len)
+    if atr <= 0:
+        return None
 
-    # Optional EMA stack filter
-    ema_ok = True
-    if s.use_ema_stack:
-        ema20 = _ema(close, 20)
-        ema50 = _ema(close, 50)
-        ema_ok = (price > ema20 > ema50) or (price < ema20 < ema50)
+    res, sup = _last_break_levels(df.iloc[:-1], s.pivot_l, s.pivot_r)
+    buf = float(s.breakout_buffer_atr) * float(atr)
 
-    meta = {
-        'channel_len': s.channel_len,
-        'atr': float(atr),
-        'upper_channel': float(hh),
-        'lower_channel': float(ll),
-        'ema_ok': bool(ema_ok),
-    }
+    # Detect prior breakout context within recent window
+    long_ctx = bool(close.iloc[-2] <= res and close.iloc[-1] > res + buf)
+    short_ctx = bool(close.iloc[-2] >= sup and close.iloc[-1] < sup - buf)
 
-    # Compute daily range expansion vs 20-bar median
-    try:
-        rng_today = float(high.iloc[-1] - low.iloc[-1])
-        med_range = float((high - low).rolling(20).median().iloc[-1]) if len(df) >= 20 else rng_today
-        range_expansion = rng_today / max(1e-9, med_range)
-    except Exception:
-        range_expansion = 1.0
+    meta = {'atr': float(atr), 'resistance': float(res), 'support': float(sup)}
 
-    # Long breakout (with filters)
-    if price > hh + k * atr and ema_ok:
-        # Range expansion filter
-        if s.require_range_expansion and not (range_expansion >= s.range_expansion_min):
+    # Try LONG: after resistance break, wait for HL above broken level then 2 green candles
+    if long_ctx:
+        # Find recent HL pivot above broken resistance within last ~10 bars
+        pl = pd.Series(_pivot_low(low, s.pivot_l, s.pivot_r), index=df.index)
+        hl_idx = None
+        for i in range(len(df)-2, max(len(df)-12, 0), -1):
+            try:
+                if not np.isnan(pl.iloc[i]) and float(pl.iloc[i]) > (res - 1e-9):
+                    hl_idx = i
+                    break
+            except Exception:
+                continue
+        if hl_idx is None:
             return None
-        # Retest-style proximity filter (avoid late chase far from HH)
-        bdist_atr = (price - float(hh)) / max(1e-9, float(atr))
-        if s.require_retest and not (bdist_atr <= s.retest_max_dist_atr):
+        hl_price = float(pl.iloc[hl_idx])
+        # Require 2 bullish confirms after HL
+        if not _two_candle_confirmation(df, 'long', s.confirm_candles):
             return None
         entry = price
-        # Volatility-aware SL buffer (hybrid, similar to MR)
-        try:
-            vol_pct = 0.5
-            valid = atr_series.dropna()
-            if len(valid) >= 30:
-                current_atr = float(atr)
-                vol_pct = float((valid < current_atr).sum() / len(valid))
-            if vol_pct > 0.8:
-                vol_mult = 1.4
-            elif vol_pct > 0.6:
-                vol_mult = 1.2
-            elif vol_pct < 0.2:
-                vol_mult = 0.8
-            else:
-                vol_mult = 1.0
-        except Exception:
-            vol_mult = 1.0
-        adjusted = float(s.sl_atr_mult) * float(vol_mult)
-
-        # Hybrid SL options
-        # 1) Breakout level (HH) with small buffer
-        sl_opt1 = float(hh) - (adjusted * 0.3 * float(atr))
-        # 2) ATR-based from entry
-        sl_opt2 = float(entry) - (adjusted * float(atr))
-        # 3) Structural: recent pivot low with larger buffer
-        try:
-            pl = pd.Series(_pivot_low(low, 5, 5), index=df.index).dropna()
-            pivot_low_val = float(pl.iloc[-1]) if len(pl) else float(low.rolling(10).min().iloc[-1])
-        except Exception:
-            pivot_low_val = float(low.rolling(10).min().iloc[-1])
-        sl_opt3 = float(pivot_low_val) - (adjusted * float(atr))
-
-        sl = min(sl_opt1, sl_opt2, sl_opt3)
-        # Enforce minimum stop distance (1%)
-        min_stop = float(entry) * 0.01
+        # Hybrid SL: max of (pivot HL - buffer, entry - atr_mult*atr)
+        sl_pivot = hl_price - (s.pivot_buffer_atr * atr)
+        sl_atr = entry - (s.sl_atr_mult * atr)
+        sl = min(sl_pivot, sl_atr)  # more conservative (farther)
+        # Enforce 1% min stop distance
+        min_stop = entry * 0.01
         if (entry - sl) < min_stop:
-            sl = float(entry) - min_stop
+            sl = entry - min_stop
+        if entry <= sl:
+            return None
+        R = entry - sl
+        tp = entry + s.rr * R
+        meta.update({'break_level': float(res), 'hl_price': float(hl_price), 'break_dist_atr': float((entry - res)/atr), 'retrace_depth_atr': float((entry - hl_price)/max(1e-9, atr)), 'confirm_candles': int(s.confirm_candles)})
+        return Signal('long', float(entry), float(sl), float(tp), 'Trend Pullback LONG (break→HL→2 green)', meta)
+
+    # Try SHORT: after support break, wait for LH below broken level then 2 red candles
+    if short_ctx:
+        ph = pd.Series(_pivot_high(high, s.pivot_l, s.pivot_r), index=df.index)
+        lh_idx = None
+        for i in range(len(df)-2, max(len(df)-12, 0), -1):
             try:
-                logger.info(f"[{symbol}] Trend SL adjusted to minimum distance (1% from entry)")
+                if not np.isnan(ph.iloc[i]) and float(ph.iloc[i]) < (sup + 1e-9):
+                    lh_idx = i
+                    break
             except Exception:
-                pass
-
-        R = float(entry) - float(sl)
-        if R <= 0:
+                continue
+        if lh_idx is None:
             return None
-        # Volatility-aware RR schedule
-        fee_adjustment = 1.00165
-        rr_eff = float(s.rr)
-        try:
-            # vol_pct ~ ATR percentile (higher means current ATR high vs history)
-            vol_pct = 0.5
-            valid = atr_series.dropna()
-            if len(valid) >= 30:
-                current_atr = float(atr)
-                vol_pct = float((valid < current_atr).sum() / len(valid))
-            # Map: low vol -> higher RR, high vol -> lower RR
-            if vol_pct < 0.3:
-                rr_eff = max(rr_eff, 3.0)
-            elif vol_pct > 0.7:
-                rr_eff = min(rr_eff, 2.0)
-            else:
-                rr_eff = float(s.rr)
-        except Exception:
-            rr_eff = float(s.rr)
-        tp = float(entry) + rr_eff * R * fee_adjustment
-        reason = f"Donchian breakout LONG > HH({s.channel_len}) + {k}*ATR"
-        meta.update({'breakout_dist_atr': float(bdist_atr), 'pivot_low': float(low.rolling(10).min().iloc[-1]), 'range_expansion': float(range_expansion), 'rr_eff': float(rr_eff)})
-        # HTF S/R guard: avoid breakouts into nearby resistance
-        try:
-            if s.use_htf_sr_filter and _HTF_AVAILABLE:
-                use_mtf, level, why = should_use_mtf_level(symbol, entry, price, df)
-                if use_mtf and ('resistance' in why.lower()):
-                    logger.info(f"[{symbol}] Trend LONG blocked by HTF filter: {why}")
-                    return None
-                if use_mtf:
-                    meta['htf_level'] = float(level)
-                    meta['htf_reason'] = why
-        except Exception:
-            pass
-        try:
-            which = 'pivot' if sl == sl_opt3 else ('atr' if sl == sl_opt2 else 'breakout')
-            logger.info(f"[{symbol}] Trend LONG SL method: {which} | entry={entry:.4f} sl={sl:.4f} tp={tp:.4f}")
-        except Exception:
-            pass
-        return Signal('long', float(entry), float(sl), float(tp), reason, meta)
-
-    # Short breakout (with filters)
-    if price < ll - k * atr and ema_ok:
-        # Range expansion filter
-        if s.require_range_expansion and not (range_expansion >= s.range_expansion_min):
-            return None
-        # Retest-style proximity filter
-        bdist_atr = (float(ll) - price) / max(1e-9, float(atr))
-        if s.require_retest and not (bdist_atr <= s.retest_max_dist_atr):
+        lh_price = float(ph.iloc[lh_idx])
+        if not _two_candle_confirmation(df, 'short', s.confirm_candles):
             return None
         entry = price
-        # Volatility-aware SL buffer (hybrid)
-        try:
-            vol_pct = 0.5
-            valid = atr_series.dropna()
-            if len(valid) >= 30:
-                current_atr = float(atr)
-                vol_pct = float((valid < current_atr).sum() / len(valid))
-            if vol_pct > 0.8:
-                vol_mult = 1.4
-            elif vol_pct > 0.6:
-                vol_mult = 1.2
-            elif vol_pct < 0.2:
-                vol_mult = 0.8
-            else:
-                vol_mult = 1.0
-        except Exception:
-            vol_mult = 1.0
-        adjusted = float(s.sl_atr_mult) * float(vol_mult)
-
-        # Hybrid SL options
-        # 1) Breakout level (LL) with small buffer
-        sl_opt1 = float(ll) + (adjusted * 0.3 * float(atr))
-        # 2) ATR-based from entry
-        sl_opt2 = float(entry) + (adjusted * float(atr))
-        # 3) Structural: recent pivot high with larger buffer
-        try:
-            ph = pd.Series(_pivot_high(high, 5, 5), index=df.index).dropna()
-            pivot_high_val = float(ph.iloc[-1]) if len(ph) else float(high.rolling(10).max().iloc[-1])
-        except Exception:
-            pivot_high_val = float(high.rolling(10).max().iloc[-1])
-        sl_opt3 = float(pivot_high_val) + (adjusted * float(atr))
-
-        sl = max(sl_opt1, sl_opt2, sl_opt3)
-        # Enforce minimum stop distance (1%)
-        min_stop = float(entry) * 0.01
+        sl_pivot = lh_price + (s.pivot_buffer_atr * atr)
+        sl_atr = entry + (s.sl_atr_mult * atr)
+        sl = max(sl_pivot, sl_atr)
+        min_stop = entry * 0.01
         if (sl - entry) < min_stop:
-            sl = float(entry) + min_stop
-            try:
-                logger.info(f"[{symbol}] Trend SL adjusted to minimum distance (1% from entry)")
-            except Exception:
-                pass
-
-        R = float(sl) - float(entry)
-        if R <= 0:
+            sl = entry + min_stop
+        if sl <= entry:
             return None
-        fee_adjustment = 1.00165
-        rr_eff = float(s.rr)
-        try:
-            vol_pct = 0.5
-            valid = atr_series.dropna()
-            if len(valid) >= 30:
-                current_atr = float(atr)
-                vol_pct = float((valid < current_atr).sum() / len(valid))
-            if vol_pct < 0.3:
-                rr_eff = max(rr_eff, 3.0)
-            elif vol_pct > 0.7:
-                rr_eff = min(rr_eff, 2.0)
-            else:
-                rr_eff = float(s.rr)
-        except Exception:
-            rr_eff = float(s.rr)
-        tp = float(entry) - rr_eff * R * fee_adjustment
-        reason = f"Donchian breakout SHORT < LL({s.channel_len}) - {k}*ATR"
-        meta.update({'breakout_dist_atr': float(bdist_atr), 'pivot_high': float(high.rolling(10).max().iloc[-1]), 'range_expansion': float(range_expansion), 'rr_eff': float(rr_eff)})
-        # HTF S/R guard: avoid breakouts into nearby support
-        try:
-            if s.use_htf_sr_filter and _HTF_AVAILABLE:
-                use_mtf, level, why = should_use_mtf_level(symbol, entry, price, df)
-                if use_mtf and ('support' in why.lower()):
-                    logger.info(f"[{symbol}] Trend SHORT blocked by HTF filter: {why}")
-                    return None
-                if use_mtf:
-                    meta['htf_level'] = float(level)
-                    meta['htf_reason'] = why
-        except Exception:
-            pass
-        try:
-            which = 'pivot' if sl == sl_opt3 else ('atr' if sl == sl_opt2 else 'breakout')
-            logger.info(f"[{symbol}] Trend SHORT SL method: {which} | entry={entry:.4f} sl={sl:.4f} tp={tp:.4f}")
-        except Exception:
-            pass
-        return Signal('short', float(entry), float(sl), float(tp), reason, meta)
+        R = sl - entry
+        tp = entry - s.rr * R
+        meta.update({'break_level': float(sup), 'lh_price': float(lh_price), 'break_dist_atr': float((sup - entry)/atr), 'retrace_depth_atr': float((lh_price - entry)/max(1e-9, atr)), 'confirm_candles': int(s.confirm_candles)})
+        return Signal('short', float(entry), float(sl), float(tp), 'Trend Pullback SHORT (break→LH→2 red)', meta)
 
     return None

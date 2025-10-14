@@ -1602,6 +1602,18 @@ class TradingBot:
                         hi_thr = float(e_cfg.get('high_ml_force', 92))
                     except Exception:
                         allow_hi = True; hi_thr = 92.0
+                    # Session gating for Scalp execution (phantoms still recorded)
+                    try:
+                        sc_cfg = (self.config.get('scalp', {}) or {})
+                        allowed_sessions = [str(x) for x in (sc_cfg.get('session_only') or [])]
+                        # Determine current session (UTC)
+                        from datetime import datetime as _dt
+                        hr = _dt.utcnow().hour
+                        cur_session = 'asian' if 0 <= hr < 8 else ('european' if hr < 16 else 'us')
+                        if allowed_sessions and (cur_session not in allowed_sessions):
+                            allow_hi = False
+                    except Exception:
+                        pass
                     # EV-based threshold bump for Scalp
                     try:
                         from ml_scorer_scalp import get_scalp_scorer
@@ -3316,11 +3328,11 @@ class TradingBot:
         phantom_virtual_delta = int(phantom_cfg.get('virtual_snapshots_delta', 5))
 
         if use_enhanced_parallel:
-            strategy_type = "Enhanced Parallel (Trend + Mean Reversion with ML)"
+            strategy_type = "Enhanced Parallel (Trend Pullback + Mean Reversion with ML)"
             logger.info(f"📊 Strategy: {strategy_type}")
             logger.info("🧠 Using Enhanced Parallel ML System with regime-based strategy routing")
         else:
-            strategy_type = "Trend Breakout"
+            strategy_type = "Trend Pullback"
             logger.info(f"📊 Strategy: {strategy_type}")
         
         # Initialize strategy settings
@@ -4759,7 +4771,7 @@ class TradingBot:
                                 is_high_ml = bool(isinstance(getattr(sig_obj, 'meta', {}), dict) and sig_obj.meta.get('high_ml'))
                                 if self.tg and is_high_ml:
                                     emoji = '📈'
-                                    strategy_label = 'Enhanced Mr' if strategy_name=='enhanced_mr' else 'Trend Breakout'
+                                    strategy_label = 'Enhanced Mr' if strategy_name=='enhanced_mr' else 'Trend Pullback'
                                     msg = (
                                         f"🔥 HIGH-ML EXECUTE: {emoji} *{sym} {sig_obj.side.upper()}* ({strategy_label})\n\n"
                                         f"Entry: {actual_entry:.4f}\n"
@@ -4814,6 +4826,12 @@ class TradingBot:
                                 if enhanced_mr_scorer:
                                     ml_score_mr, _ = enhanced_mr_scorer.score_signal(sig_mr_ind.__dict__, ef, df)
                                     thr_mr = getattr(enhanced_mr_scorer, 'min_score', 75)
+                                    # EV-aware base threshold bump for MR
+                                    try:
+                                        ev_thr_mr = float(enhanced_mr_scorer.get_ev_threshold(ef))
+                                        thr_mr = max(thr_mr, ev_thr_mr)
+                                    except Exception:
+                                        pass
                                     mr_should = ml_score_mr >= thr_mr
                                 try:
                                     logger.debug(f"[{sym}] MR: ml_score={float(ml_score_mr or 0.0):.1f} thr={thr_mr:.0f} should={mr_should}")
@@ -5116,14 +5134,17 @@ class TradingBot:
                                     sym_cluster = int(clusters.get(sym, 3))
                                 except Exception:
                                     sym_cluster = 3
+                                # Trend Pullback features
+                                break_dist = float(getattr(sig_tr_ind, 'meta', {}).get('break_dist_atr', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0)
+                                retrace_depth = float(getattr(sig_tr_ind, 'meta', {}).get('retrace_depth_atr', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0)
+                                confirms = int(getattr(sig_tr_ind, 'meta', {}).get('confirm_candles', 0) if getattr(sig_tr_ind, 'meta', None) else 0)
                                 trend_features = {
-                                    'trend_slope_pct': trend_slope_pct,
-                                    'ema_stack_score': ema_stack_score,
                                     'atr_pct': atr_pct,
+                                    'break_dist_atr': break_dist,
+                                    'retrace_depth_atr': retrace_depth,
+                                    'confirm_candles': confirms,
+                                    'ema_stack_score': ema_stack_score,
                                     'range_expansion': range_expansion,
-                                    'breakout_dist_atr': float(getattr(sig_tr_ind, 'meta', {}).get('breakout_dist_atr', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0),
-                                    'close_vs_ema20_pct': close_vs_ema20_pct,
-                                    'bb_width_pct': bb_width_pct,
                                     'session': sess,
                                     'symbol_cluster': sym_cluster,
                                     'volatility_regime': vol_reg
@@ -5143,7 +5164,14 @@ class TradingBot:
                                             thr_tr = exec_floor
                                     except Exception:
                                         pass
-                                    tr_should = ml_score_tr >= thr_tr
+                            # EV-aware base threshold bump for Trend Pullback
+                            try:
+                                if tr_scorer is not None:
+                                    ev_thr_tr = float(tr_scorer.get_ev_threshold(trend_features))
+                                    thr_tr = max(thr_tr, ev_thr_tr)
+                            except Exception:
+                                pass
+                            tr_should = ml_score_tr >= thr_tr
                                     # Extreme ML override (force execution bypassing router/regime/micro gates)
                                     try:
                                         tr_hi_force = float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('high_ml_force', 92.0)))

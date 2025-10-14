@@ -1,7 +1,10 @@
 """
-Trend (Donchian Breakout) ML Scorer
+Trend Pullback ML Scorer
 
-Immediate-learning style scorer with simple ensemble and Redis-backed state.
+Overhauled for the new pullback logic:
+- Break S/R → HL/LH → 2-candle confirmation
+- Features reflect breakout distance, retrace depth, and confirmations
+Immediate-learning style scorer with ensemble and Redis-backed state.
 """
 import os, json, base64, pickle, logging
 from datetime import datetime
@@ -100,11 +103,15 @@ class TrendMLScorer:
             logger.error(f"Trend save state error: {e}")
 
     def _prepare_features(self, f: Dict) -> List[float]:
-        # 10-feat simplified vector, encode session to int
+        # New feature vector for Trend Pullback
         order = [
-            'trend_slope_pct', 'ema_stack_score', 'atr_pct', 'range_expansion',
-            'breakout_dist_atr', 'close_vs_ema20_pct', 'bb_width_pct', 'session',
-            'symbol_cluster', 'volatility_regime'
+            'atr_pct',            # ATR as % of price
+            'break_dist_atr',     # distance beyond broken level
+            'retrace_depth_atr',  # pullback depth before HL/LH
+            'confirm_candles',    # 2 if satisfied else <2
+            'ema_stack_score',    # simple trend filter, optional
+            'range_expansion',    # day range vs median
+            'session', 'symbol_cluster', 'volatility_regime'
         ]
         vec = []
         for k in order:
@@ -236,8 +243,8 @@ class TrendMLScorer:
         self.scaler.fit(X)
         XS = self.scaler.transform(X)
         self.models = {
-            'rf': RandomForestClassifier(n_estimators=100, max_depth=7, min_samples_split=5, random_state=42),
-            'gb': GradientBoostingClassifier(n_estimators=100, max_depth=4, learning_rate=0.1, subsample=0.8, random_state=42)
+            'rf': RandomForestClassifier(n_estimators=150, max_depth=8, min_samples_split=5, random_state=42),
+            'gb': GradientBoostingClassifier(n_estimators=150, max_depth=3, learning_rate=0.08, subsample=0.8, random_state=42)
         }
         try:
             self.models['rf'].fit(XS, y, sample_weight=w)
@@ -316,7 +323,7 @@ class TrendMLScorer:
         }
 
     def get_ev_threshold(self, features: Dict, floor: float = 70.0, ceiling: float = 90.0, min_samples: int = 30) -> float:
-        """EV-based threshold for trend by session/volatility (percent)."""
+        """EV-based threshold for Trend Pullback by session/volatility (percent)."""
         try:
             sess = str(features.get('session','unknown'))
             vol = str(features.get('volatility_regime','unknown'))
@@ -397,7 +404,7 @@ class TrendMLScorer:
         if not self.is_ml_ready or 'rf' not in self.models:
             return out
         try:
-            names = ['trend_slope_pct','ema_stack_score','atr_pct','range_expansion','breakout_dist_atr','close_vs_ema20_pct','bb_width_pct','session','symbol_cluster','volatility_regime']
+            names = ['atr_pct','break_dist_atr','retrace_depth_atr','confirm_candles','ema_stack_score','range_expansion','session','symbol_cluster','volatility_regime']
             imps = getattr(self.models['rf'], 'feature_importances_', [])
             if len(imps) > 0:
                 pairs = list(zip(names[:len(imps)], imps))

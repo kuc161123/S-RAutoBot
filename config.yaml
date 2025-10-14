@@ -257,12 +257,12 @@ phantom:
   # Daily caps for phantom sampling to keep training balanced
   none_cap: 180          # was 120 — allow more global exploration per day
   cluster3_cap: 45       # was 30 — higher for high-vol symbols
-  offhours_cap: 30       # was 20 — higher off-hours cap
+  offhours_cap: 15       # tighten off-hours phantom sampling
   # Per-strategy hourly per-symbol budgets (more aggressive)
   hourly_symbol_budget:
-    trend: 2
-    mr: 3
-    scalp: 12
+    trend: 1
+    mr: 2
+    scalp: 8
   # Per-strategy daily caps (UTC) — isolation across strategies
   caps:
     trend:
@@ -323,7 +323,7 @@ phantom_flow:
     wr_guard:
       enabled: true           # Enabled: cap relax when WR is low
       window: 40              # number of recent phantom closures
-      min_wr: 35.0            # threshold (%) below which cap applies
+      min_wr: 40.0            # threshold (%) below which cap applies
       cap: 0.50               # max relax while guard active
   # Session-based and inactivity bursts to dynamically adapt flow
   session_multipliers:
@@ -369,8 +369,8 @@ scalp:
   rr: 2.0                # Target R:R (1:2)
   # Enforce minimum 1R distance (0.5%) so fees don’t erode R
   min_r_pct: 0.005
-  dedup_hours: 2         # Redis dedup window for identical scalp signals (loosened for exploration)
-  cooldown_bars: 2       # Per-symbol cooldown in bars between scalp records (loosened for exploration)
+  dedup_hours: 3         # Slightly stricter dedup window to cut repeats
+  cooldown_bars: 4       # Stricter cooldown to reduce noise
   debug:
     force_accept: false  # Off: return to normal acceptance with decision reasons
   promote_enabled: false
@@ -387,9 +387,9 @@ scalp:
   explore:
     relax_enabled: true
     # Relaxed, phantom-only thresholds to widen net (execution unchanged)
-    vwap_dist_atr_max: 1.0   # was 0.8 — allow farther from VWAP
-    min_bb_width_pct: 0.50   # was 0.6 — accept narrower bands
-    vol_ratio_min: 1.00      # was 1.15 — lower volume spike requirement
+    vwap_dist_atr_max: 0.80  # tighten distance to VWAP
+    min_bb_width_pct: 0.60   # require slightly wider bands
+    vol_ratio_min: 1.10      # require modest volume expansion
     timeout_hours: 8         # auto-close scalp phantoms after 8h for learning
   exec:
     # Allow stream-side immediate execution for extremely high ML scores

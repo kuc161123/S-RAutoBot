@@ -906,7 +906,7 @@ HTF S/R module disabled
 • Risk per trade: {risk_label}
 • Max leverage: {risk_cfg.max_leverage}x
 • Timeframe: {timeframe} minutes
-• Strategies: Trend ML, Mean Reversion, Scalp (phantom)
+• Strategies: Trend Pullback ML, Mean Reversion, Scalp (phantom)
 • Promotions: MR (≥31% WR), Trend (≥31% WR), Scalp (≥50% WR)
 • Micro‑context: Trend/MR/Scalp 3m enforce enabled
 """
@@ -2616,7 +2616,7 @@ HTF S/R module disabled
 
             scorers = {}
             if trend_scorer_inst:
-                scorers["Trend Breakout"] = trend_scorer_inst
+                scorers["Trend Pullback"] = trend_scorer_inst
             # Original MR disabled per configuration; do not include in patterns
 
             for strategy_name, scorer in scorers.items():

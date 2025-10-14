@@ -1296,6 +1296,12 @@ class TradingBot:
                     try:
                         s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
                         exp = s_cfg.get('explore', {})
+                        # Allow RR override via config (defaults to 2.0 in ScalpSettings)
+                        try:
+                            if 'rr' in s_cfg:
+                                sc_settings.rr = float(s_cfg.get('rr'))
+                        except Exception:
+                            pass
                         # Apply minimum 1R distance if configured
                         try:
                             if 'min_r_pct' in s_cfg:

@@ -366,6 +366,7 @@ scalp:
   independent: true      # When true, Scalp runs fully independent of regime/router
   block_regime: false    # Do not block by regime (e.g., extreme volatility)
   session_only: ["us", "european"]
+  rr: 2.0                # Target R:R (1:2)
   # Enforce minimum 1R distance (0.5%) so fees don’t erode R
   min_r_pct: 0.005
   dedup_hours: 2         # Redis dedup window for identical scalp signals (loosened for exploration)

@@ -4731,6 +4731,24 @@ class TradingBot:
                             logger.debug(f"[{sym}] MR: skip — no_signal")
                         if sig_mr_ind is not None:
                             ef = sig_mr_ind.meta.get('mr_features', {}) if sig_mr_ind.meta else {}
+                            # Enrich MR features minimally for EV gating
+                            try:
+                                if 'session' not in ef:
+                                    hr = datetime.utcnow().hour
+                                    ef['session'] = 'asian' if 0 <= hr < 8 else ('european' if hr < 16 else 'us')
+                            except Exception:
+                                pass
+                            try:
+                                if 'volatility_regime' not in ef:
+                                    vol_reg = 'normal'
+                                    try:
+                                        mrk = get_enhanced_market_regime(df, sym)
+                                        vol_reg = str(getattr(mrk, 'volatility', 'normal') or 'normal')
+                                    except Exception:
+                                        pass
+                                    ef['volatility_regime'] = vol_reg
+                            except Exception:
+                                pass
                             ml_score_mr = 0.0; thr_mr = 75.0; mr_should = True
                             try:
                                 if enhanced_mr_scorer:
@@ -5008,6 +5026,36 @@ class TradingBot:
                                 atr = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
                                 atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
                                 close_vs_ema20_pct = float(((price - ema20) / max(1e-9, ema20)) * 100.0) if ema20 else 0.0
+                                # Bollinger width pct (20)
+                                try:
+                                    ma20 = cl.rolling(20).mean()
+                                    sd20 = cl.rolling(20).std()
+                                    bb_upper = ma20 + 2*sd20
+                                    bb_lower = ma20 - 2*sd20
+                                    bb_width = float((bb_upper.iloc[-1] - bb_lower.iloc[-1])) if len(bb_upper) > 0 else 0.0
+                                    bb_width_pct = float(bb_width / max(1e-9, float(price))) if price else 0.0
+                                except Exception:
+                                    bb_width_pct = 0.0
+                                # Volatility regime and session
+                                vol_reg = 'normal'
+                                try:
+                                    mrk = get_enhanced_market_regime(df, sym)
+                                    vol_reg = str(getattr(mrk, 'volatility', 'normal') or 'normal')
+                                except Exception:
+                                    pass
+                                try:
+                                    hr = datetime.utcnow().hour
+                                    sess = 'asian' if 0 <= hr < 8 else ('european' if hr < 16 else 'us')
+                                except Exception:
+                                    sess = 'us'
+                                # Symbol cluster
+                                sym_cluster = 3
+                                try:
+                                    from symbol_clustering import load_symbol_clusters
+                                    clusters = load_symbol_clusters()
+                                    sym_cluster = int(clusters.get(sym, 3))
+                                except Exception:
+                                    sym_cluster = 3
                                 trend_features = {
                                     'trend_slope_pct': trend_slope_pct,
                                     'ema_stack_score': ema_stack_score,
@@ -5015,10 +5063,10 @@ class TradingBot:
                                     'range_expansion': range_expansion,
                                     'breakout_dist_atr': float(getattr(sig_tr_ind, 'meta', {}).get('breakout_dist_atr', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0),
                                     'close_vs_ema20_pct': close_vs_ema20_pct,
-                                    'bb_width_pct': 0.0,
-                                    'session': 'us',
-                                    'symbol_cluster': 3,
-                                    'volatility_regime': 'normal'
+                                    'bb_width_pct': bb_width_pct,
+                                    'session': sess,
+                                    'symbol_cluster': sym_cluster,
+                                    'volatility_regime': vol_reg
                                 }
                             except Exception:
                                 trend_features = {}

@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-An ML-enhanced automated trading bot for Bybit perpetual futures that monitors the top 50 cryptocurrency pairs by market cap. Uses a Trend Breakout (Donchian) strategy with ML scoring and a complementary Mean Reversion strategy, with strict risk management.
+An ML-enhanced automated trading bot for Bybit perpetual futures that monitors the top 50 cryptocurrency pairs by market cap. Uses a Trend Pullback strategy (break S/R → HL/LH → 2‑candle confirmation) with ML scoring and a complementary Mean Reversion strategy, with strict risk management.
 
 ## Key Architecture
 
 ### Core Components
 - **live_bot.py**: Main entry point, orchestrates all components, manages WebSocket connections
-- **strategy_trend_breakout.py**: Active Trend Breakout strategy
+- **strategy_trend_breakout.py**: Trend Pullback strategy implementation
 - **ml_scorer_trend.py**: Trend ML scorer and retraining
 - **phantom_trade_tracker.py**: Tracks all signals (executed and rejected) for ML learning
 - **multi_websocket_handler.py**: Manages multiple WebSocket connections for 263 symbols
@@ -30,7 +30,7 @@ An ML-enhanced automated trading bot for Bybit perpetual futures that monitors t
 
 ### Data Flow
 1. Multi-WebSocket streams → top 50 symbols' live klines → frames dict
-2. Strategy analyzes 200+ candles → detects trend breakout signals
+2. Strategy analyzes context → detects trend pullback signals (break→HL/LH→2‑candle)
 3. ML scorer evaluates signal → features → score 0-100
 4. Phantom tracker records all signals for learning
 5. Position manager checks risk rules → executes if score ≥ 70

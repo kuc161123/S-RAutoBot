@@ -2364,6 +2364,8 @@ class TradingBot:
 
                     strategy_label = getattr(pos, 'strategy_name', 'unknown')
                     if isinstance(strategy_label, str):
+                        if strategy_label == 'trend_breakout':
+                            strategy_label = 'trend_pullback'
                         strategy_label = strategy_label.replace('_', ' ').title()
                     # Include realized R multiple for clarity vs 1% risk
                     realized_r = None
@@ -3348,7 +3350,7 @@ class TradingBot:
             both_hit_rule=cfg["trade"]["both_hit_rule"],
             confirmation_candles=cfg["trade"].get("confirmation_candles", 2)
         )
-        # Trend breakout settings
+        # Trend pullback settings
         tr_cfg = cfg.get('trend', {}) or {}
         trend_settings = TrendSettingsTB(
             channel_len=int(tr_cfg.get('channel_len', 20)),
@@ -5957,7 +5959,7 @@ class TradingBot:
                                     pass
                                 handled = True
                             elif router_choice == "pullback":
-                                # Backward-compat: treat legacy 'pullback' route as Trend Breakout
+                                # Backward-compat: treat legacy 'pullback' route as Trend Pullback
                                 logger.debug(f"🔵 [{sym}] ROUTER OVERRIDE → TREND BREAKOUT ANALYSIS (legacy pullback route)")
                                 sig = detect_trend_signal(df.copy(), trend_settings, sym)
                                 selected_strategy = "trend_breakout"
@@ -5983,7 +5985,7 @@ class TradingBot:
                                 handled = True
 
                         if (not handled) and selected_strategy == "trend_breakout":
-                            # Trend breakout strategy scoring and gating
+                            # Trend pullback strategy scoring and gating
                             if sig is None:
                                 sig = detect_trend_signal(df.copy(), trend_settings, sym)
                             if sig:
@@ -6087,7 +6089,7 @@ class TradingBot:
                                 logger.info(f"   💡 Range quality: {regime_analysis.range_quality}, confidence: {regime_analysis.regime_confidence:.1%}")
 
                         elif (not handled) and regime_analysis.recommended_strategy == "pullback":
-                            # Treat legacy pullback recommendation as Trend Breakout
+                            # Treat legacy pullback recommendation as Trend Pullback
                             logger.debug(f"🔵 [{sym}] TREND BREAKOUT ANALYSIS (legacy pullback route):")
                             sig = detect_trend_signal(df.copy(), trend_settings, sym)
                             selected_strategy = "trend_breakout"

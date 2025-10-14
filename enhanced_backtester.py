@@ -2,7 +2,7 @@
 Enhanced Backtesting Engine - Accurate ML Feature Generation
 
 This enhanced backtester ensures that ML features are generated exactly the same way
-as the live bot for both Trend (Breakout) and Mean Reversion strategies.
+as the live bot for both Trend (Pullback) and Mean Reversion strategies.
 
 Key improvements:
 1. Generates ML features exactly like live bot
@@ -124,34 +124,31 @@ class EnhancedBacktester:
         return results
     
     def _generate_trend_features(self, df: pd.DataFrame, signal: Signal, symbol: str) -> Dict:
-        """Generate ML features for trend breakout exactly like live bot"""
+        """Generate ML features for Trend Pullback exactly like live bot"""
         try:
             close = df['close']; high = df['high']; low = df['low']
-            price = float(close.iloc[-1])
-            ys = close.tail(20).values if len(close) >= 20 else close.values
-            try:
-                slope = np.polyfit(np.arange(len(ys)), ys, 1)[0]
-            except Exception:
-                slope = 0.0
-            trend_slope_pct = float((slope / price) * 100.0) if price else 0.0
-            ema20 = float(close.ewm(span=20, adjust=False).mean().iloc[-1])
+            price = float(close.iloc[-1]) if len(close) else 0.0
+            ema20 = float(close.ewm(span=20, adjust=False).mean().iloc[-1]) if len(close) else price
             ema50 = float(close.ewm(span=50, adjust=False).mean().iloc[-1]) if len(close) >= 50 else ema20
             ema_stack_score = 100.0 if (price > ema20 > ema50 or price < ema20 < ema50) else 50.0 if (ema20 != ema50) else 0.0
-            rng_today = float(high.iloc[-1] - low.iloc[-1])
-            med_range = float((high - low).rolling(20).median().iloc[-1]) if len(df) >= 20 else rng_today
+            rng_today = float(high.iloc[-1] - low.iloc[-1]) if len(high) else 0.0
+            med_range = float((high - low).rolling(20).median().iloc[-1]) if len(df) >= 20 else max(1e-9, rng_today)
             range_expansion = float(rng_today / max(1e-9, med_range))
             prev = close.shift(); trarr = np.maximum(high - low, np.maximum((high - prev).abs(), (low - prev).abs()))
-            atr = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
+            atr = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else (float(trarr.iloc[-1]) if len(trarr) else 0.0)
             atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
-            close_vs_ema20_pct = float(((price - ema20) / max(1e-9, ema20)) * 100.0) if ema20 else 0.0
+            # Map signal meta to new features
+            meta = getattr(signal, 'meta', {}) or {}
+            break_dist = float(meta.get('break_dist_atr', 0.0))
+            retrace_depth = float(meta.get('retrace_depth_atr', 0.0))
+            confirms = int(meta.get('confirm_candles', 0))
             features = {
-                'trend_slope_pct': trend_slope_pct,
-                'ema_stack_score': ema_stack_score,
                 'atr_pct': atr_pct,
+                'break_dist_atr': break_dist,
+                'retrace_depth_atr': retrace_depth,
+                'confirm_candles': confirms,
+                'ema_stack_score': ema_stack_score,
                 'range_expansion': range_expansion,
-                'breakout_dist_atr': float(signal.meta.get('breakout_dist_atr', 0.0) if getattr(signal, 'meta', None) else 0.0),
-                'close_vs_ema20_pct': close_vs_ema20_pct,
-                'bb_width_pct': 0.0,
                 'session': 'us',
                 'symbol_cluster': 3,
                 'volatility_regime': 'normal'

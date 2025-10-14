@@ -467,7 +467,7 @@ class TGBot:
             lines.append(f"• Open positions: {len(positions)}")
             lines.append(f"• Estimated risk: ${estimated_risk:.2f}")
             if self.shared.get('use_enhanced_parallel', False):
-                lines.append("• Routing: Enhanced parallel (Trend + MR)")
+                lines.append("• Routing: Enhanced parallel (Trend Pullback + MR)")
         else:
             lines.append("• No open positions")
 
@@ -479,7 +479,7 @@ class TGBot:
                 for trades in getattr(phantom_tracker, 'phantom_trades', {}).values():
                     for p in trades:
                         try:
-                            if getattr(p, 'strategy_name', '') != 'trend_breakout':
+                            if getattr(p, 'strategy_name', '') not in ('trend_breakout','trend_pullback'):
                                 continue
                             if getattr(p, 'outcome', None) in ('win','loss'):
                                 total += 1

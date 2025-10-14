@@ -560,7 +560,7 @@ class PhantomTradeTracker:
         # Feed Trend ML only for non-timeout outcomes
         if not phantom.was_executed and str(getattr(phantom, 'exit_reason', '')) != 'timeout':
             try:
-                if getattr(phantom, 'strategy_name', '') == 'trend_breakout':
+                if getattr(phantom, 'strategy_name', '') in ('trend_breakout','trend_pullback'):
                     self._feed_phantom_to_trend_ml(phantom)
             except Exception:
                 pass

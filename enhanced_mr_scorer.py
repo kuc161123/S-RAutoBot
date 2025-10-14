@@ -681,6 +681,25 @@ class EnhancedMeanReversionScorer:
             pass
         return info
 
+    def get_ev_threshold(self, features: dict, floor: float = 65.0, ceiling: float = 90.0, min_samples: int = 30) -> float:
+        """EV-based threshold for MR by session/volatility (percent)."""
+        try:
+            sess = str(features.get('session','unknown'))
+            vol = str(features.get('volatility_regime','unknown'))
+            key = f"{sess}|{vol}"
+            b = self.ev_buckets.get(key) or {}
+            w_n = int(b.get('w_n', 0)); l_n = int(b.get('l_n', 0))
+            if (w_n + l_n) < min_samples or w_n == 0 or l_n == 0:
+                return float(floor)
+            avg_win = (b.get('w_sum', 0.0) / max(1, w_n))
+            avg_loss = (b.get('l_sum', 0.0) / max(1, l_n))
+            R_net = abs(avg_win) / max(1e-6, abs(avg_loss))
+            p_min = 1.0 / (1.0 + max(1e-6, R_net))
+            thr = max(floor, min(ceiling, p_min * 100.0))
+            return float(thr)
+        except Exception:
+            return float(floor)
+
     def startup_retrain(self) -> bool:
         """Retrain models on startup with all available data including phantom trades"""
         logger.info("Checking Enhanced MR startup retrain...")
@@ -782,6 +801,22 @@ class EnhancedMeanReversionScorer:
                 # Append without trimming to keep full history for retraining (no limits)
                 self.redis_client.rpush('enhanced_mr:trades',
                                       json.dumps(trade_record, cls=NumpyJSONEncoder))
+                # Update EV buckets
+                try:
+                    f = (trade_record.get('features') or trade_record.get('enhanced_features')) or {}
+                    sess = str(f.get('session','unknown'))
+                    vol = str(f.get('volatility_regime','unknown'))
+                    key = f"{sess}|{vol}"
+                    b = self.ev_buckets.get(key, {'w_sum':0.0,'w_n':0,'l_sum':0.0,'l_n':0})
+                    if int(trade_record.get('outcome',0)) == 1:
+                        b['w_sum'] += float(trade_record.get('pnl_percent', 0.0))
+                        b['w_n'] += 1
+                    else:
+                        b['l_sum'] += float(trade_record.get('pnl_percent', 0.0))
+                        b['l_n'] += 1
+                    self.ev_buckets[key] = b
+                except Exception:
+                    pass
             else:
                 if 'trades' not in self.memory_storage:
                     self.memory_storage['trades'] = []
@@ -835,6 +870,36 @@ class EnhancedMeanReversionScorer:
 
             # Train specialized models
             self._train_specialized_ensemble(X, y)
+            # Calibrate probabilities using isotonic on ensemble mean raw score
+            try:
+                raw_preds = []
+                RD = self.ensemble_models.get('range_detector')
+                RP = self.ensemble_models.get('reversal_predictor')
+                EO = self.ensemble_models.get('exit_optimizer')
+                for i in range(len(X)):
+                    probs = []
+                    try:
+                        if RD and hasattr(RD,'predict_proba'):
+                            probs.append(float(RD.predict_proba([X[i]])[:,1]))
+                    except Exception:
+                        pass
+                    try:
+                        if RP and hasattr(RP,'predict_proba'):
+                            probs.append(float(RP.predict_proba([X[i]])[:,1]))
+                    except Exception:
+                        pass
+                    try:
+                        if EO and hasattr(EO,'predict_proba'):
+                            probs.append(float(EO.predict_proba([X[i]])[:,1]))
+                    except Exception:
+                        pass
+                    if probs:
+                        raw_preds.append(float(np.mean(probs)))
+                if len(raw_preds) >= 50:
+                    self.calibrator = IsotonicRegression(out_of_bounds='clip')
+                    self.calibrator.fit(np.array(raw_preds), y)
+            except Exception as _e:
+                logger.debug(f"MR calibrator skipped: {_e}")
 
             self.is_ml_ready = True
             self.last_train_count = total_combined if include_phantoms else self.completed_trades

@@ -1546,6 +1546,14 @@ class TradingBot:
                         hi_thr = float(e_cfg.get('high_ml_force', 92))
                     except Exception:
                         allow_hi = True; hi_thr = 92.0
+                    # EV-based threshold bump for Scalp
+                    try:
+                        from ml_scorer_scalp import get_scalp_scorer
+                        sc_ev_scorer = get_scalp_scorer()
+                        ev_thr_sc = float(sc_ev_scorer.get_ev_threshold(sc_feats))
+                        hi_thr = max(hi_thr, ev_thr_sc)
+                    except Exception:
+                        pass
                     if allow_hi and float(ml_s or 0.0) >= hi_thr:
                         try:
                             if sym in self.book.positions:
@@ -4738,6 +4746,13 @@ class TradingBot:
                                     mr_hi_force = float((((cfg.get('mr', {}) or {}).get('exec', {}) or {}).get('high_ml_force', 90.0)))
                                 except Exception:
                                     mr_hi_force = 90.0
+                                # EV-based threshold bump for MR
+                                try:
+                                    if enhanced_mr_scorer:
+                                        ev_thr_mr = float(enhanced_mr_scorer.get_ev_threshold(ef))
+                                        mr_hi_force = max(mr_hi_force, ev_thr_mr)
+                                except Exception:
+                                    pass
                                 if ml_score_mr >= mr_hi_force:
                                     try:
                                         if not sig_mr_ind.meta:
@@ -5026,6 +5041,13 @@ class TradingBot:
                                         tr_hi_force = float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('high_ml_force', 92.0)))
                                     except Exception:
                                         tr_hi_force = 92.0
+                                    # EV-based threshold bump for Trend
+                                    try:
+                                        if tr_scorer is not None:
+                                            ev_thr_tr = float(tr_scorer.get_ev_threshold(trend_features))
+                                            tr_hi_force = max(tr_hi_force, ev_thr_tr)
+                                    except Exception:
+                                        pass
                                     if ml_score_tr >= tr_hi_force:
                                         try:
                                             if not sig_tr_ind.meta:

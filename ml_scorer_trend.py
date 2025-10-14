@@ -9,6 +9,7 @@ from typing import Dict, Tuple, List
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
+from sklearn.isotonic import IsotonicRegression
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,8 @@ class TrendMLScorer:
         self.last_train_count = 0
         self.models = {}
         self.scaler = StandardScaler()
+        self.calibrator: IsotonicRegression | None = None
+        self.ev_buckets: dict = {}
         self.is_ml_ready = False
         self.redis_client = None
         if enabled and redis:
@@ -54,11 +57,23 @@ class TrendMLScorer:
                 self.min_score = float(thr)
             m = r.get('tml:model')
             s = r.get('tml:scaler')
+            c = r.get('tml:calibrator')
+            b = r.get('tml:ev_buckets')
             if m and s:
                 self.models = pickle.loads(base64.b64decode(m))
                 self.scaler = pickle.loads(base64.b64decode(s))
                 self.is_ml_ready = True
                 logger.info("Loaded Trend ML models")
+            if c:
+                try:
+                    self.calibrator = pickle.loads(base64.b64decode(c))
+                except Exception:
+                    self.calibrator = None
+            if b:
+                try:
+                    self.ev_buckets = pickle.loads(base64.b64decode(b))
+                except Exception:
+                    self.ev_buckets = {}
         except Exception as e:
             logger.error(f"Trend load state error: {e}")
 
@@ -73,6 +88,14 @@ class TrendMLScorer:
             if self.is_ml_ready:
                 r.set('tml:model', base64.b64encode(pickle.dumps(self.models)).decode('ascii'))
                 r.set('tml:scaler', base64.b64encode(pickle.dumps(self.scaler)).decode('ascii'))
+                try:
+                    r.set('tml:calibrator', base64.b64encode(pickle.dumps(self.calibrator)).decode('ascii'))
+                except Exception:
+                    pass
+                try:
+                    r.set('tml:ev_buckets', base64.b64encode(pickle.dumps(self.ev_buckets)).decode('ascii'))
+                except Exception:
+                    pass
         except Exception as e:
             logger.error(f"Trend save state error: {e}")
 
@@ -108,7 +131,13 @@ class TrendMLScorer:
                     preds.append(self.models['gb'].predict_proba(xs)[:,1])
                 if preds:
                     p = float(np.mean(preds))
-                    return p * 100.0, 'Trend ML Ensemble'
+                    try:
+                        if self.calibrator is not None:
+                            p = float(self.calibrator.predict([p])[0])
+                            p = max(0.0, min(1.0, p))
+                    except Exception:
+                        pass
+                    return p * 100.0, 'Trend ML Ensemble (cal)'
             except Exception as e:
                 logger.warning(f"Trend ML scoring failed: {e}")
         # Fallback rule-based
@@ -147,6 +176,22 @@ class TrendMLScorer:
             if r:
                 # Append without trimming to keep full history for retraining (no limits)
                 r.rpush('tml:trades', json.dumps(rec))
+                # Update EV buckets
+                try:
+                    f = rec.get('features', {}) or {}
+                    sess = str(f.get('session','unknown'))
+                    vol = str(f.get('volatility_regime','unknown'))
+                    key = f"{sess}|{vol}"
+                    b = self.ev_buckets.get(key, {'w_sum':0.0,'w_n':0,'l_sum':0.0,'l_n':0})
+                    if rec['outcome'] == 1:
+                        b['w_sum'] += float(rec.get('pnl_percent', 0.0))
+                        b['w_n'] += 1
+                    else:
+                        b['l_sum'] += float(rec.get('pnl_percent', 0.0))
+                        b['l_n'] += 1
+                    self.ev_buckets[key] = b
+                except Exception:
+                    pass
             self._save_state()
         except Exception as e:
             logger.error(f"Trend record outcome error: {e}")
@@ -202,6 +247,26 @@ class TrendMLScorer:
             self.models['gb'].fit(XS, y)
         self.is_ml_ready = True
         self.last_train_count = len(mix)
+        # Calibrate (isotonic) on mean-of-heads raw scores
+        try:
+            raw_preds = []
+            for i in range(len(XS)):
+                p_heads = []
+                try:
+                    p_heads.append(self.models['rf'].predict_proba(XS[i:i+1])[:,1])
+                except Exception:
+                    pass
+                try:
+                    p_heads.append(self.models['gb'].predict_proba(XS[i:i+1])[:,1])
+                except Exception:
+                    pass
+                if p_heads:
+                    raw_preds.append(float(np.mean(p_heads)))
+            if len(raw_preds) >= 50:
+                self.calibrator = IsotonicRegression(out_of_bounds='clip')
+                self.calibrator.fit(np.array(raw_preds), y)
+        except Exception as _e:
+            logger.debug(f"Trend calibrator skipped: {_e}")
         # Stamp last retrain time
         try:
             if self.redis_client:
@@ -249,6 +314,25 @@ class TrendMLScorer:
             'next_retrain_at': int(next_at),
             'can_train': data_len >= self.MIN_TRADES_FOR_ML
         }
+
+    def get_ev_threshold(self, features: Dict, floor: float = 70.0, ceiling: float = 90.0, min_samples: int = 30) -> float:
+        """EV-based threshold for trend by session/volatility (percent)."""
+        try:
+            sess = str(features.get('session','unknown'))
+            vol = str(features.get('volatility_regime','unknown'))
+            key = f"{sess}|{vol}"
+            b = self.ev_buckets.get(key) or {}
+            w_n = int(b.get('w_n', 0)); l_n = int(b.get('l_n', 0))
+            if (w_n + l_n) < min_samples or w_n == 0 or l_n == 0:
+                return float(floor)
+            avg_win = (b.get('w_sum', 0.0) / max(1, w_n))
+            avg_loss = (b.get('l_sum', 0.0) / max(1, l_n))
+            R_net = abs(avg_win) / max(1e-6, abs(avg_loss))
+            p_min = 1.0 / (1.0 + max(1e-6, R_net))
+            thr = max(floor, min(ceiling, p_min * 100.0))
+            return float(thr)
+        except Exception:
+            return float(floor)
 
     def get_stats(self) -> Dict:
         """Return status summary compatible with UI expectations.

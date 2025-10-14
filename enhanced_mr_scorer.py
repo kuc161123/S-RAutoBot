@@ -793,7 +793,8 @@ class EnhancedMeanReversionScorer:
 
     def _retrain_ensemble(self):
         """Retrain the specialized ensemble models (executed trades only)"""
-        self._retrain_ensemble_with_phantoms(include_phantoms=False)
+        # Use executed + phantom combined so last_train_count matches dashboard combined count
+        self._retrain_ensemble_with_phantoms(include_phantoms=True)
 
     def _retrain_ensemble_with_phantoms(self, include_phantoms=True):
         """Retrain the specialized ensemble models with optional phantom data"""

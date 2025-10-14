@@ -1631,6 +1631,7 @@ class TradingBot:
                                 if executed:
                                     logger.info(f"[{sym}] 🧮 Scalp decision final: exec_scalp (reason=ml_extreme {float(ml_s or 0.0):.1f}>={hi_thr:.0f})")
                                     # Skip rest of gating for this detection
+                                    _scalp_decision_logged = True
                                     self._scalp_cooldown[sym] = bar_ts
                                     blist.append(now_ts)
                                     self._scalp_budget[sym] = blist
@@ -2742,11 +2743,14 @@ class TradingBot:
                                             ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
                                             logger.info(f"[{symbol}] ⚠️ Trend ML updated with outcome (recovered position, defaulted).")
                                 else:
-                                    # Trend strategy
-                                    logger.info(f"[{symbol}] 🔵 TREND STRATEGY detected")
-                                    if ml_scorer is not None:
-                                        ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                        logger.info(f"[{symbol}] Trend ML updated with outcome.")
+                                    # Trend strategy or others. Do NOT route Scalp outcomes to Trend ML.
+                                    if str(getattr(pos, 'strategy_name','')).lower() == 'scalp':
+                                        logger.info(f"[{symbol}] ⚙️ Scalp outcome handled by Scalp phantom tracker; skipping Trend ML update")
+                                    else:
+                                        logger.info(f"[{symbol}] 🔵 TREND STRATEGY detected")
+                                        if ml_scorer is not None:
+                                            ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                            logger.info(f"[{symbol}] Trend ML updated with outcome.")
                             else:
                                 # Robust routing by strategy_name when enhanced path isn't active
                                 if not skip_ml_update_manual:

@@ -5254,8 +5254,6 @@ class TradingBot:
                                     logger.debug(f"[{sym}] Trend: ml_score={float(ml_score_tr or 0.0):.1f} thr={thr_tr:.0f} should={tr_should}")
                                 except Exception:
                                     pass
-                            except Exception:
-                                pass
                             # Optional 3m context (diagnostic only)
                             try:
                                 if bool(((cfg.get('trend', {}).get('context', {}) or {}).get('use_3m_context', False))):

@@ -25,6 +25,7 @@ class ScalpMLScorer:
     MIN_TRADES_FOR_ML = 50
     RETRAIN_INTERVAL = 50
     INITIAL_THRESHOLD = 75
+    FEAT_VERSION = 1
     # Allow phantom-only bootstrap when there are no executed scalp trades yet
     # Unlimited phantom usage policy for training (no cap)
     PHANTOM_BOOTSTRAP_MIN = 0
@@ -133,7 +134,7 @@ class ScalpMLScorer:
         except Exception as e:
             logger.error(f"Scalp save state error: {e}")
 
-    def _prepare_features(self, f: Dict) -> List[float]:
+    def _prepare_features(self, f: Dict, version: int = 1) -> List[float]:
         order = [
             'atr_pct', 'bb_width_pct', 'impulse_ratio', 'ema_slope_fast', 'ema_slope_slow',
             'volume_ratio', 'upper_wick_ratio', 'lower_wick_ratio', 'vwap_dist_atr',
@@ -260,7 +261,7 @@ class ScalpMLScorer:
         mix = data
 
         if len(mix) < self.MIN_TRADES_FOR_ML:
-            logger.info(f"Scalp ML trainable set below minimum after policy: {len(mix)}/{self.MIN_TRADES_FOR_ML} (exec={exec_count})")
+            logger.info(f"Scalp ML trainable set below minimum after policy: {len(mix)}/{self.MIN_TRADES_FOR_ML}")
             return False
         for d in mix:
             f = d.get('features', {})

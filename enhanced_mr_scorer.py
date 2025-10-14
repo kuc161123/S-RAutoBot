@@ -132,21 +132,21 @@ class EnhancedMeanReversionScorer:
 
         try:
             # Load completed trades count
-            count = self.redis_client.get('enhanced_mr:completed_trades')
+            count = self.redis_client.get('ml:mr:completed_trades') or self.redis_client.get('enhanced_mr:completed_trades')
             self.completed_trades = int(count) if count else 0
 
             # Load last train count
-            last_train = self.redis_client.get('enhanced_mr:last_train_count')
+            last_train = self.redis_client.get('ml:mr:last_train_count') or self.redis_client.get('enhanced_mr:last_train_count')
             self.last_train_count = int(last_train) if last_train else 0
 
             # Load threshold
-            threshold = self.redis_client.get('enhanced_mr:threshold')
+            threshold = self.redis_client.get('ml:mr:threshold') or self.redis_client.get('enhanced_mr:threshold')
             if threshold:
                 self.min_score = float(threshold)
                 logger.info(f"Loaded Enhanced MR threshold: {self.min_score}")
 
             # Load recent performance
-            perf = self.redis_client.get('enhanced_mr:recent_performance')
+            perf = self.redis_client.get('ml:mr:recent_performance') or self.redis_client.get('enhanced_mr:recent_performance')
             if perf:
                 self.recent_performance = json.loads(perf)
 
@@ -163,8 +163,8 @@ class EnhancedMeanReversionScorer:
     def _load_ensemble_models(self):
         """Load all ensemble models from Redis"""
         try:
-            models_data = self.redis_client.get('enhanced_mr:ensemble_models')
-            scalers_data = self.redis_client.get('enhanced_mr:scalers')
+            models_data = self.redis_client.get('ml:mr:ensemble_models') or self.redis_client.get('enhanced_mr:ensemble_models')
+            scalers_data = self.redis_client.get('ml:mr:scalers') or self.redis_client.get('enhanced_mr:scalers')
 
             if models_data and scalers_data:
                 import base64
@@ -172,7 +172,7 @@ class EnhancedMeanReversionScorer:
                 self.scalers = pickle.loads(base64.b64decode(scalers_data))
 
                 # Load performance data
-                perf_data = self.redis_client.get('enhanced_mr:model_performance')
+                perf_data = self.redis_client.get('ml:mr:model_performance') or self.redis_client.get('enhanced_mr:model_performance')
                 if perf_data:
                     perf_dict = json.loads(perf_data)
                     self.model_performance = {
@@ -192,11 +192,16 @@ class EnhancedMeanReversionScorer:
             return
 
         try:
+            self.redis_client.set('ml:mr:completed_trades', str(self.completed_trades))
+            self.redis_client.set('ml:mr:last_train_count', str(self.last_train_count))
+            self.redis_client.set('ml:mr:threshold', str(self.min_score))
+            self.redis_client.set('ml:mr:recent_performance',
+                                json.dumps(self.recent_performance, cls=NumpyJSONEncoder))
+            # Legacy mirrors
             self.redis_client.set('enhanced_mr:completed_trades', str(self.completed_trades))
             self.redis_client.set('enhanced_mr:last_train_count', str(self.last_train_count))
             self.redis_client.set('enhanced_mr:threshold', str(self.min_score))
-            self.redis_client.set('enhanced_mr:recent_performance',
-                                json.dumps(self.recent_performance, cls=NumpyJSONEncoder))
+            self.redis_client.set('enhanced_mr:recent_performance', json.dumps(self.recent_performance, cls=NumpyJSONEncoder))
 
             # Save models and scalers
             if self.is_ml_ready:
@@ -204,13 +209,16 @@ class EnhancedMeanReversionScorer:
                 models_data = base64.b64encode(pickle.dumps(self.ensemble_models)).decode('ascii')
                 scalers_data = base64.b64encode(pickle.dumps(self.scalers)).decode('ascii')
 
-                self.redis_client.set('enhanced_mr:ensemble_models', models_data)
-                self.redis_client.set('enhanced_mr:scalers', scalers_data)
+                self.redis_client.set('ml:mr:ensemble_models', models_data)
+                self.redis_client.set('ml:mr:scalers', scalers_data)
 
                 # Save performance data
                 perf_dict = {name: asdict(perf) for name, perf in self.model_performance.items()}
-                self.redis_client.set('enhanced_mr:model_performance',
-                                    json.dumps(perf_dict, cls=NumpyJSONEncoder))
+                self.redis_client.set('ml:mr:model_performance', json.dumps(perf_dict, cls=NumpyJSONEncoder))
+                # Legacy mirrors
+                self.redis_client.set('enhanced_mr:ensemble_models', models_data)
+                self.redis_client.set('enhanced_mr:scalers', scalers_data)
+                self.redis_client.set('enhanced_mr:model_performance', json.dumps(perf_dict, cls=NumpyJSONEncoder))
 
         except Exception as e:
             logger.error(f"Error saving Enhanced MR ML state: {e}")
@@ -644,7 +652,9 @@ class EnhancedMeanReversionScorer:
         executed_count = self.completed_trades
         try:
             if self.redis_client:
-                executed_count = len(self.redis_client.lrange('enhanced_mr:trades', 0, -1))
+                executed_count = len(self.redis_client.lrange('ml:mr:trades', 0, -1) or [])
+                if executed_count == 0:
+                    executed_count = len(self.redis_client.lrange('enhanced_mr:trades', 0, -1) or [])
         except Exception:
             pass
         total_combined = executed_count + phantom_count
@@ -676,7 +686,7 @@ class EnhancedMeanReversionScorer:
         # Attach last retrain timestamp if available
         try:
             if self.redis_client:
-                info['last_retrain_ts'] = self.redis_client.get('enhanced_mr:last_train_ts')
+                info['last_retrain_ts'] = self.redis_client.get('ml:mr:last_train_ts') or self.redis_client.get('enhanced_mr:last_train_ts')
         except Exception:
             pass
         return info
@@ -711,7 +721,9 @@ class EnhancedMeanReversionScorer:
         # Get executed trades
         try:
             if self.redis_client:
-                trade_data = self.redis_client.lrange('enhanced_mr:trades', 0, -1)
+                trade_data = self.redis_client.lrange('ml:mr:trades', 0, -1)
+                if not trade_data:
+                    trade_data = self.redis_client.lrange('enhanced_mr:trades', 0, -1)
                 executed_count = len(trade_data)
             else:
                 executed_count = len(self.memory_storage.get('trades', []))
@@ -799,8 +811,11 @@ class EnhancedMeanReversionScorer:
         try:
             if self.redis_client:
                 # Append without trimming to keep full history for retraining (no limits)
-                self.redis_client.rpush('enhanced_mr:trades',
-                                      json.dumps(trade_record, cls=NumpyJSONEncoder))
+                self.redis_client.rpush('ml:mr:trades', json.dumps(trade_record, cls=NumpyJSONEncoder))
+                try:
+                    self.redis_client.rpush('enhanced_mr:trades', json.dumps(trade_record, cls=NumpyJSONEncoder))
+                except Exception:
+                    pass
                 # Update EV buckets
                 try:
                     f = (trade_record.get('features') or trade_record.get('enhanced_features')) or {}

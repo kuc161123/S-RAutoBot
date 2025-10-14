@@ -56,18 +56,18 @@ class ScalpMLScorer:
         if not self.redis_client:
             return
         try:
-            t = self.redis_client.get('ml:completed_trades:scalp')
+            t = self.redis_client.get('ml:scalp:completed_trades') or self.redis_client.get('ml:completed_trades:scalp')
             self.completed_trades = int(t) if t else 0
-            last = self.redis_client.get('ml:last_train_count:scalp')
+            last = self.redis_client.get('ml:scalp:last_train_count') or self.redis_client.get('ml:last_train_count:scalp')
             self.last_train_count = int(last) if last else 0
-            thr = self.redis_client.get('ml:threshold:scalp')
+            thr = self.redis_client.get('ml:scalp:threshold') or self.redis_client.get('ml:threshold:scalp')
             if thr:
                 self.min_score = float(thr)
-            m = self.redis_client.get('ml:model:scalp')
-            s = self.redis_client.get('ml:scaler:scalp')
-            c = self.redis_client.get('ml:calibrator:scalp')
-            b = self.redis_client.get('ml:ev_buckets:scalp')
-            fv = self.redis_client.get('ml:featver:scalp')
+            m = self.redis_client.get('ml:scalp:model') or self.redis_client.get('ml:model:scalp')
+            s = self.redis_client.get('ml:scalp:scaler') or self.redis_client.get('ml:scaler:scalp')
+            c = self.redis_client.get('ml:scalp:calibrator') or self.redis_client.get('ml:calibrator:scalp')
+            b = self.redis_client.get('ml:scalp:ev_buckets') or self.redis_client.get('ml:ev_buckets:scalp')
+            fv = self.redis_client.get('ml:scalp:featver') or self.redis_client.get('ml:featver:scalp')
             if m and s:
                 self.models = pickle.loads(base64.b64decode(m))
                 self.scaler = pickle.loads(base64.b64decode(s))
@@ -105,18 +105,41 @@ class ScalpMLScorer:
         if not self.redis_client:
             return
         try:
+            self.redis_client.set('ml:scalp:completed_trades', str(self.completed_trades))
+            self.redis_client.set('ml:scalp:last_train_count', str(self.last_train_count))
+            self.redis_client.set('ml:scalp:threshold', str(self.min_score))
+            # Legacy mirrors
             self.redis_client.set('ml:completed_trades:scalp', str(self.completed_trades))
             self.redis_client.set('ml:last_train_count:scalp', str(self.last_train_count))
             self.redis_client.set('ml:threshold:scalp', str(self.min_score))
             if self.is_ml_ready:
-                self.redis_client.set('ml:model:scalp', base64.b64encode(pickle.dumps(self.models)).decode('ascii'))
-                self.redis_client.set('ml:scaler:scalp', base64.b64encode(pickle.dumps(self.scaler)).decode('ascii'))
+                enc_model = base64.b64encode(pickle.dumps(self.models)).decode('ascii')
+                enc_scaler = base64.b64encode(pickle.dumps(self.scaler)).decode('ascii')
+                self.redis_client.set('ml:scalp:model', enc_model)
+                self.redis_client.set('ml:scalp:scaler', enc_scaler)
                 try:
-                    self.redis_client.set('ml:calibrator:scalp', base64.b64encode(pickle.dumps(self.calibrator)).decode('ascii'))
+                    enc_cal = base64.b64encode(pickle.dumps(self.calibrator)).decode('ascii')
+                    self.redis_client.set('ml:scalp:calibrator', enc_cal)
                 except Exception:
                     pass
                 try:
-                    self.redis_client.set('ml:ev_buckets:scalp', base64.b64encode(pickle.dumps(self.ev_buckets)).decode('ascii'))
+                    enc_ev = base64.b64encode(pickle.dumps(self.ev_buckets)).decode('ascii')
+                    self.redis_client.set('ml:scalp:ev_buckets', enc_ev)
+                except Exception:
+                    pass
+                try:
+                    self.redis_client.set('ml:scalp:featver', str(self.featver))
+                except Exception:
+                    pass
+                # Legacy mirrors
+                self.redis_client.set('ml:model:scalp', enc_model)
+                self.redis_client.set('ml:scaler:scalp', enc_scaler)
+                try:
+                    self.redis_client.set('ml:calibrator:scalp', enc_cal)
+                except Exception:
+                    pass
+                try:
+                    self.redis_client.set('ml:ev_buckets:scalp', enc_ev)
                 except Exception:
                     pass
                 try:
@@ -205,7 +228,11 @@ class ScalpMLScorer:
                     'was_executed': 1 if signal.get('was_executed') else 0
                 }
                 # Append without trimming to keep full history for retraining (no limits)
-                self.redis_client.rpush('ml:trades:scalp', json.dumps(record))
+                self.redis_client.rpush('ml:scalp:trades', json.dumps(record))
+                try:
+                    self.redis_client.rpush('ml:trades:scalp', json.dumps(record))
+                except Exception:
+                    pass
                 # Update EV buckets
                 try:
                     f = record.get('features', {}) or {}
@@ -241,7 +268,9 @@ class ScalpMLScorer:
         data = []
         if self.redis_client:
             try:
-                arr = self.redis_client.lrange('ml:trades:scalp', 0, -1)
+                arr = self.redis_client.lrange('ml:scalp:trades', 0, -1)
+                if not arr:
+                    arr = self.redis_client.lrange('ml:trades:scalp', 0, -1)
                 for t in arr:
                     try:
                         data.append(json.loads(t))
@@ -330,8 +359,12 @@ class ScalpMLScorer:
         self.featver = self.FEAT_VERSION
         # Stamp last retrain time
         try:
-            if self.redis_client:
-                self.redis_client.set('ml:last_train_ts:scalp', datetime.utcnow().isoformat())
+                if self.redis_client:
+                    self.redis_client.set('ml:scalp:last_train_ts', datetime.utcnow().isoformat())
+                    try:
+                        self.redis_client.set('ml:last_train_ts:scalp', datetime.utcnow().isoformat())
+                    except Exception:
+                        pass
         except Exception:
             pass
         self._save_state()

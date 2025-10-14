@@ -38,6 +38,7 @@ class TrendMLScorer:
         self.ev_buckets: dict = {}
         self.is_ml_ready = False
         self.redis_client = None
+        self.KEY_NS = 'ml:trend'
         if enabled and redis:
             try:
                 url = os.getenv('REDIS_URL')
@@ -53,15 +54,15 @@ class TrendMLScorer:
         if not r:
             return
         try:
-            self.completed_trades = int(r.get('tml:completed_trades') or 0)
-            self.last_train_count = int(r.get('tml:last_train_count') or 0)
-            thr = r.get('tml:threshold')
+            self.completed_trades = int(r.get(f'{self.KEY_NS}:completed_trades') or r.get('tml:completed_trades') or 0)
+            self.last_train_count = int(r.get(f'{self.KEY_NS}:last_train_count') or r.get('tml:last_train_count') or 0)
+            thr = r.get(f'{self.KEY_NS}:threshold') or r.get('tml:threshold')
             if thr:
                 self.min_score = float(thr)
-            m = r.get('tml:model')
-            s = r.get('tml:scaler')
-            c = r.get('tml:calibrator')
-            b = r.get('tml:ev_buckets')
+            m = r.get(f'{self.KEY_NS}:model') or r.get('tml:model')
+            s = r.get(f'{self.KEY_NS}:scaler') or r.get('tml:scaler')
+            c = r.get(f'{self.KEY_NS}:calibrator') or r.get('tml:calibrator')
+            b = r.get(f'{self.KEY_NS}:ev_buckets') or r.get('tml:ev_buckets')
             if m and s:
                 self.models = pickle.loads(base64.b64decode(m))
                 self.scaler = pickle.loads(base64.b64decode(s))
@@ -85,18 +86,38 @@ class TrendMLScorer:
         if not r:
             return
         try:
+            # New namespaced keys
+            r.set(f'{self.KEY_NS}:completed_trades', str(self.completed_trades))
+            r.set(f'{self.KEY_NS}:last_train_count', str(self.last_train_count))
+            r.set(f'{self.KEY_NS}:threshold', str(self.min_score))
+            # Write legacy keys for compatibility during transition
             r.set('tml:completed_trades', str(self.completed_trades))
             r.set('tml:last_train_count', str(self.last_train_count))
             r.set('tml:threshold', str(self.min_score))
             if self.is_ml_ready:
-                r.set('tml:model', base64.b64encode(pickle.dumps(self.models)).decode('ascii'))
-                r.set('tml:scaler', base64.b64encode(pickle.dumps(self.scaler)).decode('ascii'))
+                enc_model = base64.b64encode(pickle.dumps(self.models)).decode('ascii')
+                enc_scaler = base64.b64encode(pickle.dumps(self.scaler)).decode('ascii')
+                r.set(f'{self.KEY_NS}:model', enc_model)
+                r.set(f'{self.KEY_NS}:scaler', enc_scaler)
                 try:
-                    r.set('tml:calibrator', base64.b64encode(pickle.dumps(self.calibrator)).decode('ascii'))
+                    enc_cal = base64.b64encode(pickle.dumps(self.calibrator)).decode('ascii')
+                    r.set(f'{self.KEY_NS}:calibrator', enc_cal)
                 except Exception:
                     pass
                 try:
-                    r.set('tml:ev_buckets', base64.b64encode(pickle.dumps(self.ev_buckets)).decode('ascii'))
+                    enc_ev = base64.b64encode(pickle.dumps(self.ev_buckets)).decode('ascii')
+                    r.set(f'{self.KEY_NS}:ev_buckets', enc_ev)
+                except Exception:
+                    pass
+                # Legacy mirrors
+                r.set('tml:model', enc_model)
+                r.set('tml:scaler', enc_scaler)
+                try:
+                    r.set('tml:calibrator', enc_cal)
+                except Exception:
+                    pass
+                try:
+                    r.set('tml:ev_buckets', enc_ev)
                 except Exception:
                     pass
         except Exception as e:
@@ -182,7 +203,12 @@ class TrendMLScorer:
             }
             if r:
                 # Append without trimming to keep full history for retraining (no limits)
-                r.rpush('tml:trades', json.dumps(rec))
+                r.rpush(f'{self.KEY_NS}:trades', json.dumps(rec))
+                # Legacy mirror
+                try:
+                    r.rpush('tml:trades', json.dumps(rec))
+                except Exception:
+                    pass
                 # Update EV buckets
                 try:
                     f = rec.get('features', {}) or {}
@@ -215,7 +241,9 @@ class TrendMLScorer:
         data = []
         if self.redis_client:
             try:
-                arr = self.redis_client.lrange('tml:trades', 0, -1)
+                arr = self.redis_client.lrange(f'{self.KEY_NS}:trades', 0, -1)
+                if not arr:
+                    arr = self.redis_client.lrange('tml:trades', 0, -1)
                 for t in arr:
                     try:
                         data.append(json.loads(t))
@@ -316,7 +344,7 @@ class TrendMLScorer:
             'total_combined': int(data_len),
             'executed_count': int(exec_count),
             'phantom_count': int(ph_count),
-            'last_retrain_ts': (self.redis_client.get('tml:last_train_ts') if self.redis_client else None),
+            'last_retrain_ts': (self.redis_client.get(f'{self.KEY_NS}:last_train_ts') if self.redis_client else None),
             'trades_until_next_retrain': int(left),
             'next_retrain_at': int(next_at),
             'can_train': data_len >= self.MIN_TRADES_FOR_ML

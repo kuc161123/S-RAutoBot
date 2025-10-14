@@ -4885,10 +4885,10 @@ class TradingBot:
                                         mr_hi_force = max(mr_hi_force, ev_thr_mr)
                                 except Exception:
                                     pass
-                                    if ml_score_mr >= mr_hi_force:
-                                        try:
-                                            if not sig_mr_ind.meta:
-                                                sig_mr_ind.meta = {}
+                                if ml_score_mr >= mr_hi_force:
+                                    try:
+                                        if not sig_mr_ind.meta:
+                                            sig_mr_ind.meta = {}
                                     except Exception:
                                         sig_mr_ind.meta = {}
                                     # Mark as high-ML for telemetry/notifications and bypass gates

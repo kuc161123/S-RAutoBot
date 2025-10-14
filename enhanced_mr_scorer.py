@@ -655,6 +655,7 @@ class EnhancedMeanReversionScorer:
             'phantom_count': phantom_count,
             'total_combined': total_combined,
             'last_train_count': self.last_train_count,
+            'last_retrain_ts': None,
             'trades_until_next_retrain': 0,
             'next_retrain_at': 0,
             'can_train': False
@@ -672,7 +673,12 @@ class EnhancedMeanReversionScorer:
             info['trades_until_next_retrain'] = max(0, self.RETRAIN_INTERVAL - trades_since_last)
             info['next_retrain_at'] = self.last_train_count + self.RETRAIN_INTERVAL
             info['can_train'] = True  # We can always retrain if models exist
-        
+        # Attach last retrain timestamp if available
+        try:
+            if self.redis_client:
+                info['last_retrain_ts'] = self.redis_client.get('enhanced_mr:last_train_ts')
+        except Exception:
+            pass
         return info
 
     def startup_retrain(self) -> bool:
@@ -831,6 +837,12 @@ class EnhancedMeanReversionScorer:
 
             self.is_ml_ready = True
             self.last_train_count = total_combined if include_phantoms else self.completed_trades
+            # Stamp last retrain time
+            try:
+                if self.redis_client:
+                    self.redis_client.set('enhanced_mr:last_train_ts', datetime.utcnow().isoformat())
+            except Exception:
+                pass
             self._save_state()
 
             active_models = [name for name, model in self.ensemble_models.items() if model is not None]

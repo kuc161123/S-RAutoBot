@@ -280,6 +280,13 @@ class TGBot:
                 lines.append(f"• Next retrain in: {mr_info.get('trades_until_next_retrain', 0)} trades")
                 # Clarify executed vs phantom counts for transparency
                 lines.append(f"• Executed: {mr_info.get('completed_trades', 0)} | Phantom: {mr_info.get('phantom_count', 0)}")
+                # Last retrain timestamp (if available)
+                try:
+                    last_ts_mr = mr_info.get('last_retrain_ts')
+                    if last_ts_mr:
+                        lines.append(f"• Last retrain: {last_ts_mr}")
+                except Exception:
+                    pass
                 # MR Promotion status
                 try:
                     mr_stats = enhanced_mr.get_enhanced_stats()
@@ -314,6 +321,13 @@ class TGBot:
                 lines.append(f"• Trades (exec + phantom): {total}")
                 lines.append(f"• Next retrain in: {tstats.get('trades_until_next_retrain',0)} trades")
                 lines.append(f"• Executed: {exec_n} | Phantom: {ph_n}")
+                # Last retrain timestamp (if available)
+                try:
+                    last_ts_tr = tstats.get('last_retrain_ts')
+                    if last_ts_tr:
+                        lines.append(f"• Last retrain: {last_ts_tr}")
+                except Exception:
+                    pass
                 lines.append(f"• Threshold: {getattr(tr_scorer, 'min_score', 70):.0f}")
             except Exception:
                 pass
@@ -347,6 +361,13 @@ class TGBot:
                 s_ret = sc_scorer.get_retrain_info()
                 lines.append(f"• Records: {s_stats.get('total_records',0)} | Trainable: {s_ret.get('trainable_size',0)}")
                 lines.append(f"• Next retrain in: {s_ret.get('trades_until_next_retrain',0)} trades")
+                # Last retrain timestamp (if available)
+                try:
+                    last_ts_sc = s_ret.get('last_retrain_ts')
+                    if last_ts_sc:
+                        lines.append(f"• Last retrain: {last_ts_sc}")
+                except Exception:
+                    pass
                 lines.append(f"• Threshold: {getattr(sc_scorer, 'min_score', 75):.0f}")
             except Exception:
                 lines.append(f"• Samples: {getattr(sc_scorer, 'completed_trades', 0)}")

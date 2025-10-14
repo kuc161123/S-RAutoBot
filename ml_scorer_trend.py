@@ -202,6 +202,12 @@ class TrendMLScorer:
             self.models['gb'].fit(XS, y)
         self.is_ml_ready = True
         self.last_train_count = len(mix)
+        # Stamp last retrain time
+        try:
+            if self.redis_client:
+                self.redis_client.set('tml:last_train_ts', datetime.utcnow().isoformat())
+        except Exception:
+            pass
         self._save_state()
         logger.info("Trend ML retrained")
         return True
@@ -238,6 +244,7 @@ class TrendMLScorer:
             'total_combined': int(data_len),
             'executed_count': int(exec_count),
             'phantom_count': int(ph_count),
+            'last_retrain_ts': (self.redis_client.get('tml:last_train_ts') if self.redis_client else None),
             'trades_until_next_retrain': int(left),
             'next_retrain_at': int(next_at),
             'can_train': data_len >= self.MIN_TRADES_FOR_ML

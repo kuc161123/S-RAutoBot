@@ -228,6 +228,12 @@ class ScalpMLScorer:
                 pass
         self.is_ml_ready = True
         self.last_train_count = len(mix)
+        # Stamp last retrain time
+        try:
+            if self.redis_client:
+                self.redis_client.set('ml:last_train_ts:scalp', datetime.utcnow().isoformat())
+        except Exception:
+            pass
         self._save_state()
         logger.info("Scalp ML retrained")
         return True
@@ -272,10 +278,17 @@ class ScalpMLScorer:
                 'total_records': int(len(data)),
                 'trainable_size': int(trainable),
                 'last_train_count': int(self.last_train_count),
+                'last_retrain_ts': None,
                 'trades_until_next_retrain': 0,
                 'next_retrain_at': 0,
                 'can_train': False
             }
+            # Read last retrain timestamp if available
+            try:
+                if self.redis_client:
+                    info['last_retrain_ts'] = self.redis_client.get('ml:last_train_ts:scalp')
+            except Exception:
+                pass
 
             if not self.is_ml_ready:
                 info['can_train'] = trainable >= self.MIN_TRADES_FOR_ML

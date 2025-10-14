@@ -100,6 +100,8 @@ trend:
   sl_atr_mult: 1.5
   rr: 2.5
   use_ema_stack: true
+  regime:
+    execute_only: true   # Apply regime gates only for execution; phantoms remain free
   exec:
     enabled: true
     # When true, bot may run Trend in phantom-only mode during cold start.
@@ -238,6 +240,7 @@ mr:
     min_conf: 0.60
     min_persist: 0.60
     phantom_on_filter_fail: true
+    execute_only: true   # Apply regime gates only for execution; phantoms remain free
     promotion_bypass: true
   exec:
     enabled: true

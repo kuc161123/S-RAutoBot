@@ -4248,11 +4248,21 @@ class TradingBot:
                             candidates.append(('enhanced_mr', mr_score))
 
                     # Apply HTF gating to candidates when enabled (drop misaligned). Use composite RC/TS.
+                    # When execute_only flags are enabled, do NOT drop here — defer to execution stage
                     if central_router_enabled:
                         try:
                             htf_cfg = (self.config.get('router', {}) or {}).get('htf_bias', {})
                             mode = str(htf_cfg.get('mode', 'gated')).lower()
                             if bool(htf_cfg.get('enabled', False)):
+                                # Exec-only regime flags
+                                try:
+                                    tr_exec_only = bool((((self.config.get('trend', {}) or {}).get('regime', {}) or {}).get('execute_only', True)))
+                                except Exception:
+                                    tr_exec_only = True
+                                try:
+                                    mr_exec_only = bool((((self.config.get('mr', {}) or {}).get('regime', {}) or {}).get('execute_only', True)))
+                                except Exception:
+                                    mr_exec_only = True
                                 metrics = self._get_htf_metrics(sym, df)
                                 min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
                                 min_rq = float((htf_cfg.get('mr', {}) or {}).get('min_range_quality', 0.60))
@@ -4260,12 +4270,19 @@ class TradingBot:
                                 gated = []
                                 for name, sc in candidates:
                                     if name == 'trend_pullback':
+                                        if tr_exec_only:
+                                            # Defer gating to execution; keep candidate
+                                            gated.append((name, sc))
+                                            continue
                                         ts_ok = (metrics['ts15'] >= min_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] >= min_ts))
                                         if ts_ok or mode == 'soft':
                                             gated.append((name, sc))
                                         else:
                                             logger.info(f"[{sym}] 🧮 HTF gate: drop TREND ts15={metrics['ts15']:.1f} ts60={metrics['ts60']:.1f} < {min_ts:.1f}")
                                     elif name == 'enhanced_mr':
+                                        if mr_exec_only:
+                                            gated.append((name, sc))
+                                            continue
                                         rc_ok = (metrics['rc15'] >= min_rq) and ((metrics['rc60'] == 0.0) or (metrics['rc60'] >= min_rq))
                                         ts_ok = (metrics['ts15'] <= max_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] <= max_ts))
                                         if (rc_ok and ts_ok) or mode == 'soft':
@@ -5271,6 +5288,28 @@ class TradingBot:
                                     allow_tr_exec = False
                                 executed = False
                                 if allow_tr_exec:
+                                    # Exec-only regime gate for Trend Pullback (skip if disabled)
+                                    try:
+                                        tr_exec_only = bool((((cfg.get('trend', {}) or {}).get('regime', {}) or {}).get('execute_only', True)))
+                                    except Exception:
+                                        tr_exec_only = True
+                                    if tr_exec_only:
+                                        try:
+                                            htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
+                                            metrics = self._get_htf_metrics(sym, df)
+                                            min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
+                                            ts_ok = (metrics['ts15'] >= min_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] >= min_ts))
+                                            if not ts_ok:
+                                                # Record phantom and skip execution due to regime gate
+                                                if phantom_tracker and sig_tr_ind is not None:
+                                                    phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
+                                                try:
+                                                    logger.info(f"[{sym}] 🧮 Exec-only regime gate: block Trend (ts15/ts60 below min {min_ts:.1f}) → phantom")
+                                                except Exception:
+                                                    pass
+                                                continue
+                                        except Exception:
+                                            pass
                                     try:
                                         self._last_signal_features[sym] = dict(trend_features)
                                     except Exception:

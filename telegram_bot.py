@@ -3763,7 +3763,7 @@ HTF S/R module disabled
                 recent_trades = all_trades[-50:] if len(all_trades) > 50 else all_trades
 
                 # Group by strategy
-                trend_trades = [t for t in recent_trades if t.strategy_name in ("trend_breakout", "pullback")]
+                trend_trades = [t for t in recent_trades if t.strategy_name in ("trend_pullback", "pullback")]
                 mr_trades = [t for t in recent_trades if t.strategy_name in ["mean_reversion", "enhanced_mr"]]
 
                 msg += f"📈 *Recent Performance (Last 50 trades):*\n"

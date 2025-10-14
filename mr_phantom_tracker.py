@@ -655,7 +655,11 @@ class MRPhantomTracker:
             # Determine outcome (win/loss)
             outcome = phantom.outcome
 
-            # Record phantom trade outcome for ML learning
+            # Record phantom trade outcome for ML learning as phantom (not executed)
+            try:
+                signal_data['was_executed'] = False
+            except Exception:
+                pass
             mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
 
             logger.debug(f"[{phantom.symbol}] Fed MR phantom trade outcome to ML: {outcome} "

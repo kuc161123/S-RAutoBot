@@ -2734,6 +2734,10 @@ class TradingBot:
                                 elif pos.strategy_name == "mean_reversion":
                                     # Guard: do NOT route 'mean_reversion' to Enhanced MR to avoid accidental increments
                                     if shared_mr_scorer is not None:
+                                        try:
+                                            signal_data['was_executed'] = True
+                                        except Exception:
+                                            pass
                                         shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
                                         logger.info(f"[{symbol}] ✅ Original MR ML updated with outcome (guarded).")
                                     else:
@@ -2752,14 +2756,22 @@ class TradingBot:
                                     logger.info(f"[{symbol}] 🔍 UNKNOWN STRATEGY - Checking reason: '{reason}'")
                                     if 'Mean Reversion:' in reason or 'Rejection from resistance' in reason or 'Rejection from support' in reason:
                                         # Treat as MR, but guard against Enhanced MR increments if original scorer absent
-                                        if shared_mr_scorer is not None:
-                                            shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                            logger.info(f"[{symbol}] ✅ Original MR ML updated with outcome (recovered, inferred).")
+                                            if shared_mr_scorer is not None:
+                                                try:
+                                                    signal_data['was_executed'] = True
+                                                except Exception:
+                                                    pass
+                                                shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                                logger.info(f"[{symbol}] ✅ Original MR ML updated with outcome (recovered, inferred).")
                                         else:
                                             logger.warning(f"[{symbol}] ⚠️ Inferred MR outcome not recorded (no original MR scorer; guard active)")
                                     else:
                                         # Default to Trend ML
                                         if ml_scorer is not None:
+                                            try:
+                                                signal_data['was_executed'] = True
+                                            except Exception:
+                                                pass
                                             ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
                                             logger.info(f"[{symbol}] ⚠️ Trend ML updated with outcome (recovered position, defaulted).")
                                 else:
@@ -2769,6 +2781,10 @@ class TradingBot:
                                     else:
                                         logger.info(f"[{symbol}] 🔵 TREND STRATEGY detected")
                                         if ml_scorer is not None:
+                                            try:
+                                                signal_data['was_executed'] = True
+                                            except Exception:
+                                                pass
                                             ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
                                             logger.info(f"[{symbol}] Trend ML updated with outcome.")
                             else:
@@ -2788,6 +2804,10 @@ class TradingBot:
                                             # Prefer Enhanced MR scorer if available even when use_enhanced flag is false
                                             if shared_enhanced_mr is not None:
                                                 try:
+                                                    try:
+                                                        signal_data['was_executed'] = True
+                                                    except Exception:
+                                                        pass
                                                     shared_enhanced_mr.record_outcome(signal_data, outcome, pnl_pct)
                                                     logger.info(f"[{symbol}] Enhanced MR ML updated with outcome (fallback path).")
                                                     routed = True
@@ -2795,6 +2815,10 @@ class TradingBot:
                                                     logger.warning(f"[{symbol}] Enhanced MR ML update failed: {e}")
                                             if (not routed) and (shared_mr_scorer is not None):
                                                 try:
+                                                    try:
+                                                        signal_data['was_executed'] = True
+                                                    except Exception:
+                                                        pass
                                                     shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
                                                     logger.info(f"[{symbol}] Original MR ML updated with outcome (fallback path).")
                                                     routed = True

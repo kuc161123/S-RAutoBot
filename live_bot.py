@@ -3350,19 +3350,18 @@ class TradingBot:
             both_hit_rule=cfg["trade"]["both_hit_rule"],
             confirmation_candles=cfg["trade"].get("confirmation_candles", 2)
         )
-        # Trend pullback settings
+        # Trend pullback settings (new dataclass fields)
         tr_cfg = cfg.get('trend', {}) or {}
+        tr_exec = (tr_cfg.get('exec', {}) or {}) if isinstance(tr_cfg, dict) else {}
         trend_settings = TrendSettingsTB(
-            channel_len=int(tr_cfg.get('channel_len', 20)),
             atr_len=int(tr_cfg.get('atr_len', 14)),
-            breakout_k_atr=float(tr_cfg.get('breakout_k_atr', 0.3)),
-            sl_atr_mult=float(tr_cfg.get('sl_atr_mult', 1.5)),
             rr=float(tr_cfg.get('rr', 2.5)),
-            use_ema_stack=bool(tr_cfg.get('use_ema_stack', True)),
-            require_range_expansion=bool(tr_cfg.get('explore', {}).get('require_range_expansion', True)),
-            range_expansion_min=float(tr_cfg.get('explore', {}).get('range_expansion_min', 1.2)),
-            require_retest=bool(tr_cfg.get('explore', {}).get('require_retest', True)),
-            retest_max_dist_atr=float(tr_cfg.get('explore', {}).get('retest_max_dist_atr', 0.5)),
+            sl_atr_mult=float(tr_cfg.get('sl_atr_mult', 1.5)),
+            confirm_candles=int(tr_cfg.get('confirm_candles', cfg['trade'].get('confirmation_candles', 2))),
+            pivot_l=int(tr_cfg.get('pivot_l', 3)),
+            pivot_r=int(tr_cfg.get('pivot_r', 3)),
+            breakout_buffer_atr=float(tr_cfg.get('breakout_buffer_atr', 0.1)),
+            pivot_buffer_atr=float(tr_exec.get('pivot_buffer_atr', 0.05)),
         )
 
         # Initialize components

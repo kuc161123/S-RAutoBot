@@ -1057,6 +1057,56 @@ class TradingBot:
             out['volatility_regime'] = vol_level if isinstance(vol_level, str) else 'normal'
             out['symbol_cluster'] = int(cluster_id) if cluster_id is not None else 3
 
+            # --- Additional micro features (v2) ---
+            try:
+                # Short-horizon returns (%)
+                if len(close) >= 2 and close.iloc[-2] != 0:
+                    out['ret_1'] = float((close.iloc[-1] - close.iloc[-2]) / close.iloc[-2] * 100.0)
+                else:
+                    out['ret_1'] = 0.0
+                if len(close) >= 4 and close.iloc[-4] != 0:
+                    out['ret_3'] = float((close.iloc[-1] - close.iloc[-4]) / close.iloc[-4] * 100.0)
+                else:
+                    out['ret_3'] = 0.0
+                if len(close) >= 6 and close.iloc[-6] != 0:
+                    out['ret_5'] = float((close.iloc[-1] - close.iloc[-6]) / close.iloc[-6] * 100.0)
+                else:
+                    out['ret_5'] = 0.0
+            except Exception:
+                out['ret_1'] = out.get('ret_1', 0.0)
+                out['ret_3'] = out.get('ret_3', 0.0)
+                out['ret_5'] = out.get('ret_5', 0.0)
+
+            try:
+                # ATR slope over last 10 bars, scaled to % of price
+                if len(tr) >= 11 and price:
+                    atr_prev = float(tr.rolling(14).mean().iloc[-11]) if len(tr) >= 14 else float(tr.iloc[-11])
+                    atr_slope = (atr - atr_prev) / 10.0
+                    out['atr_slope'] = float((atr_slope / max(1e-9, price)) * 100.0)
+                else:
+                    out['atr_slope'] = 0.0
+            except Exception:
+                out['atr_slope'] = out.get('atr_slope', 0.0)
+
+            try:
+                # Volatility-of-volatility: std of last 10 returns (%)
+                if len(close) >= 11 and price:
+                    rets = close.pct_change().tail(10).dropna().values
+                    out['vol_of_vol'] = float(np.std(rets) * 100.0)
+                else:
+                    out['vol_of_vol'] = 0.0
+            except Exception:
+                out['vol_of_vol'] = out.get('vol_of_vol', 0.0)
+
+            try:
+                # Round tick distance proxy: distance to nearest .00/.25/.50/.75 (% of price)
+                q = [0.00, 0.25, 0.50, 0.75]
+                frac = (price * 100.0) % 1.0  # rough proxy at 0.01 scale
+                nearest = min(q, key=lambda x: abs(frac - x)) if isinstance(frac, float) else 0.0
+                out['round_tick_dist'] = float(abs(frac - nearest) * 100.0)
+            except Exception:
+                out['round_tick_dist'] = out.get('round_tick_dist', 0.0)
+
         except Exception:
             # Return whatever computed; scorer will default missing
             pass

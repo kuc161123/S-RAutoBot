@@ -282,8 +282,15 @@ class TGBot:
                 lines.append(f"• Executed: {mr_info.get('completed_trades', 0)} | Phantom: {mr_info.get('phantom_count', 0)}")
                 # Last retrain timestamp (if available)
                 try:
-                    last_ts_mr = mr_info.get('last_retrain_ts')
-                    if last_ts_mr:
+                last_ts_mr = mr_info.get('last_retrain_ts')
+                if last_ts_mr:
+                    try:
+                        from datetime import datetime as _dt
+                        t0 = _dt.fromisoformat(str(last_ts_mr).replace('Z',''))
+                        delta = _dt.utcnow() - t0
+                        mins = int(delta.total_seconds()//60)
+                        lines.append(f"• Last retrain: {mins//60}h {mins%60}m ago")
+                    except Exception:
                         lines.append(f"• Last retrain: {last_ts_mr}")
                 except Exception:
                     pass
@@ -323,8 +330,15 @@ class TGBot:
                 lines.append(f"• Executed: {exec_n} | Phantom: {ph_n}")
                 # Last retrain timestamp (if available)
                 try:
-                    last_ts_tr = tstats.get('last_retrain_ts')
-                    if last_ts_tr:
+                last_ts_tr = tstats.get('last_retrain_ts')
+                if last_ts_tr:
+                    try:
+                        from datetime import datetime as _dt
+                        t0 = _dt.fromisoformat(str(last_ts_tr).replace('Z',''))
+                        delta = _dt.utcnow() - t0
+                        mins = int(delta.total_seconds()//60)
+                        lines.append(f"• Last retrain: {mins//60}h {mins%60}m ago")
+                    except Exception:
                         lines.append(f"• Last retrain: {last_ts_tr}")
                 except Exception:
                     pass
@@ -363,8 +377,15 @@ class TGBot:
                 lines.append(f"• Next retrain in: {s_ret.get('trades_until_next_retrain',0)} trades")
                 # Last retrain timestamp (if available)
                 try:
-                    last_ts_sc = s_ret.get('last_retrain_ts')
-                    if last_ts_sc:
+                last_ts_sc = s_ret.get('last_retrain_ts')
+                if last_ts_sc:
+                    try:
+                        from datetime import datetime as _dt
+                        t0 = _dt.fromisoformat(str(last_ts_sc).replace('Z',''))
+                        delta = _dt.utcnow() - t0
+                        mins = int(delta.total_seconds()//60)
+                        lines.append(f"• Last retrain: {mins//60}h {mins%60}m ago")
+                    except Exception:
                         lines.append(f"• Last retrain: {last_ts_sc}")
                 except Exception:
                     pass

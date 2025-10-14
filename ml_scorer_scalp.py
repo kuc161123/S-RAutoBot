@@ -66,11 +66,27 @@ class ScalpMLScorer:
             s = self.redis_client.get('ml:scaler:scalp')
             c = self.redis_client.get('ml:calibrator:scalp')
             b = self.redis_client.get('ml:ev_buckets:scalp')
+            fv = self.redis_client.get('ml:featver:scalp')
             if m and s:
                 self.models = pickle.loads(base64.b64decode(m))
                 self.scaler = pickle.loads(base64.b64decode(s))
                 self.is_ml_ready = True
                 logger.info("Loaded Scalp ML models")
+            if c:
+                try:
+                    self.calibrator = pickle.loads(base64.b64decode(c))
+                except Exception:
+                    self.calibrator = None
+            if b:
+                try:
+                    self.ev_buckets = pickle.loads(base64.b64decode(b))
+                except Exception:
+                    self.ev_buckets = {}
+            try:
+                if fv:
+                    self.featver = int(fv)
+            except Exception:
+                self.featver = 1
             if c:
                 try:
                     self.calibrator = pickle.loads(base64.b64decode(c))
@@ -94,6 +110,18 @@ class ScalpMLScorer:
             if self.is_ml_ready:
                 self.redis_client.set('ml:model:scalp', base64.b64encode(pickle.dumps(self.models)).decode('ascii'))
                 self.redis_client.set('ml:scaler:scalp', base64.b64encode(pickle.dumps(self.scaler)).decode('ascii'))
+                try:
+                    self.redis_client.set('ml:calibrator:scalp', base64.b64encode(pickle.dumps(self.calibrator)).decode('ascii'))
+                except Exception:
+                    pass
+                try:
+                    self.redis_client.set('ml:ev_buckets:scalp', base64.b64encode(pickle.dumps(self.ev_buckets)).decode('ascii'))
+                except Exception:
+                    pass
+                try:
+                    self.redis_client.set('ml:featver:scalp', str(self.featver))
+                except Exception:
+                    pass
                 try:
                     self.redis_client.set('ml:calibrator:scalp', base64.b64encode(pickle.dumps(self.calibrator)).decode('ascii'))
                 except Exception:
@@ -236,7 +264,7 @@ class ScalpMLScorer:
             return False
         for d in mix:
             f = d.get('features', {})
-            X.append(self._prepare_features(f))
+            X.append(self._prepare_features(f, self.FEAT_VERSION))
             y.append(int(d.get('outcome', 0)))
             wt = 1.0 if d.get('was_executed') else 0.8
             if f.get('routing') == 'none':
@@ -298,6 +326,7 @@ class ScalpMLScorer:
             logger.debug(f"Scalp calibrator skipped: {_e}")
         self.is_ml_ready = True
         self.last_train_count = len(mix)
+        self.featver = self.FEAT_VERSION
         # Stamp last retrain time
         try:
             if self.redis_client:

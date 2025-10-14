@@ -105,10 +105,14 @@ class TGBot:
         self.app.add_handler(CommandHandler("shadowstats", self.shadow_stats))
         self.app.add_handler(CommandHandler("flowdebug", self.flow_debug))
         self.app.add_handler(CommandHandler("flowstatus", self.flow_debug))
-        # High-ML threshold controls per strategy
+        # High-ML threshold controls per strategy (with and without underscores)
         self.app.add_handler(CommandHandler("scalp_highml", self.set_scalp_highml))
         self.app.add_handler(CommandHandler("mr_highml", self.set_mr_highml))
         self.app.add_handler(CommandHandler("trend_highml", self.set_trend_highml))
+        # Aliases without underscore as requested
+        self.app.add_handler(CommandHandler("scalphighml", self.set_scalp_highml))
+        self.app.add_handler(CommandHandler("mrhighml", self.set_mr_highml))
+        self.app.add_handler(CommandHandler("trendhighml", self.set_trend_highml))
 
         self.running = False
 
@@ -826,9 +830,9 @@ class TGBot:
 /trainingstatus – Background training progress
 
 ⚡ High‑ML Controls
-/scalp_highml V – Set Scalp high‑ML execute threshold (e.g., 80)
-/mr_highml V – Set Mean Reversion high‑ML execute threshold (e.g., 80)
-/trend_highml V – Set Trend high‑ML execute threshold (e.g., 95)
+/scalphighml V – Set Scalp high‑ML execute threshold (e.g., 80)
+/mrhighml V – Set Mean Reversion high‑ML execute threshold (e.g., 80)
+/trendhighml V – Set Trend high‑ML execute threshold (e.g., 95)
 
 🧭 Regime & System
 /system – Parallel routing status

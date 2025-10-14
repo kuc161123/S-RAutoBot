@@ -5151,6 +5151,24 @@ class TradingBot:
                                     'symbol_cluster': sym_cluster,
                                     'volatility_regime': vol_reg
                                 }
+                                # Log Trend Pullback signal meta and EV threshold snapshot
+                                try:
+                                    ev_thr_log = None
+                                    _ts = get_trend_scorer() if 'get_trend_scorer' in globals() and get_trend_scorer is not None else None
+                                    if _ts is not None:
+                                        ev_thr_log = float(_ts.get_ev_threshold(trend_features))
+                                except Exception:
+                                    ev_thr_log = None
+                                try:
+                                    logger.info(
+                                        f"[{sym}] Trend Pullback signal: {sig_tr_ind.side.upper()} "
+                                        f"entry={float(sig_tr_ind.entry):.4f} sl={float(sig_tr_ind.sl):.4f} tp={float(sig_tr_ind.tp):.4f} | "
+                                        f"break={getattr(sig_tr_ind,'meta',{}).get('break_level','n/a')} confirm={int(confirms)} "
+                                        f"break_d_atr={float(break_dist):.2f} retrace_atr={float(retrace_depth):.2f} "
+                                        f"ev_thr={ev_thr_log if ev_thr_log is not None else 'n/a'}"
+                                    )
+                                except Exception:
+                                    pass
                             except Exception:
                                 trend_features = {}
                             tr_should = True; ml_score_tr = 0.0; thr_tr = 70.0
@@ -5175,6 +5193,10 @@ class TradingBot:
                             except Exception:
                                 pass
                             tr_should = ml_score_tr >= thr_tr
+                            try:
+                                logger.info(f"[{sym}] Trend Pullback gating: ml={float(ml_score_tr):.1f} thr={float(thr_tr):.1f} should={tr_should}")
+                            except Exception:
+                                pass
                             # Extreme ML override (force execution bypassing router/regime/micro gates)
                             try:
                                 tr_hi_force = float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('high_ml_force', 92.0)))
@@ -5187,43 +5209,47 @@ class TradingBot:
                                     tr_hi_force = max(tr_hi_force, ev_thr_tr)
                             except Exception:
                                 pass
-                                    if ml_score_tr >= tr_hi_force:
-                                        try:
-                                            if not sig_tr_ind.meta:
-                                                sig_tr_ind.meta = {}
-                                        except Exception:
-                                            sig_tr_ind.meta = {}
-                                        # High-ML execution marker only
-                                        sig_tr_ind.meta['high_ml'] = True
-                                        # Allow/disallow Trend execution via config (default: disabled)
-                                        try:
-                                            allow_tr_exec = bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('enabled', False)))
-                                        except Exception:
-                                            allow_tr_exec = False
-                                        executed = False
-                                        if allow_tr_exec:
-                                        executed = await _try_execute('trend_pullback', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
-                                        if executed:
+                            if ml_score_tr >= tr_hi_force:
+                                try:
+                                    logger.info(f"[{sym}] Trend Pullback HIGH-ML override: ml={float(ml_score_tr):.1f} ≥ {float(tr_hi_force):.1f}")
+                                except Exception:
+                                    pass
+                                try:
+                                    if not sig_tr_ind.meta:
+                                        sig_tr_ind.meta = {}
+                                except Exception:
+                                    sig_tr_ind.meta = {}
+                                # High-ML execution marker only
+                                sig_tr_ind.meta['high_ml'] = True
+                                # Allow/disallow Trend execution via config (default: disabled)
+                                try:
+                                    allow_tr_exec = bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('enabled', False)))
+                                except Exception:
+                                    allow_tr_exec = False
+                                executed = False
+                                if allow_tr_exec:
+                                    executed = await _try_execute('trend_pullback', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
+                                if executed:
+                                    try:
+                                        logger.info(f"[{sym}] 🧮 Decision final: exec_trend (reason=ml_extreme {ml_score_tr:.1f}>={tr_hi_force:.0f})")
+                                    except Exception:
+                                        pass
+                                    continue
+                                else:
+                                    try:
+                                        if not allow_tr_exec:
+                                            if phantom_tracker and sig_tr_ind is not None:
+                                                phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
                                             try:
-                                                logger.info(f"[{sym}] 🧮 Decision final: exec_trend (reason=ml_extreme {ml_score_tr:.1f}>={tr_hi_force:.0f})")
+                                                log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
                                             except Exception:
-                                                pass
+                                                log_flag = False
+                                            (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=exec_disabled)")
                                             continue
                                         else:
-                                            try:
-                                                if not allow_tr_exec:
-                                                    if phantom_tracker and sig_tr_ind is not None:
-                                                        phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
-                                                    try:
-                                                        log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
-                                                    except Exception:
-                                                        log_flag = False
-                                                    (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=exec_disabled)")
-                                                    continue
-                                                else:
-                                                    logger.info(f"[{sym}] 🛑 Trend High-ML override blocked: reason=exec_guard")
-                                            except Exception:
-                                                pass
+                                            logger.info(f"[{sym}] 🛑 Trend High-ML override blocked: reason=exec_guard")
+                                    except Exception:
+                                        pass
                                 try:
                                     logger.debug(f"[{sym}] Trend: ml_score={float(ml_score_tr or 0.0):.1f} thr={thr_tr:.0f} should={tr_should}")
                                 except Exception:
@@ -6101,6 +6127,17 @@ class TradingBot:
                                 logger.info(f"   ✅ Trend Signal Detected: {sig.side.upper()} at {sig.entry:.4f}")
                                 logger.info(f"   🎯 SL: {sig.sl:.4f} | TP: {sig.tp:.4f} | R:R: {((sig.tp-sig.entry)/(sig.entry-sig.sl) if sig.side=='long' else (sig.entry-sig.tp)/(sig.sl-sig.entry)):.2f}")
                                 logger.info(f"   📝 Reason: {sig.reason}")
+                                # Log pullback-specific meta
+                                try:
+                                    _m = getattr(sig, 'meta', {}) or {}
+                                    logger.info(
+                                        f"   🧩 Pullback Meta: break={_m.get('break_level','n/a')} "
+                                        f"confirm={int(_m.get('confirm_candles',0))} "
+                                        f"break_d_atr={float(_m.get('break_dist_atr',0.0)):.2f} "
+                                        f"retrace_atr={float(_m.get('retrace_depth_atr',0.0)):.2f}"
+                                    )
+                                except Exception:
+                                    pass
                                 # Override: if MR ML shows very strong signal, prefer it
                                 try:
                                     alt_mr_sig = detect_signal_mean_reversion(df.copy(), settings, sym)

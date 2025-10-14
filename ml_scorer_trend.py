@@ -191,7 +191,18 @@ class TrendMLScorer:
         return max(0.0, min(100.0, score)), 'Trend heuristic'
 
     def record_outcome(self, signal: Dict, outcome: str, pnl_percent: float = 0.0):
-        self.completed_trades += 1
+        # Skip timeout/cancel outcomes to keep EV/training clean
+        try:
+            if str(signal.get('exit_reason','')).lower() == 'timeout':
+                return
+        except Exception:
+            pass
+        # Count only executed trades toward completed_trades; phantoms are stored but not counted
+        try:
+            if bool(signal.get('was_executed')):
+                self.completed_trades += 1
+        except Exception:
+            self.completed_trades += 1
         r = self.redis_client
         try:
             rec = {

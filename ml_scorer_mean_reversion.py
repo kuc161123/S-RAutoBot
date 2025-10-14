@@ -528,7 +528,8 @@ class MLScorerMeanReversion:
             pnl_percent: P&L percentage for this trade
         """
         try:
-            self.completed_trades += 1
+            if bool(signal_data.get('was_executed', True)):
+                self.completed_trades += 1
 
             # Extract features; if missing, try to recover from MR phantom tracker (executed trades)
             features = signal_data.get('features', {})
@@ -553,7 +554,7 @@ class MLScorerMeanReversion:
                     'outcome': outcome_binary,
                     'pnl_percent': pnl_percent,
                     'timestamp': datetime.now().isoformat(),
-                    'was_executed': 1
+                    'was_executed': 1 if bool(signal_data.get('was_executed', True)) else 0
                 }
 
                 # Store full history without trimming to allow unlimited retraining data

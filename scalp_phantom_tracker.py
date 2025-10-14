@@ -396,6 +396,14 @@ class ScalpPhantomTracker:
 
         # Allow multiple active phantoms per symbol
 
+        # Annotate features with versioning for data lineage
+        try:
+            if isinstance(features, dict):
+                features = features.copy()
+                features.setdefault('feature_version', 'scalp_v1')
+        except Exception:
+            pass
+
         ph = ScalpPhantomTrade(
             symbol=symbol,
             side=signal['side'],

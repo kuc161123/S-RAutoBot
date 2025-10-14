@@ -2675,6 +2675,17 @@ class TradingBot:
                                 feat_ref = self._last_signal_features.pop(symbol, {})
                             except Exception:
                                 feat_ref = {}
+                            # Attach last captured features and version tags per strategy
+                            # Default feature_version added when missing to help downstream schema tracking
+                            try:
+                                if isinstance(feat_ref, dict):
+                                    if str(getattr(pos, 'strategy_name', '')).lower() in ('trend_pullback','trend_breakout'):
+                                        feat_ref.setdefault('feature_version', 'trend_v1')
+                                    elif str(getattr(pos, 'strategy_name', '')).lower() in ('enhanced_mr','mean_reversion'):
+                                        feat_ref.setdefault('feature_version', 'mr_v1')
+                            except Exception:
+                                pass
+
                             signal_data = {
                                 'symbol': symbol,
                                 'features': feat_ref,
@@ -4874,10 +4885,10 @@ class TradingBot:
                                         mr_hi_force = max(mr_hi_force, ev_thr_mr)
                                 except Exception:
                                     pass
-                                if ml_score_mr >= mr_hi_force:
-                                    try:
-                                        if not sig_mr_ind.meta:
-                                            sig_mr_ind.meta = {}
+                                    if ml_score_mr >= mr_hi_force:
+                                        try:
+                                            if not sig_mr_ind.meta:
+                                                sig_mr_ind.meta = {}
                                     except Exception:
                                         sig_mr_ind.meta = {}
                                     # Mark as high-ML for telemetry/notifications and bypass gates
@@ -4889,6 +4900,11 @@ class TradingBot:
                                         allow_mr_exec = False
                                     executed = False
                                     if allow_mr_exec:
+                                        try:
+                                            # Store MR features for executed outcome logging
+                                            self._last_signal_features[sym] = dict(ef)
+                                        except Exception:
+                                            pass
                                         executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
                                     if executed:
                                         try:
@@ -4924,6 +4940,10 @@ class TradingBot:
                                     try:
                                         if self.tg:
                                             await self.tg.send_message(f"🌀 MR Promotion: Force executing {sym} {sig_mr_ind.side.upper()} (WR ≥ {promote_wr:.0f}%)")
+                                    except Exception:
+                                        pass
+                                    try:
+                                        self._last_signal_features[sym] = dict(ef)
                                     except Exception:
                                         pass
                                     executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
@@ -5251,6 +5271,10 @@ class TradingBot:
                                     allow_tr_exec = False
                                 executed = False
                                 if allow_tr_exec:
+                                    try:
+                                        self._last_signal_features[sym] = dict(trend_features)
+                                    except Exception:
+                                        pass
                                     executed = await _try_execute('trend_pullback', sig_tr_ind, ml_score=ml_score_tr, threshold=thr_tr)
                                 if executed:
                                     try:

@@ -660,6 +660,14 @@ class MRPhantomTracker:
                 signal_data['was_executed'] = False
             except Exception:
                 pass
+            try:
+                # Ensure feature version tagging for MR
+                f = signal_data.get('features') or {}
+                if isinstance(f, dict):
+                    f.setdefault('feature_version', 'mr_v1')
+                    signal_data['features'] = f
+            except Exception:
+                pass
             mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
 
             logger.debug(f"[{phantom.symbol}] Fed MR phantom trade outcome to ML: {outcome} "

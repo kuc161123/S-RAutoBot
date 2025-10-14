@@ -217,7 +217,11 @@ class ScalpMLScorer:
         return 60.0, 'Fallback'
 
     def record_outcome(self, signal: Dict, outcome: str, pnl_percent: float = 0.0):
-        self.completed_trades += 1
+        try:
+            if bool(signal.get('was_executed')):
+                self.completed_trades += 1
+        except Exception:
+            self.completed_trades += 1
         if self.redis_client:
             try:
                 record = {

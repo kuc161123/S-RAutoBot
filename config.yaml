@@ -246,7 +246,7 @@ mr:
       min_pct: 0.001          # 0.1% slippage threshold to trigger SL recalc
       pivot_buffer_atr: 0.05  # keep SL beyond range pivot by 0.05 ATR
     # Force execution when ML score is extremely high
-    high_ml_force: 80
+    high_ml_force: 65
   context:
     use_3m_context: true      # Use 3-minute micro context for diagnostics/logging
     enforce: false            # Do not block execution by 3m micro-context (phantoms free to learn)
@@ -362,7 +362,7 @@ scalp:
   enabled: true
   timeframe: 3           # Future: stream 3m for scalps; current uses main tf
   use_ml: true
-  threshold: 80
+  threshold: 70
   independent: true      # When true, Scalp runs fully independent of regime/router
   block_regime: false    # Do not block by regime (e.g., extreme volatility)
   session_only: ["us", "european"]
@@ -393,7 +393,7 @@ scalp:
   exec:
     # Allow stream-side immediate execution for extremely high ML scores
     allow_stream_high_ml: true
-    high_ml_force: 80
+    high_ml_force: 70
     # Optionally cancel any active scalp phantom on high-ML execution to avoid duplicate tracking
     cancel_active_on_high_ml: true
     # Estimated slippage fraction to achieve target R:R net of fees and slippage

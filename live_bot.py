@@ -2767,13 +2767,13 @@ class TradingBot:
                                     logger.info(f"[{symbol}] 🔍 UNKNOWN STRATEGY - Checking reason: '{reason}'")
                                     if 'Mean Reversion:' in reason or 'Rejection from resistance' in reason or 'Rejection from support' in reason:
                                         # Treat as MR, but guard against Enhanced MR increments if original scorer absent
-                                            if shared_mr_scorer is not None:
-                                                try:
-                                                    signal_data['was_executed'] = True
-                                                except Exception:
-                                                    pass
-                                                shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                                logger.info(f"[{symbol}] ✅ Original MR ML updated with outcome (recovered, inferred).")
+                                        if shared_mr_scorer is not None:
+                                            try:
+                                                signal_data['was_executed'] = True
+                                            except Exception:
+                                                pass
+                                            shared_mr_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                            logger.info(f"[{symbol}] ✅ Original MR ML updated with outcome (recovered, inferred).")
                                         else:
                                             logger.warning(f"[{symbol}] ⚠️ Inferred MR outcome not recorded (no original MR scorer; guard active)")
                                     else:

@@ -94,7 +94,7 @@ class BackgroundInitialTrainer:
         await self._notify_telegram(
             "🚀 *Starting Background ML Training*\n\n"
             "Training initial models from historical data:\n"
-            "• Trend Breakout Strategy\n"
+            "• Trend Pullback Strategy\n"
             "• Enhanced Mean Reversion Strategy\n\n"
             "This will run in background while live trading continues.\n"
             "Use /training_status to check progress."

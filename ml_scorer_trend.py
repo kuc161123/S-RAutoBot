@@ -255,6 +255,12 @@ class TrendMLScorer:
                 arr = self.redis_client.lrange(f'{self.KEY_NS}:trades', 0, -1)
                 if not arr:
                     arr = self.redis_client.lrange('tml:trades', 0, -1)
+                # Prefer empty list if new key exists; fallback only if it truly doesn't exist
+                try:
+                    if self.redis_client.exists(f'{self.KEY_NS}:trades'):
+                        arr = self.redis_client.lrange(f'{self.KEY_NS}:trades', 0, -1)
+                except Exception:
+                    pass
                 for t in arr:
                     try:
                         data.append(json.loads(t))
@@ -317,6 +323,10 @@ class TrendMLScorer:
         try:
             if self.redis_client:
                 self.redis_client.set('tml:last_train_ts', datetime.utcnow().isoformat())
+                try:
+                    self.redis_client.set(f'{self.KEY_NS}:last_train_ts', datetime.utcnow().isoformat())
+                except Exception:
+                    pass
         except Exception:
             pass
         self._save_state()
@@ -392,8 +402,11 @@ class TrendMLScorer:
         ph_count = 0
         try:
             if self.redis_client:
-                # Last 200 outcomes as proxy for recent WR
-                arr = self.redis_client.lrange('tml:trades', -200, -1) or []
+                # Last 200 outcomes as proxy for recent WR (prefer new namespace)
+                key = f"{self.KEY_NS}:trades"
+                arr = self.redis_client.lrange(key, -200, -1) or []
+                if (not arr) and (not bool(self.redis_client.exists(key))):
+                    arr = self.redis_client.lrange('tml:trades', -200, -1) or []
                 for t in arr:
                     try:
                         rec = json.loads(t)
@@ -405,7 +418,9 @@ class TrendMLScorer:
                     recent_wr = (wins / total) * 100.0
                 recent_trades = total
                 # Overall executed vs phantom counts for clarity
-                all_arr = self.redis_client.lrange('tml:trades', 0, -1) or []
+                all_arr = self.redis_client.lrange(key, 0, -1) or []
+                if (not all_arr) and (not bool(self.redis_client.exists(key))):
+                    all_arr = self.redis_client.lrange('tml:trades', 0, -1) or []
                 for t in all_arr:
                     try:
                         rec = json.loads(t)
@@ -455,7 +470,10 @@ class TrendMLScorer:
         # Basic time/session buckets
         try:
             r = self.redis_client
-            arr = r.lrange('tml:trades', -500, -1) if r else []
+            key = f"{self.KEY_NS}:trades"
+            arr = r.lrange(key, -500, -1) if r else []
+            if r and (not arr) and (not bool(r.exists(key))):
+                arr = r.lrange('tml:trades', -500, -1)
             hours = {}
             sess = {}
             for t in arr:

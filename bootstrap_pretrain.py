@@ -3,7 +3,7 @@
 Bootstrap pretraining from candle data (OHLCV only).
 
 Generates training samples for:
-- Trend Breakout (Donchian-based)
+- Trend Pullback (Break→HL/LH→2-candle)
 - Mean Reversion (using live MR detector with df-index time)
 
 Labels trades via conservative TP/SL-first rule (SL-first on same-bar hit).
@@ -211,19 +211,25 @@ def main():
     # If Redis exists, write datasets to the expected keys
     if redis_client:
         try:
-            # Persist Trend executed trades to 'tml:trades'
+            # Persist Trend executed trades to both legacy and new namespaces
             redis_client.delete('tml:trades')
+            redis_client.delete('ml:trend:trades')
             for s in pullback_training:
                 record = {
                     'features': s['features'],
-                    'outcome': 'win' if s['outcome'] == 1 else 'loss',
+                    'outcome': int(s['outcome']),
                     'pnl_percent': 0.0,
-                    'timestamp': datetime.now().isoformat()
+                    'timestamp': datetime.now().isoformat(),
+                    'was_executed': 1
                 }
                 redis_client.rpush('tml:trades', json.dumps(record))
+                redis_client.rpush('ml:trend:trades', json.dumps(record))
+            # Counters in both legacy and new namespaces
             redis_client.set('tml:completed_trades', str(len(pullback_training)))
             redis_client.set('tml:last_train_count', '0')
-            logger.info(f"Persisted {len(pullback_training)} trend samples to Redis")
+            redis_client.set('ml:trend:completed_trades', str(len(pullback_training)))
+            redis_client.set('ml:trend:last_train_count', '0')
+            logger.info(f"Persisted {len(pullback_training)} trend samples to Redis (legacy + namespaced)")
         except Exception as e:
             logger.error(f"Failed to persist pullback samples to Redis: {e}")
 

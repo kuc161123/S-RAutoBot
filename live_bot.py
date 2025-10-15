@@ -5160,6 +5160,13 @@ class TradingBot:
                             sig_tr_ind = None
                         if sig_tr_ind is None:
                             logger.debug(f"[{sym}] Trend: skip — no_signal")
+                            # Optional INFO-level log for visibility when no signal is found
+                            try:
+                                log_no_sig = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('no_signal_info', False)))
+                            except Exception:
+                                log_no_sig = False
+                            if log_no_sig:
+                                logger.info(f"[{sym}] ❌ No Trend Signal: Pullback conditions not met")
                         if sig_tr_ind is not None:
                             # Build trend features (regime-independent)
                             try:

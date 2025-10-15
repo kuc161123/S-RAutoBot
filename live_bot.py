@@ -5205,8 +5205,7 @@ class TradingBot:
                                 # Regime gate disabled for MR phantom flow; allow ML to decide execution (high-ML only)
                                 if False and (not mr_pass_regime and not (promotion_bypass and recent_wr >= promote_wr)):
                                     logger.debug(f"[{sym}] MR: skip — regime gate (prim={prim}, conf={conf:.2f}, persist={persist:.2f})")
-                                    if mr_phantom_tracker:
-                                        mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+                                    # Do NOT record phantom when regime gate fails (high-quality phantom policy)
                                     sig_mr_ind = None
                             except Exception:
                                 pass

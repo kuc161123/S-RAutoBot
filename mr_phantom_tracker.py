@@ -291,18 +291,19 @@ class MRPhantomTracker:
             if not was_executed:
                 ef = enhanced_features or {}
                 cf = features or {}
-                # Prefer enhanced features when present
-                rc = ef.get('range_confidence', cf.get('range_confidence'))
+                meta = signal.get('meta', {}) if isinstance(signal, dict) else {}
+                # Prefer meta, then enhanced features, then basic features
+                rc = meta.get('range_confidence', ef.get('range_confidence', cf.get('range_confidence')))
                 try:
                     rc = float(rc) if rc is not None else None
                 except Exception:
                     rc = None
-                ts = ef.get('trend_strength', cf.get('trend_strength'))
+                ts = meta.get('trend_strength', ef.get('trend_strength', cf.get('trend_strength')))
                 try:
                     ts = float(ts) if ts is not None else None
                 except Exception:
                     ts = None
-                vol = str(ef.get('volatility_regime', cf.get('volatility_regime', 'normal')))
+                vol = str(meta.get('volatility_regime', ef.get('volatility_regime', cf.get('volatility_regime', 'normal'))))
                 # Drop when range confidence is low (<0.6) or trend is too strong (>40) or extreme vol
                 if rc is not None and rc < 0.60:
                     logger.info(f"[{symbol}] 🛑 MR phantom dropped by regime (range_confidence {rc:.2f}<0.60)")

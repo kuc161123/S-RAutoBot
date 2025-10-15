@@ -100,6 +100,10 @@ trend:
   sl_atr_mult: 1.5
   rr: 2.5
   use_ema_stack: true
+  logging:
+    no_signal_info: true     # Emit INFO when no trend signal forms (per symbol)
+    phantom_info: true       # Emit INFO for phantom decisions (not just DEBUG)
+    verbose: true            # Emit analysis start heartbeat at INFO
   regime:
     execute_only: true   # Apply regime gates only for execution; phantoms remain free
   exec:

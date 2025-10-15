@@ -2853,7 +2853,7 @@ class TradingBot:
                                         logger.info(f"[{symbol}] ✅ Original MR ML updated with outcome (guarded).")
                                     else:
                                         logger.warning(f"[{symbol}] ⚠️ Mean Reversion outcome not recorded (no original MR scorer active; guard preventing Enhanced MR increment)")
-                                elif pos.strategy_name == "unknown":
+                                elif str(getattr(pos, 'strategy_name', '')).lower() == "unknown":
                                     # Recovered position - try Redis hint first, else check reason text
                                     try:
                                         if getattr(self, '_redis', None) is not None:
@@ -2877,19 +2877,14 @@ class TradingBot:
                                         else:
                                             logger.warning(f"[{symbol}] ⚠️ Inferred MR outcome not recorded (no original MR scorer; guard active)")
                                     else:
-                                        # Default to Trend ML
-                                        if ml_scorer is not None:
-                                            try:
-                                                signal_data['was_executed'] = True
-                                            except Exception:
-                                                pass
-                                            ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                            logger.info(f"[{symbol}] ⚠️ Trend ML updated with outcome (recovered position, defaulted).")
+                                        # Do not default unknown to any ML. Log and skip.
+                                        logger.info(f"[{symbol}] 🛑 Unknown strategy — skipping ML update (no default routing)")
                                 else:
-                                    # Trend strategy or others. Do NOT route Scalp outcomes to Trend ML.
-                                    if str(getattr(pos, 'strategy_name','')).lower() == 'scalp':
-                                        logger.info(f"[{symbol}] ⚙️ Scalp outcome handled by Scalp phantom tracker; skipping Trend ML update")
-                                    else:
+                                    # Route only if clearly Trend; never route Scalp or unknown/other to Trend ML
+                                    strat_l = str(getattr(pos, 'strategy_name','')).lower()
+                                    if strat_l == 'scalp':
+                                        logger.info(f"[{symbol}] ⚙️ Scalp outcome handled by Scalp phantom tracker; skipping ML update")
+                                    elif strat_l in ('trend_pullback','trend_breakout'):
                                         logger.info(f"[{symbol}] 🔵 TREND STRATEGY detected")
                                         if ml_scorer is not None:
                                             try:
@@ -2898,6 +2893,8 @@ class TradingBot:
                                                 pass
                                             ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
                                             logger.info(f"[{symbol}] Trend ML updated with outcome.")
+                                    else:
+                                        logger.info(f"[{symbol}] 🛑 Non-trend strategy '{strat_l}' — skipping Trend ML update")
                             else:
                                 # Robust routing by strategy_name when enhanced path isn't active
                                 if not skip_ml_update_manual:
@@ -5270,7 +5267,15 @@ class TradingBot:
 
                         # 2) Trend independent
                         try:
-                            logger.debug(f"[{sym}] Trend: analysis start")
+                            # Verbose heartbeat for Trend analysis
+                            try:
+                                verbose_tr = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('verbose', False)))
+                            except Exception:
+                                verbose_tr = False
+                            if verbose_tr:
+                                logger.info(f"[{sym}] 🔵 Trend: analysis start")
+                            else:
+                                logger.debug(f"[{sym}] Trend: analysis start")
                             # Ensure we have enough 15m history for detection
                             try:
                                 if len(df) < getattr(self, '_trend_hist_min', 80):

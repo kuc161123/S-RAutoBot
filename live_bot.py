@@ -5394,30 +5394,34 @@ class TradingBot:
                                     except Exception:
                                         tr_exec_only = True
                                     if tr_exec_only:
+                                        htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
+                                        # Get HTF metrics safely
                                         try:
-                                            htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
                                             metrics = self._get_htf_metrics(sym, df)
+                                        except Exception:
+                                            metrics = {'ts15': 0.0, 'ts60': 0.0}
+                                        try:
                                             min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
-                                            ts_ok = (metrics['ts15'] >= min_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] >= min_ts))
-                                            # Log Trend decision context for exec-only regime gate
+                                        except Exception:
+                                            min_ts = 60.0
+                                        ts15 = float(metrics.get('ts15', 0.0)); ts60 = float(metrics.get('ts60', 0.0))
+                                        # Log context
+                                        try:
+                                            logger.info(f"[{sym}] 🔵 Trend decision context: exec_only=True ts15={ts15:.1f} ts60={ts60:.1f} min_ts={min_ts:.1f} high_ml={ml_score_tr:.1f}/{tr_hi_force:.0f}")
+                                        except Exception:
+                                            pass
+                                        # Block when HTF trend strength is insufficient
+                                        if not ((ts15 >= min_ts) and ((ts60 == 0.0) or (ts60 >= min_ts))):
                                             try:
-                                                logger.info(f"[{sym}] 🔵 Trend decision context: exec_only=True ts15={metrics['ts15']:.1f} ts60={metrics['ts60']:.1f} min_ts={min_ts:.1f} high_ml={ml_score_tr:.1f}/{tr_hi_force:.0f}")
+                                                logger.info(f"[{sym}] 🧮 Trend decision final: phantom (blocked) (reason=exec-only ts<min {ts15:.1f}/{ts60:.1f}<{min_ts:.1f})")
                                             except Exception:
                                                 pass
-                                    if not ts_ok:
-                                        # Skip phantom as well when regime gate fails (higher-quality phantom policy)
-                                        try:
-                                            logger.info(f"[{sym}] 🧮 Trend decision final: phantom (blocked) (reason=exec-only ts<min {metrics['ts15']:.1f}/{metrics['ts60']:.1f}<{min_ts:.1f})")
-                                        except Exception:
-                                            pass
-                                        continue
-                                            else:
-                                                try:
-                                                    logger.info(f"[{sym}] 🧮 Trend decision final: execute (reason=high_ml {ml_score_tr:.1f}≥{tr_hi_force:.0f} & regime_ok)")
-                                                except Exception:
-                                                    pass
-                                        except Exception:
-                                            pass
+                                            continue
+                                        else:
+                                            try:
+                                                logger.info(f"[{sym}] 🧮 Trend decision final: execute (reason=high_ml {ml_score_tr:.1f}≥{tr_hi_force:.0f} & regime_ok)")
+                                            except Exception:
+                                                pass
                                     try:
                                         self._last_signal_features[sym] = dict(trend_features)
                                     except Exception:

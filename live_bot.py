@@ -5484,13 +5484,18 @@ class TradingBot:
                                 else:
                                     try:
                                         if not allow_tr_exec:
-                                            if phantom_tracker and sig_tr_ind is not None:
-                                                phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
-                                            try:
-                                                log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
-                                            except Exception:
-                                                log_flag = False
-                                            (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=exec_disabled)")
+                                            # Only accept phantom if regime passes
+                                            ok_reg, why_reg = self._phantom_trend_regime_ok(sym, df, regime_analysis)
+                                            if phantom_tracker and sig_tr_ind is not None and ok_reg:
+                                                _rec = phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
+                                                if _rec is not None:
+                                                    try:
+                                                        log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
+                                                    except Exception:
+                                                        log_flag = False
+                                                    (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=exec_disabled)")
+                                            else:
+                                                logger.info(f"[{sym}] 🛑 Trend phantom dropped by regime gate ({why_reg})")
                                             continue
                                         else:
                                             logger.info(f"[{sym}] 🛑 Trend High-ML override blocked: reason=exec_guard")
@@ -5659,67 +5664,81 @@ class TradingBot:
                                             continue
                                 except Exception:
                                     pass
-                                # Fall back to phantom record
+                                # Fall back to phantom record only if regime is OK
                                 if phantom_tracker and sig_tr_ind is not None:
                                     # Log regime/exec gate block
                                     try:
                                         logger.debug(f"[{sym}] Trend: skip — regime/exec gate (reg={tr_pass_regime}, exec={trend_exec_enabled})")
                                     except Exception:
                                         pass
-                                    phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
-                                    try:
-                                        try:
-                                            log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
-                                        except Exception:
-                                            log_flag = False
-                                        (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=regime/exec_gate)")
-                                    except Exception:
-                                        pass
-                                    try:
-                                        if self.flow_controller and self.flow_controller.enabled:
-                                            self.flow_controller.increment_accepted('trend', 1)
-                                    except Exception:
-                                        pass
+                                    if tr_pass_regime:
+                                        _rec = phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
+                                        if _rec is not None:
+                                            try:
+                                                try:
+                                                    log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
+                                                except Exception:
+                                                    log_flag = False
+                                                (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=exec_gate)")
+                                            except Exception:
+                                                pass
+                                            try:
+                                                if self.flow_controller and self.flow_controller.enabled:
+                                                    self.flow_controller.increment_accepted('trend', 1)
+                                            except Exception:
+                                                pass
+                                    else:
+                                        logger.info(f"[{sym}] 🛑 Trend phantom dropped by regime gate (regime/exec_gate)")
                             if tr_should:
                                 # Disable normal Trend execution – only high-ML executes
                                 if phantom_tracker and sig_tr_ind is not None:
-                                    phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
-                                    try:
-                                        try:
-                                            log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
-                                        except Exception:
-                                            log_flag = False
-                                        (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=ml_below_high_ml)")
-                                    except Exception:
-                                        pass
+                                    ok_reg, why_reg = self._phantom_trend_regime_ok(sym, df, regime_analysis)
+                                    if ok_reg:
+                                        _rec = phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
+                                        if _rec is not None:
+                                            try:
+                                                try:
+                                                    log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
+                                                except Exception:
+                                                    log_flag = False
+                                                (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=ml_below_high_ml)")
+                                            except Exception:
+                                                pass
+                                    else:
+                                        logger.info(f"[{sym}] 🛑 Trend phantom dropped by regime gate ({why_reg})")
                                 continue
-                            # Trend normal ML below high-ML: always record phantom (no phantom-level guards)
+                            # Trend normal ML below high-ML: record phantom only if regime passes
                             if phantom_tracker:
                                 try:
-                                    logger.debug(f"[{sym}] Trend: below exec threshold (score {float(ml_score_tr or 0.0):.1f}) — recording phantom")
+                                    logger.debug(f"[{sym}] Trend: below exec threshold (score {float(ml_score_tr or 0.0):.1f}) — consider phantom")
                                 except Exception:
                                     pass
-                                phantom_tracker.record_signal(
-                                    sym,
-                                    {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp},
-                                    float(ml_score_tr or 0.0),
-                                    False,
-                                    trend_features,
-                                    'trend_pullback'
-                                )
-                                try:
-                                    try:
-                                        log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
-                                    except Exception:
-                                        log_flag = False
-                                    (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=ml<thr)")
-                                except Exception:
-                                    pass
-                                try:
-                                    if self.flow_controller and self.flow_controller.enabled:
-                                        self.flow_controller.increment_accepted('trend', 1)
-                                except Exception:
-                                    pass
+                                ok_reg, why_reg = self._phantom_trend_regime_ok(sym, df, regime_analysis)
+                                if ok_reg:
+                                    _rec = phantom_tracker.record_signal(
+                                        sym,
+                                        {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp},
+                                        float(ml_score_tr or 0.0),
+                                        False,
+                                        trend_features,
+                                        'trend_pullback'
+                                    )
+                                    if _rec is not None:
+                                        try:
+                                            try:
+                                                log_flag = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('phantom_info', False)))
+                                            except Exception:
+                                                log_flag = False
+                                            (logger.info if log_flag else logger.debug)(f"[{sym}] 🧮 Decision final: phantom_trend (reason=ml<thr)")
+                                        except Exception:
+                                            pass
+                                        try:
+                                            if self.flow_controller and self.flow_controller.enabled:
+                                                self.flow_controller.increment_accepted('trend', 1)
+                                        except Exception:
+                                            pass
+                                else:
+                                    logger.info(f"[{sym}] 🛑 Trend phantom dropped by regime gate ({why_reg})")
 
                         # 3) Scalp independent (promotion-only execution)
                         try:

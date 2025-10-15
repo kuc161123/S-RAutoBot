@@ -604,6 +604,9 @@ class TradingBot:
             'mr': {},
             'trend': {}
         }
+        # Trend history readiness tracking (avoid log spam when 15m history is short)
+        self._trend_hist_warned: Dict[str, bool] = {}
+        self._trend_hist_min: int = 80  # minimum 15m bars required for pullback detection
 
     def _resample_ohlcv(self, df: pd.DataFrame, minutes: int) -> pd.DataFrame:
         try:
@@ -5141,6 +5144,17 @@ class TradingBot:
                         # 2) Trend independent
                         try:
                             logger.debug(f"[{sym}] Trend: analysis start")
+                            # Ensure we have enough 15m history for detection
+                            try:
+                                if len(df) < getattr(self, '_trend_hist_min', 80):
+                                    if not self._trend_hist_warned.get(sym, False):
+                                        logger.info(f"[{sym}] 🔵 Trend waiting for history: have {len(df)}/{getattr(self, '_trend_hist_min', 80)} 15m bars")
+                                        self._trend_hist_warned[sym] = True
+                                    raise Exception('insufficient_history')
+                            except Exception as _e:
+                                if str(_e) != 'insufficient_history':
+                                    logger.debug(f"[{sym}] Trend history check: {_e}")
+                                raise
                             sig_tr_ind = detect_trend_signal(df.copy(), trend_settings, sym)
                         except Exception:
                             sig_tr_ind = None
@@ -5728,7 +5742,13 @@ class TradingBot:
                             except Exception:
                                 soft_sig_mr = None
                             try:
-                                soft_sig_tr = detect_trend_signal(df.copy(), trend_settings, sym)
+                                if len(df) < getattr(self, '_trend_hist_min', 80):
+                                    if not self._trend_hist_warned.get(sym, False):
+                                        logger.info(f"[{sym}] 🔵 Trend waiting for history: have {len(df)}/{getattr(self, '_trend_hist_min', 80)} 15m bars")
+                                        self._trend_hist_warned[sym] = True
+                                    soft_sig_tr = None
+                                else:
+                                    soft_sig_tr = detect_trend_signal(df.copy(), trend_settings, sym)
                             except Exception:
                                 soft_sig_tr = None
 
@@ -6082,7 +6102,14 @@ class TradingBot:
                             elif router_choice == "pullback":
                                 # Backward-compat: treat legacy 'pullback' route as Trend Pullback
                                 logger.debug(f"🔵 [{sym}] ROUTER OVERRIDE → TREND PULLBACK ANALYSIS (legacy pullback route)")
-                                sig = detect_trend_signal(df.copy(), trend_settings, sym)
+                                # Ensure sufficient 15m history
+                                if len(df) < getattr(self, '_trend_hist_min', 80):
+                                    if not self._trend_hist_warned.get(sym, False):
+                                        logger.info(f"[{sym}] 🔵 Trend waiting for history: have {len(df)}/{getattr(self, '_trend_hist_min', 80)} 15m bars")
+                                        self._trend_hist_warned[sym] = True
+                                    sig = None
+                                else:
+                                    sig = detect_trend_signal(df.copy(), trend_settings, sym)
                                 selected_strategy = "trend_pullback"
                                 selected_ml_scorer = get_trend_scorer() if 'get_trend_scorer' in globals() and get_trend_scorer is not None else None
                                 selected_phantom_tracker = phantom_tracker
@@ -6094,7 +6121,13 @@ class TradingBot:
                                 handled = True
                             else:
                                 logger.debug(f"🟣 [{sym}] ROUTER OVERRIDE → TREND PULLBACK ANALYSIS:")
-                                sig = detect_trend_signal(df.copy(), trend_settings, sym)
+                                if len(df) < getattr(self, '_trend_hist_min', 80):
+                                    if not self._trend_hist_warned.get(sym, False):
+                                        logger.info(f"[{sym}] 🔵 Trend waiting for history: have {len(df)}/{getattr(self, '_trend_hist_min', 80)} 15m bars")
+                                        self._trend_hist_warned[sym] = True
+                                    sig = None
+                                else:
+                                    sig = detect_trend_signal(df.copy(), trend_settings, sym)
                                 selected_strategy = "trend_pullback"
                                 selected_ml_scorer = get_trend_scorer() if 'get_trend_scorer' in globals() and get_trend_scorer is not None else None
                                 selected_phantom_tracker = phantom_tracker
@@ -6108,7 +6141,14 @@ class TradingBot:
                         if (not handled) and selected_strategy == "trend_pullback":
                             # Trend pullback strategy scoring and gating
                             if sig is None:
-                                sig = detect_trend_signal(df.copy(), trend_settings, sym)
+                                # Guard on 15m history length
+                                if len(df) < getattr(self, '_trend_hist_min', 80):
+                                    if not self._trend_hist_warned.get(sym, False):
+                                        logger.info(f"[{sym}] 🔵 Trend waiting for history: have {len(df)}/{getattr(self, '_trend_hist_min', 80)} 15m bars")
+                                        self._trend_hist_warned[sym] = True
+                                    sig = None
+                                else:
+                                    sig = detect_trend_signal(df.copy(), trend_settings, sym)
                             if sig:
                                 # Build trend features for ML
                                 try:
@@ -6658,7 +6698,14 @@ class TradingBot:
                             # Try Trend phantom (exploration gating)
                             if not pb_caps_reached:
                                 try:
-                                    sig_tr = detect_trend_signal(df.copy(), trend_settings, sym)
+                                    # Gate on minimum history
+                                    if len(df) < getattr(self, '_trend_hist_min', 80):
+                                        if not self._trend_hist_warned.get(sym, False):
+                                            logger.info(f"[{sym}] 🔵 Trend waiting for history: have {len(df)}/{getattr(self, '_trend_hist_min', 80)} 15m bars")
+                                            self._trend_hist_warned[sym] = True
+                                        sig_tr = None
+                                    else:
+                                        sig_tr = detect_trend_signal(df.copy(), trend_settings, sym)
                                     pb_remaining = pb_limit - len(pb_budget)
                                     if pb_remaining > 0 and sig_tr and _not_duplicate('trend', sym, sig_tr):
                                         # Build basic trend features

@@ -394,6 +394,9 @@ scalp:
     min_bb_width_pct: 0.60   # require slightly wider bands
     vol_ratio_min: 1.10      # require modest volume expansion
     timeout_hours: 8         # auto-close scalp phantoms after 8h for learning
+  backfill:
+    active_labeling: false   # if true, uses recent 3m bars to label open phantoms during downtime
+    ml_enabled: false        # if true, seeds Scalp ML with historical phantom outcomes on startup
   exec:
     # Allow stream-side immediate execution for extremely high ML scores
     allow_stream_high_ml: true
@@ -1753,6 +1756,8 @@ symbol_meta:
 enhanced_mr:
   diag_dump_on_start: true   # Log first/last executed entries from Redis for auditing
   clear_on_start: false      # DANGER: if true, clears Enhanced MR Redis namespace on start
+  backfill:
+    enabled: false           # if true, seeds Enhanced MR ML with historical phantom outcomes on startup
 execution:
   stale_feed_guard:
     enabled: true

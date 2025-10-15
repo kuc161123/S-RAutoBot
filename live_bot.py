@@ -1776,71 +1776,77 @@ class TradingBot:
                     except Exception:
                         force_accept = False
                     if force_accept:
-                        scpt.record_scalp_signal(
+                        _rec = scpt.record_scalp_signal(
                             sym,
                             {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
                             float(ml_s or 0.0),
                             False,
                             sc_feats
                         )
-                        try:
-                            self._scalp_stats['signals'] = self._scalp_stats.get('signals', 0) + 1
-                        except Exception:
-                            pass
-                        logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
-                        try:
-                            logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=debug_force)")
-                            _scalp_decision_logged = True
-                        except Exception:
-                            pass
-                        self._scalp_cooldown[sym] = bar_ts
-                        blist.append(now_ts)
-                        self._scalp_budget[sym] = blist
-                    elif sc_remaining > 0 and daily_ok:
-                        scpt.record_scalp_signal(
-                            sym,
-                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                            float(ml_s or 0.0),
-                            False,
-                            sc_feats
-                        )
-                        try:
-                            self._scalp_stats['signals'] = self._scalp_stats.get('signals', 0) + 1
-                        except Exception:
-                            pass
-                        # Increment Flow Controller accepted counter for scalp (phantom-only pacing)
-                        try:
-                            if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
-                                self.flow_controller.increment_accepted('scalp', 1)
-                        except Exception:
-                            pass
-                        # Increment daily none count for scalp
-                        try:
-                            if scpt.redis_client is not None and n_key is not None:
-                                scpt.redis_client.incr(n_key)
-                        except Exception:
-                            pass
-                        logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
-                        try:
-                            # Explain why not executed: ML below threshold vs budget/cap
-                            reason = 'unknown'
+                        if _rec is not None:
                             try:
-                                if not daily_ok:
-                                    reason = 'daily_cap'
-                                elif sc_remaining <= 0:
-                                    reason = 'hourly_budget'
-                                else:
-                                    # default: below high-ML threshold
-                                    reason = f"ml<thr {float(ml_s or 0.0):.1f}<{hi_thr:.0f}"
+                                self._scalp_stats['signals'] = self._scalp_stats.get('signals', 0) + 1
                             except Exception:
                                 pass
-                            logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason={reason})")
-                            _scalp_decision_logged = True
-                        except Exception:
-                            pass
-                        self._scalp_cooldown[sym] = bar_ts
-                        blist.append(now_ts)
-                        self._scalp_budget[sym] = blist
+                            logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                            try:
+                                logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=debug_force)")
+                                _scalp_decision_logged = True
+                            except Exception:
+                                pass
+                            self._scalp_cooldown[sym] = bar_ts
+                            blist.append(now_ts)
+                            self._scalp_budget[sym] = blist
+                        else:
+                            logger.info(f"[{sym}] 🛑 Scalp phantom (none route debug) dropped by regime gate (tracker)")
+                    elif sc_remaining > 0 and daily_ok:
+                        _rec = scpt.record_scalp_signal(
+                            sym,
+                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                            float(ml_s or 0.0),
+                            False,
+                            sc_feats
+                        )
+                        if _rec is not None:
+                            try:
+                                self._scalp_stats['signals'] = self._scalp_stats.get('signals', 0) + 1
+                            except Exception:
+                                pass
+                            # Increment Flow Controller accepted counter for scalp (phantom-only pacing)
+                            try:
+                                if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
+                                    self.flow_controller.increment_accepted('scalp', 1)
+                            except Exception:
+                                pass
+                            # Increment daily none count for scalp
+                            try:
+                                if scpt.redis_client is not None and n_key is not None:
+                                    scpt.redis_client.incr(n_key)
+                            except Exception:
+                                pass
+                            logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                            try:
+                                # Explain why not executed: ML below threshold vs budget/cap
+                                reason = 'unknown'
+                                try:
+                                    if not daily_ok:
+                                        reason = 'daily_cap'
+                                    elif sc_remaining <= 0:
+                                        reason = 'hourly_budget'
+                                    else:
+                                        # default: below high-ML threshold
+                                        reason = f"ml<thr {float(ml_s or 0.0):.1f}<{hi_thr:.0f}"
+                                except Exception:
+                                    pass
+                                logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason={reason})")
+                                _scalp_decision_logged = True
+                            except Exception:
+                                pass
+                            self._scalp_cooldown[sym] = bar_ts
+                            blist.append(now_ts)
+                            self._scalp_budget[sym] = blist
+                        else:
+                            logger.info(f"[{sym}] 🛑 Scalp phantom (none route) dropped by regime gate (tracker)")
                         # Shadow execute Scalp if ML is trained and score ≥ threshold
                         try:
                             scorer = get_scalp_scorer() if get_scalp_scorer is not None else None

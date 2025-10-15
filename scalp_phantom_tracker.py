@@ -378,7 +378,34 @@ class ScalpPhantomTracker:
         except Exception as e:
             logger.error(f"Scalp Phantom save error: {e}")
 
-    def record_scalp_signal(self, symbol: str, signal: Dict, ml_score: float, was_executed: bool, features: Dict) -> ScalpPhantomTrade:
+    def record_scalp_signal(self, symbol: str, signal: Dict, ml_score: float, was_executed: bool, features: Dict) -> ScalpPhantomTrade | None:
+        # Regime gating for phantom quality: allow only normal/high volatility and micro-trend match
+        try:
+            if not was_executed:
+                vol = str((features or {}).get('volatility_regime', 'normal'))
+                if vol not in ('normal', 'high'):
+                    logger.info(f"[{symbol}] 🛑 Scalp phantom dropped by regime (vol={vol})")
+                    return None
+                # Micro-trend match using EMA slopes (fast/slow)
+                try:
+                    sl_fast = float((features or {}).get('ema_slope_fast', 0.0))
+                except Exception:
+                    sl_fast = 0.0
+                try:
+                    sl_slow = float((features or {}).get('ema_slope_slow', 0.0))
+                except Exception:
+                    sl_slow = 0.0
+                side = str(signal.get('side', ''))
+                if side == 'long' and not (sl_fast >= 0.0 and sl_slow >= 0.0):
+                    logger.info(f"[{symbol}] 🛑 Scalp phantom dropped by micro-trend (need up; fast={sl_fast:.2f} slow={sl_slow:.2f})")
+                    return None
+                if side == 'short' and not (sl_fast <= 0.0 and sl_slow <= 0.0):
+                    logger.info(f"[{symbol}] 🛑 Scalp phantom dropped by micro-trend (need down; fast={sl_fast:.2f} slow={sl_slow:.2f})")
+                    return None
+        except Exception:
+            # On any error in gating, default to recording to avoid losing data silently
+            pass
+
         # Round TP/SL to tick size for better alignment
         try:
             ts = self._tick_size_for(symbol)

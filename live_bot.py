@@ -1702,7 +1702,17 @@ class TradingBot:
                             if sym in self.book.positions:
                                 logger.info(f"[{sym}] 🛑 Scalp High-ML blocked: reason=position_exists")
                             else:
-                                executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                                # Regime gate for scalp execution (volatility + micro-trend alignment)
+                                vol_ok = str(sc_feats.get('volatility_regime','normal')) in ('normal','high')
+                                fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
+                                slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
+                                side = str(sc_sig.side)
+                                micro_ok = (side == 'long' and fast >= 0.0 and slow >= 0.0) or (side == 'short' and fast <= 0.0 and slow <= 0.0)
+                                if not (vol_ok and micro_ok):
+                                    logger.info(f"[{sym}] 🛑 Scalp execution blocked by regime gate (vol={sc_feats.get('volatility_regime')} fast={fast:.2f} slow={slow:.2f} side={side})")
+                                    executed = False
+                                else:
+                                    executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                                 # Optionally cancel any pre-existing active scalp phantom to avoid duplicate tracking
                                 try:
                                     cancel_on_hi = bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('cancel_active_on_high_ml', True))
@@ -2095,7 +2105,16 @@ class TradingBot:
                     if sym in self.book.positions:
                         logger.info(f"[{sym}] 🛑 Scalp High-ML (fallback) blocked: reason=position_exists")
                     else:
-                        executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                        vol_ok = str(sc_feats.get('volatility_regime','normal')) in ('normal','high')
+                        fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
+                        slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
+                        side = str(sc_sig.side)
+                        micro_ok = (side == 'long' and fast >= 0.0 and slow >= 0.0) or (side == 'short' and fast <= 0.0 and slow <= 0.0)
+                        if not (vol_ok and micro_ok):
+                            logger.info(f"[{sym}] 🛑 Scalp execution (fallback) blocked by regime gate (vol={sc_feats.get('volatility_regime')} fast={fast:.2f} slow={slow:.2f} side={side})")
+                            executed = False
+                        else:
+                            executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                         scpt.record_scalp_signal(
                             sym,
                             {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
@@ -5008,12 +5027,20 @@ class TradingBot:
                                         allow_mr_exec = False
                                     executed = False
                                     if allow_mr_exec:
+                                        # Regime gate execution same as phantom
                                         try:
-                                            # Store MR features for executed outcome logging
-                                            self._last_signal_features[sym] = dict(ef)
+                                            ok_mr_reg, why_mr_reg = self._phantom_mr_regime_ok(sym, df, regime_analysis)
                                         except Exception:
-                                            pass
-                                        executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
+                                            ok_mr_reg, why_mr_reg = True, 'n/a'
+                                        if not ok_mr_reg:
+                                            logger.info(f"[{sym}] 🛑 MR execution blocked by regime gate ({why_mr_reg})")
+                                        else:
+                                            try:
+                                                # Store MR features for executed outcome logging
+                                                self._last_signal_features[sym] = dict(ef)
+                                            except Exception:
+                                                pass
+                                            executed = await _try_execute('enhanced_mr', sig_mr_ind, ml_score=ml_score_mr, threshold=thr_mr)
                                     if executed:
                                         try:
                                             logger.info(f"[{sym}] 🧮 Decision final: exec_mr (reason=ml_extreme {ml_score_mr:.1f}>={mr_hi_force:.0f})")
@@ -6342,21 +6369,30 @@ class TradingBot:
                                         self._last_signal_features[sym] = dict(trend_features)
                                 except Exception:
                                     pass
+                                # Regime gate for execution and phantom symmetry
+                                try:
+                                    ok_regime, why_reg = self._phantom_trend_regime_ok(sym, df, regime_analysis)
+                                except Exception:
+                                    ok_regime, why_reg = True, 'n/a'
                                 # Record Trend signal into phantom tracker with regime gating for phantoms
                                 try:
                                     if should_take_trade:
-                                        logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed=True)")
-                                        phantom_tracker.record_signal(
-                                            symbol=sym,
-                                            signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                                            ml_score=float(ml_score or 0.0),
-                                            was_executed=True,
-                                            features=trend_features,
-                                            strategy_name='trend_pullback'
-                                        )
+                                        if ok_regime:
+                                            logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed=True)")
+                                            phantom_tracker.record_signal(
+                                                symbol=sym,
+                                                signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                                ml_score=float(ml_score or 0.0),
+                                                was_executed=True,
+                                                features=trend_features,
+                                                strategy_name='trend_pullback'
+                                            )
+                                        else:
+                                            logger.info(f"[{sym}] 🛑 Trend execution blocked by regime gate ({why_reg})")
+                                            # Treat as non-execution path
+                                            should_take_trade = False
                                     else:
-                                        ok_ph, why = self._phantom_trend_regime_ok(sym, df, regime_analysis)
-                                        if ok_ph:
+                                        if ok_regime:
                                             logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed=False)")
                                             phantom_tracker.record_signal(
                                                 symbol=sym,
@@ -6367,7 +6403,7 @@ class TradingBot:
                                                 strategy_name='trend_pullback'
                                             )
                                         else:
-                                            logger.info(f"[{sym}] 🛑 Trend phantom dropped by regime gate ({why})")
+                                            logger.info(f"[{sym}] 🛑 Trend phantom dropped by regime gate ({why_reg})")
                                 except Exception:
                                     pass
                                 if not should_take_trade:

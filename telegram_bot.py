@@ -515,7 +515,7 @@ class TGBot:
 
         # Phantom + Executed summaries with WR and open/closed
         try:
-            # Trend phantom summary
+            # Trend phantom summary (prefer in-memory; fallback to Redis snapshot if empty)
             pb_wins = pb_losses = pb_closed = 0
             pb_open_trades = pb_open_syms = 0
             if phantom_tracker:
@@ -534,6 +534,38 @@ class TGBot:
                         pb_open_trades = sum(len(lst) for lst in act.values())
                     except Exception:
                         pb_open_trades = pb_open_syms
+                except Exception:
+                    pass
+                # Fallback to Redis snapshot when no in-memory counts are present
+                try:
+                    if (pb_wins + pb_losses + pb_open_trades) == 0 and getattr(phantom_tracker, 'redis_client', None):
+                        r = phantom_tracker.redis_client
+                        try:
+                            comp_raw = r.get('phantom:completed')
+                            if comp_raw:
+                                import json as _json
+                                items = _json.loads(comp_raw)
+                                for rec in items:
+                                    if not bool(rec.get('was_executed')) and rec.get('outcome') in ('win','loss'):
+                                        pb_closed += 1
+                                        if rec.get('outcome') == 'win':
+                                            pb_wins += 1
+                                        else:
+                                            pb_losses += 1
+                        except Exception:
+                            pass
+                        try:
+                            act_raw = r.get('phantom:active')
+                            if act_raw:
+                                import json as _json
+                                act = _json.loads(act_raw) or {}
+                                pb_open_syms = len(act)
+                                try:
+                                    pb_open_trades = sum(len(v) if isinstance(v, list) else 1 for v in act.values())
+                                except Exception:
+                                    pb_open_trades = pb_open_syms
+                        except Exception:
+                            pass
                 except Exception:
                     pass
             pb_wr = (pb_wins / (pb_wins + pb_losses) * 100.0) if (pb_wins + pb_losses) else 0.0

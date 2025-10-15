@@ -3821,9 +3821,14 @@ class TradingBot:
                 # Phantom notifications are disabled (only executed high-ML opens + all closes sent elsewhere)
 
                 # MR phantom notifier disabled
-                # One-time backfill of MR phantom outcomes into Enhanced MR ML (avoid duplicates via Redis flag)
+                # One-time backfill of MR phantom outcomes into Enhanced MR ML (guarded by config; default OFF)
                 try:
-                    if enhanced_mr_scorer is not None:
+                    mr_bf_enabled = False
+                    try:
+                        mr_bf_enabled = bool((((cfg.get('enhanced_mr', {}) or {}).get('backfill', {}) or {}).get('enabled', False)))
+                    except Exception:
+                        mr_bf_enabled = False
+                    if enhanced_mr_scorer is not None and mr_bf_enabled:
                         backfilled_mr = False
                         client = getattr(enhanced_mr_scorer, 'redis_client', None)
                         if client is not None:
@@ -3941,9 +3946,14 @@ class TradingBot:
                 try:
                     if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
                         scpt = get_scalp_phantom_tracker()
-                        # Downtime backfill for Scalp phantoms using exchange klines + periodic sweeper
+                        # Downtime backfill for Scalp phantoms using exchange klines (guarded by config; default OFF)
                         try:
-                            if hasattr(scpt, 'backfill_active') and self.bybit is not None:
+                            scalp_bf_active = False
+                            try:
+                                scalp_bf_active = bool((((cfg.get('scalp', {}) or {}).get('backfill', {}) or {}).get('active_labeling', False)))
+                            except Exception:
+                                scalp_bf_active = False
+                            if scalp_bf_active and hasattr(scpt, 'backfill_active') and self.bybit is not None:
                                 def _fetch3(sym: str, start_ms: int, end_ms: Optional[int] = None):
                                     try:
                                         rows = self.bybit.get_klines(sym, '3', limit=200, start=start_ms, end=end_ms) or []
@@ -4017,17 +4027,22 @@ class TradingBot:
                             logger.info(f"🩳 Scalp promotion readiness: enabled={promote_enabled}, samples={samples}, wr={wr:.1f}%, ready={shared['scalp_promoted']}")
                         except Exception as e:
                             logger.debug(f"Scalp promotion readiness check failed: {e}")
-                        # One-time backfill of Scalp phantom outcomes into Scalp ML (avoid duplicates via Redis flag)
+                        # One-time backfill of Scalp phantom outcomes into Scalp ML (guarded by config; default OFF)
                         try:
+                            scalp_bf_ml = False
+                            try:
+                                scalp_bf_ml = bool((((cfg.get('scalp', {}) or {}).get('backfill', {}) or {}).get('ml_enabled', False)))
+                            except Exception:
+                                scalp_bf_ml = False
                             s_scorer = get_scalp_scorer() if (SCALP_AVAILABLE and get_scalp_scorer is not None) else None
                             backfilled = False
-                            if s_scorer and getattr(s_scorer, 'redis_client', None):
+                            if scalp_bf_ml and s_scorer and getattr(s_scorer, 'redis_client', None):
                                 try:
                                     if s_scorer.redis_client.get('ml:backfill:scalp:done') == '1':
                                         backfilled = True
                                 except Exception:
                                     pass
-                            if s_scorer and not backfilled:
+                            if scalp_bf_ml and s_scorer and not backfilled:
                                 fed = 0
                                 for trades in scpt.completed.values():
                                     for t in trades:
@@ -4040,7 +4055,7 @@ class TradingBot:
                                                 pass
                                 # Set redis flag to avoid duplication on future starts
                                 try:
-                                    if s_scorer and getattr(s_scorer, 'redis_client', None):
+                                    if scalp_bf_ml and s_scorer and getattr(s_scorer, 'redis_client', None):
                                         s_scorer.redis_client.set('ml:backfill:scalp:done', '1')
                                 except Exception:
                                     pass
@@ -4048,10 +4063,11 @@ class TradingBot:
                                     logger.info(f"🩳 Scalp ML backfill: fed {fed} phantom outcomes into ML store")
                                 # Attempt a startup retrain after backfill if trainable
                                 try:
-                                    ri = s_scorer.get_retrain_info()
-                                    if ri.get('trainable_size', 0) >= getattr(s_scorer, 'MIN_TRADES_FOR_ML', 50):
-                                        ok = s_scorer.startup_retrain()
-                                        logger.info(f"🩳 Scalp ML startup retrain attempted: {'✅ success' if ok else '⚠️ skipped'}")
+                                    if scalp_bf_ml:
+                                        ri = s_scorer.get_retrain_info()
+                                        if ri.get('trainable_size', 0) >= getattr(s_scorer, 'MIN_TRADES_FOR_ML', 50):
+                                            ok = s_scorer.startup_retrain()
+                                            logger.info(f"🩳 Scalp ML startup retrain attempted: {'✅ success' if ok else '⚠️ skipped'}")
                                 except Exception:
                                     pass
                         except Exception as e:

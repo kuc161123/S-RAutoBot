@@ -608,6 +608,78 @@ class TradingBot:
         self._trend_hist_warned: Dict[str, bool] = {}
         self._trend_hist_min: int = 80  # minimum 15m bars required for pullback detection
 
+    def _phantom_trend_regime_ok(self, sym: str, df: 'pd.DataFrame', regime_analysis) -> tuple[bool, str]:
+        """Return whether Trend phantom should be recorded under current regime.
+
+        Applies router.htf_bias thresholds if enabled; otherwise uses trend.regime settings.
+        """
+        try:
+            cfg = self.config
+        except Exception:
+            cfg = {}
+        # Prefer HTF metrics when enabled
+        try:
+            htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
+            if bool(htf_cfg.get('enabled', False)):
+                metrics = self._get_htf_metrics(sym, df)
+                min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
+                ts15 = float(metrics.get('ts15', 0.0)); ts60 = float(metrics.get('ts60', 0.0))
+                ok = (ts15 >= min_ts) and ((ts60 == 0.0) or (ts60 >= min_ts))
+                reason = f"ts15/ts60 {ts15:.1f}/{ts60:.1f} {'>=' if ok else '<'} {min_ts:.1f}"
+                return ok, reason
+        except Exception:
+            pass
+        # Fallback to trend.regime config
+        try:
+            tr_reg = (cfg.get('trend', {}) or {}).get('regime', {})
+            if bool(tr_reg.get('enabled', True)):
+                prim = getattr(regime_analysis, 'primary_regime', 'unknown') if regime_analysis else 'unknown'
+                conf = float(getattr(regime_analysis, 'regime_confidence', 0.0) or 0.0)
+                vol = str(getattr(regime_analysis, 'volatility_level', 'normal') or 'normal')
+                min_conf = float(tr_reg.get('min_conf', 0.60))
+                allowed_vol = set(tr_reg.get('allowed_vol', ['low', 'normal']))
+                ok = (prim == 'trending') and (conf >= min_conf) and (vol in allowed_vol)
+                reason = f"prim={prim} conf={conf:.2f} vol={vol} min_conf={min_conf:.2f} allowed={','.join(sorted(allowed_vol))}"
+                return ok, reason
+        except Exception:
+            pass
+        # If no regime config, allow by default
+        return True, 'regime_n/a'
+
+    def _phantom_mr_regime_ok(self, sym: str, df: 'pd.DataFrame', regime_analysis) -> tuple[bool, str]:
+        """Return whether MR phantom should be recorded under current regime.
+
+        Uses router.htf_bias thresholds for range/ts if enabled; else basic MR regime checks.
+        """
+        try:
+            cfg = self.config
+        except Exception:
+            cfg = {}
+        try:
+            htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
+            if bool(htf_cfg.get('enabled', False)):
+                metrics = self._get_htf_metrics(sym, df)
+                min_rq = float((htf_cfg.get('mr', {}) or {}).get('min_range_quality', 0.60))
+                max_ts = float((htf_cfg.get('mr', {}) or {}).get('max_trend_strength', 40.0))
+                rc15 = float(metrics.get('rc15', 0.0)); rc60 = float(metrics.get('rc60', 0.0)); ts15 = float(metrics.get('ts15', 0.0)); ts60 = float(metrics.get('ts60', 0.0))
+                ok = (rc15 >= min_rq) and ((rc60 == 0.0) or (rc60 >= min_rq)) and (ts15 <= max_ts) and ((ts60 == 0.0) or (ts60 <= max_ts))
+                reason = f"rc15/rc60 {rc15:.2f}/{rc60:.2f}≥{min_rq:.2f} & ts15/ts60 {ts15:.1f}/{ts60:.1f}≤{max_ts:.1f}"
+                return ok, reason
+        except Exception:
+            pass
+        try:
+            mr_reg = (cfg.get('mr', {}) or {}).get('regime', {})
+            if bool(mr_reg.get('enabled', True)):
+                prim = getattr(regime_analysis, 'primary_regime', 'unknown') if regime_analysis else 'unknown'
+                conf = float(getattr(regime_analysis, 'regime_confidence', 0.0) or 0.0)
+                min_conf = float(mr_reg.get('min_conf', 0.60))
+                ok = (prim == 'ranging') and (conf >= min_conf)
+                reason = f"prim={prim} conf={conf:.2f} min_conf={min_conf:.2f}"
+                return ok, reason
+        except Exception:
+            pass
+        return True, 'regime_n/a'
+
     def _resample_ohlcv(self, df: pd.DataFrame, minutes: int) -> pd.DataFrame:
         try:
             rule = f"{int(minutes)}T"
@@ -5092,7 +5164,14 @@ class TradingBot:
                             if sig_mr_ind is not None and float(ml_score_mr or 0.0) < float((((cfg.get('mr', {}) or {}).get('exec', {}) or {}).get('high_ml_force', 90.0))):
                                 # Below high-ML execution threshold: record phantom with explicit reason
                                 if mr_phantom_tracker:
-                                    mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+                                    ok_ph_mr, why_mr = self._phantom_mr_regime_ok(sym, df, regime_analysis)
+                                    if ok_ph_mr:
+                                        mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
+                                    else:
+                                        try:
+                                            logger.info(f"[{sym}] 🛑 MR phantom dropped by regime gate ({why_mr})")
+                                        except Exception:
+                                            pass
                                     try:
                                         try:
                                             hi_force_dbg = float((((cfg.get('mr', {}) or {}).get('exec', {}) or {}).get('high_ml_force', 90.0)))
@@ -5325,15 +5404,13 @@ class TradingBot:
                                                 logger.info(f"[{sym}] 🔵 Trend decision context: exec_only=True ts15={metrics['ts15']:.1f} ts60={metrics['ts60']:.1f} min_ts={min_ts:.1f} high_ml={ml_score_tr:.1f}/{tr_hi_force:.0f}")
                                             except Exception:
                                                 pass
-                                            if not ts_ok:
-                                                # Record phantom and skip execution due to regime gate
-                                                if phantom_tracker and sig_tr_ind is not None:
-                                                    phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
-                                                try:
-                                                    logger.info(f"[{sym}] 🧮 Trend decision final: phantom (reason=exec-only ts<min {metrics['ts15']:.1f}/{metrics['ts60']:.1f}<{min_ts:.1f})")
-                                                except Exception:
-                                                    pass
-                                                continue
+                                    if not ts_ok:
+                                        # Skip phantom as well when regime gate fails (higher-quality phantom policy)
+                                        try:
+                                            logger.info(f"[{sym}] 🧮 Trend decision final: phantom (blocked) (reason=exec-only ts<min {metrics['ts15']:.1f}/{metrics['ts60']:.1f}<{min_ts:.1f})")
+                                        except Exception:
+                                            pass
+                                        continue
                                             else:
                                                 try:
                                                     logger.info(f"[{sym}] 🧮 Trend decision final: execute (reason=high_ml {ml_score_tr:.1f}≥{tr_hi_force:.0f} & regime_ok)")
@@ -6245,16 +6322,34 @@ class TradingBot:
                                         self._last_signal_features[sym] = dict(trend_features)
                                 except Exception:
                                     pass
-                                # Record phantom for trend before continue if not executing
-                                logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed={should_take_trade})")
-                                phantom_tracker.record_signal(
-                                    symbol=sym,
-                                    signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
-                                    ml_score=float(ml_score or 0.0),
-                                    was_executed=should_take_trade,
-                                    features=trend_features,
-                                    strategy_name='trend_pullback'
-                                )
+                                # Record Trend signal into phantom tracker with regime gating for phantoms
+                                try:
+                                    if should_take_trade:
+                                        logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed=True)")
+                                        phantom_tracker.record_signal(
+                                            symbol=sym,
+                                            signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                            ml_score=float(ml_score or 0.0),
+                                            was_executed=True,
+                                            features=trend_features,
+                                            strategy_name='trend_pullback'
+                                        )
+                                    else:
+                                        ok_ph, why = self._phantom_trend_regime_ok(sym, df, regime_analysis)
+                                        if ok_ph:
+                                            logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed=False)")
+                                            phantom_tracker.record_signal(
+                                                symbol=sym,
+                                                signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
+                                                ml_score=float(ml_score or 0.0),
+                                                was_executed=False,
+                                                features=trend_features,
+                                                strategy_name='trend_pullback'
+                                            )
+                                        else:
+                                            logger.info(f"[{sym}] 🛑 Trend phantom dropped by regime gate ({why})")
+                                except Exception:
+                                    pass
                                 if not should_take_trade:
                                     # Skip execution, continue to next symbol
                                     continue
@@ -6688,7 +6783,11 @@ class TradingBot:
                                     else:
                                         logger.info(f"[{sym}] 👻 Phantom-only (MR none): {sig_mr.side.upper()} @ {sig_mr.entry:.4f}")
                                         if mr_phantom_tracker:
-                                            mr_phantom_tracker.record_mr_signal(sym, sig_mr.__dict__, 0.0, False, {}, ef)
+                                            ok_ph_mr2, why_mr2 = self._phantom_mr_regime_ok(sym, df, regime_analysis)
+                                            if ok_ph_mr2:
+                                                mr_phantom_tracker.record_mr_signal(sym, sig_mr.__dict__, 0.0, False, {}, ef)
+                                            else:
+                                                logger.info(f"[{sym}] 🛑 MR phantom (none route) dropped by regime gate ({why_mr2})")
                                             # Count accepted MR phantom for flow pacing
                                             try:
                                                 if self.flow_controller:
@@ -6785,19 +6884,26 @@ class TradingBot:
                                         else:
                                             try:
                                                 logger.info(f"[{sym}] 🔵 Trend decision context: dedup=True hourly_remaining={pb_remaining} daily_ok={not pb_caps_reached}")
-                                                logger.info(f"[{sym}] 🧮 Trend decision final: phantom (reason=routing=none explore)")
                                             except Exception:
                                                 pass
-                                            logger.info(f"[{sym}] 👻 Phantom-only (Trend none): {sig_tr.side.upper()} @ {sig_tr.entry:.4f}")
-                                            if phantom_tracker:
-                                                phantom_tracker.record_signal(
-                                                    symbol=sym,
-                                                    signal={'side': sig_tr.side, 'entry': sig_tr.entry, 'sl': sig_tr.sl, 'tp': sig_tr.tp},
-                                                    ml_score=0.0,
-                                                    was_executed=False,
-                                                    features=trend_features,
-                                                    strategy_name='trend_pullback'
-                                                )
+                                            ok_ph, why = self._phantom_trend_regime_ok(sym, df, regime_analysis)
+                                            if ok_ph:
+                                                try:
+                                                    logger.info(f"[{sym}] 🧮 Trend decision final: phantom (reason=routing=none explore)")
+                                                except Exception:
+                                                    pass
+                                                logger.info(f"[{sym}] 👻 Phantom-only (Trend none): {sig_tr.side.upper()} @ {sig_tr.entry:.4f}")
+                                                if phantom_tracker:
+                                                    phantom_tracker.record_signal(
+                                                        symbol=sym,
+                                                        signal={'side': sig_tr.side, 'entry': sig_tr.entry, 'sl': sig_tr.sl, 'tp': sig_tr.tp},
+                                                        ml_score=0.0,
+                                                        was_executed=False,
+                                                        features=trend_features,
+                                                        strategy_name='trend_pullback'
+                                                    )
+                                            else:
+                                                logger.info(f"[{sym}] 🛑 Trend phantom (none route) dropped by regime gate ({why})")
                                                 try:
                                                     if self.flow_controller:
                                                         self.flow_controller.increment_accepted('trend', 1)

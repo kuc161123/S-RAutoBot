@@ -279,7 +279,7 @@ class PhantomTradeTracker:
         return d
 
     def record_signal(self, symbol: str, signal: dict, ml_score: float, 
-                     was_executed: bool, features: dict, strategy_name: str = "unknown") -> PhantomTrade:
+                     was_executed: bool, features: dict, strategy_name: str = "unknown") -> Optional[PhantomTrade]:
         """
         Record a new signal (whether executed or not)
         
@@ -302,6 +302,34 @@ class PhantomTradeTracker:
                 except Exception:
                     expected = 0
                 features.setdefault('feature_count', expected)
+        except Exception:
+            pass
+
+        # Regime gating for Trend-like phantoms (non-executed)
+        try:
+            if not was_executed and strategy_name in ('trend_pullback','trend_breakout','trend','unknown'):
+                vol = str((features or {}).get('volatility_regime', 'normal'))
+                if vol == 'extreme':
+                    logger.info(f"[{symbol}] 🛑 Trend phantom dropped by regime (volatility=extreme)")
+                    return None
+                slope = 0.0
+                try:
+                    slope = float((features or {}).get('trend_slope_pct', 0.0))
+                except Exception:
+                    slope = 0.0
+                ema_stack = 0.0
+                try:
+                    ema_stack = float((features or {}).get('ema_stack_score', 0.0))
+                except Exception:
+                    ema_stack = 0.0
+                side = str(signal.get('side', ''))
+                # Require EMA alignment and slope in the trade direction
+                if side == 'long' and (slope < 0.0 or ema_stack < 40.0):
+                    logger.info(f"[{symbol}] 🛑 Trend phantom dropped by micro-trend (need up; slope={slope:.2f} ema={ema_stack:.0f})")
+                    return None
+                if side == 'short' and (slope > 0.0 or ema_stack < 40.0):
+                    logger.info(f"[{symbol}] 🛑 Trend phantom dropped by micro-trend (need down; slope={slope:.2f} ema={ema_stack:.0f})")
+                    return None
         except Exception:
             pass
 

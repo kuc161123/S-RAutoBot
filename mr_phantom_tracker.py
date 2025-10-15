@@ -274,7 +274,7 @@ class MRPhantomTracker:
         return self._blocked_counts.get(day, {'total': 0, 'trend': 0, 'mr': 0, 'scalp': 0})
 
     def record_mr_signal(self, symbol: str, signal: dict, ml_score: float,
-                        was_executed: bool, features: dict, enhanced_features: dict = None) -> MRPhantomTrade:
+                        was_executed: bool, features: dict, enhanced_features: dict = None) -> Optional[MRPhantomTrade]:
         """
         Record a mean reversion signal with range-specific data
 
@@ -286,6 +286,37 @@ class MRPhantomTracker:
             features: Basic MR features
             enhanced_features: Enhanced feature set from enhanced_mr_features.py
         """
+        # Regime gating for phantom quality (non-executed only)
+        try:
+            if not was_executed:
+                ef = enhanced_features or {}
+                cf = features or {}
+                # Prefer enhanced features when present
+                rc = ef.get('range_confidence', cf.get('range_confidence'))
+                try:
+                    rc = float(rc) if rc is not None else None
+                except Exception:
+                    rc = None
+                ts = ef.get('trend_strength', cf.get('trend_strength'))
+                try:
+                    ts = float(ts) if ts is not None else None
+                except Exception:
+                    ts = None
+                vol = str(ef.get('volatility_regime', cf.get('volatility_regime', 'normal')))
+                # Drop when range confidence is low (<0.6) or trend is too strong (>40) or extreme vol
+                if rc is not None and rc < 0.60:
+                    logger.info(f"[{symbol}] 🛑 MR phantom dropped by regime (range_confidence {rc:.2f}<0.60)")
+                    return None
+                if ts is not None and ts > 40.0:
+                    logger.info(f"[{symbol}] 🛑 MR phantom dropped by regime (trend_strength {ts:.1f}>40)")
+                    return None
+                if vol == 'extreme':
+                    logger.info(f"[{symbol}] 🛑 MR phantom dropped by regime (volatility=extreme)")
+                    return None
+        except Exception:
+            # On gating errors, proceed to record to avoid silent losses of data
+            pass
+
         # Allow multiple active MR phantoms per symbol
 
         # Extract range information from signal meta

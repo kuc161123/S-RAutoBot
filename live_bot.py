@@ -5299,15 +5299,25 @@ class TradingBot:
                                             metrics = self._get_htf_metrics(sym, df)
                                             min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
                                             ts_ok = (metrics['ts15'] >= min_ts) and ((metrics['ts60'] == 0.0) or (metrics['ts60'] >= min_ts))
+                                            # Log Trend decision context for exec-only regime gate
+                                            try:
+                                                logger.info(f"[{sym}] 🔵 Trend decision context: exec_only=True ts15={metrics['ts15']:.1f} ts60={metrics['ts60']:.1f} min_ts={min_ts:.1f} high_ml={ml_score_tr:.1f}/{tr_hi_force:.0f}")
+                                            except Exception:
+                                                pass
                                             if not ts_ok:
                                                 # Record phantom and skip execution due to regime gate
                                                 if phantom_tracker and sig_tr_ind is not None:
                                                     phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
                                                 try:
-                                                    logger.info(f"[{sym}] 🧮 Exec-only regime gate: block Trend (ts15/ts60 below min {min_ts:.1f}) → phantom")
+                                                    logger.info(f"[{sym}] 🧮 Trend decision final: phantom (reason=exec-only ts<min {metrics['ts15']:.1f}/{metrics['ts60']:.1f}<{min_ts:.1f})")
                                                 except Exception:
                                                     pass
                                                 continue
+                                            else:
+                                                try:
+                                                    logger.info(f"[{sym}] 🧮 Trend decision final: execute (reason=high_ml {ml_score_tr:.1f}≥{tr_hi_force:.0f} & regime_ok)")
+                                                except Exception:
+                                                    pass
                                         except Exception:
                                             pass
                                     try:
@@ -6152,10 +6162,32 @@ class TradingBot:
                                         ml_score, ml_reason = trend_scorer.score_signal(sig.__dict__, trend_features)
                                         threshold = getattr(trend_scorer, 'min_score', 70)
                                         should_take_trade = ml_score >= threshold
+                                        # Trend decision context (execution path)
+                                        try:
+                                            pb_limit = int((self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}).get('trend', (self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}).get('pullback', 3)))
+                                        except Exception:
+                                            pb_limit = 3
+                                        try:
+                                            pb_map = (self.shared.get('phantom_budget', {}) or {}).get('trend', {}) if hasattr(self, 'shared') else {}
+                                            pb_remaining = max(0, pb_limit - len(pb_map.get(sym, [])))
+                                        except Exception:
+                                            pb_remaining = 'n/a'
+                                        # EV threshold (if available)
+                                        try:
+                                            ev_thr = float(trend_scorer.get_ev_threshold(trend_features))
+                                        except Exception:
+                                            ev_thr = None
+                                        try:
+                                            ctx = f"dedup=True hourly_remaining={pb_remaining} daily_ok=True"
+                                            if ev_thr is not None:
+                                                ctx += f" ev_thr={ev_thr:.0f}"
+                                            logger.info(f"[{sym}] 🔵 Trend decision context: {ctx}")
+                                        except Exception:
+                                            pass
                                         if should_take_trade:
-                                            logger.info(f"   ✅ DECISION: EXECUTE TRADE - Trend ML {ml_score:.1f} ≥ {threshold}")
+                                            logger.info(f"[{sym}] 🧮 Trend decision final: execute (reason=ml≥thr {ml_score:.1f}≥{threshold})")
                                         else:
-                                            logger.info(f"   ❌ DECISION: REJECT TRADE - Trend ML {ml_score:.1f} < {threshold}")
+                                            logger.info(f"[{sym}] 🧮 Trend decision final: phantom (reason=ml<thr {ml_score:.1f}<{threshold})")
                                     except Exception as e:
                                         logger.warning(f"Trend ML scoring error: {e}")
                                         should_take_trade = False
@@ -6689,8 +6721,19 @@ class TradingBot:
                                         except Exception:
                                             pass
                                         if not meets_gate:
+                                            # Log unified decision lines for Trend in NONE routing
+                                            try:
+                                                logger.info(f"[{sym}] 🔵 Trend decision context: dedup=True hourly_remaining={pb_remaining} daily_ok={not pb_caps_reached}")
+                                                logger.info(f"[{sym}] 🧮 Trend decision final: phantom (reason=explore_gate {', '.join(reasons) if reasons else 'gate fail'})")
+                                            except Exception:
+                                                pass
                                             logger.info(f"[{sym}] 👻 Trend explore skip: {', '.join(reasons) if reasons else 'gate fail'}")
                                         else:
+                                            try:
+                                                logger.info(f"[{sym}] 🔵 Trend decision context: dedup=True hourly_remaining={pb_remaining} daily_ok={not pb_caps_reached}")
+                                                logger.info(f"[{sym}] 🧮 Trend decision final: phantom (reason=routing=none explore)")
+                                            except Exception:
+                                                pass
                                             logger.info(f"[{sym}] 👻 Phantom-only (Trend none): {sig_tr.side.upper()} @ {sig_tr.entry:.4f}")
                                             if phantom_tracker:
                                                 phantom_tracker.record_signal(

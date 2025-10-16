@@ -3513,7 +3513,9 @@ class TradingBot:
         
         # Import strategies for parallel system
         from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion
-        from strategy_trend_breakout import detect_signal as detect_trend_signal, TrendSettings as TrendSettingsTB
+        # Use pullback strategy detection with detailed logging
+        from strategy_pullback import detect_signal_pullback as detect_trend_signal
+        from strategy_pullback import reset_symbol_state as _reset_symbol_state
         # Trend-only overrides: disable MR/Scalp detection functions at source
         if self._trend_only:
             try:
@@ -3562,19 +3564,12 @@ class TradingBot:
             both_hit_rule=cfg["trade"]["both_hit_rule"],
             confirmation_candles=cfg["trade"].get("confirmation_candles", 2)
         )
-        # Trend pullback settings (new dataclass fields)
+        # Pullback detection uses the generic Settings() already constructed above
+        # Keep a separate alias to avoid refactoring call sites
         tr_cfg = cfg.get('trend', {}) or {}
-        tr_exec = (tr_cfg.get('exec', {}) or {}) if isinstance(tr_cfg, dict) else {}
-        trend_settings = TrendSettingsTB(
-            atr_len=int(tr_cfg.get('atr_len', 14)),
-            rr=float(tr_cfg.get('rr', 2.5)),
-            sl_atr_mult=float(tr_cfg.get('sl_atr_mult', 1.5)),
-            confirm_candles=int(tr_cfg.get('confirm_candles', cfg['trade'].get('confirmation_candles', 2))),
-            pivot_l=int(tr_cfg.get('pivot_l', 3)),
-            pivot_r=int(tr_cfg.get('pivot_r', 3)),
-            breakout_buffer_atr=float(tr_cfg.get('breakout_buffer_atr', 0.1)),
-            pivot_buffer_atr=float(tr_exec.get('pivot_buffer_atr', 0.05)),
-        )
+        trend_settings = settings
+        # Enable reset_symbol_state for pullback state machine
+        reset_symbol_state = _reset_symbol_state
 
         # Initialize components
         risk = RiskConfig(

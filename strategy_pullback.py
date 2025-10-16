@@ -28,6 +28,8 @@ class Settings:
     # Extra breathing room when a pivot-based stop is selected
     # Expressed as fraction of entry price (e.g., 0.01 = 1%)
     extra_pivot_breath_pct: float = 0.01
+    # Maximum bars to wait after HL/LH for confirmations before forgetting the setup
+    confirmation_timeout_bars: int = 6
 
 @dataclass
 class Signal:
@@ -491,6 +493,17 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             logger.info(f"[{symbol}] Pullback low broken, resetting to neutral")
             state.state = "NEUTRAL"
             state.confirmation_count = 0
+        # Reset if confirmations do not arrive within timeout bars
+        else:
+            try:
+                if state.pullback_time is not None:
+                    bars_elapsed = int((current_time - state.pullback_time) / pd.Timedelta(minutes=15))
+                    if bars_elapsed >= int(s.confirmation_timeout_bars) and confirmations < int(s.confirmation_candles):
+                        logger.info(f"[{symbol}] Confirmation timeout ({bars_elapsed} bars) — forgetting setup")
+                        state.state = "NEUTRAL"
+                        state.confirmation_count = 0
+            except Exception:
+                pass
     
     elif state.state == "LH_FORMED":
         # Count confirmation candles for short
@@ -592,6 +605,17 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             logger.info(f"[{symbol}] Pullback high broken, resetting to neutral")
             state.state = "NEUTRAL"
             state.confirmation_count = 0
+        # Reset if confirmations do not arrive within timeout bars
+        else:
+            try:
+                if state.pullback_time is not None:
+                    bars_elapsed = int((current_time - state.pullback_time) / pd.Timedelta(minutes=15))
+                    if bars_elapsed >= int(s.confirmation_timeout_bars) and confirmations < int(s.confirmation_candles):
+                        logger.info(f"[{symbol}] Confirmation timeout ({bars_elapsed} bars) — forgetting setup")
+                        state.state = "NEUTRAL"
+                        state.confirmation_count = 0
+            except Exception:
+                pass
     
     elif state.state == "SIGNAL_SENT":
         # Don't send another signal until state is reset

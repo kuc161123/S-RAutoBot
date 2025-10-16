@@ -1778,3 +1778,5 @@ execution:
 strategy_independence:
   enabled: true               # Run Trend and MR fully independently (single-per-symbol concurrency)
   concurrency: single_per_symbol
+  # Maximum bars to wait after HL/LH for confirmations before forgetting the setup
+  confirmation_timeout_bars: 6

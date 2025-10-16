@@ -481,6 +481,11 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                          {"atr": atr, "res": nearestRes, "sup": nearestSup, 
                           "breakout_level": state.breakout_level, "pullback_low": state.pullback_extreme})
         
+        # Reset if pullback crosses back into the breakout level (invalidate setup)
+        elif df["low"].iloc[-1] < state.breakout_level:
+            logger.info(f"[{symbol}] Pullback crossed back into breakout level ({state.breakout_level:.4f}) — forgetting setup")
+            state.state = "NEUTRAL"
+            state.confirmation_count = 0
         # Reset if price breaks below pullback low
         elif df["low"].iloc[-1] < state.pullback_extreme:
             logger.info(f"[{symbol}] Pullback low broken, resetting to neutral")
@@ -577,6 +582,11 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                          {"atr": atr, "res": nearestRes, "sup": nearestSup,
                           "breakout_level": state.breakout_level, "pullback_high": state.pullback_extreme})
         
+        # Reset if pullback crosses back into the breakout level (invalidate setup)
+        elif df["high"].iloc[-1] > state.breakout_level:
+            logger.info(f"[{symbol}] Pullback crossed back into breakout level ({state.breakout_level:.4f}) — forgetting setup")
+            state.state = "NEUTRAL"
+            state.confirmation_count = 0
         # Reset if price breaks above pullback high
         elif df["high"].iloc[-1] > state.pullback_extreme:
             logger.info(f"[{symbol}] Pullback high broken, resetting to neutral")

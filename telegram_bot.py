@@ -85,6 +85,9 @@ class TGBot:
         self.app.add_handler(CommandHandler("mrphantom", self.mr_phantom_stats))  # Alternative command name
         self.app.add_handler(CommandHandler("parallel_performance", self.parallel_performance))
         self.app.add_handler(CommandHandler("parallelperformance", self.parallel_performance))  # Alternative command name
+        # Trend pullback state snapshot
+        self.app.add_handler(CommandHandler("trend_states", self.trend_states))
+        self.app.add_handler(CommandHandler("trendstates", self.trend_states))  # Alternative command name
         self.app.add_handler(CommandHandler("regime_analysis", self.regime_analysis))
         self.app.add_handler(CommandHandler("regimeanalysis", self.regime_analysis))  # Alternative command name
         self.app.add_handler(CommandHandler("regime", self.regime_single))
@@ -1959,6 +1962,36 @@ HTF S/R module disabled
         except Exception as e:
             logger.error(f"Error in recent_trades: {e}")
             await update.message.reply_text("Error getting recent trades")
+
+    async def trend_states(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show current Trend Pullback state per symbol"""
+        try:
+            from strategy_pullback import get_trend_states_snapshot
+            snap = get_trend_states_snapshot()
+            if not snap:
+                await self.safe_reply(update, "🔎 Trend Pullback States\n• No states tracked yet")
+                return
+            lines = ["🔎 *Trend Pullback States*", "━━━━━━━━━━━━━━━━━━━━━", ""]
+            for sym in sorted(snap.keys()):
+                st = snap[sym]
+                state = st.get('state','?')
+                brk = st.get('breakout_level')
+                ext = st.get('pullback_extreme')
+                conf = st.get('confirm_progress', 0)
+                age = st.get('pullback_age_bars')
+                detail = []
+                if brk:
+                    detail.append(f"break {brk:.4f}")
+                if ext:
+                    detail.append(f"pb {ext:.4f}")
+                detail.append(f"conf {conf}")
+                if age is not None:
+                    detail.append(f"age {age}b")
+                lines.append(f"• {sym}: {state} ({', '.join(detail)})")
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as exc:
+            logger.warning(f"trend_states failed: {exc}")
+            await self.safe_reply(update, "⚠️ Failed to fetch trend states")
     
     async def ml_stats(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show ML system statistics and status for a specific strategy."""

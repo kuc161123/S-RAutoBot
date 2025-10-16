@@ -3918,6 +3918,19 @@ class TradingBot:
                     "_Use /dashboard for full status_"
                 )
 
+                # Wire Trend event notifications to Telegram
+                try:
+                    from strategy_pullback import set_trend_event_notifier
+                    def _trend_notifier(symbol: str, text: str):
+                        try:
+                            # Fire-and-forget send to Telegram
+                            asyncio.create_task(self.tg.send_message(text))
+                        except Exception:
+                            pass
+                    set_trend_event_notifier(_trend_notifier)
+                except Exception:
+                    logger.debug("Failed to wire trend notifier to Telegram")
+
                 # Phantom notifications are disabled (only executed high-ML opens + all closes sent elsewhere)
 
                 # MR phantom notifier disabled

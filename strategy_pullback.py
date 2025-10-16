@@ -7,6 +7,21 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# --- Event notifier integration (for Telegram, etc.) ---
+_event_notifier = None  # type: Optional[callable]
+
+def set_trend_event_notifier(fn):
+    """Register a notifier callback taking (symbol:str, text:str)."""
+    global _event_notifier
+    _event_notifier = fn
+
+def _notify(symbol: str, text: str):
+    try:
+        if _event_notifier:
+            _event_notifier(symbol, text)
+    except Exception:
+        pass
+
 @dataclass
 class Settings:
     left:int=2
@@ -358,7 +373,9 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             # Find and store previous pivot low for structure-based stop
             current_idx = len(df) - 1
             state.previous_pivot_low = find_previous_pivot_low(df, current_idx)
-            logger.info(f"[{symbol}] Resistance broken at {nearestRes:.4f}, waiting for pullback and HL")
+            msg = f"[{symbol}] Resistance broken at {nearestRes:.4f}, waiting for pullback and HL"
+            logger.info(msg)
+            _notify(symbol, f"🔵 Trend: {msg}")
             
         elif trendDn and c < nearestSup and vol_ok and ema_ok_short:
             # Support broken - wait for pullback
@@ -369,7 +386,9 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             # Find and store previous pivot high for structure-based stop
             current_idx = len(df) - 1
             state.previous_pivot_high = find_previous_pivot_high(df, current_idx)
-            logger.info(f"[{symbol}] Support broken at {nearestSup:.4f}, waiting for pullback and LH")
+            msg = f"[{symbol}] Support broken at {nearestSup:.4f}, waiting for pullback and LH"
+            logger.info(msg)
+            _notify(symbol, f"🔵 Trend: {msg}")
     
     elif state.state == "RESISTANCE_BROKEN":
         # Wait for higher low above old resistance
@@ -377,11 +396,15 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             state.state = "HL_FORMED"
             state.pullback_extreme = df["low"].iloc[-10:].min()  # Record the pullback low
             state.pullback_time = current_time
-            logger.info(f"[{symbol}] Higher Low formed above {state.breakout_level:.4f}, waiting for confirmation")
+            msg = f"[{symbol}] Higher Low formed above {state.breakout_level:.4f}, waiting for confirmation"
+            logger.info(msg)
+            _notify(symbol, f"🔵 Trend: {msg}")
         
         # Reset if price falls back below breakout level
         elif c < state.breakout_level:
-            logger.info(f"[{symbol}] Price fell below breakout level, resetting to neutral")
+            msg = f"[{symbol}] Price fell below breakout level, resetting to neutral"
+            logger.info(msg)
+            _notify(symbol, f"🛑 Trend: {msg}")
             state.state = "NEUTRAL"
             state.confirmation_count = 0
     
@@ -391,11 +414,15 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             state.state = "LH_FORMED"
             state.pullback_extreme = df["high"].iloc[-10:].max()  # Record the pullback high
             state.pullback_time = current_time
-            logger.info(f"[{symbol}] Lower High formed below {state.breakout_level:.4f}, waiting for confirmation")
+            msg = f"[{symbol}] Lower High formed below {state.breakout_level:.4f}, waiting for confirmation"
+            logger.info(msg)
+            _notify(symbol, f"🔵 Trend: {msg}")
         
         # Reset if price rises back above breakout level
         elif c > state.breakout_level:
-            logger.info(f"[{symbol}] Price rose above breakout level, resetting to neutral")
+            msg = f"[{symbol}] Price rose above breakout level, resetting to neutral"
+            logger.info(msg)
+            _notify(symbol, f"🛑 Trend: {msg}")
             state.state = "NEUTRAL"
             state.confirmation_count = 0
     
@@ -421,7 +448,14 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 logger.info(f"[{symbol}] HL confirmation {confirmations}/{s.confirmation_candles} | Body {body_ratio:.1f}% | Range/ATR {candle_range_atr:.1f}% | Vol× {vol_ratio:.2f}")
         except Exception:
             pass
-        
+        # Notify on confirmation progress (only when it increases)
+        try:
+            if confirmations > 0 and confirmations > int(state.confirmation_count):
+                state.confirmation_count = confirmations
+                _notify(symbol, f"🔵 Trend: HL confirmation {confirmations}/{s.confirmation_candles}")
+        except Exception:
+            pass
+
         if confirmations >= s.confirmation_candles:
             # Generate LONG signal
             entry = c
@@ -476,7 +510,9 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             state.last_signal_time = current_time
             state.last_signal_candle_time = df.index[-1]
             
-            logger.info(f"[{symbol}] 🟢 LONG SIGNAL (Pullback) - Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}")
+            sig_msg = f"[{symbol}] 🟢 LONG SIGNAL (Pullback) - Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}"
+            logger.info(sig_msg)
+            _notify(symbol, sig_msg)
             
             return Signal("long", entry, sl, tp, 
                          f"Pullback long: HL above {state.breakout_level:.4f} + {s.confirmation_candles} confirmations",
@@ -485,12 +521,16 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         
         # Reset if pullback crosses back into the breakout level (invalidate setup)
         elif df["low"].iloc[-1] < state.breakout_level:
-            logger.info(f"[{symbol}] Pullback crossed back into breakout level ({state.breakout_level:.4f}) — forgetting setup")
+            msg = f"[{symbol}] Pullback crossed back into breakout level ({state.breakout_level:.4f}) — forgetting setup"
+            logger.info(msg)
+            _notify(symbol, f"🛑 Trend: {msg}")
             state.state = "NEUTRAL"
             state.confirmation_count = 0
         # Reset if price breaks below pullback low
         elif df["low"].iloc[-1] < state.pullback_extreme:
-            logger.info(f"[{symbol}] Pullback low broken, resetting to neutral")
+            msg = f"[{symbol}] Pullback low broken, resetting to neutral"
+            logger.info(msg)
+            _notify(symbol, f"🛑 Trend: {msg}")
             state.state = "NEUTRAL"
             state.confirmation_count = 0
         # Reset if confirmations do not arrive within timeout bars
@@ -499,7 +539,9 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 if state.pullback_time is not None:
                     bars_elapsed = int((current_time - state.pullback_time) / pd.Timedelta(minutes=15))
                     if bars_elapsed >= int(s.confirmation_timeout_bars) and confirmations < int(s.confirmation_candles):
-                        logger.info(f"[{symbol}] Confirmation timeout ({bars_elapsed} bars) — forgetting setup")
+                        msg = f"[{symbol}] Confirmation timeout ({bars_elapsed} bars) — forgetting setup"
+                        logger.info(msg)
+                        _notify(symbol, f"🛑 Trend: {msg}")
                         state.state = "NEUTRAL"
                         state.confirmation_count = 0
             except Exception:
@@ -533,7 +575,14 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 logger.info(f"[{symbol}] LH confirmation {confirmations}/{s.confirmation_candles}")
         except Exception:
             pass
-        
+        # Notify on confirmation progress (only when it increases)
+        try:
+            if confirmations > 0 and confirmations > int(state.confirmation_count):
+                state.confirmation_count = confirmations
+                _notify(symbol, f"🔵 Trend: LH confirmation {confirmations}/{s.confirmation_candles}")
+        except Exception:
+            pass
+
         if confirmations >= s.confirmation_candles:
             # Generate SHORT signal
             entry = c
@@ -588,7 +637,9 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             state.last_signal_time = current_time
             state.last_signal_candle_time = df.index[-1]
             
-            logger.info(f"[{symbol}] 🔴 SHORT SIGNAL (Pullback) - Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}")
+            sig_msg = f"[{symbol}] 🔴 SHORT SIGNAL (Pullback) - Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}"
+            logger.info(sig_msg)
+            _notify(symbol, sig_msg)
             
             return Signal("short", entry, sl, tp,
                          f"Pullback short: LH below {state.breakout_level:.4f} + {s.confirmation_candles} confirmations",
@@ -597,12 +648,16 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         
         # Reset if pullback crosses back into the breakout level (invalidate setup)
         elif df["high"].iloc[-1] > state.breakout_level:
-            logger.info(f"[{symbol}] Pullback crossed back into breakout level ({state.breakout_level:.4f}) — forgetting setup")
+            msg = f"[{symbol}] Pullback crossed back into breakout level ({state.breakout_level:.4f}) — forgetting setup"
+            logger.info(msg)
+            _notify(symbol, f"🛑 Trend: {msg}")
             state.state = "NEUTRAL"
             state.confirmation_count = 0
         # Reset if price breaks above pullback high
         elif df["high"].iloc[-1] > state.pullback_extreme:
-            logger.info(f"[{symbol}] Pullback high broken, resetting to neutral")
+            msg = f"[{symbol}] Pullback high broken, resetting to neutral"
+            logger.info(msg)
+            _notify(symbol, f"🛑 Trend: {msg}")
             state.state = "NEUTRAL"
             state.confirmation_count = 0
         # Reset if confirmations do not arrive within timeout bars
@@ -651,3 +706,25 @@ def reset_symbol_state(symbol:str):
     if symbol in breakout_states:
         logger.info(f"[{symbol}] Resetting breakout state to NEUTRAL")
         breakout_states[symbol] = BreakoutState()
+
+def get_trend_states_snapshot() -> Dict[str, dict]:
+    """Return a lightweight snapshot of current pullback states per symbol."""
+    out: Dict[str, dict] = {}
+    for sym, st in breakout_states.items():
+        try:
+            age_bars = None
+            if st.pullback_time:
+                try:
+                    age_bars = int((datetime.utcnow() - st.pullback_time.to_pydatetime()).total_seconds() // (15*60))
+                except Exception:
+                    age_bars = None
+            out[sym] = {
+                'state': st.state,
+                'breakout_level': float(st.breakout_level or 0.0),
+                'pullback_extreme': float(st.pullback_extreme or 0.0),
+                'confirm_progress': int(st.confirmation_count or 0),
+                'pullback_age_bars': age_bars
+            }
+        except Exception:
+            out[sym] = {'state': st.state}
+    return out

@@ -122,7 +122,7 @@ trend:
     min_recent_wr: 0.0
     # Minimum ML score floor for execution (in addition to model threshold)
     min_ml: 75
-    # Extra breathing room added when pivot-based stop is selected (fraction of entry)
+    # Extra breathing room added to any chosen stop method (fraction of entry)
     extra_pivot_breath_pct: 0.01
     slippage_recalc:
       enabled: true

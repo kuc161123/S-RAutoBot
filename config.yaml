@@ -149,7 +149,9 @@ trend:
     use_3m_context: true    # Use 3-minute micro context for diagnostics/logging
     enforce: false          # Do not block execution by 3m micro-context (phantoms free to learn)
   logging:
-    phantom_info: true      # If true, log Trend phantom decisions at INFO; otherwise DEBUG
+    verbose: true           # Ensure per-candle Trend analysis heartbeat at INFO
+    no_signal_info: true    # Emit INFO when no Trend signal forms
+    phantom_info: true      # Log Trend phantom decisions at INFO
   explore:
     enabled: true
     slope_min: 4.0

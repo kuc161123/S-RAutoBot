@@ -4544,13 +4544,14 @@ class TradingBot:
                         except Exception:
                             pass
                         # Scalp health snapshot
-                        try:
-                            st = getattr(self, '_scalp_stats', {}) or {}
-                            logger.info(f"🩳 Scalp health: confirms={st.get('confirms',0)}, signals={st.get('signals',0)}, dedup={st.get('dedup_skips',0)}, cooldown={st.get('cooldown_skips',0)}")
-                            # Reset counters for next interval
-                            self._scalp_stats = {'confirms': 0, 'signals': 0, 'dedup_skips': 0, 'cooldown_skips': 0}
-                        except Exception:
-                            pass
+                        if not getattr(self, '_trend_only', False):
+                            try:
+                                st = getattr(self, '_scalp_stats', {}) or {}
+                                logger.info(f"🩳 Scalp health: confirms={st.get('confirms',0)}, signals={st.get('signals',0)}, dedup={st.get('dedup_skips',0)}, cooldown={st.get('cooldown_skips',0)}")
+                                # Reset counters for next interval
+                                self._scalp_stats = {'confirms': 0, 'signals': 0, 'dedup_skips': 0, 'cooldown_skips': 0}
+                            except Exception:
+                                pass
                         # Add ML stats to summary
                         if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
                             # Enhanced parallel system stats
@@ -4688,7 +4689,7 @@ class TradingBot:
                                 logger.info(f"🧠 Trend ML: {ml_stats.get('completed_trades', 0)} trades, {retrain_info.get('trades_until_next_retrain', 'N/A')} to retrain")
                             # Get mean reversion scorer from shared data for logging
                             shared_mr_scorer_log = shared.get('mean_reversion_scorer') if 'shared' in locals() else None
-                            if shared_mr_scorer_log:
+                            if shared_mr_scorer_log and not getattr(self, '_trend_only', False):
                                 mr_ml_stats = shared_mr_scorer_log.get_stats()
                                 logger.info(f"🧠 Mean Reversion ML: {mr_ml_stats.get('completed_trades', 0)} trades")
                         last_summary_log = datetime.now()
@@ -5041,14 +5042,17 @@ class TradingBot:
 
                         # (Reverted) Stream-side Scalp promotion execution queue removed; main loop handles promotion only
 
-                        # 1) Mean Reversion independent
-                        try:
-                            logger.debug(f"[{sym}] MR: analysis start")
-                            sig_mr_ind = detect_signal_mean_reversion(df.copy(), settings, sym)
-                        except Exception:
+                        # 1) Mean Reversion independent (disabled in trend-only mode)
+                        if not getattr(self, '_trend_only', False):
+                            try:
+                                logger.debug(f"[{sym}] MR: analysis start")
+                                sig_mr_ind = detect_signal_mean_reversion(df.copy(), settings, sym)
+                            except Exception:
+                                sig_mr_ind = None
+                            if sig_mr_ind is None:
+                                logger.debug(f"[{sym}] MR: skip — no_signal")
+                        else:
                             sig_mr_ind = None
-                        if sig_mr_ind is None:
-                            logger.debug(f"[{sym}] MR: skip — no_signal")
                         if sig_mr_ind is not None:
                             ef = sig_mr_ind.meta.get('mr_features', {}) if sig_mr_ind.meta else {}
                             # Enrich MR features minimally for EV gating
@@ -5353,6 +5357,8 @@ class TradingBot:
                                 verbose_tr = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('verbose', False)))
                             except Exception:
                                 verbose_tr = False
+                            if getattr(self, '_trend_only', False):
+                                verbose_tr = True
                             if verbose_tr:
                                 logger.info(f"[{sym}] 🔵 Trend: analysis start")
                             else:
@@ -5378,6 +5384,8 @@ class TradingBot:
                                 log_no_sig = bool((((cfg.get('trend', {}) or {}).get('logging', {}) or {}).get('no_signal_info', False)))
                             except Exception:
                                 log_no_sig = False
+                            if getattr(self, '_trend_only', False):
+                                log_no_sig = True
                             if log_no_sig:
                                 logger.info(f"[{sym}] ❌ No Trend Signal: Pullback conditions not met")
                         if sig_tr_ind is not None:

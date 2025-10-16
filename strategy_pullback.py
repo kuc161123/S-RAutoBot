@@ -7,8 +7,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# 3m microframe provider (injected from live_bot)
+_get_df3m = None  # type: Optional[callable]
+
+def set_trend_microframe_provider(fn):
+    """Register a callback: fn(symbol) -> pd.DataFrame for 3m microframe."""
+    global _get_df3m
+    _get_df3m = fn
+
 # --- Event notifier integration (for Telegram, etc.) ---
 _event_notifier = None  # type: Optional[callable]
+_redis_client = None    # type: Optional[object]
+_entry_executor = None  # type: Optional[callable]
 
 def set_trend_event_notifier(fn):
     """Register a notifier callback taking (symbol:str, text:str)."""
@@ -21,6 +31,98 @@ def _notify(symbol: str, text: str):
             _event_notifier(symbol, text)
     except Exception:
         pass
+
+# --- Simple Redis-backed state persistence (optional) ---
+def set_trend_state_store(redis_client):
+    """Register a Redis client for persisting per-symbol pullback state."""
+    global _redis_client
+    _redis_client = redis_client
+
+def set_trend_entry_executor(fn):
+    """Register entry executor: fn(symbol, side, entry, sl, tp, meta_dict)"""
+    global _entry_executor
+    _entry_executor = fn
+
+def _persist_state(symbol: str, state: 'BreakoutState'):
+    try:
+        if not _redis_client:
+            return
+        import json, time
+        payload = {
+            'state': state.state,
+            'breakout_level': float(state.breakout_level or 0.0),
+            'pullback_extreme': float(state.pullback_extreme or 0.0),
+            'pullback_time': state.pullback_time.isoformat() if state.pullback_time else None,
+            'breakout_time': state.breakout_time.isoformat() if state.breakout_time else None,
+            'confirmation_count': int(state.confirmation_count or 0),
+            'last_resistance': float(state.last_resistance or 0.0),
+            'last_support': float(state.last_support or 0.0),
+            'previous_pivot_low': float(state.previous_pivot_low or 0.0),
+            'previous_pivot_high': float(state.previous_pivot_high or 0.0),
+            'last_update_ts': int(time.time())
+        }
+        _redis_client.set(f'trend:state:{symbol}', json.dumps(payload))
+    except Exception:
+        pass
+
+def hydrate_trend_states(frames: Dict[str, pd.DataFrame], timeframe_min: int = 15, max_age_bars: int = 48) -> int:
+    """Hydrate in-memory breakout_states from Redis. Returns number restored."""
+    try:
+        if not _redis_client:
+            return 0
+        import time, json
+        restored = 0
+        try:
+            cur = 0
+            keys = []
+            while True:
+                cur, batch = _redis_client.scan(cur, match='trend:state:*', count=200)
+                keys.extend(batch or [])
+                if cur == 0:
+                    break
+        except Exception:
+            try:
+                keys = _redis_client.keys('trend:state:*') or []
+            except Exception:
+                keys = []
+        now = int(time.time()); max_age = int(max(1, max_age_bars) * timeframe_min * 60)
+        for k in keys:
+            try:
+                raw = _redis_client.get(k)
+                if not raw:
+                    continue
+                rec = json.loads(raw)
+                ts = int(rec.get('last_update_ts', 0) or 0)
+                if ts and (now - ts) > max_age:
+                    continue
+                sym = k.split(':', 2)[-1]
+                if sym not in frames:
+                    continue
+                st = breakout_states.setdefault(sym, BreakoutState())
+                st.state = str(rec.get('state', st.state))
+                st.breakout_level = float(rec.get('breakout_level', 0.0))
+                st.pullback_extreme = float(rec.get('pullback_extreme', 0.0))
+                try:
+                    pb = rec.get('pullback_time')
+                    st.pullback_time = pd.to_datetime(pb) if pb else None
+                except Exception:
+                    st.pullback_time = None
+                try:
+                    bo = rec.get('breakout_time')
+                    st.breakout_time = pd.to_datetime(bo) if bo else None
+                except Exception:
+                    st.breakout_time = None
+                st.confirmation_count = int(rec.get('confirmation_count', 0))
+                st.last_resistance = float(rec.get('last_resistance', 0.0))
+                st.last_support = float(rec.get('last_support', 0.0))
+                st.previous_pivot_low = float(rec.get('previous_pivot_low', 0.0))
+                st.previous_pivot_high = float(rec.get('previous_pivot_high', 0.0))
+                restored += 1
+            except Exception:
+                continue
+        return restored
+    except Exception:
+        return 0
 
 @dataclass
 class Settings:
@@ -45,6 +147,9 @@ class Settings:
     extra_pivot_breath_pct: float = 0.01
     # Maximum bars to wait after HL/LH for confirmations before forgetting the setup
     confirmation_timeout_bars: int = 6
+    # Use 3m microframe for pullback and confirmation phases
+    use_3m_pullback: bool = True
+    use_3m_confirm: bool = True
 
 @dataclass
 class Signal:
@@ -394,11 +499,23 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     
     elif state.state == "RESISTANCE_BROKEN":
         # Wait for higher low above old resistance
-        if detect_higher_low(df, state.breakout_level):
+        df_pull = df
+        try:
+            if s.use_3m_pullback and _get_df3m is not None:
+                d3 = _get_df3m(symbol)
+                if d3 is not None and len(d3) >= 30:
+                    df_pull = d3
+        except Exception:
+            df_pull = df
+        if detect_higher_low(df_pull, state.breakout_level):
             state.state = "HL_FORMED"
-            state.pullback_extreme = df["low"].iloc[-10:].min()  # Record the pullback low
+            try:
+                src = df_pull if df_pull is not None else df
+                state.pullback_extreme = src["low"].iloc[-10:].min()  # Record the pullback low
+            except Exception:
+                state.pullback_extreme = df["low"].iloc[-10:].min()
             state.pullback_time = current_time
-            msg = f"[{symbol}] Higher Low formed above {state.breakout_level:.4f}, waiting for confirmation"
+            msg = f"[{symbol}] Higher Low {'(3m) ' if df_pull is not df else ''}formed above {state.breakout_level:.4f}, waiting for confirmation"
             logger.info(msg)
             _notify(symbol, f"🔵 Trend: {msg}")
             _persist_state(symbol, state)
@@ -414,11 +531,23 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     
     elif state.state == "SUPPORT_BROKEN":
         # Wait for lower high below old support
-        if detect_lower_high(df, state.breakout_level):
+        df_pull = df
+        try:
+            if s.use_3m_pullback and _get_df3m is not None:
+                d3 = _get_df3m(symbol)
+                if d3 is not None and len(d3) >= 30:
+                    df_pull = d3
+        except Exception:
+            df_pull = df
+        if detect_lower_high(df_pull, state.breakout_level):
             state.state = "LH_FORMED"
-            state.pullback_extreme = df["high"].iloc[-10:].max()  # Record the pullback high
+            try:
+                src = df_pull if df_pull is not None else df
+                state.pullback_extreme = src["high"].iloc[-10:].max()
+            except Exception:
+                state.pullback_extreme = df["high"].iloc[-10:].max()  # Record the pullback high
             state.pullback_time = current_time
-            msg = f"[{symbol}] Lower High formed below {state.breakout_level:.4f}, waiting for confirmation"
+            msg = f"[{symbol}] Lower High {'(3m) ' if df_pull is not df else ''}formed below {state.breakout_level:.4f}, waiting for confirmation"
             logger.info(msg)
             _notify(symbol, f"🔵 Trend: {msg}")
             _persist_state(symbol, state)
@@ -434,7 +563,15 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     
     elif state.state == "HL_FORMED":
         # Count confirmation candles for long
-        confirmations = count_confirmation_candles(df, "long", s.confirmation_candles)
+        df_conf = df
+        try:
+            if s.use_3m_confirm and _get_df3m is not None:
+                d3 = _get_df3m(symbol)
+                if d3 is not None and len(d3) >= max(10, s.confirmation_candles+2):
+                    df_conf = d3
+        except Exception:
+            df_conf = df
+        confirmations = count_confirmation_candles(df_conf, "long", s.confirmation_candles)
         # Verbose per-candle confirmation diagnostics
         try:
             if confirmations > 0 and confirmations < s.confirmation_candles:
@@ -451,14 +588,14 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     vol_ratio = float(df['volume'].iloc[-1] / df['volume'].rolling(20).mean().iloc[-1])
                 except Exception:
                     vol_ratio = 1.0
-                logger.info(f"[{symbol}] HL confirmation {confirmations}/{s.confirmation_candles} | Body {body_ratio:.1f}% | Range/ATR {candle_range_atr:.1f}% | Vol× {vol_ratio:.2f}")
+                logger.info(f"[{symbol}] HL confirmation {'(3m) ' if df_conf is not df else ''}{confirmations}/{s.confirmation_candles} | Body {body_ratio:.1f}% | Range/ATR {candle_range_atr:.1f}% | Vol× {vol_ratio:.2f}")
         except Exception:
             pass
         # Notify on confirmation progress (only when it increases)
         try:
             if confirmations > 0 and confirmations > int(state.confirmation_count):
                 state.confirmation_count = confirmations
-                _notify(symbol, f"🔵 Trend: HL confirmation {confirmations}/{s.confirmation_candles}")
+                _notify(symbol, f"🔵 Trend: HL confirmation {'(3m) ' if df_conf is not df else ''}{confirmations}/{s.confirmation_candles}")
                 _persist_state(symbol, state)
         except Exception:
             pass
@@ -521,7 +658,13 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             logger.info(sig_msg)
             _notify(symbol, sig_msg)
             _persist_state(symbol, state)
-            
+            # Stream-side entry execution (if registered)
+            try:
+                if _entry_executor is not None:
+                    meta = {"phase":"3m_confirm","hl": True}
+                    _entry_executor(symbol, "long", float(entry), float(sl), float(tp), meta)
+            except Exception:
+                pass
             return Signal("long", entry, sl, tp, 
                          f"Pullback long: HL above {state.breakout_level:.4f} + {s.confirmation_candles} confirmations",
                          {"atr": atr, "res": nearestRes, "sup": nearestSup, 
@@ -558,7 +701,15 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     
     elif state.state == "LH_FORMED":
         # Count confirmation candles for short
-        confirmations = count_confirmation_candles(df, "short", s.confirmation_candles)
+        df_conf = df
+        try:
+            if s.use_3m_confirm and _get_df3m is not None:
+                d3 = _get_df3m(symbol)
+                if d3 is not None and len(d3) >= max(10, s.confirmation_candles+2):
+                    df_conf = d3
+        except Exception:
+            df_conf = df
+        confirmations = count_confirmation_candles(df_conf, "short", s.confirmation_candles)
         # Verbose per-candle confirmation diagnostics
         try:
             if confirmations > 0 and confirmations < s.confirmation_candles:
@@ -575,13 +726,13 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     vol_ratio = float(df['volume'].iloc[-1] / df['volume'].rolling(20).mean().iloc[-1])
                 except Exception:
                     vol_ratio = 1.0
-                logger.info(f"[{symbol}] LH confirmation {confirmations}/{s.confirmation_candles} | Body {body_ratio:.1f}% | Range/ATR {candle_range_atr:.1f}% | Vol× {vol_ratio:.2f}")
+                logger.info(f"[{symbol}] LH confirmation {'(3m) ' if df_conf is not df else ''}{confirmations}/{s.confirmation_candles} | Body {body_ratio:.1f}% | Range/ATR {candle_range_atr:.1f}% | Vol× {vol_ratio:.2f}")
         except Exception:
             pass
         # Log each confirmation candle as it accrues (until signal fires)
         try:
             if confirmations > 0 and confirmations < s.confirmation_candles:
-                logger.info(f"[{symbol}] LH confirmation {confirmations}/{s.confirmation_candles}")
+                logger.info(f"[{symbol}] LH confirmation {'(3m) ' if df_conf is not df else ''}{confirmations}/{s.confirmation_candles}")
         except Exception:
             pass
         # Notify on confirmation progress (only when it increases)
@@ -651,6 +802,13 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             logger.info(sig_msg)
             _notify(symbol, sig_msg)
             _persist_state(symbol, state)
+            # Stream-side entry execution (if registered)
+            try:
+                if _entry_executor is not None:
+                    meta = {"phase":"3m_confirm","lh": True}
+                    _entry_executor(symbol, "short", float(entry), float(sl), float(tp), meta)
+            except Exception:
+                pass
             
             return Signal("short", entry, sl, tp,
                          f"Pullback short: LH below {state.breakout_level:.4f} + {s.confirmation_candles} confirmations",
@@ -718,6 +876,11 @@ def reset_symbol_state(symbol:str):
     if symbol in breakout_states:
         logger.info(f"[{symbol}] Resetting breakout state to NEUTRAL")
         breakout_states[symbol] = BreakoutState()
+        try:
+            if _redis_client:
+                _redis_client.delete(f'trend:state:{symbol}')
+        except Exception:
+            pass
 
 def get_trend_states_snapshot() -> Dict[str, dict]:
     """Return a lightweight snapshot of current pullback states per symbol."""

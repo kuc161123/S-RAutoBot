@@ -3584,7 +3584,9 @@ class TradingBot:
             confirmation_candles=cfg["trade"].get("confirmation_candles", 2),
             # Trend-specific breathing room for pivot stops
             extra_pivot_breath_pct=float(((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('extra_pivot_breath_pct', 0.01)),
-            confirmation_timeout_bars=int((cfg.get('trend', {}) or {}).get('confirmation_timeout_bars', 6))
+            confirmation_timeout_bars=int((cfg.get('trend', {}) or {}).get('confirmation_timeout_bars', 6)),
+            use_3m_pullback=bool((((cfg.get('trend', {}) or {}).get('context', {}) or {}).get('use_3m_pullback', True))),
+            use_3m_confirm=bool((((cfg.get('trend', {}) or {}).get('context', {}) or {}).get('use_3m_confirm', True)))
         )
         # Pullback detection uses the generic Settings() already constructed above
         # Keep a separate alias to avoid refactoring call sites
@@ -3949,7 +3951,7 @@ class TradingBot:
 
                 # Wire Trend event notifications to Telegram
                 try:
-                    from strategy_pullback import set_trend_event_notifier
+                    from strategy_pullback import set_trend_event_notifier, set_trend_microframe_provider, set_trend_entry_executor
                     def _trend_notifier(symbol: str, text: str):
                         try:
                             # Fire-and-forget send to Telegram
@@ -3957,6 +3959,65 @@ class TradingBot:
                         except Exception:
                             pass
                     set_trend_event_notifier(_trend_notifier)
+                    # Provide 3m frames to pullback strategy for micro detection
+                    try:
+                        set_trend_microframe_provider(lambda sym: self.frames_3m.get(sym))
+                    except Exception:
+                        pass
+                    # Provide stream-side entry executor to strategy (3m execution)
+                    async def _stream_execute_trend(symbol: str, side: str, entry: float, sl: float, tp: float, meta: dict):
+                        try:
+                            exec_cfg = ((self.config.get('trend', {}) or {}).get('exec', {}) or {})
+                            if not bool(exec_cfg.get('allow_stream_entry', True)):
+                                return
+                            # Guard: existing position
+                            if symbol in self.book.positions:
+                                return
+                            # Acquire lock
+                            import asyncio as _asyncio
+                            if symbol not in self._exec_locks:
+                                self._exec_locks[symbol] = _asyncio.Lock()
+                            async with self._exec_locks[symbol]:
+                                if symbol in self.book.positions:
+                                    return
+                                # Compute qty via sizer
+                                meta_cfg = self.config.get('symbol_meta', {})
+                                sm = meta_for(symbol, meta_cfg)
+                                qty_step = float(sm.get('qty_step', 0.001)); min_qty = float(sm.get('min_qty', 0.001))
+                                qty = self.sizer.qty_for(float(entry), float(sl), qty_step, min_qty)
+                                if qty <= 0:
+                                    return
+                                # Place market
+                                side_mkt = 'Buy' if side == 'long' else 'Sell'
+                                self.bybit.place_market(symbol, side_mkt, qty, reduce_only=False)
+                                # Set TP/SL
+                                try:
+                                    self.bybit.set_tpsl(symbol, take_profit=float(tp), stop_loss=float(sl), qty=qty)
+                                except Exception:
+                                    try:
+                                        self.bybit.set_tpsl(symbol, take_profit=float(tp), stop_loss=float(sl))
+                                    except Exception:
+                                        pass
+                                # Track locally
+                                try:
+                                    from position_mgr import Position
+                                    self.book.positions[symbol] = Position(side=side, qty=float(qty), entry=float(entry), sl=float(sl), tp=float(tp), entry_time=datetime.utcnow(), strategy_name='trend_pullback')
+                                except Exception:
+                                    pass
+                                # Telegram notify
+                                try:
+                                    if self.tg:
+                                        await self.tg.send_message(f"⚡ Stream Entry: {symbol} {side.upper()} qty={qty} entry={entry:.4f} sl={sl:.4f} tp={tp:.4f}")
+                                except Exception:
+                                    pass
+                        except Exception as e:
+                            logger.debug(f"Stream execute trend error [{symbol}]: {e}")
+                    def _entry_exec(symbol, side, entry, sl, tp, m):
+                        try:
+                            asyncio.create_task(_stream_execute_trend(symbol, side, entry, sl, tp, m or {}))
+                        except Exception:
+                            pass
+                    set_trend_entry_executor(_entry_exec)
                 except Exception:
                     logger.debug("Failed to wire trend notifier to Telegram")
 

@@ -213,17 +213,54 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     
     state = breakout_states[symbol]
 
+    # Utility: compact preconditions logger
+    def _log_preconditions(reason: str = ""):  # reason: optional context tag
+        try:
+            # Basic distances to S/R in ATR units (positive means beyond the level)
+            dist_res_atr = (c - float(state.last_resistance)) / max(1e-9, atr) if state.last_resistance else 0.0
+            dist_sup_atr = (float(state.last_support) - c) / max(1e-9, atr) if state.last_support else 0.0
+            # Confirmation progress based on current state
+            conf_need = int(s.confirmation_candles)
+            conf_have = 0
+            st = state.state
+            if st in ("HL_FORMED", "RESISTANCE_BROKEN"):
+                conf_have = count_confirmation_candles(df, "long", conf_need)
+            elif st in ("LH_FORMED", "SUPPORT_BROKEN"):
+                conf_have = count_confirmation_candles(df, "short", conf_need)
+            # Trend structure snapshot (best-effort from last pivots when available)
+            # Recompute minimally to avoid holding external state
+            try:
+                ph2 = pd.Series(_pivot_high(df["high"], s.left, s.right)).dropna()
+                pl2 = pd.Series(_pivot_low(df["low"], s.left, s.right)).dropna()
+                trend_up = bool(len(ph2) >= 2 and len(pl2) >= 2 and float(ph2.iloc[-1]) > float(ph2.iloc[-2]) and float(pl2.iloc[-1]) > float(pl2.iloc[-2]))
+                trend_dn = bool(len(ph2) >= 2 and len(pl2) >= 2 and float(ph2.iloc[-1]) < float(ph2.iloc[-2]) and float(pl2.iloc[-1]) < float(pl2.iloc[-2]))
+            except Exception:
+                trend_up = trend_dn = False
+            logger.info(
+                f"[{symbol}] Preconditions: state={state.state} res={state.last_resistance:.4f} sup={state.last_support:.4f} "
+                f"dResATR={dist_res_atr:.2f} dSupATR={dist_sup_atr:.2f} conf={conf_have}/{conf_need} "
+                f"trendUp={trend_up} trendDn={trend_dn}{(' reason='+reason) if reason else ''}"
+            )
+        except Exception:
+            pass
+
     # Cooldown logic to prevent multiple signals in quick succession
     if state.last_signal_candle_time:
         time_since_last_signal = df.index[-1] - state.last_signal_candle_time
         # Assuming 15-minute candles, convert min_candles_between_signals to timedelta
         cooldown_duration = pd.Timedelta(minutes=s.min_candles_between_signals * 15)
         if time_since_last_signal < cooldown_duration:
+            _log_preconditions("cooldown")
             return None # Still in cooldown period
     
     # Require minimum candles for reliable S/R detection
     min_candles = 200
     if len(df) < min_candles:
+        # Not enough history for stable S/R
+        try:
+            logger.info(f"[{symbol}] Preconditions: insufficient_history ({len(df)}/{min_candles})")
+        except Exception:
+            pass
         return None
     
     # Calculate current S/R levels
@@ -235,6 +272,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     dh = ph.dropna()
     dl = pl.dropna()
     if len(dh) < 2 or len(dl) < 2:
+        _log_preconditions("sr_insufficient")
         return None
     
     lastHigh, prevHigh = float(dh.iloc[-1]), float(dh.iloc[-2])
@@ -550,6 +588,8 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         # State will be reset when position closes (handled in live_bot.py)
         pass
     
+    # No signal this bar: emit snapshot of current preconditions
+    _log_preconditions()
     return None
 
 def reset_symbol_state(symbol:str):

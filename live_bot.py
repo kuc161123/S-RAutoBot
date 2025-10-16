@@ -1332,7 +1332,7 @@ class TradingBot:
                                     logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=volatility_extreme)")
                                 except Exception:
                                     pass
-                                continue
+                                # Do not continue; proceed to Trend analysis
                         except Exception:
                             pass
 
@@ -5177,7 +5177,6 @@ class TradingBot:
                                             if mr_phantom_tracker:
                                                 mr_phantom_tracker.record_mr_signal(sym, sig_mr_ind.__dict__, float(ml_score_mr or 0.0), False, {}, ef)
                                             sig_mr_ind = None
-                                            continue
                                         elif mode == 'soft' and mild:
                                             # Apply soft penalty to ML threshold
                                             try:

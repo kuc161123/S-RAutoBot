@@ -83,6 +83,11 @@ trade:
   fee_total_pct: 0.00110   # Estimated total fee fraction for entry+exit (~0.11%) used for fee-aware sizing (aligns with screenshots)
 
 
+# Runtime mode switches
+modes:
+  trend_only: true   # When true, disable MR & Scalp (exec + phantom) and mute their logs
+
+
 # Strategy-specific regime thresholds and hysteresis
 strategy_regimes:
   mr:
@@ -144,7 +149,7 @@ trend:
     use_3m_context: true    # Use 3-minute micro context for diagnostics/logging
     enforce: false          # Do not block execution by 3m micro-context (phantoms free to learn)
   logging:
-    phantom_info: false     # If true, log Trend phantom decisions at INFO; otherwise DEBUG
+    phantom_info: true      # If true, log Trend phantom decisions at INFO; otherwise DEBUG
   explore:
     enabled: true
     slope_min: 4.0

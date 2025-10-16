@@ -607,6 +607,8 @@ class TradingBot:
         # Trend history readiness tracking (avoid log spam when 15m history is short)
         self._trend_hist_warned: Dict[str, bool] = {}
         self._trend_hist_min: int = 80  # minimum 15m bars required for pullback detection
+        # Trend-only mode toggle (set in run() from config/env)
+        self._trend_only: bool = False
 
     def _phantom_trend_regime_ok(self, sym: str, df: 'pd.DataFrame', regime_analysis) -> tuple[bool, str]:
         """Return whether Trend phantom should be recorded under current regime.
@@ -1297,6 +1299,13 @@ class TradingBot:
                 except Exception:
                     pass
 
+                # Trend-only mode: skip any Scalp analysis/logging on 3m stream
+                try:
+                    if getattr(self, '_trend_only', False):
+                        continue
+                except Exception:
+                    pass
+
                 # Analysis trace (start)
                 try:
                     logger.debug(f"[{sym}] 🩳 Scalp(3m) analysis start: tf={timeframe}m")
@@ -1911,6 +1920,12 @@ class TradingBot:
 
         This preserves Scalp independence by only engaging when the 3m loop isn't producing confirms.
         """
+        # Trend-only mode: completely skip Scalp fallback path
+        try:
+            if getattr(self, '_trend_only', False):
+                return
+        except Exception:
+            pass
         # Guards
         try:
             s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
@@ -3388,6 +3403,45 @@ class TradingBot:
         
         # Store config as instance variable
         self.config = cfg
+        # Trend-only mode toggle from config/env
+        try:
+            self._trend_only = bool(((cfg.get('modes', {}) or {}).get('trend_only', False)))
+        except Exception:
+            self._trend_only = False
+        try:
+            if not self._trend_only:
+                env_flag = str(os.getenv('TREND_ONLY', '')).strip().lower()
+                self._trend_only = env_flag in ('1','true','yes','on')
+        except Exception:
+            pass
+        if self._trend_only:
+            # Mutate runtime config to disable Scalp and MR execution paths
+            try:
+                cfg.setdefault('scalp', {})['enabled'] = False
+            except Exception:
+                pass
+            try:
+                cfg.setdefault('mr', {}).setdefault('exec', {})['enabled'] = False
+            except Exception:
+                pass
+            # Silence non-trend logs via a lightweight filter
+            class _TrendOnlyFilter(logging.Filter):
+                def filter(self, record: logging.LogRecord) -> bool:
+                    msg = str(record.getMessage())
+                    # Drop common MR/Scalp lines
+                    noisy = (
+                        'Mean Reversion' in msg or ' phantom_mr' in msg or ' exec_mr' in msg or
+                        '🩳' in msg or 'Scalp' in msg or 'scalp' in msg or 'MR execution' in msg or 'MR ' in msg
+                    )
+                    return not noisy
+            try:
+                logging.getLogger().addFilter(_TrendOnlyFilter())
+            except Exception:
+                pass
+            try:
+                logger.info('🔕 Trend-only mode active: MR & Scalp disabled (exec + phantom); logs muted for non-trend')
+            except Exception:
+                pass
         # Startup build fingerprint (commit hash + timestamp)
         try:
             sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
@@ -3444,6 +3498,16 @@ class TradingBot:
         # Import strategies for parallel system
         from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion
         from strategy_trend_breakout import detect_signal as detect_trend_signal, TrendSettings as TrendSettingsTB
+        # Trend-only overrides: disable MR/Scalp detection functions at source
+        if self._trend_only:
+            try:
+                detect_signal_mean_reversion = (lambda *args, **kwargs: None)
+            except Exception:
+                pass
+            try:
+                globals()['detect_scalp_signal'] = None
+            except Exception:
+                pass
         use_enhanced_parallel = cfg["trade"].get("use_enhanced_parallel", True) and ENHANCED_ML_AVAILABLE
         use_regime_switching = cfg["trade"].get("use_regime_switching", False)
         # Backward-compat: no reset function in Trend-only mode

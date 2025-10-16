@@ -623,6 +623,26 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         pass
     
     # No signal this bar: emit snapshot of current preconditions
+    # Also provide a concise next-step hint when neutral
+    try:
+        if state.state == "NEUTRAL":
+            hints = []
+            if state.last_resistance:
+                try:
+                    if c <= float(state.last_resistance):
+                        hints.append(f"close > {float(state.last_resistance):.4f} (resistance)")
+                except Exception:
+                    pass
+            if state.last_support:
+                try:
+                    if c >= float(state.last_support):
+                        hints.append(f"close < {float(state.last_support):.4f} (support)")
+                except Exception:
+                    pass
+            if hints:
+                logger.info(f"[{symbol}] Next: need {' OR '.join(hints)} to start pullback sequence")
+    except Exception:
+        pass
     _log_preconditions()
     return None
 

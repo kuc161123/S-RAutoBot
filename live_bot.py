@@ -3424,6 +3424,11 @@ class TradingBot:
                 cfg.setdefault('mr', {}).setdefault('exec', {})['enabled'] = False
             except Exception:
                 pass
+            # Prefer pure Trend Pullback path (no enhanced-parallel orchestration)
+            try:
+                cfg.setdefault('trade', {})['use_enhanced_parallel'] = False
+            except Exception:
+                pass
             # Silence non-trend logs via a lightweight filter
             class _TrendOnlyFilter(logging.Filter):
                 def filter(self, record: logging.LogRecord) -> bool:
@@ -3431,11 +3436,22 @@ class TradingBot:
                     # Drop common MR/Scalp lines
                     noisy = (
                         'Mean Reversion' in msg or ' phantom_mr' in msg or ' exec_mr' in msg or
-                        '🩳' in msg or 'Scalp' in msg or 'scalp' in msg or 'MR execution' in msg or 'MR ' in msg
+                        '🩳' in msg or 'Scalp' in msg or 'scalp' in msg or 'MR execution' in msg or
+                        'MR ' in msg or 'MR:' in msg or 'RANGE DEBUG' in msg or 'Range details' in msg or 'FALLBACK' in msg
                     )
                     return not noisy
             try:
                 logging.getLogger().addFilter(_TrendOnlyFilter())
+            except Exception:
+                pass
+            # Reduce verbosity of non-trend modules explicitly
+            try:
+                for name in (
+                    'enhanced_market_regime', 'strategy_mean_reversion', 'ml_scorer_mean_reversion',
+                    'enhanced_mr_scorer', 'mr_phantom_tracker', 'strategy_scalp', 'scalp_phantom_tracker',
+                    'ml_scorer_scalp'
+                ):
+                    logging.getLogger(name).setLevel(logging.WARNING)
             except Exception:
                 pass
             try:

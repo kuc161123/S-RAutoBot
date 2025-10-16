@@ -616,6 +616,11 @@ class TradingBot:
         Applies router.htf_bias thresholds if enabled; otherwise uses trend.regime settings.
         """
         try:
+            if getattr(self, '_disable_gates', False):
+                return True, 'gates_disabled'
+        except Exception:
+            pass
+        try:
             cfg = self.config
         except Exception:
             cfg = {}
@@ -653,6 +658,11 @@ class TradingBot:
 
         Uses router.htf_bias thresholds for range/ts if enabled; else basic MR regime checks.
         """
+        try:
+            if getattr(self, '_disable_gates', False):
+                return True, 'gates_disabled'
+        except Exception:
+            pass
         try:
             cfg = self.config
         except Exception:
@@ -3403,6 +3413,15 @@ class TradingBot:
         
         # Store config as instance variable
         self.config = cfg
+        # Global gating disable (per user request to allow phantom and executed trades through)
+        try:
+            self._disable_gates = True
+            # Also reflect in config to minimize gated branches
+            cfg.setdefault('trend', {}).setdefault('regime', {})['enabled'] = False
+            cfg.setdefault('mr', {}).setdefault('regime', {})['enabled'] = False
+            cfg.setdefault('router', {}).setdefault('htf_bias', {})['enabled'] = False
+        except Exception:
+            self._disable_gates = True
         # Trend-only mode toggle from config/env
         try:
             self._trend_only = bool(((cfg.get('modes', {}) or {}).get('trend_only', False)))
@@ -3783,6 +3802,16 @@ class TradingBot:
         
         # Fetch historical data for all symbols
         await self.load_or_fetch_initial_data(symbols, tf)
+
+        # Wire Trend pullback state persistence + hydrate from Redis
+        try:
+            from strategy_pullback import set_trend_state_store, hydrate_trend_states
+            set_trend_state_store(self._redis)
+            restored = hydrate_trend_states(self.frames, timeframe_min=int(tf), max_age_bars=int((cfg.get('trend',{}) or {}).get('state_max_age_bars', 48)))
+            if restored:
+                logger.info(f"Trend state: restored {restored} symbols from Redis")
+        except Exception as e:
+            logger.debug(f"Trend state hydrate failed: {e}")
         
         # Optional pre-run setup (scalp backfill, phantom timeouts)
         try:

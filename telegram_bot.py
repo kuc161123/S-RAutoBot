@@ -101,6 +101,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalpqa", self.scalp_qa))
         self.app.add_handler(CommandHandler("scalppromote", self.scalp_promotion_status))
         self.app.add_handler(CommandHandler("trendpromote", self.trend_promotion_status))
+        # Trend ML high-ML threshold changer
+        self.app.add_handler(CommandHandler("trendhighml", self.trend_high_ml))
         self.app.add_handler(CallbackQueryHandler(self.ui_callback, pattern=r"^ui:"))
         self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
         self.app.add_handler(CommandHandler("panicclose", self.panic_close))
@@ -1962,6 +1964,24 @@ HTF S/R module disabled
         except Exception as e:
             logger.error(f"Error in recent_trades: {e}")
             await update.message.reply_text("Error getting recent trades")
+
+    async def trend_high_ml(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Set Trend high-ML execution threshold (also updates min_ml). Usage: /trendhighml 90"""
+        try:
+            if not ctx.args:
+                await self.safe_reply(update, "Usage: /trendhighml <threshold>")
+                return
+            val = float(ctx.args[0])
+            cfg = self.shared.get('config', {}) or {}
+            tr_exec = ((cfg.setdefault('trend', {})).setdefault('exec', {}))
+            old_hi = tr_exec.get('high_ml_force', None)
+            old_min = tr_exec.get('min_ml', None)
+            tr_exec['high_ml_force'] = val
+            tr_exec['min_ml'] = min(val, tr_exec.get('min_ml', val))
+            await self.safe_reply(update, f"✅ Trend high‑ML threshold updated: {old_hi} → {val} (min_ml: {old_min} → {tr_exec['min_ml']})")
+        except Exception as exc:
+            logger.warning(f"trend_high_ml failed: {exc}")
+            await self.safe_reply(update, "⚠️ Failed to update Trend high‑ML threshold")
 
     async def trend_states(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show current Trend Pullback state per symbol"""

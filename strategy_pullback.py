@@ -376,6 +376,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             msg = f"[{symbol}] Resistance broken at {nearestRes:.4f}, waiting for pullback and HL"
             logger.info(msg)
             _notify(symbol, f"🔵 Trend: {msg}")
+            _persist_state(symbol, state)
             
         elif trendDn and c < nearestSup and vol_ok and ema_ok_short:
             # Support broken - wait for pullback
@@ -389,6 +390,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             msg = f"[{symbol}] Support broken at {nearestSup:.4f}, waiting for pullback and LH"
             logger.info(msg)
             _notify(symbol, f"🔵 Trend: {msg}")
+            _persist_state(symbol, state)
     
     elif state.state == "RESISTANCE_BROKEN":
         # Wait for higher low above old resistance
@@ -399,6 +401,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             msg = f"[{symbol}] Higher Low formed above {state.breakout_level:.4f}, waiting for confirmation"
             logger.info(msg)
             _notify(symbol, f"🔵 Trend: {msg}")
+            _persist_state(symbol, state)
         
         # Reset if price falls back below breakout level
         elif c < state.breakout_level:
@@ -407,6 +410,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             _notify(symbol, f"🛑 Trend: {msg}")
             state.state = "NEUTRAL"
             state.confirmation_count = 0
+            _persist_state(symbol, state)
     
     elif state.state == "SUPPORT_BROKEN":
         # Wait for lower high below old support
@@ -417,6 +421,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             msg = f"[{symbol}] Lower High formed below {state.breakout_level:.4f}, waiting for confirmation"
             logger.info(msg)
             _notify(symbol, f"🔵 Trend: {msg}")
+            _persist_state(symbol, state)
         
         # Reset if price rises back above breakout level
         elif c > state.breakout_level:
@@ -425,6 +430,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             _notify(symbol, f"🛑 Trend: {msg}")
             state.state = "NEUTRAL"
             state.confirmation_count = 0
+            _persist_state(symbol, state)
     
     elif state.state == "HL_FORMED":
         # Count confirmation candles for long
@@ -453,6 +459,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             if confirmations > 0 and confirmations > int(state.confirmation_count):
                 state.confirmation_count = confirmations
                 _notify(symbol, f"🔵 Trend: HL confirmation {confirmations}/{s.confirmation_candles}")
+                _persist_state(symbol, state)
         except Exception:
             pass
 
@@ -513,6 +520,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             sig_msg = f"[{symbol}] 🟢 LONG SIGNAL (Pullback) - Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}"
             logger.info(sig_msg)
             _notify(symbol, sig_msg)
+            _persist_state(symbol, state)
             
             return Signal("long", entry, sl, tp, 
                          f"Pullback long: HL above {state.breakout_level:.4f} + {s.confirmation_candles} confirmations",
@@ -526,6 +534,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             _notify(symbol, f"🛑 Trend: {msg}")
             state.state = "NEUTRAL"
             state.confirmation_count = 0
+            _persist_state(symbol, state)
         # Reset if price breaks below pullback low
         elif df["low"].iloc[-1] < state.pullback_extreme:
             msg = f"[{symbol}] Pullback low broken, resetting to neutral"
@@ -580,6 +589,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             if confirmations > 0 and confirmations > int(state.confirmation_count):
                 state.confirmation_count = confirmations
                 _notify(symbol, f"🔵 Trend: LH confirmation {confirmations}/{s.confirmation_candles}")
+                _persist_state(symbol, state)
         except Exception:
             pass
 
@@ -640,6 +650,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             sig_msg = f"[{symbol}] 🔴 SHORT SIGNAL (Pullback) - Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}"
             logger.info(sig_msg)
             _notify(symbol, sig_msg)
+            _persist_state(symbol, state)
             
             return Signal("short", entry, sl, tp,
                          f"Pullback short: LH below {state.breakout_level:.4f} + {s.confirmation_candles} confirmations",
@@ -653,6 +664,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             _notify(symbol, f"🛑 Trend: {msg}")
             state.state = "NEUTRAL"
             state.confirmation_count = 0
+            _persist_state(symbol, state)
         # Reset if price breaks above pullback high
         elif df["high"].iloc[-1] > state.pullback_extreme:
             msg = f"[{symbol}] Pullback high broken, resetting to neutral"

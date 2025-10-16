@@ -25,6 +25,9 @@ class Settings:
     mtf_weight:float=2.0  # Prefer major levels 2x over minor
     mtf_min_strength:float=3.0  # Minimum strength for major levels
     min_candles_between_signals:int=5 # Minimum number of candles between signals for the same symbol
+    # Extra breathing room when a pivot-based stop is selected
+    # Expressed as fraction of entry price (e.g., 0.01 = 1%)
+    extra_pivot_breath_pct: float = 0.01
 
 @dataclass
 class Signal:
@@ -395,6 +398,12 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             
             # Use the lowest SL (gives most room)
             sl = min(sl_option1, sl_option2, sl_option3)
+
+            # If pivot-based stop selected, add breathing room (move SL further by +extra% of entry)
+            if sl == sl_option1 and s.extra_pivot_breath_pct > 0:
+                old_sl = sl
+                sl = float(sl) - float(entry) * float(s.extra_pivot_breath_pct)
+                logger.info(f"[{symbol}] Pivot stop breathing: -{s.extra_pivot_breath_pct*100:.1f}% of entry ({old_sl:.4f} -> {sl:.4f})")
             
             # Ensure minimum stop distance (at least 1% from entry)
             min_stop_distance = entry * 0.01
@@ -485,6 +494,12 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             
             # Use the highest SL (gives most room)
             sl = max(sl_option1, sl_option2, sl_option3)
+
+            # If pivot-based stop selected, add breathing room (move SL further by +extra% of entry)
+            if sl == sl_option1 and s.extra_pivot_breath_pct > 0:
+                old_sl = sl
+                sl = float(sl) + float(entry) * float(s.extra_pivot_breath_pct)
+                logger.info(f"[{symbol}] Pivot stop breathing: +{s.extra_pivot_breath_pct*100:.1f}% of entry ({old_sl:.4f} -> {sl:.4f})")
             
             # Ensure minimum stop distance (at least 1% from entry)
             min_stop_distance = entry * 0.01

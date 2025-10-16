@@ -3562,7 +3562,9 @@ class TradingBot:
             vol_len=cfg["trade"]["vol_len"],
             vol_mult=cfg["trade"]["vol_mult"],
             both_hit_rule=cfg["trade"]["both_hit_rule"],
-            confirmation_candles=cfg["trade"].get("confirmation_candles", 2)
+            confirmation_candles=cfg["trade"].get("confirmation_candles", 2),
+            # Trend-specific breathing room for pivot stops
+            extra_pivot_breath_pct=float(((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('extra_pivot_breath_pct', 0.01))
         )
         # Pullback detection uses the generic Settings() already constructed above
         # Keep a separate alias to avoid refactoring call sites

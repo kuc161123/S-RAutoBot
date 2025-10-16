@@ -4709,7 +4709,9 @@ class TradingBot:
                     except Exception:
                         independence_enabled = False
 
-                    if independence_enabled and ENHANCED_ML_AVAILABLE:
+                    # In trend-only mode, always run independence block to ensure Trend logging,
+                    # regardless of enhanced ML availability.
+                    if independence_enabled or getattr(self, '_trend_only', False):
                         # Take a regime snapshot once for per-strategy filters
                         try:
                             regime_analysis = get_enhanced_market_regime(df, sym)

@@ -5233,8 +5233,62 @@ class TradingBot:
                                             logger.debug(f"[{sym}] SL recalc skipped: {_slerr}")
                             except Exception:
                                 pass
-                            # Set TP/SL
-                            bybit.set_tpsl(sym, take_profit=sig_obj.tp, stop_loss=sig_obj.sl, qty=qty)
+                            # Set TP/SL (with optional Trend scale-out when enabled)
+                            main_tp_applied = None
+                            try:
+                                sc_cfg = ((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('scaleout', {}) or {}))
+                                if strategy_name in ('trend_pullback','trend_breakout') and bool(sc_cfg.get('enabled', False)) and qty > 0:
+                                    from position_mgr import round_step
+                                    qty_step = float(m.get('qty_step', 0.001))
+                                    frac = max(0.1, min(0.9, float(sc_cfg.get('fraction', 0.5))))
+                                    tp1_r = float(sc_cfg.get('tp1_r', 1.6))
+                                    tp2_r = float(sc_cfg.get('tp2_r', 3.0))
+                                    R = abs(float(actual_entry) - float(sig_obj.sl))
+                                    if R > 0:
+                                        if sig_obj.side == 'long':
+                                            tp1 = float(actual_entry) + tp1_r * R
+                                            tp2 = float(actual_entry) + tp2_r * R
+                                            tp_side = "Sell"
+                                        else:
+                                            tp1 = float(actual_entry) - tp1_r * R
+                                            tp2 = float(actual_entry) - tp2_r * R
+                                            tp_side = "Buy"
+                                        # Set main TP to TP2
+                                        try:
+                                            bybit.set_tpsl(sym, take_profit=float(tp2), stop_loss=float(sig_obj.sl))
+                                            main_tp_applied = float(tp2)
+                                        except Exception:
+                                            pass
+                                        # Place reduce-only limit for partial TP1
+                                        try:
+                                            qty1 = round_step(float(qty) * frac, qty_step)
+                                            bybit.place_reduce_only_limit(sym, tp_side, float(qty1), float(tp1), post_only=True, reduce_only=True)
+                                        except Exception:
+                                            pass
+                                        # Track and notify
+                                        try:
+                                            if not hasattr(self, '_scaleout'):
+                                                self._scaleout = {}
+                                            self._scaleout[sym] = {
+                                                'tp1': float(tp1), 'tp2': float(tp2), 'entry': float(actual_entry),
+                                                'side': sig_obj.side, 'be_moved': False, 'move_be': bool(sc_cfg.get('move_sl_to_be', True))
+                                            }
+                                            if self.tg:
+                                                pct = int(round(frac*100))
+                                                qty2 = max(0.0, float(qty) - float(qty1))
+                                                await self.tg.send_message(f"📊 Scale-out armed: {sym} TP1={tp1:.4f} qty1={qty1:.4f} ({pct}%) TP2={tp2:.4f} qty2={qty2:.4f} | SL→BE after TP1")
+                                        except Exception:
+                                            pass
+                                else:
+                                    # Single TP/SL
+                                    bybit.set_tpsl(sym, take_profit=sig_obj.tp, stop_loss=sig_obj.sl, qty=qty)
+                                    main_tp_applied = float(sig_obj.tp)
+                            except Exception:
+                                # Fallback: ensure at least SL is set
+                                try:
+                                    bybit.set_tpsl(sym, stop_loss=float(sig_obj.sl))
+                                except Exception:
+                                    pass
                             # Read back TP/SL from exchange to reflect any server-side rounding
                             try:
                                 pos_tp_sl = bybit.get_position(sym)
@@ -5253,7 +5307,7 @@ class TradingBot:
                                 qty,
                                 entry=actual_entry,
                                 sl=sig_obj.sl,
-                                tp=sig_obj.tp,
+                                tp=(main_tp_applied if main_tp_applied is not None else sig_obj.tp),
                                 entry_time=datetime.now(),
                                 strategy_name=strategy_name,
                                 ml_score=float(ml_score or 0.0)

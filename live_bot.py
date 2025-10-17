@@ -595,6 +595,8 @@ class TradingBot:
             self._exec_locks: Dict[str, _asyncio.Lock] = {}
         except Exception:
             self._exec_locks = {}
+        # Track stream-side executions to suppress duplicate main-loop notifications
+        self._stream_executed: Dict[str, float] = {}
         # Track if TP/SL has been applied for a symbol (best-effort idempotency)
         self._tpsl_applied: Dict[str, float] = {}
         # Cache of latest scalp detections per symbol (for promotion timing)
@@ -4108,10 +4110,22 @@ class TradingBot:
                                             pt.cancel_active(symbol)
                                 except Exception:
                                     pass
-                                # Telegram notify
+                                # Mark stream-executed timestamp
+                                try:
+                                    from time import time as _now
+                                    self._stream_executed[symbol] = float(_now())
+                                except Exception:
+                                    pass
+                                # Telegram notify (include TP1/TP2 if scale-out armed)
                                 try:
                                     if self.tg:
-                                        await self.tg.send_message(f"⚡ Stream Entry: {symbol} {side.upper()} qty={qty} entry={entry:.4f} sl={sl:.4f} tp={tp:.4f}")
+                                        msg = f"⚡ Stream Entry: {symbol} {side.upper()} qty={qty} entry={entry:.4f} sl={sl:.4f}"
+                                        so = getattr(self, '_scaleout', {}).get(symbol) if hasattr(self, '_scaleout') else None
+                                        if so and 'tp1' in so and 'tp2' in so:
+                                            msg += f" TP1={so['tp1']:.4f} TP2={so['tp2']:.4f}"
+                                        else:
+                                            msg += f" tp={tp:.4f}"
+                                        await self.tg.send_message(msg)
                                 except Exception:
                                     pass
                         except Exception as e:
@@ -5244,6 +5258,9 @@ class TradingBot:
                                 pass
                             # Notify only for high-ML executions (Trend/MR)
                             try:
+                                # Suppress dup if stream-side already executed
+                                if sym in getattr(self, '_stream_executed', {}):
+                                    raise Exception('skip_high_ml_notify_stream_executed')
                                 is_high_ml = bool(isinstance(getattr(sig_obj, 'meta', {}), dict) and sig_obj.meta.get('high_ml'))
                                 if self.tg and is_high_ml:
                                     emoji = '📈'

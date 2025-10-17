@@ -4079,21 +4079,26 @@ class TradingBot:
                                                 from position_mgr import round_step
                                                 qty_step = float(meta_for(symbol, self.shared.get("meta", {})).get('qty_step', 0.001)) if hasattr(self, 'shared') else 0.001
                                                 qty1 = round_step(float(qty) * frac, qty_step)
-                                                self.bybit.place_reduce_only_limit(symbol, tp_side, float(qty1), float(tp1), post_only=True, reduce_only=True)
+                                                tp1_resp = self.bybit.place_reduce_only_limit(symbol, tp_side, float(qty1), float(tp1), post_only=True, reduce_only=True)
                                             except Exception:
-                                                pass
+                                                tp1_resp = None
                                             # Track for BE move
                                             try:
                                                 if not hasattr(self, '_scaleout'):
                                                     self._scaleout = {}
                                                 self._scaleout[symbol] = {
                                                     'tp1': float(tp1), 'tp2': float(tp2), 'entry': float(entry),
-                                                    'side': side, 'be_moved': False, 'move_be': bool(sc_cfg.get('move_sl_to_be', True))
+                                                    'side': side, 'be_moved': False, 'move_be': bool(sc_cfg.get('move_sl_to_be', True)),
+                                                    'qty1': float(qty1), 'qty2': max(0.0, float(qty) - float(qty1)),
+                                                    'tp1_order_id': (tp1_resp.get('result', {}).get('orderId') if isinstance(tp1_resp, dict) else None)
                                                 }
                                                 if self.tg:
                                                     pct = int(round(frac*100))
-                                                    qty2 = max(0.0, float(qty) - float(qty1))
-                                                    await self.tg.send_message(f"📊 Scale-out armed: {symbol} TP1={tp1:.4f} qty1={qty1:.4f} ({pct}%) TP2={tp2:.4f} qty2={qty2:.4f} | SL→BE after TP1")
+                                                    oid = self._scaleout[symbol].get('tp1_order_id')
+                                                    await self.tg.send_message(
+                                                        f"📊 Scale-out armed: {symbol} TP1={tp1:.4f} qty1={qty1:.4f} ({pct}%) TP2={tp2:.4f} qty2={self._scaleout[symbol]['qty2']:.4f}"
+                                                        + (f" ordId={oid}" if oid else "") + " | SL→BE after TP1"
+                                                    )
                                             except Exception:
                                                 pass
                                     else:
@@ -5262,21 +5267,26 @@ class TradingBot:
                                         # Place reduce-only limit for partial TP1
                                         try:
                                             qty1 = round_step(float(qty) * frac, qty_step)
-                                            bybit.place_reduce_only_limit(sym, tp_side, float(qty1), float(tp1), post_only=True, reduce_only=True)
+                                            tp1_resp = bybit.place_reduce_only_limit(sym, tp_side, float(qty1), float(tp1), post_only=True, reduce_only=True)
                                         except Exception:
-                                            pass
+                                            tp1_resp = None
                                         # Track and notify
                                         try:
                                             if not hasattr(self, '_scaleout'):
                                                 self._scaleout = {}
                                             self._scaleout[sym] = {
                                                 'tp1': float(tp1), 'tp2': float(tp2), 'entry': float(actual_entry),
-                                                'side': sig_obj.side, 'be_moved': False, 'move_be': bool(sc_cfg.get('move_sl_to_be', True))
+                                                'side': sig_obj.side, 'be_moved': False, 'move_be': bool(sc_cfg.get('move_sl_to_be', True)),
+                                                'qty1': float(qty1), 'qty2': max(0.0, float(qty) - float(qty1)),
+                                                'tp1_order_id': (tp1_resp.get('result', {}).get('orderId') if isinstance(tp1_resp, dict) else None)
                                             }
                                             if self.tg:
                                                 pct = int(round(frac*100))
-                                                qty2 = max(0.0, float(qty) - float(qty1))
-                                                await self.tg.send_message(f"📊 Scale-out armed: {sym} TP1={tp1:.4f} qty1={qty1:.4f} ({pct}%) TP2={tp2:.4f} qty2={qty2:.4f} | SL→BE after TP1")
+                                                oid = self._scaleout[sym].get('tp1_order_id')
+                                                await self.tg.send_message(
+                                                    f"📊 Scale-out armed: {sym} TP1={tp1:.4f} qty1={qty1:.4f} ({pct}%) TP2={tp2:.4f} qty2={self._scaleout[sym]['qty2']:.4f}"
+                                                    + (f" ordId={oid}" if oid else "") + " | SL→BE after TP1"
+                                                )
                                         except Exception:
                                             pass
                                 else:
@@ -5331,13 +5341,26 @@ class TradingBot:
                                 if self.tg and is_high_ml:
                                     emoji = '📈'
                                     strategy_label = 'Enhanced Mr' if strategy_name=='enhanced_mr' else 'Trend Pullback'
-                                    msg = (
-                                        f"🔥 HIGH-ML EXECUTE: {emoji} *{sym} {sig_obj.side.upper()}* ({strategy_label})\n\n"
-                                        f"Entry: {actual_entry:.4f}\n"
-                                        f"Stop Loss: {sig_obj.sl:.4f}\n"
-                                        f"Take Profit: {sig_obj.tp:.4f}\n"
-                                        f"Quantity: {qty}"
-                                    )
+                                    # Include scale-out info if available
+                                    so = getattr(self, '_scaleout', {}).get(sym) if hasattr(self, '_scaleout') else None
+                                    if so and 'tp1' in so and 'tp2' in so:
+                                        msg = (
+                                            f"🔥 HIGH-ML EXECUTE: {emoji} *{sym} {sig_obj.side.upper()}* ({strategy_label})\n\n"
+                                            f"Entry: {actual_entry:.4f}\n"
+                                            f"Stop Loss: {sig_obj.sl:.4f}\n"
+                                            f"TP1: {so['tp1']:.4f} qty1={so.get('qty1',0):.4f}"
+                                            + (f" ordId={so.get('tp1_order_id')}" if so.get('tp1_order_id') else "") + "\n"
+                                            f"TP2: {so['tp2']:.4f} qty2={so.get('qty2',0):.4f}\n"
+                                            f"Quantity: {qty}"
+                                        )
+                                    else:
+                                        msg = (
+                                            f"🔥 HIGH-ML EXECUTE: {emoji} *{sym} {sig_obj.side.upper()}* ({strategy_label})\n\n"
+                                            f"Entry: {actual_entry:.4f}\n"
+                                            f"Stop Loss: {sig_obj.sl:.4f}\n"
+                                            f"Take Profit: {sig_obj.tp:.4f}\n"
+                                            f"Quantity: {qty}"
+                                        )
                                     await self.tg.send_message(msg)
                             except Exception:
                                 pass

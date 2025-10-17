@@ -934,21 +934,23 @@ class TradingBot:
                     # Set TP/SL exactly once: prefer Partial mode, fallback to Full, final fallback reduce-only limit + SL
                     try:
                         applied_mode = None  # 'partial' | 'full' | 'reduce_only'
-                    try:
-                        # Prefer Partial (qty-aware, limit TP)
-                        bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
-                        applied_mode = 'partial'
-                    except Exception:
                         try:
-                            # Fallback to Full (no qty); does not place limit TP orders
-                            bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
-                            applied_mode = 'full'
+                            # Prefer Partial (qty-aware, limit TP)
+                            bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
+                            applied_mode = 'partial'
                         except Exception:
-                            # Final fallback: place a single reduce-only limit TP and SL-only
-                            tp_side = "Sell" if sig_obj.side == "long" else "Buy"
-                            bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
-                            bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
-                            applied_mode = 'reduce_only'
+                            try:
+                                # Fallback to Full (no qty); does not place limit TP orders
+                                bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
+                                applied_mode = 'full'
+                            except Exception:
+                                # Final fallback: place a single reduce-only limit TP and SL-only
+                                tp_side = "Sell" if sig_obj.side == "long" else "Buy"
+                                bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
+                                bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
+                                applied_mode = 'reduce_only'
+                    except Exception:
+                        pass
 
                     # Optional scale-out: place reduce-only limit for partial at TP1 and keep main TP at TP2; move SL to BE upon TP1 hit
                     try:
@@ -987,6 +989,13 @@ class TradingBot:
                                         'tp1': float(tp1), 'tp2': float(tp2), 'entry': float(actual_entry),
                                         'side': sig_obj.side, 'be_moved': False, 'move_be': bool(sc_cfg.get('move_sl_to_be', True))
                                     }
+                                    # Notify scale-out armed
+                                    try:
+                                        if self.tg:
+                                            pct = int(round(frac*100))
+                                            await self.tg.send_message(f"📊 Scale-out armed: {sym} TP1={tp1:.4f} ({pct}%) TP2={tp2:.4f} | SL→BE after TP1")
+                                    except Exception:
+                                        pass
                                 except Exception:
                                     pass
                     except Exception:
@@ -4032,14 +4041,58 @@ class TradingBot:
                                 # Place market
                                 side_mkt = 'Buy' if side == 'long' else 'Sell'
                                 self.bybit.place_market(symbol, side_mkt, qty, reduce_only=False)
-                                # Set TP/SL
+                                # Set TP/SL with optional scale-out
                                 try:
-                                    self.bybit.set_tpsl(symbol, take_profit=float(tp), stop_loss=float(sl), qty=qty)
+                                    sc_cfg = ((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('scaleout', {}) or {}))
+                                    if bool(sc_cfg.get('enabled', False)):
+                                        frac = max(0.1, min(0.9, float(sc_cfg.get('fraction', 0.5))))
+                                        tp1_r = float(sc_cfg.get('tp1_r', 1.6))
+                                        tp2_r = float(sc_cfg.get('tp2_r', 3.0))
+                                        R = abs(float(entry) - float(sl))
+                                        if R > 0:
+                                            if side == 'long':
+                                                tp1 = float(entry) + tp1_r * R
+                                                tp2 = float(entry) + tp2_r * R
+                                                tp_side = "Sell"
+                                            else:
+                                                tp1 = float(entry) - tp1_r * R
+                                                tp2 = float(entry) - tp2_r * R
+                                                tp_side = "Buy"
+                                            # Main TP to TP2
+                                            try:
+                                                self.bybit.set_tpsl(symbol, take_profit=float(tp2), stop_loss=float(sl))
+                                            except Exception:
+                                                pass
+                                            # Partial reduce-only limit at TP1
+                                            try:
+                                                qty1 = float(qty) * frac
+                                                self.bybit.place_reduce_only_limit(symbol, tp_side, qty1, float(tp1), post_only=True, reduce_only=True)
+                                            except Exception:
+                                                pass
+                                            # Track for BE move
+                                            try:
+                                                if not hasattr(self, '_scaleout'):
+                                                    self._scaleout = {}
+                                                self._scaleout[symbol] = {
+                                                    'tp1': float(tp1), 'tp2': float(tp2), 'entry': float(entry),
+                                                    'side': side, 'be_moved': False, 'move_be': bool(sc_cfg.get('move_sl_to_be', True))
+                                                }
+                                                if self.tg:
+                                                    pct = int(round(frac*100))
+                                                    await self.tg.send_message(f"📊 Scale-out armed: {symbol} TP1={tp1:.4f} ({pct}%) TP2={tp2:.4f} | SL→BE after TP1")
+                                            except Exception:
+                                                pass
+                                    else:
+                                        # No scale-out: set TP/SL as provided
+                                        try:
+                                            self.bybit.set_tpsl(symbol, take_profit=float(tp), stop_loss=float(sl), qty=qty)
+                                        except Exception:
+                                            try:
+                                                self.bybit.set_tpsl(symbol, take_profit=float(tp), stop_loss=float(sl))
+                                            except Exception:
+                                                pass
                                 except Exception:
-                                    try:
-                                        self.bybit.set_tpsl(symbol, take_profit=float(tp), stop_loss=float(sl))
-                                    except Exception:
-                                        pass
+                                    pass
                                 # Track locally
                                 try:
                                     from position_mgr import Position

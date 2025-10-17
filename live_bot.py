@@ -979,8 +979,14 @@ class TradingBot:
                                     pass
                                 # Place reduce-only limit for partial TP1
                                 try:
-                                    qty1 = float(qty) * frac
-                                    bybit.place_reduce_only_limit(sym, tp_side, qty1, float(tp1), post_only=True, reduce_only=True)
+                                    # Round partial qty to step for exchange safety
+                                    try:
+                                        from position_mgr import round_step
+                                        qty_step = float(meta_for(sym, shared["meta"]).get('qty_step', 0.001)) if 'shared' in locals() else 0.001
+                                    except Exception:
+                                        qty_step = 0.001
+                                    qty1 = round_step(float(qty) * frac, qty_step)
+                                    bybit.place_reduce_only_limit(sym, tp_side, float(qty1), float(tp1), post_only=True, reduce_only=True)
                                 except Exception:
                                     pass
                                 # Track scale-out for BE move monitoring
@@ -995,7 +1001,10 @@ class TradingBot:
                                     try:
                                         if self.tg:
                                             pct = int(round(frac*100))
-                                            await self.tg.send_message(f"📊 Scale-out armed: {sym} TP1={tp1:.4f} ({pct}%) TP2={tp2:.4f} | SL→BE after TP1")
+                                            qty2 = max(0.0, float(qty) - float(qty1))
+                                            await self.tg.send_message(
+                                                f"📊 Scale-out armed: {sym} TP1={tp1:.4f} qty1={qty1:.4f} ({pct}%) TP2={tp2:.4f} qty2={qty2:.4f} | SL→BE after TP1"
+                                            )
                                     except Exception:
                                         pass
                                 except Exception:
@@ -4067,8 +4076,10 @@ class TradingBot:
                                                 pass
                                             # Partial reduce-only limit at TP1
                                             try:
-                                                qty1 = float(qty) * frac
-                                                self.bybit.place_reduce_only_limit(symbol, tp_side, qty1, float(tp1), post_only=True, reduce_only=True)
+                                                from position_mgr import round_step
+                                                qty_step = float(meta_for(symbol, self.shared.get("meta", {})).get('qty_step', 0.001)) if hasattr(self, 'shared') else 0.001
+                                                qty1 = round_step(float(qty) * frac, qty_step)
+                                                self.bybit.place_reduce_only_limit(symbol, tp_side, float(qty1), float(tp1), post_only=True, reduce_only=True)
                                             except Exception:
                                                 pass
                                             # Track for BE move
@@ -4081,7 +4092,8 @@ class TradingBot:
                                                 }
                                                 if self.tg:
                                                     pct = int(round(frac*100))
-                                                    await self.tg.send_message(f"📊 Scale-out armed: {symbol} TP1={tp1:.4f} ({pct}%) TP2={tp2:.4f} | SL→BE after TP1")
+                                                    qty2 = max(0.0, float(qty) - float(qty1))
+                                                    await self.tg.send_message(f"📊 Scale-out armed: {symbol} TP1={tp1:.4f} qty1={qty1:.4f} ({pct}%) TP2={tp2:.4f} qty2={qty2:.4f} | SL→BE after TP1")
                                             except Exception:
                                                 pass
                                     else:

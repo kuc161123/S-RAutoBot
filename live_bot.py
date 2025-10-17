@@ -4004,6 +4004,15 @@ class TradingBot:
                                     self.book.positions[symbol] = Position(side=side, qty=float(qty), entry=float(entry), sl=float(sl), tp=float(tp), entry_time=datetime.utcnow(), strategy_name='trend_pullback')
                                 except Exception:
                                     pass
+                                # Optionally cancel any active trend phantom for this symbol to avoid ML double count
+                                try:
+                                    ph_cfg = (self.config.get('phantom', {}) or {})
+                                    if bool(ph_cfg.get('cancel_on_execute', True)):
+                                        pt = self.shared.get('phantom_tracker') if hasattr(self, 'shared') else None
+                                        if pt is not None and hasattr(pt, 'cancel_active'):
+                                            pt.cancel_active(symbol)
+                                except Exception:
+                                    pass
                                 # Telegram notify
                                 try:
                                     if self.tg:

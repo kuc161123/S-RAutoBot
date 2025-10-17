@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import UpdateType, ParseMode
-from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 try:
     # Use HTTPXRequest to tune timeouts and reduce httpx.ReadError during polling
     from telegram.request import HTTPXRequest
@@ -40,6 +40,8 @@ class TGBot:
         # Simple per-command cooldown
         self._cooldowns = {}
         self._cooldown_seconds = 2.0
+        # Simple UI conversation state per chat for numeric settings
+        self._ui_state: dict[int, dict] = {}
         
         # Add command handlers
         self.app.add_handler(CommandHandler("start", self.start))
@@ -104,6 +106,8 @@ class TGBot:
         # Trend ML high-ML threshold changer
         self.app.add_handler(CommandHandler("trendhighml", self.trend_high_ml))
         self.app.add_handler(CallbackQueryHandler(self.ui_callback, pattern=r"^ui:"))
+        # Capture numeric input replies when a settings prompt is active
+        self.app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), self._on_text))
         self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
         self.app.add_handler(CommandHandler("panicclose", self.panic_close))
         self.app.add_handler(CommandHandler("forceretrain", self.force_retrain_ml))
@@ -296,11 +300,17 @@ class TGBot:
             cfg = self.shared.get('config', {}) or {}
             tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
             sc = (tr_exec.get('scaleout',{}) or {})
-            rr = self.shared.get('risk_reward') or tr_exec.get('rr') or 2.5
+            rr = (self.shared.get('trend_settings').rr if self.shared.get('trend_settings') else self.shared.get('risk_reward')) or 2.5
             lines.append("")
             lines.append("⚙️ *Config*")
             lines.append(f"• R:R: 1:{float(rr)} | Stream entry: {'On' if tr_exec.get('allow_stream_entry', True) else 'Off'}")
             lines.append(f"• Scale‑out: {'On' if sc.get('enabled', False) else 'Off'} (TP1 {sc.get('tp1_r',1.6)}R @ {sc.get('fraction',0.5):.2f}, TP2 {sc.get('tp2_r',3.0)}R, BE {'On' if sc.get('move_sl_to_be', True) else 'Off'})")
+            # Timeouts summary
+            try:
+                conf_bars = int(self.shared.get('trend_settings').confirmation_timeout_bars)
+                lines.append(f"• Timeouts: confirm {conf_bars} bars | Phantom {(getattr(self.shared.get('phantom_tracker'), 'timeout_hours', 0) or 0)}h")
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -1877,16 +1887,30 @@ class TGBot:
                     cfg = self.shared.get('config', {}) or {}
                     tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
                     sc = (tr_exec.get('scaleout',{}) or {})
+                    # Read current RR and timeouts
+                    rr_val = None
+                    conf_bars = None
+                    try:
+                        rr_val = float(self.shared.get('trend_settings').rr)
+                        conf_bars = int(self.shared.get('trend_settings').confirmation_timeout_bars)
+                    except Exception:
+                        pass
                     lines = ["⚙️ *Settings*", "",
                              f"Stream entry: {'On' if tr_exec.get('allow_stream_entry', True) else 'Off'}",
                              f"Scale‑out: {'On' if sc.get('enabled', False) else 'Off'}",
                              f"BE move: {'On' if sc.get('move_sl_to_be', True) else 'Off'}",
+                             f"R:R: 1:{rr_val if rr_val is not None else '2.5'}",
+                             f"TP1 R: {sc.get('tp1_r',1.6)} | TP2 R: {sc.get('tp2_r',3.0)} | Fraction: {sc.get('fraction',0.5):.2f}",
+                             f"Confirm timeout bars: {conf_bars if conf_bars is not None else '6'} | Phantom timeout h: {(getattr(self.shared.get('phantom_tracker'), 'timeout_hours', 0) or 0)}",
                              "",
-                             "Use the buttons below to toggle."]
+                             "Use the buttons below to toggle or set values."]
                     kb = InlineKeyboardMarkup([
                         [InlineKeyboardButton("Stream Entry", callback_data="ui:settings:toggle:stream")],
                         [InlineKeyboardButton("Scale‑out", callback_data="ui:settings:toggle:scaleout")],
                         [InlineKeyboardButton("BE Move", callback_data="ui:settings:toggle:be")],
+                        [InlineKeyboardButton("Set R:R", callback_data="ui:settings:set:rr"), InlineKeyboardButton("Set TP1 R", callback_data="ui:settings:set:tp1_r")],
+                        [InlineKeyboardButton("Set TP2 R", callback_data="ui:settings:set:tp2_r"), InlineKeyboardButton("Set Fraction", callback_data="ui:settings:set:fraction")],
+                        [InlineKeyboardButton("Set Confirm Bars", callback_data="ui:settings:set:confirm_bars"), InlineKeyboardButton("Set Phantom Hours", callback_data="ui:settings:set:phantom_hours")],
                         [InlineKeyboardButton("🔙 Back", callback_data="ui:dash:refresh")]
                     ])
                     await query.edit_message_text("\n".join(lines), reply_markup=kb, parse_mode='Markdown')
@@ -1915,6 +1939,22 @@ class TGBot:
                         pass
                     # Back to settings snapshot
                     await self.ui_callback(update, ctx)
+                    return
+                if data.startswith("ui:settings:set:"):
+                    await query.answer()
+                    key = data.rsplit(':',1)[-1]
+                    # Prompt for value and store awaiting state
+                    chat_id = query.message.chat_id
+                    self._ui_state[chat_id] = {'await': key}
+                    prompts = {
+                        'rr': "Send a number for base R:R (e.g., 2.5)",
+                        'tp1_r': "Send TP1 R (e.g., 1.6)",
+                        'tp2_r': "Send TP2 R (e.g., 3.0)",
+                        'fraction': "Send scale‑out fraction between 0.1 and 0.9 (e.g., 0.5)",
+                        'confirm_bars': "Send confirmation timeout bars (integer, e.g., 6)",
+                        'phantom_hours': "Send phantom timeout hours (integer, e.g., 100)"
+                    }
+                    await query.edit_message_text(f"✍️ {prompts.get(key,'Send a value')}")
                     return
             if data.startswith("ui:dash:refresh"):
                 # Build fresh dashboard and edit in place (no cooldown)
@@ -4905,3 +4945,113 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in flow_debug: {e}")
             await update.message.reply_text("Error getting flow status")
+    async def _on_text(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Handle numeric inputs for settings when a prompt is active."""
+        try:
+            chat = update.effective_chat
+            if not chat or chat.id != self.chat_id:
+                return
+            state = self._ui_state.get(chat.id)
+            if not state or 'await' not in state:
+                return
+            key = state['await']
+            text = (update.message.text or '').strip()
+            cfg = self.shared.get('config', {}) or {}
+            tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+            sc = (tr_exec.get('scaleout',{}) or {})
+            ts = self.shared.get('trend_settings')
+            pt = self.shared.get('phantom_tracker')
+
+            def _ok(msg: str):
+                self._ui_state.pop(chat.id, None)
+                return ctx.application.create_task(self.send_message(msg))
+
+            # Parse and apply
+            if key == 'rr':
+                try:
+                    val = float(text)
+                    if val < 1.2 or val > 5.0:
+                        await update.message.reply_text("Value out of range (1.2–5.0)")
+                        return
+                    if ts:
+                        ts.rr = val
+                    self.shared['risk_reward'] = val
+                    await _ok(f"✅ R:R set to 1:{val}")
+                except Exception:
+                    await update.message.reply_text("Please send a valid number, e.g., 2.5")
+                return
+
+            if key == 'tp1_r':
+                try:
+                    val = float(text)
+                    if val < 1.1 or val > 3.0:
+                        await update.message.reply_text("Value out of range (1.1–3.0)")
+                        return
+                    sc['tp1_r'] = val
+                    tr_exec['scaleout'] = sc
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ TP1 R set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a valid number, e.g., 1.6")
+                return
+
+            if key == 'tp2_r':
+                try:
+                    val = float(text)
+                    if val < 1.5 or val > 6.0:
+                        await update.message.reply_text("Value out of range (1.5–6.0)")
+                        return
+                    sc['tp2_r'] = val
+                    tr_exec['scaleout'] = sc
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ TP2 R set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a valid number, e.g., 3.0")
+                return
+
+            if key == 'fraction':
+                try:
+                    val = float(text)
+                    if val < 0.1 or val > 0.9:
+                        await update.message.reply_text("Fraction must be between 0.1 and 0.9")
+                        return
+                    sc['fraction'] = val
+                    tr_exec['scaleout'] = sc
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ Scale‑out fraction set to {val:.2f}")
+                except Exception:
+                    await update.message.reply_text("Please send a valid number, e.g., 0.5")
+                return
+
+            if key == 'confirm_bars':
+                try:
+                    val = int(text)
+                    if val < 1 or val > 24:
+                        await update.message.reply_text("Bars must be 1–24")
+                        return
+                    if ts:
+                        ts.confirmation_timeout_bars = val
+                    await _ok(f"✅ Confirmation timeout set to {val} bars")
+                except Exception:
+                    await update.message.reply_text("Please send an integer, e.g., 6")
+                return
+
+            if key == 'phantom_hours':
+                try:
+                    val = int(text)
+                    if val < 1 or val > 240:
+                        await update.message.reply_text("Hours must be 1–240")
+                        return
+                    if pt:
+                        pt.timeout_hours = val
+                    await _ok(f"✅ Phantom timeout set to {val}h")
+                except Exception:
+                    await update.message.reply_text("Please send an integer, e.g., 100")
+                return
+
+        except Exception:
+            # swallow
+            pass

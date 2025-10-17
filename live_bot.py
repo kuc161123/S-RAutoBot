@@ -3959,6 +3959,8 @@ class TradingBot:
             "timeframe": tf,
             "symbols_config": symbols,
             "risk_reward": settings.rr,
+            # Expose live Trend Settings object for runtime adjustments (RR, timeouts)
+            "trend_settings": settings,
             # Enhanced ML system components
             "enhanced_mr_scorer": enhanced_mr_scorer,
             "mr_phantom_tracker": mr_phantom_tracker,

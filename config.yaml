@@ -132,6 +132,13 @@ trend:
       pivot_buffer_atr: 0.05  # keep SL beyond pivot by 0.05 ATR
     # Force execution when ML score is extremely high
     high_ml_force: 95
+    # Scale-out partial take profit settings
+    scaleout:
+      enabled: true
+      fraction: 0.5        # 50% size at TP1
+      tp1_r: 1.6           # 1.5–1.8 R; default 1.6R
+      tp2_r: 3.0           # runner target
+      move_sl_to_be: true  # move SL to break-even after TP1 hits
   regime:
     enabled: true
     min_conf: 0.60

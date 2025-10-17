@@ -931,9 +931,9 @@ class TradingBot:
                         pass
                 except Exception:
                     pass
-            # Set TP/SL exactly once: prefer Partial mode, fallback to Full, final fallback reduce-only limit + SL
-                try:
-                    applied_mode = None  # 'partial' | 'full' | 'reduce_only'
+                    # Set TP/SL exactly once: prefer Partial mode, fallback to Full, final fallback reduce-only limit + SL
+                    try:
+                        applied_mode = None  # 'partial' | 'full' | 'reduce_only'
                     try:
                         # Prefer Partial (qty-aware, limit TP)
                         bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
@@ -949,6 +949,48 @@ class TradingBot:
                             bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
                             bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
                             applied_mode = 'reduce_only'
+
+                    # Optional scale-out: place reduce-only limit for partial at TP1 and keep main TP at TP2; move SL to BE upon TP1 hit
+                    try:
+                        sc_cfg = ((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('scaleout', {}) or {}))
+                        if bool(sc_cfg.get('enabled', False)) and qty > 0:
+                            frac = max(0.1, min(0.9, float(sc_cfg.get('fraction', 0.5))))
+                            tp1_r = float(sc_cfg.get('tp1_r', 1.6))
+                            tp2_r = float(sc_cfg.get('tp2_r', 3.0))
+                            # Compute R using current entry and stop
+                            R = abs(float(actual_entry) - float(sig_obj.sl))
+                            if R > 0:
+                                if sig_obj.side == 'long':
+                                    tp1 = float(actual_entry) + tp1_r * R
+                                    tp2 = float(actual_entry) + tp2_r * R
+                                    tp_side = "Sell"
+                                else:
+                                    tp1 = float(actual_entry) - tp1_r * R
+                                    tp2 = float(actual_entry) - tp2_r * R
+                                    tp_side = "Buy"
+                                # Set main TP to TP2
+                                try:
+                                    bybit.set_tpsl(sym, take_profit=float(tp2), stop_loss=float(sig_obj.sl))
+                                except Exception:
+                                    pass
+                                # Place reduce-only limit for partial TP1
+                                try:
+                                    qty1 = float(qty) * frac
+                                    bybit.place_reduce_only_limit(sym, tp_side, qty1, float(tp1), post_only=True, reduce_only=True)
+                                except Exception:
+                                    pass
+                                # Track scale-out for BE move monitoring
+                                try:
+                                    if not hasattr(self, '_scaleout'):
+                                        self._scaleout = {}
+                                    self._scaleout[sym] = {
+                                        'tp1': float(tp1), 'tp2': float(tp2), 'entry': float(actual_entry),
+                                        'side': sig_obj.side, 'be_moved': False, 'move_be': bool(sc_cfg.get('move_sl_to_be', True))
+                                    }
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
 
                     # Best-effort verification without reapplying (to avoid duplicate TP/SL sets)
                     try:
@@ -4463,6 +4505,28 @@ class TradingBot:
                     # Update shadow simulations with current price
                     try:
                         get_shadow_tracker().update_prices(sym, float(df['close'].iloc[-1]))
+                    except Exception:
+                        pass
+
+                    # Scale-out BE move monitoring: move SL to BE after TP1 reached
+                    try:
+                        if hasattr(self, '_scaleout') and sym in getattr(self, '_scaleout', {}) and sym in self.book.positions:
+                            so = self._scaleout.get(sym) or {}
+                            if not so.get('be_moved') and bool(so.get('move_be', True)):
+                                side = str(so.get('side',''))
+                                tp1 = float(so.get('tp1', 0.0))
+                                entry_px = float(so.get('entry', 0.0))
+                                last_px = float(df['close'].iloc[-1])
+                                hit = (side == 'long' and last_px >= tp1) or (side == 'short' and last_px <= tp1)
+                                if hit:
+                                    try:
+                                        # Move stop to break-even (entry price)
+                                        self.bybit.set_tpsl(sym, stop_loss=float(entry_px))
+                                        self._scaleout[sym]['be_moved'] = True
+                                        if self.tg:
+                                            await self.tg.send_message(f"🛡️ BE Move: {sym} SL→BE at {entry_px:.4f} after TP1 hit")
+                                    except Exception:
+                                        pass
                     except Exception:
                         pass
                 

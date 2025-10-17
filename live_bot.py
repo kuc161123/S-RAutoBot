@@ -3985,6 +3985,11 @@ class TradingBot:
             # Simple telemetry counters
             "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0, "policy_rejects": 0}
         }
+        # Trend event ring buffer for Telegram dashboard/event log
+        try:
+            shared["trend_events"] = []
+        except Exception:
+            pass
         
         # Initialize Telegram bot with retry on conflict
         max_retries = 3
@@ -4002,13 +4007,12 @@ class TradingBot:
                     risk_display = f"${risk.risk_usd}"
                 
                 await self.tg.send_message(
-                    "🚀 *Trading Bot Started*\n\n"
-                    f"📊 Monitoring: {len(symbols)} symbols\n"
-                    f"⏰ Timeframe: {tf} minutes\n"
-                    f"💰 Risk per trade: {risk_display}\n"
-                    f"📈 R:R Ratio: 1:{settings.rr}\n\n"
-                    "_Use /risk to manage risk settings_\n"
-                    "_Use /dashboard for full status_"
+                    "🚀 *Trend Pullback Bot Started*\n\n"
+                    f"📊 Monitoring: {len(symbols)} symbols | TF: {tf}m + 3m\n"
+                    f"💰 Risk per trade: {risk_display} | R:R 1:{settings.rr}\n\n"
+                    "15m break → 3m HL/LH → 3m 2/2 confirms → stream entry\n"
+                    "Scale‑out: 50% at ~1.6R, SL→BE, runner to ~3.0R\n\n"
+                    "Use /dashboard for buttons and status."
                 )
 
                 # Wire Trend event notifications to Telegram
@@ -4018,6 +4022,21 @@ class TradingBot:
                         try:
                             # Fire-and-forget send to Telegram
                             asyncio.create_task(self.tg.send_message(text))
+                            # Record into lightweight ring buffer for dashboard/event log
+                            try:
+                                evts = self.shared.get("trend_events") if hasattr(self, 'shared') else None
+                                if isinstance(evts, list):
+                                    from datetime import datetime as _dt
+                                    evts.append({
+                                        'ts': _dt.utcnow().isoformat() + 'Z',
+                                        'symbol': symbol,
+                                        'text': str(text)[:500]
+                                    })
+                                    # Cap buffer size
+                                    if len(evts) > 60:
+                                        del evts[:len(evts)-60]
+                            except Exception:
+                                pass
                         except Exception:
                             pass
                     set_trend_event_notifier(_trend_notifier)

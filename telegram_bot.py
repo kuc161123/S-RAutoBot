@@ -156,6 +156,164 @@ class TGBot:
 
         return per_trade, label
 
+    def _build_trend_dashboard(self):
+        """Build Trend‑only dashboard text and keyboard."""
+        frames = self.shared.get("frames", {})
+        book = self.shared.get("book")
+        last_analysis = self.shared.get("last_analysis", {})
+        per_trade_risk, _risk_label = self._compute_risk_snapshot()
+
+        lines = ["🎯 *Trend Pullback Dashboard*", "━━━━━━━━━━━━━━━━━━━━━", ""]
+
+        # System
+        lines.append("⚡ *System*")
+        lines.append(f"• Status: {'✅ Online' if frames else '⏳ Starting up'}")
+        timeframe = self.shared.get("timeframe")
+        if timeframe:
+            lines.append(f"• Timeframe: {timeframe}m + 3m")
+        symbols_cfg = self.shared.get("symbols_config")
+        if symbols_cfg:
+            lines.append(f"• Universe: {len(symbols_cfg)} symbols")
+        if last_analysis:
+            try:
+                latest_symbol, latest_time = max(last_analysis.items(), key=lambda kv: kv[1])
+                if isinstance(latest_time, datetime):
+                    ref_now = datetime.now(latest_time.tzinfo) if latest_time.tzinfo else datetime.now()
+                    age_minutes = max(0, int((ref_now - latest_time).total_seconds() // 60))
+                    lines.append(f"• Last scan: {latest_symbol} ({age_minutes}m ago)")
+            except Exception:
+                pass
+        # Balance
+        broker = self.shared.get("broker")
+        balance = self.shared.get("last_balance")
+        try:
+            if broker and balance is None:
+                bal = broker.get_balance()
+                if bal is not None:
+                    balance = bal
+                    self.shared["last_balance"] = bal
+        except Exception:
+            pass
+        if balance is not None:
+            lines.append(f"• Balance: ${float(balance):.2f} USDT")
+
+        # Trend States summary
+        lines.append("")
+        lines.append("📐 *Trend States*")
+        try:
+            from strategy_pullback import get_trend_states_snapshot
+            snap = get_trend_states_snapshot() or {}
+            counts = {"NEUTRAL":0, "RESISTANCE_BROKEN":0, "SUPPORT_BROKEN":0, "HL_FORMED":0, "LH_FORMED":0, "SIGNAL_SENT":0}
+            for st in snap.values():
+                s = (st.get('state') if isinstance(st, dict) else None) or 'NEUTRAL'
+                if s in counts:
+                    counts[s] += 1
+            lines.append(
+                f"NEUTRAL {counts['NEUTRAL']} | RES {counts['RESISTANCE_BROKEN']} | SUP {counts['SUPPORT_BROKEN']} | HL {counts['HL_FORMED']} | LH {counts['LH_FORMED']} | SENT {counts['SIGNAL_SENT']}"
+            )
+        except Exception:
+            lines.append("(unavailable)")
+
+        # Positions
+        positions = book.positions if book else {}
+        lines.append("")
+        lines.append("📊 *Positions*")
+        if positions:
+            estimated_risk = per_trade_risk * len(positions)
+            lines.append(f"• Open: {len(positions)} | Est risk: ${estimated_risk:.2f}")
+        else:
+            lines.append("• None")
+
+        # Recent executed (last 5, trend only)
+        try:
+            tt = self.shared.get('trade_tracker')
+            rec = getattr(tt, 'trades', []) or []
+            rec = [t for t in rec if 'trend' in (getattr(t, 'strategy_name', '') or '').lower()]
+            rec.sort(key=lambda t: getattr(t, 'exit_time', None) or getattr(t, 'entry_time', None), reverse=True)
+            last5 = rec[:5]
+            if last5:
+                lines.append("")
+                lines.append("📜 *Recent Executed*")
+                for t in last5:
+                    try:
+                        sym = t.symbol; side = t.side
+                        et = t.entry_time.strftime('%m-%d %H:%M') if t.entry_time else ''
+                        pnl = f" | PnL ${float(t.pnl_usd):.2f}" if getattr(t, 'exit_price', None) else ''
+                        lines.append(f"• {sym} {side.upper()} {et}{pnl}")
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+        # Trend Phantom aggregate
+        try:
+            pt = self.shared.get("phantom_tracker")
+            total = wins = losses = timeouts = 0
+            if pt:
+                for trades in getattr(pt, 'phantom_trades', {}).values():
+                    for p in trades:
+                        if (getattr(p, 'strategy_name', '') or '').startswith('trend'):
+                            oc = getattr(p, 'outcome', None)
+                            if oc in ('win','loss'):
+                                total += 1
+                                wins += (1 if oc == 'win' else 0)
+                                losses += (1 if oc == 'loss' else 0)
+                            if (not getattr(p, 'was_executed', False)) and getattr(p, 'exit_reason', None) == 'timeout':
+                                timeouts += 1
+            wr = (wins/total*100.0) if total else 0.0
+            lines.append("")
+            lines.append("👻 *Trend Phantom*")
+            lines.append(f"• Tracked: {total} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}")
+        except Exception:
+            pass
+
+        # Trend ML snapshot
+        try:
+            ml_scorer = self.shared.get('ml_scorer')
+            if ml_scorer:
+                ms = ml_scorer.get_stats()
+                lines.append("")
+                lines.append("🤖 *Trend ML*")
+                lines.append(f"• {ms.get('status','⏳')} | Thresh: {ms.get('current_threshold','?'):.0f}")
+                lines.append(f"• Trades: {ms.get('completed_trades',0)} | Recent WR: {ms.get('recent_win_rate',0.0):.1f}%")
+        except Exception:
+            pass
+
+        # State activity (last 10)
+        try:
+            evts = self.shared.get('trend_events') or []
+            if evts:
+                lines.append("")
+                lines.append("🧭 *State Activity (last 10)*")
+                for e in evts[-10:]:
+                    sym = e.get('symbol','?'); txt = e.get('text','')
+                    lines.append(f"• {sym}: {txt}")
+        except Exception:
+            pass
+
+        # Config snapshot
+        try:
+            cfg = self.shared.get('config', {}) or {}
+            tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+            sc = (tr_exec.get('scaleout',{}) or {})
+            rr = self.shared.get('risk_reward') or tr_exec.get('rr') or 2.5
+            lines.append("")
+            lines.append("⚙️ *Config*")
+            lines.append(f"• R:R: 1:{float(rr)} | Stream entry: {'On' if tr_exec.get('allow_stream_entry', True) else 'Off'}")
+            lines.append(f"• Scale‑out: {'On' if sc.get('enabled', False) else 'Off'} (TP1 {sc.get('tp1_r',1.6)}R @ {sc.get('fraction',0.5):.2f}, TP2 {sc.get('tp2_r',3.0)}R, BE {'On' if sc.get('move_sl_to_be', True) else 'Off'})")
+        except Exception:
+            pass
+
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Refresh", callback_data="ui:dash:refresh")],
+            [InlineKeyboardButton("📐 Trend States", callback_data="ui:trend:states"), InlineKeyboardButton("📊 Positions", callback_data="ui:positions")],
+            [InlineKeyboardButton("📜 Recent", callback_data="ui:recent"), InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:trend")],
+            [InlineKeyboardButton("🤖 ML", callback_data="ui:ml:trend"), InlineKeyboardButton("🧠 Patterns", callback_data="ui:ml:patterns")],
+            [InlineKeyboardButton("🧭 Events", callback_data="ui:events"), InlineKeyboardButton("⚙️ Settings", callback_data="ui:settings")]
+        ])
+
+        return "\n".join(lines), kb
+
     def _build_dashboard(self):
         """Build dashboard text and inline keyboard without sending it.
         Returns (text:str, keyboard:InlineKeyboardMarkup|None).
@@ -868,86 +1026,55 @@ class TGBot:
 
     async def start(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Start command handler"""
-        await self.safe_reply(update,
-            "🤖 *Trading Bot Active*\n\n"
-            "Use /help to see available commands."
-        )
+        msg = [
+            "🤖 *Trend Pullback Bot*",
+            "",
+            "15m break → 3m HL/LH → 3m 2/2 confirmations → stream entry",
+            "Scale‑out: 50% @ ~1.6R, SL→BE, runner to ~3.0R",
+            "",
+            "Quick actions:",
+            "• /dashboard — Trend dashboard",
+            "• /trend_states — Current states per symbol",
+            "• /recent — Recent executed (trend)",
+            "• /ml — Trend ML status",
+            "• /mlpatterns — Learned patterns",
+            "• /trendhighml 95 — Set high‑ML threshold",
+            "",
+            "Tips: Use the dashboard buttons for Positions, Phantom, ML, Events, and Settings."
+        ]
+        await self.safe_reply(update, "\n".join(msg))
 
     async def help(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Help command handler"""
         per_trade, risk_label = self._compute_risk_snapshot()
-        risk_cfg = self.shared.get("risk")
         timeframe = self.shared.get("timeframe", "15")
-
-        help_text = f"""📚 *Bot Commands*
-
-📊 Monitoring
-/dashboard – Full bot overview
-/health – Data & heartbeat summary
-/status – Open positions snapshot
-/balance – Latest account balance
-/symbols – Active trading universe
-/regime SYMBOL – Market regime for a symbol
-
-📈 Analytics
-/stats [all|trend|reversion] – Trade statistics
-/recent [limit] – Recent trade log
-/analysis [symbol] – Recent analysis timestamps
-/mlrankings – Symbol rankings by WR/PnL
-/shadowstats – Compare baseline vs shadow per strategy
-/mlpatterns – Learned ML patterns & insights
-
-🤖 ML & Phantoms
-/ml or /mlstatus – Trend ML status
-/enhancedmr – Enhanced MR ML status
-/mrphantom – MR phantom stats
-/phantom [strategy] – Phantom trade outcomes
-/phantomqa – Phantom caps & WR QA
-/scalpqa – Scalp phantom QA
-/scalppromote – Scalp promotion status (WR-based)
-/trendpromote – Trend promotion (corking) status
-/trainingstatus – Background training progress
-
-⚡ High‑ML Controls
-/scalphighml V – Set Scalp high‑ML execute threshold (e.g., 80)
-/mrhighml V – Set Mean Reversion high‑ML execute threshold (e.g., 80)
-/trendhighml V – Set Trend high‑ML execute threshold (e.g., 95)
-
-🧭 Regime & System
-/system – Parallel routing status
-/regimeanalysis – Top regime signals
-/strategycomparison – Strategy comparison table
-/parallel_performance – Compare strategy performance
-
-🧱 Support/Resistance
-HTF S/R module disabled
-
-⚙️ Risk & Controls
-/risk – Current risk settings
-/riskpercent V – Set % risk (e.g., 2.5)
-/riskusd V – Set USD risk (e.g., 100)
-/setrisk amount – Flexible ("3%" or "50")
-/mlrisk – Toggle ML dynamic risk
-/mlriskrange min max – Dynamic risk bounds
-/panicclose SYMBOL – Emergency close
-/forceretrain – Force ML retrain
-
-🧪 Diagnostics
-/telemetry – ML rejects and phantom outcomes
-
-ℹ️ Info
-/start – Welcome
-/help – This menu
-
-📈 Current Settings
-• Risk per trade: {risk_label}
-• Max leverage: {risk_cfg.max_leverage}x
-• Timeframe: {timeframe} minutes
-• Strategies: Trend Pullback ML, Mean Reversion, Scalp (phantom)
-• Promotions: MR (≥31% WR), Trend (≥31% WR), Scalp (≥50% WR)
-• Micro‑context: Trend/MR/Scalp 3m enforce enabled
-"""
-        await self.safe_reply(update, help_text)
+        lines = [
+            "📚 *Trend‑Only Help*",
+            "",
+            "Monitoring",
+            "• /dashboard — Trend dashboard (use buttons)",
+            "• /trend_states — State per symbol",
+            "• /recent — Recent executed (trend)",
+            "",
+            "ML",
+            "• /ml — Trend ML status",
+            "• /mlpatterns — Learned patterns",
+            "• /trendhighml <V> — Set high‑ML threshold",
+            "",
+            "Settings (via dashboard → Settings)",
+            "• Stream entry On/Off",
+            "• Scale‑out (TP1/TP2, fraction) and BE move",
+            "• Timeouts (HL/LH, confirmations, phantom)",
+            "",
+            "Other",
+            "• /status, /balance, /symbols",
+            "• /panicclose SYMBOL",
+            "",
+            "Current",
+            f"• Risk per trade: {risk_label}",
+            f"• Timeframe: {timeframe}m + 3m"
+        ]
+        await self.safe_reply(update, "\n".join(lines))
 
     async def telemetry(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show lightweight ML/phantom telemetry counters"""
@@ -1618,6 +1745,177 @@ HTF S/R module disabled
         try:
             query = update.callback_query
             data = query.data or ""
+            # Trend-only UI routes (take precedence)
+            if data == "ui:dash:refresh":
+                await query.answer("Refreshing…")
+                text, kb = self._build_trend_dashboard()
+                try:
+                    await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
+                except Exception:
+                    await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
+                return
+            if data in ("ui:trend:states", "ui:positions", "ui:recent", "ui:phantom:trend", "ui:ml:trend", "ui:ml:patterns", "ui:events", "ui:settings") or data.startswith("ui:settings:toggle:"):
+                # Re-dispatch into the simpler trend-only handlers by faking a small switch
+                if data == "ui:trend:states":
+                    await query.answer()
+                    try:
+                        from strategy_pullback import get_trend_states_snapshot
+                        snap = get_trend_states_snapshot() or {}
+                        lines = ["📐 *Trend States*", ""]
+                        for sym, st in sorted(snap.items()):
+                            try:
+                                s = st.get('state','?'); bl = st.get('breakout_level',0.0); conf = st.get('confirm_progress',0)
+                                lines.append(f"• {sym}: {s} | lvl {bl:.4f} | conf {conf}")
+                            except Exception:
+                                lines.append(f"• {sym}: {st}")
+                        await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
+                    except Exception:
+                        await query.edit_message_text("📐 Trend states unavailable", parse_mode='Markdown')
+                    return
+                if data == "ui:positions":
+                    await query.answer()
+                    book = self.shared.get('book')
+                    positions = (book.positions if book else {})
+                    lines = ["📊 *Open Positions*", ""]
+                    if not positions:
+                        lines.append("None")
+                    else:
+                        for sym, p in positions.items():
+                            try:
+                                be = ''
+                                so = getattr(self.shared.get('bot_instance', None), '_scaleout', {}) if self.shared.get('bot_instance') else {}
+                                if isinstance(so, dict) and sym in so and so.get('be_moved'):
+                                    be = ' | BE moved'
+                                lines.append(f"• {sym} {p.side.upper()} qty={p.qty} entry={p.entry:.4f} sl={p.sl:.4f} tp={p.tp:.4f}{be}")
+                            except Exception:
+                                continue
+                    await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
+                    return
+                if data == "ui:recent":
+                    await query.answer()
+                    tt = self.shared.get('trade_tracker')
+                    rec = getattr(tt, 'trades', []) or []
+                    rec = [t for t in rec if 'trend' in (getattr(t, 'strategy_name', '') or '').lower()]
+                    rec.sort(key=lambda t: getattr(t, 'exit_time', None) or getattr(t, 'entry_time', None), reverse=True)
+                    last10 = rec[:10]
+                    lines = ["📜 *Recent Executed (Trend)*", ""]
+                    for t in last10:
+                        try:
+                            sym = t.symbol; side = t.side
+                            et = t.entry_time.strftime('%m-%d %H:%M') if t.entry_time else ''
+                            out = f" | PnL ${float(t.pnl_usd):.2f}" if getattr(t, 'exit_price', None) else ''
+                            lines.append(f"• {sym} {side.upper()} {et}{out}")
+                        except Exception:
+                            continue
+                    if len(lines) <= 2:
+                        lines.append("No trades yet")
+                    await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
+                    return
+                if data == "ui:phantom:trend":
+                    await query.answer()
+                    pt = self.shared.get('phantom_tracker')
+                    total = wins = losses = timeouts = 0
+                    if pt:
+                        for trades in getattr(pt, 'phantom_trades', {}).values():
+                            for p in trades:
+                                if (getattr(p, 'strategy_name', '') or '').startswith('trend'):
+                                    oc = getattr(p, 'outcome', None)
+                                    if oc in ('win','loss'):
+                                        total += 1
+                                        wins += (1 if oc == 'win' else 0)
+                                        losses += (1 if oc == 'loss' else 0)
+                                    if (not getattr(p, 'was_executed', False)) and getattr(p, 'exit_reason', None) == 'timeout':
+                                        timeouts += 1
+                    wr = (wins/total*100.0) if total else 0.0
+                    lines = ["👻 *Trend Phantom*", "", f"Tracked: {total} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}"]
+                    await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
+                    return
+                if data == "ui:ml:trend":
+                    await query.answer()
+                    ml = self.shared.get('ml_scorer')
+                    if not ml:
+                        await query.edit_message_text("🤖 Trend ML unavailable", parse_mode='Markdown')
+                    else:
+                        st = ml.get_stats()
+                        lines = ["🤖 *Trend ML*", "",
+                                 f"Status: {st.get('status','⏳')}",
+                                 f"Threshold: {st.get('current_threshold','?'):.0f}",
+                                 f"Completed trades: {st.get('completed_trades',0)}",
+                                 f"Recent WR: {st.get('recent_win_rate',0.0):.1f}%"]
+                        await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
+                    return
+                if data == "ui:ml:patterns":
+                    await query.answer()
+                    ml = self.shared.get('ml_scorer')
+                    if not ml:
+                        await query.edit_message_text("🧠 Patterns unavailable", parse_mode='Markdown')
+                    else:
+                        pats = ml.get_learned_patterns() or {}
+                        fi = pats.get('feature_importance', {})
+                        lines = ["🧠 *Trend ML Patterns*", ""]
+                        if fi:
+                            for k, v in list(fi.items())[:8]:
+                                lines.append(f"• {k}: {float(v):.1f}%")
+                        else:
+                            lines.append("Collecting data…")
+                        await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
+                    return
+                if data == "ui:events":
+                    await query.answer()
+                    evts = self.shared.get('trend_events') or []
+                    lines = ["🧭 *Recent State Activity*", ""]
+                    if not evts:
+                        lines.append("No recent events")
+                    else:
+                        for e in evts[-30:]:
+                            sym = e.get('symbol','?'); txt = e.get('text','')
+                            lines.append(f"• {sym}: {txt}")
+                    await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
+                    return
+                if data == "ui:settings":
+                    await query.answer()
+                    cfg = self.shared.get('config', {}) or {}
+                    tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+                    sc = (tr_exec.get('scaleout',{}) or {})
+                    lines = ["⚙️ *Settings*", "",
+                             f"Stream entry: {'On' if tr_exec.get('allow_stream_entry', True) else 'Off'}",
+                             f"Scale‑out: {'On' if sc.get('enabled', False) else 'Off'}",
+                             f"BE move: {'On' if sc.get('move_sl_to_be', True) else 'Off'}",
+                             "",
+                             "Use the buttons below to toggle."]
+                    kb = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("Stream Entry", callback_data="ui:settings:toggle:stream")],
+                        [InlineKeyboardButton("Scale‑out", callback_data="ui:settings:toggle:scaleout")],
+                        [InlineKeyboardButton("BE Move", callback_data="ui:settings:toggle:be")],
+                        [InlineKeyboardButton("🔙 Back", callback_data="ui:dash:refresh")]
+                    ])
+                    await query.edit_message_text("\n".join(lines), reply_markup=kb, parse_mode='Markdown')
+                    return
+                if data.startswith("ui:settings:toggle:"):
+                    await query.answer()
+                    key = data.rsplit(':',1)[-1]
+                    bot = self.shared.get('bot_instance')
+                    cfg = self.shared.get('config', {}) or {}
+                    tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+                    sc = (tr_exec.get('scaleout',{}) or {})
+                    if key == 'stream':
+                        tr_exec['allow_stream_entry'] = not bool(tr_exec.get('allow_stream_entry', True))
+                    elif key == 'scaleout':
+                        sc['enabled'] = not bool(sc.get('enabled', False))
+                        tr_exec['scaleout'] = sc
+                    elif key == 'be':
+                        sc['move_sl_to_be'] = not bool(sc.get('move_sl_to_be', True))
+                        tr_exec['scaleout'] = sc
+                    try:
+                        cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                        if bot is not None:
+                            bot.config = cfg
+                        self.shared['config'] = cfg
+                    except Exception:
+                        pass
+                    # Back to settings snapshot
+                    await self.ui_callback(update, ctx)
+                    return
             if data.startswith("ui:dash:refresh"):
                 # Build fresh dashboard and edit in place (no cooldown)
                 await query.answer("Refreshing…")

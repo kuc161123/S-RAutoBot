@@ -104,6 +104,8 @@ trend:
   breakout_k_atr: 0.3
   sl_atr_mult: 1.5
   rr: 2.5
+  # Keep hydrated Trend states valid for up to 1 week (15m bars)
+  state_max_age_bars: 672
   use_ema_stack: true
   logging:
     no_signal_info: true     # Emit INFO when no trend signal forms (per symbol)
@@ -177,7 +179,7 @@ trend:
     require_retest: true
     retest_max_dist_atr: 0.5
     allow_volatility_high: true
-    timeout_hours: 100
+    timeout_hours: 168      # 1 week timeout for Trend phantoms
     enable_virtual_snapshots: true
     snapshots_delta: 5
 

@@ -1371,7 +1371,16 @@ class TradingBot:
                 except Exception:
                     pass
 
-                # Trend-only mode: skip any Scalp analysis/logging on 3m stream
+                # Advance Trend microstructure on each confirmed 3m bar (no 15m wait)
+                try:
+                    df15 = self.frames.get(sym)
+                    if df15 is not None and not df15.empty and getattr(self, '_detect_trend_signal', None) is not None and getattr(self, '_trend_settings', None) is not None:
+                        # Run micro-step by invoking pullback detection (it consults 3m frames internally)
+                        _ = self._detect_trend_signal(df15.copy(), self._trend_settings, sym)
+                except Exception as _te:
+                    logger.debug(f"[{sym}] Trend micro-step error on 3m: {_te}")
+
+                # Trend-only mode: skip Scalp analysis/logging on 3m stream but keep Trend micro-step above
                 try:
                     if getattr(self, '_trend_only', False):
                         continue
@@ -3597,6 +3606,11 @@ class TradingBot:
         # Use pullback strategy detection with detailed logging
         from strategy_pullback import detect_signal_pullback as detect_trend_signal
         from strategy_pullback import reset_symbol_state as _reset_symbol_state
+        # Cache Trend detect function for 3m micro-step usage
+        try:
+            self._detect_trend_signal = detect_trend_signal
+        except Exception:
+            self._detect_trend_signal = None
         # Trend-only overrides: disable MR/Scalp detection functions at source
         if self._trend_only:
             try:
@@ -3666,6 +3680,10 @@ class TradingBot:
         # Keep a separate alias to avoid refactoring call sites
         tr_cfg = cfg.get('trend', {}) or {}
         trend_settings = settings
+        try:
+            self._trend_settings = trend_settings
+        except Exception:
+            pass
         # Enable reset_symbol_state for pullback state machine
         reset_symbol_state = _reset_symbol_state
 

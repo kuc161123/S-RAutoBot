@@ -3674,7 +3674,20 @@ class TradingBot:
             bos_confirm_closes=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('bos', {}) or {}).get('confirm_closes', 1)),
             breakout_to_pullback_bars_3m=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('timeouts', {}) or {}).get('breakout_to_pullback_bars_3m', 10)),
             pullback_to_bos_bars_3m=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('timeouts', {}) or {}).get('pullback_to_bos_bars_3m', 10)),
-            breakout_buffer_atr=float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('breakout_buffer_atr', 0.05)))
+            breakout_buffer_atr=float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('breakout_buffer_atr', 0.05))),
+            # Divergence config (TSI/RSI) for 3m strict gating
+            div_enabled=bool(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('enabled', False))),
+            div_mode=str(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('mode', 'optional'))),
+            div_require=str(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('require', 'any'))),
+            div_use_rsi=bool('rsi' in ((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('oscillators', ['rsi','tsi']))),
+            div_use_tsi=bool('tsi' in ((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('oscillators', ['rsi','tsi']))),
+            div_rsi_len=int(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('rsi_len', 14))),
+            div_tsi_long=int(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('tsi_long', 25))),
+            div_tsi_short=int(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('tsi_short', 13))),
+            div_window_bars_3m=int(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('confirm_window_bars_3m', 6))),
+            div_min_strength_rsi=float(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('min_strength', {})).get('rsi', 2.0) if isinstance(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('min_strength', {})), dict) else 2.0),
+            div_min_strength_tsi=float(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('min_strength', {})).get('tsi', 0.3) if isinstance(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('min_strength', {})), dict) else 0.3),
+            div_notify=bool(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('notify', True)))
         )
         # Pullback detection uses the generic Settings() already constructed above
         # Keep a separate alias to avoid refactoring call sites

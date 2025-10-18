@@ -132,6 +132,20 @@ trend:
       enabled: true
       min_pct: 0.001        # 0.1% slippage threshold to trigger SL recalc
       pivot_buffer_atr: 0.05  # keep SL beyond pivot by 0.05 ATR
+    # Divergence confirmation on 3m (strict gating, any RSI or TSI)
+    divergence:
+      enabled: true
+      mode: strict          # off | optional | strict
+      require: any          # any | all (oscillator set)
+      oscillators: [rsi, tsi]
+      rsi_len: 14
+      tsi_long: 25
+      tsi_short: 13
+      confirm_window_bars_3m: 6
+      min_strength:
+        rsi: 2.0
+        tsi: 0.3
+      notify: true
     # Force execution when ML score is extremely high
     high_ml_force: 95
     # Scale-out partial take profit settings

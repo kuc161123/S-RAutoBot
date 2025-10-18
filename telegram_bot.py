@@ -1749,7 +1749,8 @@ class TGBot:
             if not self._cooldown_ok('dashboard'):
                 await self.safe_reply(update, "⏳ Please wait before using /dashboard again")
                 return
-            text, kb = self._build_dashboard()
+            # Use Trend-only dashboard with inline Settings for consistency
+            text, kb = self._build_trend_dashboard()
             await update.message.reply_text(text, reply_markup=kb)
 
         except Exception as e:
@@ -1770,7 +1771,7 @@ class TGBot:
                 except Exception:
                     await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
                 return
-            if data in ("ui:trend:states", "ui:positions", "ui:recent", "ui:phantom:trend", "ui:ml:trend", "ui:ml:patterns", "ui:events", "ui:settings") or data.startswith("ui:settings:toggle:"):
+            if data in ("ui:trend:states", "ui:positions", "ui:recent", "ui:phantom:trend", "ui:ml:trend", "ui:ml:patterns", "ui:events", "ui:settings") or data.startswith("ui:settings:toggle:") or data.startswith("ui:settings:set:"):
                 # Re-dispatch into the simpler trend-only handlers by faking a small switch
                 if data == "ui:trend:states":
                     await query.answer()
@@ -1796,6 +1797,13 @@ class TGBot:
                                     parts.append(micro)
                                 if pivot > 0:
                                     parts.append(f"{pivot_label}={pivot:.4f}")
+                                try:
+                                    div_ok = st.get('divergence_ok', False)
+                                    div_type = st.get('divergence_type','NONE')
+                                    div_score = float(st.get('divergence_score',0.0) or 0.0)
+                                    parts.append(f"Div={'✅' if div_ok else '—'} {div_type}{(' '+str(round(div_score,2))) if div_score else ''}")
+                                except Exception:
+                                    pass
                                 state_line = " | ".join(parts)
                                 lines.append(f"• {sym}: {state_line} | lvl {bl:.4f} | conf {conf}")
                             except Exception:
@@ -1909,6 +1917,7 @@ class TGBot:
                     cfg = self.shared.get('config', {}) or {}
                     tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
                     sc = (tr_exec.get('scaleout',{}) or {})
+                    div = (tr_exec.get('divergence',{}) or {})
                     # Read current RR and timeouts
                     rr_val = None
                     conf_bars = None
@@ -1925,6 +1934,11 @@ class TGBot:
                              f"TP1 R: {sc.get('tp1_r',1.6)} | TP2 R: {sc.get('tp2_r',3.0)} | Fraction: {sc.get('fraction',0.5):.2f}",
                              f"Confirm timeout bars: {conf_bars if conf_bars is not None else '6'} | Phantom timeout h: {(getattr(self.shared.get('phantom_tracker'), 'timeout_hours', 0) or 0)}",
                              "",
+                             "📐 *Divergence (3m)*",
+                             f"Mode: {div.get('mode','off')} | Require: {div.get('require','any')} | Osc: {', '.join(div.get('oscillators', ['rsi','tsi']))}",
+                             f"RSI len: {div.get('rsi_len',14)} | TSI: {div.get('tsi_long',25)}/{div.get('tsi_short',13)} | Window: {div.get('confirm_window_bars_3m',6)} bars",
+                             f"Min strength — RSI: {((div.get('min_strength',{}) or {}).get('rsi',2.0))} | TSI: {((div.get('min_strength',{}) or {}).get('tsi',0.3))}",
+                             "",
                              "Use the buttons below to toggle or set values."]
                     kb = InlineKeyboardMarkup([
                         [InlineKeyboardButton("Stream Entry", callback_data="ui:settings:toggle:stream")],
@@ -1933,6 +1947,11 @@ class TGBot:
                         [InlineKeyboardButton("Set R:R", callback_data="ui:settings:set:rr"), InlineKeyboardButton("Set TP1 R", callback_data="ui:settings:set:tp1_r")],
                         [InlineKeyboardButton("Set TP2 R", callback_data="ui:settings:set:tp2_r"), InlineKeyboardButton("Set Fraction", callback_data="ui:settings:set:fraction")],
                         [InlineKeyboardButton("Set Confirm Bars", callback_data="ui:settings:set:confirm_bars"), InlineKeyboardButton("Set Phantom Hours", callback_data="ui:settings:set:phantom_hours")],
+                        [InlineKeyboardButton("Div Mode", callback_data="ui:settings:toggle:div_mode"), InlineKeyboardButton("Div Require", callback_data="ui:settings:toggle:div_require")],
+                        [InlineKeyboardButton("Osc RSI", callback_data="ui:settings:toggle:div_osc_rsi"), InlineKeyboardButton("Osc TSI", callback_data="ui:settings:toggle:div_osc_tsi")],
+                        [InlineKeyboardButton("Set RSI Len", callback_data="ui:settings:set:div_rsi_len"), InlineKeyboardButton("Set TSI Params", callback_data="ui:settings:set:div_tsi_params")],
+                        [InlineKeyboardButton("Set Div Window", callback_data="ui:settings:set:div_window"), InlineKeyboardButton("Set Min RSI", callback_data="ui:settings:set:div_min_rsi")],
+                        [InlineKeyboardButton("Set Min TSI", callback_data="ui:settings:set:div_min_tsi")],
                         [InlineKeyboardButton("🔙 Back", callback_data="ui:dash:refresh")]
                     ])
                     await query.edit_message_text("\n".join(lines), reply_markup=kb, parse_mode='Markdown')
@@ -1944,6 +1963,7 @@ class TGBot:
                     cfg = self.shared.get('config', {}) or {}
                     tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
                     sc = (tr_exec.get('scaleout',{}) or {})
+                    div = (tr_exec.get('divergence',{}) or {})
                     if key == 'stream':
                         tr_exec['allow_stream_entry'] = not bool(tr_exec.get('allow_stream_entry', True))
                     elif key == 'scaleout':
@@ -1952,6 +1972,32 @@ class TGBot:
                     elif key == 'be':
                         sc['move_sl_to_be'] = not bool(sc.get('move_sl_to_be', True))
                         tr_exec['scaleout'] = sc
+                    elif key == 'div_mode':
+                        # Cycle: off -> optional -> strict -> off
+                        mode = str((div.get('mode') or 'off')).lower()
+                        nxt = 'optional' if mode == 'off' else 'strict' if mode == 'optional' else 'off'
+                        div['mode'] = nxt; div['enabled'] = (nxt != 'off')
+                        tr_exec['divergence'] = div
+                    elif key == 'div_require':
+                        req = str(div.get('require','any')).lower()
+                        div['require'] = 'all' if req == 'any' else 'any'
+                        tr_exec['divergence'] = div
+                    elif key == 'div_osc_rsi':
+                        osc = list(div.get('oscillators', ['rsi','tsi']))
+                        if 'rsi' in osc:
+                            osc = [o for o in osc if o != 'rsi']
+                        else:
+                            osc.append('rsi')
+                        div['oscillators'] = osc
+                        tr_exec['divergence'] = div
+                    elif key == 'div_osc_tsi':
+                        osc = list(div.get('oscillators', ['rsi','tsi']))
+                        if 'tsi' in osc:
+                            osc = [o for o in osc if o != 'tsi']
+                        else:
+                            osc.append('tsi')
+                        div['oscillators'] = osc
+                        tr_exec['divergence'] = div
                     try:
                         cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
                         if bot is not None:
@@ -1974,14 +2020,19 @@ class TGBot:
                         'tp2_r': "Send TP2 R (e.g., 3.0)",
                         'fraction': "Send scale‑out fraction between 0.1 and 0.9 (e.g., 0.5)",
                         'confirm_bars': "Send confirmation timeout bars (integer, e.g., 6)",
-                        'phantom_hours': "Send phantom timeout hours (integer, e.g., 100)"
+                        'phantom_hours': "Send phantom timeout hours (integer, e.g., 100)",
+                        'div_rsi_len': "Send RSI length (e.g., 14)",
+                        'div_tsi_params': "Send TSI params as long,short (e.g., 25,13)",
+                        'div_window': "Send divergence confirm window in 3m bars (e.g., 6)",
+                        'div_min_rsi': "Send minimum RSI delta (e.g., 2.0)",
+                        'div_min_tsi': "Send minimum TSI delta (e.g., 0.3)"
                     }
                     await query.edit_message_text(f"✍️ {prompts.get(key,'Send a value')}")
                     return
             if data.startswith("ui:dash:refresh"):
                 # Build fresh dashboard and edit in place (no cooldown)
                 await query.answer("Refreshing…")
-                text, kb = self._build_dashboard()
+                text, kb = self._build_trend_dashboard()
                 try:
                     await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
                 except Exception:
@@ -2379,6 +2430,13 @@ class TGBot:
                 suffix = f" | {micro}" if micro else ""
                 if pivot > 0:
                     suffix += f" | {pivot_label}={pivot:.4f}"
+                try:
+                    div_ok = st.get('divergence_ok', False)
+                    div_type = st.get('divergence_type','NONE')
+                    div_score = float(st.get('divergence_score',0.0) or 0.0)
+                    suffix += f" | Div={'✅' if div_ok else '—'} {div_type}{(' '+str(round(div_score,2))) if div_score else ''}"
+                except Exception:
+                    pass
                 lines.append(f"• {sym}: {state}{suffix} ({', '.join(detail)})")
             await self.safe_reply(update, "\n".join(lines))
         except Exception as exc:
@@ -4993,6 +5051,7 @@ class TGBot:
             cfg = self.shared.get('config', {}) or {}
             tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
             sc = (tr_exec.get('scaleout',{}) or {})
+            div = (tr_exec.get('divergence',{}) or {})
             ts = self.shared.get('trend_settings')
             pt = self.shared.get('phantom_tracker')
 
@@ -5084,6 +5143,83 @@ class TGBot:
                     await _ok(f"✅ Phantom timeout set to {val}h")
                 except Exception:
                     await update.message.reply_text("Please send an integer, e.g., 100")
+                return
+
+            # Divergence settings
+            if key == 'div_rsi_len':
+                try:
+                    val = int(text)
+                    if val < 2 or val > 100:
+                        await update.message.reply_text("RSI length must be 2–100")
+                        return
+                    div['rsi_len'] = val
+                    tr_exec['divergence'] = div
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ RSI length set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send an integer, e.g., 14")
+                return
+
+            if key == 'div_tsi_params':
+                try:
+                    parts = [int(x.strip()) for x in text.split(',')]
+                    if len(parts) != 2:
+                        raise ValueError()
+                    lo, sh = parts
+                    if lo < 2 or lo > 200 or sh < 2 or sh > 200:
+                        await update.message.reply_text("TSI params must be between 2 and 200, e.g., 25,13")
+                        return
+                    div['tsi_long'] = lo; div['tsi_short'] = sh
+                    tr_exec['divergence'] = div
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ TSI params set to {lo},{sh}")
+                except Exception:
+                    await update.message.reply_text("Please send as long,short e.g., 25,13")
+                return
+
+            if key == 'div_window':
+                try:
+                    val = int(text)
+                    if val < 0 or val > 50:
+                        await update.message.reply_text("Window must be 0–50 bars")
+                        return
+                    div['confirm_window_bars_3m'] = val
+                    tr_exec['divergence'] = div
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ Divergence window set to {val} bars")
+                except Exception:
+                    await update.message.reply_text("Please send an integer, e.g., 6")
+                return
+
+            if key == 'div_min_rsi':
+                try:
+                    val = float(text)
+                    if 'min_strength' not in div or not isinstance(div.get('min_strength'), dict):
+                        div['min_strength'] = {}
+                    div['min_strength']['rsi'] = val
+                    tr_exec['divergence'] = div
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ Minimum RSI delta set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 2.0")
+                return
+
+            if key == 'div_min_tsi':
+                try:
+                    val = float(text)
+                    if 'min_strength' not in div or not isinstance(div.get('min_strength'), dict):
+                        div['min_strength'] = {}
+                    div['min_strength']['tsi'] = val
+                    tr_exec['divergence'] = div
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ Minimum TSI delta set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 0.3")
                 return
 
         except Exception:

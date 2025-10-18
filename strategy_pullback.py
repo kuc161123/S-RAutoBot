@@ -150,6 +150,18 @@ class Settings:
     # Use 3m microframe for pullback and confirmation phases
     use_3m_pullback: bool = True
     use_3m_confirm: bool = True
+    # Microstructure/BOS controls
+    retest_enabled: bool = True
+    retest_distance_mode: str = "atr"  # atr|percent
+    retest_max_dist_atr: float = 0.50
+    retest_max_dist_pct: float = 0.40
+    require_protective_hl_for_long: bool = True
+    require_protective_lh_for_short: bool = True
+    bos_body_min_ratio: float = 0.25
+    bos_confirm_closes: int = 1  # extra 3m closes beyond pivot
+    breakout_to_pullback_bars_3m: int = 10
+    pullback_to_bos_bars_3m: int = 10
+    breakout_buffer_atr: float = 0.05  # invalidation buffer beyond level (15m ATR)
 
 @dataclass
 class Signal:
@@ -175,6 +187,13 @@ class BreakoutState:
     last_support:float = 0.0  # Track the support level
     previous_pivot_low:float = 0.0  # Track previous pivot low for structure-based stops
     previous_pivot_high:float = 0.0  # Track previous pivot high for structure-based stops
+    # Microstructure fields
+    micro_state: str = ""  # PULLBACK_3M, BOS_PENDING
+    last_counter_pivot: float = 0.0  # last 3m LH (long) or HL (short)
+    last_counter_time: Optional[datetime] = None
+    retest_ok: bool = False
+    bos_pending_confirms: int = 0
+    micro_start_time: Optional[datetime] = None
 
 # Global state tracking for each symbol
 breakout_states: Dict[str, BreakoutState] = {}
@@ -287,6 +306,35 @@ def detect_lower_high(df:pd.DataFrame, below_level:float, lookback:int=10) -> bo
                 return True
     
     return False
+
+def _last_pivot(series: pd.Series, kind: str = 'high', left: int = 2, right: int = 2) -> Optional[float]:
+    try:
+        if kind == 'high':
+            piv = _pivot_high(series, left, right)
+        else:
+            piv = _pivot_low(series, left, right)
+        s = pd.Series(piv, index=series.index).dropna()
+        if len(s) == 0:
+            return None
+        return float(s.iloc[-1])
+    except Exception:
+        return None
+
+def _body_ratio(df: pd.DataFrame) -> float:
+    try:
+        o = float(df['open'].iloc[-1]); c = float(df['close'].iloc[-1]);
+        h = float(df['high'].iloc[-1]); l = float(df['low'].iloc[-1])
+        rng = max(1e-9, h - l)
+        body = abs(c - o)
+        return body / rng
+    except Exception:
+        return 0.0
+
+def _atr_val(df: pd.DataFrame, n: int) -> float:
+    try:
+        return float(_atr(df, n)[-1])
+    except Exception:
+        return 0.0
 
 def count_confirmation_candles(df:pd.DataFrame, direction:str, count_needed:int=2) -> int:
     """
@@ -498,208 +546,238 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             _persist_state(symbol, state)
     
     elif state.state == "RESISTANCE_BROKEN":
-        # Wait for higher low above old resistance
-        df_pull = df
+        # Long setup: 3m pullback → last LH pivot → BOS above LH
+        df3 = df
         try:
             if s.use_3m_pullback and _get_df3m is not None:
                 d3 = _get_df3m(symbol)
                 if d3 is not None and len(d3) >= 30:
-                    df_pull = d3
+                    df3 = d3
         except Exception:
-            df_pull = df
-        if detect_higher_low(df_pull, state.breakout_level):
-            state.state = "HL_FORMED"
+            df3 = df
+        # Invalidation: fell back below breakout buffer
+        try:
+            atr15 = _atr_val(df, s.atr_len)
+            if c < (state.breakout_level - s.breakout_buffer_atr * atr15):
+                msg = f"[{symbol}] Invalidation: fell below breakout buffer, reset"
+                logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
+                state.state = "NEUTRAL"; state.confirmation_count = 0; state.micro_state = ""; state.retest_ok=False; state.last_counter_pivot=0.0
+                _persist_state(symbol, state)
+                return None
+        except Exception:
+            pass
+        # Retest proximity
+        if s.retest_enabled and not state.retest_ok:
             try:
-                src = df_pull if df_pull is not None else df
-                state.pullback_extreme = src["low"].iloc[-10:].min()  # Record the pullback low
+                if len(df3) >= 10:
+                    recent = df3.tail(20)
+                    min_dist = min(abs(float(x) - float(state.breakout_level)) for x in recent['low'][-20:])
+                    ok = (min_dist <= (s.retest_max_dist_atr * max(1e-9, _atr_val(df, s.atr_len)))) if s.retest_distance_mode=='atr' else (min_dist <= float(state.breakout_level)*(s.retest_max_dist_pct/100.0))
+                    if ok:
+                        state.retest_ok = True; state.micro_state = "PULLBACK_3M"; state.micro_start_time = current_time
+                        msg = f"[{symbol}] 3m retest near breakout ({min_dist:.4f})"
+                        logger.info(msg); _notify(symbol, f"🔵 Trend: {msg}")
             except Exception:
-                state.pullback_extreme = df["low"].iloc[-10:].min()
-            state.pullback_time = current_time
-            msg = f"[{symbol}] Higher Low {'(3m) ' if df_pull is not df else ''}formed above {state.breakout_level:.4f}, waiting for confirmation"
-            logger.info(msg)
-            _notify(symbol, f"🔵 Trend: {msg}")
-            _persist_state(symbol, state)
-        
-        # Reset if price falls back below breakout level
-        elif c < state.breakout_level:
-            msg = f"[{symbol}] Price fell below breakout level, resetting to neutral"
-            logger.info(msg)
-            _notify(symbol, f"🛑 Trend: {msg}")
-            state.state = "NEUTRAL"
-            state.confirmation_count = 0
-            _persist_state(symbol, state)
+                pass
+        # Optional protective HL before BOS
+        protective_hl_ok = True
+        if s.require_protective_hl_for_long:
+            try:
+                protective_hl_ok = detect_higher_low(df3, state.breakout_level)
+                if protective_hl_ok and state.state != "HL_FORMED":
+                    state.state = "HL_FORMED"; state.pullback_time = current_time
+                    try:
+                        state.pullback_extreme = df3['low'].iloc[-10:].min()
+                    except Exception:
+                        state.pullback_extreme = df['low'].iloc[-10:].min()
+                    msg = f"[{symbol}] 3m HL formed above breakout; BOS pending"
+                    logger.info(msg); _notify(symbol, f"🔵 Trend: {msg}")
+            except Exception:
+                protective_hl_ok = False
+        # Track last counter-trend pivot (LH)
+        try:
+            piv = _last_pivot(df3['high'], 'high', 2, 2)
+            if piv is not None:
+                state.last_counter_pivot = float(piv); state.last_counter_time = current_time
+        except Exception:
+            pass
+        # BOS: close above last LH with body filter and optional extra closes
+        try:
+            br = _body_ratio(df3)
+            bos_ready = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) > state.last_counter_pivot) and (br >= s.bos_body_min_ratio)
+            if state.retest_ok and protective_hl_ok and bos_ready:
+                if s.bos_confirm_closes <= 0:
+                    entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
+                    sl_opt3 = (state.pullback_extreme - s.sl_buf_atr*atr) if state.pullback_extreme else (entry - s.sl_buf_atr*atr)
+                    sl = min(state.previous_pivot_low - (s.sl_buf_atr*0.3*atr), state.breakout_level - (s.sl_buf_atr*1.6*atr), sl_opt3)
+                    if s.extra_pivot_breath_pct > 0:
+                        sl = float(sl) - float(entry)*float(s.extra_pivot_breath_pct)
+                    R = abs(entry - sl); tp = entry + (s.rr * R * 1.00165)
+                    state.state = "SIGNAL_SENT"; state.last_signal_time = current_time; state.last_signal_candle_time = df.index[-1]
+                    msg = f"[{symbol}] ✅ BOS confirmed (3m) → LONG @ {entry:.4f} (pivot {state.last_counter_pivot:.4f})"
+                    logger.info(msg); _notify(symbol, msg); _persist_state(symbol, state)
+                    if _entry_executor is not None:
+                        _entry_executor(symbol, "long", float(entry), float(sl), float(tp), {"phase":"3m_bos","lh_pivot": state.last_counter_pivot})
+                    return Signal("long", entry, sl, tp, f"BOS long: break of LH {state.last_counter_pivot:.4f}", {"atr": atr, "breakout_level": state.breakout_level, "lh_pivot": state.last_counter_pivot})
+                else:
+                    state.bos_pending_confirms += 1
+                    if state.bos_pending_confirms >= int(s.bos_confirm_closes):
+                        entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
+                        sl_opt3 = (state.pullback_extreme - s.sl_buf_atr*atr) if state.pullback_extreme else (entry - s.sl_buf_atr*atr)
+                        sl = min(state.previous_pivot_low - (s.sl_buf_atr*0.3*atr), state.breakout_level - (s.sl_buf_atr*1.6*atr), sl_opt3)
+                        if s.extra_pivot_breath_pct > 0:
+                            sl = float(sl) - float(entry)*float(s.extra_pivot_breath_pct)
+                        R = abs(entry - sl); tp = entry + (s.rr * R * 1.00165)
+                        state.state = "SIGNAL_SENT"; state.last_signal_time = current_time; state.last_signal_candle_time = df.index[-1]
+                        msg = f"[{symbol}] ✅ BOS confirmed (3m {state.bos_pending_confirms}/{s.bos_confirm_closes}) → LONG @ {entry:.4f}"
+                        logger.info(msg); _notify(symbol, msg); _persist_state(symbol, state)
+                        if _entry_executor is not None:
+                            _entry_executor(symbol, "long", float(entry), float(sl), float(tp), {"phase":"3m_bos","lh_pivot": state.last_counter_pivot})
+                        return Signal("long", entry, sl, tp, f"BOS long: break of LH {state.last_counter_pivot:.4f}", {"atr": atr, "breakout_level": state.breakout_level, "lh_pivot": state.last_counter_pivot})
+        except Exception:
+            pass
+        # Timeouts
+        try:
+            if state.breakout_time is not None and s.breakout_to_pullback_bars_3m > 0 and df3 is not df:
+                bars_since = int((df3.index >= state.breakout_time).sum())
+                if (not state.retest_ok) and bars_since >= int(s.breakout_to_pullback_bars_3m):
+                    msg = f"[{symbol}] Timeout: no 3m pullback near breakout within {s.breakout_to_pullback_bars_3m} bars"
+                    logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
+                    state.state = "NEUTRAL"; state.micro_state=""; state.retest_ok=False; state.last_counter_pivot=0.0; state.confirmation_count=0
+                    _persist_state(symbol, state)
+            if state.pullback_time is not None and s.pullback_to_bos_bars_3m > 0 and df3 is not df:
+                bars_since_pb = int((df3.index >= state.pullback_time).sum())
+                if bars_since_pb >= int(s.pullback_to_bos_bars_3m):
+                    msg = f"[{symbol}] Timeout: BOS not confirmed within {s.pullback_to_bos_bars_3m} 3m bars"
+                    logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
+                    state.state = "NEUTRAL"; state.micro_state=""; state.retest_ok=False; state.last_counter_pivot=0.0; state.confirmation_count=0
+                    _persist_state(symbol, state)
     
     elif state.state == "SUPPORT_BROKEN":
-        # Wait for lower high below old support
-        df_pull = df
+        # Short setup: 3m pullback → last HL pivot → BOS below HL
+        df3 = df
         try:
             if s.use_3m_pullback and _get_df3m is not None:
                 d3 = _get_df3m(symbol)
                 if d3 is not None and len(d3) >= 30:
-                    df_pull = d3
+                    df3 = d3
         except Exception:
-            df_pull = df
-        if detect_lower_high(df_pull, state.breakout_level):
-            state.state = "LH_FORMED"
+            df3 = df
+        # Invalidation: rose back above breakout buffer
+        try:
+            atr15 = _atr_val(df, s.atr_len)
+            if c > (state.breakout_level + s.breakout_buffer_atr * atr15):
+                msg = f"[{symbol}] Invalidation: rose above breakout buffer, reset"
+                logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
+                state.state = "NEUTRAL"; state.confirmation_count = 0; state.micro_state = ""; state.retest_ok=False; state.last_counter_pivot=0.0
+                _persist_state(symbol, state)
+                return None
+        except Exception:
+            pass
+        # Retest proximity
+        if s.retest_enabled and not state.retest_ok:
             try:
-                src = df_pull if df_pull is not None else df
-                state.pullback_extreme = src["high"].iloc[-10:].max()
+                if len(df3) >= 10:
+                    recent = df3.tail(20)
+                    min_dist = min(abs(float(x) - float(state.breakout_level)) for x in recent['high'][-20:])
+                    ok = (min_dist <= (s.retest_max_dist_atr * max(1e-9, _atr_val(df, s.atr_len)))) if s.retest_distance_mode=='atr' else (min_dist <= float(state.breakout_level)*(s.retest_max_dist_pct/100.0))
+                    if ok:
+                        state.retest_ok = True; state.micro_state = "PULLBACK_3M"; state.micro_start_time = current_time
+                        msg = f"[{symbol}] 3m retest near breakout ({min_dist:.4f})"
+                        logger.info(msg); _notify(symbol, f"🔵 Trend: {msg}")
             except Exception:
-                state.pullback_extreme = df["high"].iloc[-10:].max()  # Record the pullback high
-            state.pullback_time = current_time
-            msg = f"[{symbol}] Lower High {'(3m) ' if df_pull is not df else ''}formed below {state.breakout_level:.4f}, waiting for confirmation"
-            logger.info(msg)
-            _notify(symbol, f"🔵 Trend: {msg}")
-            _persist_state(symbol, state)
-        
-        # Reset if price rises back above breakout level
-        elif c > state.breakout_level:
-            msg = f"[{symbol}] Price rose above breakout level, resetting to neutral"
-            logger.info(msg)
-            _notify(symbol, f"🛑 Trend: {msg}")
-            state.state = "NEUTRAL"
-            state.confirmation_count = 0
-            _persist_state(symbol, state)
+                pass
+        # Optional protective LH before BOS
+        protective_lh_ok = True
+        if s.require_protective_lh_for_short:
+            try:
+                protective_lh_ok = detect_lower_high(df3, state.breakout_level)
+                if protective_lh_ok and state.state != "LH_FORMED":
+                    state.state = "LH_FORMED"; state.pullback_time = current_time
+                    try:
+                        state.pullback_extreme = df3['high'].iloc[-10:].max()
+                    except Exception:
+                        state.pullback_extreme = df['high'].iloc[-10:].max()
+                    msg = f"[{symbol}] 3m LH formed below breakout; BOS pending"
+                    logger.info(msg); _notify(symbol, f"🔵 Trend: {msg}")
+            except Exception:
+                protective_lh_ok = False
+        # Track last counter-trend pivot (HL)
+        try:
+            piv = _last_pivot(df3['low'], 'low', 2, 2)
+            if piv is not None:
+                state.last_counter_pivot = float(piv); state.last_counter_time = current_time
+        except Exception:
+            pass
+        # BOS: close below last HL
+        try:
+            br = _body_ratio(df3)
+            bos_ready = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) < state.last_counter_pivot) and (br >= s.bos_body_min_ratio)
+            if state.retest_ok and protective_lh_ok and bos_ready:
+                if s.bos_confirm_closes <= 0:
+                    entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
+                    sl_opt3 = (state.pullback_extreme + s.sl_buf_atr*atr) if state.pullback_extreme else (entry + s.sl_buf_atr*atr)
+                    sl = max(state.previous_pivot_high + (s.sl_buf_atr*0.3*atr), state.breakout_level + (s.sl_buf_atr*1.6*atr), sl_opt3)
+                    if s.extra_pivot_breath_pct > 0:
+                        sl = float(sl) + float(entry)*float(s.extra_pivot_breath_pct)
+                    R = abs(sl - entry); tp = entry - (s.rr * R * 1.00165)
+                    state.state = "SIGNAL_SENT"; state.last_signal_time = current_time; state.last_signal_candle_time = df.index[-1]
+                    msg = f"[{symbol}] ✅ BOS confirmed (3m) → SHORT @ {entry:.4f} (pivot {state.last_counter_pivot:.4f})"
+                    logger.info(msg); _notify(symbol, msg); _persist_state(symbol, state)
+                    if _entry_executor is not None:
+                        _entry_executor(symbol, "short", float(entry), float(sl), float(tp), {"phase":"3m_bos","hl_pivot": state.last_counter_pivot})
+                    return Signal("short", entry, sl, tp, f"BOS short: break of HL {state.last_counter_pivot:.4f}", {"atr": atr, "breakout_level": state.breakout_level, "hl_pivot": state.last_counter_pivot})
+                else:
+                    state.bos_pending_confirms += 1
+                    if state.bos_pending_confirms >= int(s.bos_confirm_closes):
+                        entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
+                        sl_opt3 = (state.pullback_extreme + s.sl_buf_atr*atr) if state.pullback_extreme else (entry + s.sl_buf_atr*atr)
+                        sl = max(state.previous_pivot_high + (s.sl_buf_atr*0.3*atr), state.breakout_level + (s.sl_buf_atr*1.6*atr), sl_opt3)
+                        if s.extra_pivot_breath_pct > 0:
+                            sl = float(sl) + float(entry)*float(s.extra_pivot_breath_pct)
+                        R = abs(sl - entry); tp = entry - (s.rr * R * 1.00165)
+                        state.state = "SIGNAL_SENT"; state.last_signal_time = current_time; state.last_signal_candle_time = df.index[-1]
+                        msg = f"[{symbol}] ✅ BOS confirmed (3m {state.bos_pending_confirms}/{s.bos_confirm_closes}) → SHORT @ {entry:.4f}"
+                        logger.info(msg); _notify(symbol, msg); _persist_state(symbol, state)
+                        if _entry_executor is not None:
+                            _entry_executor(symbol, "short", float(entry), float(sl), float(tp), {"phase":"3m_bos","hl_pivot": state.last_counter_pivot})
+                        return Signal("short", entry, sl, tp, f"BOS short: break of HL {state.last_counter_pivot:.4f}", {"atr": atr, "breakout_level": state.breakout_level, "hl_pivot": state.last_counter_pivot})
+        except Exception:
+            pass
+        # Timeouts
+        try:
+            if state.breakout_time is not None and s.breakout_to_pullback_bars_3m > 0 and df3 is not df:
+                bars_since = int((df3.index >= state.breakout_time).sum())
+                if (not state.retest_ok) and bars_since >= int(s.breakout_to_pullback_bars_3m):
+                    msg = f"[{symbol}] Timeout: no 3m pullback near breakout within {s.breakout_to_pullback_bars_3m} bars"
+                    logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
+                    state.state = "NEUTRAL"; state.micro_state=""; state.retest_ok=False; state.last_counter_pivot=0.0; state.confirmation_count=0
+                    _persist_state(symbol, state)
+            if state.pullback_time is not None and s.pullback_to_bos_bars_3m > 0 and df3 is not df:
+                bars_since_pb = int((df3.index >= state.pullback_time).sum())
+                if bars_since_pb >= int(s.pullback_to_bos_bars_3m):
+                    msg = f"[{symbol}] Timeout: BOS not confirmed within {s.pullback_to_bos_bars_3m} 3m bars"
+                    logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
+                    state.state = "NEUTRAL"; state.micro_state=""; state.retest_ok=False; state.last_counter_pivot=0.0; state.confirmation_count=0
+                    _persist_state(symbol, state)
     
     elif state.state == "HL_FORMED":
-        # Count confirmation candles for long
-        df_conf = df
+        # New BOS-based flow supersedes legacy 2-candle confirms
         try:
-            if s.use_3m_confirm and _get_df3m is not None:
-                d3 = _get_df3m(symbol)
-                if d3 is not None and len(d3) >= max(10, s.confirmation_candles+2):
-                    df_conf = d3
-        except Exception:
-            df_conf = df
-        confirmations = count_confirmation_candles(df_conf, "long", s.confirmation_candles)
-        # Verbose per-candle confirmation diagnostics
-        try:
-            if confirmations > 0 and confirmations < s.confirmation_candles:
-                o = float(df["open"].iloc[-1]); cl = float(df["close"].iloc[-1])
-                hi = float(df["high"].iloc[-1]); lo = float(df["low"].iloc[-1])
-                body = abs(cl - o); rng = max(1e-9, hi - lo)
-                body_ratio = body / rng * 100.0
-                try:
-                    atr_recent = float(_atr(df, s.atr_len)[-1])
-                except Exception:
-                    atr_recent = rng
-                candle_range_atr = (rng / atr_recent * 100.0) if atr_recent > 0 else 0.0
-                try:
-                    vol_ratio = float(df['volume'].iloc[-1] / df['volume'].rolling(20).mean().iloc[-1])
-                except Exception:
-                    vol_ratio = 1.0
-                logger.info(f"[{symbol}] HL confirmation {'(3m) ' if df_conf is not df else ''}{confirmations}/{s.confirmation_candles} | Body {body_ratio:.1f}% | Range/ATR {candle_range_atr:.1f}% | Vol× {vol_ratio:.2f}")
-        except Exception:
-            pass
-        # Notify on confirmation progress (only when it increases)
-        try:
-            if confirmations > 0 and confirmations > int(state.confirmation_count):
-                state.confirmation_count = confirmations
-                _notify(symbol, f"🔵 Trend: HL confirmation {'(3m) ' if df_conf is not df else ''}{confirmations}/{s.confirmation_candles}")
-                _persist_state(symbol, state)
-        except Exception:
-            pass
-
-        if confirmations >= s.confirmation_candles:
-            # Generate LONG signal
-            entry = c
-            
-            # HYBRID STOP LOSS METHOD - use whichever gives more room
-            # Option 1: Previous pivot low
-            sl_option1 = state.previous_pivot_low - (s.sl_buf_atr * 0.3 * atr)  # Smaller buffer since further away
-            
-            # Option 2: Breakout level minus ATR
-            sl_option2 = state.breakout_level - (s.sl_buf_atr * 1.6 * atr)  # Larger buffer from breakout
-            
-            # Option 3: Original method (pullback extreme)
-            sl_option3 = state.pullback_extreme - (s.sl_buf_atr * atr)
-            
-            # Use the lowest SL (gives most room)
-            sl = min(sl_option1, sl_option2, sl_option3)
-
-            # Breathing room: apply to any chosen stop method (move SL further by +extra% of entry)
-            if s.extra_pivot_breath_pct > 0:
-                old_sl = sl
-                sl = float(sl) - float(entry) * float(s.extra_pivot_breath_pct)
-                logger.info(f"[{symbol}] Stop breathing: -{s.extra_pivot_breath_pct*100:.1f}% of entry ({old_sl:.4f} -> {sl:.4f})")
-            
-            # Ensure minimum stop distance (at least 1% from entry)
-            min_stop_distance = entry * 0.01
-            if abs(entry - sl) < min_stop_distance:
-                sl = entry - min_stop_distance
-                logger.info(f"[{symbol}] Adjusted stop to minimum distance (1% from entry)")
-            
-            # Log which method was used
-            if sl == sl_option1:
-                logger.info(f"[{symbol}] Using previous pivot low for stop: {state.previous_pivot_low:.4f}")
-            elif sl == sl_option2:
-                logger.info(f"[{symbol}] Using breakout level for stop: {state.breakout_level:.4f}")
-            else:
-                logger.info(f"[{symbol}] Using pullback extreme for stop: {state.pullback_extreme:.4f}")
-            
-            if entry <= sl:
-                logger.info(f"[{symbol}] Long signal rejected - invalid SL placement")
-                state.state = "NEUTRAL"
+            if getattr(s, 'retest_enabled', False):
                 return None
-            
-            R = entry - sl
-            # Account for fees and slippage in TP calculation
-            # Bybit fees: 0.06% entry + 0.055% exit (limit) = 0.115% total
-            # Add 0.05% for slippage = 0.165% total cost
-            # To get 2.5:1 after fees, we need to target slightly higher
-            fee_adjustment = 1.00165  # Compensate for 0.165% total costs
-            tp = entry + (s.rr * R * fee_adjustment)
-            
-            state.state = "SIGNAL_SENT"
-            state.last_signal_time = current_time
-            state.last_signal_candle_time = df.index[-1]
-            
-            sig_msg = f"[{symbol}] 🟢 LONG SIGNAL (Pullback) - Entry: {entry:.4f}, SL: {sl:.4f}, TP: {tp:.4f}"
-            logger.info(sig_msg)
-            _notify(symbol, sig_msg)
-            _persist_state(symbol, state)
-            # Stream-side entry execution (if registered)
-            try:
-                if _entry_executor is not None:
-                    meta = {"phase":"3m_confirm","hl": True}
-                    _entry_executor(symbol, "long", float(entry), float(sl), float(tp), meta)
-            except Exception:
-                pass
-            return Signal("long", entry, sl, tp, 
-                         f"Pullback long: HL above {state.breakout_level:.4f} + {s.confirmation_candles} confirmations",
-                         {"atr": atr, "res": nearestRes, "sup": nearestSup, 
-                          "breakout_level": state.breakout_level, "pullback_low": state.pullback_extreme})
-        
-        # Reset if pullback crosses back into the breakout level (invalidate setup)
-        elif df["low"].iloc[-1] < state.breakout_level:
-            msg = f"[{symbol}] Pullback crossed back into breakout level ({state.breakout_level:.4f}) — forgetting setup"
-            logger.info(msg)
-            _notify(symbol, f"🛑 Trend: {msg}")
-            state.state = "NEUTRAL"
-            state.confirmation_count = 0
-            _persist_state(symbol, state)
-        # Reset if price breaks below pullback low
-        elif df["low"].iloc[-1] < state.pullback_extreme:
-            msg = f"[{symbol}] Pullback low broken, resetting to neutral"
-            logger.info(msg)
-            _notify(symbol, f"🛑 Trend: {msg}")
-            state.state = "NEUTRAL"
-            state.confirmation_count = 0
-        # Reset if confirmations do not arrive within timeout bars
-        else:
-            try:
-                if state.pullback_time is not None:
-                    bars_elapsed = int((current_time - state.pullback_time) / pd.Timedelta(minutes=15))
-                    if bars_elapsed >= int(s.confirmation_timeout_bars) and confirmations < int(s.confirmation_candles):
-                        msg = f"[{symbol}] Confirmation timeout ({bars_elapsed} bars) — forgetting setup"
-                        logger.info(msg)
-                        _notify(symbol, f"🛑 Trend: {msg}")
-                        state.state = "NEUTRAL"
-                        state.confirmation_count = 0
-            except Exception:
-                pass
+        except Exception:
+            pass
+        # Long: BOS logic handled in RESISTANCE_BROKEN branch
+        pass
     
     elif state.state == "LH_FORMED":
+        # New BOS-based flow supersedes legacy 2-candle confirms
+        try:
+            if getattr(s, 'retest_enabled', False):
+                return None
+        except Exception:
+            pass
         # Count confirmation candles for short
         df_conf = df
         try:

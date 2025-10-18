@@ -3648,7 +3648,19 @@ class TradingBot:
             extra_pivot_breath_pct=float(((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('extra_pivot_breath_pct', 0.01)),
             confirmation_timeout_bars=int((cfg.get('trend', {}) or {}).get('confirmation_timeout_bars', 6)),
             use_3m_pullback=bool((((cfg.get('trend', {}) or {}).get('context', {}) or {}).get('use_3m_pullback', True))),
-            use_3m_confirm=bool((((cfg.get('trend', {}) or {}).get('context', {}) or {}).get('use_3m_confirm', True)))
+            use_3m_confirm=bool((((cfg.get('trend', {}) or {}).get('context', {}) or {}).get('use_3m_confirm', True))),
+            # Microstructure + BOS config (with safe defaults)
+            retest_enabled=bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('retest', {}) or {}).get('enabled', True)),
+            retest_distance_mode=str((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('retest', {}) or {}).get('distance_mode', 'atr')),
+            retest_max_dist_atr=float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('retest', {}) or {}).get('max_dist_atr', 0.50)),
+            retest_max_dist_pct=float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('retest', {}) or {}).get('max_dist_pct', 0.40)),
+            require_protective_hl_for_long=bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('micro', {}) or {}).get('require_protective_hl_for_long', True)),
+            require_protective_lh_for_short=bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('micro', {}) or {}).get('require_protective_lh_for_short', True)),
+            bos_body_min_ratio=float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('bos', {}) or {}).get('body_min_ratio', 0.25)),
+            bos_confirm_closes=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('bos', {}) or {}).get('confirm_closes', 1)),
+            breakout_to_pullback_bars_3m=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('timeouts', {}) or {}).get('breakout_to_pullback_bars_3m', 10)),
+            pullback_to_bos_bars_3m=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('timeouts', {}) or {}).get('pullback_to_bos_bars_3m', 10)),
+            breakout_buffer_atr=float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('breakout_buffer_atr', 0.05)))
         )
         # Pullback detection uses the generic Settings() already constructed above
         # Keep a separate alias to avoid refactoring call sites

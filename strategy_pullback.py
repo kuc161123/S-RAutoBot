@@ -747,7 +747,12 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     elif s.div_window_bars_3m > 0 and bars_since_pb >= int(s.div_window_bars_3m) and not state.divergence_timeout_notified:
                         state.divergence_timeout_notified = True
                         if s.div_notify:
-                            _notify(symbol, f"🛑 Trend: Divergence timeout (3m) — BOS gated")
+                            _notify(symbol, f"🛑 Trend: Divergence timeout (3m) — resetting to NEUTRAL")
+                        # Reset setup after divergence window expiry (strict mode)
+                        state.state = "NEUTRAL"; state.micro_state = ""; state.retest_ok=False; state.last_counter_pivot=0.0; state.confirmation_count=0
+                        state.divergence_ok=False; state.divergence_type='NONE'; state.divergence_score=0.0; state.divergence_time=None
+                        _persist_state(symbol, state)
+                        return None
             except Exception:
                 pass
 
@@ -902,7 +907,12 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     elif s.div_window_bars_3m > 0 and bars_since_pb >= int(s.div_window_bars_3m) and not state.divergence_timeout_notified:
                         state.divergence_timeout_notified = True
                         if s.div_notify:
-                            _notify(symbol, f"🛑 Trend: Divergence timeout (3m) — BOS gated")
+                            _notify(symbol, f"🛑 Trend: Divergence timeout (3m) — resetting to NEUTRAL")
+                        # Reset setup after divergence window expiry (strict mode)
+                        state.state = "NEUTRAL"; state.micro_state = ""; state.retest_ok=False; state.last_counter_pivot=0.0; state.confirmation_count=0
+                        state.divergence_ok=False; state.divergence_type='NONE'; state.divergence_score=0.0; state.divergence_time=None
+                        _persist_state(symbol, state)
+                        return None
             except Exception:
                 pass
 

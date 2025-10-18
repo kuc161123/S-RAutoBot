@@ -652,6 +652,8 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
                     state.state = "NEUTRAL"; state.micro_state=""; state.retest_ok=False; state.last_counter_pivot=0.0; state.confirmation_count=0
                     _persist_state(symbol, state)
+        except Exception:
+            pass
     
     elif state.state == "SUPPORT_BROKEN":
         # Short setup: 3m pullback → last HL pivot → BOS below HL
@@ -760,6 +762,8 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
                     state.state = "NEUTRAL"; state.micro_state=""; state.retest_ok=False; state.last_counter_pivot=0.0; state.confirmation_count=0
                     _persist_state(symbol, state)
+        except Exception:
+            pass
     
     elif state.state == "HL_FORMED":
         # New BOS-based flow supersedes legacy 2-candle confirms

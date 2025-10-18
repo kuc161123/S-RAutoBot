@@ -194,6 +194,7 @@ class BreakoutState:
     retest_ok: bool = False
     bos_pending_confirms: int = 0
     micro_start_time: Optional[datetime] = None
+    last_counter_pivot_notified: float = 0.0
 
 # Global state tracking for each symbol
 breakout_states: Dict[str, BreakoutState] = {}
@@ -526,7 +527,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             # Find and store previous pivot low for structure-based stop
             current_idx = len(df) - 1
             state.previous_pivot_low = find_previous_pivot_low(df, current_idx)
-            msg = f"[{symbol}] Resistance broken at {nearestRes:.4f}, waiting for pullback and HL"
+            msg = f"[{symbol}] Resistance broken at {nearestRes:.4f} — focusing 3m pullback → BOS"
             logger.info(msg)
             _notify(symbol, f"🔵 Trend: {msg}")
             _persist_state(symbol, state)
@@ -540,7 +541,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             # Find and store previous pivot high for structure-based stop
             current_idx = len(df) - 1
             state.previous_pivot_high = find_previous_pivot_high(df, current_idx)
-            msg = f"[{symbol}] Support broken at {nearestSup:.4f}, waiting for pullback and LH"
+            msg = f"[{symbol}] Support broken at {nearestSup:.4f} — focusing 3m pullback → BOS"
             logger.info(msg)
             _notify(symbol, f"🔵 Trend: {msg}")
             _persist_state(symbol, state)
@@ -575,7 +576,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     ok = (min_dist <= (s.retest_max_dist_atr * max(1e-9, _atr_val(df, s.atr_len)))) if s.retest_distance_mode=='atr' else (min_dist <= float(state.breakout_level)*(s.retest_max_dist_pct/100.0))
                     if ok:
                         state.retest_ok = True; state.micro_state = "PULLBACK_3M"; state.micro_start_time = current_time
-                        msg = f"[{symbol}] 3m retest near breakout ({min_dist:.4f})"
+                        msg = f"[{symbol}] 3m retest near breakout ({min_dist:.4f}) — pullback started"
                         logger.info(msg); _notify(symbol, f"🔵 Trend: {msg}")
             except Exception:
                 pass
@@ -598,7 +599,11 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         try:
             piv = _last_pivot(df3['high'], 'high', 2, 2)
             if piv is not None:
+                prev = state.last_counter_pivot
                 state.last_counter_pivot = float(piv); state.last_counter_time = current_time
+                if state.retest_ok and prev == 0.0 and state.last_counter_pivot > 0:
+                    m = f"[{symbol}] 3m counter‑trend LH marked @ {state.last_counter_pivot:.4f}"
+                    logger.info(m); _notify(symbol, f"🔎 Trend: {m}")
         except Exception:
             pass
         # BOS: close above last LH with body filter and optional extra closes
@@ -621,6 +626,11 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     return Signal("long", entry, sl, tp, f"BOS long: break of LH {state.last_counter_pivot:.4f}", {"atr": atr, "breakout_level": state.breakout_level, "lh_pivot": state.last_counter_pivot})
                 else:
                     state.bos_pending_confirms += 1
+                    try:
+                        if state.bos_pending_confirms < int(s.bos_confirm_closes):
+                            _notify(symbol, f"🔸 Trend: BOS confirm {state.bos_pending_confirms}/{int(s.bos_confirm_closes)} (3m)")
+                    except Exception:
+                        pass
                     if state.bos_pending_confirms >= int(s.bos_confirm_closes):
                         entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
                         sl_opt3 = (state.pullback_extreme - s.sl_buf_atr*atr) if state.pullback_extreme else (entry - s.sl_buf_atr*atr)
@@ -685,7 +695,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     ok = (min_dist <= (s.retest_max_dist_atr * max(1e-9, _atr_val(df, s.atr_len)))) if s.retest_distance_mode=='atr' else (min_dist <= float(state.breakout_level)*(s.retest_max_dist_pct/100.0))
                     if ok:
                         state.retest_ok = True; state.micro_state = "PULLBACK_3M"; state.micro_start_time = current_time
-                        msg = f"[{symbol}] 3m retest near breakout ({min_dist:.4f})"
+                        msg = f"[{symbol}] 3m retest near breakout ({min_dist:.4f}) — pullback started"
                         logger.info(msg); _notify(symbol, f"🔵 Trend: {msg}")
             except Exception:
                 pass
@@ -708,7 +718,11 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         try:
             piv = _last_pivot(df3['low'], 'low', 2, 2)
             if piv is not None:
+                prev = state.last_counter_pivot
                 state.last_counter_pivot = float(piv); state.last_counter_time = current_time
+                if state.retest_ok and prev == 0.0 and state.last_counter_pivot > 0:
+                    m = f"[{symbol}] 3m counter‑trend HL marked @ {state.last_counter_pivot:.4f}"
+                    logger.info(m); _notify(symbol, f"🔎 Trend: {m}")
         except Exception:
             pass
         # BOS: close below last HL
@@ -731,6 +745,11 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     return Signal("short", entry, sl, tp, f"BOS short: break of HL {state.last_counter_pivot:.4f}", {"atr": atr, "breakout_level": state.breakout_level, "hl_pivot": state.last_counter_pivot})
                 else:
                     state.bos_pending_confirms += 1
+                    try:
+                        if state.bos_pending_confirms < int(s.bos_confirm_closes):
+                            _notify(symbol, f"🔸 Trend: BOS confirm {state.bos_pending_confirms}/{int(s.bos_confirm_closes)} (3m)")
+                    except Exception:
+                        pass
                     if state.bos_pending_confirms >= int(s.bos_confirm_closes):
                         entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
                         sl_opt3 = (state.pullback_extreme + s.sl_buf_atr*atr) if state.pullback_extreme else (entry + s.sl_buf_atr*atr)

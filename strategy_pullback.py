@@ -999,7 +999,10 @@ def get_trend_states_snapshot() -> Dict[str, dict]:
                 'breakout_level': float(st.breakout_level or 0.0),
                 'pullback_extreme': float(st.pullback_extreme or 0.0),
                 'confirm_progress': int(st.confirmation_count or 0),
-                'pullback_age_bars': age_bars
+                'pullback_age_bars': age_bars,
+                # 3m microstructure fields (for transparent monitoring)
+                'micro_state': st.micro_state or "",
+                'last_counter_pivot': float(st.last_counter_pivot or 0.0)
             }
         except Exception:
             out[sym] = {'state': st.state}

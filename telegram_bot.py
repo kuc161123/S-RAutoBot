@@ -1780,8 +1780,24 @@ class TGBot:
                         lines = ["📐 *Trend States*", ""]
                         for sym, st in sorted(snap.items()):
                             try:
-                                s = st.get('state','?'); bl = st.get('breakout_level',0.0); conf = st.get('confirm_progress',0)
-                                lines.append(f"• {sym}: {s} | lvl {bl:.4f} | conf {conf}")
+                                s = st.get('state','?')
+                                bl = float(st.get('breakout_level', 0.0) or 0.0)
+                                conf = int(st.get('confirm_progress', 0) or 0)
+                                micro = st.get('micro_state') or ""
+                                pivot = float(st.get('last_counter_pivot') or 0.0)
+                                if s in ("RESISTANCE_BROKEN", "HL_FORMED"):
+                                    pivot_label = "LH"
+                                elif s in ("SUPPORT_BROKEN", "LH_FORMED"):
+                                    pivot_label = "HL"
+                                else:
+                                    pivot_label = "PV"
+                                parts = [f"{s}"]
+                                if micro:
+                                    parts.append(micro)
+                                if pivot > 0:
+                                    parts.append(f"{pivot_label}={pivot:.4f}")
+                                state_line = " | ".join(parts)
+                                lines.append(f"• {sym}: {state_line} | lvl {bl:.4f} | conf {conf}")
                             except Exception:
                                 lines.append(f"• {sym}: {st}")
                         await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
@@ -2343,6 +2359,15 @@ class TGBot:
                 ext = st.get('pullback_extreme')
                 conf = st.get('confirm_progress', 0)
                 age = st.get('pullback_age_bars')
+                micro = st.get('micro_state') or ""
+                pivot = float(st.get('last_counter_pivot') or 0.0)
+                # Decide pivot label by macro path: long path expects LH, short path expects HL
+                if state in ("RESISTANCE_BROKEN", "HL_FORMED"):
+                    pivot_label = "LH"
+                elif state in ("SUPPORT_BROKEN", "LH_FORMED"):
+                    pivot_label = "HL"
+                else:
+                    pivot_label = "PV"
                 detail = []
                 if brk:
                     detail.append(f"break {brk:.4f}")
@@ -2351,7 +2376,10 @@ class TGBot:
                 detail.append(f"conf {conf}")
                 if age is not None:
                     detail.append(f"age {age}b")
-                lines.append(f"• {sym}: {state} ({', '.join(detail)})")
+                suffix = f" | {micro}" if micro else ""
+                if pivot > 0:
+                    suffix += f" | {pivot_label}={pivot:.4f}"
+                lines.append(f"• {sym}: {state}{suffix} ({', '.join(detail)})")
             await self.safe_reply(update, "\n".join(lines))
         except Exception as exc:
             logger.warning(f"trend_states failed: {exc}")

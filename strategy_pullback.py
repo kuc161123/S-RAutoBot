@@ -606,10 +606,10 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     logger.info(m); _notify(symbol, f"🔎 Trend: {m}")
         except Exception:
             pass
-        # BOS: close above last LH with body filter and optional extra closes
+        # BOS: close above last LH (ignore body filter) and optional extra closes
         try:
             br = _body_ratio(df3)
-            bos_ready = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) > state.last_counter_pivot) and (br >= s.bos_body_min_ratio)
+            bos_ready = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) > state.last_counter_pivot)
             if state.retest_ok and protective_hl_ok and bos_ready:
                 if s.bos_confirm_closes <= 0:
                     entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
@@ -725,10 +725,10 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     logger.info(m); _notify(symbol, f"🔎 Trend: {m}")
         except Exception:
             pass
-        # BOS: close below last HL
+        # BOS: close below last HL (ignore body filter)
         try:
             br = _body_ratio(df3)
-            bos_ready = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) < state.last_counter_pivot) and (br >= s.bos_body_min_ratio)
+            bos_ready = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) < state.last_counter_pivot)
             if state.retest_ok and protective_lh_ok and bos_ready:
                 if s.bos_confirm_closes <= 0:
                     entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)

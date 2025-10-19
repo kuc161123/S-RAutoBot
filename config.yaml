@@ -146,6 +146,8 @@ trend:
         rsi: 2.0
         tsi: 0.3
       notify: true
+    # When BOS breaks before protective pivot, hold 'armed' state up to this many minutes
+    bos_hold_minutes: 300
     # Force execution when ML score is extremely high
     high_ml_force: 95
     # Scale-out partial take profit settings

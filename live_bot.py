@@ -3694,6 +3694,8 @@ class TradingBot:
             div_min_strength_rsi=float(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('min_strength', {})).get('rsi', 2.0) if isinstance(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('min_strength', {})), dict) else 2.0),
             div_min_strength_tsi=float(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('min_strength', {})).get('tsi', 0.3) if isinstance(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('min_strength', {})), dict) else 0.3),
             div_notify=bool(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('notify', True)))
+            ,
+            bos_armed_hold_minutes=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('bos_hold_minutes', 300)))
         )
         # Pullback detection uses the generic Settings() already constructed above
         # Keep a separate alias to avoid refactoring call sites

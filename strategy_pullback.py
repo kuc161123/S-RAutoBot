@@ -755,6 +755,28 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                         state.pullback_extreme = df['low'].iloc[-10:].min()
                     msg = f"[{symbol}] 3m HL formed above breakout; BOS pending"
                     logger.info(msg); _notify(symbol, f"🔵 Trend: {msg}")
+                    # If BOS was already broken earlier (armed) or is currently above pivot, send signal immediately
+                    try:
+                        bos_cross_now = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) > state.last_counter_pivot)
+                    except Exception:
+                        bos_cross_now = False
+                    if (state.bos_cross_notified or bos_cross_now) and state.retest_ok:
+                        try:
+                            entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
+                            sl_opt3 = (state.pullback_extreme - s.sl_buf_atr*atr) if state.pullback_extreme else (entry - s.sl_buf_atr*atr)
+                            sl = min(state.previous_pivot_low - (s.sl_buf_atr*0.3*atr), state.breakout_level - (s.sl_buf_atr*1.6*atr), sl_opt3)
+                            if s.extra_pivot_breath_pct > 0:
+                                sl = float(sl) - float(entry)*float(s.extra_pivot_breath_pct)
+                            R = abs(entry - sl); tp = entry + (s.rr * R * 1.00165)
+                            state.state = "SIGNAL_SENT"; state.last_signal_time = current_time; state.last_signal_candle_time = df.index[-1]
+                            state.waiting_reason = ""; state.bos_cross_notified = False
+                            msg2 = f"[{symbol}] ✅ BOS confirmed (3m) → LONG @ {entry:.4f} (pivot {state.last_counter_pivot:.4f})"
+                            logger.info(msg2); _notify(symbol, msg2); _persist_state(symbol, state)
+                            if _entry_executor is not None:
+                                _entry_executor(symbol, "long", float(entry), float(sl), float(tp), {"phase":"3m_bos","lh_pivot": state.last_counter_pivot, "div_ok": bool(state.divergence_ok), "div_type": state.divergence_type, "div_score": float(state.divergence_score), "div_rsi_delta": float(state.div_rsi_delta), "div_tsi_delta": float(state.div_tsi_delta)})
+                            return Signal("long", entry, sl, tp, f"BOS long: break of LH {state.last_counter_pivot:.4f}", {"atr": _atr_val(df, s.atr_len), "breakout_level": state.breakout_level, "lh_pivot": state.last_counter_pivot})
+                        except Exception:
+                            pass
                     # Start divergence check (strict gating if enabled)
                     try:
                         if s.div_enabled and s.div_mode in ("optional","strict"):
@@ -940,6 +962,28 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                         state.pullback_extreme = df['high'].iloc[-10:].max()
                     msg = f"[{symbol}] 3m LH formed below breakout; BOS pending"
                     logger.info(msg); _notify(symbol, f"🔵 Trend: {msg}")
+                    # If BOS was already broken earlier (armed) or is currently below pivot, send signal immediately
+                    try:
+                        bos_cross_now = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) < state.last_counter_pivot)
+                    except Exception:
+                        bos_cross_now = False
+                    if (state.bos_cross_notified or bos_cross_now) and state.retest_ok:
+                        try:
+                            entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
+                            sl_opt3 = (state.pullback_extreme + s.sl_buf_atr*atr) if state.pullback_extreme else (entry + s.sl_buf_atr*atr)
+                            sl = max(state.previous_pivot_high + (s.sl_buf_atr*0.3*atr), state.breakout_level + (s.sl_buf_atr*1.6*atr), sl_opt3)
+                            if s.extra_pivot_breath_pct > 0:
+                                sl = float(sl) + float(entry)*float(s.extra_pivot_breath_pct)
+                            R = abs(sl - entry); tp = entry - (s.rr * R * 1.00165)
+                            state.state = "SIGNAL_SENT"; state.last_signal_time = current_time; state.last_signal_candle_time = df.index[-1]
+                            state.waiting_reason = ""; state.bos_cross_notified = False
+                            msg2 = f"[{symbol}] ✅ BOS confirmed (3m) → SHORT @ {entry:.4f} (pivot {state.last_counter_pivot:.4f})"
+                            logger.info(msg2); _notify(symbol, msg2); _persist_state(symbol, state)
+                            if _entry_executor is not None:
+                                _entry_executor(symbol, "short", float(entry), float(sl), float(tp), {"phase":"3m_bos","hl_pivot": state.last_counter_pivot, "div_ok": bool(state.divergence_ok), "div_type": state.divergence_type, "div_score": float(state.divergence_score), "div_rsi_delta": float(state.div_rsi_delta), "div_tsi_delta": float(state.div_tsi_delta)})
+                            return Signal("short", entry, sl, tp, f"BOS short: break of HL {state.last_counter_pivot:.4f}", {"atr": _atr_val(df, s.atr_len), "breakout_level": state.breakout_level, "hl_pivot": state.last_counter_pivot})
+                        except Exception:
+                            pass
                     # Start divergence check (strict gating if enabled)
                     try:
                         if s.div_enabled and s.div_mode in ("optional","strict"):

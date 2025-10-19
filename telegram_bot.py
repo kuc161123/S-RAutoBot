@@ -1808,7 +1808,23 @@ class TGBot:
                                 lines.append(f"• {sym}: {state_line} | lvl {bl:.4f} | conf {conf}")
                             except Exception:
                                 lines.append(f"• {sym}: {st}")
-                        await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
+                        text = "\n".join(lines)
+                        # Handle Telegram 4096-char limit by truncating and hinting
+                        if len(text) > 3800:
+                            # Keep header + first ~40 items
+                            header = lines[:2]
+                            body = lines[2:42]
+                            rest = len(lines) - len(body) - 2
+                            body.append(f"… (+{rest} more, use /trend_states)")
+                            text = "\n".join(header + body)
+                        try:
+                            await query.edit_message_text(text, parse_mode='Markdown')
+                        except Exception:
+                            # Fallback: send as a new message (avoid losing content)
+                            try:
+                                await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
+                            except Exception:
+                                await query.edit_message_text("📐 Trend states unavailable", parse_mode='Markdown')
                     except Exception:
                         await query.edit_message_text("📐 Trend states unavailable", parse_mode='Markdown')
                     return

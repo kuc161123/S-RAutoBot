@@ -622,6 +622,12 @@ class TradingBot:
                 return True, 'gates_disabled'
         except Exception:
             pass
+        # Config override: ungated Trend phantom flow (learn-first)
+        try:
+            if bool(((self.config.get('phantom', {}) or {}).get('ungated_trend', False))):
+                return True, 'ungated_trend'
+        except Exception:
+            pass
         try:
             cfg = self.config
         except Exception:
@@ -5848,7 +5854,13 @@ class TradingBot:
                                     'range_expansion': range_expansion,
                                     'session': sess,
                                     'symbol_cluster': sym_cluster,
-                                    'volatility_regime': vol_reg
+                                    'volatility_regime': vol_reg,
+                                    # Divergence features (if provided by strategy)
+                                    'div_ok': bool(getattr(sig_tr_ind, 'meta', {}).get('div_ok', False) if getattr(sig_tr_ind, 'meta', None) else False),
+                                    'div_type': str(getattr(sig_tr_ind, 'meta', {}).get('div_type', 'NONE') if getattr(sig_tr_ind, 'meta', None) else 'NONE'),
+                                    'div_score': float(getattr(sig_tr_ind, 'meta', {}).get('div_score', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0),
+                                    'div_rsi_delta': float(getattr(sig_tr_ind, 'meta', {}).get('div_rsi_delta', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0),
+                                    'div_tsi_delta': float(getattr(sig_tr_ind, 'meta', {}).get('div_tsi_delta', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0),
                                 }
                                 # Log Trend Pullback signal meta and EV threshold snapshot
                                 try:
@@ -8626,3 +8638,13 @@ if __name__ == "__main__":
         if hasattr(bot, 'storage'):
             bot.storage.close()
         logger.info("Bot terminated")
+                    # Confirm flag for this 15m bar
+                    try:
+                        main_confirm = bool(k.get('confirm', False))
+                    except Exception:
+                        main_confirm = False
+                    try:
+                        if getattr(self, '_trend_settings', None) is not None:
+                            self._trend_settings.current_bar_confirmed = main_confirm
+                    except Exception:
+                        pass

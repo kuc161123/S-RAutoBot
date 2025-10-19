@@ -132,6 +132,11 @@ class TrendMLScorer:
             'confirm_candles',    # 2 if satisfied else <2
             'ema_stack_score',    # simple trend filter, optional
             'range_expansion',    # day range vs median
+            # Divergence features (if available; defaults applied otherwise)
+            'div_ok',
+            'div_score',
+            'div_rsi_delta',
+            'div_tsi_delta',
             'session', 'symbol_cluster', 'volatility_regime'
         ]
         vec = []
@@ -141,10 +146,19 @@ class TrendMLScorer:
                 v = {'asian':0,'european':1,'us':2,'off_hours':3}.get(str(v),3)
             if k == 'volatility_regime':
                 v = {'low':0,'normal':1,'high':2,'extreme':3}.get(str(v),1)
+            if k == 'div_ok':
+                try:
+                    v = 1.0 if bool(v) else 0.0
+                except Exception:
+                    v = 0.0
             try:
                 vec.append(float(v))
             except Exception:
-                vec.append(0.0)
+                # Defaults for divergence and numerics when missing
+                if k in ('div_ok','div_score','div_rsi_delta','div_tsi_delta'):
+                    vec.append(0.0)
+                else:
+                    vec.append(0.0)
         return vec
 
     def score_signal(self, signal: Dict, features: Dict) -> Tuple[float, str]:

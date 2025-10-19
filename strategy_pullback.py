@@ -162,6 +162,9 @@ class Settings:
     breakout_to_pullback_bars_3m: int = 10
     pullback_to_bos_bars_3m: int = 10
     breakout_buffer_atr: float = 0.05  # invalidation buffer beyond level (15m ATR)
+    # 15m breakout gating
+    require_main_confirm_for_breakout: bool = True
+    current_bar_confirmed: bool = False
     # Divergence confirmation (3m) before BOS
     div_enabled: bool = False
     div_mode: str = "optional"  # off|optional|strict
@@ -214,6 +217,10 @@ class BreakoutState:
     divergence_score: float = 0.0
     divergence_time: Optional[datetime] = None
     divergence_timeout_notified: bool = False
+    div_rsi_delta: float = 0.0
+    div_tsi_delta: float = 0.0
+    # One-time micro confirmation note (HH/HL or LH/LL) just after breakout
+    micro_note_sent: bool = False
 
 # Global state tracking for each symbol
 breakout_states: Dict[str, BreakoutState] = {}
@@ -275,19 +282,19 @@ def _last_two_pivots(series: pd.Series, kind: str = 'low', L: int = 2, R: int = 
 def _hidden_divergence(df3: pd.DataFrame, path: str, s: Settings):
     """Evaluate hidden divergence on 3m pivots.
     path: 'long' (HL) or 'short' (LH)
-    Returns: (ok:bool, div_type:str, score:float, details:str)
+    Returns: (ok:bool, div_type:str, score:float, details:str, dr:float, dt:float)
     """
     try:
         close = df3['close']
         lows = df3['low']; highs = df3['high']
         pivs = _last_two_pivots(lows if path=='long' else highs, 'low' if path=='long' else 'high', 2, 2)
         if not pivs:
-            return False, 'NONE', 0.0, ''
+            return False, 'NONE', 0.0, '', 0.0, 0.0
         (i1, p1), (i2, p2) = pivs
         # Price HL/LH check (should already be true from protective pivot detection)
         price_ok = (p2 > p1) if path=='long' else (p2 < p1)
         if not price_ok:
-            return False, 'NONE', 0.0, ''
+            return False, 'NONE', 0.0, '', 0.0, 0.0
         # Oscillators
         rsi = _rsi(close, s.div_rsi_len) if s.div_use_rsi else None
         tsi = _tsi(close, s.div_tsi_long, s.div_tsi_short) if s.div_use_tsi else None
@@ -309,7 +316,7 @@ def _hidden_divergence(df3: pd.DataFrame, path: str, s: Settings):
         all_ok = ( (not s.div_use_rsi or rsi_ok) and (not s.div_use_tsi or tsi_ok) )
         ok = any_ok if s.div_require == 'any' else all_ok
         if not ok:
-            return False, 'NONE', 0.0, ''
+            return False, 'NONE', 0.0, '', float(dr if 'dr' in locals() else 0.0), float(dt if 'dt' in locals() else 0.0)
         div_type = 'HBULL' if path=='long' else 'HBEAR'
         score = max(abs(dr), abs(dt))
         details = []
@@ -317,9 +324,29 @@ def _hidden_divergence(df3: pd.DataFrame, path: str, s: Settings):
             details.append(f"RSIΔ={dr:+.2f}")
         if s.div_use_tsi:
             details.append(f"TSIΔ={dt:+.2f}")
-        return True, div_type, float(score), (' '.join(details))
+        return True, div_type, float(score), (' '.join(details)), float(dr), float(dt)
     except Exception:
-        return False, 'NONE', 0.0, ''
+        return False, 'NONE', 0.0, '', 0.0, 0.0
+
+def _micro_confirms(df3: pd.DataFrame, path: str) -> bool:
+    """Check if 3m shows HH/HL (long) or LH/LL (short) using last two pivots."""
+    try:
+        if path == 'long':
+            hp = _last_two_pivots(df3['high'], 'high', 2, 2)
+            lp = _last_two_pivots(df3['low'], 'low', 2, 2)
+            if (not hp) or (not lp):
+                return False
+            (_, h1), (_, h2) = hp; (_, l1), (_, l2) = lp
+            return (h2 > h1) and (l2 > l1)
+        else:
+            hp = _last_two_pivots(df3['high'], 'high', 2, 2)
+            lp = _last_two_pivots(df3['low'], 'low', 2, 2)
+            if (not hp) or (not lp):
+                return False
+            (_, h1), (_, h2) = hp; (_, l1), (_, l2) = lp
+            return (h2 < h1) and (l2 < l1)
+    except Exception:
+        return False
 
 def _atr(df:pd.DataFrame, n:int):
     """Calculate Average True Range"""
@@ -629,6 +656,12 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
     if state.state == "NEUTRAL":
         # Check for initial breakout
         if trendUp and c > nearestRes and vol_ok and ema_ok_long:
+            # Require 15m bar close if configured
+            try:
+                if s.require_main_confirm_for_breakout and not bool(getattr(s, 'current_bar_confirmed', False)):
+                    return None
+            except Exception:
+                pass
             # Resistance broken - wait for pullback
             state.state = "RESISTANCE_BROKEN"
             state.breakout_level = nearestRes
@@ -643,6 +676,11 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             _persist_state(symbol, state)
             
         elif trendDn and c < nearestSup and vol_ok and ema_ok_short:
+            try:
+                if s.require_main_confirm_for_breakout and not bool(getattr(s, 'current_bar_confirmed', False)):
+                    return None
+            except Exception:
+                pass
             # Support broken - wait for pullback
             state.state = "SUPPORT_BROKEN"
             state.breakout_level = nearestSup
@@ -666,6 +704,16 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     df3 = d3
         except Exception:
             df3 = df
+        # Optional pre-pullback micro confirmation note (HH/HL since breakout)
+        try:
+            if (not state.micro_note_sent) and (not state.retest_ok) and state.breakout_time is not None and df3 is not df:
+                # Use last ~20 bars after breakout
+                seg = df3[df3.index >= state.breakout_time].tail(30)
+                if len(seg) >= 6 and _micro_confirms(seg, 'long'):
+                    _notify(symbol, f"🔹 Trend: 3m micro confirms HH/HL since breakout")
+                    state.micro_note_sent = True
+        except Exception:
+            pass
         # Invalidation: fell back below breakout buffer
         try:
             atr15 = _atr_val(df, s.atr_len)
@@ -706,9 +754,10 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     # Start divergence check (strict gating if enabled)
                     try:
                         if s.div_enabled and s.div_mode in ("optional","strict"):
-                            ok, div_type, score, det = _hidden_divergence(df3, 'long', s)
+                            ok, div_type, score, det, dr, dt = _hidden_divergence(df3, 'long', s)
                             if ok:
                                 state.divergence_ok = True; state.divergence_type = div_type; state.divergence_score = score; state.divergence_time = current_time
+                                state.div_rsi_delta = float(dr); state.div_tsi_delta = float(dt)
                                 if s.div_notify:
                                     _notify(symbol, f"🔬 Trend: Hidden bullish divergence confirmed (3m) {(''+det) if det else ''}")
                             else:
@@ -739,9 +788,10 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 else:
                     bars_since_pb = 0
                 if not state.divergence_ok:
-                    ok, div_type, score, det = _hidden_divergence(df3, 'long', s)
+                    ok, div_type, score, det, dr, dt = _hidden_divergence(df3, 'long', s)
                     if ok:
                         state.divergence_ok = True; state.divergence_type = div_type; state.divergence_score=score; state.divergence_time=current_time
+                        state.div_rsi_delta = float(dr); state.div_tsi_delta = float(dt)
                         if s.div_notify:
                             _notify(symbol, f"🔬 Trend: Hidden bullish divergence confirmed (3m) {(''+det) if det else ''}")
                     elif s.div_window_bars_3m > 0 and bars_since_pb >= int(s.div_window_bars_3m) and not state.divergence_timeout_notified:
@@ -774,7 +824,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     msg = f"[{symbol}] ✅ BOS confirmed (3m) → LONG @ {entry:.4f} (pivot {state.last_counter_pivot:.4f})"
                     logger.info(msg); _notify(symbol, msg); _persist_state(symbol, state)
                     if _entry_executor is not None:
-                        _entry_executor(symbol, "long", float(entry), float(sl), float(tp), {"phase":"3m_bos","lh_pivot": state.last_counter_pivot})
+                        _entry_executor(symbol, "long", float(entry), float(sl), float(tp), {"phase":"3m_bos","lh_pivot": state.last_counter_pivot, "div_ok": bool(state.divergence_ok), "div_type": state.divergence_type, "div_score": float(state.divergence_score), "div_rsi_delta": float(state.div_rsi_delta), "div_tsi_delta": float(state.div_tsi_delta)})
                     return Signal("long", entry, sl, tp, f"BOS long: break of LH {state.last_counter_pivot:.4f}", {"atr": atr, "breakout_level": state.breakout_level, "lh_pivot": state.last_counter_pivot})
                 else:
                     state.bos_pending_confirms += 1
@@ -794,7 +844,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                         msg = f"[{symbol}] ✅ BOS confirmed (3m {state.bos_pending_confirms}/{s.bos_confirm_closes}) → LONG @ {entry:.4f}"
                         logger.info(msg); _notify(symbol, msg); _persist_state(symbol, state)
                         if _entry_executor is not None:
-                            _entry_executor(symbol, "long", float(entry), float(sl), float(tp), {"phase":"3m_bos","lh_pivot": state.last_counter_pivot})
+                            _entry_executor(symbol, "long", float(entry), float(sl), float(tp), {"phase":"3m_bos","lh_pivot": state.last_counter_pivot, "div_ok": bool(state.divergence_ok), "div_type": state.divergence_type, "div_score": float(state.divergence_score), "div_rsi_delta": float(state.div_rsi_delta), "div_tsi_delta": float(state.div_tsi_delta)})
                         return Signal("long", entry, sl, tp, f"BOS long: break of LH {state.last_counter_pivot:.4f}", {"atr": atr, "breakout_level": state.breakout_level, "lh_pivot": state.last_counter_pivot})
         except Exception:
             pass
@@ -827,6 +877,15 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     df3 = d3
         except Exception:
             df3 = df
+        # Optional pre-pullback micro confirmation note (LH/LL since breakout)
+        try:
+            if (not state.micro_note_sent) and (not state.retest_ok) and state.breakout_time is not None and df3 is not df:
+                seg = df3[df3.index >= state.breakout_time].tail(30)
+                if len(seg) >= 6 and _micro_confirms(seg, 'short'):
+                    _notify(symbol, f"🔹 Trend: 3m micro confirms LH/LL since breakout")
+                    state.micro_note_sent = True
+        except Exception:
+            pass
         # Invalidation: rose back above breakout buffer
         try:
             atr15 = _atr_val(df, s.atr_len)
@@ -867,9 +926,10 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     # Start divergence check (strict gating if enabled)
                     try:
                         if s.div_enabled and s.div_mode in ("optional","strict"):
-                            ok, div_type, score, det = _hidden_divergence(df3, 'short', s)
+                            ok, div_type, score, det, dr, dt = _hidden_divergence(df3, 'short', s)
                             if ok:
                                 state.divergence_ok = True; state.divergence_type = div_type; state.divergence_score = score; state.divergence_time = current_time
+                                state.div_rsi_delta = float(dr); state.div_tsi_delta = float(dt)
                                 if s.div_notify:
                                     _notify(symbol, f"🔬 Trend: Hidden bearish divergence confirmed (3m) {(''+det) if det else ''}")
                             else:
@@ -899,9 +959,10 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 else:
                     bars_since_pb = 0
                 if not state.divergence_ok:
-                    ok, div_type, score, det = _hidden_divergence(df3, 'short', s)
+                    ok, div_type, score, det, dr, dt = _hidden_divergence(df3, 'short', s)
                     if ok:
                         state.divergence_ok = True; state.divergence_type = div_type; state.divergence_score=score; state.divergence_time=current_time
+                        state.div_rsi_delta = float(dr); state.div_tsi_delta = float(dt)
                         if s.div_notify:
                             _notify(symbol, f"🔬 Trend: Hidden bearish divergence confirmed (3m) {(''+det) if det else ''}")
                     elif s.div_window_bars_3m > 0 and bars_since_pb >= int(s.div_window_bars_3m) and not state.divergence_timeout_notified:
@@ -934,7 +995,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     msg = f"[{symbol}] ✅ BOS confirmed (3m) → SHORT @ {entry:.4f} (pivot {state.last_counter_pivot:.4f})"
                     logger.info(msg); _notify(symbol, msg); _persist_state(symbol, state)
                     if _entry_executor is not None:
-                        _entry_executor(symbol, "short", float(entry), float(sl), float(tp), {"phase":"3m_bos","hl_pivot": state.last_counter_pivot})
+                        _entry_executor(symbol, "short", float(entry), float(sl), float(tp), {"phase":"3m_bos","hl_pivot": state.last_counter_pivot, "div_ok": bool(state.divergence_ok), "div_type": state.divergence_type, "div_score": float(state.divergence_score), "div_rsi_delta": float(state.div_rsi_delta), "div_tsi_delta": float(state.div_tsi_delta)})
                     return Signal("short", entry, sl, tp, f"BOS short: break of HL {state.last_counter_pivot:.4f}", {"atr": atr, "breakout_level": state.breakout_level, "hl_pivot": state.last_counter_pivot})
                 else:
                     state.bos_pending_confirms += 1
@@ -954,7 +1015,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                         msg = f"[{symbol}] ✅ BOS confirmed (3m {state.bos_pending_confirms}/{s.bos_confirm_closes}) → SHORT @ {entry:.4f}"
                         logger.info(msg); _notify(symbol, msg); _persist_state(symbol, state)
                         if _entry_executor is not None:
-                            _entry_executor(symbol, "short", float(entry), float(sl), float(tp), {"phase":"3m_bos","hl_pivot": state.last_counter_pivot})
+                            _entry_executor(symbol, "short", float(entry), float(sl), float(tp), {"phase":"3m_bos","hl_pivot": state.last_counter_pivot, "div_ok": bool(state.divergence_ok), "div_type": state.divergence_type, "div_score": float(state.divergence_score), "div_rsi_delta": float(state.div_rsi_delta), "div_tsi_delta": float(state.div_tsi_delta)})
                         return Signal("short", entry, sl, tp, f"BOS short: break of HL {state.last_counter_pivot:.4f}", {"atr": atr, "breakout_level": state.breakout_level, "hl_pivot": state.last_counter_pivot})
         except Exception:
             pass

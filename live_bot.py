@@ -8638,13 +8638,3 @@ if __name__ == "__main__":
         if hasattr(bot, 'storage'):
             bot.storage.close()
         logger.info("Bot terminated")
-                    # Confirm flag for this 15m bar
-                    try:
-                        main_confirm = bool(k.get('confirm', False))
-                    except Exception:
-                        main_confirm = False
-                    try:
-                        if getattr(self, '_trend_settings', None) is not None:
-                            self._trend_settings.current_bar_confirmed = main_confirm
-                    except Exception:
-                        pass

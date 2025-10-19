@@ -1804,6 +1804,12 @@ class TGBot:
                                     parts.append(f"Div={'✅' if div_ok else '—'} {div_type}{(' '+str(round(div_score,2))) if div_score else ''}")
                                 except Exception:
                                     pass
+                                try:
+                                    if st.get('bos_crossed'):
+                                        wr = st.get('waiting_reason') or 'WAIT_PIVOT'
+                                        parts.append(f"BOS=armed({wr})")
+                                except Exception:
+                                    pass
                                 state_line = " | ".join(parts)
                                 lines.append(f"• {sym}: {state_line} | lvl {bl:.4f} | conf {conf}")
                             except Exception:
@@ -2451,6 +2457,12 @@ class TGBot:
                     div_type = st.get('divergence_type','NONE')
                     div_score = float(st.get('divergence_score',0.0) or 0.0)
                     suffix += f" | Div={'✅' if div_ok else '—'} {div_type}{(' '+str(round(div_score,2))) if div_score else ''}"
+                except Exception:
+                    pass
+                try:
+                    if st.get('bos_crossed'):
+                        wr = st.get('waiting_reason') or 'WAIT_PIVOT'
+                        suffix += f" | BOS=armed ({wr})"
                 except Exception:
                     pass
                 lines.append(f"• {sym}: {state}{suffix} ({', '.join(detail)})")

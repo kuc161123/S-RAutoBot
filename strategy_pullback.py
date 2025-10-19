@@ -221,6 +221,10 @@ class BreakoutState:
     div_tsi_delta: float = 0.0
     # One-time micro confirmation note (HH/HL or LH/LL) just after breakout
     micro_note_sent: bool = False
+    # BOS cross monitoring (when pivot broken but protective HL/LH not yet confirmed)
+    bos_cross_notified: bool = False
+    bos_cross_time: Optional[datetime] = None
+    waiting_reason: str = ""  # e.g., WAIT_HL, WAIT_LH, ""
 
 # Global state tracking for each symbol
 breakout_states: Dict[str, BreakoutState] = {}
@@ -720,7 +724,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             if c < (state.breakout_level - s.breakout_buffer_atr * atr15):
                 msg = f"[{symbol}] Invalidation: fell below breakout buffer, reset"
                 logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
-                state.state = "NEUTRAL"; state.confirmation_count = 0; state.micro_state = ""; state.retest_ok=False; state.last_counter_pivot=0.0
+                state.state = "NEUTRAL"; state.confirmation_count = 0; state.micro_state = ""; state.retest_ok=False; state.last_counter_pivot=0.0; state.bos_cross_notified=False; state.waiting_reason=""; state.bos_cross_time=None
                 _persist_state(symbol, state)
                 return None
         except Exception:
@@ -779,6 +783,17 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     logger.info(m); _notify(symbol, f"🔎 Trend: {m}")
         except Exception:
             pass
+        # If BOS level already broken but HL not yet confirmed, notify once and set waiting reason
+        try:
+            bos_cross = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) > state.last_counter_pivot)
+        except Exception:
+            bos_cross = False
+        if bos_cross and not protective_hl_ok and not state.bos_cross_notified:
+            try:
+                _notify(symbol, f"⏳ Trend: BOS level broken (3m) @ {state.last_counter_pivot:.4f} — waiting for protective HL above breakout")
+                state.bos_cross_notified = True; state.bos_cross_time = current_time; state.waiting_reason = 'WAIT_HL'
+            except Exception:
+                pass
         # Divergence gating (strict): require divergence_ok before BOS is eligible
         if s.div_enabled and s.div_mode == 'strict':
             try:
@@ -813,6 +828,8 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             if s.div_enabled and s.div_mode == 'strict':
                 bos_ready = bos_ready and bool(state.divergence_ok)
             if state.retest_ok and protective_hl_ok and bos_ready:
+                # Clear waiting reason if any
+                state.waiting_reason = ""; state.bos_cross_notified = False
                 if s.bos_confirm_closes <= 0:
                     entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
                     sl_opt3 = (state.pullback_extreme - s.sl_buf_atr*atr) if state.pullback_extreme else (entry - s.sl_buf_atr*atr)
@@ -855,15 +872,15 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 if (not state.retest_ok) and bars_since >= int(s.breakout_to_pullback_bars_3m):
                     msg = f"[{symbol}] Timeout: no 3m pullback near breakout within {s.breakout_to_pullback_bars_3m} bars"
                     logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
-                    state.state = "NEUTRAL"; state.micro_state=""; state.retest_ok=False; state.last_counter_pivot=0.0; state.confirmation_count=0
-                    _persist_state(symbol, state)
+                state.state = "NEUTRAL"; state.micro_state=""; state.retest_ok=False; state.last_counter_pivot=0.0; state.confirmation_count=0; state.bos_cross_notified=False; state.waiting_reason=""; state.bos_cross_time=None
+                _persist_state(symbol, state)
             if state.pullback_time is not None and s.pullback_to_bos_bars_3m > 0 and df3 is not df:
                 bars_since_pb = int((df3.index >= state.pullback_time).sum())
                 if bars_since_pb >= int(s.pullback_to_bos_bars_3m):
                     msg = f"[{symbol}] Timeout: BOS not confirmed within {s.pullback_to_bos_bars_3m} 3m bars"
                     logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
-                    state.state = "NEUTRAL"; state.micro_state=""; state.retest_ok=False; state.last_counter_pivot=0.0; state.confirmation_count=0
-                    _persist_state(symbol, state)
+                state.state = "NEUTRAL"; state.micro_state=""; state.retest_ok=False; state.last_counter_pivot=0.0; state.confirmation_count=0; state.bos_cross_notified=False; state.waiting_reason=""; state.bos_cross_time=None
+                _persist_state(symbol, state)
         except Exception:
             pass
     
@@ -892,7 +909,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             if c > (state.breakout_level + s.breakout_buffer_atr * atr15):
                 msg = f"[{symbol}] Invalidation: rose above breakout buffer, reset"
                 logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
-                state.state = "NEUTRAL"; state.confirmation_count = 0; state.micro_state = ""; state.retest_ok=False; state.last_counter_pivot=0.0
+                state.state = "NEUTRAL"; state.confirmation_count = 0; state.micro_state = ""; state.retest_ok=False; state.last_counter_pivot=0.0; state.bos_cross_notified=False; state.waiting_reason=""; state.bos_cross_time=None
                 _persist_state(symbol, state)
                 return None
         except Exception:
@@ -951,6 +968,17 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     logger.info(m); _notify(symbol, f"🔎 Trend: {m}")
         except Exception:
             pass
+        # If BOS level already broken but LH not yet confirmed, notify once and set waiting reason
+        try:
+            bos_cross = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) < state.last_counter_pivot)
+        except Exception:
+            bos_cross = False
+        if bos_cross and not protective_lh_ok and not state.bos_cross_notified:
+            try:
+                _notify(symbol, f"⏳ Trend: BOS level broken (3m) @ {state.last_counter_pivot:.4f} — waiting for protective LH below breakout")
+                state.bos_cross_notified = True; state.bos_cross_time = current_time; state.waiting_reason = 'WAIT_LH'
+            except Exception:
+                pass
         # Divergence gating (strict): require divergence_ok before BOS is eligible
         if s.div_enabled and s.div_mode == 'strict':
             try:
@@ -984,6 +1012,7 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             if s.div_enabled and s.div_mode == 'strict':
                 bos_ready = bos_ready and bool(state.divergence_ok)
             if state.retest_ok and protective_lh_ok and bos_ready:
+                state.waiting_reason = ""; state.bos_cross_notified = False
                 if s.bos_confirm_closes <= 0:
                     entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
                     sl_opt3 = (state.pullback_extreme + s.sl_buf_atr*atr) if state.pullback_extreme else (entry + s.sl_buf_atr*atr)
@@ -1260,7 +1289,10 @@ def get_trend_states_snapshot() -> Dict[str, dict]:
                 # Divergence
                 'divergence_ok': bool(st.divergence_ok),
                 'divergence_type': st.divergence_type or 'NONE',
-                'divergence_score': float(st.divergence_score or 0.0)
+                'divergence_score': float(st.divergence_score or 0.0),
+                # BOS waiting details
+                'bos_crossed': bool(st.bos_cross_notified or (st.bos_cross_time is not None)),
+                'waiting_reason': st.waiting_reason or ''
             }
         except Exception:
             out[sym] = {'state': st.state}

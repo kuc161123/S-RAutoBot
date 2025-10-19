@@ -4609,6 +4609,22 @@ class TradingBot:
                         columns=["open","high","low","close","volume"]
                     )
                     
+                    # Capture 15m confirm flag for breakout gating
+                    try:
+                        main_confirm = bool(k.get('confirm', False))
+                    except Exception:
+                        main_confirm = False
+                    try:
+                        if getattr(self, '_trend_settings', None) is not None:
+                            self._trend_settings.current_bar_confirmed = main_confirm
+                        # Also expose in shared for diagnostics if needed
+                        try:
+                            self.shared['last_main_confirm'] = {sym: main_confirm}
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
                     # Get existing frame or create new if not exists
                     if sym in self.frames:
                         df = self.frames[sym]

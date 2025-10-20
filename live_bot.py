@@ -4161,8 +4161,12 @@ class TradingBot:
                                         ml_score, _ = tr_scorer.score_signal(dummy_sig, feats)
                                 except Exception:
                                     ml_score = 0.0
-                                # Record phantom
+                                # Log and record phantom
                                 try:
+                                    try:
+                                        logger.info(f"[{sym}] 👻 Trend PHANTOM (BOS) {side.upper()} @ {float(entry):.4f} SL {float(sl):.4f} TP {float(tp):.4f} | ML {ml_score:.1f}")
+                                    except Exception:
+                                        pass
                                     pt = get_phantom_tracker()
                                     pt.record_signal(sym, {'side': side, 'entry': float(entry), 'sl': float(sl), 'tp': float(tp)}, float(ml_score or 0.0), False, feats, 'trend_pullback')
                                 except Exception:
@@ -4181,6 +4185,45 @@ class TradingBot:
                             # Guard: existing position
                             if symbol in self.book.positions:
                                 return
+                            # Compute a quick ML score for logging (best-effort)
+                            ml_score_se = 0.0
+                            try:
+                                if 'get_trend_scorer' in globals() and get_trend_scorer is not None:
+                                    tr_scorer = get_trend_scorer()
+                                    df = self.frames.get(symbol)
+                                    feats = {}
+                                    if df is not None and not df.empty:
+                                        cl = df['close']; price = float(cl.iloc[-1]) if len(cl) else 0.0
+                                        ys = cl.tail(20).values if len(cl) >= 20 else cl.values
+                                        try:
+                                            slope = np.polyfit(np.arange(len(ys)), ys, 1)[0]
+                                        except Exception:
+                                            slope = 0.0
+                                        trend_slope_pct = float((slope / price) * 100.0) if price else 0.0
+                                        ema20 = float(cl.ewm(span=20, adjust=False).mean().iloc[-1]) if len(cl) >= 20 else price
+                                        ema50 = float(cl.ewm(span=50, adjust=False).mean().iloc[-1]) if len(cl) >= 50 else ema20
+                                        ema_stack_score = 100.0 if (price > ema20 > ema50 or price < ema20 < ema50) else (50.0 if ema20 != ema50 else 0.0)
+                                        rng_today = float(df['high'].iloc[-1] - df['low'].iloc[-1])
+                                        med_range = float((df['high'] - df['low']).rolling(20).median().iloc[-1]) if len(df) >= 20 else max(1e-9, rng_today)
+                                        range_expansion = float(rng_today / max(1e-9, med_range))
+                                        prev = cl.shift(); tr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                                        atr = float(tr.rolling(14).mean().iloc[-1]) if len(tr) >= 14 else float(tr.iloc[-1])
+                                        atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
+                                        feats = {
+                                            'trend_slope_pct': trend_slope_pct,
+                                            'ema_stack_score': ema_stack_score,
+                                            'atr_pct': atr_pct,
+                                            'range_expansion': range_expansion,
+                                            'breakout_dist_atr': 0.0,
+                                            'session': 'us', 'symbol_cluster': 3, 'volatility_regime': getattr(self, 'last_volatility_level', 'normal') if hasattr(self, 'last_volatility_level') else 'normal'
+                                        }
+                                    ml_score_se, _ = tr_scorer.score_signal({'side': side, 'entry': entry, 'sl': sl, 'tp': tp}, feats)
+                            except Exception:
+                                ml_score_se = 0.0
+                            try:
+                                logger.info(f"[{symbol}] ⚡ STREAM EXECUTE {side.upper()} @ {entry:.4f} SL {sl:.4f} TP {tp:.4f} | ML {ml_score_se:.1f}")
+                            except Exception:
+                                pass
                             # Acquire lock
                             import asyncio as _asyncio
                             if symbol not in self._exec_locks:
@@ -5328,7 +5371,10 @@ class TradingBot:
                             max_lev = int(m.get("max_leverage", 10))
                             bybit.set_leverage(sym, max_lev)
                             side = "Buy" if sig_obj.side == "long" else "Sell"
-                            logger.info(f"[{sym}] {strategy_name.upper()} placing {side} order for {qty} units")
+                            try:
+                                logger.info(f"[{sym}] {strategy_name.upper()} EXECUTE {sig_obj.side.upper()} @ {float(sig_obj.entry):.4f} SL {float(sig_obj.sl):.4f} TP {float(sig_obj.tp):.4f} | ML {ml_score:.1f} thr {threshold:.1f}")
+                            except Exception:
+                                logger.info(f"[{sym}] {strategy_name.upper()} placing {side} order for {qty} units")
                             _ = bybit.place_market(sym, side, qty, reduce_only=False)
                             # Adjust TP to actual entry
                             actual_entry = sig_obj.entry
@@ -7065,9 +7111,9 @@ class TradingBot:
                                         except Exception:
                                             pass
                                         if should_take_trade:
-                                            logger.info(f"[{sym}] 🧮 Trend decision final: execute (reason=ml≥thr {ml_score:.1f}≥{threshold})")
+                                            logger.info(f"[{sym}] 🧮 Trend decision final: execute (ML {ml_score:.1f} ≥ thr {threshold:.1f})")
                                         else:
-                                            logger.info(f"[{sym}] 🧮 Trend decision final: phantom (reason=ml<thr {ml_score:.1f}<{threshold})")
+                                            logger.info(f"[{sym}] 🧮 Trend decision final: phantom (ML {ml_score:.1f} < thr {threshold:.1f})")
                                     except Exception as e:
                                         logger.warning(f"Trend ML scoring error: {e}")
                                         should_take_trade = False
@@ -7087,7 +7133,7 @@ class TradingBot:
                                 try:
                                     if should_take_trade:
                                         if ok_regime:
-                                            logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed=True)")
+                                            logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed=True, ML {ml_score:.1f})")
                                             phantom_tracker.record_signal(
                                                 symbol=sym,
                                                 signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
@@ -7102,7 +7148,7 @@ class TradingBot:
                                             should_take_trade = False
                                     else:
                                         if ok_regime:
-                                            logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed=False)")
+                                            logger.info(f"[{sym}] 📊 PHANTOM ROUTING: Trend phantom tracker recording (executed=False, ML {ml_score:.1f})")
                                             phantom_tracker.record_signal(
                                                 symbol=sym,
                                                 signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},

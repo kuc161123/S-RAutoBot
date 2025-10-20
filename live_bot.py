@@ -611,6 +611,8 @@ class TradingBot:
         self._trend_hist_min: int = 80  # minimum 15m bars required for pullback detection
         # Trend-only mode toggle (set in run() from config/env)
         self._trend_only: bool = False
+        # Per-position metadata: breakout levels, policy flags, timestamps
+        self._position_meta: Dict[str, dict] = {}
 
     def _phantom_trend_regime_ok(self, sym: str, df: 'pd.DataFrame', regime_analysis) -> tuple[bool, str]:
         """Return whether Trend phantom should be recorded under current regime.
@@ -3696,6 +3698,10 @@ class TradingBot:
             div_notify=bool(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('notify', True)))
             ,
             bos_armed_hold_minutes=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('bos_hold_minutes', 300)))
+            ,
+            sl_mode=str(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('sl_mode', 'breakout')))),
+            breakout_sl_buffer_atr=float(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('breakout_sl_buffer_atr', 0.30)))),
+            min_r_pct=float(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('min_r_pct', 0.005))))
         )
         # Pullback detection uses the generic Settings() already constructed above
         # Keep a separate alias to avoid refactoring call sites
@@ -4188,6 +4194,21 @@ class TradingBot:
                                 try:
                                     from position_mgr import Position
                                     self.book.positions[symbol] = Position(side=side, qty=float(qty), entry=float(entry), sl=float(sl), tp=float(tp), entry_time=datetime.utcnow(), strategy_name='trend_pullback')
+                                except Exception:
+                                    pass
+                                # Store per-position metadata for re-entry invalidation
+                                try:
+                                    if not hasattr(self, '_position_meta'):
+                                        self._position_meta = {}
+                                    blevel = float((meta or {}).get('breakout_level', 0.0)) if isinstance(meta, dict) else 0.0
+                                    self._position_meta[symbol] = {
+                                        'breakout_level': blevel,
+                                        'side': side,
+                                        'sl_mode': getattr(self._trend_settings, 'sl_mode', 'breakout'),
+                                        'breakout_sl_buffer_atr': float(getattr(self._trend_settings, 'breakout_sl_buffer_atr', 0.30)),
+                                        'min_r_pct': float(getattr(self._trend_settings, 'min_r_pct', 0.005)),
+                                        'last_checked': None
+                                    }
                                 except Exception:
                                     pass
                                 # Optionally cancel any active trend phantom for this symbol to avoid ML double count
@@ -4701,7 +4722,68 @@ class TradingBot:
                                         pass
                     except Exception:
                         pass
-                
+
+                    # Re-entry invalidation: close if price re-enters breakout zone
+                    try:
+                        exec_cfg = ((self.config.get('trend', {}) or {}).get('exec', {}) or {})
+                        if bool(exec_cfg.get('cancel_on_reentry', True)) and sym in self.book.positions:
+                            pm = getattr(self, '_position_meta', {}).get(sym, {})
+                            breakout_level = float(pm.get('breakout_level', 0.0) or 0.0)
+                            if breakout_level > 0:
+                                inv_mode = str(exec_cfg.get('invalidation_mode', 'on_close')).lower()
+                                inv_tf = str(exec_cfg.get('invalidation_timeframe', '3m')).lower()
+                                pre_tp1_only = bool(exec_cfg.get('cancel_on_reentry_pre_tp1_only', True))
+                                # Pre-TP1 guard using BE moved flag
+                                if pre_tp1_only:
+                                    so = getattr(self, '_scaleout', {}) if hasattr(self, '_scaleout') else {}
+                                    if isinstance(so, dict) and sym in so and so.get('be_moved'):
+                                        raise Exception('skip_reentry_post_tp1')
+                                # Determine price per timeframe
+                                price_ok = False
+                                last_price = None
+                                if inv_tf == '3m' and hasattr(self, 'frames_3m'):
+                                    df3c = self.frames_3m.get(sym)
+                                    if df3c is not None and len(df3c) > 0:
+                                        last_price = float(df3c['close'].iloc[-1])
+                                        price_ok = True
+                                if not price_ok:
+                                    # fallback to main timeframe
+                                    dfm = self.frames.get(sym)
+                                    if dfm is not None and len(dfm) > 0:
+                                        last_price = float(dfm['close'].iloc[-1])
+                                        price_ok = True
+                                if price_ok and last_price is not None:
+                                    pos = self.book.positions.get(sym)
+                                    if pos:
+                                        side = str(pos.side)
+                                        reenter = False
+                                        if side == 'long':
+                                            if inv_mode == 'on_close':
+                                                reenter = last_price <= breakout_level
+                                            else:  # on_touch uses current last price likewise
+                                                reenter = last_price <= breakout_level
+                                        else:  # short
+                                            if inv_mode == 'on_close':
+                                                reenter = last_price >= breakout_level
+                                            else:
+                                                reenter = last_price >= breakout_level
+                                        if reenter:
+                                            # Close position and cancel orders
+                                            try:
+                                                self.bybit.cancel_all_orders(sym)
+                                            except Exception:
+                                                pass
+                                            try:
+                                                close_side = 'Sell' if side == 'long' else 'Buy'
+                                                self.bybit.place_market(sym, close_side, float(pos.qty), reduce_only=True)
+                                                logger.info(f"[{sym}] 🛑 Re-entry invalidation: closed at {last_price:.4f} (breakout {breakout_level:.4f})")
+                                                if self.tg:
+                                                    await self.tg.send_message(f"🛑 Re-entry invalidation: {sym} closed at {last_price:.4f} (breakout {breakout_level:.4f})")
+                                            except Exception as e:
+                                                logger.warning(f"[{sym}] Re-entry invalidation close failed: {e}")
+                    except Exception:
+                        pass
+
                     # Auto-save to database every 15 minutes
                     if (datetime.now() - self.last_save_time).total_seconds() > 900:
                         await self.save_all_candles()

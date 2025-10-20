@@ -150,6 +150,14 @@ trend:
     bos_hold_minutes: 300
     # Force execution when ML score is extremely high
     high_ml_force: 95
+    # SL + re-entry invalidation policy for Trend
+    sl_mode: breakout          # breakout | hybrid
+    breakout_sl_buffer_atr: 0.30
+    min_r_pct: 0.005           # 0.5% minimum R safeguard
+    cancel_on_reentry: true
+    invalidation_mode: on_close   # on_close | on_touch
+    invalidation_timeframe: 3m    # 3m | 1m
+    cancel_on_reentry_pre_tp1_only: true
     # Scale-out partial take profit settings
     scaleout:
       enabled: true

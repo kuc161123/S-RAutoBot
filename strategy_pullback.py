@@ -180,6 +180,10 @@ class Settings:
     div_notify: bool = True
     # BOS armed hold window (minutes) when BOS crosses first and waiting for protective HL/LH
     bos_armed_hold_minutes: int = 300  # 5 hours
+    # SL policy
+    sl_mode: str = "breakout"  # breakout | hybrid
+    breakout_sl_buffer_atr: float = 0.30
+    min_r_pct: float = 0.005
 
 @dataclass
 class Signal:
@@ -874,8 +878,20 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 state.waiting_reason = ""; state.bos_cross_notified = False
                 if s.bos_confirm_closes <= 0:
                     entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
-                    sl_opt3 = (state.pullback_extreme - s.sl_buf_atr*atr) if state.pullback_extreme else (entry - s.sl_buf_atr*atr)
-                    sl = min(state.previous_pivot_low - (s.sl_buf_atr*0.3*atr), state.breakout_level - (s.sl_buf_atr*1.6*atr), sl_opt3)
+                    if s.sl_mode == 'breakout':
+                        atr15 = _atr_val(df, s.atr_len)
+                        sl = float(state.breakout_level) - float(s.breakout_sl_buffer_atr)*float(atr15)
+                        min_stop = float(entry) - float(entry)*float(s.min_r_pct)
+                        sl = min(sl, min_stop)
+                    else:
+                        if s.sl_mode == 'breakout':
+                            atr15 = _atr_val(df, s.atr_len)
+                            sl = float(state.breakout_level) - float(s.breakout_sl_buffer_atr)*float(atr15)
+                            min_stop = float(entry) - float(entry)*float(s.min_r_pct)
+                            sl = min(sl, min_stop)
+                        else:
+                            sl_opt3 = (state.pullback_extreme - s.sl_buf_atr*atr) if state.pullback_extreme else (entry - s.sl_buf_atr*atr)
+                            sl = min(state.previous_pivot_low - (s.sl_buf_atr*0.3*atr), state.breakout_level - (s.sl_buf_atr*1.6*atr), sl_opt3)
                     if s.extra_pivot_breath_pct > 0:
                         sl = float(sl) - float(entry)*float(s.extra_pivot_breath_pct)
                     R = abs(entry - sl); tp = entry + (s.rr * R * 1.00165)
@@ -894,8 +910,14 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                         pass
                     if state.bos_pending_confirms >= int(s.bos_confirm_closes):
                         entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
-                        sl_opt3 = (state.pullback_extreme - s.sl_buf_atr*atr) if state.pullback_extreme else (entry - s.sl_buf_atr*atr)
-                        sl = min(state.previous_pivot_low - (s.sl_buf_atr*0.3*atr), state.breakout_level - (s.sl_buf_atr*1.6*atr), sl_opt3)
+                        if s.sl_mode == 'breakout':
+                            atr15 = _atr_val(df, s.atr_len)
+                            sl = float(state.breakout_level) - float(s.breakout_sl_buffer_atr)*float(atr15)
+                            min_stop = float(entry) - float(entry)*float(s.min_r_pct)
+                            sl = min(sl, min_stop)
+                        else:
+                            sl_opt3 = (state.pullback_extreme - s.sl_buf_atr*atr) if state.pullback_extreme else (entry - s.sl_buf_atr*atr)
+                            sl = min(state.previous_pivot_low - (s.sl_buf_atr*0.3*atr), state.breakout_level - (s.sl_buf_atr*1.6*atr), sl_opt3)
                         if s.extra_pivot_breath_pct > 0:
                             sl = float(sl) - float(entry)*float(s.extra_pivot_breath_pct)
                         R = abs(entry - sl); tp = entry + (s.rr * R * 1.00165)
@@ -1095,8 +1117,14 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 state.waiting_reason = ""; state.bos_cross_notified = False
                 if s.bos_confirm_closes <= 0:
                     entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
-                    sl_opt3 = (state.pullback_extreme + s.sl_buf_atr*atr) if state.pullback_extreme else (entry + s.sl_buf_atr*atr)
-                    sl = max(state.previous_pivot_high + (s.sl_buf_atr*0.3*atr), state.breakout_level + (s.sl_buf_atr*1.6*atr), sl_opt3)
+                    if s.sl_mode == 'breakout':
+                        atr15 = _atr_val(df, s.atr_len)
+                        sl = float(state.breakout_level) + float(s.breakout_sl_buffer_atr)*float(atr15)
+                        min_stop = float(entry) + float(entry)*float(s.min_r_pct)
+                        sl = max(sl, min_stop)
+                    else:
+                        sl_opt3 = (state.pullback_extreme + s.sl_buf_atr*atr) if state.pullback_extreme else (entry + s.sl_buf_atr*atr)
+                        sl = max(state.previous_pivot_high + (s.sl_buf_atr*0.3*atr), state.breakout_level + (s.sl_buf_atr*1.6*atr), sl_opt3)
                     if s.extra_pivot_breath_pct > 0:
                         sl = float(sl) + float(entry)*float(s.extra_pivot_breath_pct)
                     R = abs(sl - entry); tp = entry - (s.rr * R * 1.00165)
@@ -1115,8 +1143,14 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                         pass
                     if state.bos_pending_confirms >= int(s.bos_confirm_closes):
                         entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
-                        sl_opt3 = (state.pullback_extreme + s.sl_buf_atr*atr) if state.pullback_extreme else (entry + s.sl_buf_atr*atr)
-                        sl = max(state.previous_pivot_high + (s.sl_buf_atr*0.3*atr), state.breakout_level + (s.sl_buf_atr*1.6*atr), sl_opt3)
+                        if s.sl_mode == 'breakout':
+                            atr15 = _atr_val(df, s.atr_len)
+                            sl = float(state.breakout_level) + float(s.breakout_sl_buffer_atr)*float(atr15)
+                            min_stop = float(entry) + float(entry)*float(s.min_r_pct)
+                            sl = max(sl, min_stop)
+                        else:
+                            sl_opt3 = (state.pullback_extreme + s.sl_buf_atr*atr) if state.pullback_extreme else (entry + s.sl_buf_atr*atr)
+                            sl = max(state.previous_pivot_high + (s.sl_buf_atr*0.3*atr), state.breakout_level + (s.sl_buf_atr*1.6*atr), sl_opt3)
                         if s.extra_pivot_breath_pct > 0:
                             sl = float(sl) + float(entry)*float(s.extra_pivot_breath_pct)
                         R = abs(sl - entry); tp = entry - (s.rr * R * 1.00165)

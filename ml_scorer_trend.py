@@ -38,6 +38,7 @@ class TrendMLScorer:
         self.ev_buckets: dict = {}
         self.is_ml_ready = False
         self.redis_client = None
+        self.phantom_weight = 0.8  # default weight for phantom samples
         self.KEY_NS = 'ml:trend'
         if enabled and redis:
             try:
@@ -78,6 +79,13 @@ class TrendMLScorer:
                     self.ev_buckets = pickle.loads(base64.b64decode(b))
                 except Exception:
                     self.ev_buckets = {}
+            # Load phantom weight if provided
+            try:
+                w = r.get(f'{self.KEY_NS}:phantom_weight') or r.get('phantom:weight')
+                if w:
+                    self.phantom_weight = float(w)
+            except Exception:
+                pass
         except Exception as e:
             logger.error(f"Trend load state error: {e}")
 
@@ -298,7 +306,10 @@ class TrendMLScorer:
             f = d.get('features', {})
             X.append(self._prepare_features(f))
             y.append(int(d.get('outcome', 0)))
-            wt = 1.0 if d.get('was_executed') else 0.8
+            try:
+                wt = 1.0 if d.get('was_executed') else float(self.phantom_weight)
+            except Exception:
+                wt = 0.8 if not d.get('was_executed') else 1.0
             w.append(wt)
         X = np.array(X); y = np.array(y); w = np.array(w)
         self.scaler.fit(X)

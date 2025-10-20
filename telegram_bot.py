@@ -1997,6 +1997,7 @@ class TGBot:
                     sc = (tr_exec.get('scaleout',{}) or {})
                     div = (tr_exec.get('divergence',{}) or {})
                     ph = (cfg.get('phantom', {}) or {})
+                    ts = self.shared.get('trend_settings')
                     if key == 'stream':
                         tr_exec['allow_stream_entry'] = not bool(tr_exec.get('allow_stream_entry', True))
                     elif key == 'scaleout':
@@ -2011,10 +2012,14 @@ class TGBot:
                         nxt = 'optional' if mode == 'off' else 'strict' if mode == 'optional' else 'off'
                         div['mode'] = nxt; div['enabled'] = (nxt != 'off')
                         tr_exec['divergence'] = div
+                        if ts:
+                            ts.div_mode = nxt; ts.div_enabled = (nxt != 'off')
                     elif key == 'div_require':
                         req = str(div.get('require','any')).lower()
                         div['require'] = 'all' if req == 'any' else 'any'
                         tr_exec['divergence'] = div
+                        if ts:
+                            ts.div_require = div['require']
                     elif key == 'div_osc_rsi':
                         osc = list(div.get('oscillators', ['rsi','tsi']))
                         if 'rsi' in osc:
@@ -2023,6 +2028,8 @@ class TGBot:
                             osc.append('rsi')
                         div['oscillators'] = osc
                         tr_exec['divergence'] = div
+                        if ts:
+                            ts.div_use_rsi = bool('rsi' in osc)
                     elif key == 'div_osc_tsi':
                         osc = list(div.get('oscillators', ['rsi','tsi']))
                         if 'tsi' in osc:
@@ -2031,6 +2038,8 @@ class TGBot:
                             osc.append('tsi')
                         div['oscillators'] = osc
                         tr_exec['divergence'] = div
+                        if ts:
+                            ts.div_use_tsi = bool('tsi' in osc)
                     elif key == 'phantom':
                         ph['enabled'] = not bool(ph.get('enabled', True))
                         cfg['phantom'] = ph
@@ -5198,6 +5207,15 @@ class TGBot:
                     ph['weight'] = float(val)
                     cfg['phantom'] = ph
                     self.shared['config'] = cfg
+                    # Also persist to Redis so ML scorer can pick it up live
+                    try:
+                        bot_instance = self.shared.get('bot_instance')
+                        r = getattr(bot_instance, '_redis', None)
+                        if r:
+                            r.set('ml:trend:phantom_weight', str(val))
+                            r.set('phantom:weight', str(val))
+                    except Exception:
+                        pass
                     await _ok(f"✅ Phantom training weight set to {val}")
                 except Exception:
                     await update.message.reply_text("Please send a valid number, e.g., 0.8")
@@ -5214,6 +5232,8 @@ class TGBot:
                     tr_exec['divergence'] = div
                     cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
                     self.shared['config'] = cfg
+                    if ts:
+                        ts.div_rsi_len = val
                     await _ok(f"✅ RSI length set to {val}")
                 except Exception:
                     await update.message.reply_text("Please send an integer, e.g., 14")
@@ -5223,7 +5243,8 @@ class TGBot:
                 try:
                     parts = [int(x.strip()) for x in text.split(',')]
                     if len(parts) != 2:
-                        raise ValueError()
+                        await update.message.reply_text("Send as long,short e.g., 25,13")
+                        return
                     lo, sh = parts
                     if lo < 2 or lo > 200 or sh < 2 or sh > 200:
                         await update.message.reply_text("TSI params must be between 2 and 200, e.g., 25,13")
@@ -5232,6 +5253,8 @@ class TGBot:
                     tr_exec['divergence'] = div
                     cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
                     self.shared['config'] = cfg
+                    if ts:
+                        ts.div_tsi_long = lo; ts.div_tsi_short = sh
                     await _ok(f"✅ TSI params set to {lo},{sh}")
                 except Exception:
                     await update.message.reply_text("Please send as long,short e.g., 25,13")
@@ -5247,6 +5270,8 @@ class TGBot:
                     tr_exec['divergence'] = div
                     cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
                     self.shared['config'] = cfg
+                    if ts:
+                        ts.div_window_bars_3m = val
                     await _ok(f"✅ Divergence window set to {val} bars")
                 except Exception:
                     await update.message.reply_text("Please send an integer, e.g., 6")
@@ -5261,6 +5286,8 @@ class TGBot:
                     tr_exec['divergence'] = div
                     cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
                     self.shared['config'] = cfg
+                    if ts:
+                        ts.div_min_strength_rsi = val
                     await _ok(f"✅ Minimum RSI delta set to {val}")
                 except Exception:
                     await update.message.reply_text("Please send a number, e.g., 2.0")
@@ -5275,6 +5302,8 @@ class TGBot:
                     tr_exec['divergence'] = div
                     cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
                     self.shared['config'] = cfg
+                    if ts:
+                        ts.div_min_strength_tsi = val
                     await _ok(f"✅ Minimum TSI delta set to {val}")
                 except Exception:
                     await update.message.reply_text("Please send a number, e.g., 0.3")

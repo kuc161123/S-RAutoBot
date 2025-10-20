@@ -1,13 +1,15 @@
 """
-Enhanced Backtesting Engine - Accurate ML Feature Generation
+Enhanced Backtesting Engine - Accurate ML Feature Generation + Trend variant sweeps
 
 This enhanced backtester ensures that ML features are generated exactly the same way
-as the live bot for both Trend (Pullback) and Mean Reversion strategies.
+as the live bot for both Trend (Pullback) and Mean Reversion strategies, and adds a
+lightweight Trend variant runner that can be used to sweep key parameters offline.
 
 Key improvements:
 1. Generates ML features exactly like live bot
 2. Handles different feature generation per strategy
-3. Maintains compatibility with existing backtester interface
+3. Adds a TrendVariantBacktester with 3m microframe support and simple trade simulation
+4. Maintains compatibility with existing backtester interface
 """
 import pandas as pd
 import numpy as np
@@ -15,7 +17,13 @@ import logging
 from typing import List, Dict, Callable, Optional
 
 from candle_storage_postgres import CandleStorage
-from strategy_trend_breakout import TrendSettings as Settings, Signal
+
+# Legacy imports for compatibility
+try:
+    from strategy_trend_breakout import TrendSettings as Settings, Signal
+except Exception:
+    Settings = object  # placeholder for legacy
+    Signal = object
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +130,202 @@ class EnhancedBacktester:
         
         logger.info(f"[{symbol}] Enhanced backtest complete. Found {len(results)} signals with ML features.")
         return results
+
+
+# -------------------------- Trend Variant Runner --------------------------- #
+from dataclasses import dataclass
+from datetime import datetime
+
+try:
+    from strategy_pullback import (
+        Settings as TPSettings,
+        Signal as TPSignal,
+        detect_signal_pullback,
+        reset_symbol_state as reset_trend_state,
+        set_trend_microframe_provider,
+    )
+except Exception:
+    TPSettings = None
+    TPSignal = None
+    detect_signal_pullback = None
+    reset_trend_state = None
+    set_trend_microframe_provider = None
+
+
+@dataclass
+class Variant:
+    name: str
+    # Core knobs
+    div_mode: str = "optional"        # off|optional|strict
+    div_require: str = "any"          # any|all
+    bos_hold_minutes: int = 300        # BOS armed hold
+    sl_mode: str = "breakout"         # breakout|hybrid
+    breakout_sl_buffer_atr: float = 0.30
+    min_r_pct: float = 0.005
+    cancel_on_reentry: bool = True
+    invalidation_mode: str = "on_close"   # on_close|on_touch
+    invalidation_timeframe: str = "3m"    # 3m|1m
+
+
+class TrendVariantBacktester:
+    """Run Trend Pullback backtests with 3m micro support and simple simulation."""
+
+    def __init__(self, storage: CandleStorage | None = None):
+        if storage is None:
+            storage = CandleStorage()
+        self.storage = storage
+        # Provider state
+        self._df3 = None
+        self._end = None
+
+    def _micro_provider(self, symbol: str):
+        try:
+            if self._df3 is None:
+                return None
+            if self._end is None:
+                return self._df3
+            return self._df3[self._df3.index <= self._end]
+        except Exception:
+            return self._df3
+
+    def run_symbol(self, symbol: str, variant: Variant, max_bars: int = None) -> list[dict]:
+        if TPSettings is None or detect_signal_pullback is None or set_trend_microframe_provider is None:
+            logging.error("Trend Pullback strategy not available for backtest")
+            return []
+
+        # Load 15m and 3m frames
+        df15 = self.storage.load_candles(symbol, limit=100000)
+        df3 = self.storage.load_candles_3m(symbol, limit=500000)
+        if df15 is None or len(df15) < 200:
+            logger.warning(f"[{symbol}] Skipping: insufficient 15m history")
+            return []
+        if df3 is None or len(df3) < 100:
+            logger.warning(f"[{symbol}] Skipping: insufficient 3m history")
+            return []
+
+        # Wire 3m provider
+        self._df3 = df3
+        self._end = None
+        set_trend_microframe_provider(self._micro_provider)
+
+        # Build settings and apply overrides
+        s = TPSettings()
+        try:
+            s.use_3m_pullback = True; s.use_3m_confirm = True
+            s.div_enabled = True
+            s.div_mode = variant.div_mode
+            s.div_require = variant.div_require
+            s.bos_armed_hold_minutes = int(variant.bos_hold_minutes)
+            s.sl_mode = variant.sl_mode
+            s.breakout_sl_buffer_atr = float(variant.breakout_sl_buffer_atr)
+            s.min_r_pct = float(variant.min_r_pct)
+        except Exception:
+            pass
+
+        # Reset state once per symbol
+        try:
+            reset_trend_state(symbol)
+        except Exception:
+            pass
+
+        results: list[dict] = []
+        start = 200
+        end = len(df15) if not max_bars else min(len(df15), max_bars)
+        for i in range(start, end):
+            df_slice = df15.iloc[: i + 1]
+            self._end = df_slice.index[-1]
+            try:
+                sig = detect_signal_pullback(df_slice, s, symbol=symbol)
+            except Exception as e:
+                logger.debug(f"[{symbol}] detect error: {e}")
+                sig = None
+            if not sig:
+                continue
+            # Simulate outcome using 15m + 3m re-entry invalidation
+            try:
+                res = self._simulate(df15, df3, i, sig, variant)
+                if res is not None:
+                    results.append({
+                        'ts': df_slice.index[-1],
+                        'symbol': symbol,
+                        'side': sig.side,
+                        'entry': float(sig.entry),
+                        'sl': float(sig.sl),
+                        'tp': float(sig.tp),
+                        'r': float(res['r']),
+                        'exit_reason': res['reason']
+                    })
+            except Exception as e:
+                logger.debug(f"[{symbol}] simulate error: {e}")
+                continue
+        return results
+
+    def _simulate(self, df15: pd.DataFrame, df3: pd.DataFrame, entry_idx15: int, sig, variant: Variant) -> Optional[dict]:
+        side = sig.side
+        entry = float(sig.entry); sl = float(sig.sl); tp = float(sig.tp)
+        risk = abs(entry - sl) if abs(entry - sl) > 0 else 1e-9
+        # Find the 15m start time
+        start_ts = df15.index[entry_idx15]
+        # Iterate forward 3m bars for fine-grained event order, up to next N hours
+        df3f = df3[df3.index > start_ts]
+        if df3f is None or len(df3f) == 0:
+            return None
+        breakout_level = float(getattr(sig, 'meta', {}).get('breakout_level', 0.0)) if getattr(sig, 'meta', None) else 0.0
+        use_reentry = bool(variant.cancel_on_reentry)
+        # Sim loop
+        for ts, row in df3f.iloc[:4000].iterrows():  # cap horizon
+            hi = float(row['high']); lo = float(row['low']); cl = float(row['close'])
+            if side == 'long':
+                # SL/TP priority within bar extremes
+                if lo <= sl:
+                    r = -1.0
+                    return {'r': r, 'reason': 'sl'}
+                if hi >= tp:
+                    r = (tp - entry) / risk
+                    return {'r': r, 'reason': 'tp'}
+                # Re-entry invalidation on close (default)
+                if use_reentry and breakout_level > 0.0:
+                    if cl <= breakout_level:
+                        r = (cl - entry) / risk
+                        return {'r': r, 'reason': 'reentry_invalidation'}
+            else:
+                if hi >= sl:
+                    r = -1.0
+                    return {'r': r, 'reason': 'sl'}
+                if lo <= tp:
+                    r = (entry - tp) / risk
+                    return {'r': r, 'reason': 'tp'}
+                if use_reentry and breakout_level > 0.0:
+                    if cl >= breakout_level:
+                        r = (entry - cl) / risk
+                        return {'r': r, 'reason': 'reentry_invalidation'}
+        return None
+
+
+def summarize_results(all_results: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Aggregate per-variant and per-symbol metrics from results dict."""
+    rows_variant = []
+    rows_symvar = []
+    for vname, sym_map in all_results.items():
+        agg = {'variant': vname, 'trades': 0, 'wins': 0, 'losses': 0, 'nores': 0, 'total_R': 0.0}
+        for sym, trades in sym_map.items():
+            sv = {'variant': vname, 'symbol': sym, 'trades': len(trades), 'wins': 0, 'losses': 0, 'total_R': 0.0}
+            for t in trades:
+                r = float(t.get('r', 0.0)); reason = t.get('exit_reason','')
+                sv['trades'] += 0  # already set
+                if reason == 'tp' or r > 0:
+                    sv['wins'] += 1
+                elif reason == 'sl' or r < 0:
+                    sv['losses'] += 1
+                sv['total_R'] += r
+            rows_symvar.append(sv)
+            agg['trades'] += sv['trades']; agg['wins'] += sv['wins']; agg['losses'] += sv['losses']; agg['total_R'] += sv['total_R']
+        agg['wr_pct'] = (agg['wins']/agg['trades']*100.0) if agg['trades'] else 0.0
+        agg['avg_R'] = (agg['total_R']/agg['trades']) if agg['trades'] else 0.0
+        rows_variant.append(agg)
+    dfv = pd.DataFrame(rows_variant)
+    dfs = pd.DataFrame(rows_symvar)
+    return dfv, dfs
     
     def _generate_trend_features(self, df: pd.DataFrame, signal: Signal, symbol: str) -> Dict:
         """Generate ML features for Trend Pullback exactly like live bot"""

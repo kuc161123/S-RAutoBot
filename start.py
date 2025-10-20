@@ -70,50 +70,53 @@ if __name__ == "__main__":
             print(f"Warning: Could not connect to Redis: {e}. Models will not be checked/saved.")
             r = None
 
-    # New: Optional pretraining run that reuses live Trend Pullback with 3m micro
-    pretrain_on_start = os.getenv('PRETRAIN_ON_START', 'false').lower() == 'true'
-    if pretrain_on_start:
-        print("[Pretrain] Running Trend Pullback pretraining before live start...")
-        try:
-            # Build CLI flags from env for sweep and DB persistence
-            args = [sys.executable, "pretrain_trend_server.py"]
-            if os.getenv('PRETRAIN_SWEEP_ENABLE', 'false').lower() == 'true' or os.getenv('PRETRAIN_SWEEP', ''):
-                args.append('--sweep')
-            if os.getenv('PRETRAIN_PERSIST_DB', 'false').lower() == 'true':
-                args.append('--persist-db')
-            wf = os.getenv('PRETRAIN_WF_FOLDS')
-            if wf:
-                args.extend(['--wf-folds', wf])
-            subprocess.run(args, check=False)
-        except Exception as e:
-            print(f"[Pretrain] Error: {e}. Proceeding to live.")
+    # Hard-skip any pretraining unless explicitly overridden
+    always_skip_pretrain = os.getenv('ALWAYS_SKIP_PRETRAIN', 'true').lower() == 'true'
+    if always_skip_pretrain:
+        print("[Pretrain] Disabled in code (ALWAYS_SKIP_PRETRAIN=true). Skipping pretraining.")
     else:
-        print("[Pretrain] Skipped. Set PRETRAIN_ON_START=true to enable.")
-
-    # Legacy bootstrap pretraining (older approach) remains available behind ENABLE_BOOTSTRAP_PRETRAIN
-    enable_bootstrap = os.getenv('ENABLE_BOOTSTRAP_PRETRAIN', 'false').lower() == 'true'
-    if enable_bootstrap:
-        # Optional: run pretrainer only when models are missing OR forced
-        should_train = False
-        if r and not check_for_trained_models(r):
-            print("[Bootstrap] Pre-trained models not found in Redis. Running pretrainer...")
-            should_train = True
-        elif os.getenv('FORCE_ML_TRAIN', 'false').lower() == 'true':
-            print("[Bootstrap] FORCE_ML_TRAIN=true. Running pretrainer...")
-            should_train = True
-
-        if should_train:
+        # Optional pretraining run that reuses live Trend Pullback with 3m micro
+        pretrain_on_start = os.getenv('PRETRAIN_ON_START', 'false').lower() == 'true'
+        if pretrain_on_start:
+            print("[Pretrain] Running Trend Pullback pretraining before live start...")
             try:
-                subprocess.run([sys.executable, "bootstrap_pretrain.py"], check=True)
-                print("[Bootstrap] Pretraining complete. Models saved if Redis available.")
-            except subprocess.CalledProcessError as e:
-                print(f"[Bootstrap] Error: Pretraining failed with exit code {e.returncode}. Continuing without.")
+                # Build CLI flags from env for sweep and DB persistence
+                args = [sys.executable, "pretrain_trend_server.py"]
+                if os.getenv('PRETRAIN_SWEEP_ENABLE', 'false').lower() == 'true' or os.getenv('PRETRAIN_SWEEP', ''):
+                    args.append('--sweep')
+                if os.getenv('PRETRAIN_PERSIST_DB', 'false').lower() == 'true':
+                    args.append('--persist-db')
+                wf = os.getenv('PRETRAIN_WF_FOLDS')
+                if wf:
+                    args.extend(['--wf-folds', wf])
+                subprocess.run(args, check=False)
             except Exception as e:
-                print(f"[Bootstrap] Error running pretrainer: {e}. Continuing without.")
+                print(f"[Pretrain] Error: {e}. Proceeding to live.")
         else:
-            print("[Bootstrap] Skipped (models present and no force).")
-    else:
-        print("Bootstrap pretraining disabled. Bot will learn from live trades only.")
+            print("[Pretrain] Skipped. Set PRETRAIN_ON_START=true to enable.")
+
+        # Legacy bootstrap pretraining (older approach) remains available behind ENABLE_BOOTSTRAP_PRETRAIN
+        enable_bootstrap = os.getenv('ENABLE_BOOTSTRAP_PRETRAIN', 'false').lower() == 'true'
+        if enable_bootstrap:
+            # Optional: run pretrainer only when models are missing OR forced
+            should_train = False
+            if r and not check_for_trained_models(r):
+                print("[Bootstrap] Pre-trained models not found in Redis. Running pretrainer...")
+                should_train = True
+            elif os.getenv('FORCE_ML_TRAIN', 'false').lower() == 'true':
+                print("[Bootstrap] FORCE_ML_TRAIN=true. Running pretrainer...")
+                should_train = True
+
+            if should_train:
+                try:
+                    subprocess.run([sys.executable, "bootstrap_pretrain.py"], check=True)
+                    print("[Bootstrap] Pretraining complete. Models saved if Redis available.")
+                except subprocess.CalledProcessError as e:
+                    print(f"[Bootstrap] Error: Pretraining failed with exit code {e.returncode}. Continuing without.")
+                except Exception as e:
+                    print(f"[Bootstrap] Error running pretrainer: {e}. Continuing without.")
+            else:
+                print("[Bootstrap] Skipped (models present and no force).")
 
     print("Launching live bot...")
     os.execvp(sys.executable, [sys.executable, "live_bot.py"])

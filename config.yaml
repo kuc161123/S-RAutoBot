@@ -135,7 +135,7 @@ trend:
     # Divergence confirmation on 3m (strict gating, any RSI or TSI)
     divergence:
       enabled: true
-      mode: optional        # off | optional | strict (learn-first: optional)
+      mode: strict          # off | optional | strict (learn-first: optional)
       require: any          # any | all (oscillator set)
       oscillators: [rsi, tsi]
       rsi_len: 14

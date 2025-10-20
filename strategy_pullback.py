@@ -763,6 +763,14 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     except Exception:
                         bos_cross_now = False
                     if (state.bos_cross_notified or bos_cross_now) and state.retest_ok:
+                        # Respect divergence strict mode: require divergence_ok before sending
+                        try:
+                            if s.div_enabled and s.div_mode == 'strict' and not bool(state.divergence_ok):
+                                state.waiting_reason = 'WAIT_DIV'
+                                _notify(symbol, f"⏳ Trend: [{symbol}] Protective HL formed; waiting for divergence (strict)")
+                                return None
+                        except Exception:
+                            pass
                         try:
                             entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
                             sl_opt3 = (state.pullback_extreme - s.sl_buf_atr*atr) if state.pullback_extreme else (entry - s.sl_buf_atr*atr)
@@ -980,6 +988,14 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     except Exception:
                         bos_cross_now = False
                     if (state.bos_cross_notified or bos_cross_now) and state.retest_ok:
+                        # Respect divergence strict mode: require divergence_ok before sending
+                        try:
+                            if s.div_enabled and s.div_mode == 'strict' and not bool(state.divergence_ok):
+                                state.waiting_reason = 'WAIT_DIV'
+                                _notify(symbol, f"⏳ Trend: [{symbol}] Protective LH formed; waiting for divergence (strict)")
+                                return None
+                        except Exception:
+                            pass
                         try:
                             entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
                             sl_opt3 = (state.pullback_extreme + s.sl_buf_atr*atr) if state.pullback_extreme else (entry + s.sl_buf_atr*atr)

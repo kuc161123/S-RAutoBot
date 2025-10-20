@@ -596,6 +596,34 @@ class PhantomTradeTracker:
         # Save to Redis
         self._save_to_redis()
 
+        # Persist to Postgres for audit
+        try:
+            from phantom_persistence import PhantomPersistence
+            import json as _json
+            rec = {
+                'symbol': symbol,
+                'side': phantom.side,
+                'entry': phantom.entry_price,
+                'sl': phantom.stop_loss,
+                'tp': phantom.take_profit,
+                'signal_time': phantom.signal_time,
+                'exit_time': phantom.exit_time,
+                'outcome': phantom.outcome,
+                'realized_rr': phantom.realized_rr if hasattr(phantom, 'realized_rr') else None,
+                'pnl_percent': phantom.pnl_percent,
+                'exit_reason': phantom.exit_reason,
+                'strategy_name': getattr(phantom, 'strategy_name', 'trend_pullback'),
+                'was_executed': phantom.was_executed,
+                'ml_score': phantom.ml_score,
+                'features_json': _json.dumps(phantom.features, cls=NumpyJSONEncoder) if isinstance(phantom.features, dict) else '{}'
+            }
+            try:
+                PhantomPersistence().add_trade(rec)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
         # Update rolling WR list for WR guard (skip timeouts)
         try:
             if self.redis_client and getattr(phantom, 'exit_reason', None) != 'timeout':

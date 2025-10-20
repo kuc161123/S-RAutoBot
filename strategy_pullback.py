@@ -950,7 +950,17 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                         if s.extra_pivot_breath_pct > 0:
                             sl = float(sl) - float(entry)*float(s.extra_pivot_breath_pct)
                         R = abs(entry - sl); tp = entry + (s.rr * R * 1.00165)
-                        meta = {"phase": "3m_bos_phantom", "lh_pivot": float(state.last_counter_pivot or 0.0), "div_ok": bool(state.divergence_ok), "div_type": state.divergence_type, "breakout_level": float(state.breakout_level or 0.0)}
+                        meta = {
+                            "phase": "3m_bos_phantom",
+                            "lh_pivot": float(state.last_counter_pivot or 0.0),
+                            "div_ok": bool(state.divergence_ok),
+                            "div_type": state.divergence_type,
+                            "div_score": float(state.divergence_score or 0.0),
+                            "div_rsi_delta": float(state.div_rsi_delta or 0.0),
+                            "div_tsi_delta": float(state.div_tsi_delta or 0.0),
+                            "protective_pivot_present": bool(protective_hl_ok),
+                            "breakout_level": float(state.breakout_level or 0.0)
+                        }
                         _phantom_recorder(symbol, "long", float(entry), float(sl), float(tp), meta)
                 except Exception:
                     pass
@@ -1204,7 +1214,17 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                         if s.extra_pivot_breath_pct > 0:
                             sl = float(sl) + float(entry)*float(s.extra_pivot_breath_pct)
                         R = abs(entry - sl); tp = entry - (s.rr * R * 1.00165)
-                        meta = {"phase": "3m_bos_phantom", "hl_pivot": float(state.last_counter_pivot or 0.0), "div_ok": bool(state.divergence_ok), "div_type": state.divergence_type, "breakout_level": float(state.breakout_level or 0.0)}
+                        meta = {
+                            "phase": "3m_bos_phantom",
+                            "hl_pivot": float(state.last_counter_pivot or 0.0),
+                            "div_ok": bool(state.divergence_ok),
+                            "div_type": state.divergence_type,
+                            "div_score": float(state.divergence_score or 0.0),
+                            "div_rsi_delta": float(state.div_rsi_delta or 0.0),
+                            "div_tsi_delta": float(state.div_tsi_delta or 0.0),
+                            "protective_pivot_present": bool(protective_lh_ok),
+                            "breakout_level": float(state.breakout_level or 0.0)
+                        }
                         _phantom_recorder(symbol, "short", float(entry), float(sl), float(tp), meta)
                 except Exception:
                     pass

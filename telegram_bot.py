@@ -1955,6 +1955,7 @@ class TGBot:
                         conf_bars = int(self.shared.get('trend_settings').confirmation_timeout_bars)
                     except Exception:
                         pass
+                    ph = (cfg.get('phantom', {}) or {})
                     lines = ["⚙️ *Settings*", "",
                              f"Stream entry: {'On' if tr_exec.get('allow_stream_entry', True) else 'Off'}",
                              f"Scale‑out: {'On' if sc.get('enabled', False) else 'Off'}",
@@ -1962,6 +1963,7 @@ class TGBot:
                              f"R:R: 1:{rr_val if rr_val is not None else '2.5'}",
                              f"TP1 R: {sc.get('tp1_r',1.6)} | TP2 R: {sc.get('tp2_r',3.0)} | Fraction: {sc.get('fraction',0.5):.2f}",
                              f"Confirm timeout bars: {conf_bars if conf_bars is not None else '6'} | Phantom timeout h: {(getattr(self.shared.get('phantom_tracker'), 'timeout_hours', 0) or 0)}",
+                             f"Phantoms: {'On' if ph.get('enabled', True) else 'Off'} | Weight: {ph.get('weight', 0.8)}",
                              "",
                              "📐 *Divergence (3m)*",
                              f"Mode: {div.get('mode','off')} | Require: {div.get('require','any')} | Osc: {', '.join(div.get('oscillators', ['rsi','tsi']))}",
@@ -1976,6 +1978,7 @@ class TGBot:
                         [InlineKeyboardButton("Set R:R", callback_data="ui:settings:set:rr"), InlineKeyboardButton("Set TP1 R", callback_data="ui:settings:set:tp1_r")],
                         [InlineKeyboardButton("Set TP2 R", callback_data="ui:settings:set:tp2_r"), InlineKeyboardButton("Set Fraction", callback_data="ui:settings:set:fraction")],
                         [InlineKeyboardButton("Set Confirm Bars", callback_data="ui:settings:set:confirm_bars"), InlineKeyboardButton("Set Phantom Hours", callback_data="ui:settings:set:phantom_hours")],
+                        [InlineKeyboardButton("Phantoms On/Off", callback_data="ui:settings:toggle:phantom"), InlineKeyboardButton("Set Phantom Weight", callback_data="ui:settings:set:phantom_weight")],
                         [InlineKeyboardButton("Div Mode", callback_data="ui:settings:toggle:div_mode"), InlineKeyboardButton("Div Require", callback_data="ui:settings:toggle:div_require")],
                         [InlineKeyboardButton("Osc RSI", callback_data="ui:settings:toggle:div_osc_rsi"), InlineKeyboardButton("Osc TSI", callback_data="ui:settings:toggle:div_osc_tsi")],
                         [InlineKeyboardButton("Set RSI Len", callback_data="ui:settings:set:div_rsi_len"), InlineKeyboardButton("Set TSI Params", callback_data="ui:settings:set:div_tsi_params")],
@@ -1993,6 +1996,7 @@ class TGBot:
                     tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
                     sc = (tr_exec.get('scaleout',{}) or {})
                     div = (tr_exec.get('divergence',{}) or {})
+                    ph = (cfg.get('phantom', {}) or {})
                     if key == 'stream':
                         tr_exec['allow_stream_entry'] = not bool(tr_exec.get('allow_stream_entry', True))
                     elif key == 'scaleout':
@@ -2027,6 +2031,9 @@ class TGBot:
                             osc.append('tsi')
                         div['oscillators'] = osc
                         tr_exec['divergence'] = div
+                    elif key == 'phantom':
+                        ph['enabled'] = not bool(ph.get('enabled', True))
+                        cfg['phantom'] = ph
                     try:
                         cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
                         if bot is not None:
@@ -2050,6 +2057,7 @@ class TGBot:
                         'fraction': "Send scale‑out fraction between 0.1 and 0.9 (e.g., 0.5)",
                         'confirm_bars': "Send confirmation timeout bars (integer, e.g., 6)",
                         'phantom_hours': "Send phantom timeout hours (integer, e.g., 100)",
+                        'phantom_weight': "Send phantom training weight between 0.3 and 1.0 (e.g., 0.8)",
                         'div_rsi_len': "Send RSI length (e.g., 14)",
                         'div_tsi_params': "Send TSI params as long,short (e.g., 25,13)",
                         'div_window': "Send divergence confirm window in 3m bars (e.g., 6)",
@@ -5178,6 +5186,21 @@ class TGBot:
                     await _ok(f"✅ Phantom timeout set to {val}h")
                 except Exception:
                     await update.message.reply_text("Please send an integer, e.g., 100")
+                return
+
+            if key == 'phantom_weight':
+                try:
+                    val = float(text)
+                    if val < 0.3 or val > 1.5:
+                        await update.message.reply_text("Weight must be 0.3–1.5")
+                        return
+                    ph = (cfg.get('phantom', {}) or {})
+                    ph['weight'] = float(val)
+                    cfg['phantom'] = ph
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ Phantom training weight set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a valid number, e.g., 0.8")
                 return
 
             # Divergence settings

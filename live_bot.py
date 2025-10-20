@@ -4108,6 +4108,10 @@ class TradingBot:
                     try:
                         def _trend_phantom_cb(sym: str, side: str, entry: float, sl: float, tp: float, meta: dict):
                             try:
+                                # Respect phantom enabled toggle
+                                cfg = self.config if hasattr(self, 'config') else {}
+                                if not bool(((cfg.get('phantom', {}) or {}).get('enabled', True))):
+                                    return
                                 df = self.frames.get(sym)
                                 feats = {}
                                 if df is not None and not df.empty:
@@ -4138,6 +4142,12 @@ class TradingBot:
                                         'atr_pct': atr_pct,
                                         'range_expansion': range_expansion,
                                         'breakout_dist_atr': float(break_dist_atr),
+                                        # divergence + protective pivot flags
+                                        'div_ok': 1 if bool((meta or {}).get('div_ok', False)) else 0,
+                                        'div_score': float((meta or {}).get('div_score', 0.0) or 0.0),
+                                        'div_rsi_delta': float((meta or {}).get('div_rsi_delta', 0.0) or 0.0),
+                                        'div_tsi_delta': float((meta or {}).get('div_tsi_delta', 0.0) or 0.0),
+                                        'protective_pivot_present': 1 if bool((meta or {}).get('protective_pivot_present', False)) else 0,
                                         'session': 'us',
                                         'symbol_cluster': 3,
                                         'volatility_regime': getattr(self, 'last_volatility_level', 'normal') if hasattr(self, 'last_volatility_level') else 'normal'

@@ -36,7 +36,8 @@ class MultiTimeframeSR:
         factor = to_tf // from_tf
         
         # Resample to higher timeframe
-        agg_df = df.resample(f'{to_tf}T').agg({
+        # Use 'min' instead of deprecated 'T' alias in pandas
+        agg_df = df.resample(f'{to_tf}min').agg({
             'open': 'first',
             'high': 'max',
             'low': 'min',

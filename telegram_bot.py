@@ -1956,6 +1956,17 @@ class TGBot:
                     except Exception:
                         pass
                     ph = (cfg.get('phantom', {}) or {})
+                    # HTF min trend strength & SL mode/buffer
+                    try:
+                        htf_cfg = ((cfg.get('router', {}) or {}).get('htf_bias', {}) or {})
+                        min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
+                    except Exception:
+                        min_ts = 60.0
+                    try:
+                        sl_mode = str((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('sl_mode', 'breakout')))
+                        sl_buf = float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('breakout_sl_buffer_atr', 0.30)))
+                    except Exception:
+                        sl_mode = 'breakout'; sl_buf = 0.30
                     lines = ["⚙️ *Settings*", "",
                              f"Stream entry: {'On' if tr_exec.get('allow_stream_entry', True) else 'Off'}",
                              f"Scale‑out: {'On' if sc.get('enabled', False) else 'Off'}",
@@ -1963,6 +1974,8 @@ class TGBot:
                              f"R:R: 1:{rr_val if rr_val is not None else '2.5'}",
                              f"TP1 R: {sc.get('tp1_r',1.6)} | TP2 R: {sc.get('tp2_r',3.0)} | Fraction: {sc.get('fraction',0.5):.2f}",
                              f"Confirm timeout bars: {conf_bars if conf_bars is not None else '6'} | Phantom timeout h: {(getattr(self.shared.get('phantom_tracker'), 'timeout_hours', 0) or 0)}",
+                             f"SL Mode: {sl_mode} | SL Buffer ATR: {sl_buf:.2f}",
+                             f"HTF min trend strength: {min_ts:.1f}",
                              f"Phantoms: {'On' if ph.get('enabled', True) else 'Off'} | Weight: {ph.get('weight', 0.8)}",
                              "",
                              "📐 *Divergence (3m)*",
@@ -1975,9 +1988,11 @@ class TGBot:
                         [InlineKeyboardButton("Stream Entry", callback_data="ui:settings:toggle:stream")],
                         [InlineKeyboardButton("Scale‑out", callback_data="ui:settings:toggle:scaleout")],
                         [InlineKeyboardButton("BE Move", callback_data="ui:settings:toggle:be")],
+                        [InlineKeyboardButton("SL Mode", callback_data="ui:settings:toggle:sl_mode"), InlineKeyboardButton("Set SL Buffer", callback_data="ui:settings:set:sl_buffer")],
                         [InlineKeyboardButton("Set R:R", callback_data="ui:settings:set:rr"), InlineKeyboardButton("Set TP1 R", callback_data="ui:settings:set:tp1_r")],
                         [InlineKeyboardButton("Set TP2 R", callback_data="ui:settings:set:tp2_r"), InlineKeyboardButton("Set Fraction", callback_data="ui:settings:set:fraction")],
                         [InlineKeyboardButton("Set Confirm Bars", callback_data="ui:settings:set:confirm_bars"), InlineKeyboardButton("Set Phantom Hours", callback_data="ui:settings:set:phantom_hours")],
+                        [InlineKeyboardButton("Set HTF Min TS", callback_data="ui:settings:set:htf_min_ts")],
                         [InlineKeyboardButton("Phantoms On/Off", callback_data="ui:settings:toggle:phantom"), InlineKeyboardButton("Set Phantom Weight", callback_data="ui:settings:set:phantom_weight")],
                         [InlineKeyboardButton("Div Mode", callback_data="ui:settings:toggle:div_mode"), InlineKeyboardButton("Div Require", callback_data="ui:settings:toggle:div_require")],
                         [InlineKeyboardButton("Osc RSI", callback_data="ui:settings:toggle:div_osc_rsi"), InlineKeyboardButton("Osc TSI", callback_data="ui:settings:toggle:div_osc_tsi")],
@@ -2006,6 +2021,13 @@ class TGBot:
                     elif key == 'be':
                         sc['move_sl_to_be'] = not bool(sc.get('move_sl_to_be', True))
                         tr_exec['scaleout'] = sc
+                    elif key == 'sl_mode':
+                        cur = str(tr_exec.get('sl_mode', 'breakout'))
+                        nxt = 'hybrid' if cur == 'breakout' else 'breakout'
+                        tr_exec['sl_mode'] = nxt
+                        ts = self.shared.get('trend_settings')
+                        if ts:
+                            ts.sl_mode = nxt
                     elif key == 'div_mode':
                         # Cycle: off -> optional -> strict -> off
                         mode = str((div.get('mode') or 'off')).lower()
@@ -2067,6 +2089,8 @@ class TGBot:
                         'confirm_bars': "Send confirmation timeout bars (integer, e.g., 6)",
                         'phantom_hours': "Send phantom timeout hours (integer, e.g., 100)",
                         'phantom_weight': "Send phantom training weight between 0.3 and 1.0 (e.g., 0.8)",
+                        'sl_buffer': "Send breakout SL buffer ATR (e.g., 0.40)",
+                        'htf_min_ts': "Send HTF min trend strength (e.g., 60)",
                         'div_rsi_len': "Send RSI length (e.g., 14)",
                         'div_tsi_params': "Send TSI params as long,short (e.g., 25,13)",
                         'div_window': "Send divergence confirm window in 3m bars (e.g., 6)",
@@ -5219,6 +5243,38 @@ class TGBot:
                     await _ok(f"✅ Phantom training weight set to {val}")
                 except Exception:
                     await update.message.reply_text("Please send a valid number, e.g., 0.8")
+                return
+
+            if key == 'sl_buffer':
+                try:
+                    val = float(text)
+                    if val < 0.05 or val > 1.00:
+                        await update.message.reply_text("Buffer must be 0.05–1.00 ATR")
+                        return
+                    tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+                    tr_exec['breakout_sl_buffer_atr'] = float(val)
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    ts = self.shared.get('trend_settings')
+                    if ts:
+                        ts.breakout_sl_buffer_atr = float(val)
+                    await _ok(f"✅ SL breakout buffer set to {val:.2f} ATR")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 0.40")
+                return
+
+            if key == 'htf_min_ts':
+                try:
+                    val = float(text)
+                    if val < 40 or val > 90:
+                        await update.message.reply_text("Min trend strength must be 40–90")
+                        return
+                    router = cfg.setdefault('router', {}).setdefault('htf_bias', {}).setdefault('trend', {})
+                    router['min_trend_strength'] = float(val)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ HTF min trend strength set to {val:.1f}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 60")
                 return
 
             # Divergence settings

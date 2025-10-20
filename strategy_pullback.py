@@ -163,7 +163,7 @@ class Settings:
     retest_max_dist_pct: float = 0.40
     require_protective_hl_for_long: bool = True
     require_protective_lh_for_short: bool = True
-    bos_body_min_ratio: float = 0.25
+    bos_body_min_ratio: float = 0.30
     bos_confirm_closes: int = 1  # extra 3m closes beyond pivot
     breakout_to_pullback_bars_3m: int = 10
     pullback_to_bos_bars_3m: int = 10
@@ -877,8 +877,13 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         try:
             br = _body_ratio(df3)
             bos_ready = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) > state.last_counter_pivot)
-            # Eligibility: BOS close and retest_ok, plus either protective HL OR divergence_ok
-            eligible_long = state.retest_ok and bos_ready and (protective_hl_ok or bool(state.divergence_ok))
+            body_ok = bool(br >= float(s.bos_body_min_ratio or 0.0))
+            # Eligibility (exec): require protective HL; divergence only matters if div_mode=strict; enforce body filter
+            eligible_long = (
+                state.retest_ok and bos_ready and protective_hl_ok and body_ok and (
+                    (not s.div_enabled) or (s.div_mode != 'strict') or bool(state.divergence_ok)
+                )
+            )
             if eligible_long:
                 # Clear waiting reason if any
                 state.waiting_reason = ""; state.bos_cross_notified = False
@@ -1149,7 +1154,13 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         try:
             br = _body_ratio(df3)
             bos_ready = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) < state.last_counter_pivot)
-            eligible_short = state.retest_ok and bos_ready and (protective_lh_ok or bool(state.divergence_ok))
+            body_ok = bool(br >= float(s.bos_body_min_ratio or 0.0))
+            # Eligibility (exec): require protective LH; divergence only matters if div_mode=strict; enforce body filter
+            eligible_short = (
+                state.retest_ok and bos_ready and protective_lh_ok and body_ok and (
+                    (not s.div_enabled) or (s.div_mode != 'strict') or bool(state.divergence_ok)
+                )
+            )
             if eligible_short:
                 state.waiting_reason = ""; state.bos_cross_notified = False
                 if s.bos_confirm_closes <= 0:

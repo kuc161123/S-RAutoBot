@@ -132,10 +132,10 @@ trend:
       enabled: true
       min_pct: 0.001        # 0.1% slippage threshold to trigger SL recalc
       pivot_buffer_atr: 0.05  # keep SL beyond pivot by 0.05 ATR
-    # Divergence confirmation on 3m (strict gating, any RSI or TSI)
+    # Divergence confirmation on 3m (optional gating by default; strict reduces flow)
     divergence:
       enabled: true
-      mode: strict          # off | optional | strict (learn-first: optional)
+      mode: optional          # off | optional | strict (learn-first: optional)
       require: any          # any | all (oscillator set)
       oscillators: [rsi, tsi]
       rsi_len: 14

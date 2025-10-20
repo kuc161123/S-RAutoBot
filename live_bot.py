@@ -4076,7 +4076,7 @@ class TradingBot:
 
                 # Wire Trend event notifications to Telegram
                 try:
-                    from strategy_pullback import set_trend_event_notifier, set_trend_microframe_provider, set_trend_entry_executor
+                    from strategy_pullback import set_trend_event_notifier, set_trend_microframe_provider, set_trend_entry_executor, set_trend_phantom_recorder
                     def _trend_notifier(symbol: str, text: str):
                         try:
                             # Fire-and-forget send to Telegram
@@ -4102,6 +4102,64 @@ class TradingBot:
                     # Provide 3m frames to pullback strategy for micro detection
                     try:
                         set_trend_microframe_provider(lambda sym: self.frames_3m.get(sym))
+                    except Exception:
+                        pass
+                    # Provide phantom recorder callback for permissive BOS-cross phantoms
+                    try:
+                        def _trend_phantom_cb(sym: str, side: str, entry: float, sl: float, tp: float, meta: dict):
+                            try:
+                                df = self.frames.get(sym)
+                                feats = {}
+                                if df is not None and not df.empty:
+                                    cl = df['close']; price = float(cl.iloc[-1]) if len(cl) else 0.0
+                                    ys = cl.tail(20).values if len(cl) >= 20 else cl.values
+                                    try:
+                                        slope = np.polyfit(np.arange(len(ys)), ys, 1)[0]
+                                    except Exception:
+                                        slope = 0.0
+                                    trend_slope_pct = float((slope / price) * 100.0) if price else 0.0
+                                    ema20 = float(cl.ewm(span=20, adjust=False).mean().iloc[-1]) if len(cl) >= 20 else price
+                                    ema50 = float(cl.ewm(span=50, adjust=False).mean().iloc[-1]) if len(cl) >= 50 else ema20
+                                    ema_stack_score = 100.0 if (price > ema20 > ema50 or price < ema20 < ema50) else (50.0 if ema20 != ema50 else 0.0)
+                                    rng_today = float(df['high'].iloc[-1] - df['low'].iloc[-1])
+                                    med_range = float((df['high'] - df['low']).rolling(20).median().iloc[-1]) if len(df) >= 20 else max(1e-9, rng_today)
+                                    range_expansion = float(rng_today / max(1e-9, med_range))
+                                    prev = cl.shift(); tr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                                    atr = float(tr.rolling(14).mean().iloc[-1]) if len(tr) >= 14 else float(tr.iloc[-1])
+                                    atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
+                                    brk = float((meta or {}).get('breakout_level', 0.0) or 0.0)
+                                    try:
+                                        break_dist_atr = ((price - brk) / atr) if (side == 'long' and atr) else ((brk - price) / atr) if (atr) else 0.0
+                                    except Exception:
+                                        break_dist_atr = 0.0
+                                    feats = {
+                                        'trend_slope_pct': trend_slope_pct,
+                                        'ema_stack_score': ema_stack_score,
+                                        'atr_pct': atr_pct,
+                                        'range_expansion': range_expansion,
+                                        'breakout_dist_atr': float(break_dist_atr),
+                                        'session': 'us',
+                                        'symbol_cluster': 3,
+                                        'volatility_regime': getattr(self, 'last_volatility_level', 'normal') if hasattr(self, 'last_volatility_level') else 'normal'
+                                    }
+                                # Score via ML if available
+                                ml_score = 0.0
+                                try:
+                                    if 'get_trend_scorer' in globals() and get_trend_scorer is not None:
+                                        tr_scorer = get_trend_scorer()
+                                        dummy_sig = {'side': side, 'entry': entry, 'sl': sl, 'tp': tp}
+                                        ml_score, _ = tr_scorer.score_signal(dummy_sig, feats)
+                                except Exception:
+                                    ml_score = 0.0
+                                # Record phantom
+                                try:
+                                    pt = get_phantom_tracker()
+                                    pt.record_signal(sym, {'side': side, 'entry': float(entry), 'sl': float(sl), 'tp': float(tp)}, float(ml_score or 0.0), False, feats, 'trend_pullback')
+                                except Exception:
+                                    pass
+                            except Exception:
+                                pass
+                        set_trend_phantom_recorder(_trend_phantom_cb)
                     except Exception:
                         pass
                     # Provide stream-side entry executor to strategy (3m execution)

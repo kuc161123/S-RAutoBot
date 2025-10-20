@@ -19,6 +19,7 @@ def set_trend_microframe_provider(fn):
 _event_notifier = None  # type: Optional[callable]
 _redis_client = None    # type: Optional[object]
 _entry_executor = None  # type: Optional[callable]
+_phantom_recorder = None  # type: Optional[callable]
 
 def set_trend_event_notifier(fn):
     """Register a notifier callback taking (symbol:str, text:str)."""
@@ -42,6 +43,11 @@ def set_trend_entry_executor(fn):
     """Register entry executor: fn(symbol, side, entry, sl, tp, meta_dict)"""
     global _entry_executor
     _entry_executor = fn
+
+def set_trend_phantom_recorder(fn):
+    """Register phantom recorder: fn(symbol, side, entry, sl, tp, meta_dict)"""
+    global _phantom_recorder
+    _phantom_recorder = fn
 
 def _persist_state(symbol: str, state: 'BreakoutState'):
     try:
@@ -927,6 +933,27 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                         if _entry_executor is not None:
                             _entry_executor(symbol, "long", float(entry), float(sl), float(tp), {"phase":"3m_bos","lh_pivot": state.last_counter_pivot, "div_ok": bool(state.divergence_ok), "div_type": state.divergence_type, "div_score": float(state.divergence_score), "div_rsi_delta": float(state.div_rsi_delta), "div_tsi_delta": float(state.div_tsi_delta)})
                         return Signal("long", entry, sl, tp, f"BOS long: break of LH {state.last_counter_pivot:.4f}", {"atr": atr, "breakout_level": state.breakout_level, "lh_pivot": state.last_counter_pivot})
+            else:
+                # Not eligible for execution, but BOS crossed: record a phantom for learning
+                try:
+                    if bos_ready and _phantom_recorder is not None:
+                        entry = float(df3['close'].iloc[-1])
+                        atr15_val = _atr_val(df, s.atr_len)
+                        if s.sl_mode == 'breakout':
+                            sl = float(state.breakout_level) - float(s.breakout_sl_buffer_atr)*float(atr15_val)
+                            min_stop = float(entry) - float(entry)*float(s.min_r_pct)
+                            sl = min(sl, min_stop)
+                        else:
+                            atr_val = _atr_val(df, s.atr_len)
+                            sl_opt3 = (state.pullback_extreme - s.sl_buf_atr*atr_val) if state.pullback_extreme else (entry - s.sl_buf_atr*atr_val)
+                            sl = min(state.previous_pivot_low - (s.sl_buf_atr*0.3*atr_val), state.breakout_level - (s.sl_buf_atr*1.6*atr_val), sl_opt3)
+                        if s.extra_pivot_breath_pct > 0:
+                            sl = float(sl) - float(entry)*float(s.extra_pivot_breath_pct)
+                        R = abs(entry - sl); tp = entry + (s.rr * R * 1.00165)
+                        meta = {"phase": "3m_bos_phantom", "lh_pivot": float(state.last_counter_pivot or 0.0), "div_ok": bool(state.divergence_ok), "div_type": state.divergence_type, "breakout_level": float(state.breakout_level or 0.0)}
+                        _phantom_recorder(symbol, "long", float(entry), float(sl), float(tp), meta)
+                except Exception:
+                    pass
         except Exception:
             pass
         # Timeouts
@@ -1160,6 +1187,27 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                         if _entry_executor is not None:
                             _entry_executor(symbol, "short", float(entry), float(sl), float(tp), {"phase":"3m_bos","hl_pivot": state.last_counter_pivot, "div_ok": bool(state.divergence_ok), "div_type": state.divergence_type, "div_score": float(state.divergence_score), "div_rsi_delta": float(state.div_rsi_delta), "div_tsi_delta": float(state.div_tsi_delta)})
                         return Signal("short", entry, sl, tp, f"BOS short: break of HL {state.last_counter_pivot:.4f}", {"atr": atr, "breakout_level": state.breakout_level, "hl_pivot": state.last_counter_pivot})
+            else:
+                # Not eligible for execution, but BOS crossed: record a phantom (short)
+                try:
+                    if bos_ready and _phantom_recorder is not None:
+                        entry = float(df3['close'].iloc[-1])
+                        atr15_val = _atr_val(df, s.atr_len)
+                        if s.sl_mode == 'breakout':
+                            sl = float(state.breakout_level) + float(s.breakout_sl_buffer_atr)*float(atr15_val)
+                            min_stop = float(entry) + float(entry)*float(s.min_r_pct)
+                            sl = max(sl, min_stop)
+                        else:
+                            atr_val = _atr_val(df, s.atr_len)
+                            sl_opt3 = (state.pullback_extreme + s.sl_buf_atr*atr_val) if state.pullback_extreme else (entry + s.sl_buf_atr*atr_val)
+                            sl = max(state.previous_pivot_high + (s.sl_buf_atr*0.3*atr_val), state.breakout_level + (s.sl_buf_atr*1.6*atr_val), sl_opt3)
+                        if s.extra_pivot_breath_pct > 0:
+                            sl = float(sl) + float(entry)*float(s.extra_pivot_breath_pct)
+                        R = abs(entry - sl); tp = entry - (s.rr * R * 1.00165)
+                        meta = {"phase": "3m_bos_phantom", "hl_pivot": float(state.last_counter_pivot or 0.0), "div_ok": bool(state.divergence_ok), "div_type": state.divergence_type, "breakout_level": float(state.breakout_level or 0.0)}
+                        _phantom_recorder(symbol, "short", float(entry), float(sl), float(tp), meta)
+                except Exception:
+                    pass
         except Exception:
             pass
         # Timeouts

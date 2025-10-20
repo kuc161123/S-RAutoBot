@@ -5231,6 +5231,12 @@ class TGBot:
                     ph['weight'] = float(val)
                     cfg['phantom'] = ph
                     self.shared['config'] = cfg
+                    try:
+                        bot_instance = self.shared.get('bot_instance')
+                        if bot_instance:
+                            bot_instance.config = cfg
+                    except Exception:
+                        pass
                     # Also persist to Redis so ML scorer can pick it up live
                     try:
                         bot_instance = self.shared.get('bot_instance')
@@ -5255,6 +5261,12 @@ class TGBot:
                     tr_exec['breakout_sl_buffer_atr'] = float(val)
                     cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
                     self.shared['config'] = cfg
+                    try:
+                        bot_instance = self.shared.get('bot_instance')
+                        if bot_instance:
+                            bot_instance.config = cfg
+                    except Exception:
+                        pass
                     ts = self.shared.get('trend_settings')
                     if ts:
                         ts.breakout_sl_buffer_atr = float(val)
@@ -5272,6 +5284,12 @@ class TGBot:
                     router = cfg.setdefault('router', {}).setdefault('htf_bias', {}).setdefault('trend', {})
                     router['min_trend_strength'] = float(val)
                     self.shared['config'] = cfg
+                    try:
+                        bot_instance = self.shared.get('bot_instance')
+                        if bot_instance:
+                            bot_instance.config = cfg
+                    except Exception:
+                        pass
                     await _ok(f"✅ HTF min trend strength set to {val:.1f}")
                 except Exception:
                     await update.message.reply_text("Please send a number, e.g., 60")

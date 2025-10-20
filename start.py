@@ -70,7 +70,27 @@ if __name__ == "__main__":
             print(f"Warning: Could not connect to Redis: {e}. Models will not be checked/saved.")
             r = None
 
-    # Bootstrap pretraining is disabled by default. Enable only if explicitly requested.
+    # New: Optional pretraining run that reuses live Trend Pullback with 3m micro
+    pretrain_on_start = os.getenv('PRETRAIN_ON_START', 'false').lower() == 'true'
+    if pretrain_on_start:
+        print("[Pretrain] Running Trend Pullback pretraining before live start...")
+        try:
+            # Build CLI flags from env for sweep and DB persistence
+            args = [sys.executable, "pretrain_trend_server.py"]
+            if os.getenv('PRETRAIN_SWEEP_ENABLE', 'false').lower() == 'true' or os.getenv('PRETRAIN_SWEEP', ''):
+                args.append('--sweep')
+            if os.getenv('PRETRAIN_PERSIST_DB', 'false').lower() == 'true':
+                args.append('--persist-db')
+            wf = os.getenv('PRETRAIN_WF_FOLDS')
+            if wf:
+                args.extend(['--wf-folds', wf])
+            subprocess.run(args, check=False)
+        except Exception as e:
+            print(f"[Pretrain] Error: {e}. Proceeding to live.")
+    else:
+        print("[Pretrain] Skipped. Set PRETRAIN_ON_START=true to enable.")
+
+    # Legacy bootstrap pretraining (older approach) remains available behind ENABLE_BOOTSTRAP_PRETRAIN
     enable_bootstrap = os.getenv('ENABLE_BOOTSTRAP_PRETRAIN', 'false').lower() == 'true'
     if enable_bootstrap:
         # Optional: run pretrainer only when models are missing OR forced

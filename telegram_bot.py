@@ -208,12 +208,19 @@ class TGBot:
             from strategy_pullback import get_trend_states_snapshot
             snap = get_trend_states_snapshot() or {}
             counts = {"NEUTRAL":0, "RESISTANCE_BROKEN":0, "SUPPORT_BROKEN":0, "HL_FORMED":0, "LH_FORMED":0, "SIGNAL_SENT":0}
+            bos_armed = 0
             for st in snap.values():
                 s = (st.get('state') if isinstance(st, dict) else None) or 'NEUTRAL'
                 if s in counts:
                     counts[s] += 1
+                try:
+                    if st.get('bos_crossed'):
+                        bos_armed += 1
+                except Exception:
+                    pass
+            # Include BOS armed and protective pivot counts in summary
             lines.append(
-                f"NEUTRAL {counts['NEUTRAL']} | RES {counts['RESISTANCE_BROKEN']} | SUP {counts['SUPPORT_BROKEN']} | HL {counts['HL_FORMED']} | LH {counts['LH_FORMED']} | SENT {counts['SIGNAL_SENT']}"
+                f"NEUTRAL {counts['NEUTRAL']} | RES {counts['RESISTANCE_BROKEN']} | SUP {counts['SUPPORT_BROKEN']} | BOS {bos_armed} | HL {counts['HL_FORMED']} | LH {counts['LH_FORMED']} | SENT {counts['SIGNAL_SENT']}"
             )
         except Exception:
             lines.append("(unavailable)")

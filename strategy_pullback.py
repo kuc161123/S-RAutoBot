@@ -763,14 +763,6 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                     except Exception:
                         bos_cross_now = False
                     if (state.bos_cross_notified or bos_cross_now) and state.retest_ok:
-                        # Respect divergence strict mode: require divergence_ok before sending
-                        try:
-                            if s.div_enabled and s.div_mode == 'strict' and not bool(state.divergence_ok):
-                                state.waiting_reason = 'WAIT_DIV'
-                                _notify(symbol, f"⏳ Trend: [{symbol}] Protective HL formed; waiting for divergence (strict)")
-                                return None
-                        except Exception:
-                            pass
                         try:
                             entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)
                             sl_opt3 = (state.pullback_extreme - s.sl_buf_atr*atr) if state.pullback_extreme else (entry - s.sl_buf_atr*atr)
@@ -867,9 +859,9 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         try:
             br = _body_ratio(df3)
             bos_ready = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) > state.last_counter_pivot)
-            if s.div_enabled and s.div_mode == 'strict':
-                bos_ready = bos_ready and bool(state.divergence_ok)
-            if state.retest_ok and protective_hl_ok and bos_ready:
+            # Eligibility: BOS close and retest_ok, plus either protective HL OR divergence_ok
+            eligible_long = state.retest_ok and bos_ready and (protective_hl_ok or bool(state.divergence_ok))
+            if eligible_long:
                 # Clear waiting reason if any
                 state.waiting_reason = ""; state.bos_cross_notified = False
                 if s.bos_confirm_closes <= 0:
@@ -1090,9 +1082,8 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
         try:
             br = _body_ratio(df3)
             bos_ready = (state.last_counter_pivot > 0) and (float(df3['close'].iloc[-1]) < state.last_counter_pivot)
-            if s.div_enabled and s.div_mode == 'strict':
-                bos_ready = bos_ready and bool(state.divergence_ok)
-            if state.retest_ok and protective_lh_ok and bos_ready:
+            eligible_short = state.retest_ok and bos_ready and (protective_lh_ok or bool(state.divergence_ok))
+            if eligible_short:
                 state.waiting_reason = ""; state.bos_cross_notified = False
                 if s.bos_confirm_closes <= 0:
                     entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)

@@ -222,7 +222,8 @@ def run_pretraining(
         start_days = int(os.getenv('PRETRAIN_START_DAYS', '21'))
     except Exception:
         start_days = 21
-    start_ts = pd.Timestamp.utcnow().tz_localize('UTC') - pd.Timedelta(days=start_days)
+    # Use UTC-aware timestamp directly; avoid tz_localize on tz-aware values
+    start_ts = pd.Timestamp.now(tz='UTC') - pd.Timedelta(days=start_days)
 
     # Cap signals per symbol for speed
     try:

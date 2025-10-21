@@ -63,6 +63,9 @@ class PhantomTrade:
     two_r_hit: Optional[bool] = None
     realized_rr: Optional[float] = None
     exit_reason: Optional[str] = None
+    # Lifecycle flags
+    be_moved: bool = False
+    tp1_hit: bool = False
     
     def to_dict(self):
         """Convert to dictionary for storage"""
@@ -445,6 +448,25 @@ class PhantomTradeTracker:
                         ph.max_favorable = current_price
                     if current_price < ph.max_adverse:
                         ph.max_adverse = current_price
+                    # Simulate TP1 → move SL to BE once price crosses tp1 level
+                    try:
+                        import yaml
+                        tp1_r = 1.6
+                        with open('config.yaml','r') as _f:
+                            _cfg = yaml.safe_load(_f)
+                            tp1_r = float(((((_cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('scaleout', {}) or {}).get('tp1_r', 1.6)))
+                    except Exception:
+                        tp1_r = 1.6
+                    try:
+                        R = abs(float(ph.entry_price) - float(ph.stop_loss))
+                        tp1_lvl = float(ph.entry_price) + tp1_r * R
+                        if (not ph.tp1_hit) and cur_high >= tp1_lvl:
+                            ph.tp1_hit = True
+                            ph.be_moved = True
+                            # Simulate SL moved to BE after TP1
+                            ph.stop_loss = float(ph.entry_price)
+                    except Exception:
+                        pass
                     if cur_high >= ph.take_profit:
                         self._close_phantom(symbol, ph, current_price, 'win', df, btc_price, symbol_collector, exit_reason='tp')
                         continue
@@ -458,6 +480,23 @@ class PhantomTradeTracker:
                         ph.max_favorable = current_price
                     if current_price > ph.max_adverse:
                         ph.max_adverse = current_price
+                    try:
+                        import yaml
+                        tp1_r = 1.6
+                        with open('config.yaml','r') as _f:
+                            _cfg = yaml.safe_load(_f)
+                            tp1_r = float(((((_cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('scaleout', {}) or {}).get('tp1_r', 1.6)))
+                    except Exception:
+                        tp1_r = 1.6
+                    try:
+                        R = abs(float(ph.entry_price) - float(ph.stop_loss))
+                        tp1_lvl = float(ph.entry_price) - tp1_r * R
+                        if (not ph.tp1_hit) and cur_low <= tp1_lvl:
+                            ph.tp1_hit = True
+                            ph.be_moved = True
+                            ph.stop_loss = float(ph.entry_price)
+                    except Exception:
+                        pass
                     if cur_low <= ph.take_profit:
                         self._close_phantom(symbol, ph, current_price, 'win', df, btc_price, symbol_collector, exit_reason='tp')
                         continue
@@ -775,7 +814,9 @@ class PhantomTradeTracker:
                 'sl': phantom.stop_loss,
                 'tp': phantom.take_profit,
                 'symbol': phantom.symbol,
-                'features': phantom.features,
+                'features': {**(phantom.features or {}),
+                             'tp1_hit': 1.0 if getattr(phantom, 'tp1_hit', False) else 0.0,
+                             'be_moved': 1.0 if getattr(phantom, 'be_moved', False) else 0.0},
                 'score': phantom.ml_score,
                 'timestamp': phantom.signal_time,
                 'was_executed': False,

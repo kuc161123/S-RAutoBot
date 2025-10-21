@@ -1003,7 +1003,10 @@ class TradingBot:
                                         self._scaleout = {}
                                     self._scaleout[sym] = {
                                         'tp1': float(tp1), 'tp2': float(tp2), 'entry': float(actual_entry),
-                                        'side': sig_obj.side, 'be_moved': False, 'move_be': bool(sc_cfg.get('move_sl_to_be', True))
+                                        'side': sig_obj.side, 'be_moved': False, 'move_be': bool(sc_cfg.get('move_sl_to_be', True)),
+                                        'qty1': float(qty1), 'qty2': max(0.0, float(qty) - float(qty1)),
+                                        'tp1_order_id': None,
+                                        'tp1_hit': False, 'tp1_notified': False
                                     }
                                     # Notify scale-out armed
                                     try:
@@ -1387,6 +1390,76 @@ class TradingBot:
                         _ = self._detect_trend_signal(df15.copy(), self._trend_settings, sym)
                 except Exception as _te:
                     logger.debug(f"[{sym}] Trend micro-step error on 3m: {_te}")
+
+                # BE move monitoring on 3m close: detect TP1 hit and move SL→BE promptly
+                try:
+                    if hasattr(self, '_scaleout') and sym in getattr(self, '_scaleout', {}) and sym in self.book.positions:
+                        so = self._scaleout.get(sym) or {}
+                        if not bool(so.get('be_moved')) and bool(so.get('move_be', True)):
+                            side = str(so.get('side',''))
+                            tp1 = float(so.get('tp1', 0.0))
+                            entry_px = float(so.get('entry', 0.0))
+                            df3c = self.frames_3m.get(sym)
+                            last_px = float(df3c['close'].iloc[-1]) if df3c is not None and not df3c.empty else None
+                            hit = (last_px is not None) and ((side == 'long' and last_px >= tp1) or (side == 'short' and last_px <= tp1))
+                            if hit:
+                                # TP1 reached: notify once
+                                if not bool(so.get('tp1_notified', False)):
+                                    try:
+                                        if self.tg:
+                                            qty1 = so.get('qty1')
+                                            msg_tp1 = f"🎯 TP1 reached: {sym} price {last_px:.4f} {'≥' if side=='long' else '≤'} TP1 {tp1:.4f}"
+                                            if qty1:
+                                                msg_tp1 += f" | qty1={float(qty1):.4f}"
+                                            await self.tg.send_message(msg_tp1)
+                                        # Append to event log
+                                        try:
+                                            evts = self.shared.get('trend_events')
+                                            if isinstance(evts, list):
+                                                from datetime import datetime as _dt
+                                                evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': sym, 'text': msg_tp1})
+                                                if len(evts) > 60:
+                                                    del evts[:len(evts)-60]
+                                        except Exception:
+                                            pass
+                                    except Exception:
+                                        pass
+                                    # Mark tp1 hit
+                                    self._scaleout[sym]['tp1_notified'] = True
+                                    self._scaleout[sym]['tp1_hit'] = True
+                                    try:
+                                        from datetime import datetime as _dt
+                                        self._scaleout[sym]['tp1_time'] = _dt.utcnow()
+                                    except Exception:
+                                        pass
+
+                                # Move stop to break-even (entry price)
+                                try:
+                                    self.bybit.set_tpsl(sym, stop_loss=float(entry_px))
+                                    self._scaleout[sym]['be_moved'] = True
+                                    # Update in-memory book position SL
+                                    try:
+                                        if sym in self.book.positions:
+                                            self.book.positions[sym].sl = float(entry_px)
+                                    except Exception:
+                                        pass
+                                    # Notify BE move
+                                    if self.tg:
+                                        await self.tg.send_message(f"🛡️ BE Move: {sym} SL→BE at {entry_px:.4f} after TP1 hit")
+                                    # Append to event log
+                                    try:
+                                        evts = self.shared.get('trend_events')
+                                        if isinstance(evts, list):
+                                            from datetime import datetime as _dt
+                                            evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': sym, 'text': f"BE Move: SL→BE at {entry_px:.4f} after TP1"})
+                                            if len(evts) > 60:
+                                                del evts[:len(evts)-60]
+                                    except Exception:
+                                        pass
+                                except Exception:
+                                    pass
+                except Exception as _e:
+                    logger.debug(f"[{sym}] 3m BE monitor error: {_e}")
 
                 # Trend-only mode: skip Scalp analysis/logging on 3m stream but keep Trend micro-step above
                 try:
@@ -2899,6 +2972,35 @@ class TradingBot:
                                     'reason': getattr(pos, 'ml_reason', '')
                                 }
                             }
+
+                            # Enrich features with lifecycle flags from scale-out (if present)
+                            try:
+                                so = getattr(self, '_scaleout', {}).get(symbol) if hasattr(self, '_scaleout') else None
+                                if isinstance(so, dict):
+                                    feat_ref['tp1_hit'] = 1.0 if bool(so.get('tp1_hit')) else 0.0
+                                    feat_ref['be_moved'] = 1.0 if bool(so.get('be_moved')) else 0.0
+                                    # Runner hit is true if exit_reason is TP and be_moved was true
+                                    try:
+                                        feat_ref['runner_hit'] = 1.0 if (str(exit_reason).lower() == 'tp' and bool(so.get('be_moved'))) else 0.0
+                                    except Exception:
+                                        feat_ref['runner_hit'] = 0.0
+                                    # Timing features
+                                    try:
+                                        if 'tp1_time' in so and pos.entry_time:
+                                            feat_ref['time_to_tp1_sec'] = float((so['tp1_time'] - pos.entry_time).total_seconds())
+                                        else:
+                                            feat_ref['time_to_tp1_sec'] = 0.0
+                                    except Exception:
+                                        feat_ref['time_to_tp1_sec'] = 0.0
+                                    try:
+                                        if pos.entry_time:
+                                            feat_ref['time_to_exit_sec'] = float((datetime.now() - pos.entry_time).total_seconds())
+                                        else:
+                                            feat_ref['time_to_exit_sec'] = 0.0
+                                    except Exception:
+                                        feat_ref['time_to_exit_sec'] = 0.0
+                            except Exception:
+                                pass
                             
                             # Debugging: Log strategy name and routing info for all closed trades
                             logger.info(f"[{symbol}] ML ROUTING DEBUG: strategy='{pos.strategy_name}', use_enhanced={shared.get('use_enhanced_parallel', False) if 'shared' in locals() else False}")

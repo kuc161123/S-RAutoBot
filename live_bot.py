@@ -1006,8 +1006,16 @@ class TradingBot:
                                         'side': sig_obj.side, 'be_moved': False, 'move_be': bool(sc_cfg.get('move_sl_to_be', True)),
                                         'qty1': float(qty1), 'qty2': max(0.0, float(qty) - float(qty1)),
                                         'tp1_order_id': None,
-                                        'tp1_hit': False, 'tp1_notified': False
+                                        'tp1_hit': False, 'tp1_notified': False,
+                                        'recovered': False
                                     }
+                                    # Persist scaleout hints for recovery
+                                    try:
+                                        if getattr(self, '_redis', None) is not None:
+                                            import json as _json
+                                            self._redis.set(f'openpos:scaleout:{sym}', _json.dumps(self._scaleout[sym]))
+                                    except Exception:
+                                        pass
                                     # Notify scale-out armed
                                     try:
                                         if self.tg:
@@ -1433,29 +1441,33 @@ class TradingBot:
                                     except Exception:
                                         pass
 
-                                # Move stop to break-even (entry price)
+                                # Move stop to break-even (entry price) — only for non-recovered OR if reconcile toggle is on
                                 try:
-                                    self.bybit.set_tpsl(sym, stop_loss=float(entry_px))
-                                    self._scaleout[sym]['be_moved'] = True
-                                    # Update in-memory book position SL
-                                    try:
-                                        if sym in self.book.positions:
-                                            self.book.positions[sym].sl = float(entry_px)
-                                    except Exception:
-                                        pass
-                                    # Notify BE move
-                                    if self.tg:
-                                        await self.tg.send_message(f"🛡️ BE Move: {sym} SL→BE at {entry_px:.4f} after TP1 hit")
-                                    # Append to event log
-                                    try:
-                                        evts = self.shared.get('trend_events')
-                                        if isinstance(evts, list):
-                                            from datetime import datetime as _dt
-                                            evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': sym, 'text': f"BE Move: SL→BE at {entry_px:.4f} after TP1"})
-                                            if len(evts) > 60:
-                                                del evts[:len(evts)-60]
-                                    except Exception:
-                                        pass
+                                    tr_exec = ((self.config.get('trend', {}) or {}).get('exec', {}) or {})
+                                    reconcile = bool(tr_exec.get('recovery_reconcile_be', False))
+                                    is_recovered = bool(so.get('recovered', False))
+                                    if (not is_recovered) or reconcile:
+                                        self.bybit.set_tpsl(sym, stop_loss=float(entry_px))
+                                        self._scaleout[sym]['be_moved'] = True
+                                        # Update in-memory book position SL
+                                        try:
+                                            if sym in self.book.positions:
+                                                self.book.positions[sym].sl = float(entry_px)
+                                        except Exception:
+                                            pass
+                                        # Notify BE move
+                                        if self.tg:
+                                            await self.tg.send_message(f"🛡️ BE Move: {sym} SL→BE at {entry_px:.4f} after TP1 hit")
+                                        # Append to event log
+                                        try:
+                                            evts = self.shared.get('trend_events')
+                                            if isinstance(evts, list):
+                                                from datetime import datetime as _dt
+                                                evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': sym, 'text': f"BE Move: SL→BE at {entry_px:.4f} after TP1"})
+                                                if len(evts) > 60:
+                                                    del evts[:len(evts)-60]
+                                        except Exception:
+                                            pass
                                 except Exception:
                                     pass
                 except Exception as _e:
@@ -3285,6 +3297,7 @@ class TradingBot:
             
             if positions:
                 recovered = 0
+                recovered_details = []
                 for pos in positions:
                     # Skip if no position size
                     size_str = pos.get('size', '0')
@@ -3321,13 +3334,19 @@ class TradingBot:
                     
                     # Add to book
                     from position_mgr import Position
-                    # Try to restore strategy from Redis if available
+                    # Try to restore strategy from Redis; in trend-only mode default to trend_pullback
                     recovered_strategy = "unknown"
                     try:
                         if getattr(self, '_redis', None) is not None:
                             v = self._redis.get(f'openpos:strategy:{symbol}')
                             if isinstance(v, str) and v:
                                 recovered_strategy = v
+                        if recovered_strategy == "unknown":
+                            try:
+                                if getattr(self, '_trend_only', False):
+                                    recovered_strategy = 'trend_pullback'
+                            except Exception:
+                                pass
                     except Exception:
                         recovered_strategy = "unknown"
                     book.positions[symbol] = Position(
@@ -3340,7 +3359,67 @@ class TradingBot:
                         strategy_name=recovered_strategy  # Restored if available; may remain 'unknown'
                     )
                     
+                    # Hydrate per-position meta from Redis if available
+                    try:
+                        if getattr(self, '_redis', None) is not None:
+                            import json as _json
+                            meta_raw = self._redis.get(f'openpos:meta:{symbol}')
+                            if meta_raw:
+                                m = _json.loads(meta_raw)
+                                if not hasattr(self, '_position_meta'):
+                                    self._position_meta = {}
+                                self._position_meta[symbol] = m
+                    except Exception:
+                        pass
+                    # Hydrate scale-out state from Redis or reconstruct
+                    so_hydrated = False
+                    try:
+                        if getattr(self, '_redis', None) is not None:
+                            import json as _json
+                            so_raw = self._redis.get(f'openpos:scaleout:{symbol}')
+                            if so_raw:
+                                so = _json.loads(so_raw)
+                                if not hasattr(self, '_scaleout'):
+                                    self._scaleout = {}
+                                so['recovered'] = True
+                                self._scaleout[symbol] = so
+                                so_hydrated = True
+                    except Exception:
+                        so_hydrated = False
+                    if not so_hydrated:
+                        # Reconstruct TP1/TP2/qtys from config; do NOT modify exchange orders
+                        try:
+                            tr_exec = ((self.config.get('trend', {}) or {}).get('exec', {}) or {})
+                            sc = (tr_exec.get('scaleout',{}) or {})
+                            if bool(sc.get('enabled', False)):
+                                frac = max(0.1, min(0.9, float(sc.get('fraction', 0.5))))
+                                tp1_r = float(sc.get('tp1_r', 1.6))
+                                tp2_r = float(sc.get('tp2_r', 3.0))
+                                R = abs(entry - (sl if sl > 0 else entry))
+                                if R > 0:
+                                    if side == 'long':
+                                        tp1 = float(entry) + tp1_r * R
+                                        tp2 = float(entry) + tp2_r * R
+                                    else:
+                                        tp1 = float(entry) - tp1_r * R
+                                        tp2 = float(entry) - tp2_r * R
+                                    qty1 = float(qty) * frac
+                                    qty2 = max(0.0, float(qty) - qty1)
+                                    be_tolerance = float(entry) * 0.001  # 0.1%
+                                    be_moved = abs(sl - entry) <= be_tolerance
+                                    if not hasattr(self, '_scaleout'):
+                                        self._scaleout = {}
+                                    self._scaleout[symbol] = {
+                                        'tp1': float(tp1), 'tp2': float(tp2), 'entry': float(entry),
+                                        'side': side, 'be_moved': bool(be_moved), 'move_be': bool(sc.get('move_sl_to_be', True)),
+                                        'qty1': float(qty1), 'qty2': float(qty2), 'tp1_order_id': None,
+                                        'tp1_hit': bool(be_moved), 'tp1_notified': False,
+                                        'recovered': True
+                                    }
+                        except Exception:
+                            pass
                     recovered += 1
+                    recovered_details.append({'symbol': symbol, 'strategy': recovered_strategy, 'scaleout': 'hydrated' if so_hydrated else 'reconstructed'})
                     if recovered_strategy != "unknown":
                         logger.info(f"Recovered {side} position: {symbol} qty={qty} entry={entry:.4f} TP={tp:.4f} SL={sl:.4f} strategy={recovered_strategy}")
                     else:
@@ -3355,9 +3434,11 @@ class TradingBot:
                         msg = f"📊 *Recovered {recovered} existing position(s)*\n"
                         msg += "⚠️ *These positions will NOT be modified*\n"
                         msg += "✅ *TP/SL orders preserved as-is*\n\n"
-                        for sym, pos in book.positions.items():
-                            emoji = "🟢" if pos.side == "long" else "🔴"
-                            msg += f"{emoji} {sym}: {pos.side} qty={pos.qty:.4f}\n"
+                        for d in recovered_details:
+                            sym = d['symbol']; pos = book.positions.get(sym)
+                            emoji = "🟢" if pos and pos.side == "long" else "🔴"
+                            msg += f"{emoji} {sym}: {pos.side if pos else '?'} qty={pos.qty if pos else 0}\n"
+                            msg += f"   strategy={d['strategy']} scaleout={d['scaleout']}\n"
                         await self.tg.send_message(msg)
             else:
                 logger.info("No existing positions to recover")
@@ -4422,6 +4503,15 @@ class TradingBot:
                                         'min_r_pct': float(getattr(self._trend_settings, 'min_r_pct', 0.005)),
                                         'last_checked': None
                                     }
+                                    # Persist hints for recovery
+                                    try:
+                                        if getattr(self, '_redis', None) is not None:
+                                            import json as _json
+                                            self._redis.set(f'openpos:strategy:{symbol}', 'trend_pullback')
+                                            self._redis.set(f'openpos:entry:{symbol}', _json.dumps({'entry': float(entry), 'qty': float(qty), 'ts': datetime.utcnow().isoformat()}))
+                                            self._redis.set(f'openpos:meta:{symbol}', _json.dumps(self._position_meta[symbol]))
+                                    except Exception:
+                                        pass
                                 except Exception:
                                     pass
                                 # Optionally cancel any active trend phantom for this symbol to avoid ML double count

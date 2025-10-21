@@ -1976,6 +1976,7 @@ class TGBot:
                              f"Confirm timeout bars: {conf_bars if conf_bars is not None else '6'} | Phantom timeout h: {(getattr(self.shared.get('phantom_tracker'), 'timeout_hours', 0) or 0)}",
                              f"SL Mode: {sl_mode} | SL Buffer ATR: {sl_buf:.2f}",
                              f"HTF min trend strength: {min_ts:.1f}",
+                             f"Recovery: BE reconcile: {'On' if ((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('recovery_reconcile_be', False) else 'Off'}",
                              f"Phantoms: {'On' if ph.get('enabled', True) else 'Off'} | Weight: {ph.get('weight', 0.8)}",
                              "",
                              "📐 *Divergence (3m)*",
@@ -1993,6 +1994,7 @@ class TGBot:
                         [InlineKeyboardButton("Set TP2 R", callback_data="ui:settings:set:tp2_r"), InlineKeyboardButton("Set Fraction", callback_data="ui:settings:set:fraction")],
                         [InlineKeyboardButton("Set Confirm Bars", callback_data="ui:settings:set:confirm_bars"), InlineKeyboardButton("Set Phantom Hours", callback_data="ui:settings:set:phantom_hours")],
                         [InlineKeyboardButton("Set HTF Min TS", callback_data="ui:settings:set:htf_min_ts")],
+                        [InlineKeyboardButton("Recovery BE", callback_data="ui:settings:toggle:reconcile_be")],
                         [InlineKeyboardButton("Phantoms On/Off", callback_data="ui:settings:toggle:phantom"), InlineKeyboardButton("Set Phantom Weight", callback_data="ui:settings:set:phantom_weight")],
                         [InlineKeyboardButton("Div Mode", callback_data="ui:settings:toggle:div_mode"), InlineKeyboardButton("Div Require", callback_data="ui:settings:toggle:div_require")],
                         [InlineKeyboardButton("Osc RSI", callback_data="ui:settings:toggle:div_osc_rsi"), InlineKeyboardButton("Osc TSI", callback_data="ui:settings:toggle:div_osc_tsi")],
@@ -2028,6 +2030,12 @@ class TGBot:
                         ts = self.shared.get('trend_settings')
                         if ts:
                             ts.sl_mode = nxt
+                    elif key == 'reconcile_be':
+                        try:
+                            cur = bool(tr_exec.get('recovery_reconcile_be', False))
+                        except Exception:
+                            cur = False
+                        tr_exec['recovery_reconcile_be'] = (not cur)
                     elif key == 'div_mode':
                         # Cycle: off -> optional -> strict -> off
                         mode = str((div.get('mode') or 'off')).lower()

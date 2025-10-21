@@ -7317,27 +7317,27 @@ class TradingBot:
                                     pb_limit = int((self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}).get('trend', (self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}).get('pullback', 3)))
                                 except Exception:
                                     pb_limit = 3
-                                        try:
-                                            pb_map = (self.shared.get('phantom_budget', {}) or {}).get('trend', {}) if hasattr(self, 'shared') else {}
-                                            pb_remaining = max(0, pb_limit - len(pb_map.get(sym, [])))
-                                        except Exception:
-                                            pb_remaining = 'n/a'
-                                        # EV threshold (if available)
-                                        try:
-                                            ev_thr = float(trend_scorer.get_ev_threshold(trend_features))
-                                        except Exception:
-                                            ev_thr = None
-                                        try:
-                                            ctx = f"dedup=True hourly_remaining={pb_remaining} daily_ok=True"
-                                            if ev_thr is not None:
-                                                ctx += f" ev_thr={ev_thr:.0f}"
-                                            logger.info(f"[{sym}] 🔵 Trend decision context: {ctx}")
-                                        except Exception:
-                                            pass
-                                        if should_take_trade:
-                                            logger.info(f"[{sym}] 🧮 Trend decision final: execute (ML {ml_score:.1f} ≥ thr {threshold:.1f})")
-                                        else:
-                                            logger.info(f"[{sym}] 🧮 Trend decision final: phantom (ML {ml_score:.1f} < thr {threshold:.1f})")
+                                try:
+                                    pb_map = (self.shared.get('phantom_budget', {}) or {}).get('trend', {}) if hasattr(self, 'shared') else {}
+                                    pb_remaining = max(0, pb_limit - len(pb_map.get(sym, [])))
+                                except Exception:
+                                    pb_remaining = 'n/a'
+                                # EV threshold (if available)
+                                try:
+                                    ev_thr = float(trend_scorer.get_ev_threshold(trend_features))
+                                except Exception:
+                                    ev_thr = None
+                                try:
+                                    ctx = f"dedup=True hourly_remaining={pb_remaining} daily_ok=True"
+                                    if ev_thr is not None:
+                                        ctx += f" ev_thr={ev_thr:.0f}"
+                                    logger.info(f"[{sym}] 🔵 Trend decision context: {ctx}")
+                                except Exception:
+                                    pass
+                                if should_take_trade:
+                                    logger.info(f"[{sym}] 🧮 Trend decision final: execute (ML {ml_score:.1f} ≥ thr {threshold:.1f})")
+                                else:
+                                    logger.info(f"[{sym}] 🧮 Trend decision final: phantom (ML {ml_score:.1f} < thr {threshold:.1f})")
                                     except Exception as e:
                                         logger.warning(f"Trend ML scoring error: {e}")
                                         should_take_trade = False

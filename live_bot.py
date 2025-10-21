@@ -7338,10 +7338,10 @@ class TradingBot:
                                     logger.info(f"[{sym}] 🧮 Trend decision final: execute (ML {ml_score:.1f} ≥ thr {threshold:.1f})")
                                 else:
                                     logger.info(f"[{sym}] 🧮 Trend decision final: phantom (ML {ml_score:.1f} < thr {threshold:.1f})")
-                                    except Exception as e:
-                                        logger.warning(f"Trend ML scoring error: {e}")
-                                        should_take_trade = False
-                                        ml_score = 0.0
+                            except Exception as e:
+                                logger.warning(f"Trend ML scoring error: {e}")
+                                should_take_trade = False
+                                ml_score = 0.0
                                 # Persist features to attach on close for executed outcomes
                                 try:
                                     if should_take_trade:

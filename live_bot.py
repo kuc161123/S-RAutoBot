@@ -7275,16 +7275,48 @@ class TradingBot:
                                 # Score
                                 trend_scorer = get_trend_scorer() if 'get_trend_scorer' in globals() and get_trend_scorer is not None else None
                                 ml_score = 0.0; should_take_trade = True; ml_reason = 'Trend ML disabled'
-                                if trend_scorer is not None:
-                                    try:
-                                        ml_score, ml_reason = trend_scorer.score_signal(sig.__dict__, trend_features)
-                                        threshold = getattr(trend_scorer, 'min_score', 70)
-                                        should_take_trade = ml_score >= threshold
-                                        # Trend decision context (execution path)
-                                        try:
-                                            pb_limit = int((self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}).get('trend', (self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}).get('pullback', 3)))
-                                        except Exception:
-                                            pb_limit = 3
+                        if trend_scorer is not None:
+                            try:
+                                ml_score, ml_reason = trend_scorer.score_signal(sig.__dict__, trend_features)
+                                threshold = getattr(trend_scorer, 'min_score', 70)
+                                should_take_trade = ml_score >= threshold
+                                # BTC gate (exec-only): require BTC trending; else route to phantom
+                                try:
+                                    btc_gate = (((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('btc_gate', {}) or {})
+                                    if bool(btc_gate.get('enabled', True)) and should_take_trade:
+                                        # Compute BTC metrics
+                                        btc_df = self.frames.get('BTCUSDT')
+                                        ts15 = ts60 = 0.0
+                                        vol_level = 'unknown'
+                                        if btc_df is not None and not btc_df.empty:
+                                            metrics = self._get_htf_metrics('BTCUSDT', btc_df)
+                                            ts15 = float(metrics.get('ts15', 0.0)); ts60 = float(metrics.get('ts60', 0.0))
+                                            try:
+                                                from enhanced_market_regime import get_enhanced_market_regime
+                                                btc_reg = get_enhanced_market_regime(btc_df.tail(200), 'BTCUSDT')
+                                                vol_level = getattr(btc_reg, 'volatility_level', 'unknown')
+                                            except Exception:
+                                                vol_level = 'unknown'
+                                        min_ts15 = float(btc_gate.get('min_trend_strength_15m', 60))
+                                        min_ts60 = float(btc_gate.get('min_trend_strength_60m', 0))
+                                        allow_vol = set(btc_gate.get('allow_volatility', ['low','normal']))
+                                        ok_ts15 = (ts15 >= min_ts15)
+                                        ok_ts60 = True if min_ts60 <= 0 else (ts60 >= min_ts60)
+                                        ok_vol = (vol_level in allow_vol) if vol_level != 'unknown' else True
+                                        btc_ok = ok_ts15 and ok_ts60 and ok_vol
+                                        if not btc_ok:
+                                            should_take_trade = False
+                                            try:
+                                                logger.info(f"[BTCUSDT] BTC Gate: FAIL ts15={ts15:.1f}/{min_ts15:.1f} ts60={ts60:.1f}/{min_ts60:.1f} vol={vol_level} allow={','.join(sorted(allow_vol))}")
+                                            except Exception:
+                                                pass
+                                except Exception:
+                                    pass
+                                # Trend decision context (execution path)
+                                try:
+                                    pb_limit = int((self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}).get('trend', (self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}).get('pullback', 3)))
+                                except Exception:
+                                    pb_limit = 3
                                         try:
                                             pb_map = (self.shared.get('phantom_budget', {}) or {}).get('trend', {}) if hasattr(self, 'shared') else {}
                                             pb_remaining = max(0, pb_limit - len(pb_map.get(sym, [])))

@@ -190,6 +190,11 @@ class Settings:
     sl_mode: str = "breakout"  # breakout | hybrid
     breakout_sl_buffer_atr: float = 0.30
     min_r_pct: float = 0.005
+    # Exec-only S/R gate (phantoms free): require major HTF level + confluence + clearance
+    sr_exec_enabled: bool = True
+    sr_min_strength: float = 2.5
+    sr_confluence_tolerance_pct: float = 0.0025  # 0.25%
+    sr_min_break_clear_atr: float = 0.10
 
 @dataclass
 class Signal:
@@ -885,6 +890,51 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 )
             )
             if eligible_long:
+                # Exec-only SR gate: require strong HTF level + confluence + clearance; phantoms remain free
+                try:
+                    if s.sr_exec_enabled and s.use_mtf_sr:
+                        sr_ok = True; sr_reason = ""
+                        level = None; strength = 0.0; conf_ok = True; clearance_ok = True
+                        try:
+                            c15 = float(df['close'].iloc[-1])
+                            # Fetch validated levels and pick nearest resistance above price
+                            from multi_timeframe_sr import mtf_sr
+                            vlevels = mtf_sr.get_price_validated_levels(symbol, c15)
+                            res_levels = [(lv, st) for (lv, st, t) in vlevels if t == 'resistance']
+                            if res_levels:
+                                # nearest by absolute distance
+                                level, strength = min(res_levels, key=lambda x: abs(x[0] - c15))
+                                # Confluence with lastHigh
+                                tol = float(s.sr_confluence_tolerance_pct or 0.0) * max(1e-9, float(level))
+                                conf_ok = (abs(float(level) - float(lastHigh)) <= tol)
+                                # Clearance beyond the HTF level in ATR(15m)
+                                atr15 = _atr_val(df, s.atr_len)
+                                clearance = (c15 - float(level)) / max(1e-9, atr15)
+                                clearance_ok = (clearance >= float(s.sr_min_break_clear_atr or 0.0))
+                                sr_ok = (float(strength) >= float(s.sr_min_strength or 0.0)) and conf_ok and clearance_ok
+                            else:
+                                sr_ok = False; sr_reason = "no_resistance_level"
+                        except Exception as _sre:
+                            sr_ok = True; sr_reason = f"sr_check_error:{_sre}"
+                        if not sr_ok:
+                            # Record phantom and skip execute
+                            try:
+                                if _phantom_recorder is not None and bos_ready:
+                                    entry = float(df3['close'].iloc[-1])
+                                    atr15_val = _atr_val(df, s.atr_len)
+                                    sl = float(state.breakout_level) - float(s.breakout_sl_buffer_atr)*float(atr15_val)
+                                    min_stop = float(entry) - float(entry)*float(s.min_r_pct)
+                                    sl = min(sl, min_stop)
+                                    if s.extra_pivot_breath_pct > 0:
+                                        sl = float(sl) - float(entry)*float(s.extra_pivot_breath_pct)
+                                    R = abs(entry - sl); tp = entry + (s.rr * R * 1.00165)
+                                    meta = {"phase":"3m_bos_phantom","sr_exec_gate":"fail","sr_strength": float(strength),"sr_level": float(level or 0.0),"sr_conf": bool(conf_ok),"sr_clear": bool(clearance_ok)}
+                                    _phantom_recorder(symbol, "long", float(entry), float(sl), float(tp), meta)
+                            except Exception:
+                                pass
+                            return None
+                except Exception:
+                    pass
                 # Clear waiting reason if any
                 state.waiting_reason = ""; state.bos_cross_notified = False
                 if s.bos_confirm_closes <= 0:
@@ -1162,6 +1212,46 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                 )
             )
             if eligible_short:
+                # Exec-only SR gate on short path
+                try:
+                    if s.sr_exec_enabled and s.use_mtf_sr:
+                        sr_ok = True; sr_reason = ""
+                        level = None; strength = 0.0; conf_ok = True; clearance_ok = True
+                        try:
+                            c15 = float(df['close'].iloc[-1])
+                            from multi_timeframe_sr import mtf_sr
+                            vlevels = mtf_sr.get_price_validated_levels(symbol, c15)
+                            sup_levels = [(lv, st) for (lv, st, t) in vlevels if t == 'support']
+                            if sup_levels:
+                                level, strength = min(sup_levels, key=lambda x: abs(x[0] - c15))
+                                tol = float(s.sr_confluence_tolerance_pct or 0.0) * max(1e-9, float(level))
+                                conf_ok = (abs(float(level) - float(lastLow)) <= tol)
+                                atr15 = _atr_val(df, s.atr_len)
+                                clearance = (float(level) - c15) / max(1e-9, atr15)
+                                clearance_ok = (clearance >= float(s.sr_min_break_clear_atr or 0.0))
+                                sr_ok = (float(strength) >= float(s.sr_min_strength or 0.0)) and conf_ok and clearance_ok
+                            else:
+                                sr_ok = False; sr_reason = "no_support_level"
+                        except Exception as _sre:
+                            sr_ok = True; sr_reason = f"sr_check_error:{_sre}"
+                        if not sr_ok:
+                            try:
+                                if _phantom_recorder is not None and bos_ready:
+                                    entry = float(df3['close'].iloc[-1])
+                                    atr15_val = _atr_val(df, s.atr_len)
+                                    sl = float(state.breakout_level) + float(s.breakout_sl_buffer_atr)*float(atr15_val)
+                                    min_stop = float(entry) + float(entry)*float(s.min_r_pct)
+                                    sl = max(sl, min_stop)
+                                    if s.extra_pivot_breath_pct > 0:
+                                        sl = float(sl) + float(entry)*float(s.extra_pivot_breath_pct)
+                                    R = abs(entry - sl); tp = entry - (s.rr * R * 1.00165)
+                                    meta = {"phase":"3m_bos_phantom","sr_exec_gate":"fail","sr_strength": float(strength),"sr_level": float(level or 0.0),"sr_conf": bool(conf_ok),"sr_clear": bool(clearance_ok)}
+                                    _phantom_recorder(symbol, "short", float(entry), float(sl), float(tp), meta)
+                            except Exception:
+                                pass
+                            return None
+                except Exception:
+                    pass
                 state.waiting_reason = ""; state.bos_cross_notified = False
                 if s.bos_confirm_closes <= 0:
                     entry = float(df3['close'].iloc[-1]); atr = _atr_val(df, s.atr_len)

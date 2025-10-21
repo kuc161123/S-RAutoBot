@@ -1977,6 +1977,14 @@ class TGBot:
                              f"SL Mode: {sl_mode} | SL Buffer ATR: {sl_buf:.2f}",
                              f"HTF min trend strength: {min_ts:.1f}",
                              f"Recovery: BE reconcile: {'On' if ((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('recovery_reconcile_be', False) else 'Off'}",
+                             "",
+                             "🧱 *Exec S/R Gate*",
+                             f"Enabled: {(((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('sr',{}) or {}).get('enabled', True)} | Min strength: {(((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('sr',{}) or {}).get('min_strength', 2.8)}",
+                             f"Confluence tol: {(((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('sr',{}) or {}).get('confluence_tolerance_pct', 0.0025)} | Clearance ATR: {(((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('sr',{}) or {}).get('min_break_clear_atr', 0.10)}",
+                             "",
+                             "₿ *BTC Exec Gate*",
+                             f"Enabled: {(((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('btc_gate',{}) or {}).get('enabled', True)} | Min TS15: {(((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('btc_gate',{}) or {}).get('min_trend_strength_15m', 60)} | Min TS60: {(((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('btc_gate',{}) or {}).get('min_trend_strength_60m', 55)}",
+                             f"Allow vol: {','.join((((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('btc_gate',{}) or {}).get('allow_volatility', ['low','normal']))}",
                              f"Phantoms: {'On' if ph.get('enabled', True) else 'Off'} | Weight: {ph.get('weight', 0.8)}",
                              "",
                              "📐 *Divergence (3m)*",
@@ -1995,6 +2003,10 @@ class TGBot:
                         [InlineKeyboardButton("Set Confirm Bars", callback_data="ui:settings:set:confirm_bars"), InlineKeyboardButton("Set Phantom Hours", callback_data="ui:settings:set:phantom_hours")],
                         [InlineKeyboardButton("Set HTF Min TS", callback_data="ui:settings:set:htf_min_ts")],
                         [InlineKeyboardButton("Recovery BE", callback_data="ui:settings:toggle:reconcile_be")],
+                        [InlineKeyboardButton("SR Gate", callback_data="ui:settings:toggle:sr_gate"), InlineKeyboardButton("Set SR Strength", callback_data="ui:settings:set:sr_strength")],
+                        [InlineKeyboardButton("Set SR Confluence", callback_data="ui:settings:set:sr_confluence"), InlineKeyboardButton("Set SR Clear ATR", callback_data="ui:settings:set:sr_clear")],
+                        [InlineKeyboardButton("BTC Gate", callback_data="ui:settings:toggle:btc_gate"), InlineKeyboardButton("Set BTC Min TS15", callback_data="ui:settings:set:btc_min_ts15")],
+                        [InlineKeyboardButton("Set BTC Min TS60", callback_data="ui:settings:set:btc_min_ts60"), InlineKeyboardButton("BTC Allow HighVol", callback_data="ui:settings:toggle:btc_allow_high")],
                         [InlineKeyboardButton("Phantoms On/Off", callback_data="ui:settings:toggle:phantom"), InlineKeyboardButton("Set Phantom Weight", callback_data="ui:settings:set:phantom_weight")],
                         [InlineKeyboardButton("Div Mode", callback_data="ui:settings:toggle:div_mode"), InlineKeyboardButton("Div Require", callback_data="ui:settings:toggle:div_require")],
                         [InlineKeyboardButton("Osc RSI", callback_data="ui:settings:toggle:div_osc_rsi"), InlineKeyboardButton("Osc TSI", callback_data="ui:settings:toggle:div_osc_tsi")],
@@ -2036,6 +2048,26 @@ class TGBot:
                         except Exception:
                             cur = False
                         tr_exec['recovery_reconcile_be'] = (not cur)
+                    elif key == 'sr_gate':
+                        sr = (tr_exec.get('sr', {}) or {})
+                        sr['enabled'] = not bool(sr.get('enabled', True))
+                        tr_exec['sr'] = sr
+                        ts = self.shared.get('trend_settings')
+                        if ts:
+                            ts.sr_exec_enabled = bool(sr['enabled'])
+                    elif key == 'btc_gate':
+                        bg = (tr_exec.get('btc_gate', {}) or {})
+                        bg['enabled'] = not bool(bg.get('enabled', True))
+                        tr_exec['btc_gate'] = bg
+                    elif key == 'btc_allow_high':
+                        bg = (tr_exec.get('btc_gate', {}) or {})
+                        allow = set(bg.get('allow_volatility', ['low','normal']))
+                        if 'high' in allow:
+                            allow.discard('high')
+                        else:
+                            allow.add('high')
+                        bg['allow_volatility'] = list(sorted(allow))
+                        tr_exec['btc_gate'] = bg
                     elif key == 'div_mode':
                         # Cycle: off -> optional -> strict -> off
                         mode = str((div.get('mode') or 'off')).lower()
@@ -2099,6 +2131,11 @@ class TGBot:
                         'phantom_weight': "Send phantom training weight between 0.3 and 1.0 (e.g., 0.8)",
                         'sl_buffer': "Send breakout SL buffer ATR (e.g., 0.40)",
                         'htf_min_ts': "Send HTF min trend strength (e.g., 60)",
+                        'sr_strength': "Send SR min strength (e.g., 2.8)",
+                        'sr_confluence': "Send SR confluence tolerance pct (e.g., 0.0025)",
+                        'sr_clear': "Send SR min break clearance in ATR (e.g., 0.10)",
+                        'btc_min_ts15': "Send BTC min trend strength 15m (e.g., 60)",
+                        'btc_min_ts60': "Send BTC min trend strength 60m (e.g., 55)",
                         'div_rsi_len': "Send RSI length (e.g., 14)",
                         'div_tsi_params': "Send TSI params as long,short (e.g., 25,13)",
                         'div_window': "Send divergence confirm window in 3m bars (e.g., 6)",
@@ -5257,6 +5294,85 @@ class TGBot:
                     await _ok(f"✅ Phantom training weight set to {val}")
                 except Exception:
                     await update.message.reply_text("Please send a valid number, e.g., 0.8")
+                return
+
+            if key == 'sr_strength':
+                try:
+                    val = float(text)
+                    tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+                    sr = (tr_exec.get('sr', {}) or {})
+                    sr['min_strength'] = float(val)
+                    tr_exec['sr'] = sr
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    ts = self.shared.get('trend_settings')
+                    if ts:
+                        ts.sr_min_strength = float(val)
+                    await _ok(f"✅ SR min strength set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 2.8")
+                return
+
+            if key == 'sr_confluence':
+                try:
+                    val = float(text)
+                    tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+                    sr = (tr_exec.get('sr', {}) or {})
+                    sr['confluence_tolerance_pct'] = float(val)
+                    tr_exec['sr'] = sr
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    ts = self.shared.get('trend_settings')
+                    if ts:
+                        ts.sr_confluence_tolerance_pct = float(val)
+                    await _ok(f"✅ SR confluence tolerance set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 0.0025")
+                return
+
+            if key == 'sr_clear':
+                try:
+                    val = float(text)
+                    tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+                    sr = (tr_exec.get('sr', {}) or {})
+                    sr['min_break_clear_atr'] = float(val)
+                    tr_exec['sr'] = sr
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    ts = self.shared.get('trend_settings')
+                    if ts:
+                        ts.sr_min_break_clear_atr = float(val)
+                    await _ok(f"✅ SR min clearance set to {val} ATR")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 0.10")
+                return
+
+            if key == 'btc_min_ts15':
+                try:
+                    val = float(text)
+                    tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+                    bg = (tr_exec.get('btc_gate', {}) or {})
+                    bg['min_trend_strength_15m'] = float(val)
+                    tr_exec['btc_gate'] = bg
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ BTC min trend strength 15m set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 60")
+                return
+
+            if key == 'btc_min_ts60':
+                try:
+                    val = float(text)
+                    tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+                    bg = (tr_exec.get('btc_gate', {}) or {})
+                    bg['min_trend_strength_60m'] = float(val)
+                    tr_exec['btc_gate'] = bg
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ BTC min trend strength 60m set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 55")
                 return
 
             if key == 'sl_buffer':

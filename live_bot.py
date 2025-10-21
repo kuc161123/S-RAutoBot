@@ -5543,6 +5543,23 @@ class TradingBot:
                             qty = sizer.qty_for(sig_obj.entry, sig_obj.sl, m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
                             if qty <= 0:
                                 logger.info(f"[{sym}] {strategy_name} qty calc invalid -> skip execution")
+                                # Record as phantom if this was a valid Trend signal but balance/sizing blocked execution
+                                try:
+                                    if strategy_name in ('trend_pullback','trend_breakout') and 'phantom_tracker' in locals() and phantom_tracker is not None:
+                                        # Use last cached trend features if available
+                                        feats = {}
+                                        try:
+                                            feats = getattr(self, '_last_signal_features', {}).get(sym, {}) if hasattr(self, '_last_signal_features') else {}
+                                        except Exception:
+                                            feats = {}
+                                        ph_sig = {'side': sig_obj.side, 'entry': float(sig_obj.entry), 'sl': float(sig_obj.sl), 'tp': float(sig_obj.tp)}
+                                        phantom_tracker.record_signal(sym, ph_sig, float(ml_score or 0.0), False, feats, 'trend_pullback')
+                                        try:
+                                            logger.info(f"[{sym}] 👻 Phantom recorded due to insufficient balance/sizing (ML {ml_score:.1f})")
+                                        except Exception:
+                                            pass
+                                except Exception:
+                                    pass
                                 try:
                                     R = abs(float(sig_obj.entry) - float(sig_obj.sl))
                                     risk_val = (risk.risk_percent if getattr(risk, 'use_percent_risk', False) else getattr(risk, 'risk_usd', 0.0))

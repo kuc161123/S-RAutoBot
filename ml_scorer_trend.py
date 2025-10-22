@@ -11,6 +11,10 @@ from datetime import datetime
 from typing import Dict, Tuple, List
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+try:
+    from sklearn.neural_network import MLPClassifier  # optional NN head
+except Exception:
+    MLPClassifier = None
 from sklearn.preprocessing import StandardScaler
 from sklearn.isotonic import IsotonicRegression
 
@@ -40,6 +44,11 @@ class TrendMLScorer:
         self.redis_client = None
         self.phantom_weight = 0.8  # default weight for phantom samples
         self.KEY_NS = 'ml:trend'
+        # Optional NN head toggle (off by default)
+        try:
+            self.nn_enabled = bool(int(os.getenv('TREND_NN_ENABLED', '0')))
+        except Exception:
+            self.nn_enabled = False
         if enabled and redis:
             try:
                 url = os.getenv('REDIS_URL')
@@ -86,6 +95,13 @@ class TrendMLScorer:
                     self.phantom_weight = float(w)
             except Exception:
                 pass
+            # Load NN flag if present
+            try:
+                nn_flag = r.get(f'{self.KEY_NS}:nn_enabled')
+                if nn_flag is not None:
+                    self.nn_enabled = bool(int(nn_flag))
+            except Exception:
+                pass
         except Exception as e:
             logger.error(f"Trend load state error: {e}")
 
@@ -128,6 +144,11 @@ class TrendMLScorer:
                     r.set('tml:ev_buckets', enc_ev)
                 except Exception:
                     pass
+            # Persist NN flag for ops visibility
+            try:
+                r.set(f'{self.KEY_NS}:nn_enabled', '1' if self.nn_enabled else '0')
+            except Exception:
+                pass
         except Exception as e:
             logger.error(f"Trend save state error: {e}")
 
@@ -153,7 +174,9 @@ class TrendMLScorer:
             'runner_hit',
             'time_to_tp1_sec',
             'time_to_exit_sec',
-            'session', 'symbol_cluster', 'volatility_regime'
+            'session', 'symbol_cluster', 'volatility_regime',
+            # Composite HTF metrics (flattened)
+            'ts15','ts60','rc15','rc60'
         ]
         vec = []
         for k in order:
@@ -187,6 +210,11 @@ class TrendMLScorer:
                     preds.append(self.models['rf'].predict_proba(xs)[:,1])
                 if self.models.get('gb'):
                     preds.append(self.models['gb'].predict_proba(xs)[:,1])
+                if self.models.get('nn'):
+                    try:
+                        preds.append(self.models['nn'].predict_proba(xs)[:,1])
+                    except Exception:
+                        pass
                 if preds:
                     p = float(np.mean(preds))
                     try:
@@ -324,12 +352,28 @@ class TrendMLScorer:
             'rf': RandomForestClassifier(n_estimators=150, max_depth=8, min_samples_split=5, random_state=42),
             'gb': GradientBoostingClassifier(n_estimators=150, max_depth=3, learning_rate=0.08, subsample=0.8, random_state=42)
         }
+        # Optional simple NN head
+        if self.nn_enabled and MLPClassifier is not None:
+            try:
+                self.models['nn'] = MLPClassifier(hidden_layer_sizes=(32,16), activation='relu', solver='adam', learning_rate_init=0.001, max_iter=400, random_state=42)
+            except Exception:
+                self.models.pop('nn', None)
         try:
             self.models['rf'].fit(XS, y, sample_weight=w)
             self.models['gb'].fit(XS, y, sample_weight=w)
+            if 'nn' in self.models:
+                try:
+                    self.models['nn'].fit(XS, y)
+                except Exception:
+                    self.models.pop('nn', None)
         except Exception:
             self.models['rf'].fit(XS, y)
             self.models['gb'].fit(XS, y)
+            if 'nn' in self.models:
+                try:
+                    self.models['nn'].fit(XS, y)
+                except Exception:
+                    self.models.pop('nn', None)
         self.is_ml_ready = True
         self.last_train_count = len(mix)
         # Calibrate (isotonic) on mean-of-heads raw scores
@@ -471,6 +515,8 @@ class TrendMLScorer:
                 models_active.append('rf')
             if self.models.get('gb'):
                 models_active.append('gb')
+            if self.models.get('nn'):
+                models_active.append('nn')
         except Exception:
             pass
         return {

@@ -4583,6 +4583,12 @@ class TradingBot:
                                 try:
                                     if df is not None and not df.empty:
                                         feats['htf'] = dict(self._compute_symbol_htf_exec_metrics(sym, df))
+                                        comp0 = self._get_htf_metrics(sym, df)
+                                        feats['htf_comp'] = dict(comp0)
+                                        feats['ts15'] = float(comp0.get('ts15', 0.0))
+                                        feats['ts60'] = float(comp0.get('ts60', 0.0))
+                                        feats['rc15'] = float(comp0.get('rc15', 0.0))
+                                        feats['rc60'] = float(comp0.get('rc60', 0.0))
                                 except Exception:
                                     pass
                                 # Log and record phantom
@@ -4645,9 +4651,18 @@ class TradingBot:
                                     try:
                                         feats = feats if isinstance(feats, dict) else {}
                                         feats['htf_gate'] = {'mode': htf_mode}
-                                        # Include full HTF snapshot
+                                        # Include full HTF snapshot + composite (flattened)
                                         try:
                                             feats['htf'] = dict(self._compute_symbol_htf_exec_metrics(symbol, df_main))
+                                        except Exception:
+                                            pass
+                                        try:
+                                            comp3 = self._get_htf_metrics(symbol, df_main)
+                                            feats['htf_comp'] = dict(comp3)
+                                            feats['ts15'] = float(comp3.get('ts15', 0.0))
+                                            feats['ts60'] = float(comp3.get('ts60', 0.0))
+                                            feats['rc15'] = float(comp3.get('rc15', 0.0))
+                                            feats['rc60'] = float(comp3.get('rc60', 0.0))
                                         except Exception:
                                             pass
                                     except Exception:
@@ -6605,6 +6620,21 @@ class TradingBot:
                                     'div_rsi_delta': float(getattr(sig_tr_ind, 'meta', {}).get('div_rsi_delta', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0),
                                     'div_tsi_delta': float(getattr(sig_tr_ind, 'meta', {}).get('div_tsi_delta', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0),
                                 }
+                                # Attach full HTF snapshots and composite (flattened)
+                                try:
+                                    htfm = self._compute_symbol_htf_exec_metrics(sym, df)
+                                    trend_features['htf'] = dict(htfm)
+                                except Exception:
+                                    pass
+                                try:
+                                    comp = self._get_htf_metrics(sym, df)
+                                    trend_features['htf_comp'] = dict(comp)
+                                    trend_features['ts15'] = float(comp.get('ts15', 0.0))
+                                    trend_features['ts60'] = float(comp.get('ts60', 0.0))
+                                    trend_features['rc15'] = float(comp.get('rc15', 0.0))
+                                    trend_features['rc60'] = float(comp.get('rc60', 0.0))
+                                except Exception:
+                                    pass
                                 # Log Trend Pullback signal meta and EV threshold snapshot
                                 try:
                                     ev_thr_log = None
@@ -7210,6 +7240,20 @@ class TradingBot:
                                         'symbol_cluster': 3,
                                         'volatility_regime': getattr(regime_analysis, 'volatility_level', 'normal'),
                                     }
+                                    # Attach HTF snapshots + comp (flattened)
+                                    try:
+                                        trend_features['htf'] = dict(self._compute_symbol_htf_exec_metrics(sym, df))
+                                    except Exception:
+                                        pass
+                                    try:
+                                        comp2 = self._get_htf_metrics(sym, df)
+                                        trend_features['htf_comp'] = dict(comp2)
+                                        trend_features['ts15'] = float(comp2.get('ts15', 0.0))
+                                        trend_features['ts60'] = float(comp2.get('ts60', 0.0))
+                                        trend_features['rc15'] = float(comp2.get('rc15', 0.0))
+                                        trend_features['rc60'] = float(comp2.get('rc60', 0.0))
+                                    except Exception:
+                                        pass
                                     tr_score, _ = tr_scorer.score_signal(soft_sig_tr.__dict__, trend_features)
                                     tr_thr = getattr(tr_scorer, 'min_score', 70)
                                     tr_margin = tr_score - tr_thr
@@ -8808,6 +8852,16 @@ class TradingBot:
                                             feats_sf = dict(trend_features) if 'trend_features' in locals() and isinstance(trend_features, dict) else {}
                                             if 'htf' not in feats_sf:
                                                 feats_sf['htf'] = dict(self._compute_symbol_htf_exec_metrics(sym, df))
+                                            # Add composite + flatten if missing
+                                            try:
+                                                comp4 = self._get_htf_metrics(sym, df)
+                                                feats_sf.setdefault('htf_comp', dict(comp4))
+                                                feats_sf.setdefault('ts15', float(comp4.get('ts15', 0.0)))
+                                                feats_sf.setdefault('ts60', float(comp4.get('ts60', 0.0)))
+                                                feats_sf.setdefault('rc15', float(comp4.get('rc15', 0.0)))
+                                                feats_sf.setdefault('rc60', float(comp4.get('rc60', 0.0)))
+                                            except Exception:
+                                                pass
                                         else:
                                             feats_sf = basic_features if 'basic_features' in locals() else {}
                                     except Exception:
@@ -9223,6 +9277,20 @@ class TradingBot:
                                     'symbol_cluster': 3,
                                     'volatility_regime': getattr(regime_analysis, 'volatility_level', 'normal') if 'regime_analysis' in locals() else 'normal',
                                 }
+                                # Attach HTF snapshots + composite (flattened)
+                                try:
+                                    trend_features['htf'] = dict(self._compute_symbol_htf_exec_metrics(sym, df))
+                                except Exception:
+                                    pass
+                                try:
+                                    comp5 = self._get_htf_metrics(sym, df)
+                                    trend_features['htf_comp'] = dict(comp5)
+                                    trend_features['ts15'] = float(comp5.get('ts15', 0.0))
+                                    trend_features['ts60'] = float(comp5.get('ts60', 0.0))
+                                    trend_features['rc15'] = float(comp5.get('rc15', 0.0))
+                                    trend_features['rc60'] = float(comp5.get('rc60', 0.0))
+                                except Exception:
+                                    pass
                                 # Attach full HTF snapshot
                                 try:
                                     trend_features['htf'] = dict(self._compute_symbol_htf_exec_metrics(sym, df))

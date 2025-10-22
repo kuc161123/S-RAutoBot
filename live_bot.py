@@ -982,62 +982,6 @@ class TradingBot:
                 pass
             return True, threshold, 'error', {}
 
-    def _get_btc_htf_snapshot(self) -> Dict[str, object]:
-        """Return BTC snapshot with ts15, ts60, volatility_level.
-
-        Safe defaults when BTC frames are missing.
-        """
-        out = {'ts15': 0.0, 'ts60': 0.0, 'volatility_level': 'unknown'}
-        try:
-            btc_df = self.frames.get('BTCUSDT') if hasattr(self, 'frames') else None
-            if btc_df is None or getattr(btc_df, 'empty', True):
-                return out
-            m = self._get_htf_metrics('BTCUSDT', btc_df)
-            out['ts15'] = float(m.get('ts15', 0.0))
-            out['ts60'] = float(m.get('ts60', 0.0))
-            try:
-                from enhanced_market_regime import get_enhanced_market_regime
-                reg = get_enhanced_market_regime(btc_df.tail(200), 'BTCUSDT')
-                out['volatility_level'] = str(getattr(reg, 'volatility_level', 'unknown') or 'unknown')
-            except Exception:
-                out['volatility_level'] = 'unknown'
-        except Exception:
-            pass
-        return out
-
-    def _btc_gate_allows(self) -> tuple[bool, str]:
-        """Evaluate BTC exec gate based on current config and BTC snapshot.
-
-        Returns (allowed, reason_string). Logs on FAIL for observability.
-        """
-        try:
-            cfg = getattr(self, 'config', {}) or {}
-            btc_gate = (((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('btc_gate', {}) or {})
-            if not bool(btc_gate.get('enabled', True)):
-                return True, 'btc_gate_disabled'
-            snap = self._get_btc_htf_snapshot()
-            ts15 = float(snap.get('ts15', 0.0)); ts60 = float(snap.get('ts60', 0.0))
-            vol_level = str(snap.get('volatility_level', 'unknown'))
-            min_ts15 = float(btc_gate.get('min_trend_strength_15m', 60))
-            min_ts60 = float(btc_gate.get('min_trend_strength_60m', 0))
-            allow_vol = set(btc_gate.get('allow_volatility', ['low','normal']))
-            ok_ts15 = (ts15 >= min_ts15)
-            ok_ts60 = True if min_ts60 <= 0 else (ts60 >= min_ts60)
-            ok_vol = (vol_level in allow_vol) if vol_level != 'unknown' else True
-            ok = ok_ts15 and ok_ts60 and ok_vol
-            if not ok:
-                try:
-                    logger.info(f"[BTCUSDT] BTC Gate: FAIL ts15={ts15:.1f}/{min_ts15:.1f} ts60={ts60:.1f}/{min_ts60:.1f} vol={vol_level} allow={','.join(sorted(allow_vol))}")
-                except Exception:
-                    pass
-                return False, 'btc_gate_fail'
-            return True, 'btc_gate_pass'
-        except Exception as _e:
-            try:
-                logger.debug(f"BTC gate error: {_e}")
-            except Exception:
-                pass
-            return True, 'btc_gate_error'
 
     # --- 3m micro-context checks (diagnostic) ---
     def _micro_context_trend(self, symbol: str, side: str) -> tuple[bool, str]:
@@ -4659,17 +4603,6 @@ class TradingBot:
                             # Guard: existing position
                             if symbol in self.book.positions:
                                 return
-                            # Exec-only BTC gate (must pass)
-                            try:
-                                btc_ok, btc_reason = self._btc_gate_allows()
-                            except Exception:
-                                btc_ok, btc_reason = True, 'btc_gate_error'
-                            if not btc_ok:
-                                try:
-                                    logger.info(f"[{symbol}] 🛑 Stream execute blocked by BTC gate ({btc_reason})")
-                                except Exception:
-                                    pass
-                                return
                             # Exec-only HTF gate (per-symbol)
                             try:
                                 df_main = self.frames.get(symbol)
@@ -6695,17 +6628,6 @@ class TradingBot:
                                     allow_tr_exec = False
                                 executed = False
                                 if allow_tr_exec:
-                                    # BTC exec gate (exec-only): require BTC trending; else route to phantom
-                                    try:
-                                        btc_ok, btc_reason = self._btc_gate_allows()
-                                    except Exception:
-                                        btc_ok, btc_reason = True, 'btc_gate_error'
-                                    if not btc_ok:
-                                        try:
-                                            logger.info(f"[{sym}] 🧮 Trend decision final: phantom (blocked) (reason={btc_reason})")
-                                        except Exception:
-                                            pass
-                                        continue
                                     # Exec-only HTF gate (per-symbol) — independent of router.htf_bias
                                     try:
                                         ok_gate, thr_adj, mode, _m = self._apply_htf_exec_gate(sym, df, sig_tr_ind.side, thr_tr)
@@ -6725,7 +6647,7 @@ class TradingBot:
                                             pass
                                     else:
                                         try:
-                                            logger.info(f"[{sym}] 🧮 Trend decision final: execute (reason=high_ml {ml_score_tr:.1f}≥{tr_hi_force:.0f} & htf_ok & btc_ok)")
+                                            logger.info(f"[{sym}] 🧮 Trend decision final: execute (reason=high_ml {ml_score_tr:.1f}≥{tr_hi_force:.0f} & htf_ok)")
                                         except Exception:
                                             pass
                                     try:
@@ -7615,39 +7537,7 @@ class TradingBot:
                                 ml_score, ml_reason = trend_scorer.score_signal(sig.__dict__, trend_features)
                                 threshold = getattr(trend_scorer, 'min_score', 70)
                                 should_take_trade = ml_score >= threshold
-                                # BTC gate (exec-only): require BTC trending; else route to phantom
-                                try:
-                                    btc_gate = (((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('btc_gate', {}) or {})
-                                    if bool(btc_gate.get('enabled', True)) and should_take_trade:
-                                        # Compute BTC metrics
-                                        btc_df = self.frames.get('BTCUSDT')
-                                        ts15 = ts60 = 0.0
-                                        vol_level = 'unknown'
-                                        if btc_df is not None and not btc_df.empty:
-                                            metrics = self._get_htf_metrics('BTCUSDT', btc_df)
-                                            ts15 = float(metrics.get('ts15', 0.0)); ts60 = float(metrics.get('ts60', 0.0))
-                                            try:
-                                                from enhanced_market_regime import get_enhanced_market_regime
-                                                btc_reg = get_enhanced_market_regime(btc_df.tail(200), 'BTCUSDT')
-                                                vol_level = getattr(btc_reg, 'volatility_level', 'unknown')
-                                            except Exception:
-                                                vol_level = 'unknown'
-                                        min_ts15 = float(btc_gate.get('min_trend_strength_15m', 60))
-                                        min_ts60 = float(btc_gate.get('min_trend_strength_60m', 0))
-                                        allow_vol = set(btc_gate.get('allow_volatility', ['low','normal']))
-                                        ok_ts15 = (ts15 >= min_ts15)
-                                        ok_ts60 = True if min_ts60 <= 0 else (ts60 >= min_ts60)
-                                        ok_vol = (vol_level in allow_vol) if vol_level != 'unknown' else True
-                                        btc_ok = ok_ts15 and ok_ts60 and ok_vol
-                                        if not btc_ok:
-                                            should_take_trade = False
-                                            try:
-                                                logger.info(f"[BTCUSDT] BTC Gate: FAIL ts15={ts15:.1f}/{min_ts15:.1f} ts60={ts60:.1f}/{min_ts60:.1f} vol={vol_level} allow={','.join(sorted(allow_vol))}")
-                                            except Exception:
-                                                pass
-                                except Exception:
-                                    pass
-                                # Apply per-symbol HTF exec gate (after BTC gate)
+                                # Apply per-symbol HTF exec gate
                                 try:
                                     if should_take_trade:
                                         ok_gate, new_thr, mode, _m = self._apply_htf_exec_gate(sym, df, sig.side, threshold)

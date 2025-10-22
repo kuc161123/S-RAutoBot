@@ -1967,6 +1967,7 @@ class TGBot:
                         sl_buf = float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('breakout_sl_buffer_atr', 0.30)))
                     except Exception:
                         sl_mode = 'breakout'; sl_buf = 0.30
+                    htf_gate = ((((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('htf_gate',{}) or {}))
                     lines = ["⚙️ *Settings*", "",
                              f"Stream entry: {'On' if tr_exec.get('allow_stream_entry', True) else 'Off'}",
                              f"Scale‑out: {'On' if sc.get('enabled', False) else 'Off'}",
@@ -1987,6 +1988,12 @@ class TGBot:
                              f"Allow vol: {','.join((((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('btc_gate',{}) or {}).get('allow_volatility', ['low','normal']))}",
                              f"Phantoms: {'On' if ph.get('enabled', True) else 'Off'} | Weight: {ph.get('weight', 0.8)}",
                              "",
+                             "📈 *Symbol HTF Gate*",
+                             f"Enabled: {bool(htf_gate.get('enabled', True))} | Mode: {htf_gate.get('mode','gated')}",
+                             f"TS1H min: {float(htf_gate.get('min_trend_strength_1h',60.0)):.1f} | TS4H min: {float(htf_gate.get('min_trend_strength_4h',55.0)):.1f}",
+                             f"EMA align: {'On' if bool(htf_gate.get('ema_alignment', True)) else 'Off'} | ADX1H min: {float(htf_gate.get('adx_min_1h',0.0)):.1f}",
+                             f"Structure: {'On' if bool(htf_gate.get('structure_confluence', False)) else 'Off'} | Soft Δ: {float(htf_gate.get('soft_delta',5)):.0f}",
+                             "",
                              "📐 *Divergence (3m)*",
                              f"Mode: {div.get('mode','off')} | Require: {div.get('require','any')} | Osc: {', '.join(div.get('oscillators', ['rsi','tsi']))}",
                              f"RSI len: {div.get('rsi_len',14)} | TSI: {div.get('tsi_long',25)}/{div.get('tsi_short',13)} | Window: {div.get('confirm_window_bars_3m',6)} bars",
@@ -2002,6 +2009,10 @@ class TGBot:
                         [InlineKeyboardButton("Set TP2 R", callback_data="ui:settings:set:tp2_r"), InlineKeyboardButton("Set Fraction", callback_data="ui:settings:set:fraction")],
                         [InlineKeyboardButton("Set Confirm Bars", callback_data="ui:settings:set:confirm_bars"), InlineKeyboardButton("Set Phantom Hours", callback_data="ui:settings:set:phantom_hours")],
                         [InlineKeyboardButton("Set HTF Min TS", callback_data="ui:settings:set:htf_min_ts")],
+                        [InlineKeyboardButton("HTF Gate", callback_data="ui:settings:toggle:htf_gate"), InlineKeyboardButton("Mode", callback_data="ui:settings:toggle:htf_mode")],
+                        [InlineKeyboardButton("Set TS1H", callback_data="ui:settings:set:htf_ts1h"), InlineKeyboardButton("Set TS4H", callback_data="ui:settings:set:htf_ts4h")],
+                        [InlineKeyboardButton("EMA Align", callback_data="ui:settings:toggle:htf_ema"), InlineKeyboardButton("Set ADX1H", callback_data="ui:settings:set:htf_adx1h")],
+                        [InlineKeyboardButton("Structure", callback_data="ui:settings:toggle:htf_struct"), InlineKeyboardButton("Soft Δ", callback_data="ui:settings:set:htf_soft_delta")],
                         [InlineKeyboardButton("Recovery BE", callback_data="ui:settings:toggle:reconcile_be")],
                         [InlineKeyboardButton("SR Gate", callback_data="ui:settings:toggle:sr_gate"), InlineKeyboardButton("Set SR Strength", callback_data="ui:settings:set:sr_strength")],
                         [InlineKeyboardButton("Set SR Confluence", callback_data="ui:settings:set:sr_confluence"), InlineKeyboardButton("Set SR Clear ATR", callback_data="ui:settings:set:sr_clear")],
@@ -2068,6 +2079,23 @@ class TGBot:
                             allow.add('high')
                         bg['allow_volatility'] = list(sorted(allow))
                         tr_exec['btc_gate'] = bg
+                    elif key == 'htf_gate':
+                        hg = (tr_exec.get('htf_gate', {}) or {})
+                        hg['enabled'] = not bool(hg.get('enabled', True))
+                        tr_exec['htf_gate'] = hg
+                    elif key == 'htf_mode':
+                        hg = (tr_exec.get('htf_gate', {}) or {})
+                        cur = str(hg.get('mode', 'gated')).lower()
+                        hg['mode'] = 'soft' if cur == 'gated' else 'gated'
+                        tr_exec['htf_gate'] = hg
+                    elif key == 'htf_ema':
+                        hg = (tr_exec.get('htf_gate', {}) or {})
+                        hg['ema_alignment'] = not bool(hg.get('ema_alignment', True))
+                        tr_exec['htf_gate'] = hg
+                    elif key == 'htf_struct':
+                        hg = (tr_exec.get('htf_gate', {}) or {})
+                        hg['structure_confluence'] = not bool(hg.get('structure_confluence', False))
+                        tr_exec['htf_gate'] = hg
                     elif key == 'div_mode':
                         # Cycle: off -> optional -> strict -> off
                         mode = str((div.get('mode') or 'off')).lower()
@@ -2136,6 +2164,10 @@ class TGBot:
                         'sr_clear': "Send SR min break clearance in ATR (e.g., 0.10)",
                         'btc_min_ts15': "Send BTC min trend strength 15m (e.g., 60)",
                         'btc_min_ts60': "Send BTC min trend strength 60m (e.g., 55)",
+                        'htf_ts1h': "Send min trend strength 1H (e.g., 60)",
+                        'htf_ts4h': "Send min trend strength 4H (e.g., 55)",
+                        'htf_adx1h': "Send ADX(14) minimum on 1H (e.g., 20; 0 to disable)",
+                        'htf_soft_delta': "Send soft gate ML threshold delta (e.g., 5)",
                         'div_rsi_len': "Send RSI length (e.g., 14)",
                         'div_tsi_params': "Send TSI params as long,short (e.g., 25,13)",
                         'div_window': "Send divergence confirm window in 3m bars (e.g., 6)",
@@ -5373,6 +5405,62 @@ class TGBot:
                     await _ok(f"✅ BTC min trend strength 60m set to {val}")
                 except Exception:
                     await update.message.reply_text("Please send a number, e.g., 55")
+                return
+
+            if key == 'htf_ts1h':
+                try:
+                    val = float(text)
+                    tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+                    hg = (tr_exec.get('htf_gate', {}) or {})
+                    hg['min_trend_strength_1h'] = float(val)
+                    tr_exec['htf_gate'] = hg
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ HTF min 1H trend strength set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 60")
+                return
+
+            if key == 'htf_ts4h':
+                try:
+                    val = float(text)
+                    tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+                    hg = (tr_exec.get('htf_gate', {}) or {})
+                    hg['min_trend_strength_4h'] = float(val)
+                    tr_exec['htf_gate'] = hg
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ HTF min 4H trend strength set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 55")
+                return
+
+            if key == 'htf_adx1h':
+                try:
+                    val = float(text)
+                    tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+                    hg = (tr_exec.get('htf_gate', {}) or {})
+                    hg['adx_min_1h'] = float(val)
+                    tr_exec['htf_gate'] = hg
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ HTF 1H ADX minimum set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 20")
+                return
+
+            if key == 'htf_soft_delta':
+                try:
+                    val = float(text)
+                    tr_exec = ((cfg.get('trend',{}) or {}).get('exec',{}) or {})
+                    hg = (tr_exec.get('htf_gate', {}) or {})
+                    hg['soft_delta'] = float(val)
+                    tr_exec['htf_gate'] = hg
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).update(tr_exec)
+                    self.shared['config'] = cfg
+                    await _ok(f"✅ HTF soft delta set to {val}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 5")
                 return
 
             if key == 'sl_buffer':

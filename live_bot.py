@@ -613,6 +613,8 @@ class TradingBot:
         self._trend_only: bool = False
         # Per-position metadata: breakout levels, policy flags, timestamps
         self._position_meta: Dict[str, dict] = {}
+        # Per-symbol HTF exec metrics cache (refresh on 15m close)
+        self._htf_exec_cache: Dict[str, Dict[str, object]] = {}
 
     def _phantom_trend_regime_ok(self, sym: str, df: 'pd.DataFrame', regime_analysis) -> tuple[bool, str]:
         """Return whether Trend phantom should be recorded under current regime.
@@ -747,6 +749,238 @@ class TradingBot:
         except Exception:
             pass
         return out
+
+    def _compute_symbol_htf_exec_metrics(self, symbol: str, df: pd.DataFrame) -> Dict[str, object]:
+        """Compute and cache per-symbol HTF metrics used for exec gating.
+
+        Returns a dict with keys:
+          - ts1h, ts4h: trend strength on 1H/4H
+          - ema_dir_1h/4h: 'up'/'down'/'none' stack direction
+          - ema_ok_1h/4h: bool alignment with intended side (computed elsewhere)
+          - ema_dist_1h/4h: |price-EMA50|/EMA50 in pct
+          - adx_1h: ADX(14) on 1H
+          - rsi_1h: RSI(14) on 1H
+          - struct_dir_1h/4h: 'up'/'down'/'none' based on last two pivots
+        """
+        try:
+            if df is None or len(df) < 20:
+                return {
+                    'ts1h': 0.0, 'ts4h': 0.0,
+                    'ema_dir_1h': 'none', 'ema_dir_4h': 'none',
+                    'ema_dist_1h': 0.0, 'ema_dist_4h': 0.0,
+                    'adx_1h': 0.0, 'rsi_1h': 50.0,
+                    'struct_dir_1h': 'none', 'struct_dir_4h': 'none'
+                }
+            # Cache on latest 15m bar index
+            try:
+                last_idx = df.index[-1]
+            except Exception:
+                last_idx = None
+            cached = self._htf_exec_cache.get(symbol)
+            if cached and cached.get('last_idx') == last_idx:
+                return cached.get('metrics', {})
+
+            def _resample(df_in: pd.DataFrame, minutes: int) -> pd.DataFrame:
+                try:
+                    rule = f"{int(minutes)}T"
+                    agg = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
+                    return df_in.resample(rule).agg(agg).dropna()
+                except Exception:
+                    return df_in
+
+            def _ema(series: 'pd.Series', span: int) -> float:
+                try:
+                    return float(series.ewm(span=span, adjust=False).mean().iloc[-1])
+                except Exception:
+                    return 0.0
+
+            def _rsi(series: 'pd.Series', period: int = 14) -> float:
+                try:
+                    delta = series.diff()
+                    up = delta.clip(lower=0).rolling(period).mean()
+                    down = (-delta.clip(upper=0)).rolling(period).mean()
+                    rs = up / (down.replace(0, 1e-9))
+                    r = 100 - (100 / (1 + rs))
+                    return float(r.iloc[-1]) if len(r) else 50.0
+                except Exception:
+                    return 50.0
+
+            def _adx(df_in: 'pd.DataFrame', period: int = 14) -> float:
+                try:
+                    high = df_in['high']; low = df_in['low']; close = df_in['close']
+                    plus_dm = high.diff()
+                    minus_dm = low.diff().mul(-1)
+                    plus_dm[(plus_dm < 0) | (plus_dm < minus_dm)] = 0
+                    minus_dm[(minus_dm < 0) | (minus_dm < plus_dm)] = 0
+                    tr1 = high - low
+                    tr2 = (high - close.shift(1)).abs()
+                    tr3 = (low - close.shift(1)).abs()
+                    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    atr = tr.ewm(alpha=1/period, adjust=False).mean()
+                    plus_di = 100 * (plus_dm.ewm(alpha=1/period, adjust=False).mean() / atr.replace(0, 1e-9))
+                    minus_di = 100 * (minus_dm.ewm(alpha=1/period, adjust=False).mean() / atr.replace(0, 1e-9))
+                    dx = (plus_di.subtract(minus_di).abs() / (plus_di + minus_di).replace(0, 1e-9)) * 100
+                    adx = dx.ewm(alpha=1/period, adjust=False).mean()
+                    return float(adx.iloc[-1]) if len(adx) else 0.0
+                except Exception:
+                    return 0.0
+
+            def _ema_dir(df_in: 'pd.DataFrame') -> tuple[str, float]:
+                try:
+                    price = float(df_in['close'].iloc[-1])
+                    e20 = _ema(df_in['close'], 20)
+                    e50 = _ema(df_in['close'], 50)
+                    e200 = _ema(df_in['close'], 200) if len(df_in) >= 200 else _ema(df_in['close'], 100)
+                    if price > e20 > e50 > e200:
+                        d = 'up'
+                    elif price < e20 < e50 < e200:
+                        d = 'down'
+                    else:
+                        d = 'none'
+                    ema_dist = abs(price - (e50 if e50 else price)) / max(e50, 1e-9)
+                    return d, float(ema_dist * 100.0)
+                except Exception:
+                    return 'none', 0.0
+
+            def _structure_dir(df_in: 'pd.DataFrame') -> str:
+                # Simple pivot-based HH/HL vs LH/LL
+                try:
+                    left = right = 2
+                    highs = df_in['high']; lows = df_in['low']
+                    piv_hi_idx = []
+                    for i in range(left, len(highs) - right):
+                        h = highs.iloc[i]
+                        if all(h > highs.iloc[i - j - 1] for j in range(left)) and all(h >= highs.iloc[i + j + 1] for j in range(right)):
+                            piv_hi_idx.append(i)
+                    piv_lo_idx = []
+                    for i in range(left, len(lows) - right):
+                        l = lows.iloc[i]
+                        if all(l < lows.iloc[i - j - 1] for j in range(left)) and all(l <= lows.iloc[i + j + 1] for j in range(right)):
+                            piv_lo_idx.append(i)
+                    if len(piv_hi_idx) < 2 or len(piv_lo_idx) < 2:
+                        return 'none'
+                    last_his = highs.iloc[piv_hi_idx[-2]:piv_hi_idx[-1]+1]
+                    last_los = lows.iloc[piv_lo_idx[-2]:piv_lo_idx[-1]+1]
+                    hh = highs.iloc[piv_hi_idx[-1]] > highs.iloc[piv_hi_idx[-2]]
+                    hl = lows.iloc[piv_lo_idx[-1]] > lows.iloc[piv_lo_idx[-2]]
+                    if hh and hl:
+                        return 'up'
+                    ll = highs.iloc[piv_hi_idx[-1]] < highs.iloc[piv_hi_idx[-2]]
+                    lh = lows.iloc[piv_lo_idx[-1]] < lows.iloc[piv_lo_idx[-2]]
+                    if ll and lh:
+                        return 'down'
+                    return 'none'
+                except Exception:
+                    return 'none'
+
+            import pandas as pd  # type: ignore
+
+            df1h = _resample(df, 60)
+            df4h = _resample(df, 240)
+
+            # Trend strength via enhanced regime
+            try:
+                ts1h = float(get_enhanced_market_regime(df1h, symbol).trend_strength) if len(df1h) >= 20 else 0.0
+            except Exception:
+                ts1h = 0.0
+            try:
+                ts4h = float(get_enhanced_market_regime(df4h, symbol).trend_strength) if len(df4h) >= 20 else 0.0
+            except Exception:
+                ts4h = 0.0
+
+            # EMA alignment + distance
+            ema_dir_1h, ema_dist_1h = _ema_dir(df1h)
+            ema_dir_4h, ema_dist_4h = _ema_dir(df4h) if len(df4h) else ('none', 0.0)
+
+            # Momentum
+            adx_1h = _adx(df1h, 14) if len(df1h) >= 30 else 0.0
+            rsi_1h = _rsi(df1h['close'], 14) if len(df1h) >= 20 else 50.0
+
+            # Structure
+            struct_dir_1h = _structure_dir(df1h) if len(df1h) >= 20 else 'none'
+            struct_dir_4h = _structure_dir(df4h) if len(df4h) >= 20 else 'none'
+
+            metrics = {
+                'ts1h': ts1h, 'ts4h': ts4h,
+                'ema_dir_1h': ema_dir_1h, 'ema_dir_4h': ema_dir_4h,
+                'ema_dist_1h': ema_dist_1h, 'ema_dist_4h': ema_dist_4h,
+                'adx_1h': adx_1h, 'rsi_1h': rsi_1h,
+                'struct_dir_1h': struct_dir_1h, 'struct_dir_4h': struct_dir_4h
+            }
+            self._htf_exec_cache[symbol] = {'last_idx': last_idx, 'metrics': metrics}
+            return metrics
+        except Exception:
+            return {'ts1h': 0.0, 'ts4h': 0.0, 'ema_dir_1h': 'none', 'ema_dir_4h': 'none', 'ema_dist_1h': 0.0, 'ema_dist_4h': 0.0, 'adx_1h': 0.0, 'rsi_1h': 50.0, 'struct_dir_1h': 'none', 'struct_dir_4h': 'none'}
+
+    def _apply_htf_exec_gate(self, symbol: str, df: 'pd.DataFrame', side: str, threshold: float) -> tuple[bool, float, str, Dict[str, object]]:
+        """Apply per-symbol HTF gate for Trend execution.
+
+        Returns: (allowed, new_threshold, reason, metrics)
+        - In gated mode, allowed=False skips execution; threshold unchanged
+        - In soft mode, allowed may remain False but threshold is increased; caller can re-evaluate ML
+        """
+        try:
+            cfg = getattr(self, 'config', {}) or {}
+            gate = ((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('htf_gate', {}) or {}))
+            enabled = bool(gate.get('enabled', True))
+            if not enabled:
+                return True, threshold, 'disabled', {}
+            mode = str(gate.get('mode', 'gated')).lower()
+            min_ts1h = float(gate.get('min_trend_strength_1h', 60.0))
+            min_ts4h = float(gate.get('min_trend_strength_4h', 55.0))
+            ema_required = bool(gate.get('ema_alignment', True))
+            adx_min_1h = float(gate.get('adx_min_1h', 0.0))
+            struct_required = bool(gate.get('structure_confluence', False))
+            soft_delta = float(gate.get('soft_delta', 5.0))
+
+            m = self._compute_symbol_htf_exec_metrics(symbol, df)
+            ts1h = float(m.get('ts1h', 0.0)); ts4h = float(m.get('ts4h', 0.0))
+            ema_ok_1h = (m.get('ema_dir_1h') == ('up' if side == 'long' else 'down')) if ema_required else True
+            ema_ok_4h = (m.get('ema_dir_4h') == ('up' if side == 'long' else 'down')) if (ema_required and min_ts4h > 0) else True
+            adx_ok = (float(m.get('adx_1h', 0.0)) >= adx_min_1h) if adx_min_1h > 0 else True
+            struct_ok_1h = (m.get('struct_dir_1h') == ('up' if side == 'long' else 'down')) if struct_required else True
+            struct_ok_4h = (m.get('struct_dir_4h') == ('up' if side == 'long' else 'down')) if (struct_required and min_ts4h > 0) else True
+            ts_ok = (ts1h >= min_ts1h) and ((min_ts4h <= 0) or (ts4h >= min_ts4h))
+            all_ok = ts_ok and ema_ok_1h and ema_ok_4h and adx_ok and struct_ok_1h and struct_ok_4h
+            if all_ok:
+                try:
+                    logger.info(f"[{symbol}] HTF Gate: PASS ts1h={ts1h:.1f}/{min_ts1h:.1f} ts4h={ts4h:.1f}/{min_ts4h:.1f} ema={ema_ok_1h}/{ema_ok_4h} struct={struct_ok_1h}/{struct_ok_4h} adx1h={m.get('adx_1h',0.0):.1f}/{adx_min_1h:.1f} mode={mode}")
+                except Exception:
+                    pass
+                # Event
+                try:
+                    ev = self.shared.get('trend_events', [])
+                    ev.append({'symbol': symbol, 'text': f"HTF PASS ({side}) ts1h={ts1h:.0f} ts4h={ts4h:.0f} ema={ema_ok_1h}/{ema_ok_4h} adx={m.get('adx_1h',0.0):.0f}"})
+                    self.shared['trend_events'] = ev[-200:]
+                except Exception:
+                    pass
+                return True, threshold, 'pass', m
+            else:
+                if mode == 'soft':
+                    new_thr = float(threshold) + soft_delta
+                    try:
+                        logger.info(f"[{symbol}] HTF Gate: SOFT +thr={soft_delta:.0f} → new_thr={new_thr:.0f} (ts1h={ts1h:.1f}/{min_ts1h:.1f} ts4h={ts4h:.1f}/{min_ts4h:.1f} ema={ema_ok_1h}/{ema_ok_4h} struct={struct_ok_1h}/{struct_ok_4h} adx1h={m.get('adx_1h',0.0):.1f}/{adx_min_1h:.1f})")
+                    except Exception:
+                        pass
+                    return False, new_thr, 'soft', m
+                else:
+                    try:
+                        logger.info(f"[{symbol}] HTF Gate: FAIL ts1h={ts1h:.1f}/{min_ts1h:.1f} ts4h={ts4h:.1f}/{min_ts4h:.1f} ema={ema_ok_1h}/{ema_ok_4h} struct={struct_ok_1h}/{struct_ok_4h} adx1h={m.get('adx_1h',0.0):.1f}/{adx_min_1h:.1f} mode=gated")
+                    except Exception:
+                        pass
+                    try:
+                        ev = self.shared.get('trend_events', [])
+                        ev.append({'symbol': symbol, 'text': f"HTF FAIL ({side}) ts1h={ts1h:.0f} ts4h={ts4h:.0f} ema={ema_ok_1h}/{ema_ok_4h} adx={m.get('adx_1h',0.0):.0f}"})
+                        self.shared['trend_events'] = ev[-200:]
+                    except Exception:
+                        pass
+                    return False, threshold, 'gated', m
+        except Exception as _ge:
+            try:
+                logger.debug(f"[{symbol}] HTF gate error: {_ge}")
+            except Exception:
+                pass
+            return True, threshold, 'error', {}
 
     # --- 3m micro-context checks (diagnostic) ---
     def _micro_context_trend(self, symbol: str, side: str) -> tuple[bool, str]:
@@ -6376,40 +6610,28 @@ class TradingBot:
                                     allow_tr_exec = False
                                 executed = False
                                 if allow_tr_exec:
-                                    # Exec-only regime gate for Trend Pullback (skip if disabled)
+                                    # Exec-only HTF gate (per-symbol) — independent of router.htf_bias
                                     try:
-                                        tr_exec_only = bool((((cfg.get('trend', {}) or {}).get('regime', {}) or {}).get('execute_only', True)))
+                                        ok_gate, thr_adj, mode, _m = self._apply_htf_exec_gate(sym, df, sig_tr_ind.side, thr_tr)
                                     except Exception:
-                                        tr_exec_only = True
-                                    if tr_exec_only:
-                                        htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
-                                        # Get HTF metrics safely
+                                        ok_gate, thr_adj, mode = True, thr_tr, 'error'
+                                    if not ok_gate and mode == 'gated':
                                         try:
-                                            metrics = self._get_htf_metrics(sym, df)
-                                        except Exception:
-                                            metrics = {'ts15': 0.0, 'ts60': 0.0}
-                                        try:
-                                            min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
-                                        except Exception:
-                                            min_ts = 60.0
-                                        ts15 = float(metrics.get('ts15', 0.0)); ts60 = float(metrics.get('ts60', 0.0))
-                                        # Log context
-                                        try:
-                                            logger.info(f"[{sym}] 🔵 Trend decision context: exec_only=True ts15={ts15:.1f} ts60={ts60:.1f} min_ts={min_ts:.1f} high_ml={ml_score_tr:.1f}/{tr_hi_force:.0f}")
+                                            logger.info(f"[{sym}] 🧮 Trend decision final: phantom (blocked) (reason=htf_gate)")
                                         except Exception:
                                             pass
-                                        # Block when HTF trend strength is insufficient
-                                        if not ((ts15 >= min_ts) and ((ts60 == 0.0) or (ts60 >= min_ts))):
-                                            try:
-                                                logger.info(f"[{sym}] 🧮 Trend decision final: phantom (blocked) (reason=exec-only ts<min {ts15:.1f}/{ts60:.1f}<{min_ts:.1f})")
-                                            except Exception:
-                                                pass
-                                            continue
-                                        else:
-                                            try:
-                                                logger.info(f"[{sym}] 🧮 Trend decision final: execute (reason=high_ml {ml_score_tr:.1f}≥{tr_hi_force:.0f} & regime_ok)")
-                                            except Exception:
-                                                pass
+                                        continue
+                                    elif not ok_gate and mode == 'soft':
+                                        try:
+                                            thr_tr = float(thr_adj)
+                                            logger.info(f"[{sym}] 🔵 Trend decision context: HTF soft mode → new_thr={thr_tr:.0f} high_ml={ml_score_tr:.1f}/{tr_hi_force:.0f}")
+                                        except Exception:
+                                            pass
+                                    else:
+                                        try:
+                                            logger.info(f"[{sym}] 🧮 Trend decision final: execute (reason=high_ml {ml_score_tr:.1f}≥{tr_hi_force:.0f} & htf_ok)")
+                                        except Exception:
+                                            pass
                                     try:
                                         self._last_signal_features[sym] = dict(trend_features)
                                     except Exception:
@@ -7327,6 +7549,17 @@ class TradingBot:
                                                 logger.info(f"[BTCUSDT] BTC Gate: FAIL ts15={ts15:.1f}/{min_ts15:.1f} ts60={ts60:.1f}/{min_ts60:.1f} vol={vol_level} allow={','.join(sorted(allow_vol))}")
                                             except Exception:
                                                 pass
+                                except Exception:
+                                    pass
+                                # Apply per-symbol HTF exec gate (after BTC gate)
+                                try:
+                                    if should_take_trade:
+                                        ok_gate, new_thr, mode, _m = self._apply_htf_exec_gate(sym, df, sig.side, threshold)
+                                        if not ok_gate and mode == 'gated':
+                                            should_take_trade = False
+                                        elif not ok_gate and mode == 'soft':
+                                            threshold = float(new_thr)
+                                            should_take_trade = ml_score >= threshold
                                 except Exception:
                                     pass
                                 # Trend decision context (execution path)

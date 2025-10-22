@@ -167,6 +167,16 @@ trend:
       min_trend_strength_60m: 55
       allow_volatility: [low, normal]
       mode: gated   # gated | soft
+    # Per‑symbol HTF exec gate (phantoms free)
+    htf_gate:
+      enabled: true
+      mode: gated           # gated | soft
+      min_trend_strength_1h: 60.0
+      min_trend_strength_4h: 55.0
+      ema_alignment: true   # require EMA fan alignment with direction
+      adx_min_1h: 20.0      # optional, 0 to disable
+      structure_confluence: true  # require HH/HL for long or LH/LL for short on 1H (and 4H if min_ts_4h > 0)
+      soft_delta: 5         # threshold bump when mode=soft and gate fails
     cancel_on_reentry: true
     invalidation_mode: on_close   # on_close | on_touch
     invalidation_timeframe: 3m    # 3m | 1m

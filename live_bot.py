@@ -8801,13 +8801,23 @@ class TradingBot:
                                         sym, sig.__dict__, float(ml_score or 0.0), False, {}, enhanced_features if 'enhanced_features' in locals() else {}
                                     )
                                 elif selected_phantom_tracker:
-                                    # Trend phantom record
+                                    # Trend phantom record — include full HTF snapshot
+                                    try:
+                                        feats_sf = {}
+                                        if selected_strategy in ('trend_pullback','pullback'):
+                                            feats_sf = dict(trend_features) if 'trend_features' in locals() and isinstance(trend_features, dict) else {}
+                                            if 'htf' not in feats_sf:
+                                                feats_sf['htf'] = dict(self._compute_symbol_htf_exec_metrics(sym, df))
+                                        else:
+                                            feats_sf = basic_features if 'basic_features' in locals() else {}
+                                    except Exception:
+                                        feats_sf = basic_features if 'basic_features' in locals() else {}
                                     selected_phantom_tracker.record_signal(
                                         symbol=sym,
                                         signal={'side': sig.side, 'entry': sig.entry, 'sl': sig.sl, 'tp': sig.tp},
                                         ml_score=float(ml_score or 0.0),
                                         was_executed=False,
-                                        features=basic_features if 'basic_features' in locals() else {},
+                                        features=feats_sf,
                                         strategy_name=selected_strategy
                                     )
                             except Exception:

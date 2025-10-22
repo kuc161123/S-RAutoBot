@@ -30,6 +30,11 @@ class TrendMLScorer:
     MIN_TRADES_FOR_ML = 30
     RETRAIN_INTERVAL = 50
     INITIAL_THRESHOLD = 70
+    # Auto-activation threshold for optional NN head (total records: executed + phantom)
+    try:
+        NN_AUTO_ACTIVATE_MIN = int(os.getenv('TREND_NN_MIN_TRADES', '300'))
+    except Exception:
+        NN_AUTO_ACTIVATE_MIN = 300
 
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
@@ -333,6 +338,13 @@ class TrendMLScorer:
         if len(data) < self.MIN_TRADES_FOR_ML:
             logger.info(f"Trend ML not enough data: {len(data)}/{self.MIN_TRADES_FOR_ML}")
             return False
+        # Auto-activate NN when we have plenty of trades (can be overridden by env/Redis)
+        try:
+            if (not self.nn_enabled) and (MLPClassifier is not None) and (len(data) >= self.NN_AUTO_ACTIVATE_MIN):
+                self.nn_enabled = True
+                logger.info(f"Trend NN head auto-activated (records={len(data)} ≥ {self.NN_AUTO_ACTIVATE_MIN})")
+        except Exception:
+            pass
         X, y, w = [], [], []
         # Use entire dataset (executed + phantom) without caps
         mix = data

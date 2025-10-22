@@ -191,7 +191,7 @@ class TGBot:
         broker = self.shared.get("broker")
         balance = self.shared.get("last_balance")
         try:
-            if broker and balance is None:
+            if broker and (balance is None or float(balance) <= 0.0):
                 bal = broker.get_balance()
                 if bal is not None:
                     balance = bal
@@ -371,10 +371,10 @@ class TGBot:
         broker = self.shared.get("broker")
         balance = self.shared.get("last_balance")
         if broker:
-            if balance is None:
+            if balance is None or float(balance) <= 0.0:
                 try:
                     balance = broker.get_balance()
-                    if balance:
+                    if balance is not None:
                         self.shared["last_balance"] = balance
                 except Exception as exc:
                     logger.warning(f"Error refreshing balance: {exc}")

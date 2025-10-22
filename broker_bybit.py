@@ -110,31 +110,49 @@ class Bybit:
         raise RuntimeError("Bybit request failed")
 
     def get_balance(self) -> Optional[float]:
-        """Get USDT balance"""
+        """Get USDT balance (robust): try UNIFIED → CONTRACT → SPOT; prefer equity."""
         try:
-            # Use UNIFIED account type (most common for retail)
-            resp = self._request("GET", "/v5/account/wallet-balance", {"accountType": "UNIFIED"})
-            if resp and resp.get("result"):
-                for item in resp["result"]["list"]:
-                    for coin in item.get("coin", []):
-                        if coin["coin"] == "USDT":
-                            # Try multiple balance fields
-                            balance_str = coin.get("availableToWithdraw") or coin.get("walletBalance") or coin.get("equity") or "0"
-                            
-                            # Handle empty strings and convert to float
-                            try:
-                                if balance_str and balance_str != "":
-                                    return float(balance_str)
-                            except (ValueError, TypeError):
-                                logger.debug(f"Could not parse balance: {balance_str}")
-                                continue
-            
-            # If no USDT found, return None (non-critical)
+            account_types = ["UNIFIED", "CONTRACT", "SPOT"]
+            for acct in account_types:
+                try:
+                    resp = self._request("GET", "/v5/account/wallet-balance", {"accountType": acct})
+                except Exception as _e:
+                    logger.debug(f"Wallet balance fetch failed for {acct}: {_e}")
+                    continue
+                try:
+                    if not (resp and resp.get("result")):
+                        continue
+                    lists = resp["result"].get("list", [])
+                    for item in lists:
+                        for coin in item.get("coin", []):
+                            if str(coin.get("coin")) == "USDT":
+                                # Prefer equity → walletBalance → availableToWithdraw
+                                fields = [coin.get("equity"), coin.get("walletBalance"), coin.get("availableToWithdraw")]
+                                for val in fields:
+                                    try:
+                                        if val is not None and str(val) != "":
+                                            v = float(val)
+                                            # Accept first non-NaN number; keep searching only if zero across all fields
+                                            if v != 0.0:
+                                                return v
+                                            zero_candidate = v
+                                        else:
+                                            continue
+                                    except (ValueError, TypeError):
+                                        continue
+                                # If all fields parse but are 0.0, return zero and continue to next acct only if not found later
+                                try:
+                                    # Return the last parsed zero if we reached here
+                                    return float(zero_candidate)  # may be 0.0
+                                except Exception:
+                                    return 0.0
+                except Exception as _pe:
+                    logger.debug(f"Parse wallet balance failed for {acct}: {_pe}")
+                    continue
+            # If no USDT found across account types
             return None
-            
         except Exception as e:
             logger.error(f"Failed to get balance: {e}")
-            # Not critical - bot can continue without balance display
             return None
 
     def set_leverage(self, symbol:str, leverage:int) -> Dict[str, Any]:

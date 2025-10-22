@@ -4855,6 +4855,54 @@ class TradingBot:
                                         await self.tg.send_message(msg)
                                 except Exception:
                                     pass
+                                # Record executed mirror for ML (was_executed=True) so retraining uses executed and phantom
+                                try:
+                                    from phantom_trade_tracker import get_phantom_tracker
+                                    pt = get_phantom_tracker()
+                                    # Build executed features similar to main path
+                                    feats_exec = {}
+                                    try:
+                                        dfm = self.frames.get(symbol)
+                                        if dfm is not None and not dfm.empty:
+                                            clm = dfm['close']; price_m = float(clm.iloc[-1]) if len(clm) else 0.0
+                                            ys_m = clm.tail(20).values if len(clm) >= 20 else clm.values
+                                            try:
+                                                slope_m = np.polyfit(np.arange(len(ys_m)), ys_m, 1)[0]
+                                            except Exception:
+                                                slope_m = 0.0
+                                            ema20_m = float(clm.ewm(span=20, adjust=False).mean().iloc[-1]) if len(clm) >= 20 else price_m
+                                            ema50_m = float(clm.ewm(span=50, adjust=False).mean().iloc[-1]) if len(clm) >= 50 else ema20_m
+                                            ema_stack_m = 100.0 if (price_m > ema20_m > ema50_m or price_m < ema20_m < ema50_m) else (50.0 if ema20_m != ema50_m else 0.0)
+                                            rng_today_m = float(dfm['high'].iloc[-1] - dfm['low'].iloc[-1])
+                                            med_range_m = float((dfm['high'] - dfm['low']).rolling(20).median().iloc[-1]) if len(dfm) >= 20 else max(1e-9, rng_today_m)
+                                            feats_exec = {
+                                                'trend_slope_pct': float((slope_m / price_m) * 100.0) if price_m else 0.0,
+                                                'ema_stack_score': float(ema_stack_m),
+                                                'atr_pct': float(((np.maximum(dfm['high'] - dfm['low'], np.maximum((dfm['high'] - clm.shift()).abs(), (dfm['low'] - clm.shift()).abs()))).rolling(14).mean().iloc[-1]) / max(1e-9, price_m) * 100.0) if len(dfm) >= 14 else 0.0,
+                                                'range_expansion': float(rng_today_m / max(1e-9, med_range_m)),
+                                                'session': 'us',
+                                                'symbol_cluster': 3,
+                                                'volatility_regime': getattr(self, 'last_volatility_level', 'normal') if hasattr(self, 'last_volatility_level') else 'normal'
+                                            }
+                                            # Attach HTF snapshots + composite
+                                            try:
+                                                feats_exec['htf'] = dict(self._compute_symbol_htf_exec_metrics(symbol, dfm))
+                                            except Exception:
+                                                pass
+                                            try:
+                                                compE = self._get_htf_metrics(symbol, dfm)
+                                                feats_exec['htf_comp'] = dict(compE)
+                                                feats_exec['ts15'] = float(compE.get('ts15', 0.0))
+                                                feats_exec['ts60'] = float(compE.get('ts60', 0.0))
+                                                feats_exec['rc15'] = float(compE.get('rc15', 0.0))
+                                                feats_exec['rc60'] = float(compE.get('rc60', 0.0))
+                                            except Exception:
+                                                pass
+                                    except Exception:
+                                        feats_exec = {}
+                                    pt.record_signal(symbol, {'side': 'long' if side=='Buy' else 'short', 'entry': float(entry), 'sl': float(sl), 'tp': float(tp)}, float(ml_score_se or 0.0), True, feats_exec, 'trend_pullback')
+                                except Exception:
+                                    pass
                         except Exception as e:
                             logger.debug(f"Stream execute trend error [{symbol}]: {e}")
                     def _entry_exec(symbol, side, entry, sl, tp, m):

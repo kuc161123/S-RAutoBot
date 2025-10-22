@@ -4579,6 +4579,12 @@ class TradingBot:
                                         ml_score, _ = tr_scorer.score_signal(dummy_sig, feats)
                                 except Exception:
                                     ml_score = 0.0
+                                # Attach HTF snapshot to features
+                                try:
+                                    if df is not None and not df.empty:
+                                        feats['htf'] = dict(self._compute_symbol_htf_exec_metrics(sym, df))
+                                except Exception:
+                                    pass
                                 # Log and record phantom
                                 try:
                                     try:
@@ -4639,6 +4645,11 @@ class TradingBot:
                                     try:
                                         feats = feats if isinstance(feats, dict) else {}
                                         feats['htf_gate'] = {'mode': htf_mode}
+                                        # Include full HTF snapshot
+                                        try:
+                                            feats['htf'] = dict(self._compute_symbol_htf_exec_metrics(symbol, df_main))
+                                        except Exception:
+                                            pass
                                     except Exception:
                                         feats = {}
                                     pt.record_signal(symbol, {'side': side, 'entry': float(entry), 'sl': float(sl), 'tp': float(tp)}, float(ml_score_se or 0.0), False, feats, 'trend_pullback')
@@ -7602,6 +7613,12 @@ class TradingBot:
                                         'symbol_cluster': 3,
                                         'volatility_regime': regime_analysis.volatility_level if hasattr(regime_analysis, 'volatility_level') else 'normal'
                                     }
+                                    # Attach full HTF snapshot for ML/phantom
+                                    try:
+                                        htfm = self._compute_symbol_htf_exec_metrics(sym, df)
+                                        trend_features['htf'] = dict(htfm)
+                                    except Exception:
+                                        pass
                                 except Exception:
                                     trend_features = {}
 
@@ -9196,6 +9213,11 @@ class TradingBot:
                                     'symbol_cluster': 3,
                                     'volatility_regime': getattr(regime_analysis, 'volatility_level', 'normal') if 'regime_analysis' in locals() else 'normal',
                                 }
+                                # Attach full HTF snapshot
+                                try:
+                                    trend_features['htf'] = dict(self._compute_symbol_htf_exec_metrics(sym, df))
+                                except Exception:
+                                    pass
                             except Exception:
                                 trend_features = {}
                             phantom_tracker.record_signal(

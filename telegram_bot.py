@@ -1789,6 +1789,11 @@ class TGBot:
                         for sym, st in sorted(snap.items()):
                             try:
                                 s = st.get('state','?')
+                                executed = bool(st.get('executed', False))
+                                # Display mapping: avoid 'SENT' unless executed
+                                disp_state = s
+                                if s == 'SIGNAL_SENT' and not executed:
+                                    disp_state = 'SIGNAL'
                                 bl = float(st.get('breakout_level', 0.0) or 0.0)
                                 conf = int(st.get('confirm_progress', 0) or 0)
                                 micro = st.get('micro_state') or ""
@@ -1799,7 +1804,7 @@ class TGBot:
                                     pivot_label = "HL"
                                 else:
                                     pivot_label = "PV"
-                                parts = [f"{s}"]
+                                parts = [f"{disp_state}"]
                                 if micro:
                                     parts.append(micro)
                                 if pivot > 0:
@@ -1811,6 +1816,18 @@ class TGBot:
                                     parts.append(f"Div={'✅' if div_ok else '—'} {div_type}{(' '+str(round(div_score,2))) if div_score else ''}")
                                 except Exception:
                                     pass
+                                # Gates and execution indicators
+                                try:
+                                    gates = st.get('gates', {}) or {}
+                                    htf_ok = gates.get('htf_ok')
+                                    sr_ok = gates.get('sr_ok')
+                                    parts.append(
+                                        f"Gates: HTF={'✅' if htf_ok else ('—' if htf_ok is not None else '?')} SR={'✅' if sr_ok else ('—' if sr_ok is not None else '?')}"
+                                    )
+                                except Exception:
+                                    pass
+                                if executed:
+                                    parts.append('EXEC')
                                 try:
                                     if st.get('bos_crossed'):
                                         wr = st.get('waiting_reason') or 'WAIT_PIVOT'

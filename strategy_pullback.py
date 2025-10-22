@@ -238,6 +238,36 @@ class BreakoutState:
     div_tsi_delta: float = 0.0
     # One-time micro confirmation note (HH/HL or LH/LL) just after breakout
     micro_note_sent: bool = False
+    # Exec gate diagnostics
+    last_sr_gate_ok: Optional[bool] = None
+    last_sr_meta: dict = None
+    last_htf_gate_ok: Optional[bool] = None
+    last_htf_meta: dict = None
+    # Execution marker (set true when an exchange order is placed)
+    last_executed: bool = False
+
+def update_sr_gate(symbol: str, ok: bool, meta: dict):
+    try:
+        st = breakout_states.setdefault(symbol, BreakoutState())
+        st.last_sr_gate_ok = bool(ok)
+        st.last_sr_meta = dict(meta or {})
+    except Exception:
+        pass
+
+def update_htf_gate(symbol: str, ok: bool, meta: dict):
+    try:
+        st = breakout_states.setdefault(symbol, BreakoutState())
+        st.last_htf_gate_ok = bool(ok)
+        st.last_htf_meta = dict(meta or {})
+    except Exception:
+        pass
+
+def mark_executed(symbol: str):
+    try:
+        st = breakout_states.setdefault(symbol, BreakoutState())
+        st.last_executed = True
+    except Exception:
+        pass
     # BOS cross monitoring (when pivot broken but protective HL/LH not yet confirmed)
     bos_cross_notified: bool = False
     bos_cross_time: Optional[datetime] = None
@@ -916,6 +946,16 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                                 sr_ok = False; sr_reason = "no_resistance_level"
                         except Exception as _sre:
                             sr_ok = True; sr_reason = f"sr_check_error:{_sre}"
+                        # Persist SR gate status for states
+                        try:
+                            update_sr_gate(symbol, bool(sr_ok), {
+                                'level': float(level or 0.0),
+                                'strength': float(strength or 0.0),
+                                'conf_ok': bool(conf_ok),
+                                'clear_ok': bool(clearance_ok)
+                            })
+                        except Exception:
+                            pass
                         if not sr_ok:
                             # Record phantom and skip execute
                             try:
@@ -930,6 +970,10 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                                     R = abs(entry - sl); tp = entry + (s.rr * R * 1.00165)
                                     meta = {"phase":"3m_bos_phantom","sr_exec_gate":"fail","sr_strength": float(strength),"sr_level": float(level or 0.0),"sr_conf": bool(conf_ok),"sr_clear": bool(clearance_ok)}
                                     _phantom_recorder(symbol, "long", float(entry), float(sl), float(tp), meta)
+                            except Exception:
+                                pass
+                            try:
+                                _notify(symbol, f"🛑 Trend: [{symbol}] SR exec gate blocked — routed to phantom")
                             except Exception:
                                 pass
                             return None
@@ -1234,6 +1278,16 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                                 sr_ok = False; sr_reason = "no_support_level"
                         except Exception as _sre:
                             sr_ok = True; sr_reason = f"sr_check_error:{_sre}"
+                        # Persist SR gate status for states
+                        try:
+                            update_sr_gate(symbol, bool(sr_ok), {
+                                'level': float(level or 0.0),
+                                'strength': float(strength or 0.0),
+                                'conf_ok': bool(conf_ok),
+                                'clear_ok': bool(clearance_ok)
+                            })
+                        except Exception:
+                            pass
                         if not sr_ok:
                             try:
                                 if _phantom_recorder is not None and bos_ready:
@@ -1247,6 +1301,10 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                                     R = abs(entry - sl); tp = entry - (s.rr * R * 1.00165)
                                     meta = {"phase":"3m_bos_phantom","sr_exec_gate":"fail","sr_strength": float(strength),"sr_level": float(level or 0.0),"sr_conf": bool(conf_ok),"sr_clear": bool(clearance_ok)}
                                     _phantom_recorder(symbol, "short", float(entry), float(sl), float(tp), meta)
+                            except Exception:
+                                pass
+                            try:
+                                _notify(symbol, f"🛑 Trend: [{symbol}] SR exec gate blocked — routed to phantom")
                             except Exception:
                                 pass
                             return None
@@ -1582,7 +1640,13 @@ def get_trend_states_snapshot() -> Dict[str, dict]:
                 'divergence_score': float(st.divergence_score or 0.0),
                 # BOS waiting details
                 'bos_crossed': bool(st.bos_cross_notified or (st.bos_cross_time is not None)),
-                'waiting_reason': st.waiting_reason or ''
+                'waiting_reason': st.waiting_reason or '',
+                # Gates and execution
+                'gates': {
+                    'sr_ok': st.last_sr_gate_ok,
+                    'htf_ok': st.last_htf_gate_ok,
+                },
+                'executed': bool(st.last_executed)
             }
         except Exception:
             out[sym] = {'state': st.state}

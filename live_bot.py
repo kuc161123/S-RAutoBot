@@ -4614,6 +4614,42 @@ class TradingBot:
                                     logger.info(f"[{symbol}] 🛑 Stream execute blocked by HTF gate (gated)")
                                 except Exception:
                                     pass
+                                # Persist HTF gate decision into trend state
+                                try:
+                                    from strategy_pullback import update_htf_gate
+                                    m = {}
+                                    try:
+                                        m = self._compute_symbol_htf_exec_metrics(symbol, df_main)
+                                    except Exception:
+                                        m = {}
+                                    meta_gate = {'mode': htf_mode}
+                                    if isinstance(m, dict):
+                                        for k in ('ts1h','ts4h','ema_dir_1h','ema_dir_4h','adx_1h','struct_dir_1h','struct_dir_4h'):
+                                            if k in m:
+                                                meta_gate[k] = m[k]
+                                    update_htf_gate(symbol, False, meta_gate)
+                                except Exception:
+                                    pass
+                                # Record phantom for learning with current stream proposal
+                                try:
+                                    from phantom_trade_tracker import get_phantom_tracker
+                                    pt = get_phantom_tracker()
+                                    # Build minimal features when available
+                                    feats = {}
+                                    try:
+                                        feats = feats if isinstance(feats, dict) else {}
+                                        feats['htf_gate'] = {'mode': htf_mode}
+                                    except Exception:
+                                        feats = {}
+                                    pt.record_signal(symbol, {'side': side, 'entry': float(entry), 'sl': float(sl), 'tp': float(tp)}, float(ml_score_se or 0.0), False, feats, 'trend_pullback')
+                                except Exception:
+                                    pass
+                                # Notify
+                                try:
+                                    if self.tg:
+                                        await self.tg.send_message(f"🛑 Trend: [{symbol}] HTF gate blocked (stream) — routed to phantom")
+                                except Exception:
+                                    pass
                                 return
                             elif not htf_ok and htf_mode == 'soft':
                                 try:
@@ -6128,6 +6164,13 @@ class TradingBot:
                                 is_high_ml = bool(isinstance(getattr(sig_obj, 'meta', {}), dict) and sig_obj.meta.get('high_ml'))
                                 if not is_high_ml:
                                     logger.info(f"[{sym}] 🧮 Decision final: exec_{'mr' if strategy_name=='enhanced_mr' else 'trend'} (reason=ok)")
+                                # Mark Trend executed in state snapshot
+                                try:
+                                    if strategy_name in ('trend_pullback','trend_breakout'):
+                                        from strategy_pullback import mark_executed
+                                        mark_executed(sym)
+                                except Exception:
+                                    pass
                             except Exception:
                                 pass
                             return True
@@ -6633,9 +6676,42 @@ class TradingBot:
                                         ok_gate, thr_adj, mode, _m = self._apply_htf_exec_gate(sym, df, sig_tr_ind.side, thr_tr)
                                     except Exception:
                                         ok_gate, thr_adj, mode = True, thr_tr, 'error'
+                                    # Persist HTF gate decision into trend state
+                                    try:
+                                        from strategy_pullback import update_htf_gate
+                                        meta_gate = {'mode': mode}
+                                        if isinstance(_m, dict):
+                                            for k in ('ts1h','ts4h','ema_dir_1h','ema_dir_4h','adx_1h','struct_dir_1h','struct_dir_4h'):
+                                                if k in _m:
+                                                    meta_gate[k] = _m[k]
+                                        update_htf_gate(sym, bool(ok_gate), meta_gate)
+                                    except Exception:
+                                        pass
                                     if not ok_gate and mode == 'gated':
                                         try:
                                             logger.info(f"[{sym}] 🧮 Trend decision final: phantom (blocked) (reason=htf_gate)")
+                                        except Exception:
+                                            pass
+                                        # Record phantom so ML learns gate failures too
+                                        try:
+                                            if phantom_tracker and sig_tr_ind is not None:
+                                                # Attach minimal gate metrics in features under 'htf_gate'
+                                                gf = dict(trend_features) if 'trend_features' in locals() and isinstance(trend_features, dict) else {}
+                                                gf['htf_gate'] = {'mode': mode}
+                                                phantom_tracker.record_signal(
+                                                    sym,
+                                                    {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp},
+                                                    float(ml_score_tr or 0.0),
+                                                    False,
+                                                    gf,
+                                                    'trend_pullback'
+                                                )
+                                        except Exception:
+                                            pass
+                                        # Notify
+                                        try:
+                                            if self.tg:
+                                                await self.tg.send_message(f"🛑 Trend: [{sym}] HTF gate blocked — routed to phantom")
                                         except Exception:
                                             pass
                                         continue
@@ -7622,6 +7698,12 @@ class TradingBot:
                                 except Exception:
                                     pass
                                 if not should_take_trade:
+                                    # Notify ML reject diverted to phantom
+                                    try:
+                                        if self.tg:
+                                            await self.tg.send_message(f"🛑 Trend: [{sym}] ML reject — ML {ml_score:.1f} < thr {threshold:.1f} (phantom recorded)")
+                                    except Exception:
+                                        pass
                                     # Skip execution, continue to next symbol
                                     continue
                             else:

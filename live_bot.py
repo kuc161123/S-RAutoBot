@@ -4735,6 +4735,16 @@ class TradingBot:
                                         feats['rc60'] = float(comp0.get('rc60', 0.0))
                                 except Exception:
                                     pass
+                                # Attach Qscore snapshot for BOS phantom as well
+                                try:
+                                    rule_mode = (self.config.get('trend', {}) or {}).get('rule_mode', {}) if hasattr(self, 'config') else {}
+                                    if bool(rule_mode.get('enabled', False)):
+                                        qB, qcB, qrB = self._compute_qscore(sym, 'long' if side=='Buy' else 'short', df, self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None)
+                                        feats['qscore'] = float(qB)
+                                        feats['qscore_components'] = dict(qcB)
+                                        feats['qscore_reasons'] = list(qrB)
+                                except Exception:
+                                    pass
                                 # Attach rule-mode Qscore if enabled
                                 try:
                                     rule_mode = (self.config.get('trend', {}) or {}).get('rule_mode', {}) if hasattr(self, 'config') else {}
@@ -4861,7 +4871,7 @@ class TradingBot:
                                     try:
                                         from phantom_trade_tracker import get_phantom_tracker
                                         pt = get_phantom_tracker()
-                                        feats_q = {'qscore': float(q)}
+                                        feats_q = {'qscore': float(q), 'qscore_components': dict(qc), 'qscore_reasons': list(qr), 'decision': 'rule_phantom_stream'}
                                         try:
                                             feats_q['htf'] = dict(self._compute_symbol_htf_exec_metrics(symbol, df_main))
                                             comp6 = self._get_htf_metrics(symbol, df_main)
@@ -4900,11 +4910,11 @@ class TradingBot:
                                     return
                             # Compute a quick ML score for logging (best-effort)
                             ml_score_se = 0.0
-                                try:
-                                    if 'get_trend_scorer' in globals() and get_trend_scorer is not None:
-                                        tr_scorer = get_trend_scorer()
-                                        df = self.frames.get(symbol)
-                                        feats = {}
+                            try:
+                                if 'get_trend_scorer' in globals() and get_trend_scorer is not None:
+                                    tr_scorer = get_trend_scorer()
+                                    df = self.frames.get(symbol)
+                                    feats = {}
                                     if df is not None and not df.empty:
                                         cl = df['close']; price = float(cl.iloc[-1]) if len(cl) else 0.0
                                         ys = cl.tail(20).values if len(cl) >= 20 else cl.values
@@ -5075,6 +5085,25 @@ class TradingBot:
                                         await self.tg.send_message(msg)
                                 except Exception:
                                     pass
+                                # Append to events feed
+                                try:
+                                    evts = self.shared.get('trend_events')
+                                    if isinstance(evts, list):
+                                        from datetime import datetime as _dt
+                                        etxt = f"Stream EXECUTE qty={qty} entry={entry:.4f} sl={sl:.4f} tp={tp:.4f}"
+                                        if rm_enabled:
+                                            etxt += f" Q={q:.1f}"
+                                        evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': symbol, 'text': etxt})
+                                        if len(evts) > 60:
+                                            del evts[:len(evts)-60]
+                                except Exception:
+                                    pass
+                                # Mark executed in Trend states snapshot
+                                try:
+                                    from strategy_pullback import mark_executed
+                                    mark_executed(symbol)
+                                except Exception:
+                                    pass
                                 # Record executed mirror for ML (was_executed=True) so retraining uses executed and phantom
                                 try:
                                     from phantom_trade_tracker import get_phantom_tracker
@@ -5125,7 +5154,7 @@ class TradingBot:
                                                 pass
                                     except Exception:
                                         feats_exec = {}
-                                    pt.record_signal(symbol, {'side': 'long' if side=='Buy' else 'short', 'entry': float(entry), 'sl': float(sl), 'tp': float(tp)}, float(ml_score_se or 0.0), True, feats_exec, 'trend_pullback')
+                                    pt.record_signal(symbol, {'side': str(side), 'entry': float(entry), 'sl': float(sl), 'tp': float(tp)}, float(ml_score_se or 0.0), True, feats_exec, 'trend_pullback')
                                 except Exception:
                                     pass
                         except Exception as e:
@@ -6908,6 +6937,16 @@ class TradingBot:
                                     trend_features['rc60'] = float(comp.get('rc60', 0.0))
                                 except Exception:
                                     pass
+                                # If rule-mode, attach Qscore details
+                                try:
+                                    rule_mode = (cfg.get('trend', {}) or {}).get('rule_mode', {}) if 'cfg' in locals() else {}
+                                    if bool(rule_mode.get('enabled', False)):
+                                        q, qc, qr = self._compute_qscore(sym, soft_sig_tr.side, df, self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None)
+                                        trend_features['qscore'] = float(q)
+                                        trend_features['qscore_components'] = dict(qc)
+                                        trend_features['qscore_reasons'] = list(qr)
+                                except Exception:
+                                    pass
                                 # Log Trend Pullback signal meta and EV threshold snapshot
                                 try:
                                     ev_thr_log = None
@@ -8050,6 +8089,8 @@ class TradingBot:
                                     # Attach Qscore to features for training
                                     try:
                                         trend_features['qscore'] = float(q)
+                                        trend_features['qscore_components'] = dict(qc)
+                                        trend_features['qscore_reasons'] = list(qr)
                                     except Exception:
                                         pass
                                     exec_min = float(rule_mode.get('execute_q_min', 78))
@@ -8062,6 +8103,10 @@ class TradingBot:
                                         try:
                                             if self.tg:
                                                 await self.tg.send_message(f"🟢 Rule-mode EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {exec_min:.1f})\n{comps}")
+                                        except Exception:
+                                            pass
+                                        try:
+                                            trend_features['decision'] = 'rule_execute'
                                         except Exception:
                                             pass
                                         # Append to events feed
@@ -8082,6 +8127,10 @@ class TradingBot:
                                         except Exception:
                                             pass
                                         try:
+                                            trend_features['decision'] = 'rule_phantom'
+                                        except Exception:
+                                            pass
+                                        try:
                                             evts = self.shared.get('trend_events')
                                             if isinstance(evts, list):
                                                 from datetime import datetime as _dt
@@ -8095,6 +8144,10 @@ class TradingBot:
                                         try:
                                             if self.tg:
                                                 await self.tg.send_message(f"🟠 Rule-mode LOW-QUALITY: [{sym}] Q={q:.1f} < {ph_min:.1f} — phantom (low-weight)\n{comps}")
+                                        except Exception:
+                                            pass
+                                        try:
+                                            trend_features['decision'] = 'rule_low_quality'
                                         except Exception:
                                             pass
                                         try:

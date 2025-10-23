@@ -912,6 +912,134 @@ class TradingBot:
         except Exception:
             return {'ts1h': 0.0, 'ts4h': 0.0, 'ema_dir_1h': 'none', 'ema_dir_4h': 'none', 'ema_dist_1h': 0.0, 'ema_dist_4h': 0.0, 'adx_1h': 0.0, 'rsi_1h': 50.0, 'struct_dir_1h': 'none', 'struct_dir_4h': 'none'}
 
+    def _compute_qscore(self, symbol: str, side: str, df15: 'pd.DataFrame', df3: 'pd.DataFrame' = None) -> tuple[float, dict, list[str]]:
+        """Compute rule-based quality score (0–100) with component breakdown and reasons.
+
+        Components: SR (25), HTF (30), BOS/Confirm (15), Micro 3m (10), Risk geometry (10), Divergence (10).
+        """
+        total = 0.0
+        comp = {}
+        reasons: list[str] = []
+        try:
+            # --- SR quality (HTF S/R)
+            try:
+                from multi_timeframe_sr import mtf_sr
+                price = float(df15['close'].iloc[-1]) if (df15 is not None and len(df15) > 0) else 0.0
+                vlevels = mtf_sr.get_price_validated_levels(symbol, price)
+                if side == 'long':
+                    # nearest resistance above price (for clearance eval)
+                    res = [(lv, st) for (lv, st, t) in vlevels if t == 'resistance']
+                    if res:
+                        level, strength = min(res, key=lambda x: abs(x[0] - price))
+                        # stronger is better up to 5 touches proxy scaled to 100
+                        sr_strength = max(0.0, min(100.0, float(strength) / 5.0 * 100.0))
+                        # clearance if we are above that level (post-break), else low
+                        atr15 = float(((df15['high'] - df15['low']).rolling(14).mean().iloc[-1]) if len(df15) >= 14 else (df15['high'].iloc[-1] - df15['low'].iloc[-1]))
+                        clearance = ((price - level) / max(1e-9, atr15)) if atr15 else 0.0
+                        sr_clear = max(0.0, min(100.0, (clearance / 0.25) * 100.0))  # 0.25 ATR maps to 100
+                        comp['sr'] = 0.6 * sr_strength + 0.4 * sr_clear
+                    else:
+                        comp['sr'] = 20.0
+                        reasons.append('SR: no_resistance_level')
+                else:
+                    sup = [(lv, st) for (lv, st, t) in vlevels if t == 'support']
+                    if sup:
+                        level, strength = min(sup, key=lambda x: abs(x[0] - price))
+                        sr_strength = max(0.0, min(100.0, float(strength) / 5.0 * 100.0))
+                        atr15 = float(((df15['high'] - df15['low']).rolling(14).mean().iloc[-1]) if len(df15) >= 14 else (df15['high'].iloc[-1] - df15['low'].iloc[-1]))
+                        clearance = ((level - price) / max(1e-9, atr15)) if atr15 else 0.0
+                        sr_clear = max(0.0, min(100.0, (clearance / 0.25) * 100.0))
+                        comp['sr'] = 0.6 * sr_strength + 0.4 * sr_clear
+                    else:
+                        comp['sr'] = 20.0
+                        reasons.append('SR: no_support_level')
+            except Exception as _e:
+                comp['sr'] = 40.0
+                reasons.append(f'SR:error:{_e}')
+
+            # --- HTF quality (1H/4H + composite)
+            try:
+                htf = self._compute_symbol_htf_exec_metrics(symbol, df15)
+                weight = 0.0
+                align1h = 100.0 if (htf.get('ema_dir_1h') == ('up' if side == 'long' else 'down')) else 50.0 if htf.get('ema_dir_1h') != 'none' else 0.0
+                align4h = 100.0 if (htf.get('ema_dir_4h') == ('up' if side == 'long' else 'down')) else 50.0 if htf.get('ema_dir_4h') != 'none' else 0.0
+                ts1h = max(0.0, min(100.0, float(htf.get('ts1h', 0.0))))
+                ts4h = max(0.0, min(100.0, float(htf.get('ts4h', 0.0))))
+                adx = max(0.0, min(100.0, float(htf.get('adx_1h', 0.0)) * 3.0))  # scale ADX ~ 0–33 → 0–100
+                struct1h = 100.0 if (htf.get('struct_dir_1h') == ('up' if side == 'long' else 'down')) else 0.0
+                struct4h = 100.0 if (htf.get('struct_dir_4h') == ('up' if side == 'long' else 'down')) else 0.0
+                comp['htf'] = 0.25 * ts1h + 0.10 * ts4h + 0.20 * align1h + 0.10 * align4h + 0.20 * adx + 0.10 * struct1h + 0.05 * struct4h
+            except Exception as _e:
+                comp['htf'] = 40.0
+                reasons.append(f'HTF:error:{_e}')
+
+            # --- BOS / Confirmations
+            try:
+                # proxies from last features if available
+                confirms = 0
+                try:
+                    confirms = int(getattr(self, '_last_signal_features', {}).get(symbol, {}).get('confirm_candles', 0))
+                except Exception:
+                    confirms = 0
+                bos = min(100.0, confirms / 2.0 * 100.0)  # 0,50,100 for 0,1,≥2 confirms
+                comp['bos'] = bos
+            except Exception:
+                comp['bos'] = 50.0
+
+            # --- Micro 3m alignment
+            try:
+                ok3, why3 = self._micro_context_trend(symbol, side)
+                comp['micro'] = 100.0 if ok3 else 30.0
+                if not ok3:
+                    reasons.append(f'micro:{why3}')
+            except Exception as _e:
+                comp['micro'] = 50.0
+                reasons.append(f'micro:error:{_e}')
+
+            # --- Risk geometry
+            try:
+                # prefer higher R; penalize extremely small ATR
+                cl = df15['close']; price = float(cl.iloc[-1]) if len(cl) else 0.0
+                atr15 = float(((df15['high'] - df15['low']).rolling(14).mean().iloc[-1]) if len(df15) >= 14 else (df15['high'].iloc[-1] - df15['low'].iloc[-1]))
+                rng_med = float((df15['high'] - df15['low']).rolling(20).median().iloc[-1]) if len(df15) >= 20 else atr15
+                bw = (rng_med / max(1e-9, price))
+                # mid range width (~2%-6%) scores best
+                if bw <= 0:
+                    comp['risk'] = 40.0
+                elif bw < 0.01:
+                    comp['risk'] = 50.0
+                    reasons.append('risk:range_too_tight')
+                elif bw > 0.08:
+                    comp['risk'] = 50.0
+                    reasons.append('risk:range_too_wide')
+                else:
+                    comp['risk'] = 80.0
+            except Exception:
+                comp['risk'] = 50.0
+
+            # --- Divergence (optional)
+            try:
+                lf = getattr(self, '_last_signal_features', {}).get(symbol, {}) if hasattr(self, '_last_signal_features') else {}
+                div_ok = bool(lf.get('div_ok', False))
+                comp['div'] = 80.0 if div_ok else 50.0
+            except Exception:
+                comp['div'] = 50.0
+
+            # Weighted sum (normalized)
+            q = (
+                0.25 * comp.get('sr', 50.0)
+                + 0.30 * comp.get('htf', 50.0)
+                + 0.15 * comp.get('bos', 50.0)
+                + 0.10 * comp.get('micro', 50.0)
+                + 0.10 * comp.get('risk', 50.0)
+                + 0.10 * comp.get('div', 50.0)
+            )
+            total = max(0.0, min(100.0, q))
+        except Exception as _e:
+            total = 50.0
+            reasons.append(f'qscore:error:{_e}')
+        return float(total), comp, reasons
+
     def _apply_htf_exec_gate(self, symbol: str, df: 'pd.DataFrame', side: str, threshold: float) -> tuple[bool, float, str, Dict[str, object]]:
         """Apply per-symbol HTF gate for Trend execution.
 
@@ -4129,6 +4257,13 @@ class TradingBot:
             self._trend_settings = trend_settings
         except Exception:
             pass
+        # Propagate rule_mode to strategy (disable SR hard gate when enabled)
+        try:
+            rm = (cfg.get('trend', {}) or {}).get('rule_mode', {})
+            import os as _os
+            _os.environ['TREND_RULE_MODE'] = '1' if bool(rm.get('enabled', False)) else '0'
+        except Exception:
+            pass
         # Enable reset_symbol_state for pullback state machine
         reset_symbol_state = _reset_symbol_state
 
@@ -4591,6 +4726,14 @@ class TradingBot:
                                         feats['rc60'] = float(comp0.get('rc60', 0.0))
                                 except Exception:
                                     pass
+                                # Attach rule-mode Qscore if enabled
+                                try:
+                                    rule_mode = (self.config.get('trend', {}) or {}).get('rule_mode', {}) if hasattr(self, 'config') else {}
+                                    if bool(rule_mode.get('enabled', False)):
+                                        q, qc, qr = self._compute_qscore(sym, 'long' if side=='Buy' else 'short', df, self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None)
+                                        feats['qscore'] = float(q)
+                                except Exception:
+                                    pass
                                 # Log and record phantom
                                 try:
                                     try:
@@ -4621,7 +4764,10 @@ class TradingBot:
                                 htf_ok, _, htf_mode, _ = self._apply_htf_exec_gate(symbol, df_main, side, 0.0)
                             except Exception:
                                 htf_ok, htf_mode = True, 'error'
-                            if not htf_ok and htf_mode == 'gated':
+                            # Under rule_mode, HTF gating is scored, not blocked
+                            rule_mode = (self.config.get('trend', {}) or {}).get('rule_mode', {}) if hasattr(self, 'config') else {}
+                            rm_enabled = bool(rule_mode.get('enabled', False))
+                            if (not rm_enabled) and (not htf_ok) and (htf_mode == 'gated'):
                                 try:
                                     logger.info(f"[{symbol}] 🛑 Stream execute blocked by HTF gate (gated)")
                                 except Exception:
@@ -4688,13 +4834,57 @@ class TradingBot:
                                     logger.info(f"[{symbol}] 🔵 Stream execute: HTF soft mode — allowing with caution")
                                 except Exception:
                                     pass
+                            # Rule-mode: compute Qscore and block stream execute if below threshold
+                            try:
+                                rule_mode = (self.config.get('trend', {}) or {}).get('rule_mode', {}) if hasattr(self, 'config') else {}
+                                rm_enabled = bool(rule_mode.get('enabled', False))
+                            except Exception:
+                                rm_enabled = False
+                            if rm_enabled:
+                                try:
+                                    q, qc, qr = self._compute_qscore(symbol, 'long' if side=='Buy' else 'short', df_main, self.frames_3m.get(symbol) if hasattr(self, 'frames_3m') else None)
+                                except Exception:
+                                    q, qc, qr = 50.0, {}, []
+                                exec_min = float(rule_mode.get('execute_q_min', 78))
+                                ph_min = float(rule_mode.get('phantom_q_min', 65))
+                                if q < exec_min:
+                                    # Record phantom and return
+                                    try:
+                                        from phantom_trade_tracker import get_phantom_tracker
+                                        pt = get_phantom_tracker()
+                                        feats_q = {'qscore': float(q)}
+                                        try:
+                                            feats_q['htf'] = dict(self._compute_symbol_htf_exec_metrics(symbol, df_main))
+                                            comp6 = self._get_htf_metrics(symbol, df_main)
+                                            feats_q['htf_comp'] = dict(comp6)
+                                            feats_q['ts15'] = float(comp6.get('ts15', 0.0))
+                                            feats_q['ts60'] = float(comp6.get('ts60', 0.0))
+                                            feats_q['rc15'] = float(comp6.get('rc15', 0.0))
+                                            feats_q['rc60'] = float(comp6.get('rc60', 0.0))
+                                        except Exception:
+                                            pass
+                                        pt.record_signal(symbol, {'side': 'long' if side=='Buy' else 'short', 'entry': float(entry), 'sl': float(sl), 'tp': float(tp)}, 0.0, False, feats_q, 'trend_pullback')
+                                    except Exception:
+                                        pass
+                                    # Revert state & notify
+                                    try:
+                                        from strategy_pullback import revert_to_neutral
+                                        revert_to_neutral(symbol)
+                                    except Exception:
+                                        pass
+                                    try:
+                                        if self.tg:
+                                            await self.tg.send_message(f"🛑 Trend: [{symbol}] Rule-mode Qscore {q:.1f} < {exec_min:.1f} — routed to phantom")
+                                    except Exception:
+                                        pass
+                                    return
                             # Compute a quick ML score for logging (best-effort)
                             ml_score_se = 0.0
-                            try:
-                                if 'get_trend_scorer' in globals() and get_trend_scorer is not None:
-                                    tr_scorer = get_trend_scorer()
-                                    df = self.frames.get(symbol)
-                                    feats = {}
+                                try:
+                                    if 'get_trend_scorer' in globals() and get_trend_scorer is not None:
+                                        tr_scorer = get_trend_scorer()
+                                        df = self.frames.get(symbol)
+                                        feats = {}
                                     if df is not None and not df.empty:
                                         cl = df['close']; price = float(cl.iloc[-1]) if len(cl) else 0.0
                                         ys = cl.tail(20).values if len(cl) >= 20 else cl.values
@@ -4890,7 +5080,7 @@ class TradingBot:
                                                 'symbol_cluster': 3,
                                                 'volatility_regime': getattr(self, 'last_volatility_level', 'normal') if hasattr(self, 'last_volatility_level') else 'normal'
                                             }
-                                            # Attach HTF snapshots + composite
+                                            # Attach HTF snapshots + composite + qscore when available
                                             try:
                                                 feats_exec['htf'] = dict(self._compute_symbol_htf_exec_metrics(symbol, dfm))
                                             except Exception:
@@ -4902,6 +5092,11 @@ class TradingBot:
                                                 feats_exec['ts60'] = float(compE.get('ts60', 0.0))
                                                 feats_exec['rc15'] = float(compE.get('rc15', 0.0))
                                                 feats_exec['rc60'] = float(compE.get('rc60', 0.0))
+                                            except Exception:
+                                                pass
+                                            try:
+                                                if rm_enabled:
+                                                    feats_exec['qscore'] = float(q)
                                             except Exception:
                                                 pass
                                     except Exception:
@@ -6730,12 +6925,66 @@ class TradingBot:
                                         pass
                             except Exception:
                                 pass
-                            tr_should = ml_score_tr >= thr_tr
+                            # Rule-mode: Qscore routing overrides ML gating until ML maturity
+                            rule_mode = (cfg.get('trend', {}) or {}).get('rule_mode', {}) if 'cfg' in locals() else {}
+                            rm_enabled = bool(rule_mode.get('enabled', False))
+                            qscore = None; qcomp = {}; qreasons = []
+                            if rm_enabled:
+                                try:
+                                    qscore, qcomp, qreasons = self._compute_qscore(sym, sig_tr_ind.side, df, self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None)
+                                except Exception:
+                                    qscore, qcomp, qreasons = 50.0, {}, []
+                                # Attach to features for ML training
+                                try:
+                                    trend_features['qscore'] = float(qscore)
+                                except Exception:
+                                    pass
+                                exec_min = float(rule_mode.get('execute_q_min', 78))
+                                ph_min = float(rule_mode.get('phantom_q_min', 65))
+                                # Safety: extreme volatility block
+                                try:
+                                    extreme_block = bool(rule_mode.get('safety', {}).get('extreme_vol_block', True)) and str(getattr(regime_analysis, 'volatility_level', 'normal')) == 'extreme'
+                                except Exception:
+                                    extreme_block = False
+                                if extreme_block:
+                                    tr_should = False
+                                    try:
+                                        if self.tg:
+                                            await self.tg.send_message(f"🛑 Trend: [{sym}] Extreme volatility — rule-mode blocked; phantom recorded")
+                                    except Exception:
+                                        pass
+                                elif qscore >= exec_min:
+                                    tr_should = True
+                                elif qscore >= ph_min:
+                                    tr_should = False
+                                else:
+                                    tr_should = False
+                                # ML influence when mature: tie-break near threshold
+                                try:
+                                    if bool(rule_mode.get('ml_influence', {}).get('enabled', True)) and tr_scorer is not None:
+                                        info = tr_scorer.get_retrain_info()
+                                        total_recs = int(info.get('total_records', 0))
+                                        exec_cnt = int(info.get('executed_count', 0))
+                                        min_recs = int(rule_mode.get('ml_influence', {}).get('min_records', 2000))
+                                        min_exec = int(rule_mode.get('ml_influence', {}).get('min_executed', 400))
+                                        margin = float(rule_mode.get('ml_influence', {}).get('margin_points', 3))
+                                        if total_recs >= min_recs and exec_cnt >= min_exec:
+                                            # If near threshold and ML strong, allow exec
+                                            if (exec_min - margin) <= float(qscore or 0.0) < exec_min and ml_score_tr >= thr_tr:
+                                                tr_should = True
+                                                try:
+                                                    logger.info(f"[{sym}] Rule-mode ML tie-break: q={qscore:.1f}~{exec_min:.1f}, ml={ml_score_tr:.1f}≥{thr_tr:.1f}")
+                                                except Exception:
+                                                    pass
+                                except Exception:
+                                    pass
+                            else:
+                                tr_should = (ml_score_tr >= thr_tr)
                             try:
                                 logger.info(f"[{sym}] Trend Pullback gating: ml={float(ml_score_tr):.1f} thr={float(thr_tr):.1f} should={tr_should}")
                             except Exception:
                                 pass
-                            # Extreme ML override (force execution bypassing router/regime/micro gates)
+                            # Extreme ML override (legacy high-ML only used when rule_mode disabled)
                             try:
                                 tr_hi_force = float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('high_ml_force', 92.0)))
                             except Exception:
@@ -6747,7 +6996,7 @@ class TradingBot:
                                     tr_hi_force = max(tr_hi_force, ev_thr_tr)
                             except Exception:
                                 pass
-                            if ml_score_tr >= tr_hi_force:
+                            if (not rm_enabled) and (ml_score_tr >= tr_hi_force):
                                 try:
                                     logger.info(f"[{sym}] Trend Pullback HIGH-ML override: ml={float(ml_score_tr):.1f} ≥ {float(tr_hi_force):.1f}")
                                 except Exception:
@@ -6782,7 +7031,7 @@ class TradingBot:
                                         update_htf_gate(sym, bool(ok_gate), meta_gate)
                                     except Exception:
                                         pass
-                                    if not ok_gate and mode == 'gated':
+                                    if not ok_gate and mode == 'gated' and not rm_enabled:
                                         try:
                                             logger.info(f"[{sym}] 🧮 Trend decision final: phantom (blocked) (reason=htf_gate)")
                                         except Exception:
@@ -6816,7 +7065,7 @@ class TradingBot:
                                         except Exception:
                                             pass
                                         continue
-                                    elif not ok_gate and mode == 'soft':
+                                    elif not ok_gate and mode == 'soft' and not rm_enabled:
                                         try:
                                             thr_tr = float(thr_adj)
                                             logger.info(f"[{sym}] 🔵 Trend decision context: HTF soft mode → new_thr={thr_tr:.0f} high_ml={ml_score_tr:.1f}/{tr_hi_force:.0f}")
@@ -7767,10 +8016,43 @@ class TradingBot:
                                     logger.info(f"[{sym}] 🔵 Trend decision context: {ctx}")
                                 except Exception:
                                     pass
-                                if should_take_trade:
-                                    logger.info(f"[{sym}] 🧮 Trend decision final: execute (ML {ml_score:.1f} ≥ thr {threshold:.1f})")
+                                rule_mode = (cfg.get('trend', {}) or {}).get('rule_mode', {}) if 'cfg' in locals() else {}
+                                rm_enabled = bool(rule_mode.get('enabled', False))
+                                if rm_enabled:
+                                    try:
+                                        q, qc, qr = self._compute_qscore(sym, sig.side, df, self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None)
+                                    except Exception:
+                                        q, qc, qr = 50.0, {}, []
+                                    # Attach Qscore to features for training
+                                    try:
+                                        trend_features['qscore'] = float(q)
+                                    except Exception:
+                                        pass
+                                    exec_min = float(rule_mode.get('execute_q_min', 78))
+                                    ph_min = float(rule_mode.get('phantom_q_min', 65))
+                                    # Apply rule decision irrespective of ML
+                                    should_take_trade = (q >= exec_min)
+                                    if should_take_trade:
+                                        logger.info(f"[{sym}] 🧮 Rule-mode: EXECUTE (Q={q:.1f} ≥ {exec_min:.1f})")
+                                    elif q >= ph_min:
+                                        logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (Q={q:.1f} < {exec_min:.1f})")
+                                        try:
+                                            if self.tg:
+                                                await self.tg.send_message(f"🛑 Trend: [{sym}] Rule-mode Qscore {q:.1f} < {exec_min:.1f} — routed to phantom")
+                                        except Exception:
+                                            pass
+                                    else:
+                                        logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (low-quality Q={q:.1f} < {ph_min:.1f})")
+                                        try:
+                                            if self.tg:
+                                                await self.tg.send_message(f"🛑 Trend: [{sym}] Rule-mode low-quality Qscore {q:.1f} < {ph_min:.1f} — phantom (low-weight)")
+                                        except Exception:
+                                            pass
                                 else:
-                                    logger.info(f"[{sym}] 🧮 Trend decision final: phantom (ML {ml_score:.1f} < thr {threshold:.1f})")
+                                    if should_take_trade:
+                                        logger.info(f"[{sym}] 🧮 Trend decision final: execute (ML {ml_score:.1f} ≥ thr {threshold:.1f})")
+                                    else:
+                                        logger.info(f"[{sym}] 🧮 Trend decision final: phantom (ML {ml_score:.1f} < thr {threshold:.1f})")
                             except Exception as e:
                                 logger.warning(f"Trend ML scoring error: {e}")
                                 should_take_trade = False
@@ -9354,6 +9636,14 @@ class TradingBot:
                                     'symbol_cluster': 3,
                                     'volatility_regime': getattr(regime_analysis, 'volatility_level', 'normal') if 'regime_analysis' in locals() else 'normal',
                                 }
+                                # Add Qscore if rule_mode
+                                try:
+                                    rule_mode = (cfg.get('trend', {}) or {}).get('rule_mode', {}) if 'cfg' in locals() else {}
+                                    if bool(rule_mode.get('enabled', False)):
+                                        qE, _, _ = self._compute_qscore(sym, sig.side, df, self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None)
+                                        trend_features['qscore'] = float(qE)
+                                except Exception:
+                                    pass
                                 # Attach HTF snapshots + composite (flattened)
                                 try:
                                     trend_features['htf'] = dict(self._compute_symbol_htf_exec_metrics(sym, df))

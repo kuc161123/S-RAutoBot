@@ -947,7 +947,11 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             if eligible_long:
                 # Exec-only SR gate: require strong HTF level + confluence + clearance; phantoms remain free
                 try:
-                    if s.sr_exec_enabled and s.use_mtf_sr:
+                    # Under rule_mode, SR gating becomes soft (scored by rule engine)
+                    import os
+                    rule_mode_env = os.getenv('TREND_RULE_MODE', '1')
+                    sr_gate_active = s.sr_exec_enabled and s.use_mtf_sr and (rule_mode_env not in ('1','true','on','yes'))
+                    if sr_gate_active:
                         sr_ok = True; sr_reason = ""
                         level = None; strength = 0.0; conf_ok = True; clearance_ok = True
                         try:
@@ -1287,7 +1291,10 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             if eligible_short:
                 # Exec-only SR gate on short path
                 try:
-                    if s.sr_exec_enabled and s.use_mtf_sr:
+                    import os
+                    rule_mode_env = os.getenv('TREND_RULE_MODE', '1')
+                    sr_gate_active = s.sr_exec_enabled and s.use_mtf_sr and (rule_mode_env not in ('1','true','on','yes'))
+                    if sr_gate_active:
                         sr_ok = True; sr_reason = ""
                         level = None; strength = 0.0; conf_ok = True; clearance_ok = True
                         try:

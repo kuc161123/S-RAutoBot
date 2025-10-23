@@ -181,7 +181,9 @@ class TrendMLScorer:
             'time_to_exit_sec',
             'session', 'symbol_cluster', 'volatility_regime',
             # Composite HTF metrics (flattened)
-            'ts15','ts60','rc15','rc60'
+            'ts15','ts60','rc15','rc60',
+            # Rule-mode quality score
+            'qscore'
         ]
         vec = []
         for k in order:

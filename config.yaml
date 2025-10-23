@@ -215,6 +215,19 @@ trend:
     verbose: true           # Ensure per-candle Trend analysis heartbeat at INFO
     no_signal_info: true    # Emit INFO when no Trend signal forms
     phantom_info: true      # Log Trend phantom decisions at INFO
+  # Rule-first execution and data collection mode
+  rule_mode:
+    enabled: true           # Use rule-based quality scoring for routing/exec (all symbols)
+    execute_q_min: 78       # A-tier: execute when Qscore ≥ this
+    phantom_q_min: 65       # B-tier: phantom when Qscore between phantom_q_min and execute_q_min
+    phantom_low_weight_below: 65  # C-tier: low-quality; still record but down-weight in training (via phantom_weight policy)
+    safety:
+      extreme_vol_block: true    # Never execute in extreme volatility
+    ml_influence:
+      enabled: true
+      min_records: 2000     # Total (executed + phantom) before ML can tie-break
+      min_executed: 400     # Minimum executed trades before ML influence
+      margin_points: 3      # If Qscore within this many points of execute_q_min and ML ≥ thr, allow exec
   explore:
     enabled: true
     slope_min: 4.0

@@ -1025,14 +1025,23 @@ class TradingBot:
             except Exception:
                 comp['div'] = 50.0
 
-            # Weighted sum (normalized)
+            # Weighted sum (normalized); weights from config with sane defaults
+            try:
+                rm = (getattr(self, 'config', {}) or {}).get('trend', {}).get('rule_mode', {})
+                wcfg = (rm.get('weights', {}) or {})
+                w_sr = float(wcfg.get('sr', 0.25)); w_htf = float(wcfg.get('htf', 0.30)); w_bos = float(wcfg.get('bos', 0.15))
+                w_micro = float(wcfg.get('micro', 0.10)); w_risk = float(wcfg.get('risk', 0.10)); w_div = float(wcfg.get('div', 0.10))
+                w_sum = max(1e-9, (w_sr + w_htf + w_bos + w_micro + w_risk + w_div))
+                w_sr /= w_sum; w_htf /= w_sum; w_bos /= w_sum; w_micro /= w_sum; w_risk /= w_sum; w_div /= w_sum
+            except Exception:
+                w_sr, w_htf, w_bos, w_micro, w_risk, w_div = 0.25, 0.30, 0.15, 0.10, 0.10, 0.10
             q = (
-                0.25 * comp.get('sr', 50.0)
-                + 0.30 * comp.get('htf', 50.0)
-                + 0.15 * comp.get('bos', 50.0)
-                + 0.10 * comp.get('micro', 50.0)
-                + 0.10 * comp.get('risk', 50.0)
-                + 0.10 * comp.get('div', 50.0)
+                w_sr * comp.get('sr', 50.0)
+                + w_htf * comp.get('htf', 50.0)
+                + w_bos * comp.get('bos', 50.0)
+                + w_micro * comp.get('micro', 50.0)
+                + w_risk * comp.get('risk', 50.0)
+                + w_div * comp.get('div', 50.0)
             )
             total = max(0.0, min(100.0, q))
         except Exception as _e:
@@ -4878,6 +4887,16 @@ class TradingBot:
                                             await self.tg.send_message(f"🟡 Rule-mode PHANTOM (stream): [{symbol}] Q={q:.1f} < {exec_min:.1f}\n{comps}")
                                     except Exception:
                                         pass
+                                    # Append to events
+                                    try:
+                                        evts = self.shared.get('trend_events')
+                                        if isinstance(evts, list):
+                                            from datetime import datetime as _dt
+                                            evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': symbol, 'text': f"Rule PHANTOM (stream) Q={q:.1f} comps: {comps}"})
+                                            if len(evts) > 60:
+                                                del evts[:len(evts)-60]
+                                    except Exception:
+                                        pass
                                     return
                             # Compute a quick ML score for logging (best-effort)
                             ml_score_se = 0.0
@@ -8045,6 +8064,16 @@ class TradingBot:
                                                 await self.tg.send_message(f"🟢 Rule-mode EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {exec_min:.1f})\n{comps}")
                                         except Exception:
                                             pass
+                                        # Append to events feed
+                                        try:
+                                            evts = self.shared.get('trend_events')
+                                            if isinstance(evts, list):
+                                                from datetime import datetime as _dt
+                                                evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': sym, 'text': f"Rule EXECUTE Q={q:.1f} comps: {comps}"})
+                                                if len(evts) > 60:
+                                                    del evts[:len(evts)-60]
+                                        except Exception:
+                                            pass
                                     elif q >= ph_min:
                                         logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (Q={q:.1f} < {exec_min:.1f}) comps: {comps}")
                                         try:
@@ -8052,11 +8081,29 @@ class TradingBot:
                                                 await self.tg.send_message(f"🟡 Rule-mode PHANTOM: [{sym}] Q={q:.1f} < {exec_min:.1f}\n{comps}")
                                         except Exception:
                                             pass
+                                        try:
+                                            evts = self.shared.get('trend_events')
+                                            if isinstance(evts, list):
+                                                from datetime import datetime as _dt
+                                                evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': sym, 'text': f"Rule PHANTOM Q={q:.1f} comps: {comps}"})
+                                                if len(evts) > 60:
+                                                    del evts[:len(evts)-60]
+                                        except Exception:
+                                            pass
                                     else:
                                         logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (low-quality Q={q:.1f} < {ph_min:.1f}) comps: {comps}")
                                         try:
                                             if self.tg:
                                                 await self.tg.send_message(f"🟠 Rule-mode LOW-QUALITY: [{sym}] Q={q:.1f} < {ph_min:.1f} — phantom (low-weight)\n{comps}")
+                                        except Exception:
+                                            pass
+                                        try:
+                                            evts = self.shared.get('trend_events')
+                                            if isinstance(evts, list):
+                                                from datetime import datetime as _dt
+                                                evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': sym, 'text': f"Rule LOW-Q Q={q:.1f} comps: {comps}"})
+                                                if len(evts) > 60:
+                                                    del evts[:len(evts)-60]
                                         except Exception:
                                             pass
                                 else:

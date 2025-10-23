@@ -221,6 +221,13 @@ trend:
     execute_q_min: 78       # A-tier: execute when Qscore ≥ this
     phantom_q_min: 65       # B-tier: phantom when Qscore between phantom_q_min and execute_q_min
     phantom_low_weight_below: 65  # C-tier: low-quality; still record but down-weight in training (via phantom_weight policy)
+    weights:                # Live-tunable Qscore component weights (sum auto-normalized)
+      sr: 0.25              # HTF S/R quality (strength, confluence, clearance)
+      htf: 0.30             # 1H/4H alignment (ts/EMA/ADX/structure)
+      bos: 0.15             # BOS confirmations/body
+      micro: 0.10           # 3m micro alignment
+      risk: 0.10            # risk geometry (range/ATR context)
+      div: 0.10             # divergence (optional)
     safety:
       extreme_vol_block: true    # Never execute in extreme volatility
     ml_influence:

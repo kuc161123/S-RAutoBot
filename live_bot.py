@@ -7106,6 +7106,12 @@ class TradingBot:
                                 except Exception:
                                     extreme_block = False
                                 if extreme_block:
+                                    try:
+                                        # Tag diversion reason for phantom record downstream
+                                        if isinstance(trend_features, dict):
+                                            trend_features['diversion_reason'] = 'extreme_vol'
+                                    except Exception:
+                                        pass
                                     tr_should = False
                                     try:
                                         if self.tg:
@@ -9417,6 +9423,13 @@ class TradingBot:
                                                 feats_sf.setdefault('rc60', float(comp4.get('rc60', 0.0)))
                                             except Exception:
                                                 pass
+                                            try:
+                                                # Tag diversion reason and stale metrics
+                                                feats_sf['diversion_reason'] = 'stale_feed'
+                                                feats_sf['stale_age_sec'] = int(now_sec - last_sec)
+                                                feats_sf['stale_max_lag_sec'] = int(max_lag)
+                                            except Exception:
+                                                pass
                                         else:
                                             feats_sf = basic_features if 'basic_features' in locals() else {}
                                     except Exception:
@@ -9570,11 +9583,41 @@ class TradingBot:
                 current_price = df['close'].iloc[-1]
                 if sig.side == "short" and sig.sl <= current_price:
                     logger.error(f"[{sym}] Invalid SL for SHORT: {sig.sl:.4f} must be > current price {current_price:.4f}")
-                    # Suppress Telegram for invalid SL rejection; keep log only
+                    # Record phantom with diversion reason and suppress execute
+                    try:
+                        if selected_strategy in ('trend_pullback','pullback') and 'phantom_tracker' in locals() and phantom_tracker is not None:
+                            feats_is = {}
+                            try:
+                                feats_is = getattr(self, '_last_signal_features', {}).get(sym, {}) if hasattr(self, '_last_signal_features') else {}
+                            except Exception:
+                                feats_is = {}
+                            try:
+                                if isinstance(feats_is, dict):
+                                    feats_is = feats_is.copy(); feats_is['diversion_reason'] = 'invalid_sl'
+                            except Exception:
+                                pass
+                            phantom_tracker.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, float(ml_score or 0.0), False, feats_is, 'trend_pullback')
+                    except Exception:
+                        pass
                     continue
                 elif sig.side == "long" and sig.sl >= current_price:
                     logger.error(f"[{sym}] Invalid SL for LONG: {sig.sl:.4f} must be < current price {current_price:.4f}")
-                    # Suppress Telegram for invalid SL rejection; keep log only
+                    # Record phantom with diversion reason and suppress execute
+                    try:
+                        if selected_strategy in ('trend_pullback','pullback') and 'phantom_tracker' in locals() and phantom_tracker is not None:
+                            feats_is = {}
+                            try:
+                                feats_is = getattr(self, '_last_signal_features', {}).get(sym, {}) if hasattr(self, '_last_signal_features') else {}
+                            except Exception:
+                                feats_is = {}
+                            try:
+                                if isinstance(feats_is, dict):
+                                    feats_is = feats_is.copy(); feats_is['diversion_reason'] = 'invalid_sl'
+                            except Exception:
+                                pass
+                            phantom_tracker.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, float(ml_score or 0.0), False, feats_is, 'trend_pullback')
+                    except Exception:
+                        pass
                     continue
 
                 # Place market order AFTER leverage is set

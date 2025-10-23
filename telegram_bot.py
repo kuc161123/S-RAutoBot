@@ -288,6 +288,7 @@ class TGBot:
         try:
             pt = self.shared.get("phantom_tracker")
             total = wins = losses = timeouts = 0
+            open_cnt = 0
             if pt:
                 for trades in getattr(pt, 'phantom_trades', {}).values():
                     for p in trades:
@@ -299,10 +300,20 @@ class TGBot:
                                 losses += (1 if oc == 'loss' else 0)
                             if (not getattr(p, 'was_executed', False)) and getattr(p, 'exit_reason', None) == 'timeout':
                                 timeouts += 1
+                # Count open (in-flight) trend phantoms
+                try:
+                    for lst in getattr(pt, 'active_phantoms', {}).values():
+                        for p in (lst or []):
+                            if (getattr(p, 'strategy_name', '') or '').startswith('trend'):
+                                # Only count those without an exit
+                                if not getattr(p, 'exit_time', None):
+                                    open_cnt += 1
+                except Exception:
+                    pass
             wr = (wins/total*100.0) if total else 0.0
             lines.append("")
             lines.append("👻 *Trend Phantom*")
-            lines.append(f"• Tracked: {total} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}")
+            lines.append(f"• Tracked: {total} | Open: {open_cnt} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}")
         except Exception:
             pass
 
@@ -683,7 +694,7 @@ class TGBot:
         phantom_tracker = self.shared.get("phantom_tracker")
         if phantom_tracker:
             try:
-                total = 0; wins = 0; losses = 0; timeouts = 0
+                total = 0; wins = 0; losses = 0; timeouts = 0; open_cnt = 0
                 for trades in getattr(phantom_tracker, 'phantom_trades', {}).values():
                     for p in trades:
                         try:
@@ -697,11 +708,19 @@ class TGBot:
                                 timeouts += 1
                         except Exception:
                             pass
+                # Count open (in-flight) trend phantoms
+                try:
+                    for lst in getattr(phantom_tracker, 'active_phantoms', {}).values():
+                        for p in (lst or []):
+                            if getattr(p, 'strategy_name', '') in ('trend_breakout','trend_pullback'):
+                                if not getattr(p, 'exit_time', None):
+                                    open_cnt += 1
+                except Exception:
+                    pass
                 wr = (wins/total*100.0) if total else 0.0
                 lines.append("")
                 lines.append("👻 *Trend Phantom*")
-                lines.append(f"• Tracked: {total} | WR: {wr:.1f}% (W/L {wins}/{losses})")
-                lines.append(f"• Timeouts: {timeouts}")
+                lines.append(f"• Tracked: {total} | Open: {open_cnt} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}")
             except Exception as exc:
                 logger.debug(f"Unable to fetch trend phantom stats: {exc}")
 
@@ -1929,6 +1948,7 @@ class TGBot:
                     await query.answer()
                     pt = self.shared.get('phantom_tracker')
                     total = wins = losses = timeouts = 0
+                    open_cnt = 0
                     if pt:
                         for trades in getattr(pt, 'phantom_trades', {}).values():
                             for p in trades:
@@ -1940,8 +1960,17 @@ class TGBot:
                                         losses += (1 if oc == 'loss' else 0)
                                     if (not getattr(p, 'was_executed', False)) and getattr(p, 'exit_reason', None) == 'timeout':
                                         timeouts += 1
+                        # Count open (in-flight) trend phantoms
+                        try:
+                            for lst in getattr(pt, 'active_phantoms', {}).values():
+                                for p in (lst or []):
+                                    if (getattr(p, 'strategy_name', '') or '').startswith('trend'):
+                                        if not getattr(p, 'exit_time', None):
+                                            open_cnt += 1
+                        except Exception:
+                            pass
                     wr = (wins/total*100.0) if total else 0.0
-                    lines = ["👻 *Trend Phantom*", "", f"Tracked: {total} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}"]
+                    lines = ["👻 *Trend Phantom*", "", f"Tracked: {total} | Open: {open_cnt} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}"]
                     await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
                     return
                 if data == "ui:ml:trend":

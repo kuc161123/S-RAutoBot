@@ -4907,6 +4907,7 @@ class TradingBot:
                                     try:
                                         feats = feats if isinstance(feats, dict) else {}
                                         feats['htf_gate'] = {'mode': htf_mode}
+                                        feats['diversion_reason'] = 'htf_gate_stream'
                                         # Include full HTF snapshot + composite (flattened)
                                         try:
                                             feats['htf'] = dict(self._compute_symbol_htf_exec_metrics(symbol, df_main))
@@ -6231,6 +6232,23 @@ class TradingBot:
                                     dbg_logger.debug(f"[{sym}] {strategy_name}: skip — position_exists")
                                 except Exception:
                                     pass
+                                # Record Trend phantom with explicit reason if applicable
+                                try:
+                                    if strategy_name in ('trend_pullback','trend_breakout') and 'phantom_tracker' in locals() and phantom_tracker is not None:
+                                        feats_pe = {}
+                                        try:
+                                            feats_pe = getattr(self, '_last_signal_features', {}).get(sym, {}) if hasattr(self, '_last_signal_features') else {}
+                                        except Exception:
+                                            feats_pe = {}
+                                        try:
+                                            if isinstance(feats_pe, dict):
+                                                feats_pe = feats_pe.copy(); feats_pe['diversion_reason'] = 'position_exists'
+                                        except Exception:
+                                            pass
+                                        ph_sig = {'side': sig_obj.side, 'entry': float(sig_obj.entry), 'sl': float(sig_obj.sl), 'tp': float(sig_obj.tp)}
+                                        phantom_tracker.record_signal(sym, ph_sig, float(ml_score or 0.0), False, feats_pe, 'trend_pullback')
+                                except Exception:
+                                    pass
                                 return False
                             # Get symbol metadata and round TP/SL
                             m = meta_for(sym, shared["meta"])
@@ -7443,6 +7461,11 @@ class TradingBot:
                                     except Exception:
                                         pass
                                     if tr_pass_regime:
+                                        try:
+                                            if isinstance(trend_features, dict):
+                                                trend_features = trend_features.copy(); trend_features['diversion_reason'] = 'exec_gate'
+                                        except Exception:
+                                            pass
                                         _rec = phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
                                         if _rec is not None:
                                             try:
@@ -7465,6 +7488,11 @@ class TradingBot:
                                 if phantom_tracker and sig_tr_ind is not None:
                                     ok_reg, why_reg = self._phantom_trend_regime_ok(sym, df, regime_analysis)
                                     if ok_reg:
+                                        try:
+                                            if isinstance(trend_features, dict):
+                                                trend_features = trend_features.copy(); trend_features['diversion_reason'] = 'ml_below_high_ml'
+                                        except Exception:
+                                            pass
                                         _rec = phantom_tracker.record_signal(sym, {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp}, float(ml_score_tr or 0.0), False, trend_features, 'trend_pullback')
                                         if _rec is not None:
                                             try:

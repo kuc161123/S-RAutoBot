@@ -4874,7 +4874,8 @@ class TradingBot:
                                         pass
                                     try:
                                         if self.tg:
-                                            await self.tg.send_message(f"🛑 Trend: [{symbol}] Rule-mode Qscore {q:.1f} < {exec_min:.1f} — routed to phantom")
+                                            comps = f"SR={qc.get('sr',0):.0f} HTF={qc.get('htf',0):.0f} BOS={qc.get('bos',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f} Div={qc.get('div',0):.0f}"
+                                            await self.tg.send_message(f"🟡 Rule-mode PHANTOM (stream): [{symbol}] Q={q:.1f} < {exec_min:.1f}\n{comps}")
                                     except Exception:
                                         pass
                                     return
@@ -4914,7 +4915,11 @@ class TradingBot:
                             except Exception:
                                 ml_score_se = 0.0
                             try:
-                                logger.info(f"[{symbol}] ⚡ STREAM EXECUTE {side.upper()} @ {entry:.4f} SL {sl:.4f} TP {tp:.4f} | ML {ml_score_se:.1f}")
+                                # Include Qscore when available
+                                msg = f"[{symbol}] ⚡ STREAM EXECUTE {side.upper()} @ {entry:.4f} SL {sl:.4f} TP {tp:.4f} | ML {ml_score_se:.1f}"
+                                if rm_enabled:
+                                    msg += f" | Q={q:.1f}"
+                                logger.info(msg)
                             except Exception:
                                 pass
                             # Acquire lock
@@ -8032,20 +8037,26 @@ class TradingBot:
                                     ph_min = float(rule_mode.get('phantom_q_min', 65))
                                     # Apply rule decision irrespective of ML
                                     should_take_trade = (q >= exec_min)
+                                    comps = f"SR={qc.get('sr',0):.0f} HTF={qc.get('htf',0):.0f} BOS={qc.get('bos',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f} Div={qc.get('div',0):.0f}"
                                     if should_take_trade:
-                                        logger.info(f"[{sym}] 🧮 Rule-mode: EXECUTE (Q={q:.1f} ≥ {exec_min:.1f})")
-                                    elif q >= ph_min:
-                                        logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (Q={q:.1f} < {exec_min:.1f})")
+                                        logger.info(f"[{sym}] 🧮 Rule-mode: EXECUTE (Q={q:.1f} ≥ {exec_min:.1f}) comps: {comps}")
                                         try:
                                             if self.tg:
-                                                await self.tg.send_message(f"🛑 Trend: [{sym}] Rule-mode Qscore {q:.1f} < {exec_min:.1f} — routed to phantom")
+                                                await self.tg.send_message(f"🟢 Rule-mode EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {exec_min:.1f})\n{comps}")
+                                        except Exception:
+                                            pass
+                                    elif q >= ph_min:
+                                        logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (Q={q:.1f} < {exec_min:.1f}) comps: {comps}")
+                                        try:
+                                            if self.tg:
+                                                await self.tg.send_message(f"🟡 Rule-mode PHANTOM: [{sym}] Q={q:.1f} < {exec_min:.1f}\n{comps}")
                                         except Exception:
                                             pass
                                     else:
-                                        logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (low-quality Q={q:.1f} < {ph_min:.1f})")
+                                        logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (low-quality Q={q:.1f} < {ph_min:.1f}) comps: {comps}")
                                         try:
                                             if self.tg:
-                                                await self.tg.send_message(f"🛑 Trend: [{sym}] Rule-mode low-quality Qscore {q:.1f} < {ph_min:.1f} — phantom (low-weight)")
+                                                await self.tg.send_message(f"🟠 Rule-mode LOW-QUALITY: [{sym}] Q={q:.1f} < {ph_min:.1f} — phantom (low-weight)\n{comps}")
                                         except Exception:
                                             pass
                                 else:

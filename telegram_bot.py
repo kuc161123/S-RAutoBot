@@ -231,6 +231,28 @@ class TGBot:
         except Exception:
             lines.append("(unavailable)")
 
+        # Rule‑Mode summary
+        try:
+            cfg = self.shared.get('config', {}) or {}
+            rm = (((cfg.get('trend', {}) or {}).get('rule_mode', {}) or {}))
+            enabled = bool(rm.get('enabled', False))
+            exec_min = float(rm.get('execute_q_min', 78))
+            ph_min = float(rm.get('phantom_q_min', 65))
+            extreme = bool(((rm.get('safety', {}) or {}).get('extreme_vol_block', True)))
+            # ML maturity
+            ml = self.shared.get('trend_scorer')
+            info = ml.get_retrain_info() if ml else {}
+            t = int(info.get('total_records', 0)); e = int(info.get('executed_count', 0))
+            rec_need = int(((rm.get('ml_influence', {}) or {}).get('min_records', 2000)))
+            exe_need = int(((rm.get('ml_influence', {}) or {}).get('min_executed', 400)))
+            matured = (t >= rec_need) and (e >= exe_need)
+            lines.append("")
+            lines.append("🧭 *Rule‑Mode*")
+            lines.append(f"• Enabled: {'On' if enabled else 'Off'} | Exec≥{exec_min:.0f} | Phantom≥{ph_min:.0f} | Extreme‑vol block: {'On' if extreme else 'Off'}")
+            lines.append(f"• ML tie‑break: {'Active' if matured else 'Not ready'} (records {t}/{rec_need}, executed {e}/{exe_need})")
+        except Exception:
+            lines.append("(unavailable)")
+
         # Positions
         positions = book.positions if book else {}
         lines.append("")

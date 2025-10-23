@@ -2845,6 +2845,89 @@ class TradingBot:
         except Exception as notify_err:
             logger.debug(f"Failed phantom notification: {notify_err}")
 
+    async def _notify_trend_phantom(self, phantom):
+        """Trend phantom lifecycle notifier (open, TP1, close) with reasons.
+
+        Called by PhantomTradeTracker via set_notifier().
+        """
+        if not self.tg:
+            return
+        try:
+            symbol = getattr(phantom, 'symbol', '?')
+            side = str(getattr(phantom, 'side', '?')).upper()
+            entry = float(getattr(phantom, 'entry_price', 0.0) or 0.0)
+            sl = float(getattr(phantom, 'stop_loss', 0.0) or 0.0)
+            tp = float(getattr(phantom, 'take_profit', 0.0) or 0.0)
+            ml = float(getattr(phantom, 'ml_score', 0.0) or 0.0)
+            outcome = getattr(phantom, 'outcome', None)
+            pid = getattr(phantom, 'phantom_id', '')
+            pid_suffix = f" [#{pid}]" if isinstance(pid, str) and pid else ""
+            feats = getattr(phantom, 'features', {}) or {}
+
+            # Closure
+            if outcome in ('win','loss') or getattr(phantom, 'exit_time', None):
+                emoji = '✅' if outcome == 'win' else '❌'
+                exit_reason = str(getattr(phantom, 'exit_reason', 'unknown')).replace('_',' ').title()
+                pnl = float(getattr(phantom, 'pnl_percent', 0.0) or 0.0)
+                exit_px = float(getattr(phantom, 'exit_price', 0.0) or 0.0)
+                rr = getattr(phantom, 'realized_rr', None)
+                lines = [
+                    f"👻 *Trend Phantom {emoji}*{pid_suffix}",
+                    f"{symbol} {side} | ML {ml:.1f}",
+                    f"Entry → Exit: {entry:.4f} → {exit_px:.4f}",
+                    f"P&L: {pnl:+.2f}% ({exit_reason})"
+                ]
+                try:
+                    if isinstance(rr, (int,float)):
+                        lines.append(f"Realized R: {float(rr):.2f}R")
+                except Exception:
+                    pass
+                await self.tg.send_message("\n".join(lines))
+                return
+
+            # TP1 event (active)
+            if bool(getattr(phantom, 'tp1_hit', False)) and str(getattr(phantom, 'phantom_event','')) == 'tp1':
+                await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f}")
+                try:
+                    setattr(phantom, 'phantom_event', '')
+                except Exception:
+                    pass
+                return
+
+            # Open (active) — include reason
+            decision = str(feats.get('decision',''))
+            reason = feats.get('diversion_reason', '')
+            q = feats.get('qscore', None)
+            comps = feats.get('qscore_components', {}) or {}
+            reason_line = None
+            if decision:
+                reason_line = f"Reason: {decision}"
+            elif reason:
+                reason_line = f"Reason: {reason}"
+            elif isinstance(q, (int,float)):
+                try:
+                    exec_min = float(((self.config.get('trend',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78))
+                    reason_line = f"Q={float(q):.1f} (< {exec_min:.0f})"
+                except Exception:
+                    reason_line = f"Q={float(q):.1f}"
+            lines = [
+                f"👻 *Trend Phantom Opened*{pid_suffix}",
+                f"{symbol} {side} | ML {ml:.1f}",
+                f"Entry: {entry:.4f}\nTP / SL: {tp:.4f} / {sl:.4f}",
+            ]
+            if reason_line:
+                lines.append(reason_line)
+            try:
+                if comps:
+                    lines.append(
+                        f"SR={comps.get('sr',0):.0f} HTF={comps.get('htf',0):.0f} BOS={comps.get('bos',0):.0f} Micro={comps.get('micro',0):.0f} Risk={comps.get('risk',0):.0f} Div={comps.get('div',0):.0f}"
+                    )
+            except Exception:
+                pass
+            await self.tg.send_message("\n".join([l for l in lines if l]))
+        except Exception as e:
+            logger.debug(f"Trend phantom notify error: {e}")
+
     async def load_or_fetch_initial_data(self, symbols:list[str], timeframe:str):
         """Load candles from database or fetch from API if not available"""
         logger.info("Loading historical data from database...")
@@ -4325,6 +4408,10 @@ class TradingBot:
                     # Initialize Enhanced Parallel ML System
                     ml_scorer = get_trend_scorer() if ('get_trend_scorer' in globals() and get_trend_scorer is not None) else None  # Trend ML
                     phantom_tracker = get_phantom_tracker()  # Phantom tracker
+                    try:
+                        phantom_tracker.set_notifier(self._notify_trend_phantom)
+                    except Exception:
+                        pass
                     enhanced_mr_scorer = get_enhanced_mr_scorer()  # Enhanced MR ML
                     mr_phantom_tracker = get_mr_phantom_tracker()  # MR phantom tracker
                     mean_reversion_scorer = None  # Not used in enhanced system
@@ -4407,6 +4494,10 @@ class TradingBot:
                     # Initialize original ML system
                     ml_scorer = get_immediate_scorer()
                     phantom_tracker = get_phantom_tracker()
+                    try:
+                        phantom_tracker.set_notifier(self._notify_trend_phantom)
+                    except Exception:
+                        pass
                     enhanced_mr_scorer = None
                     mr_phantom_tracker = None
                     mean_reversion_scorer = get_mean_reversion_scorer() # Original MR scorer
@@ -6168,6 +6259,11 @@ class TradingBot:
                                             feats = getattr(self, '_last_signal_features', {}).get(sym, {}) if hasattr(self, '_last_signal_features') else {}
                                         except Exception:
                                             feats = {}
+                                        try:
+                                            if isinstance(feats, dict):
+                                                feats = feats.copy(); feats['diversion_reason'] = 'sizing_invalid'
+                                        except Exception:
+                                            pass
                                         ph_sig = {'side': sig_obj.side, 'entry': float(sig_obj.entry), 'sl': float(sig_obj.sl), 'tp': float(sig_obj.tp)}
                                         phantom_tracker.record_signal(sym, ph_sig, float(ml_score or 0.0), False, feats, 'trend_pullback')
                                         try:

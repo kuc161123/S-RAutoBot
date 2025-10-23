@@ -465,6 +465,15 @@ class PhantomTradeTracker:
                             ph.be_moved = True
                             # Simulate SL moved to BE after TP1
                             ph.stop_loss = float(ph.entry_price)
+                            # Notify TP1 event
+                            try:
+                                if self.notifier:
+                                    setattr(ph, 'phantom_event', 'tp1')
+                                    res = self.notifier(ph)
+                                    if asyncio.iscoroutine(res):
+                                        asyncio.create_task(res)
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                     if cur_high >= ph.take_profit:
@@ -495,6 +504,15 @@ class PhantomTradeTracker:
                             ph.tp1_hit = True
                             ph.be_moved = True
                             ph.stop_loss = float(ph.entry_price)
+                            # Notify TP1 event
+                            try:
+                                if self.notifier:
+                                    setattr(ph, 'phantom_event', 'tp1')
+                                    res = self.notifier(ph)
+                                    if asyncio.iscoroutine(res):
+                                        asyncio.create_task(res)
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                     if cur_low <= ph.take_profit:

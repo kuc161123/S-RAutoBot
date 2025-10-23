@@ -49,6 +49,31 @@ def set_trend_phantom_recorder(fn):
     global _phantom_recorder
     _phantom_recorder = fn
 
+def revert_to_neutral(symbol: str):
+    """Reset the breakout state to NEUTRAL after a non-executed outcome (gate block, ML reject, etc.)."""
+    try:
+        st = breakout_states.setdefault(symbol, BreakoutState())
+        st.state = "NEUTRAL"
+        st.breakout_level = 0.0
+        st.pullback_extreme = 0.0
+        st.pullback_time = None
+        st.breakout_time = None
+        st.confirmation_count = 0
+        st.micro_state = ""
+        st.last_counter_pivot = 0.0
+        st.last_counter_time = None
+        st.bos_cross_notified = False
+        st.waiting_reason = ""
+        st.divergence_ok = False
+        st.divergence_type = "NONE"
+        st.divergence_score = 0.0
+        st.divergence_time = None
+        st.divergence_timeout_notified = False
+        st.last_executed = False
+        _persist_state(symbol, st)
+    except Exception:
+        pass
+
 def _persist_state(symbol: str, state: 'BreakoutState'):
     try:
         if not _redis_client:
@@ -976,6 +1001,10 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                                 _notify(symbol, f"🛑 Trend: [{symbol}] SR exec gate blocked — routed to phantom")
                             except Exception:
                                 pass
+                            try:
+                                revert_to_neutral(symbol)
+                            except Exception:
+                                pass
                             return None
                 except Exception:
                     pass
@@ -1305,6 +1334,10 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
                                 pass
                             try:
                                 _notify(symbol, f"🛑 Trend: [{symbol}] SR exec gate blocked — routed to phantom")
+                            except Exception:
+                                pass
+                            try:
+                                revert_to_neutral(symbol)
                             except Exception:
                                 pass
                             return None

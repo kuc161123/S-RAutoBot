@@ -4670,6 +4670,12 @@ class TradingBot:
                                     pt.record_signal(symbol, {'side': side, 'entry': float(entry), 'sl': float(sl), 'tp': float(tp)}, float(ml_score_se or 0.0), False, feats, 'trend_pullback')
                                 except Exception:
                                     pass
+                                # Reset state to NEUTRAL since not executed
+                                try:
+                                    from strategy_pullback import revert_to_neutral
+                                    revert_to_neutral(symbol)
+                                except Exception:
+                                    pass
                                 # Notify
                                 try:
                                     if self.tg:
@@ -6797,6 +6803,12 @@ class TradingBot:
                                                 )
                                         except Exception:
                                             pass
+                                        # Reset state to NEUTRAL since not executed
+                                        try:
+                                            from strategy_pullback import revert_to_neutral
+                                            revert_to_neutral(sym)
+                                        except Exception:
+                                            pass
                                         # Notify
                                         try:
                                             if self.tg:
@@ -7811,6 +7823,12 @@ class TradingBot:
                                     try:
                                         if self.tg:
                                             await self.tg.send_message(f"🛑 Trend: [{sym}] ML reject — ML {ml_score:.1f} < thr {threshold:.1f} (phantom recorded)")
+                                    except Exception:
+                                        pass
+                                    # Reset state to NEUTRAL since not executed
+                                    try:
+                                        from strategy_pullback import revert_to_neutral
+                                        revert_to_neutral(sym)
                                     except Exception:
                                         pass
                                     # Skip execution, continue to next symbol
@@ -8922,6 +8940,17 @@ class TradingBot:
                                         features=feats_sf,
                                         strategy_name=selected_strategy
                                     )
+                            except Exception:
+                                pass
+                            try:
+                                from strategy_pullback import revert_to_neutral
+                                revert_to_neutral(sym)
+                            except Exception:
+                                pass
+                            # Notify stale diversion
+                            try:
+                                if self.tg:
+                                    await self.tg.send_message(f"🛑 Trend: [{sym}] Stale feed (> {max_lag}s) — routed to phantom")
                             except Exception:
                                 pass
                             continue

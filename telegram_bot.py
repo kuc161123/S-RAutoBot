@@ -388,6 +388,14 @@ class TGBot:
                 lines.append(f"• Timeouts: confirm {conf_bars} bars | Phantom {(getattr(self.shared.get('phantom_tracker'), 'timeout_hours', 0) or 0)}h")
             except Exception:
                 pass
+            # Range Execute snapshot
+            try:
+                rg = (cfg.get('range', {}) or {})
+                rx = (rg.get('exec', {}) or {})
+                status = 'On' if rx.get('enabled', False) and not rg.get('phantom_only', True) else 'Off'
+                lines.append(f"• Range Exec: {status} | Risk {float(rx.get('risk_percent',0.0)):.2f}% | Daily cap {int(rx.get('daily_cap',0))}")
+            except Exception:
+                pass
         except Exception:
             pass
 

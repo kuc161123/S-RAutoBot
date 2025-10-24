@@ -3840,21 +3840,36 @@ class TradingBot:
                                         # Do not default unknown to any ML. Log and skip.
                                         logger.info(f"[{symbol}] 🛑 Unknown strategy — skipping ML update (no default routing)")
                                 else:
-                                    # Route only if clearly Trend; never route Scalp or unknown/other to Trend ML
+                                    # Range route or Trend ML
                                     strat_l = str(getattr(pos, 'strategy_name','')).lower()
-                                    if strat_l == 'scalp':
-                                        logger.info(f"[{symbol}] ⚙️ Scalp outcome handled by Scalp phantom tracker; skipping ML update")
-                                    elif strat_l in ('trend_pullback','trend_breakout'):
-                                        logger.info(f"[{symbol}] 🔵 TREND STRATEGY detected")
-                                        if ml_scorer is not None:
+                                    if strat_l.startswith('range'):
+                                        try:
+                                            from ml_scorer_range import get_range_scorer
+                                            rml = get_range_scorer()
                                             try:
                                                 signal_data['was_executed'] = True
                                             except Exception:
                                                 pass
-                                            ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
-                                            logger.info(f"[{symbol}] Trend ML updated with outcome.")
+                                            rml.record_outcome(signal_data, outcome, pnl_pct)
+                                            logger.info(f"[{symbol}] Range ML updated with outcome.")
+                                        except Exception as e:
+                                            logger.debug(f"[{symbol}] Range ML update failed: {e}")
                                     else:
-                                        logger.info(f"[{symbol}] 🛑 Non-trend strategy '{strat_l}' — skipping Trend ML update")
+                                        # Route only if clearly Trend; never route Scalp or unknown/other to Trend ML
+                                        strat_l = str(getattr(pos, 'strategy_name','')).lower()
+                                        if strat_l == 'scalp':
+                                            logger.info(f"[{symbol}] ⚙️ Scalp outcome handled by Scalp phantom tracker; skipping ML update")
+                                        elif strat_l in ('trend_pullback','trend_breakout'):
+                                            logger.info(f"[{symbol}] 🔵 TREND STRATEGY detected")
+                                            if ml_scorer is not None:
+                                                try:
+                                                    signal_data['was_executed'] = True
+                                                except Exception:
+                                                    pass
+                                                ml_scorer.record_outcome(signal_data, outcome, pnl_pct)
+                                                logger.info(f"[{symbol}] Trend ML updated with outcome.")
+                                        else:
+                                            logger.info(f"[{symbol}] 🛑 Non-trend strategy '{strat_l}' — skipping Trend ML update")
                             else:
                                 # Robust routing by strategy_name when enhanced path isn't active
                                 if not skip_ml_update_manual:
@@ -5974,7 +5989,7 @@ class TradingBot:
         except Exception:
             pass
 
-        # Start Range FBO phantom-only background scanner
+        # Start Range FBO scanner (phantom-first; can execute when enabled)
         try:
             if bool(((cfg.get('range', {}) or {}).get('enabled', True))):
                 async def _range_fbo_scanner():
@@ -6016,13 +6031,55 @@ class TradingBot:
                                         feats['rc15'] = float(comp.get('rc15', 0.0)); feats['rc60'] = float(comp.get('rc60', 0.0))
                                     except Exception:
                                         pass
-                                    # Record phantom
-                                    try:
-                                        from phantom_trade_tracker import get_phantom_tracker
-                                        pt = get_phantom_tracker()
-                                        pt.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, False, feats, 'range_fbo')
-                                    except Exception:
-                                        pass
+                                    exec_cfg = (settings.get('exec') or {})
+                                    exec_enabled = bool(exec_cfg.get('enabled', False)) and not bool(settings.get('phantom_only', True))
+                                    did_execute = False
+                                    # Range exec gating
+                                    if exec_enabled:
+                                        try:
+                                            # Existing position guard
+                                            if sym not in self.book.positions:
+                                                # Daily cap
+                                                if not hasattr(self, '_range_exec_counter'):
+                                                    self._range_exec_counter = {'day': None, 'count': 0}
+                                                from datetime import datetime as _dt
+                                                day_str = _dt.utcnow().strftime('%Y%m%d')
+                                                if self._range_exec_counter['day'] != day_str:
+                                                    self._range_exec_counter = {'day': day_str, 'count': 0}
+                                                if self._range_exec_counter['count'] < int(exec_cfg.get('daily_cap', 3)):
+                                                    # Simple HTF neutrality gate: avoid strong trend
+                                                    t15 = float(feats.get('ts15', 0.0)); t60 = float(feats.get('ts60', 0.0))
+                                                    if max(t15, t60) < 60 and q >= float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):
+                                                        # Execute using shared runner when ready
+                                                        if hasattr(self, '_range_exec_runner'):
+                                                            try:
+                                                                # Temporarily adjust risk percent if provided
+                                                                old_risk = None
+                                                                try:
+                                                                    old_risk = self.sizer.risk.risk_percent
+                                                                    self.sizer.risk.risk_percent = float(exec_cfg.get('risk_percent', old_risk or 1.0))
+                                                                except Exception:
+                                                                    pass
+                                                                await self._range_exec_runner(sig, q)
+                                                                did_execute = True
+                                                            finally:
+                                                                try:
+                                                                    if old_risk is not None:
+                                                                        self.sizer.risk.risk_percent = old_risk
+                                                                except Exception:
+                                                                    pass
+                                                            if did_execute:
+                                                                self._range_exec_counter['count'] += 1
+                                        except Exception:
+                                            did_execute = False
+                                    if not did_execute:
+                                        # Record phantom
+                                        try:
+                                            from phantom_trade_tracker import get_phantom_tracker
+                                            pt = get_phantom_tracker()
+                                            pt.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, False, feats, 'range_fbo')
+                                        except Exception:
+                                            pass
                                     # Decision message
                                     try:
                                         comps = f"RNG={qc.get('rng',0):.0f} FBO={qc.get('fbo',0):.0f} PROX={qc.get('prox',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f}"
@@ -6093,6 +6150,15 @@ class TradingBot:
                 logger.info(f"🧪 Secondary 3m stream started (tf={scalp_stream_tf}m) — sources: {'Scalp' if use_scalp else ''}{' + ' if use_scalp and use_3m_for_context else ''}{'Context' if use_3m_for_context else ''}")
             except Exception as e:
                 logger.warning(f"Failed to start scalp secondary stream: {e}")
+
+        # Range execute runner wrapper (available to background scanner after this point)
+        async def _range_exec_runner(sig_obj, qscore: float = 0.0):
+            thr = float((((cfg.get('range', {}) or {}).get('rule_mode', {}) or {}).get('execute_q_min', 78)))
+            return await _try_execute('range_fbo', sig_obj, ml_score=0.0, threshold=thr)
+        try:
+            self._range_exec_runner = _range_exec_runner
+        except Exception:
+            pass
 
         # Start streaming
         async for sym, k in stream:

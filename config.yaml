@@ -262,7 +262,7 @@ router:
 # Range FBO (failed breakout) strategy — start phantom-only
 range:
   enabled: true
-  phantom_only: true      # Record all range FBO signals as phantoms
+  phantom_only: false      # Allow execution when exec.enabled=true
   lookback: 40            # bars for range bands
   width_min_pct: 0.01     # min 1% band width
   width_max_pct: 0.08     # max 8% band width
@@ -274,6 +274,11 @@ range:
     cooldown_min: 30      # suppress repeated handoffs per symbol
     require_close_inside: true
     notify_suppress: true
+  exec:
+    enabled: true
+    risk_percent: 0.5
+    daily_cap: 3
+    allow_stream_entry: false
   rule_mode:
     execute_q_min: 78     # kept for symmetry; exec remains disabled initially
     phantom_q_min: 60
@@ -283,6 +288,11 @@ range:
       prox: 0.15          # proximity to band/mid
       micro: 0.10         # 3m micro reversal alignment
       risk: 0.15          # risk geometry
+  ml_influence:
+    enabled: false
+    min_records: 400
+    min_executed: 60
+    margin_points: 3
     # Thresholds for per-strategy HTF gating
     trend:
       min_trend_strength: 68.0  # require HTF trend_strength ≥ this to allow Trend (tighter)

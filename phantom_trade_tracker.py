@@ -685,12 +685,31 @@ class PhantomTradeTracker:
             except Exception as e:
                 logger.warning(f"[{symbol}] Failed to record phantom data: {e}")
         
-        # Feed phantom trade outcome to Trend ML for training when applicable
-        # Feed Trend ML only for non-timeout outcomes
+        # Feed phantom trade outcome to ML (Trend/Range) when applicable (non-timeout)
         if not phantom.was_executed and str(getattr(phantom, 'exit_reason', '')) != 'timeout':
             try:
-                if getattr(phantom, 'strategy_name', '') in ('trend_breakout','trend_pullback'):
+                strat = str(getattr(phantom, 'strategy_name', '') or '')
+                if strat in ('trend_breakout','trend_pullback'):
                     self._feed_phantom_to_trend_ml(phantom)
+                elif strat.startswith('range'):
+                    try:
+                        from ml_scorer_range import get_range_scorer
+                        rml = get_range_scorer()
+                        signal_data = {
+                            'side': phantom.side,
+                            'entry': phantom.entry_price,
+                            'sl': phantom.stop_loss,
+                            'tp': phantom.take_profit,
+                            'symbol': phantom.symbol,
+                            'features': {**(phantom.features or {})},
+                            'score': phantom.ml_score,
+                            'timestamp': phantom.signal_time,
+                            'was_executed': False,
+                            'exit_reason': getattr(phantom, 'exit_reason', None)
+                        }
+                        rml.record_outcome(signal_data, phantom.outcome, phantom.pnl_percent)
+                    except Exception as e:
+                        logger.debug(f"Range phantom ML feed error: {e}")
             except Exception:
                 pass
 

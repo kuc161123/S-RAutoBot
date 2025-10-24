@@ -2969,6 +2969,99 @@ class TradingBot:
         except Exception as e:
             logger.debug(f"Trend phantom notify error: {e}")
 
+    def _trend_invalidation_handoff(self, symbol: str, info: dict):
+        """Soft handoff from Trend invalidation to Range phantom (one-shot, guarded)."""
+        try:
+            cfg = self.config if hasattr(self, 'config') else {}
+            rcfg = (cfg.get('range', {}) or {})
+            hcfg = (rcfg.get('handoff', {}) or {})
+            if not bool(rcfg.get('enabled', True)) or not bool(hcfg.get('enabled', True)):
+                return
+            # Cooldown
+            if not hasattr(self, '_range_handoff_last'):
+                self._range_handoff_last = {}
+            import time, asyncio as _asyncio
+            now = time.time()
+            cd_min = int(hcfg.get('cooldown_min', 30))
+            last = float(self._range_handoff_last.get(symbol, 0))
+            if last and (now - last) < cd_min * 60:
+                if bool(hcfg.get('notify_suppress', True)) and self.tg:
+                    try:
+                        left = int(cd_min*60 - (now-last))
+                        _asyncio.create_task(self.tg.send_message(f"📦 Range handoff suppressed: {symbol} cooldown {left//60}m"))
+                    except Exception:
+                        pass
+                return
+            df = self.frames.get(symbol)
+            if df is None or df.empty:
+                return
+            # Run one-shot range detection
+            try:
+                from strategy_range_fbo import detect_range_fbo_signal
+                sig = detect_range_fbo_signal(df, rcfg, symbol)
+            except Exception:
+                sig = None
+            if not sig:
+                return
+            # Qscore_range
+            try:
+                q, qc, qr = self._compute_qscore_range(symbol, sig.side, df, self.frames_3m.get(symbol) if hasattr(self, 'frames_3m') else None)
+            except Exception:
+                q, qc, qr = 50.0, {}, []
+            feats = {
+                'handoff': True,
+                'handoff_reason': 'trend_invalidation',
+                'breakout_level': float(info.get('breakout_level', 0.0) or 0.0),
+                'qscore': float(q),
+                'qscore_components': dict(qc),
+                'qscore_reasons': list(qr)
+            }
+            # Range features
+            try:
+                feats.update({
+                    'range_high': float(sig.meta.get('range_high', 0.0)),
+                    'range_low': float(sig.meta.get('range_low', 0.0)),
+                    'range_mid': float(sig.meta.get('range_mid', 0.0)),
+                    'range_width_pct': float(sig.meta.get('range_width_pct', 0.0)),
+                    'fbo_type': str(sig.meta.get('fbo_type','')),
+                    'wick_ratio': float(sig.meta.get('wick_ratio', 0.0)),
+                    'retest_ok': bool(sig.meta.get('retest_ok', False))
+                })
+            except Exception:
+                pass
+            try:
+                comp = self._get_htf_metrics(symbol, df)
+                feats['ts15'] = float(comp.get('ts15', 0.0)); feats['ts60'] = float(comp.get('ts60', 0.0))
+                feats['rc15'] = float(comp.get('rc15', 0.0)); feats['rc60'] = float(comp.get('rc60', 0.0))
+            except Exception:
+                pass
+            # Record phantom
+            try:
+                from phantom_trade_tracker import get_phantom_tracker
+                pt = get_phantom_tracker()
+                pt.record_signal(symbol, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, False, feats, 'range_fbo')
+            except Exception:
+                pass
+            # Notify + events
+            try:
+                comps = f"RNG={qc.get('rng',0):.0f} FBO={qc.get('fbo',0):.0f} PROX={qc.get('prox',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f}"
+                if self.tg:
+                    _asyncio.create_task(self.tg.send_message(f"📦 Range Handoff PHANTOM: [{symbol}] Q={q:.1f} (from Trend invalidation)\n{comps}"))
+                evts = self.shared.get('trend_events')
+                if isinstance(evts, list):
+                    from datetime import datetime as _dt
+                    evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': symbol, 'text': f"Range Handoff PHANTOM Q={q:.1f}"})
+                    if len(evts) > 60:
+                        del evts[:len(evts)-60]
+            except Exception:
+                pass
+            self._range_handoff_last[symbol] = now
+        except Exception as e:
+            try:
+                logger.debug(f"Range handoff error for {symbol}: {e}")
+            except Exception:
+                pass
+
     def _compute_qscore_range(self, symbol: str, side: str, df15: 'pd.DataFrame', df3: 'pd.DataFrame' = None) -> tuple[float, dict, list[str]]:
         """Compute range FBO quality score (0–100) with components.
 
@@ -4851,7 +4944,7 @@ class TradingBot:
 
                 # Wire Trend event notifications to Telegram
                 try:
-                    from strategy_pullback import set_trend_event_notifier, set_trend_microframe_provider, set_trend_entry_executor, set_trend_phantom_recorder
+                    from strategy_pullback import set_trend_event_notifier, set_trend_microframe_provider, set_trend_entry_executor, set_trend_phantom_recorder, set_trend_invalidation_hook
                     def _trend_notifier(symbol: str, text: str):
                         try:
                             # Fire-and-forget send to Telegram
@@ -4979,6 +5072,11 @@ class TradingBot:
                             except Exception:
                                 pass
                         set_trend_phantom_recorder(_trend_phantom_cb)
+                    except Exception:
+                        pass
+                    # Wire Trend invalidation handoff to Range phantom
+                    try:
+                        set_trend_invalidation_hook(self._trend_invalidation_handoff)
                     except Exception:
                         pass
                     # Provide stream-side entry executor to strategy (3m execution)

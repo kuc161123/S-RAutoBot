@@ -268,6 +268,12 @@ range:
   width_max_pct: 0.08     # max 8% band width
   reentry_max_bars: 4     # must re-enter within K bars
   sl_atr_buf: 0.6         # SL buffer in ATR
+  handoff:
+    enabled: true
+    max_bars: 2           # only trigger within this many bars of invalidation
+    cooldown_min: 30      # suppress repeated handoffs per symbol
+    require_close_inside: true
+    notify_suppress: true
   rule_mode:
     execute_q_min: 78     # kept for symmetry; exec remains disabled initially
     phantom_q_min: 60

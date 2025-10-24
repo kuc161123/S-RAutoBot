@@ -20,6 +20,7 @@ _event_notifier = None  # type: Optional[callable]
 _redis_client = None    # type: Optional[object]
 _entry_executor = None  # type: Optional[callable]
 _phantom_recorder = None  # type: Optional[callable]
+_invalidation_hook = None  # type: Optional[callable]
 
 def set_trend_event_notifier(fn):
     """Register a notifier callback taking (symbol:str, text:str)."""
@@ -48,6 +49,11 @@ def set_trend_phantom_recorder(fn):
     """Register phantom recorder: fn(symbol, side, entry, sl, tp, meta_dict)"""
     global _phantom_recorder
     _phantom_recorder = fn
+
+def set_trend_invalidation_hook(fn):
+    """Register invalidation hook: fn(symbol, info: dict) called on breakout invalidation/reset."""
+    global _invalidation_hook
+    _invalidation_hook = fn
 
 def revert_to_neutral(symbol: str):
     """Reset the breakout state to NEUTRAL after a non-executed outcome (gate block, ML reject, etc.)."""
@@ -796,6 +802,16 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             if c < (state.breakout_level - s.breakout_buffer_atr * atr15):
                 msg = f"[{symbol}] Invalidation: fell below breakout buffer, reset"
                 logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
+                try:
+                    if _invalidation_hook is not None:
+                        info = {
+                            'breakout_level': float(state.breakout_level or 0.0),
+                            'direction': 'long',
+                            'breakout_time': str(state.breakout_time) if state.breakout_time else ''
+                        }
+                        _invalidation_hook(symbol, info)
+                except Exception:
+                    pass
                 state.state = "NEUTRAL"; state.confirmation_count = 0; state.micro_state = ""; state.retest_ok=False; state.last_counter_pivot=0.0; state.bos_cross_notified=False; state.waiting_reason=""; state.bos_cross_time=None
                 _persist_state(symbol, state)
                 return None
@@ -1142,6 +1158,16 @@ def detect_signal_pullback(df:pd.DataFrame, s:Settings, symbol:str="") -> Option
             if c > (state.breakout_level + s.breakout_buffer_atr * atr15):
                 msg = f"[{symbol}] Invalidation: rose above breakout buffer, reset"
                 logger.info(msg); _notify(symbol, f"🛑 Trend: {msg}")
+                try:
+                    if _invalidation_hook is not None:
+                        info = {
+                            'breakout_level': float(state.breakout_level or 0.0),
+                            'direction': 'short',
+                            'breakout_time': str(state.breakout_time) if state.breakout_time else ''
+                        }
+                        _invalidation_hook(symbol, info)
+                except Exception:
+                    pass
                 state.state = "NEUTRAL"; state.confirmation_count = 0; state.micro_state = ""; state.retest_ok=False; state.last_counter_pivot=0.0; state.bos_cross_notified=False; state.waiting_reason=""; state.bos_cross_time=None
                 _persist_state(symbol, state)
                 return None

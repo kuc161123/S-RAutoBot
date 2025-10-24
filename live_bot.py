@@ -2933,7 +2933,11 @@ class TradingBot:
                 reason_line = f"Reason: {reason}"
             elif isinstance(q, (int,float)):
                 try:
-                    exec_min = float(((self.config.get('trend',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78))
+                    # Use per-strategy thresholds
+                    if label_title.startswith('Range'):
+                        exec_min = float((((self.config.get('range',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
+                    else:
+                        exec_min = float(((self.config.get('trend',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78))
                     reason_line = f"Q={float(q):.1f} (< {exec_min:.0f})"
                 except Exception:
                     reason_line = f"Q={float(q):.1f}"

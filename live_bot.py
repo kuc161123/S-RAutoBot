@@ -2981,9 +2981,17 @@ class TradingBot:
                 lines.append(reason_line)
             try:
                 if comps:
-                    lines.append(
-                        f"SR={comps.get('sr',0):.0f} HTF={comps.get('htf',0):.0f} BOS={comps.get('bos',0):.0f} Micro={comps.get('micro',0):.0f} Risk={comps.get('risk',0):.0f} Div={comps.get('div',0):.0f}"
-                    )
+                    # Display Qscore components per strategy to avoid confusion
+                    if label_title.startswith('Range'):
+                        # Range components: rng, fbo, prox, micro, risk, sr
+                        lines.append(
+                            f"RNG={comps.get('rng',0):.0f} FBO={comps.get('fbo',0):.0f} PROX={comps.get('prox',0):.0f} Micro={comps.get('micro',0):.0f} Risk={comps.get('risk',0):.0f} SR={comps.get('sr',0):.0f}"
+                        )
+                    else:
+                        # Trend components: sr, htf, bos, micro, risk, div
+                        lines.append(
+                            f"SR={comps.get('sr',0):.0f} HTF={comps.get('htf',0):.0f} BOS={comps.get('bos',0):.0f} Micro={comps.get('micro',0):.0f} Risk={comps.get('risk',0):.0f} Div={comps.get('div',0):.0f}"
+                        )
             except Exception:
                 pass
             # De-dup open by phantom_id
@@ -6028,6 +6036,11 @@ class TradingBot:
                 async def _range_fbo_scanner():
                     from strategy_range_fbo import detect_range_fbo_signal
                     settings = cfg.get('range', {}) or {}
+                    # Heartbeat control (lightweight "no FBO" per 15m bar)
+                    log_cfg = (settings.get('logging') or {})
+                    hb_enabled = bool(log_cfg.get('heartbeat', False))
+                    decision_only = bool(log_cfg.get('decision_only', False))
+                    last_bar_ts = {}
                     while self.running:
                         try:
                             for sym in list(symbols):
@@ -6035,8 +6048,35 @@ class TradingBot:
                                     df = self.frames.get(sym)
                                     if df is None or df.empty:
                                         continue
+                                    # Track once-per-bar heartbeat per symbol
+                                    bar_ts = None
+                                    try:
+                                        bar_ts = df.index[-1]
+                                    except Exception:
+                                        bar_ts = None
                                     sig = detect_range_fbo_signal(df, settings, sym)
                                     if not sig:
+                                        # Optional per-bar heartbeat when no signal
+                                        try:
+                                            if hb_enabled and not decision_only and bar_ts is not None:
+                                                prev_ts = last_bar_ts.get(sym)
+                                                if prev_ts != bar_ts:
+                                                    # Compute a couple of light diagnostics for context
+                                                    try:
+                                                        lookback = int((settings.get('lookback') or 40))
+                                                    except Exception:
+                                                        lookback = 40
+                                                    try:
+                                                        high = df['high']; low = df['low']
+                                                        rng_high = float(high.rolling(lookback).max().iloc[-2]) if len(high) >= lookback+2 else 0.0
+                                                        rng_low = float(low.rolling(lookback).min().iloc[-2]) if len(low) >= lookback+2 else 0.0
+                                                        width_pct = ((rng_high - rng_low) / max(1e-9, rng_low)) if (rng_high > rng_low > 0) else 0.0
+                                                        logger.info(f"[{sym}] 📦 Range: no FBO (width={width_pct*100.0:.1f}% bounds={rng_low:.4f}-{rng_high:.4f})")
+                                                    except Exception:
+                                                        logger.info(f"[{sym}] 📦 Range: no FBO")
+                                                    last_bar_ts[sym] = bar_ts
+                                        except Exception:
+                                            pass
                                         continue
                                     # Phantom-only routing
                                     try:
@@ -6237,7 +6277,14 @@ class TradingBot:
                         except Exception:
                             break
                 self._create_task(_range_fbo_scanner())
-                logger.info("📦 Range FBO phantom-only scanner started")
+                try:
+                    # Reflect current exec/phantom settings in startup log for clarity
+                    settings = cfg.get('range', {}) or {}
+                    exec_cfg = (settings.get('exec') or {})
+                    exec_enabled = bool(exec_cfg.get('enabled', False)) and not bool(settings.get('phantom_only', True))
+                    logger.info(f"📦 Range FBO scanner started (exec={'ON' if exec_enabled else 'OFF'}, phantom_only={bool(settings.get('phantom_only', True))})")
+                except Exception:
+                    logger.info("📦 Range FBO scanner started")
         except Exception as e:
             logger.debug(f"Range scanner start failed: {e}")
         
@@ -6462,8 +6509,8 @@ class TradingBot:
                     except Exception:
                         pass
 
-                    # Auto-save to database every 15 minutes
-                    if (datetime.now() - self.last_save_time).total_seconds() > 900:
+                    # Auto-save to database every 2 minutes (reduce data loss on disconnects)
+                    if (datetime.now() - self.last_save_time).total_seconds() > 120:
                         await self.save_all_candles()
                         self.last_save_time = datetime.now()
                 

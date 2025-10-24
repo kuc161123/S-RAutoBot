@@ -3137,7 +3137,7 @@ class TradingBot:
     def _compute_qscore_range(self, symbol: str, side: str, df15: 'pd.DataFrame', df3: 'pd.DataFrame' = None) -> tuple[float, dict, list[str]]:
         """Compute range FBO quality score (0–100) with components.
 
-        Components: rng (35), fbo (25), prox (15), micro (10), risk (15)
+        Components: rng (35), fbo (25), prox (15), micro (10), risk (10), sr (5)
         """
         comp = {}; reasons = []
         try:
@@ -3202,14 +3202,47 @@ class TradingBot:
                 comp['micro'] = 50.0
             # Risk geometry: mid band widths are safer
             comp['risk'] = 80.0 if 0.01 <= width_pct <= 0.08 else 50.0
+            # SR confluence (HTF S/R near band edge)
+            try:
+                from multi_timeframe_sr import mtf_sr
+                # Compute ATR(14) for normalization
+                prev = cl.shift()
+                tr = np.maximum(high - low, np.maximum((high - prev).abs(), (low - prev).abs()))
+                atr14 = float(tr.rolling(14).mean().iloc[-1]) if len(tr) >= 14 else float(tr.iloc[-1])
+                sr_cfg = (((self.config.get('range', {}) or {}).get('sr_confluence', {}) or {}))
+                max_da = float(sr_cfg.get('max_dist_atr', 0.3))
+                vlevels = mtf_sr.get_price_validated_levels(symbol, price)
+                # Choose relevant band edge and level type
+                if side == 'short':
+                    edge = rng_high
+                    levels = [(lv, st) for (lv, st, t) in vlevels if t == 'resistance']
+                else:
+                    edge = rng_low
+                    levels = [(lv, st) for (lv, st, t) in vlevels if t == 'support']
+                sr_score = 50.0
+                if levels and atr14 > 0:
+                    level, strength = min(levels, key=lambda x: abs(x[0] - edge))
+                    dist_atr = abs(level - edge) / atr14
+                    # Map distance to score: 0 ATR -> 100, max_da ATR -> 0 (clipped)
+                    sr_score = max(0.0, min(100.0, (1.0 - (dist_atr / max(1e-9, max_da))) * 100.0))
+                    # mild boost by strength proxy (cap small)
+                    try:
+                        sr_score = min(100.0, sr_score + min(10.0, float(strength) * 2.0))
+                    except Exception:
+                        pass
+                comp['sr'] = sr_score
+            except Exception as _sre:
+                comp['sr'] = 50.0
+                reasons.append(f'sr:error:{_sre}')
+
             # Weighted sum
             try:
                 wcfg = (((self.config.get('range', {}) or {}).get('rule_mode', {}) or {}).get('weights', {}) or {})
-                wr = float(wcfg.get('rng', 0.35)); wf = float(wcfg.get('fbo', 0.25)); wp = float(wcfg.get('prox', 0.15)); wm = float(wcfg.get('micro', 0.10)); wk = float(wcfg.get('risk', 0.15))
-                s = max(1e-9, wr + wf + wp + wm + wk); wr/=s; wf/=s; wp/=s; wm/=s; wk/=s
+                wr = float(wcfg.get('rng', 0.35)); wf = float(wcfg.get('fbo', 0.25)); wp = float(wcfg.get('prox', 0.15)); wm = float(wcfg.get('micro', 0.10)); wk = float(wcfg.get('risk', 0.10)); ws = float(wcfg.get('sr', 0.05))
+                s = max(1e-9, wr + wf + wp + wm + wk + ws); wr/=s; wf/=s; wp/=s; wm/=s; wk/=s; ws/=s
             except Exception:
-                wr,wf,wp,wm,wk = 0.35,0.25,0.15,0.10,0.15
-            q = wr*comp.get('rng',50.0) + wf*comp.get('fbo',50.0) + wp*comp.get('prox',50.0) + wm*comp.get('micro',50.0) + wk*comp.get('risk',50.0)
+                wr,wf,wp,wm,wk,ws = 0.35,0.25,0.15,0.10,0.10,0.05
+            q = wr*comp.get('rng',50.0) + wf*comp.get('fbo',50.0) + wp*comp.get('prox',50.0) + wm*comp.get('micro',50.0) + wk*comp.get('risk',50.0) + ws*comp.get('sr',50.0)
             return max(0.0, min(100.0, float(q))), comp, reasons
         except Exception as e:
             return 50.0, {}, [f'qr:error:{e}']
@@ -6031,6 +6064,31 @@ class TradingBot:
                                         feats['rc15'] = float(comp.get('rc15', 0.0)); feats['rc60'] = float(comp.get('rc60', 0.0))
                                     except Exception:
                                         pass
+                                    # SR confluence details and optional TP2 snapping
+                                    try:
+                                        sr_cfg = ((settings.get('sr_confluence') or {}))
+                                        if bool(sr_cfg.get('enabled', True)):
+                                            from multi_timeframe_sr import mtf_sr
+                                            # ATR(14)
+                                            prev = df['close'].shift()
+                                            trarr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                                            atr14 = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
+                                            levels = mtf_sr.get_price_validated_levels(sym, float(df['close'].iloc[-1]))
+                                            edge = float(feats.get('range_high') if sig.side=='short' else feats.get('range_low'))
+                                            # Filter appropriate type
+                                            lvlist = [(lv, st, t) for (lv, st, t) in levels if (t=='resistance' if sig.side=='short' else t=='support')]
+                                            if lvlist and atr14>0:
+                                                level, strength, ltype = min(lvlist, key=lambda x: abs(x[0] - edge))
+                                                dist_atr = abs(level - edge) / atr14
+                                                feats['sr_confluence'] = {'edge': 'high' if sig.side=='short' else 'low', 'level': float(level), 'strength': float(strength), 'type': ltype, 'dist_atr': float(dist_atr)}
+                                                # Optional TP2 snapping
+                                                if bool(sr_cfg.get('snap_tp2', True)) and dist_atr <= float(sr_cfg.get('max_dist_atr', 0.30)):
+                                                    try:
+                                                        sig.tp = float(level)
+                                                    except Exception:
+                                                        pass
+                                    except Exception:
+                                        pass
                                     # Verbose range analysis log (optional)
                                     try:
                                         log_cfg = (settings.get('logging') or {})
@@ -6064,7 +6122,14 @@ class TradingBot:
                                                 if self._range_exec_counter['count'] < int(exec_cfg.get('daily_cap', 3)):
                                                     # Simple HTF neutrality gate: avoid strong trend
                                                     t15 = float(feats.get('ts15', 0.0)); t60 = float(feats.get('ts60', 0.0))
-                                                    if max(t15, t60) < 60 and q >= float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):
+                                                    sr_ok = True
+                                                    try:
+                                                        src = feats.get('sr_confluence', {}) or {}
+                                                        if src and float(src.get('dist_atr', 1.0)) > float((settings.get('sr_confluence') or {}).get('max_dist_atr', 0.30)) and bool((settings.get('sr_confluence') or {}).get('required', False)):
+                                                            sr_ok = False
+                                                    except Exception:
+                                                        sr_ok = True
+                                                    if max(t15, t60) < 60 and sr_ok and q >= float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):
                                                         # Execute using shared runner when ready
                                                         if hasattr(self, '_range_exec_runner'):
                                                             try:
@@ -6117,7 +6182,7 @@ class TradingBot:
                                             pass
                                     # Decision message
                                     try:
-                                        comps = f"RNG={qc.get('rng',0):.0f} FBO={qc.get('fbo',0):.0f} PROX={qc.get('prox',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f}"
+                                        comps = f"RNG={qc.get('rng',0):.0f} FBO={qc.get('fbo',0):.0f} PROX={qc.get('prox',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f} SR={qc.get('sr',0):.0f}"
                                         if self.tg:
                                             # Regime label from comps
                                             try:

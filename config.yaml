@@ -290,12 +290,18 @@ range:
       fbo: 0.25           # FBO strength (wick/vol spike)
       prox: 0.15          # proximity to band/mid
       micro: 0.10         # 3m micro reversal alignment
-      risk: 0.15          # risk geometry
+      risk: 0.10          # risk geometry
+      sr: 0.05            # HTF S/R confluence with band edge
   ml_influence:
     enabled: false
     min_records: 400
     min_executed: 60
     margin_points: 3
+  sr_confluence:
+    enabled: true
+    max_dist_atr: 0.30     # consider confluence when band edge within 0.3 ATR of HTF level
+    required: false        # hard gate execution on SR proximity (soft by default)
+    snap_tp2: true         # if strong SR is nearer than band, use it as TP2
     # Thresholds for per-strategy HTF gating
     trend:
       min_trend_strength: 68.0  # require HTF trend_strength ≥ this to allow Trend (tighter)

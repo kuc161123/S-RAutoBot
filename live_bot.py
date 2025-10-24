@@ -2995,6 +2995,22 @@ class TradingBot:
             df = self.frames.get(symbol)
             if df is None or df.empty:
                 return
+            # Guard strictly by bars since breakout_time
+            try:
+                max_bars = int(hcfg.get('max_bars', 2))
+            except Exception:
+                max_bars = 2
+            try:
+                bt_s = info.get('breakout_time') if isinstance(info, dict) else None
+                bars_since = None
+                if bt_s:
+                    import pandas as pd
+                    bt = pd.Timestamp(bt_s)
+                    bars_since = int((df.index >= bt).sum())
+                    if bars_since > max_bars:
+                        return
+            except Exception:
+                pass
             # Run one-shot range detection
             try:
                 from strategy_range_fbo import detect_range_fbo_signal
@@ -3016,6 +3032,23 @@ class TradingBot:
                 'qscore_components': dict(qc),
                 'qscore_reasons': list(qr)
             }
+            # Stamp handoff timing and invalidation distance (ATR)
+            try:
+                if bt_s and bars_since is not None:
+                    feats['bars_since_breakout'] = int(bars_since)
+            except Exception:
+                pass
+            try:
+                # Compute invalidation distance in ATR units using last close vs breakout_level
+                prev = df['close'].shift()
+                import numpy as np
+                trarr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                atr14 = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
+                last_px = float(df['close'].iloc[-1])
+                bl = float(info.get('breakout_level', 0.0) or 0.0)
+                feats['invalidation_dist_atr'] = float(abs(last_px - bl) / max(1e-9, atr14))
+            except Exception:
+                pass
             # Range features
             try:
                 feats.update({

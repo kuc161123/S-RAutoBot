@@ -6140,6 +6140,15 @@ class TradingBot:
                                                                     self.sizer.risk.risk_percent = float(exec_cfg.get('risk_percent', old_risk or 1.0))
                                                                 except Exception:
                                                                     pass
+                                                                # Pre-exec decision notification
+                                                                try:
+                                                                    if self.tg:
+                                                                        msg = f"🟢 Range EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):.1f})\n{comps}"
+                                                                        if regime_label:
+                                                                            msg += f"\nRegime: {regime_label}"
+                                                                        await self.tg.send_message(msg)
+                                                                except Exception:
+                                                                    pass
                                                                 await self._range_exec_runner(sig, q)
                                                                 did_execute = True
                                                             finally:
@@ -6171,6 +6180,15 @@ class TradingBot:
                                                         reason = 'daily_cap'
                                                 if reason:
                                                     logger.info(f"[{sym}] 🧮 Range decision: phantom (reason={reason})")
+                                                    # Telegram notify for blocked reasons (non-q) to mirror Trend behavior
+                                                    try:
+                                                        if self.tg and reason != 'q<thr':
+                                                            msg = f"🛑 Range: [{sym}] EXEC blocked (reason={reason}) — phantom recorded"
+                                                            if regime_label:
+                                                                msg += f"\nRegime: {regime_label}"
+                                                            await self.tg.send_message(msg)
+                                                    except Exception:
+                                                        pass
                                         except Exception:
                                             pass
                                         # Record phantom
@@ -7212,7 +7230,7 @@ class TradingBot:
                                 is_high_ml = bool(isinstance(getattr(sig_obj, 'meta', {}), dict) and sig_obj.meta.get('high_ml'))
                                 if self.tg and is_high_ml:
                                     emoji = '📈'
-                                    strategy_label = 'Enhanced Mr' if strategy_name=='enhanced_mr' else 'Trend Pullback'
+                                    strategy_label = 'Enhanced Mr' if strategy_name=='enhanced_mr' else ('Range Fbo' if strategy_name=='range_fbo' else 'Trend Pullback')
                                     # Include scale-out info if available
                                     so = getattr(self, '_scaleout', {}).get(sym) if hasattr(self, '_scaleout') else None
                                     if so and 'tp1' in so and 'tp2' in so:
@@ -10477,7 +10495,7 @@ class TradingBot:
                         sig.sl,
                         sig.tp,
                         datetime.now(),
-                        strategy_name=selected_strategy,
+                        strategy_name=(strategy_name if strategy_name in ('range_fbo','trend_pullback','enhanced_mr','scalp','mean_reversion') else selected_strategy),
                         ml_score=float(ml_score),
                         ml_reason=ml_reason if isinstance(ml_reason, str) else ""
                     )
@@ -10701,7 +10719,12 @@ class TradingBot:
                             price_diff_pct = ((actual_entry - sig.entry) / sig.entry) * 100
                             entry_info += f" (signal: {sig.entry:.4f}, {price_diff_pct:+.2f}%)"
 
-                        strategy_label = selected_strategy.replace('_', ' ').title()
+                        # Prefer runtime strategy_name when provided (range_fbo), else selected_strategy
+                        try:
+                            base_label = strategy_name if strategy_name in ('range_fbo','trend_pullback','enhanced_mr','scalp','mean_reversion') else selected_strategy
+                        except Exception:
+                            base_label = selected_strategy
+                        strategy_label = base_label.replace('_', ' ').title()
                         threshold_text = "N/A"
                         if selected_ml_scorer is not None:
                             threshold_text = f"{selected_ml_scorer.min_score:.0f}"

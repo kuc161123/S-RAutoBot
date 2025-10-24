@@ -1889,3 +1889,9 @@ strategy_independence:
   confirmation_timeout_bars: 6
   # Maximum bars to wait after resistance/support break for HL/LH to form before forgetting the setup
   pullback_timeout_bars: 12
+reporting:
+  regime_summary:
+    enabled: true
+    daily: true          # send 24h summary
+    weekly: true         # send 7d summary
+    hour_utc: 0          # target UTC hour for daily push (best-effort)

@@ -2941,6 +2941,23 @@ class TradingBot:
                     reason_line = f"Q={float(q):.1f} (< {exec_min:.0f})"
                 except Exception:
                     reason_line = f"Q={float(q):.1f}"
+            # Compute simple regime label from features if available
+            reg_label = None
+            try:
+                feats_local = getattr(phantom, 'features', {}) or {}
+                t15 = float(feats_local.get('ts15', 0.0) or 0.0)
+                t60 = float(feats_local.get('ts60', 0.0) or 0.0)
+                rc15 = float(feats_local.get('rc15', 0.0) or 0.0)
+                rc60 = float(feats_local.get('rc60', 0.0) or 0.0)
+                if t15 >= 60 or t60 >= 60:
+                    reg_label = 'Trending'
+                elif rc15 >= 0.6 or rc60 >= 0.6:
+                    reg_label = 'Ranging'
+                else:
+                    reg_label = 'Neutral'
+            except Exception:
+                reg_label = None
+
             lines = [
                 f"👻 *{label_title} Opened*{pid_suffix}",
                 f"{symbol} {side} | ML {ml:.1f}",
@@ -2955,6 +2972,11 @@ class TradingBot:
                     lines.append(f"TP / SL: {tp:.4f} / {sl:.4f}")
             except Exception:
                 lines.append(f"TP / SL: {tp:.4f} / {sl:.4f}")
+            try:
+                if reg_label:
+                    lines.append(f"Regime: {reg_label}")
+            except Exception:
+                pass
             if reason_line:
                 lines.append(reason_line)
             try:
@@ -3083,7 +3105,20 @@ class TradingBot:
             try:
                 comps = f"RNG={qc.get('rng',0):.0f} FBO={qc.get('fbo',0):.0f} PROX={qc.get('prox',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f}"
                 if self.tg:
-                    _asyncio.create_task(self.tg.send_message(f"📦 Range Handoff PHANTOM: [{symbol}] Q={q:.1f} (from Trend invalidation)\n{comps}"))
+                    # Append regime label
+                    try:
+                        reg = None
+                        t15 = float(feats.get('ts15',0.0)); t60 = float(feats.get('ts60',0.0)); rc15 = float(feats.get('rc15',0.0)); rc60 = float(feats.get('rc60',0.0))
+                        if t15 >= 60 or t60 >= 60:
+                            reg = 'Trending'
+                        elif rc15 >= 0.6 or rc60 >= 0.6:
+                            reg = 'Ranging'
+                        else:
+                            reg = 'Neutral'
+                        msg = f"📦 Range Handoff PHANTOM: [{symbol}] Q={q:.1f} (from Trend invalidation)\n{comps}\nRegime: {reg}"
+                    except Exception:
+                        msg = f"📦 Range Handoff PHANTOM: [{symbol}] Q={q:.1f} (from Trend invalidation)\n{comps}"
+                    _asyncio.create_task(self.tg.send_message(msg))
                 evts = self.shared.get('trend_events')
                 if isinstance(evts, list):
                     from datetime import datetime as _dt
@@ -5261,7 +5296,14 @@ class TradingBot:
                                         evts = self.shared.get('trend_events')
                                         if isinstance(evts, list):
                                             from datetime import datetime as _dt
-                                            evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': symbol, 'text': f"Rule PHANTOM (stream) Q={q:.1f} comps: {comps}"})
+                                            # Compute regime
+                                            try:
+                                                compm = self._get_htf_metrics(symbol, df_main)
+                                                t15 = float(compm.get('ts15',0.0)); t60 = float(compm.get('ts60',0.0)); rc15 = float(compm.get('rc15',0.0)); rc60 = float(compm.get('rc60',0.0))
+                                                reg = 'Trending' if (t15>=60 or t60>=60) else ('Ranging' if (rc15>=0.6 or rc60>=0.6) else 'Neutral')
+                                            except Exception:
+                                                reg = 'Unknown'
+                                            evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': symbol, 'text': f"Rule PHANTOM (stream) Q={q:.1f} comps: {comps} Regime:{reg}"})
                                             if len(evts) > 60:
                                                 del evts[:len(evts)-60]
                                     except Exception:
@@ -5864,6 +5906,74 @@ class TradingBot:
         except Exception:
             pass
 
+        # Regime summary reporter (daily/weekly)
+        try:
+            rep_cfg = ((cfg.get('reporting', {}) or {}).get('regime_summary', {}) or {})
+            if bool(rep_cfg.get('enabled', True)):
+                async def _regime_summary_reporter():
+                    import datetime as _dt
+                    import asyncio as _asyncio
+                    last_daily = None
+                    last_weekly = None
+                    while self.running:
+                        now = _dt.datetime.utcnow()
+                        hour_target = int(rep_cfg.get('hour_utc', 0))
+                        do_daily = bool(rep_cfg.get('daily', True)) and (now.hour == hour_target) and (last_daily is None or (now - last_daily).total_seconds() > 23*3600)
+                        do_weekly = bool(rep_cfg.get('weekly', True)) and (now.weekday() == 0) and (now.hour == hour_target) and (last_weekly is None or (now - last_weekly).total_seconds() > 6*24*3600)
+                        if do_daily or do_weekly:
+                            try:
+                                from phantom_trade_tracker import get_phantom_tracker
+                                pt = get_phantom_tracker()
+                                cutoff = now - _dt.timedelta(days=(7 if do_weekly else 1))
+                                buckets = {}
+                                for trades in getattr(pt, 'phantom_trades', {}).values():
+                                    for p in trades:
+                                        try:
+                                            if not getattr(p, 'exit_time', None):
+                                                continue
+                                            if getattr(p, 'exit_time') < cutoff:
+                                                continue
+                                            strat = str(getattr(p, 'strategy_name','') or '')
+                                            feats = getattr(p, 'features', {}) or {}
+                                            t15 = float(feats.get('ts15', 0.0)); t60 = float(feats.get('ts60', 0.0)); rc15 = float(feats.get('rc15', 0.0)); rc60 = float(feats.get('rc60', 0.0))
+                                            reg = 'Trending' if (t15 >= 60 or t60 >= 60) else ('Ranging' if (rc15 >= 0.6 or rc60 >= 0.6) else 'Neutral')
+                                            key = (('Trend' if strat.startswith('trend') else ('Range' if strat.startswith('range') else 'Other')), reg)
+                                            b = buckets.get(key, {'n': 0, 'w': 0})
+                                            b['n'] += 1
+                                            b['w'] += 1 if getattr(p, 'outcome', '') == 'win' else 0
+                                            buckets[key] = b
+                                        except Exception:
+                                            continue
+                                title = '📊 Regime Summary (7d)' if do_weekly else '📊 Regime Summary (24h)'
+                                lines = [title, '']
+                                for (sg, reg), b in sorted(buckets.items()):
+                                    wr = (b['w'] / b['n'] * 100.0) if b['n'] else 0.0
+                                    lines.append(f'• {sg} — {reg}: WR {wr:.1f}% (N={b["n"]})')
+                                msg = '\n'.join(lines) if len(lines) > 2 else (title + '\nNo data')
+                                try:
+                                    if self.tg:
+                                        await self.tg.send_message(msg)
+                                except Exception:
+                                    pass
+                                try:
+                                    evts = self.shared.get('trend_events')
+                                    if isinstance(evts, list):
+                                        evts.append({'ts': now.isoformat() + 'Z', 'symbol': '-', 'text': title})
+                                        if len(evts) > 60:
+                                            del evts[:len(evts) - 60]
+                                except Exception:
+                                    pass
+                                if do_daily:
+                                    last_daily = now
+                                if do_weekly:
+                                    last_weekly = now
+                            except Exception:
+                                pass
+                        await _asyncio.sleep(300)
+                self._create_task(_regime_summary_reporter())
+        except Exception:
+            pass
+
         # Start Range FBO phantom-only background scanner
         try:
             if bool(((cfg.get('range', {}) or {}).get('enabled', True))):
@@ -5917,7 +6027,19 @@ class TradingBot:
                                     try:
                                         comps = f"RNG={qc.get('rng',0):.0f} FBO={qc.get('fbo',0):.0f} PROX={qc.get('prox',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f}"
                                         if self.tg:
-                                            await self.tg.send_message(f"🟡 Range PHANTOM: [{sym}] Q={q:.1f} < {float(((settings.get('rule_mode') or {}).get('execute_q_min', 78))):.1f}\n{comps}")
+                                            # Regime label from comps
+                                            try:
+                                                t15 = float(feats.get('ts15',0.0)); t60 = float(feats.get('ts60',0.0)); rc15 = float(feats.get('rc15',0.0)); rc60 = float(feats.get('rc60',0.0))
+                                                if t15 >= 60 or t60 >= 60:
+                                                    reg = 'Trending'
+                                                elif rc15 >= 0.6 or rc60 >= 0.6:
+                                                    reg = 'Ranging'
+                                                else:
+                                                    reg = 'Neutral'
+                                                msg = f"🟡 Range PHANTOM: [{sym}] Q={q:.1f} < {float(((settings.get('rule_mode') or {}).get('execute_q_min', 78))):.1f}\n{comps}\nRegime: {reg}"
+                                            except Exception:
+                                                msg = f"🟡 Range PHANTOM: [{sym}] Q={q:.1f} < {float(((settings.get('rule_mode') or {}).get('execute_q_min', 78))):.1f}\n{comps}"
+                                            await self.tg.send_message(msg)
                                     except Exception:
                                         pass
                                     # Mirror to events
@@ -8579,7 +8701,13 @@ class TradingBot:
                                         logger.info(f"[{sym}] 🧮 Rule-mode: EXECUTE (Q={q:.1f} ≥ {exec_min:.1f}) comps: {comps}")
                                         try:
                                             if self.tg:
-                                                await self.tg.send_message(f"🟢 Rule-mode EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {exec_min:.1f})\n{comps}")
+                                                # Append regime label
+                                                try:
+                                                    t15 = float(trend_features.get('ts15',0.0)); t60 = float(trend_features.get('ts60',0.0)); rc15 = float(trend_features.get('rc15',0.0)); rc60 = float(trend_features.get('rc60',0.0))
+                                                    reg = 'Trending' if (t15>=60 or t60>=60) else ('Ranging' if (rc15>=0.6 or rc60>=0.6) else 'Neutral')
+                                                    await self.tg.send_message(f"🟢 Rule-mode EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {exec_min:.1f})\n{comps}\nRegime: {reg}")
+                                                except Exception:
+                                                    await self.tg.send_message(f"🟢 Rule-mode EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {exec_min:.1f})\n{comps}")
                                         except Exception:
                                             pass
                                         try:
@@ -8600,7 +8728,12 @@ class TradingBot:
                                         logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (Q={q:.1f} < {exec_min:.1f}) comps: {comps}")
                                         try:
                                             if self.tg:
-                                                await self.tg.send_message(f"🟡 Rule-mode PHANTOM: [{sym}] Q={q:.1f} < {exec_min:.1f}\n{comps}")
+                                                try:
+                                                    t15 = float(trend_features.get('ts15',0.0)); t60 = float(trend_features.get('ts60',0.0)); rc15 = float(trend_features.get('rc15',0.0)); rc60 = float(trend_features.get('rc60',0.0))
+                                                    reg = 'Trending' if (t15>=60 or t60>=60) else ('Ranging' if (rc15>=0.6 or rc60>=0.6) else 'Neutral')
+                                                    await self.tg.send_message(f"🟡 Rule-mode PHANTOM: [{sym}] Q={q:.1f} < {exec_min:.1f}\n{comps}\nRegime: {reg}")
+                                                except Exception:
+                                                    await self.tg.send_message(f"🟡 Rule-mode PHANTOM: [{sym}] Q={q:.1f} < {exec_min:.1f}\n{comps}")
                                         except Exception:
                                             pass
                                         try:
@@ -8620,7 +8753,12 @@ class TradingBot:
                                         logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (low-quality Q={q:.1f} < {ph_min:.1f}) comps: {comps}")
                                         try:
                                             if self.tg:
-                                                await self.tg.send_message(f"🟠 Rule-mode LOW-QUALITY: [{sym}] Q={q:.1f} < {ph_min:.1f} — phantom (low-weight)\n{comps}")
+                                                try:
+                                                    t15 = float(trend_features.get('ts15',0.0)); t60 = float(trend_features.get('ts60',0.0)); rc15 = float(trend_features.get('rc15',0.0)); rc60 = float(trend_features.get('rc60',0.0))
+                                                    reg = 'Trending' if (t15>=60 or t60>=60) else ('Ranging' if (rc15>=0.6 or rc60>=0.6) else 'Neutral')
+                                                    await self.tg.send_message(f"🟠 Rule-mode LOW-QUALITY: [{sym}] Q={q:.1f} < {ph_min:.1f} — phantom (low-weight)\n{comps}\nRegime: {reg}")
+                                                except Exception:
+                                                    await self.tg.send_message(f"🟠 Rule-mode LOW-QUALITY: [{sym}] Q={q:.1f} < {ph_min:.1f} — phantom (low-weight)\n{comps}")
                                         except Exception:
                                             pass
                                         try:

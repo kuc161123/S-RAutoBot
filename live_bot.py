@@ -2850,9 +2850,9 @@ class TradingBot:
             logger.debug(f"Failed phantom notification: {notify_err}")
 
     async def _notify_trend_phantom(self, phantom):
-        """Trend phantom lifecycle notifier (open, TP1, close) with reasons.
+        """Generic phantom lifecycle notifier (Trend/Range) with reasons.
 
-        Called by PhantomTradeTracker via set_notifier().
+        Called by PhantomTradeTracker via set_notifier(). Labels derived from strategy_name.
         """
         if not self.tg:
             return
@@ -2868,6 +2868,13 @@ class TradingBot:
             pid_suffix = f" [#{pid}]" if isinstance(pid, str) and pid else ""
             feats = getattr(phantom, 'features', {}) or {}
 
+            # Determine label by strategy
+            strat = str(getattr(phantom, 'strategy_name', '') or '').lower()
+            if strat.startswith('range'):
+                label_title = 'Range Phantom'
+            else:
+                label_title = 'Trend Phantom'
+
             # Closure (dedup by phantom_id)
             if outcome in ('win','loss') or getattr(phantom, 'exit_time', None):
                 emoji = '✅' if outcome == 'win' else '❌'
@@ -2876,7 +2883,7 @@ class TradingBot:
                 exit_px = float(getattr(phantom, 'exit_price', 0.0) or 0.0)
                 rr = getattr(phantom, 'realized_rr', None)
                 lines = [
-                    f"👻 *Trend Phantom {emoji}*{pid_suffix}",
+                    f"👻 *{label_title} {emoji}*{pid_suffix}",
                     f"{symbol} {side} | ML {ml:.1f}",
                     f"Entry → Exit: {entry:.4f} → {exit_px:.4f}",
                     f"P&L: {pnl:+.2f}% ({exit_reason})"
@@ -2922,7 +2929,7 @@ class TradingBot:
                 except Exception:
                     reason_line = f"Q={float(q):.1f}"
             lines = [
-                f"👻 *Trend Phantom Opened*{pid_suffix}",
+                f"👻 *{label_title} Opened*{pid_suffix}",
                 f"{symbol} {side} | ML {ml:.1f}",
                 f"Entry: {entry:.4f}\nTP / SL: {tp:.4f} / {sl:.4f}",
             ]
@@ -2943,6 +2950,87 @@ class TradingBot:
                 self._phantom_open_notified.add(pid)
         except Exception as e:
             logger.debug(f"Trend phantom notify error: {e}")
+
+    def _compute_qscore_range(self, symbol: str, side: str, df15: 'pd.DataFrame', df3: 'pd.DataFrame' = None) -> tuple[float, dict, list[str]]:
+        """Compute range FBO quality score (0–100) with components.
+
+        Components: rng (35), fbo (25), prox (15), micro (10), risk (15)
+        """
+        comp = {}; reasons = []
+        try:
+            cl = df15['close']; price = float(cl.iloc[-1]) if len(cl) else 0.0
+            high = df15['high']; low = df15['low']
+            lookback = 40
+            try:
+                lookback = int(((self.config.get('range', {}) or {}).get('lookback', 40)))
+            except Exception:
+                pass
+            rng_high = float(high.rolling(lookback).max().iloc[-2]) if len(high) >= lookback+2 else 0.0
+            rng_low = float(low.rolling(lookback).min().iloc[-2]) if len(low) >= lookback+2 else 0.0
+            width_pct = ((rng_high - rng_low) / max(1e-9, rng_low)) if (rng_high > rng_low > 0) else 0.0
+            # Range quality: best in mid band of configured bounds
+            try:
+                width_min = float(((self.config.get('range', {}) or {}).get('width_min_pct', 0.01)))
+                width_max = float(((self.config.get('range', {}) or {}).get('width_max_pct', 0.08)))
+            except Exception:
+                width_min, width_max = 0.01, 0.08
+            if width_pct <= 0:
+                comp['rng'] = 20.0; reasons.append('rng:none')
+            elif width_pct < width_min:
+                comp['rng'] = 50.0; reasons.append('rng:too_tight')
+            elif width_pct > width_max:
+                comp['rng'] = 50.0; reasons.append('rng:too_wide')
+            else:
+                comp['rng'] = 85.0
+            # FBO strength proxy: wick ratio and volume zscore
+            try:
+                rng_bar = float(high.iloc[-1] - low.iloc[-1]);
+                wick = (float(high.iloc[-1] - cl.iloc[-1]) if side=='short' else float(cl.iloc[-1] - low.iloc[-1]))
+                wick_ratio = max(0.0, min(1.0, wick / max(1e-9, rng_bar)))
+            except Exception:
+                wick_ratio = 0.0
+            vol_z = 0.0
+            try:
+                v = df15['volume']
+                vol_z = float((v.iloc[-1] - v.rolling(20).mean().iloc[-1]) / max(1e-9, v.rolling(20).std().iloc[-1])) if len(v) >= 20 else 0.0
+            except Exception:
+                vol_z = 0.0
+            comp['fbo'] = max(0.0, min(100.0, 60.0 * wick_ratio + 10.0 * max(0.0, vol_z)))
+            # Proximity to band/mid preference
+            try:
+                mid = (rng_high + rng_low) / 2.0
+                if side == 'short':
+                    prox = abs(price - mid) / max(1e-9, (rng_high - rng_low))
+                else:
+                    prox = abs(price - mid) / max(1e-9, (rng_high - rng_low))
+                comp['prox'] = max(0.0, min(100.0, (1.0 - prox) * 100.0))
+            except Exception:
+                comp['prox'] = 50.0
+            # Micro 3m reversal alignment
+            try:
+                ok3 = True
+                if df3 is not None and len(df3) >= 4:
+                    tail = df3['close'].tail(4)
+                    up_seq = tail.iloc[-1] > tail.iloc[-2] >= tail.iloc[-3]
+                    dn_seq = tail.iloc[-1] < tail.iloc[-2] <= tail.iloc[-3]
+                    ok3 = (dn_seq if side=='short' else up_seq)
+                comp['micro'] = 100.0 if ok3 else 30.0
+            except Exception:
+                comp['micro'] = 50.0
+            # Risk geometry: mid band widths are safer
+            comp['risk'] = 80.0 if 0.01 <= width_pct <= 0.08 else 50.0
+            # Weighted sum
+            try:
+                wcfg = (((self.config.get('range', {}) or {}).get('rule_mode', {}) or {}).get('weights', {}) or {})
+                wr = float(wcfg.get('rng', 0.35)); wf = float(wcfg.get('fbo', 0.25)); wp = float(wcfg.get('prox', 0.15)); wm = float(wcfg.get('micro', 0.10)); wk = float(wcfg.get('risk', 0.15))
+                s = max(1e-9, wr + wf + wp + wm + wk); wr/=s; wf/=s; wp/=s; wm/=s; wk/=s
+            except Exception:
+                wr,wf,wp,wm,wk = 0.35,0.25,0.15,0.10,0.15
+            q = wr*comp.get('rng',50.0) + wf*comp.get('fbo',50.0) + wp*comp.get('prox',50.0) + wm*comp.get('micro',50.0) + wk*comp.get('risk',50.0)
+            return max(0.0, min(100.0, float(q))), comp, reasons
+        except Exception as e:
+            return 50.0, {}, [f'qr:error:{e}']
+
 
     async def load_or_fetch_initial_data(self, symbols:list[str], timeframe:str):
         """Load candles from database or fetch from API if not available"""
@@ -5622,6 +5710,86 @@ class TradingBot:
                 self._create_task(_db_writer())
         except Exception:
             pass
+
+        # Start Range FBO phantom-only background scanner
+        try:
+            if bool(((cfg.get('range', {}) or {}).get('enabled', True))):
+                async def _range_fbo_scanner():
+                    from strategy_range_fbo import detect_range_fbo_signal
+                    settings = cfg.get('range', {}) or {}
+                    while self.running:
+                        try:
+                            for sym in list(symbols):
+                                try:
+                                    df = self.frames.get(sym)
+                                    if df is None or df.empty:
+                                        continue
+                                    sig = detect_range_fbo_signal(df, settings, sym)
+                                    if not sig:
+                                        continue
+                                    # Phantom-only routing
+                                    try:
+                                        q, qc, qr = self._compute_qscore_range(sym, sig.side, df, self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None)
+                                    except Exception:
+                                        q, qc, qr = 50.0, {}, []
+                                    # Build features
+                                    feats = {
+                                        'range_high': float(sig.meta.get('range_high', 0.0)),
+                                        'range_low': float(sig.meta.get('range_low', 0.0)),
+                                        'range_mid': float(sig.meta.get('range_mid', 0.0)),
+                                        'range_width_pct': float(sig.meta.get('range_width_pct', 0.0)),
+                                        'fbo_type': str(sig.meta.get('fbo_type', '')),
+                                        'wick_ratio': float(sig.meta.get('wick_ratio', 0.0)),
+                                        'retest_ok': bool(sig.meta.get('retest_ok', False)),
+                                        'qscore': float(q),
+                                        'qscore_components': dict(qc),
+                                        'qscore_reasons': list(qr),
+                                        'volatility_regime': getattr(self, 'last_volatility_level', 'normal') if hasattr(self, 'last_volatility_level') else 'normal',
+                                    }
+                                    # Attach HTF composite for context
+                                    try:
+                                        comp = self._get_htf_metrics(sym, df)
+                                        feats['ts15'] = float(comp.get('ts15', 0.0)); feats['ts60'] = float(comp.get('ts60', 0.0))
+                                        feats['rc15'] = float(comp.get('rc15', 0.0)); feats['rc60'] = float(comp.get('rc60', 0.0))
+                                    except Exception:
+                                        pass
+                                    # Record phantom
+                                    try:
+                                        from phantom_trade_tracker import get_phantom_tracker
+                                        pt = get_phantom_tracker()
+                                        pt.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, False, feats, 'range_fbo')
+                                    except Exception:
+                                        pass
+                                    # Decision message
+                                    try:
+                                        comps = f"RNG={qc.get('rng',0):.0f} FBO={qc.get('fbo',0):.0f} PROX={qc.get('prox',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f}"
+                                        if self.tg:
+                                            await self.tg.send_message(f"🟡 Range PHANTOM: [{sym}] Q={q:.1f} < {float(((settings.get('rule_mode') or {}).get('execute_q_min', 78))):.1f}\n{comps}")
+                                    except Exception:
+                                        pass
+                                    # Mirror to events
+                                    try:
+                                        evts = self.shared.get('trend_events')
+                                        if isinstance(evts, list):
+                                            from datetime import datetime as _dt
+                                            evts.append({'ts': _dt.utcnow().isoformat()+'Z', 'symbol': sym, 'text': f"Range PHANTOM Q={q:.1f} comps: {comps}"})
+                                            if len(evts) > 60:
+                                                del evts[:len(evts)-60]
+                                    except Exception:
+                                        pass
+                                except Exception:
+                                    continue
+                        except Exception:
+                            pass
+                        # Sleep a short cadence
+                        try:
+                            await asyncio.sleep(10)
+                        except Exception:
+                            break
+                self._create_task(_range_fbo_scanner())
+                logger.info("📦 Range FBO phantom-only scanner started")
+        except Exception as e:
+            logger.debug(f"Range scanner start failed: {e}")
         
         # Use multi-websocket handler if >190 topics
         if len(topics) > 190:

@@ -258,6 +258,25 @@ router:
   htf_bias:
     enabled: false
     mode: gated          # gated | soft
+
+# Range FBO (failed breakout) strategy — start phantom-only
+range:
+  enabled: true
+  phantom_only: true      # Record all range FBO signals as phantoms
+  lookback: 40            # bars for range bands
+  width_min_pct: 0.01     # min 1% band width
+  width_max_pct: 0.08     # max 8% band width
+  reentry_max_bars: 4     # must re-enter within K bars
+  sl_atr_buf: 0.6         # SL buffer in ATR
+  rule_mode:
+    execute_q_min: 78     # kept for symmetry; exec remains disabled initially
+    phantom_q_min: 60
+    weights:              # normalized automatically
+      rng: 0.35           # range quality (width/cleanliness)
+      fbo: 0.25           # FBO strength (wick/vol spike)
+      prox: 0.15          # proximity to band/mid
+      micro: 0.10         # 3m micro reversal alignment
+      risk: 0.15          # risk geometry
     # Thresholds for per-strategy HTF gating
     trend:
       min_trend_strength: 68.0  # require HTF trend_strength ≥ this to allow Trend (tighter)

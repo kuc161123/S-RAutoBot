@@ -317,6 +317,37 @@ class TGBot:
         except Exception:
             pass
 
+        # Range Phantom aggregate
+        try:
+            pt = self.shared.get("phantom_tracker")
+            total = wins = losses = timeouts = 0
+            open_cnt = 0
+            if pt:
+                for trades in getattr(pt, 'phantom_trades', {}).values():
+                    for p in trades:
+                        if (getattr(p, 'strategy_name', '') or '').startswith('range'):
+                            oc = getattr(p, 'outcome', None)
+                            if oc in ('win','loss'):
+                                total += 1
+                                wins += (1 if oc == 'win' else 0)
+                                losses += (1 if oc == 'loss' else 0)
+                            if (not getattr(p, 'was_executed', False)) and getattr(p, 'exit_reason', None) == 'timeout':
+                                timeouts += 1
+                # Open phantoms
+                try:
+                    for lst in getattr(pt, 'active_phantoms', {}).values():
+                        for p in (lst or []):
+                            if (getattr(p, 'strategy_name', '') or '').startswith('range') and not getattr(p, 'exit_time', None):
+                                open_cnt += 1
+                except Exception:
+                    pass
+            wr = (wins/total*100.0) if total else 0.0
+            lines.append("")
+            lines.append("📦 *Range Phantom*")
+            lines.append(f"• Tracked: {total} | Open: {open_cnt} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}")
+        except Exception:
+            pass
+
         # Trend ML snapshot
         try:
             ml_scorer = self.shared.get('ml_scorer')
@@ -724,6 +755,39 @@ class TGBot:
             except Exception as exc:
                 logger.debug(f"Unable to fetch trend phantom stats: {exc}")
 
+        # Range Phantom (aggregate)
+        phantom_tracker = self.shared.get("phantom_tracker")
+        if phantom_tracker:
+            try:
+                total = wins = losses = timeouts = open_cnt = 0
+                for trades in getattr(phantom_tracker, 'phantom_trades', {}).values():
+                    for p in trades:
+                        try:
+                            if not (getattr(p, 'strategy_name', '') or '').startswith('range'):
+                                continue
+                            if getattr(p, 'outcome', None) in ('win','loss'):
+                                total += 1
+                                if p.outcome == 'win': wins += 1
+                                else: losses += 1
+                            if not getattr(p, 'was_executed', False) and getattr(p, 'exit_reason', None) == 'timeout':
+                                timeouts += 1
+                        except Exception:
+                            pass
+                # Open
+                try:
+                    for lst in getattr(phantom_tracker, 'active_phantoms', {}).values():
+                        for p in (lst or []):
+                            if (getattr(p, 'strategy_name', '') or '').startswith('range') and not getattr(p, 'exit_time', None):
+                                open_cnt += 1
+                except Exception:
+                    pass
+                lines.append("")
+                lines.append("📦 *Range Phantom*")
+                wr = (wins/total*100.0) if total else 0.0
+                lines.append(f"• Tracked: {total} | Open: {open_cnt} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}")
+            except Exception as exc:
+                logger.debug(f"Unable to fetch range phantom stats: {exc}")
+
         # MR Phantom
         mr_phantom = self.shared.get("mr_phantom_tracker")
         if mr_phantom:
@@ -1093,18 +1157,19 @@ class TGBot:
         msg = [
             "🤖 *Trend Pullback Bot*",
             "",
-            "15m break → 3m HL/LH → 3m 2/2 confirmations → stream entry",
+            "🧭 Trend Pullback:\n15m break → 3m HL/LH → 3m 2/2 confirms → entry",
             "Scale‑out: 50% @ ~1.6R, SL→BE, runner to ~3.0R",
             "",
+            "📦 Range FBO (phantom‑only now):\nDetect failed breakouts back into range; record phantoms for learning",
+            "",
             "Quick actions:",
-            "• /dashboard — Trend dashboard",
-            "• /trend_states — Current states per symbol",
+            "• /dashboard — Dashboard",
+            "• /trend_states — Current trend states",
             "• /recent — Recent executed (trend)",
             "• /ml — Trend ML status",
             "• /mlpatterns — Learned patterns",
-            "• /trendhighml 95 — Set high‑ML threshold",
             "",
-            "Tips: Use the dashboard buttons for Positions, Phantom, ML, Events, and Settings."
+            "Tips: Use dashboard buttons for Positions, Phantom (Trend/Range), ML, Events, Settings."
         ]
         await self.safe_reply(update, "\n".join(msg))
 
@@ -1113,11 +1178,11 @@ class TGBot:
         per_trade, risk_label = self._compute_risk_snapshot()
         timeframe = self.shared.get("timeframe", "15")
         lines = [
-            "📚 *Trend‑Only Help*",
+            "📚 *Bot Help*",
             "",
             "Monitoring",
-            "• /dashboard — Trend dashboard (use buttons)",
-            "• /trend_states — State per symbol",
+            "• /dashboard — Dashboard (Trend + Range phantom)",
+            "• /trend_states — Trend state per symbol",
             "• /recent — Recent executed (trend)",
             "",
             "ML",

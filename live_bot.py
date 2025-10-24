@@ -6031,6 +6031,21 @@ class TradingBot:
                                         feats['rc15'] = float(comp.get('rc15', 0.0)); feats['rc60'] = float(comp.get('rc60', 0.0))
                                     except Exception:
                                         pass
+                                    # Verbose range analysis log (optional)
+                                    try:
+                                        log_cfg = (settings.get('logging') or {})
+                                        if bool(log_cfg.get('verbose', False)) and not bool(log_cfg.get('decision_only', False)):
+                                            rng_high = feats.get('range_high'); rng_low = feats.get('range_low'); rng_mid = feats.get('range_mid')
+                                            width_pct = feats.get('range_width_pct'); fbo_t = feats.get('fbo_type'); wick = feats.get('wick_ratio')
+                                            t15v = float(feats.get('ts15',0.0)); t60v = float(feats.get('ts60',0.0)); rc15v = float(feats.get('rc15',0.0)); rc60v = float(feats.get('rc60',0.0))
+                                            reg = 'Trending' if (t15v>=60 or t60v>=60) else ('Ranging' if (rc15v>=0.6 or rc60v>=0.6) else 'Neutral')
+                                            comps_s = f"RNG={qc.get('rng',0):.0f} FBO={qc.get('fbo',0):.0f} PROX={qc.get('prox',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f}"
+                                            logger.info(
+                                                f"[{sym}] 📦 Range analysis: high={float(rng_high):.4f} low={float(rng_low):.4f} mid={float(rng_mid):.4f} "
+                                                f"width={float(width_pct)*100.0:.1f}% fbo={fbo_t} wick={float(wick):.2f} q={q:.1f} comps: {comps_s} Regime:{reg}"
+                                            )
+                                    except Exception:
+                                        pass
                                     exec_cfg = (settings.get('exec') or {})
                                     exec_enabled = bool(exec_cfg.get('enabled', False)) and not bool(settings.get('phantom_only', True))
                                     did_execute = False
@@ -6073,6 +6088,26 @@ class TradingBot:
                                         except Exception:
                                             did_execute = False
                                     if not did_execute:
+                                        # Verbose decision reason
+                                        try:
+                                            log_cfg = (settings.get('logging') or {})
+                                            if bool(log_cfg.get('verbose', False)) and not bool(log_cfg.get('decision_only', False)):
+                                                thr = float((settings.get('rule_mode') or {}).get('execute_q_min', 78))
+                                                reason = None
+                                                if q < thr:
+                                                    reason = f"q<thr {q:.1f}<{thr:.1f}"
+                                                else:
+                                                    t15v = float(feats.get('ts15',0.0)); t60v = float(feats.get('ts60',0.0))
+                                                    if max(t15v, t60v) >= 60:
+                                                        reason = 'htf_strong'
+                                                    elif sym in self.book.positions:
+                                                        reason = 'position_exists'
+                                                    elif self._range_exec_counter['count'] >= int(exec_cfg.get('daily_cap', 3)):
+                                                        reason = 'daily_cap'
+                                                if reason:
+                                                    logger.info(f"[{sym}] 🧮 Range decision: phantom (reason={reason})")
+                                        except Exception:
+                                            pass
                                         # Record phantom
                                         try:
                                             from phantom_trade_tracker import get_phantom_tracker

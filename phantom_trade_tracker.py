@@ -640,6 +640,13 @@ class PhantomTradeTracker:
             phantom.one_r_hit = None
             phantom.two_r_hit = None
             phantom.realized_rr = None
+
+        # If TP1 was hit earlier, classify as a win regardless of later BE/SL (non-timeout)
+        try:
+            if getattr(phantom, 'tp1_hit', False) and str(exit_reason).lower() != 'timeout':
+                phantom.outcome = 'win'
+        except Exception:
+            pass
         
         # Move to completed list
         if symbol not in self.phantom_trades:

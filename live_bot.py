@@ -2903,7 +2903,16 @@ class TradingBot:
             # TP1 event (active)
             if bool(getattr(phantom, 'tp1_hit', False)) and str(getattr(phantom, 'phantom_event','')) == 'tp1':
                 if not (pid and pid in self._phantom_tp1_notified):
-                    await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f}")
+                    # If Range midline is present, include it
+                    try:
+                        strat = str(getattr(phantom, 'strategy_name', '') or '').lower()
+                        feats_tp1 = getattr(phantom, 'features', {}) or {}
+                        if strat.startswith('range') and isinstance(feats_tp1.get('range_mid', None), (int,float)):
+                            await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f} (mid {float(feats_tp1['range_mid']):.4f})")
+                        else:
+                            await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f}")
+                    except Exception:
+                        await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f}")
                     if pid:
                         self._phantom_tp1_notified.add(pid)
                 try:
@@ -2931,8 +2940,17 @@ class TradingBot:
             lines = [
                 f"👻 *{label_title} Opened*{pid_suffix}",
                 f"{symbol} {side} | ML {ml:.1f}",
-                f"Entry: {entry:.4f}\nTP / SL: {tp:.4f} / {sl:.4f}",
+                f"Entry: {entry:.4f}",
             ]
+            try:
+                if label_title.startswith('Range'):
+                    if isinstance(feats.get('range_mid', None), (int,float)):
+                        lines.append(f"TP1(mid): {float(feats['range_mid']):.4f}")
+                    lines.append(f"TP2 / SL: {tp:.4f} / {sl:.4f}")
+                else:
+                    lines.append(f"TP / SL: {tp:.4f} / {sl:.4f}")
+            except Exception:
+                lines.append(f"TP / SL: {tp:.4f} / {sl:.4f}")
             if reason_line:
                 lines.append(reason_line)
             try:

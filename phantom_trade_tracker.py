@@ -448,7 +448,29 @@ class PhantomTradeTracker:
                         ph.max_favorable = current_price
                     if current_price < ph.max_adverse:
                         ph.max_adverse = current_price
-                    # Simulate TP1 → move SL to BE once price crosses tp1 level
+                    # Range override: TP1 at range midline if available
+                    try:
+                        if str(getattr(ph, 'strategy_name', '') or '').startswith('range'):
+                            mid = None
+                            try:
+                                mid = float((ph.features or {}).get('range_mid', None))
+                            except Exception:
+                                mid = None
+                            if isinstance(mid, (int,float)) and (not ph.tp1_hit) and cur_high >= float(mid):
+                                ph.tp1_hit = True
+                                ph.be_moved = True
+                                ph.stop_loss = float(ph.entry_price)
+                                try:
+                                    if self.notifier:
+                                        setattr(ph, 'phantom_event', 'tp1')
+                                        res = self.notifier(ph)
+                                        if asyncio.iscoroutine(res):
+                                            asyncio.create_task(res)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+                    # Simulate TP1 → move SL to BE once price crosses tp1 level (R-multiple default)
                     try:
                         import yaml
                         tp1_r = 1.6
@@ -489,6 +511,28 @@ class PhantomTradeTracker:
                         ph.max_favorable = current_price
                     if current_price > ph.max_adverse:
                         ph.max_adverse = current_price
+                    # Range override: TP1 at range midline if available (short)
+                    try:
+                        if str(getattr(ph, 'strategy_name', '') or '').startswith('range'):
+                            mid = None
+                            try:
+                                mid = float((ph.features or {}).get('range_mid', None))
+                            except Exception:
+                                mid = None
+                            if isinstance(mid, (int,float)) and (not ph.tp1_hit) and cur_low <= float(mid):
+                                ph.tp1_hit = True
+                                ph.be_moved = True
+                                ph.stop_loss = float(ph.entry_price)
+                                try:
+                                    if self.notifier:
+                                        setattr(ph, 'phantom_event', 'tp1')
+                                        res = self.notifier(ph)
+                                        if asyncio.iscoroutine(res):
+                                            asyncio.create_task(res)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
                     try:
                         import yaml
                         tp1_r = 1.6

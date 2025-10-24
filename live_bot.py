@@ -615,6 +615,10 @@ class TradingBot:
         self._position_meta: Dict[str, dict] = {}
         # Per-symbol HTF exec metrics cache (refresh on 15m close)
         self._htf_exec_cache: Dict[str, Dict[str, object]] = {}
+        # Phantom notification de-dup (open/tp1/close)
+        self._phantom_open_notified: set[str] = set()
+        self._phantom_tp1_notified: set[str] = set()
+        self._phantom_close_notified: set[str] = set()
 
     def _phantom_trend_regime_ok(self, sym: str, df: 'pd.DataFrame', regime_analysis) -> tuple[bool, str]:
         """Return whether Trend phantom should be recorded under current regime.
@@ -2864,7 +2868,7 @@ class TradingBot:
             pid_suffix = f" [#{pid}]" if isinstance(pid, str) and pid else ""
             feats = getattr(phantom, 'features', {}) or {}
 
-            # Closure
+            # Closure (dedup by phantom_id)
             if outcome in ('win','loss') or getattr(phantom, 'exit_time', None):
                 emoji = '✅' if outcome == 'win' else '❌'
                 exit_reason = str(getattr(phantom, 'exit_reason', 'unknown')).replace('_',' ').title()
@@ -2882,12 +2886,19 @@ class TradingBot:
                         lines.append(f"Realized R: {float(rr):.2f}R")
                 except Exception:
                     pass
+                if pid and pid in self._phantom_close_notified:
+                    return
                 await self.tg.send_message("\n".join(lines))
+                if pid:
+                    self._phantom_close_notified.add(pid)
                 return
 
             # TP1 event (active)
             if bool(getattr(phantom, 'tp1_hit', False)) and str(getattr(phantom, 'phantom_event','')) == 'tp1':
-                await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f}")
+                if not (pid and pid in self._phantom_tp1_notified):
+                    await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f}")
+                    if pid:
+                        self._phantom_tp1_notified.add(pid)
                 try:
                     setattr(phantom, 'phantom_event', '')
                 except Exception:
@@ -2924,7 +2935,12 @@ class TradingBot:
                     )
             except Exception:
                 pass
+            # De-dup open by phantom_id
+            if pid and pid in self._phantom_open_notified:
+                return
             await self.tg.send_message("\n".join([l for l in lines if l]))
+            if pid:
+                self._phantom_open_notified.add(pid)
         except Exception as e:
             logger.debug(f"Trend phantom notify error: {e}")
 
@@ -4868,6 +4884,16 @@ class TradingBot:
                             # Guard: existing position
                             if symbol in self.book.positions:
                                 return
+                            # Ensure BOS confirmations reflected in Qscore BOS component for stream decisions
+                            try:
+                                if isinstance(meta, dict) and str(meta.get('phase','')) == '3m_bos':
+                                    # Treat as fully confirmed (2/2) for BOS component visibility
+                                    d = dict(getattr(self, '_last_signal_features', {}).get(symbol, {})) if hasattr(self, '_last_signal_features') else {}
+                                    d['confirm_candles'] = max(2, int(d.get('confirm_candles', 0) or 0))
+                                    if hasattr(self, '_last_signal_features'):
+                                        self._last_signal_features[symbol] = d
+                            except Exception:
+                                pass
                             # Exec-only HTF gate (per-symbol)
                             try:
                                 df_main = self.frames.get(symbol)

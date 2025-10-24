@@ -394,7 +394,7 @@ class TGBot:
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Refresh", callback_data="ui:dash:refresh")],
             [InlineKeyboardButton("📐 Trend States", callback_data="ui:trend:states"), InlineKeyboardButton("📊 Positions", callback_data="ui:positions")],
-            [InlineKeyboardButton("📜 Recent", callback_data="ui:recent"), InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:trend")],
+            [InlineKeyboardButton("📜 Recent", callback_data="ui:recent"), InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:trend"), InlineKeyboardButton("📦 Range", callback_data="ui:phantom:range")],
             [InlineKeyboardButton("🤖 ML", callback_data="ui:ml:trend"), InlineKeyboardButton("🧠 Patterns", callback_data="ui:ml:patterns")],
             [InlineKeyboardButton("🧭 Events", callback_data="ui:events"), InlineKeyboardButton("⚙️ Settings", callback_data="ui:settings")]
         ])
@@ -1890,7 +1890,7 @@ class TGBot:
                 except Exception:
                     await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
                 return
-            if data in ("ui:trend:states", "ui:positions", "ui:recent", "ui:phantom:trend", "ui:ml:trend", "ui:ml:patterns", "ui:events", "ui:settings") or data.startswith("ui:settings:toggle:") or data.startswith("ui:settings:set:"):
+            if data in ("ui:trend:states", "ui:positions", "ui:recent", "ui:phantom:trend", "ui:phantom:range", "ui:ml:trend", "ui:ml:patterns", "ui:events", "ui:settings") or data.startswith("ui:settings:toggle:") or data.startswith("ui:settings:set:"):
                 # Re-dispatch into the simpler trend-only handlers by faking a small switch
                 if data == "ui:trend:states":
                     await query.answer()
@@ -2036,6 +2036,35 @@ class TGBot:
                             pass
                     wr = (wins/total*100.0) if total else 0.0
                     lines = ["👻 *Trend Phantom*", "", f"Tracked: {total} | Open: {open_cnt} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}"]
+                    await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
+                    return
+                if data == "ui:phantom:range":
+                    await query.answer()
+                    pt = self.shared.get('phantom_tracker')
+                    total = wins = losses = timeouts = 0
+                    open_cnt = 0
+                    if pt:
+                        for trades in getattr(pt, 'phantom_trades', {}).values():
+                            for p in trades:
+                                if (getattr(p, 'strategy_name', '') or '').startswith('range'):
+                                    oc = getattr(p, 'outcome', None)
+                                    if oc in ('win','loss'):
+                                        total += 1
+                                        wins += (1 if oc == 'win' else 0)
+                                        losses += (1 if oc == 'loss' else 0)
+                                    if (not getattr(p, 'was_executed', False)) and getattr(p, 'exit_reason', None) == 'timeout':
+                                        timeouts += 1
+                        # Count open (in-flight) range phantoms
+                        try:
+                            for lst in getattr(pt, 'active_phantoms', {}).values():
+                                for p in (lst or []):
+                                    if (getattr(p, 'strategy_name', '') or '').startswith('range'):
+                                        if not getattr(p, 'exit_time', None):
+                                            open_cnt += 1
+                        except Exception:
+                            pass
+                    wr = (wins/total*100.0) if total else 0.0
+                    lines = ["📦 *Range Phantom*", "", f"Tracked: {total} | Open: {open_cnt} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}"]
                     await query.edit_message_text("\n".join(lines), parse_mode='Markdown')
                     return
                 if data == "ui:ml:trend":

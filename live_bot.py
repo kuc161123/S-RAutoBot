@@ -2328,7 +2328,7 @@ class TradingBot:
                 except Exception:
                     pass
 
-                # Record phantom to scalp tracker; build full feature set
+                # Record/Execute Scalp: build full feature set first
                 # Choose a source df safely without boolean evaluation on DataFrames
                 _df_src2 = None
                 try:
@@ -2367,13 +2367,22 @@ class TradingBot:
                         ml_s, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats)
                     except Exception:
                         ml_s = 0.0
-                    # High-ML immediate execution override (bypass gating)
+                    # Qscore-gated execution (primary) OR High-ML override (optional)
                     try:
                         e_cfg = (self.config.get('scalp', {}) or {}).get('exec', {})
-                        allow_hi = bool(e_cfg.get('allow_stream_high_ml', True))
+                        allow_hi = bool(e_cfg.get('allow_stream_high_ml', False))
                         hi_thr = float(e_cfg.get('high_ml_force', 92))
                     except Exception:
-                        allow_hi = True; hi_thr = 92.0
+                        allow_hi = False; hi_thr = 92.0
+                    # Scalp Qscore execution gate
+                    exec_enabled = False
+                    exec_thr = 88.0
+                    try:
+                        exec_enabled = bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('enabled', False))
+                        exec_thr = float((((self.config.get('scalp', {}) or {}).get('rule_mode', {}) or {}).get('execute_q_min', 88)))
+                    except Exception:
+                        exec_enabled = False
+                        exec_thr = 88.0
                     # Session gating for Scalp execution (phantoms still recorded)
                     try:
                         sc_cfg = (self.config.get('scalp', {}) or {})
@@ -2382,10 +2391,9 @@ class TradingBot:
                         from datetime import datetime as _dt
                         hr = _dt.utcnow().hour
                         cur_session = 'asian' if 0 <= hr < 8 else ('european' if hr < 16 else 'us')
-                        if allowed_sessions and (cur_session not in allowed_sessions):
-                            allow_hi = False
+                        session_ok = (not allowed_sessions) or (cur_session in allowed_sessions)
                     except Exception:
-                        pass
+                        session_ok = True
                     # EV-based threshold bump for Scalp
                     try:
                         from ml_scorer_scalp import get_scalp_scorer
@@ -2394,6 +2402,53 @@ class TradingBot:
                         hi_thr = max(hi_thr, ev_thr_sc)
                     except Exception:
                         pass
+                    # Attempt Qscore execution first (if enabled)
+                    did_exec = False
+                    exec_reason = None
+                    try:
+                        if exec_enabled and session_ok and float(sc_feats.get('qscore', 0.0)) >= exec_thr:
+                            if sym in self.book.positions:
+                                exec_reason = 'position_exists'
+                            else:
+                                # Daily exec cap
+                                if not hasattr(self, '_scalp_exec_counter'):
+                                    self._scalp_exec_counter = {'day': None, 'count': 0}
+                                from datetime import datetime as _dt
+                                day_str = _dt.utcnow().strftime('%Y%m%d')
+                                if self._scalp_exec_counter['day'] != day_str:
+                                    self._scalp_exec_counter = {'day': day_str, 'count': 0}
+                                daily_cap = int(e_cfg.get('daily_cap', 5) or 5)
+                                if self._scalp_exec_counter['count'] >= daily_cap:
+                                    exec_reason = 'daily_cap'
+                                else:
+                                    # Risk override
+                                    old_risk = None
+                                    try:
+                                        old_risk = self.sizer.risk.risk_percent
+                                        self.sizer.risk.risk_percent = float(e_cfg.get('risk_percent', old_risk or 1.0))
+                                    except Exception:
+                                        pass
+                                    # Pre-exec notify
+                                    try:
+                                        if self.tg:
+                                            comps = sc_feats.get('qscore_components', {}) or {}
+                                            comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
+                                            await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
+                                    except Exception:
+                                        pass
+                                    try:
+                                        did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                                    finally:
+                                        try:
+                                            if old_risk is not None:
+                                                self.sizer.risk.risk_percent = old_risk
+                                        except Exception:
+                                            pass
+                                    if did_exec:
+                                        self._scalp_exec_counter['count'] += 1
+                                        exec_reason = 'qgate'
+                    except Exception:
+                        did_exec = False
                     if allow_hi and float(ml_s or 0.0) >= hi_thr:
                         try:
                             if sym in self.book.positions:
@@ -2420,7 +2475,7 @@ class TradingBot:
                                         scpt.cancel_active(sym)
                                     except Exception:
                                         pass
-                                # Record phantom as executed for learning
+                                # Record as executed mirror for learning
                                 scpt.record_scalp_signal(
                                     sym,
                                     {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
@@ -2436,10 +2491,32 @@ class TradingBot:
                                     blist.append(now_ts)
                                     self._scalp_budget[sym] = blist
                                     continue
-                                else:
-                                    logger.info(f"[{sym}] 🛑 Scalp High-ML override blocked: reason=exec_guard")
+                            else:
+                                logger.info(f"[{sym}] 🛑 Scalp High-ML override blocked: reason=exec_guard")
                         except Exception as _ee:
                             logger.info(f"[{sym}] Scalp High-ML override error: {_ee}")
+                    # If executed via Qscore gate, record mirror and short-circuit
+                    if did_exec:
+                        try:
+                            scpt.record_scalp_signal(
+                                sym,
+                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                float(ml_s or 0.0),
+                                True,
+                                sc_feats
+                            )
+                            _scalp_decision_logged = True
+                            self._scalp_cooldown[sym] = bar_ts
+                            blist.append(now_ts)
+                            self._scalp_budget[sym] = blist
+                            # Mark decision context
+                            try:
+                                logger.info(f"[{sym}] 🧮 Scalp decision final: exec_scalp (reason=qscore {float(sc_feats.get('qscore',0.0)):.1f}>={exec_thr:.0f})")
+                            except Exception:
+                                pass
+                            continue
+                        except Exception:
+                            pass
                     # Enforce per-strategy hourly per-symbol budget for scalp
                     hb = self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
                     sc_limit = int(hb.get('scalp', sc_limit))

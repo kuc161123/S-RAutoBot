@@ -539,8 +539,11 @@ scalp:
     active_labeling: false   # if true, uses recent 3m bars to label open phantoms during downtime
     ml_enabled: false        # if true, seeds Scalp ML with historical phantom outcomes on startup
   exec:
+    enabled: true                 # Enable Scalp executes behind Qscore threshold
+    risk_percent: 0.25            # Per-trade risk for Scalp executes (percent of equity)
+    daily_cap: 5                  # Max Scalp executions per UTC day
     # Allow stream-side immediate execution for extremely high ML scores
-    allow_stream_high_ml: false   # Phantom-only pilot: disable any stream-side executes
+    allow_stream_high_ml: false   # Keep ML-override off; use Qscore gate
     high_ml_force: 70
     # Optionally cancel any active scalp phantom on high-ML execution to avoid duplicate tracking
     cancel_active_on_high_ml: true

@@ -434,9 +434,17 @@ class TGBot:
             try:
                 scp = (cfg.get('scalp', {}) or {})
                 ex = (scp.get('exec', {}) or {})
-                status = 'On' if bool(ex.get('allow_stream_high_ml', False)) else 'Off'
+                status = 'On' if (bool(ex.get('enabled', False)) or bool(ex.get('allow_stream_high_ml', False))) else 'Off'
                 sess = ",".join(scp.get('session_only', []) or [])
-                lines.append(f"• Scalp Exec: {status} | TF {scp.get('timeframe','3')}m | Sessions {sess if sess else 'all'}")
+                rp = ex.get('risk_percent', None)
+                cap = ex.get('daily_cap', None)
+                extra = []
+                if isinstance(rp, (int,float)):
+                    extra.append(f"Risk {float(rp):.2f}%")
+                if isinstance(cap, int):
+                    extra.append(f"Daily cap {cap}")
+                extra_s = f" | {' | '.join(extra)}" if extra else ""
+                lines.append(f"• Scalp Exec: {status} | TF {scp.get('timeframe','3')}m | Sessions {sess if sess else 'all'}{extra_s}")
             except Exception:
                 pass
         except Exception:

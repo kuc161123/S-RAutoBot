@@ -4230,6 +4230,14 @@ class TGBot:
 
     async def mr_ml_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show detailed Mean Reversion ML statistics"""
+        # MR disabled UX guard
+        try:
+            cfg = self.shared.get('config') or {}
+            if bool(((cfg.get('modes', {}) or {}).get('disable_mr', True))):
+                await self.safe_reply(update, "🌀 Mean Reversion is disabled in this build.")
+                return
+        except Exception:
+            pass
         try:
             msg = "🔄 *Mean Reversion ML Status*\n"
             msg += "━" * 30 + "\n\n"
@@ -4292,6 +4300,14 @@ class TGBot:
 
     async def mr_retrain(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Force retrain Mean Reversion ML models"""
+        # MR disabled UX guard
+        try:
+            cfg = self.shared.get('config') or {}
+            if bool(((cfg.get('modes', {}) or {}).get('disable_mr', True))):
+                await self.safe_reply(update, "🌀 Mean Reversion is disabled in this build.")
+                return
+        except Exception:
+            pass
         try:
             msg = "🔄 *Mean Reversion ML Retrain*\n"
             msg += "━" * 25 + "\n\n"
@@ -4351,6 +4367,14 @@ class TGBot:
 
     async def enhanced_mr_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show Enhanced Mean Reversion ML statistics"""
+        # MR disabled UX guard
+        try:
+            cfg = self.shared.get('config') or {}
+            if bool(((cfg.get('modes', {}) or {}).get('disable_mr', True))):
+                await self.safe_reply(update, "🌀 Mean Reversion is disabled in this build.")
+                return
+        except Exception:
+            pass
         try:
             msg = "🧠 *Enhanced Mean Reversion ML Status*\n"
             msg += "━" * 35 + "\n\n"
@@ -4408,6 +4432,14 @@ class TGBot:
 
     async def mr_phantom_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show Mean Reversion phantom trade statistics"""
+        # MR disabled UX guard
+        try:
+            cfg = self.shared.get('config') or {}
+            if bool(((cfg.get('modes', {}) or {}).get('disable_mr', True))):
+                await self.safe_reply(update, "🌀 Mean Reversion is disabled in this build.")
+                return
+        except Exception:
+            pass
         try:
             msg = "👻 *Mean Reversion Phantom Trades*\n"
             msg += "━" * 30 + "\n\n"

@@ -2213,18 +2213,19 @@ class TradingBot:
                                         scpt.cancel_active(sym)
                                     except Exception:
                                         pass
-                        scpt.record_scalp_signal(
-                            sym,
-                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                            float(ml_s_immediate or 0.0),
-                            bool(executed),
-                            (lambda _f: (
-                                (lambda _qs: (_f.update({'qscore': float(_qs[0]), 'qscore_components': dict(_qs[1]), 'qscore_reasons': list(_qs[2])}), _f)[1])(
-                                    self._compute_qscore_scalp(sym, sc_sig.side, float(sc_sig.entry), float(sc_sig.sl), float(sc_sig.tp), df3=_df_src_hi, df15=self.frames.get(sym), sc_feats=_f)
-                                ),
-                                _f
-                            )[1])(sc_feats_hi)
-                        )
+                                # Attach Qscore snapshot to features before recording
+                                try:
+                                    _qs = self._compute_qscore_scalp(sym, sc_sig.side, float(sc_sig.entry), float(sc_sig.sl), float(sc_sig.tp), df3=_df_src_hi, df15=self.frames.get(sym), sc_feats=sc_feats_hi)
+                                    sc_feats_hi['qscore'] = float(_qs[0]); sc_feats_hi['qscore_components'] = dict(_qs[1]); sc_feats_hi['qscore_reasons'] = list(_qs[2])
+                                except Exception:
+                                    pass
+                                scpt.record_scalp_signal(
+                                    sym,
+                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                    float(ml_s_immediate or 0.0),
+                                    bool(executed),
+                                    sc_feats_hi
+                                )
                             except Exception:
                                 pass
                             if executed:

@@ -281,6 +281,9 @@ range:
     risk_percent: 0.5
     daily_cap: 3
     allow_stream_entry: false
+    timeouts:
+      breakout_to_pullback_bars_3m: 25   # was 10 — allow more time for near-break retest
+      pullback_to_bos_bars_3m: 25        # was 10 — allow more time for BOS after retest
   logging:
     verbose: true         # Log detailed Range analysis lines
     decision_only: false  # If true, suppress analysis and show only decisions

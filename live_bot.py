@@ -1656,6 +1656,128 @@ class TradingBot:
             pass
         return out
 
+    def _compute_qscore_scalp(self, symbol: str, side: str, entry: float, sl: float, tp: float,
+                               df3: 'pd.DataFrame' = None, df15: 'pd.DataFrame' = None,
+                               sc_feats: dict | None = None) -> tuple[float, dict, list[str]]:
+        """Compute Scalp quality score (0–100) with component breakdown.
+
+        Components: mom, pull, micro, htf, sr, risk.
+        """
+        comp = {}; reasons = []
+        try:
+            f = sc_feats or {}
+            # Momentum: impulse vs ATR + wick direction + volume
+            imp = float(f.get('impulse_ratio', 0.0) or 0.0)
+            volr = float(f.get('volume_ratio', 1.0) or 1.0)
+            upw = float(f.get('upper_wick_ratio', 0.0) or 0.0)
+            loww = float(f.get('lower_wick_ratio', 0.0) or 0.0)
+            mom = min(100.0, max(0.0, 60.0 * imp + 15.0 * max(0.0, volr - 1.0)))
+            # Directional wick bonus
+            if side == 'long':
+                mom += min(10.0, loww * 20.0)
+                if upw > 0.6:
+                    reasons.append('mom:long_selling_wick')
+            else:
+                mom += min(10.0, upw * 20.0)
+                if loww > 0.6:
+                    reasons.append('mom:short_buying_wick')
+            comp['mom'] = max(0.0, min(100.0, mom))
+
+            # Pullback fit: closer to VWAP is better; wider BB up to a point is better
+            vwap_da = float(f.get('vwap_dist_atr', 0.0) or 0.0)
+            bbw = float(f.get('bb_width_pct', 0.0) or 0.0)
+            # Map VWAP distance: 0 ATR→100, 0.8 ATR→0
+            vwap_score = max(0.0, min(100.0, (1.0 - (vwap_da / 0.8)) * 100.0))
+            # Map BB width: 0%→0, 2%→100 (cap)
+            bb_score = max(0.0, min(100.0, (bbw / 0.02) * 100.0)) if bbw >= 0 else 0.0
+            comp['pull'] = 0.7 * vwap_score + 0.3 * bb_score
+
+            # Micro structure: 3m sequence of closes
+            try:
+                micro = 50.0
+                if df3 is not None and len(df3) >= 4:
+                    tail = df3['close'].tail(4)
+                    up_seq = tail.iloc[-1] > tail.iloc[-2] >= tail.iloc[-3]
+                    dn_seq = tail.iloc[-1] < tail.iloc[-2] <= tail.iloc[-3]
+                    ok = (up_seq if side == 'long' else dn_seq)
+                    micro = 100.0 if ok else 30.0
+                comp['micro'] = micro
+            except Exception:
+                comp['micro'] = 50.0
+
+            # HTF nudge from 15m/60m composite
+            try:
+                comp_htf = 50.0
+                compo = self._get_htf_metrics(symbol, df15 if df15 is not None else self.frames.get(symbol))
+                ts15 = float(compo.get('ts15', 0.0) or 0.0)
+                # Favor longs when ts15 high; shorts when ts15 low (invert)
+                if side == 'long':
+                    comp_htf = max(0.0, min(100.0, ts15))
+                else:
+                    comp_htf = max(0.0, min(100.0, 100.0 - ts15))
+                comp['htf'] = comp_htf
+            except Exception as _he:
+                comp['htf'] = 50.0; reasons.append(f'htf:error:{_he}')
+
+            # SR clearance ahead (15m HTF levels)
+            try:
+                from multi_timeframe_sr import mtf_sr
+                dfref = df15 if df15 is not None else self.frames.get(symbol)
+                price = float(dfref['close'].iloc[-1]) if dfref is not None and len(dfref) else float(df3['close'].iloc[-1]) if df3 is not None and len(df3) else 0.0
+                prev = dfref['close'].shift() if dfref is not None else (df3['close'].shift() if df3 is not None else None)
+                high = (dfref['high'] if dfref is not None else (df3['high'] if df3 is not None else None))
+                low = (dfref['low'] if dfref is not None else (df3['low'] if df3 is not None else None))
+                if prev is not None and high is not None and low is not None:
+                    trarr = np.maximum(high - low, np.maximum((high - prev).abs(), (low - prev).abs()))
+                    atr14 = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
+                else:
+                    atr14 = price * 0.005
+                vlevels = mtf_sr.get_price_validated_levels(symbol, price)
+                if side == 'long':
+                    # distance to nearest resistance above price
+                    res = [lv for (lv, st, t) in vlevels if t == 'resistance']
+                    dist_atr = min((abs(lv - price)/max(1e-9, atr14) for lv in res), default=1.0)
+                else:
+                    sup = [lv for (lv, st, t) in vlevels if t == 'support']
+                    dist_atr = min((abs(lv - price)/max(1e-9, atr14) for lv in sup), default=1.0)
+                # 0.3 ATR distance→100, 1.0 ATR→~0
+                comp['sr'] = max(0.0, min(100.0, (1.0 - (dist_atr / 0.30)) * 100.0))
+            except Exception as _se:
+                comp['sr'] = 50.0; reasons.append(f'sr:error:{_se}')
+
+            # Risk geometry: target RR and stop size sanity
+            try:
+                if side == 'long':
+                    R = max(1e-9, entry - sl)
+                    rr = max(0.0, (tp - entry) / R)
+                else:
+                    R = max(1e-9, sl - entry)
+                    rr = max(0.0, (entry - tp) / R)
+                # Map RR: 1.2→40, 1.5→60, 2.0→85, ≥3→100
+                if rr <= 1.2:
+                    risk = 40.0
+                elif rr <= 1.5:
+                    risk = 60.0
+                elif rr <= 2.0:
+                    risk = 85.0
+                else:
+                    risk = 100.0
+                comp['risk'] = risk
+            except Exception:
+                comp['risk'] = 60.0
+
+            # Weighted sum using config weights
+            try:
+                wcfg = (((self.config.get('scalp', {}) or {}).get('rule_mode', {}) or {}).get('weights', {}) or {})
+                wm = float(wcfg.get('mom', 0.35)); wp = float(wcfg.get('pull', 0.20)); wmi = float(wcfg.get('micro', 0.15)); wh = float(wcfg.get('htf', 0.10)); ws = float(wcfg.get('sr', 0.10)); wrk = float(wcfg.get('risk', 0.10))
+                s = max(1e-9, wm + wp + wmi + wh + ws + wrk); wm/=s; wp/=s; wmi/=s; wh/=s; ws/=s; wrk/=s
+            except Exception:
+                wm, wp, wmi, wh, ws, wrk = 0.35, 0.20, 0.15, 0.10, 0.10, 0.10
+            q = wm*comp.get('mom',50.0) + wp*comp.get('pull',50.0) + wmi*comp.get('micro',50.0) + wh*comp.get('htf',50.0) + ws*comp.get('sr',50.0) + wrk*comp.get('risk',50.0)
+            return max(0.0, min(100.0, float(q))), comp, reasons
+        except Exception as e:
+            return 50.0, {}, [f'scalp_q:error:{e}']
+
     async def _collect_secondary_stream(self, ws_url: str, timeframe: str, symbols: list[str]):
         """Collect a secondary timeframe (e.g., 3m) for scalp detection."""
         handler = MultiWebSocketHandler(ws_url, self.running)
@@ -2091,13 +2213,18 @@ class TradingBot:
                                         scpt.cancel_active(sym)
                                     except Exception:
                                         pass
-                                scpt.record_scalp_signal(
-                                    sym,
-                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                    float(ml_s_immediate or 0.0),
-                                    bool(executed),
-                                    sc_feats_hi
-                                )
+                        scpt.record_scalp_signal(
+                            sym,
+                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                            float(ml_s_immediate or 0.0),
+                            bool(executed),
+                            (lambda _f: (
+                                (lambda _qs: (_f.update({'qscore': float(_qs[0]), 'qscore_components': dict(_qs[1]), 'qscore_reasons': list(_qs[2])}), _f)[1])(
+                                    self._compute_qscore_scalp(sym, sc_sig.side, float(sc_sig.entry), float(sc_sig.sl), float(sc_sig.tp), df3=_df_src_hi, df15=self.frames.get(sym), sc_feats=_f)
+                                ),
+                                _f
+                            )[1])(sc_feats_hi)
+                        )
                             except Exception:
                                 pass
                             if executed:
@@ -2139,7 +2266,12 @@ class TradingBot:
                                 {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
                                 float(ml_s_early or 0.0),
                                 False,
-                                sc_feats_early
+                                (lambda _f: (
+                                    (lambda _qs: (_f.update({'qscore': float(_qs[0]), 'qscore_components': dict(_qs[1]), 'qscore_reasons': list(_qs[2])}), _f)[1])(
+                                        self._compute_qscore_scalp(sym, sc_sig.side, float(sc_sig.entry), float(sc_sig.sl), float(sc_sig.tp), df3=_df_src, df15=self.frames.get(sym), sc_feats=_f)
+                                    ),
+                                    _f
+                                )[1])(sc_feats_early)
                             )
                             try:
                                 self._scalp_stats['signals'] = self._scalp_stats.get('signals', 0) + 1
@@ -2207,6 +2339,11 @@ class TradingBot:
                 except Exception:
                     _df_src2 = df
                 sc_feats = self._build_scalp_features(_df_src2, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                try:
+                    _qs = self._compute_qscore_scalp(sym, sc_sig.side, float(sc_sig.entry), float(sc_sig.sl), float(sc_sig.tp), df3=_df_src2, df15=self.frames.get(sym), sc_feats=sc_feats)
+                    sc_feats['qscore'] = float(_qs[0]); sc_feats['qscore_components'] = dict(_qs[1]); sc_feats['qscore_reasons'] = list(_qs[2])
+                except Exception:
+                    pass
                 sc_feats['routing'] = 'none'
                 # Ensure hourly per-symbol pacing vars exist before any High-ML early exit uses them
                 try:
@@ -2872,6 +3009,8 @@ class TradingBot:
             strat = str(getattr(phantom, 'strategy_name', '') or '').lower()
             if strat.startswith('range'):
                 label_title = 'Range Phantom'
+            elif strat.startswith('scalp'):
+                label_title = 'Scalp Phantom'
             else:
                 label_title = 'Trend Phantom'
 
@@ -2987,6 +3126,11 @@ class TradingBot:
                         lines.append(
                             f"RNG={comps.get('rng',0):.0f} FBO={comps.get('fbo',0):.0f} PROX={comps.get('prox',0):.0f} Micro={comps.get('micro',0):.0f} Risk={comps.get('risk',0):.0f} SR={comps.get('sr',0):.0f}"
                         )
+                    elif label_title.startswith('Scalp'):
+                        # Scalp components: mom, pull, micro, htf, sr, risk
+                        lines.append(
+                            f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
+                        )
                     else:
                         # Trend components: sr, htf, bos, micro, risk, div
                         lines.append(
@@ -3002,6 +3146,82 @@ class TradingBot:
                 self._phantom_open_notified.add(pid)
         except Exception as e:
             logger.debug(f"Trend phantom notify error: {e}")
+
+    async def _notify_scalp_phantom(self, phantom):
+        """Scalp phantom lifecycle notifier (open/TP/close) to Telegram.
+
+        Called by ScalpPhantomTracker via set_notifier().
+        """
+        if not self.tg:
+            return
+        try:
+            symbol = getattr(phantom, 'symbol', '?')
+            side = str(getattr(phantom, 'side', '?')).upper()
+            entry = float(getattr(phantom, 'entry_price', 0.0) or 0.0)
+            sl = float(getattr(phantom, 'stop_loss', 0.0) or 0.0)
+            tp = float(getattr(phantom, 'take_profit', 0.0) or 0.0)
+            ml = float(getattr(phantom, 'ml_score', 0.0) or 0.0)
+            outcome = getattr(phantom, 'outcome', None)
+            pid = getattr(phantom, 'phantom_id', '')
+            pid_suffix = f" [#{pid}]" if isinstance(pid, str) and pid else ""
+            feats = getattr(phantom, 'features', {}) or {}
+
+            # Close notification
+            if outcome in ('win','loss') or getattr(phantom, 'exit_time', None):
+                emoji = '✅' if outcome == 'win' else ('⏱️' if str(getattr(phantom,'exit_reason','')).lower()=='timeout' else '❌')
+                exit_reason = str(getattr(phantom, 'exit_reason', 'unknown')).replace('_',' ').title()
+                pnl = float(getattr(phantom, 'pnl_percent', 0.0) or 0.0)
+                exit_px = float(getattr(phantom, 'exit_price', 0.0) or 0.0)
+                rr = getattr(phantom, 'realized_rr', None)
+                lines = [
+                    f"👻 *Scalp Phantom {emoji}*{pid_suffix}",
+                    f"{symbol} {side} | ML {ml:.1f}",
+                    f"Entry → Exit: {entry:.4f} → {exit_px:.4f}",
+                    f"P&L: {pnl:+.2f}% ({exit_reason})"
+                ]
+                try:
+                    if isinstance(rr, (int,float)):
+                        lines.append(f"Realized R: {float(rr):.2f}R")
+                except Exception:
+                    pass
+                if pid and pid in getattr(self, '_phantom_close_notified', set()):
+                    return
+                await self.tg.send_message("\n".join(lines))
+                try:
+                    self._phantom_close_notified.add(pid)
+                except Exception:
+                    pass
+                return
+
+            # Open notification with Qscore breakdown
+            q = feats.get('qscore', None)
+            comps = feats.get('qscore_components', {}) or {}
+            reason_line = f"Q={float(q):.1f}" if isinstance(q, (int,float)) else None
+            lines = [
+                f"👻 *Scalp Phantom Opened*{pid_suffix}",
+                f"{symbol} {side} | ML {ml:.1f}",
+                f"Entry: {entry:.4f}",
+                f"TP / SL: {tp:.4f} / {sl:.4f}"
+            ]
+            if reason_line:
+                lines.append(reason_line)
+            try:
+                if comps:
+                    lines.append(f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}")
+            except Exception:
+                pass
+            if pid and pid in getattr(self, '_phantom_open_notified', set()):
+                return
+            await self.tg.send_message("\n".join([l for l in lines if l]))
+            try:
+                self._phantom_open_notified.add(pid)
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                logger.debug(f"Scalp phantom notify error: {e}")
+            except Exception:
+                pass
 
     def _trend_invalidation_handoff(self, symbol: str, info: dict):
         """Soft handoff from Trend invalidation to Range phantom (one-shot, guarded)."""
@@ -4761,6 +4981,13 @@ class TradingBot:
                         phantom_tracker.set_notifier(self._notify_trend_phantom)
                     except Exception:
                         pass
+                    # Wire Scalp phantom notifier for Telegram lifecycle messages
+                    try:
+                        if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
+                            scpt = get_scalp_phantom_tracker()
+                            scpt.set_notifier(self._notify_scalp_phantom)
+                    except Exception:
+                        pass
                     enhanced_mr_scorer = get_enhanced_mr_scorer()  # Enhanced MR ML
                     mr_phantom_tracker = get_mr_phantom_tracker()  # MR phantom tracker
                     mean_reversion_scorer = None  # Not used in enhanced system
@@ -4845,6 +5072,12 @@ class TradingBot:
                     phantom_tracker = get_phantom_tracker()
                     try:
                         phantom_tracker.set_notifier(self._notify_trend_phantom)
+                    except Exception:
+                        pass
+                    try:
+                        if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
+                            scpt = get_scalp_phantom_tracker()
+                            scpt.set_notifier(self._notify_scalp_phantom)
                     except Exception:
                         pass
                     enhanced_mr_scorer = None

@@ -539,7 +539,7 @@ scalp:
     ml_enabled: false        # if true, seeds Scalp ML with historical phantom outcomes on startup
   exec:
     # Allow stream-side immediate execution for extremely high ML scores
-    allow_stream_high_ml: true
+    allow_stream_high_ml: false   # Phantom-only pilot: disable any stream-side executes
     high_ml_force: 70
     # Optionally cancel any active scalp phantom on high-ML execution to avoid duplicate tracking
     cancel_active_on_high_ml: true
@@ -547,6 +547,17 @@ scalp:
     slippage_pct: 0.0005
     # Small bias to extend TP distance to better match net realized R after fees/slippage
     rr_bias_pct: 0.03
+  # Rule-mode scoring for Scalp (phantom-only). Used for telemetry/notifications; not for execution yet.
+  rule_mode:
+    execute_q_min: 88     # Not used while exec is disabled; kept for symmetry
+    phantom_q_min: 65     # Used only for labeling decisions
+    weights:              # normalized automatically
+      mom: 0.35           # momentum burst quality (impulse, wick direction, volume)
+      pull: 0.20          # pullback fit (VWAP distance, BB width)
+      micro: 0.15         # 3m micro structure alignment
+      htf: 0.10           # 15m/1h directional nudge
+      sr: 0.10            # HTF S/R clearance in direction
+      risk: 0.10          # RR and stop geometry
 symbol_meta:
   default:
     qty_step: 0.001

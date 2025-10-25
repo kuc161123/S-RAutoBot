@@ -85,7 +85,7 @@ trade:
 
 # Runtime mode switches
 modes:
-  trend_only: true   # When true, disable MR & Scalp (exec + phantom) and mute their logs
+  trend_only: false   # Allow MR & Scalp (exec remains off for Scalp; phantoms on)
 
 
 # Strategy-specific regime thresholds and hysteresis

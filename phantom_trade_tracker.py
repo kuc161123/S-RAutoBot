@@ -66,6 +66,10 @@ class PhantomTrade:
     # Lifecycle flags
     be_moved: bool = False
     tp1_hit: bool = False
+    # Timing diagnostics for ML
+    tp1_time: Optional[datetime] = None
+    time_to_tp1_sec: Optional[int] = None
+    time_to_exit_sec: Optional[int] = None
     
     def to_dict(self):
         """Convert to dictionary for storage"""
@@ -460,6 +464,18 @@ class PhantomTradeTracker:
                                 ph.tp1_hit = True
                                 ph.be_moved = True
                                 ph.stop_loss = float(ph.entry_price)
+                                # Stamp TP1 timing for ML
+                                try:
+                                    from datetime import datetime as _dt
+                                    ph.tp1_time = _dt.utcnow()
+                                    if ph.signal_time:
+                                        ph.time_to_tp1_sec = int((ph.tp1_time - ph.signal_time).total_seconds())
+                                        if isinstance(ph.features, dict):
+                                            ph.features['time_to_tp1_sec'] = ph.time_to_tp1_sec
+                                            ph.features['tp1_hit'] = True
+                                            ph.features['be_moved'] = True
+                                except Exception:
+                                    pass
                                 try:
                                     if self.notifier:
                                         setattr(ph, 'phantom_event', 'tp1')
@@ -485,6 +501,17 @@ class PhantomTradeTracker:
                         if (not ph.tp1_hit) and cur_high >= tp1_lvl:
                             ph.tp1_hit = True
                             ph.be_moved = True
+                            try:
+                                from datetime import datetime as _dt
+                                ph.tp1_time = _dt.utcnow()
+                                if ph.signal_time:
+                                    ph.time_to_tp1_sec = int((ph.tp1_time - ph.signal_time).total_seconds())
+                                    if isinstance(ph.features, dict):
+                                        ph.features['time_to_tp1_sec'] = ph.time_to_tp1_sec
+                                        ph.features['tp1_hit'] = True
+                                        ph.features['be_moved'] = True
+                            except Exception:
+                                pass
                             # Simulate SL moved to BE after TP1
                             ph.stop_loss = float(ph.entry_price)
                             # Notify TP1 event
@@ -524,6 +551,17 @@ class PhantomTradeTracker:
                                 ph.be_moved = True
                                 ph.stop_loss = float(ph.entry_price)
                                 try:
+                                    from datetime import datetime as _dt
+                                    ph.tp1_time = _dt.utcnow()
+                                    if ph.signal_time:
+                                        ph.time_to_tp1_sec = int((ph.tp1_time - ph.signal_time).total_seconds())
+                                        if isinstance(ph.features, dict):
+                                            ph.features['time_to_tp1_sec'] = ph.time_to_tp1_sec
+                                            ph.features['tp1_hit'] = True
+                                            ph.features['be_moved'] = True
+                                except Exception:
+                                    pass
+                                try:
                                     if self.notifier:
                                         setattr(ph, 'phantom_event', 'tp1')
                                         res = self.notifier(ph)
@@ -547,6 +585,17 @@ class PhantomTradeTracker:
                         if (not ph.tp1_hit) and cur_low <= tp1_lvl:
                             ph.tp1_hit = True
                             ph.be_moved = True
+                            try:
+                                from datetime import datetime as _dt
+                                ph.tp1_time = _dt.utcnow()
+                                if ph.signal_time:
+                                    ph.time_to_tp1_sec = int((ph.tp1_time - ph.signal_time).total_seconds())
+                                    if isinstance(ph.features, dict):
+                                        ph.features['time_to_tp1_sec'] = ph.time_to_tp1_sec
+                                        ph.features['tp1_hit'] = True
+                                        ph.features['be_moved'] = True
+                            except Exception:
+                                pass
                             ph.stop_loss = float(ph.entry_price)
                             # Notify TP1 event
                             try:
@@ -609,6 +658,12 @@ class PhantomTradeTracker:
             pass
         phantom.exit_price = exit_price
         phantom.exit_time = datetime.now()
+        # Compute time-to-exit
+        try:
+            if phantom.signal_time and phantom.exit_time:
+                phantom.time_to_exit_sec = int((phantom.exit_time - phantom.signal_time).total_seconds())
+        except Exception:
+            phantom.time_to_exit_sec = None
         
         # Calculate P&L
         if phantom.side == "long":
@@ -640,6 +695,20 @@ class PhantomTradeTracker:
             phantom.one_r_hit = None
             phantom.two_r_hit = None
             phantom.realized_rr = None
+
+        # Reflect lifecycle flags/timings into features for ML consumers
+        try:
+            if isinstance(phantom.features, dict):
+                phantom.features['tp1_hit'] = bool(getattr(phantom, 'tp1_hit', False))
+                phantom.features['be_moved'] = bool(getattr(phantom, 'be_moved', False))
+                if getattr(phantom, 'time_to_tp1_sec', None) is not None:
+                    phantom.features['time_to_tp1_sec'] = int(phantom.time_to_tp1_sec)
+                if getattr(phantom, 'time_to_exit_sec', None) is not None:
+                    phantom.features['time_to_exit_sec'] = int(phantom.time_to_exit_sec)
+                if getattr(phantom, 'realized_rr', None) is not None:
+                    phantom.features['realized_rr'] = float(phantom.realized_rr)
+        except Exception:
+            pass
 
         # If TP1 was hit earlier, classify as a win regardless of later BE/SL (non-timeout)
         try:

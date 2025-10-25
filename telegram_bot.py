@@ -348,6 +348,40 @@ class TGBot:
         except Exception:
             pass
 
+        # Scalp Phantom aggregate
+        try:
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            total = wins = losses = timeouts = 0
+            open_cnt = 0
+            # Completed
+            for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                for p in arr:
+                    try:
+                        oc = getattr(p, 'outcome', None)
+                        if oc in ('win','loss') and not getattr(p, 'was_executed', False):
+                            total += 1
+                            if oc == 'win':
+                                wins += 1
+                            else:
+                                losses += 1
+                        if str(getattr(p, 'exit_reason', '')).lower() == 'timeout':
+                            timeouts += 1
+                    except Exception:
+                        continue
+            # Open
+            try:
+                act = getattr(scpt, 'active', {}) or {}
+                open_cnt = sum(len(lst) for lst in act.values())
+            except Exception:
+                pass
+            wr = (wins/total*100.0) if total else 0.0
+            lines.append("")
+            lines.append("🩳 *Scalp Phantom*")
+            lines.append(f"• Tracked: {total} | Open: {open_cnt} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}")
+        except Exception:
+            pass
+
         # Trend ML snapshot
         try:
             ml_scorer = self.shared.get('ml_scorer')
@@ -396,6 +430,15 @@ class TGBot:
                 lines.append(f"• Range Exec: {status} | Risk {float(rx.get('risk_percent',0.0)):.2f}% | Daily cap {int(rx.get('daily_cap',0))}")
             except Exception:
                 pass
+            # Scalp Exec snapshot (high-ML stream override)
+            try:
+                scp = (cfg.get('scalp', {}) or {})
+                ex = (scp.get('exec', {}) or {})
+                status = 'On' if bool(ex.get('allow_stream_high_ml', False)) else 'Off'
+                sess = ",".join(scp.get('session_only', []) or [])
+                lines.append(f"• Scalp Exec: {status} | TF {scp.get('timeframe','3')}m | Sessions {sess if sess else 'all'}")
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -404,6 +447,7 @@ class TGBot:
             [InlineKeyboardButton("📐 Trend States", callback_data="ui:trend:states"), InlineKeyboardButton("📊 Positions", callback_data="ui:positions")],
             [InlineKeyboardButton("📜 Recent", callback_data="ui:recent"), InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:trend"), InlineKeyboardButton("📦 Range", callback_data="ui:phantom:range")],
             [InlineKeyboardButton("🤖 ML", callback_data="ui:ml:trend"), InlineKeyboardButton("🧠 Patterns", callback_data="ui:ml:patterns")],
+            [InlineKeyboardButton("🩳 Scalp", callback_data="ui:scalp:qa"), InlineKeyboardButton("📈 Scalp Qscore", callback_data="ui:scalp:qscore")],
             [InlineKeyboardButton("🧭 Events", callback_data="ui:events"), InlineKeyboardButton("⚙️ Settings", callback_data="ui:settings")]
         ])
 

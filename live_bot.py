@@ -2316,6 +2316,12 @@ class TradingBot:
                     try:
                         logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=dedup)")
                         _scalp_decision_logged = True
+                        # Telegram: notify dedup skip for visibility
+                        try:
+                            if self.tg:
+                                await self.tg.send_message(f"🛑 Scalp: [{sym}] dedup skip — phantom suppressed")
+                        except Exception:
+                            pass
                     except Exception:
                         pass
                     continue
@@ -2449,6 +2455,17 @@ class TradingBot:
                                         exec_reason = 'qgate'
                     except Exception:
                         did_exec = False
+                    # If Q gate passed but blocked, notify
+                    try:
+                        if (not did_exec) and exec_enabled and session_ok and float(sc_feats.get('qscore', 0.0)) >= exec_thr:
+                            if self.tg:
+                                r = exec_reason or 'exec_guard'
+                                comps = sc_feats.get('qscore_components', {}) or {}
+                                comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
+                                await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}) — phantom recorded\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
+                    except Exception:
+                        pass
+
                     if allow_hi and float(ml_s or 0.0) >= hi_thr:
                         try:
                             if sym in self.book.positions:
@@ -2600,7 +2617,7 @@ class TradingBot:
                                 pass
                             logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
                             try:
-                                # Explain why not executed: ML below threshold vs budget/cap
+                                # Explain why not executed: budgets or below ML override (still phantom)
                                 reason = 'unknown'
                                 try:
                                     if not daily_ok:
@@ -2608,12 +2625,19 @@ class TradingBot:
                                     elif sc_remaining <= 0:
                                         reason = 'hourly_budget'
                                     else:
-                                        # default: below high-ML threshold
                                         reason = f"ml<thr {float(ml_s or 0.0):.1f}<{hi_thr:.0f}"
                                 except Exception:
                                     pass
                                 logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason={reason})")
                                 _scalp_decision_logged = True
+                                # Telegram notify for blocked reasons leading to phantom (non-q reasons), include Qscore
+                                try:
+                                    if self.tg and reason in ('daily_cap','hourly_budget'):
+                                        comps = sc_feats.get('qscore_components', {}) or {}
+                                        comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
+                                        await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={reason}) — phantom recorded\nQ={float(sc_feats.get('qscore',0.0)):.1f}\n{comp_line}")
+                                except Exception:
+                                    pass
                             except Exception:
                                 pass
                             self._scalp_cooldown[sym] = bar_ts
@@ -3153,9 +3177,12 @@ class TradingBot:
                     # Use per-strategy thresholds
                     if label_title.startswith('Range'):
                         exec_min = float((((self.config.get('range',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
+                    elif label_title.startswith('Scalp'):
+                        exec_min = float((((self.config.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 88)))
                     else:
                         exec_min = float(((self.config.get('trend',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78))
-                    reason_line = f"Q={float(q):.1f} (< {exec_min:.0f})"
+                    lt = "<" if float(q) < exec_min else ">="
+                    reason_line = f"Q={float(q):.1f} ({lt} {exec_min:.0f})"
                 except Exception:
                     reason_line = f"Q={float(q):.1f}"
             # Compute simple regime label from features if available
@@ -5064,6 +5091,16 @@ class TradingBot:
                         if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
                             scpt = get_scalp_phantom_tracker()
                             scpt.set_notifier(self._notify_scalp_phantom)
+                            # Backfill open notifications for already-active scalp phantoms
+                            try:
+                                import asyncio as _asyncio
+                                for lst in (getattr(scpt, 'active', {}) or {}).values():
+                                    for ph in (lst or []):
+                                        res = self._notify_scalp_phantom(ph)
+                                        if _asyncio.iscoroutine(res):
+                                            _asyncio.create_task(res)
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                     enhanced_mr_scorer = get_enhanced_mr_scorer()  # Enhanced MR ML
@@ -5156,6 +5193,16 @@ class TradingBot:
                         if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
                             scpt = get_scalp_phantom_tracker()
                             scpt.set_notifier(self._notify_scalp_phantom)
+                            # Backfill open notifications for already-active scalp phantoms
+                            try:
+                                import asyncio as _asyncio
+                                for lst in (getattr(scpt, 'active', {}) or {}).values():
+                                    for ph in (lst or []):
+                                        res = self._notify_scalp_phantom(ph)
+                                        if _asyncio.iscoroutine(res):
+                                            _asyncio.create_task(res)
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                     enhanced_mr_scorer = None

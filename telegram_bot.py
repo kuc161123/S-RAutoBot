@@ -1009,7 +1009,8 @@ class TGBot:
              InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:main")],
             [InlineKeyboardButton("🧪 Shadow", callback_data="ui:shadow:stats")],
             [InlineKeyboardButton("🩳 Scalp QA", callback_data="ui:scalp:qa"),
-             InlineKeyboardButton("🧪 Scalp Promote", callback_data="ui:scalp:promote")],
+            InlineKeyboardButton("📈 Scalp Qscore", callback_data="ui:scalp:qscore"),
+            InlineKeyboardButton("🧪 Scalp Promote", callback_data="ui:scalp:promote")],
             [InlineKeyboardButton("🧱 HTF S/R", callback_data="ui:htf:status"),
              InlineKeyboardButton("🔄 Update S/R", callback_data="ui:htf:update")],
             [InlineKeyboardButton("⚙️ Risk", callback_data="ui:risk:main"),
@@ -2374,6 +2375,10 @@ class TGBot:
                 await query.answer()
                 fake_update = type('obj', (object,), {'message': query.message})
                 await self.scalp_qa(fake_update, ctx)
+            elif data.startswith("ui:scalp:qscore"):
+                await query.answer()
+                fake_update = type('obj', (object,), {'message': query.message})
+                await self.scalp_qscore_report(fake_update, ctx)
             elif data.startswith("ui:scalp:promote"):
                 await query.answer()
                 fake_update = type('obj', (object,), {'message': query.message})
@@ -5056,6 +5061,90 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_qa: {e}")
             await update.message.reply_text("Error getting scalp QA")
+
+    async def scalp_qscore_report(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """As-if execute report for Scalp based on phantom Qscore thresholds.
+
+        Computes WR and EV (mean realized R) for phantoms with qscore ≥ thresholds over recent windows.
+        """
+        try:
+            from scalp_phantom_tracker import get_scalp_phantom_tracker, ScalpPhantomTrade
+            scpt = get_scalp_phantom_tracker()
+            # Gather completed phantom trades with qscore and outcome (exclude timeouts)
+            trades: list = []
+            for arr in (scpt.completed or {}).values():
+                for t in arr:
+                    try:
+                        if getattr(t, 'outcome', None) in ('win','loss') and not getattr(t, 'was_executed', False):
+                            feats = getattr(t, 'features', {}) or {}
+                            q = feats.get('qscore', None)
+                            if isinstance(q, (int,float)):
+                                trades.append(t)
+                    except Exception:
+                        continue
+            if not trades:
+                await self.safe_reply(update, "🩳 *Scalp Qscore*\nNo scored phantoms yet.")
+                return
+            # Windows
+            import datetime as _dt
+            now = _dt.datetime.utcnow()
+            def within_days(t: ScalpPhantomTrade, days: int) -> bool:
+                try:
+                    et = getattr(t, 'exit_time', None)
+                    if not et:
+                        return False
+                    return (now - et).days <= days
+                except Exception:
+                    return False
+            # Thresholds to probe: around configured execute_q_min
+            cfg = self.shared.get('config') or {}
+            sc_cfg = (cfg.get('scalp', {}) or {})
+            rm = (sc_cfg.get('rule_mode', {}) or {})
+            base_thr = int(float(rm.get('execute_q_min', 88)))
+            thrs = sorted(set([base_thr - 5, base_thr - 3, base_thr, base_thr + 2, base_thr + 5]))
+            def agg(sample: list) -> dict:
+                tot = len(sample)
+                wins = sum(1 for t in sample if getattr(t, 'outcome', None) == 'win')
+                losses = tot - wins
+                wr = (wins / tot * 100.0) if tot else 0.0
+                # EV in R using realized_rr (timeouts excluded already)
+                try:
+                    ev = sum(float(getattr(t, 'realized_rr', 0.0) or 0.0) for t in sample) / tot if tot else 0.0
+                except Exception:
+                    ev = 0.0
+                return {'n': tot, 'wr': wr, 'evr': ev, 'w': wins, 'l': losses}
+            # Build report for 7d and 30d windows
+            def lines_for(days: int) -> list[str]:
+                sub = [t for t in trades if within_days(t, days)]
+                out = [f"• Window: {days}d ({len(sub)})"]
+                if not sub:
+                    out.append("  No data")
+                    return out
+                for thr in thrs:
+                    sample = []
+                    for t in sub:
+                        try:
+                            qv = float((getattr(t, 'features', {}) or {}).get('qscore', 0.0) or 0.0)
+                            if qv >= thr:
+                                sample.append(t)
+                        except Exception:
+                            continue
+                    s = agg(sample)
+                    out.append(f"  ≥{thr}: N={s['n']} WR={s['wr']:.1f}% EV={s['evr']:.2f}R (W/L {s['w']}/{s['l']})")
+                return out
+            msg = [
+                "📈 *Scalp Qscore (as-if execute)*",
+                f"Base thr: {base_thr}",
+            ]
+            msg += lines_for(7)
+            msg.append("")
+            msg += lines_for(30)
+            msg.append("")
+            msg.append("_EV uses realized R from phantoms; excludes timeouts_")
+            await self.safe_reply(update, "\n".join(msg))
+        except Exception as e:
+            logger.error(f"Error in scalp_qscore_report: {e}")
+            await update.message.reply_text("Error computing Scalp Qscore report")
 
     async def scalp_promotion_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Summarize Scalp promotion readiness (WR-based only)."""

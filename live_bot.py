@@ -3102,10 +3102,16 @@ class TradingBot:
                 feats['rc15'] = float(comp.get('rc15', 0.0)); feats['rc60'] = float(comp.get('rc60', 0.0))
             except Exception:
                 pass
-            # Record phantom
+            # Record phantom (prefer shared tracker instance)
             try:
-                from phantom_trade_tracker import get_phantom_tracker
-                pt = get_phantom_tracker()
+                pt = None
+                try:
+                    pt = self.shared.get('phantom_tracker') if hasattr(self, 'shared') else None
+                except Exception:
+                    pt = None
+                if pt is None:
+                    from phantom_trade_tracker import get_phantom_tracker
+                    pt = get_phantom_tracker()
                 pt.record_signal(symbol, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, False, feats, 'range_fbo')
             except Exception:
                 pass
@@ -6231,10 +6237,16 @@ class TradingBot:
                                                         pass
                                         except Exception:
                                             pass
-                                        # Record phantom
+                                        # Record phantom (prefer shared tracker instance)
                                         try:
-                                            from phantom_trade_tracker import get_phantom_tracker
-                                            pt = get_phantom_tracker()
+                                            pt = None
+                                            try:
+                                                pt = self.shared.get('phantom_tracker') if hasattr(self, 'shared') else None
+                                            except Exception:
+                                                pt = None
+                                            if pt is None:
+                                                from phantom_trade_tracker import get_phantom_tracker
+                                                pt = get_phantom_tracker()
                                             pt.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, False, feats, 'range_fbo')
                                         except Exception:
                                             pass

@@ -2146,6 +2146,23 @@ class TradingBot:
                                 f"vol={_vol_ratio:.2f}/{sc_settings.vol_ratio_min:.2f} wickL={_lower_w:.2f} wickU={_upper_w:.2f}/{sc_settings.wick_ratio_min:.2f} "
                                 f"vwap={_dist_vwap_atr:.2f}/{sc_settings.vwap_dist_atr_max:.2f} orb={_orb_ok})"
                             )
+                            try:
+                                reasons = []
+                                if not (_ema_up or _ema_dn):
+                                    reasons.append('ema_misaligned')
+                                if _bbw_pct < float(sc_settings.min_bb_width_pct):
+                                    reasons.append('bbw_low')
+                                if _vol_ratio < float(sc_settings.vol_ratio_min):
+                                    reasons.append('vol_low')
+                                if _dist_vwap_atr > float(sc_settings.vwap_dist_atr_max):
+                                    reasons.append('vwap_far')
+                                if not _orb_ok:
+                                    reasons.append('orb_block')
+                                if not reasons:
+                                    reasons.append('filters_unmet')
+                                logger.info(f"[{sym}] 🧮 Scalp heartbeat: decision=no_signal reasons={','.join(reasons)}")
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                     continue
@@ -6451,11 +6468,31 @@ class TradingBot:
                                                     except Exception:
                                                         lookback = 40
                                                     try:
-                                                        high = df['high']; low = df['low']
+                                                        high = df['high']; low = df['low']; close = df['close']
                                                         rng_high = float(high.rolling(lookback).max().iloc[-2]) if len(high) >= lookback+2 else 0.0
                                                         rng_low = float(low.rolling(lookback).min().iloc[-2]) if len(low) >= lookback+2 else 0.0
                                                         width_pct = ((rng_high - rng_low) / max(1e-9, rng_low)) if (rng_high > rng_low > 0) else 0.0
                                                         logger.info(f"[{sym}] 📦 Range: no FBO (width={width_pct*100.0:.1f}% bounds={rng_low:.4f}-{rng_high:.4f})")
+                                                        # Emit a heartbeat decision line with lightweight reasons
+                                                        try:
+                                                            width_min = float(settings.get('width_min_pct', 0.01) or 0.01)
+                                                            width_max = float(settings.get('width_max_pct', 0.10) or 0.10)
+                                                            reasons = []
+                                                            if width_pct < width_min:
+                                                                reasons.append('width_too_narrow')
+                                                            if width_pct > width_max:
+                                                                reasons.append('width_too_wide')
+                                                            rng_w = max(1e-9, (rng_high - rng_low))
+                                                            cl = float(close.iloc[-1]) if len(close) else 0.0
+                                                            # Consider near-edge if within 15% of band width
+                                                            near_edge = min(abs(cl - rng_low), abs(rng_high - cl)) <= (0.15 * rng_w)
+                                                            if not near_edge:
+                                                                reasons.append('not_near_edge')
+                                                            if not reasons:
+                                                                reasons.append('no_fbo')
+                                                            logger.info(f"[{sym}] 🧮 Range heartbeat: decision=no_signal reasons={','.join(reasons)}")
+                                                        except Exception:
+                                                            pass
                                                     except Exception:
                                                         logger.info(f"[{sym}] 📦 Range: no FBO")
                                                     last_bar_ts[sym] = bar_ts
@@ -6583,6 +6620,10 @@ class TradingBot:
                                                                     pass
                                                             if did_execute:
                                                                 self._range_exec_counter['count'] += 1
+                                                                try:
+                                                                    logger.info(f"[{sym}] 🧮 Range decision final: execute (reason=q>={float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):.1f} & htf_neutral)")
+                                                                except Exception:
+                                                                    pass
                                         except Exception:
                                             did_execute = False
                                     if not did_execute:
@@ -6603,7 +6644,7 @@ class TradingBot:
                                                     elif self._range_exec_counter['count'] >= int(exec_cfg.get('daily_cap', 3)):
                                                         reason = 'daily_cap'
                                                 if reason:
-                                                    logger.info(f"[{sym}] 🧮 Range decision: phantom (reason={reason})")
+                                                    logger.info(f"[{sym}] 🧮 Range decision final: phantom (reason={reason})")
                                                     # Telegram notify for blocked reasons (non-q) to mirror Trend behavior
                                                     try:
                                                         if self.tg and reason != 'q<thr':
@@ -6779,11 +6820,19 @@ class TradingBot:
                             btc_price = self.frames['BTCUSDT']['close'].iloc[-1]
                         # Update phantom prices for both systems
                         if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
-                            # Update both phantom trackers in parallel system
-                            phantom_tracker.update_phantom_prices(
-                                sym, current_price, df=df, btc_price=btc_price, symbol_collector=symbol_collector
-                            )
-                            mr_phantom_tracker.update_mr_phantom_prices(sym, current_price, df=df)
+                            # Update Trend phantom tracker in parallel system
+                            try:
+                                phantom_tracker.update_phantom_prices(
+                                    sym, current_price, df=df, btc_price=btc_price, symbol_collector=symbol_collector
+                                )
+                            except Exception:
+                                pass
+                            # Update MR phantom tracker only when MR is enabled and tracker exists
+                            try:
+                                if (not getattr(self, '_mr_disabled', False)) and (mr_phantom_tracker is not None):
+                                    mr_phantom_tracker.update_mr_phantom_prices(sym, current_price, df=df)
+                            except Exception:
+                                pass
                             # Scalp phantom tracker price updates (if available)
                             try:
                                 scpt = get_scalp_phantom_tracker()
@@ -8035,6 +8084,10 @@ class TradingBot:
                                 if len(df) < getattr(self, '_trend_hist_min', 80):
                                     if not self._trend_hist_warned.get(sym, False):
                                         logger.info(f"[{sym}] 🔵 Trend waiting for history: have {len(df)}/{getattr(self, '_trend_hist_min', 80)} 15m bars")
+                                        try:
+                                            logger.info(f"[{sym}] 🧮 Trend heartbeat: decision=no_signal reasons=insufficient_history")
+                                        except Exception:
+                                            pass
                                         self._trend_hist_warned[sym] = True
                                     raise Exception('insufficient_history')
                             except Exception as _e:
@@ -8055,6 +8108,11 @@ class TradingBot:
                                 log_no_sig = True
                             if log_no_sig:
                                 logger.info(f"[{sym}] ❌ No Trend Signal: Pullback conditions not met")
+                                try:
+                                    # Always emit a heartbeat decision line for transparency
+                                    logger.info(f"[{sym}] 🧮 Trend heartbeat: decision=no_signal reasons=pullback_unmet")
+                                except Exception:
+                                    pass
                         if sig_tr_ind is not None:
                             # Build trend features (regime-independent)
                             try:

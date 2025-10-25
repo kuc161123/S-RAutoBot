@@ -6179,6 +6179,24 @@ class TradingBot:
                 except Exception:
                     logger.debug("Failed to wire trend notifier to Telegram")
 
+                # Wire scalp phantom notifications to Telegram (ensure after Telegram init)
+                try:
+                    if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
+                        scpt = get_scalp_phantom_tracker()
+                        scpt.set_notifier(self._notify_scalp_phantom)
+                        # Backfill open notifications for already-active scalp phantoms
+                        try:
+                            import asyncio as _asyncio
+                            for lst in (getattr(scpt, 'active', {}) or {}).values():
+                                for ph in (lst or []):
+                                    res = self._notify_scalp_phantom(ph)
+                                    if _asyncio.iscoroutine(res):
+                                        _asyncio.create_task(res)
+                        except Exception:
+                            pass
+                except Exception:
+                    logger.debug("Failed to set scalp notifier after Telegram init")
+
                 # Phantom notifications are disabled (only executed high-ML opens + all closes sent elsewhere)
 
                 # MR phantom notifier disabled

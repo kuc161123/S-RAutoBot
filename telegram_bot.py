@@ -231,6 +231,38 @@ class TGBot:
         except Exception:
             lines.append("(unavailable)")
 
+        # Range States summary
+        try:
+            rs = self.shared.get('range_states') or {}
+            if rs:
+                lines.append("")
+                lines.append("📦 *Range States*")
+                lines.append(
+                    f"IN_RANGE {int(rs.get('in_range',0))} | NEAR_EDGE {int(rs.get('near_edge',0))} | EXEC {int(rs.get('exec_today',0))} | PHANTOM {int(rs.get('phantom_open',0))} | TP1(mid) {int(rs.get('tp1_mid_hits_today',0))}"
+                )
+            else:
+                lines.append("")
+                lines.append("📦 *Range States*")
+                lines.append("(unavailable)")
+        except Exception:
+            pass
+
+        # Scalp States summary
+        try:
+            ss = self.shared.get('scalp_states') or {}
+            if ss:
+                lines.append("")
+                lines.append("🩳 *Scalp States*")
+                lines.append(
+                    f"MOM {int(ss.get('mom',0))} | PULL {int(ss.get('pull',0))} | VWAP {int(ss.get('vwap',0))} | Q≥thr {int(ss.get('q_ge_thr',0))} | EXEC {int(ss.get('exec_today',0))} | PHANTOM {int(ss.get('phantom_open',0))}"
+                )
+            else:
+                lines.append("")
+                lines.append("🩳 *Scalp States*")
+                lines.append("(unavailable)")
+        except Exception:
+            pass
+
         # Rule‑Mode summary
         try:
             cfg = self.shared.get('config', {}) or {}

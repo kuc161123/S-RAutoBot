@@ -388,6 +388,53 @@ class FlowController:
                             d['guard_active'] = guard_active
                         except Exception:
                             pass
+                        # After scanning all symbols, publish Range state snapshot to shared + Redis
+                        try:
+                            from datetime import datetime as _dt
+                            import json as _json
+                            in_range_cnt = sum(1 for st in (self._range_symbol_state or {}).values() if st.get('in_range'))
+                            near_edge_cnt = sum(1 for st in (self._range_symbol_state or {}).values() if st.get('near_edge'))
+                            # Phantom open count (from tracker, persisted in Redis)
+                            ph_open = 0
+                            try:
+                                pt = self.shared.get('phantom_tracker')
+                                if pt:
+                                    for lst in (getattr(pt, 'active_phantoms', {}) or {}).values():
+                                        for p in (lst or []):
+                                            if (getattr(p, 'strategy_name','') or '').startswith('range') and not getattr(p, 'exit_time', None):
+                                                ph_open += 1
+                            except Exception:
+                                pass
+                            exec_today = 0
+                            try:
+                                if hasattr(self, '_range_exec_counter'):
+                                    exec_today = int(self._range_exec_counter.get('count', 0))
+                            except Exception:
+                                pass
+                            tp1_hits = 0
+                            try:
+                                if hasattr(self, '_redis') and self._redis is not None:
+                                    day = _dt.utcnow().strftime('%Y%m%d')
+                                    tp1_hits = int(self._redis.get(f'state:range:tp1_hits:{day}') or 0)
+                            except Exception:
+                                pass
+                            snapshot = {
+                                'ts': _dt.utcnow().isoformat()+'Z',
+                                'in_range': in_range_cnt,
+                                'near_edge': near_edge_cnt,
+                                'exec_today': exec_today,
+                                'phantom_open': ph_open,
+                                'tp1_mid_hits_today': tp1_hits,
+                                'reasons': dict(self._range_reasons or {})
+                            }
+                            self.shared['range_states'] = snapshot
+                            try:
+                                if hasattr(self, '_redis') and self._redis is not None:
+                                    self._redis.set('state:range:summary', _json.dumps(snapshot))
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
                     except Exception:
                         pass
         except Exception:
@@ -2160,6 +2207,23 @@ class TradingBot:
                                     reasons.append('orb_block')
                                 if not reasons:
                                     reasons.append('filters_unmet')
+                                # Update per-symbol Scalp state flags
+                                try:
+                                    self._scalp_symbol_state[sym] = {
+                                        'mom': bool(_ema_up or _ema_dn),
+                                        'pull': bool((_bbw_pct >= float(sc_settings.min_bb_width_pct)) and (max(_upper_w, _lower_w) >= float(sc_settings.wick_ratio_min))),
+                                        'vwap': bool(_dist_vwap_atr <= float(sc_settings.vwap_dist_atr_max)),
+                                        # Keep last q_ge_thr flag value until a new signal evaluates
+                                        **({'q_ge_thr': self._scalp_symbol_state.get(sym, {}).get('q_ge_thr', False)} if hasattr(self, '_scalp_symbol_state') else {})
+                                    }
+                                except Exception:
+                                    pass
+                                # Reasons histogram
+                                try:
+                                    for r in reasons:
+                                        self._scalp_reasons[r] = self._scalp_reasons.get(r, 0) + 1
+                                except Exception:
+                                    pass
                                 logger.info(f"[{sym}] 🧮 Scalp heartbeat: decision=no_signal reasons={','.join(reasons)}")
                             except Exception:
                                 pass
@@ -2435,6 +2499,12 @@ class TradingBot:
                     did_exec = False
                     exec_reason = None
                     try:
+                        # Update per-symbol state for Q≥thr
+                        try:
+                            qv = float(sc_feats.get('qscore', 0.0))
+                            self._scalp_symbol_state[sym] = {**(self._scalp_symbol_state.get(sym, {}) or {}), 'q_ge_thr': bool(qv >= exec_thr)}
+                        except Exception:
+                            pass
                         if exec_enabled and session_ok and float(sc_feats.get('qscore', 0.0)) >= exec_thr:
                             if sym in self.book.positions:
                                 exec_reason = 'position_exists'
@@ -2710,6 +2780,50 @@ class TradingBot:
                             logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=unknown_path)")
                     except Exception:
                         pass
+                # Periodically publish Scalp state snapshot (approx every 30s)
+                try:
+                    import time as _t, json as _json
+                    now_ts = _t.time()
+                    last = getattr(self, '_scalp_state_flush_ts', 0.0)
+                    if (now_ts - float(last)) >= 30.0:
+                        mom = sum(1 for st in (self._scalp_symbol_state or {}).values() if st.get('mom'))
+                        pull = sum(1 for st in (self._scalp_symbol_state or {}).values() if st.get('pull'))
+                        vwap = sum(1 for st in (self._scalp_symbol_state or {}).values() if st.get('vwap'))
+                        qthr = sum(1 for st in (self._scalp_symbol_state or {}).values() if st.get('q_ge_thr'))
+                        exec_today = 0
+                        try:
+                            if hasattr(self, '_scalp_exec_counter'):
+                                exec_today = int(self._scalp_exec_counter.get('count', 0))
+                        except Exception:
+                            pass
+                        ph_open = 0
+                        try:
+                            from scalp_phantom_tracker import get_scalp_phantom_tracker
+                            scpt2 = get_scalp_phantom_tracker()
+                            act = getattr(scpt2, 'active', {}) or {}
+                            ph_open = sum(len(lst) for lst in act.values())
+                        except Exception:
+                            pass
+                        from datetime import datetime as _dt
+                        snapshot = {
+                            'ts': _dt.utcnow().isoformat()+'Z',
+                            'mom': mom,
+                            'pull': pull,
+                            'vwap': vwap,
+                            'q_ge_thr': qthr,
+                            'exec_today': exec_today,
+                            'phantom_open': ph_open,
+                            'reasons': dict(self._scalp_reasons or {})
+                        }
+                        self.shared['scalp_states'] = snapshot
+                        try:
+                            if hasattr(self, '_redis') and self._redis is not None:
+                                self._redis.set('state:scalp:summary', _json.dumps(snapshot))
+                        except Exception:
+                            pass
+                        self._scalp_state_flush_ts = now_ts
+                except Exception:
+                    pass
             except Exception as e:
                 logger.debug(f"Secondary stream update error for {sym}: {e}")
 
@@ -3136,6 +3250,25 @@ class TradingBot:
                 label_title = 'Scalp Phantom'
             else:
                 label_title = 'Trend Phantom'
+
+            # State counters: track Range TP1(mid) hits for dashboard (persisted per-day)
+            try:
+                evt = str(getattr(phantom, 'phantom_event', '') or '')
+                if label_title.startswith('Range') and evt == 'tp1':
+                    if hasattr(self, '_redis') and self._redis is not None:
+                        from datetime import datetime as _dt
+                        day = _dt.utcnow().strftime('%Y%m%d')
+                        key = f'state:range:tp1_hits:{day}'
+                        try:
+                            cur = int(self._redis.get(key) or 0)
+                        except Exception:
+                            cur = 0
+                        try:
+                            self._redis.set(key, str(cur + 1))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
             # Closure (dedup by phantom_id)
             if outcome in ('win','loss') or getattr(phantom, 'exit_time', None):
@@ -5441,6 +5574,26 @@ class TradingBot:
             # Simple telemetry counters
             "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0, "policy_rejects": 0}
         }
+        # Initialize Range/Scalp states with Redis-backed continuity
+        try:
+            if not hasattr(self, '_range_symbol_state'):
+                self._range_symbol_state = {}
+            if not hasattr(self, '_scalp_symbol_state'):
+                self._scalp_symbol_state = {}
+            if not hasattr(self, '_range_reasons'):
+                self._range_reasons = {}
+            if not hasattr(self, '_scalp_reasons'):
+                self._scalp_reasons = {}
+            if hasattr(self, '_redis') and self._redis is not None:
+                import json as _json
+                rs = self._redis.get('state:range:summary')
+                if rs:
+                    shared['range_states'] = _json.loads(rs)
+                ss = self._redis.get('state:scalp:summary')
+                if ss:
+                    shared['scalp_states'] = _json.loads(ss)
+        except Exception:
+            pass
         # Trend event ring buffer for Telegram dashboard/event log
         try:
             shared["trend_events"] = []
@@ -6486,10 +6639,24 @@ class TradingBot:
                                                             cl = float(close.iloc[-1]) if len(close) else 0.0
                                                             # Consider near-edge if within 15% of band width
                                                             near_edge = min(abs(cl - rng_low), abs(rng_high - cl)) <= (0.15 * rng_w)
+                                                            # Update per-symbol Range state
+                                                            try:
+                                                                self._range_symbol_state[sym] = {
+                                                                    'in_range': bool((rng_low < cl < rng_high)),
+                                                                    'near_edge': bool(near_edge)
+                                                                }
+                                                            except Exception:
+                                                                pass
                                                             if not near_edge:
                                                                 reasons.append('not_near_edge')
                                                             if not reasons:
                                                                 reasons.append('no_fbo')
+                                                            # Reasons histogram
+                                                            try:
+                                                                for r in reasons:
+                                                                    self._range_reasons[r] = self._range_reasons.get(r, 0) + 1
+                                                            except Exception:
+                                                                pass
                                                             logger.info(f"[{sym}] 🧮 Range heartbeat: decision=no_signal reasons={','.join(reasons)}")
                                                         except Exception:
                                                             pass
@@ -6669,6 +6836,15 @@ class TradingBot:
                                             pt.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, False, feats, 'range_fbo')
                                         except Exception:
                                             pass
+                                    # Update per-symbol Range state using latest band info
+                                    try:
+                                        cl = float(df['close'].iloc[-1])
+                                        rng_high = float(feats.get('range_high', 0.0)); rng_low = float(feats.get('range_low', 0.0))
+                                        rng_w = max(1e-9, (rng_high - rng_low))
+                                        near_edge = min(abs(cl - rng_low), abs(rng_high - cl)) <= (0.15 * rng_w)
+                                        self._range_symbol_state[sym] = {'in_range': bool((rng_low < cl < rng_high)), 'near_edge': bool(near_edge)}
+                                    except Exception:
+                                        pass
                                     # Decision message
                                     try:
                                         comps = f"RNG={qc.get('rng',0):.0f} FBO={qc.get('fbo',0):.0f} PROX={qc.get('prox',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f} SR={qc.get('sr',0):.0f}"

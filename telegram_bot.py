@@ -848,21 +848,7 @@ class TGBot:
             except Exception as exc:
                 logger.debug(f"Unable to fetch range phantom stats: {exc}")
 
-        # MR Phantom
-        mr_phantom = self.shared.get("mr_phantom_tracker")
-        if mr_phantom:
-            try:
-                mr_stats = mr_phantom.get_mr_phantom_stats()
-                lines.append("")
-                lines.append("🌀 *MR Phantom*")
-                lines.append(f"• Tracked: {mr_stats.get('total_mr_trades', 0)}")
-                try:
-                    timeouts = mr_stats.get('mr_specific_metrics', {}).get('timeout_closures', 0)
-                    lines.append(f"• Timeouts: {timeouts}")
-                except Exception:
-                    pass
-            except Exception as exc:
-                logger.debug(f"Unable to fetch MR phantom stats: {exc}")
+        # MR Phantom section hidden (MR disabled)
 
         # Phantom + Executed summaries with WR and open/closed
         try:
@@ -1017,10 +1003,15 @@ class TGBot:
             lines.append(f"• 🔵 Trend")
             lines.append(f"  ✅ W: {pb_wins}   ❌ L: {pb_losses}   🎯 WR: {pb_wr:.1f}%")
             lines.append(f"  🟢 Open: {pb_open_trades} ({pb_open_syms} syms)   🔒 Closed: {pb_closed}")
-            # Mean Reversion (phantom)
-            lines.append(f"• 🌀 Mean Reversion")
-            lines.append(f"  ✅ W: {mr_wins}   ❌ L: {mr_losses}   🎯 WR: {mr_wr:.1f}%")
-            lines.append(f"  🟢 Open: {mr_open_trades} ({mr_open_syms} syms)   🔒 Closed: {mr_closed}")
+            # Mean Reversion (phantom) — hidden when MR disabled
+            try:
+                cfg = self.shared.get('config') or {}
+                if not bool(((cfg.get('modes', {}) or {}).get('disable_mr', True))):
+                    lines.append(f"• 🌀 Mean Reversion")
+                    lines.append(f"  ✅ W: {mr_wins}   ❌ L: {mr_losses}   🎯 WR: {mr_wr:.1f}%")
+                    lines.append(f"  🟢 Open: {mr_open_trades} ({mr_open_syms} syms)   🔒 Closed: {mr_closed}")
+            except Exception:
+                pass
             # Scalp (phantom)
             lines.append(f"• 🩳 Scalp")
             lines.append(f"  ✅ W: {sc_wins}   ❌ L: {sc_losses}   🎯 WR: {sc_wr:.1f}%")
@@ -1035,12 +1026,17 @@ class TGBot:
             lines.append("• 🔵 Trend")
             lines.append(f"  ✅ W: {pbx['wins']}   ❌ L: {pbx['losses']}   🎯 WR: {pbx_wr:.1f}%")
             lines.append(f"  🔓 Open: {pbx['open']}   🔒 Closed: {pbx['closed']}")
-            # Executed MR
-            mrx = exec_stats['mr']
-            mrx_wr = (mrx['wins'] / (mrx['wins'] + mrx['losses']) * 100.0) if (mrx['wins'] + mrx['losses']) else 0.0
-            lines.append("• 🌀 Mean Reversion")
-            lines.append(f"  ✅ W: {mrx['wins']}   ❌ L: {mrx['losses']}   🎯 WR: {mrx_wr:.1f}%")
-            lines.append(f"  🔓 Open: {mrx['open']}   🔒 Closed: {mrx['closed']}")
+            # Executed MR — hidden when MR disabled
+            try:
+                cfg = self.shared.get('config') or {}
+                if not bool(((cfg.get('modes', {}) or {}).get('disable_mr', True))):
+                    mrx = exec_stats['mr']
+                    mrx_wr = (mrx['wins'] / (mrx['wins'] + mrx['losses']) * 100.0) if (mrx['wins'] + mrx['losses']) else 0.0
+                    lines.append("• 🌀 Mean Reversion")
+                    lines.append(f"  ✅ W: {mrx['wins']}   ❌ L: {mrx['losses']}   🎯 WR: {mrx_wr:.1f}%")
+                    lines.append(f"  🔓 Open: {mrx['open']}   🔒 Closed: {mrx['closed']}")
+            except Exception:
+                pass
             # Executed Scalp
             scx = exec_stats['scalp']
             scx_wr = (scx['wins'] / (scx['wins'] + scx['losses']) * 100.0) if (scx['wins'] + scx['losses']) else 0.0
@@ -1061,8 +1057,7 @@ class TGBot:
              InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:main")],
             [InlineKeyboardButton("🧪 Shadow", callback_data="ui:shadow:stats")],
             [InlineKeyboardButton("🩳 Scalp QA", callback_data="ui:scalp:qa"),
-            InlineKeyboardButton("📈 Scalp Qscore", callback_data="ui:scalp:qscore"),
-            InlineKeyboardButton("🧪 Scalp Promote", callback_data="ui:scalp:promote")],
+            InlineKeyboardButton("📈 Scalp Qscore", callback_data="ui:scalp:qscore")],
             [InlineKeyboardButton("🧱 HTF S/R", callback_data="ui:htf:status"),
              InlineKeyboardButton("🔄 Update S/R", callback_data="ui:htf:update")],
             [InlineKeyboardButton("⚙️ Risk", callback_data="ui:risk:main"),
@@ -2431,10 +2426,7 @@ class TGBot:
                 await query.answer()
                 fake_update = type('obj', (object,), {'message': query.message})
                 await self.scalp_qscore_report(fake_update, ctx)
-            elif data.startswith("ui:scalp:promote"):
-                await query.answer()
-                fake_update = type('obj', (object,), {'message': query.message})
-                await self.scalp_promotion_status(fake_update, ctx)
+            # Scalp promotion UI removed (feature disabled)
             elif data.startswith("ui:ml:main"):
                 await query.answer()
                 ml = self.shared.get("ml_scorer")

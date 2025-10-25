@@ -86,6 +86,8 @@ trade:
 # Runtime mode switches
 modes:
   trend_only: false   # Allow MR & Scalp (exec remains off for Scalp; phantoms on)
+  disable_mr: true    # Hard-disable legacy/Enhanced MR strategy (mute code paths)
+  disable_scalp_fallback: true  # Mute legacy Scalp fallback path (3m stream remains active)
 
 
 # Strategy-specific regime thresholds and hysteresis
@@ -514,6 +516,9 @@ scalp:
   min_r_pct: 0.005
   dedup_hours: 3         # Slightly stricter dedup window to cut repeats
   cooldown_bars: 4       # Stricter cooldown to reduce noise
+  logging:
+    heartbeat: true      # Per 3m-bar heartbeat when no Scalp signal
+    decision_only: false # If true, suppress analysis/heartbeat and show only decisions
   debug:
     force_accept: false  # Off: return to normal acceptance with decision reasons
   promote_enabled: false

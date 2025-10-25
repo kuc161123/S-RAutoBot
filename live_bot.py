@@ -2104,9 +2104,16 @@ class TradingBot:
                     logger.debug(f"[{sym}] Scalp(3m) detection error: {e}")
                     sc_sig = None
                 if not sc_sig:
-                    # Optional: compact gate probe at debug to help tune thresholds
+                    # Heartbeat: emit compact no-signal line at INFO (configurable)
                     try:
-                        if df3_for_sig is not None and len(df3_for_sig) >= max(sc_settings.vwap_window, 50):
+                        log_cfg = (self.config.get('scalp', {}) or {}).get('logging', {}) or {}
+                        hb_enabled = bool(log_cfg.get('heartbeat', False))
+                        decision_only = bool(log_cfg.get('decision_only', False))
+                    except Exception:
+                        hb_enabled = False; decision_only = False
+                    # Optional: compact gate probe to explain no-signal
+                    try:
+                        if hb_enabled and not decision_only and df3_for_sig is not None and len(df3_for_sig) >= max(sc_settings.vwap_window, 50):
                             import numpy as _np
                             _c = df3_for_sig['close']; _h = df3_for_sig['high']; _l = df3_for_sig['low']; _v = df3_for_sig['volume']
                             _atr = (_h - _l).rolling(sc_settings.atr_len).mean()
@@ -2125,7 +2132,7 @@ class TradingBot:
                             _ema_up = bool(_cl > float(_ema_f.iloc[-1]) > float(_ema_s.iloc[-1]))
                             _ema_dn = bool(_cl < float(_ema_f.iloc[-1]) < float(_ema_s.iloc[-1]))
                             _cur_vwap = float(_vwap.iloc[-1]) if _vwap.notna().iloc[-1] else _cl
-                            _cur_atr = float(_atr.iloc[-1]) if _atr.iloc[-1] and _atr.iloc[-1] > 0 else _rng
+                            _cur_atr = float(_atr.iloc[-1]) if (_atr.iloc[-1] is not None and _atr.iloc[-1] > 0) else _rng
                             _dist_vwap_atr = abs(_cl - _cur_vwap) / max(1e-9, _cur_atr)
                             _orb_ok = True
                             if len(df3_for_sig) >= 40:
@@ -2134,14 +2141,13 @@ class TradingBot:
                                     _orb_ok = False
                                 if _ema_dn and _cl >= _first_low:
                                     _orb_ok = False
-                            logger.debug(
-                                f"[{sym}] 🩳 Scalp gates: up={_ema_up} dn={_ema_dn} bbw={_bbw_pct:.2f}>={sc_settings.min_bb_width_pct:.2f} "
-                                f"vol={_vol_ratio:.2f}>={sc_settings.vol_ratio_min:.2f} wickL={_lower_w:.2f}/wickU={_upper_w:.2f}>={sc_settings.wick_ratio_min:.2f} "
-                                f"distVWAP={_dist_vwap_atr:.2f}<={sc_settings.vwap_dist_atr_max:.2f} orb={_orb_ok} -> no_signal"
+                            logger.info(
+                                f"[{sym}] 🩳 Scalp: no signal (up={_ema_up} dn={_ema_dn} bbw={_bbw_pct:.2f}/{sc_settings.min_bb_width_pct:.2f} "
+                                f"vol={_vol_ratio:.2f}/{sc_settings.vol_ratio_min:.2f} wickL={_lower_w:.2f} wickU={_upper_w:.2f}/{sc_settings.wick_ratio_min:.2f} "
+                                f"vwap={_dist_vwap_atr:.2f}/{sc_settings.vwap_dist_atr_max:.2f} orb={_orb_ok})"
                             )
                     except Exception:
                         pass
-                    # Do not spam logs at 3m otherwise; only log positives and regime skips
                     continue
                 # Suppress non-high-ML chatter; only log minimal detection
                 try:
@@ -4929,7 +4935,7 @@ class TradingBot:
             self._detect_trend_signal = detect_trend_signal
         except Exception:
             self._detect_trend_signal = None
-        # Trend-only overrides: disable MR/Scalp detection functions at source
+        # Strategy overrides: disable MR/Scalp detection functions at source
         if self._trend_only:
             try:
                 detect_signal_mean_reversion = (lambda *args, **kwargs: None)
@@ -4939,6 +4945,17 @@ class TradingBot:
                 globals()['detect_scalp_signal'] = None
             except Exception:
                 pass
+        else:
+            # Independent MR disable flag from config
+            try:
+                self._mr_disabled = bool(((cfg.get('modes', {}) or {}).get('disable_mr', True)))
+            except Exception:
+                self._mr_disabled = True
+            if getattr(self, '_mr_disabled', False):
+                try:
+                    detect_signal_mean_reversion = (lambda *args, **kwargs: None)
+                except Exception:
+                    pass
         use_enhanced_parallel = cfg["trade"].get("use_enhanced_parallel", True) and ENHANCED_ML_AVAILABLE
         use_regime_switching = cfg["trade"].get("use_regime_switching", False)
         # Backward-compat: no reset function in Trend-only mode
@@ -5101,83 +5118,92 @@ class TradingBot:
                                 pass
                     except Exception:
                         pass
-                    enhanced_mr_scorer = get_enhanced_mr_scorer()  # Enhanced MR ML
-                    mr_phantom_tracker = get_mr_phantom_tracker()  # MR phantom tracker
+                    # Initialize MR components only if MR is enabled
+                    if not getattr(self, '_mr_disabled', False):
+                        enhanced_mr_scorer = get_enhanced_mr_scorer()  # Enhanced MR ML
+                        mr_phantom_tracker = get_mr_phantom_tracker()  # MR phantom tracker
+                    else:
+                        enhanced_mr_scorer = None
+                        mr_phantom_tracker = None
                     mean_reversion_scorer = None  # Not used in enhanced system
 
                     # Get and log stats for both systems
                     trend_stats = ml_scorer.get_stats() if ml_scorer is not None else {'status':'N/A','current_threshold':0,'completed_trades':0,'recent_win_rate':0}
-                    mr_stats = enhanced_mr_scorer.get_enhanced_stats()
+                    mr_stats = enhanced_mr_scorer.get_enhanced_stats() if enhanced_mr_scorer is not None else {'status': 'disabled', 'current_threshold': 0, 'completed_trades': 0, 'recent_win_rate': 0}
 
                     logger.info(f"✅ Enhanced Parallel ML System initialized")
                     logger.info(f"   Trend ML: {trend_stats['status']} (threshold: {trend_stats['current_threshold']:.0f}, trades: {trend_stats['completed_trades']})")
-                    logger.info(f"   Mean Reversion ML: {mr_stats['status']} (threshold: {mr_stats['current_threshold']:.0f}, trades: {mr_stats['completed_trades']})")
+                    if not getattr(self, '_mr_disabled', False):
+                        logger.info(f"   Mean Reversion ML: {mr_stats['status']} (threshold: {mr_stats['current_threshold']:.0f}, trades: {mr_stats['completed_trades']})")
 
                     if trend_stats['recent_win_rate'] > 0:
                         logger.info(f"   Trend recent WR: {trend_stats['recent_win_rate']:.1f}%")
-                    if mr_stats['recent_win_rate'] > 0:
-                        logger.info(f"   MR recent WR: {mr_stats['recent_win_rate']:.1f}%")
+                    if (not getattr(self, '_mr_disabled', False)) and mr_stats.get('recent_win_rate', 0) > 0:
+                        logger.info(f"   MR recent WR: {mr_stats.get('recent_win_rate', 0):.1f}%")
 
                     # Perform Enhanced MR startup retrain with phantom data
-                    logger.info("🔄 Checking for Enhanced MR startup retrain...")
-                    enhanced_mr_startup_result = enhanced_mr_scorer.startup_retrain()
-                    if enhanced_mr_startup_result:
-                        # Get updated stats after retrain
-                        mr_stats = enhanced_mr_scorer.get_enhanced_stats()
-                        logger.info(f"✅ Enhanced MR models retrained on startup")
-                        logger.info(f"   Status: {mr_stats['status']}")
-                        logger.info(f"   Threshold: {mr_stats['current_threshold']:.0f}")
-                        if mr_stats.get('models_active'):
-                            logger.info(f"   Active models: {', '.join(mr_stats['models_active'])}")
-                    elif enhanced_mr_scorer.is_ml_ready:
-                        logger.info("✅ Pre-trained Enhanced MR models loaded successfully.")
-                    else:
-                        logger.info("⚠️ No pre-trained Enhanced MR models found. Starting in online learning mode.")
+                    if not getattr(self, '_mr_disabled', False) and enhanced_mr_scorer is not None:
+                        logger.info("🔄 Checking for Enhanced MR startup retrain...")
+                        enhanced_mr_startup_result = enhanced_mr_scorer.startup_retrain()
+                        if enhanced_mr_startup_result:
+                            # Get updated stats after retrain
+                            mr_stats = enhanced_mr_scorer.get_enhanced_stats()
+                            logger.info(f"✅ Enhanced MR models retrained on startup")
+                            logger.info(f"   Status: {mr_stats['status']}")
+                            logger.info(f"   Threshold: {mr_stats['current_threshold']:.0f}")
+                            if mr_stats.get('models_active'):
+                                logger.info(f"   Active models: {', '.join(mr_stats['models_active'])}")
+                        elif enhanced_mr_scorer.is_ml_ready:
+                            logger.info("✅ Pre-trained Enhanced MR models loaded successfully.")
+                        else:
+                            logger.info("⚠️ No pre-trained Enhanced MR models found. Starting in online learning mode.")
 
                     # One-time Enhanced MR diagnostic dump and optional clear on start
-                    try:
-                        emr_cfg = cfg.get('enhanced_mr', {})
-                        # Diagnostic dump: show first/last executed entries
-                        if bool(emr_cfg.get('diag_dump_on_start', True)) and getattr(enhanced_mr_scorer, 'redis_client', None):
-                            r = enhanced_mr_scorer.redis_client
-                            total = int(r.llen('enhanced_mr:trades') or 0)
-                            if total > 0:
-                                first = r.lrange('enhanced_mr:trades', 0, min(1, total-1)) or []
-                                last = r.lrange('enhanced_mr:trades', max(0, total-2), total-1) or []
-                                import json
-                                def _fmt(items):
-                                    out = []
-                                    for it in items:
-                                        try:
-                                            rec = json.loads(it)
-                                            out.append(f"{rec.get('timestamp','?')} {rec.get('symbol','?')}")
-                                        except Exception:
-                                            out.append(str(it)[:80])
-                                    return out
-                                # Clarify this buffer contains executed trade records only
-                                logger.info(f"🧪 Enhanced MR trade records (executed buffer): count={total}, first={_fmt(first)}, last={_fmt(last)}")
-                        # Optional clearing (disabled by default)
-                        if bool(emr_cfg.get('clear_on_start', False)) and getattr(enhanced_mr_scorer, 'redis_client', None):
-                            r = enhanced_mr_scorer.redis_client
-                            logger.warning("⚠️ Clearing Enhanced MR Redis namespace (clear_on_start=true)")
-                            for key in ['enhanced_mr:trades', 'enhanced_mr:completed_trades', 'enhanced_mr:last_train_count']:
+                    if not getattr(self, '_mr_disabled', False) and enhanced_mr_scorer is not None:
+                        try:
+                            emr_cfg = cfg.get('enhanced_mr', {})
+                            # Diagnostic dump: show first/last executed entries
+                            if bool(emr_cfg.get('diag_dump_on_start', True)) and getattr(enhanced_mr_scorer, 'redis_client', None):
+                                r = enhanced_mr_scorer.redis_client
+                                total = int(r.llen('enhanced_mr:trades') or 0)
+                                if total > 0:
+                                    first = r.lrange('enhanced_mr:trades', 0, min(1, total-1)) or []
+                                    last = r.lrange('enhanced_mr:trades', max(0, total-2), total-1) or []
+                                    import json
+                                    def _fmt(items):
+                                        out = []
+                                        for it in items:
+                                            try:
+                                                rec = json.loads(it)
+                                                out.append(f"{rec.get('timestamp','?')} {rec.get('symbol','?')}")
+                                            except Exception:
+                                                out.append(str(it)[:80])
+                                        return out
+                                    # Clarify this buffer contains executed trade records only
+                                    logger.info(f"🧪 Enhanced MR trade records (executed buffer): count={total}, first={_fmt(first)}, last={_fmt(last)}")
+                            # Optional clearing (disabled by default)
+                            if bool(emr_cfg.get('clear_on_start', False)) and getattr(enhanced_mr_scorer, 'redis_client', None):
+                                r = enhanced_mr_scorer.redis_client
+                                logger.warning("⚠️ Clearing Enhanced MR Redis namespace (clear_on_start=true)")
+                                for key in ['enhanced_mr:trades', 'enhanced_mr:completed_trades', 'enhanced_mr:last_train_count']:
+                                    try:
+                                        r.delete(key)
+                                    except Exception:
+                                        pass
                                 try:
-                                    r.delete(key)
+                                    enhanced_mr_scorer.completed_trades = 0
+                                    enhanced_mr_scorer.last_train_count = 0
                                 except Exception:
                                     pass
-                            try:
-                                enhanced_mr_scorer.completed_trades = 0
-                                enhanced_mr_scorer.last_train_count = 0
-                            except Exception:
-                                pass
-                            logger.info("✅ Enhanced MR Redis keys cleared and counters reset")
-                    except Exception as e:
-                        logger.debug(f"Enhanced MR diagnostics/clear failed: {e}")
+                                logger.info("✅ Enhanced MR Redis keys cleared and counters reset")
+                        except Exception as e:
+                            logger.debug(f"Enhanced MR diagnostics/clear failed: {e}")
                     # Flush any deferred MR outcomes now that scorers are available
-                    try:
-                        self._flush_deferred_mr(enhanced_mr_scorer_ref=enhanced_mr_scorer, original_mr_scorer_ref=None)
-                    except Exception:
-                        pass
+                    if not getattr(self, '_mr_disabled', False) and enhanced_mr_scorer is not None:
+                        try:
+                            self._flush_deferred_mr(enhanced_mr_scorer_ref=enhanced_mr_scorer, original_mr_scorer_ref=None)
+                        except Exception:
+                            pass
 
                 else:
                     # Initialize original ML system
@@ -5205,7 +5231,7 @@ class TradingBot:
                         pass
                     enhanced_mr_scorer = None
                     mr_phantom_tracker = None
-                    mean_reversion_scorer = get_mean_reversion_scorer() # Original MR scorer
+                    mean_reversion_scorer = None  # MR disabled
 
                     # Get and log ML stats
                     ml_stats = ml_scorer.get_stats()
@@ -5217,11 +5243,7 @@ class TradingBot:
                         logger.info(f"   Recent win rate: {ml_stats['recent_win_rate']:.1f}%")
                     if ml_stats['models_active']:
                         logger.info(f"   Active models: {', '.join(ml_stats['models_active'])}")
-                    # Flush any deferred MR outcomes using original MR scorer
-                    try:
-                        self._flush_deferred_mr(enhanced_mr_scorer_ref=None, original_mr_scorer_ref=mean_reversion_scorer)
-                    except Exception:
-                        pass
+                    # MR disabled: do not flush MR outcomes
                 # Phantom trades now expire naturally on TP/SL - no timeout needed
                 
                 # Perform startup retrain with all available data
@@ -10003,7 +10025,9 @@ class TradingBot:
                                     pass
                             # Before continuing, ensure Scalp fallback runs if 3m stream is unavailable/stale
                             try:
-                                await self._maybe_run_scalp_fallback(sym, df, regime_analysis, cluster_id)
+                                # Skip legacy Scalp fallback when disabled (prefer independent 3m stream only)
+                                if not bool(((self.config.get('modes', {}) or {}).get('disable_scalp_fallback', True))):
+                                    await self._maybe_run_scalp_fallback(sym, df, regime_analysis, cluster_id)
                             except Exception:
                                 pass
                             # After phantom-only sampling + optional Scalp fallback, continue to next symbol

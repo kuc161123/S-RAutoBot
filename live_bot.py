@@ -2508,8 +2508,6 @@ class TradingBot:
                                     blist.append(now_ts)
                                     self._scalp_budget[sym] = blist
                                     continue
-                            else:
-                                logger.info(f"[{sym}] 🛑 Scalp High-ML override blocked: reason=exec_guard")
                         except Exception as _ee:
                             logger.info(f"[{sym}] Scalp High-ML override error: {_ee}")
                     # If executed via Qscore gate, record mirror and short-circuit

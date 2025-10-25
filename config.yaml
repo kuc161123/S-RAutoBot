@@ -263,10 +263,10 @@ router:
 range:
   enabled: true
   phantom_only: false      # Allow execution when exec.enabled=true
-  lookback: 40            # bars for range bands
+  lookback: 30            # was 40 — shorter bands for more FBO opportunities
   width_min_pct: 0.01     # min 1% band width
-  width_max_pct: 0.08     # max 8% band width
-  reentry_max_bars: 4     # must re-enter within K bars
+  width_max_pct: 0.10     # was 0.08 — allow wider ranges to qualify
+  reentry_max_bars: 6     # was 4 — allow slower re-entries
   sl_atr_buf: 0.6         # SL buffer in ATR
   handoff:
     enabled: true
@@ -530,9 +530,10 @@ scalp:
   explore:
     relax_enabled: true
     # Relaxed, phantom-only thresholds to widen net (execution unchanged)
-    vwap_dist_atr_max: 0.80  # tighten distance to VWAP
-    min_bb_width_pct: 0.60   # require slightly wider bands
-    vol_ratio_min: 1.10      # require modest volume expansion
+    vwap_dist_atr_max: 1.00  # was 0.80 — allow a bit farther from VWAP
+    min_bb_width_pct: 0.55   # was 0.60 — accept slightly narrower bands
+    vol_ratio_min: 1.05      # was 1.10 — accept lighter volume expansion
+    wick_ratio_min: 0.25     # was 0.30 default — allow smaller wick confirms
     timeout_hours: 8         # auto-close scalp phantoms after 8h for learning
   backfill:
     active_labeling: false   # if true, uses recent 3m bars to label open phantoms during downtime

@@ -426,12 +426,11 @@ class TGBot:
                 wr = (wins/total*100.0) if total else 0.0
                 pnl = sum(float(getattr(t, 'pnl_usd', 0.0) or 0.0) for t in arr)
                 return total, wins, losses, wr, pnl
-            # Trend executed
+            # Trend executed (always show, even if zero)
             t_total, t_w, t_l, t_wr, t_pnl = _agg(lambda s: ('trend' in s))
-            if t_total or t_pnl or (self.shared.get('book') and self.shared.get('book').positions):
-                lines.append("")
-                lines.append("✅ *Trend Executed*")
-                lines.append(f"• Closed: {t_total} | WR: {t_wr:.1f}% (W/L {t_w}/{t_l}) | PnL: ${t_pnl:.2f}")
+            lines.append("")
+            lines.append("✅ *Trend Executed*")
+            lines.append(f"• Closed: {t_total} | WR: {t_wr:.1f}% (W/L {t_w}/{t_l}) | PnL: ${t_pnl:.2f}")
             # Range executed
             r_total, r_w, r_l, r_wr, r_pnl = _agg(lambda s: s.startswith('range'))
             lines.append("")

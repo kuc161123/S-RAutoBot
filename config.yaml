@@ -255,6 +255,14 @@ trend:
 ml:
   fail_open_on_error: false   # if true, allow execution on ML errors; else skip and record phantom
 
+# Phantom pacing (per-strategy) — increase Scalp flow, keep exec strict via Qscore
+phantom:
+  hourly_symbol_budget:
+    scalp: 8    # was 4 (default). Allow up to 8 scalp phantoms per symbol per hour
+  caps:
+    scalp:
+      none: 400 # max daily scalp phantoms when accepted in 'none' bucket
+
 # Higher-timeframe router bias and gating (enabled by default)
 router:
   htf_bias:
@@ -267,8 +275,8 @@ range:
   phantom_only: false      # Allow execution when exec.enabled=true
   lookback: 30            # was 40 — shorter bands for more FBO opportunities
   width_min_pct: 0.01     # min 1% band width
-  width_max_pct: 0.10     # was 0.08 — allow wider ranges to qualify
-  reentry_max_bars: 6     # was 4 — allow slower re-entries
+  width_max_pct: 0.12     # was 0.10 — allow wider ranges to qualify for more flow
+  reentry_max_bars: 10    # was 6 — allow slower re-entries for more opportunities
   sl_atr_buf: 0.6         # SL buffer in ATR
   handoff:
     enabled: true

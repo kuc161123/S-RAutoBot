@@ -1300,6 +1300,30 @@ class TradingBot:
                         return (_math.ceil(x / step)) * step
                     except Exception:
                         return round_step(x, step)
+                # First, enforce a minimum SL distance pre-sizing based on ATR and config to avoid micro-stops
+                try:
+                    df3_pre = self.frames_3m.get(sym)
+                    # Compute simple ATR(14) on 3m frame if available
+                    atr14 = 0.0
+                    if df3_pre is not None and len(df3_pre) >= 15:
+                        pc = df3_pre['close'].shift()
+                        tr = (df3_pre['high'] - df3_pre['low']).combine((df3_pre['high'] - pc).abs(), max).combine((df3_pre['low'] - pc).abs(), max)
+                        atr14 = float(tr.rolling(14).mean().iloc[-1]) if tr.notna().sum() >= 14 else float((df3_pre['high'] - df3_pre['low']).iloc[-1])
+                    # min_r_pct from config with sane default
+                    try:
+                        min_r_pct = float(((self.config.get('scalp', {}) or {}).get('min_r_pct', 0.005)))
+                    except Exception:
+                        min_r_pct = 0.005
+                    entry_pre = float(getattr(sig_obj, 'entry', 0.0) or 0.0)
+                    min_dist = max(entry_pre * min_r_pct, 0.60 * atr14, entry_pre * 0.002)
+                    if str(getattr(sig_obj, 'side','short')).lower() == 'short':
+                        if float(sig_obj.sl) - entry_pre < min_dist:
+                            sig_obj.sl = entry_pre + min_dist
+                    else:
+                        if entry_pre - float(sig_obj.sl) < min_dist:
+                            sig_obj.sl = entry_pre - min_dist
+                except Exception:
+                    pass
                 # Round SL away from entry strictly
                 if str(getattr(sig_obj, 'side', 'short')).lower() == 'short':
                     sl_r = _ceil_tick(float(sig_obj.sl), tick_size)
@@ -1408,6 +1432,31 @@ class TradingBot:
                         rr_bias_pct = float((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('rr_bias_pct', 0.0)))
                     except Exception:
                         rr_bias_pct = 0.0
+                    # After we know actual entry, enforce minimum SL distance again relative to actual_entry
+                    try:
+                        # Reuse precomputed atr14/min_r_pct where possible
+                        df3_post = self.frames_3m.get(sym)
+                        atr14_post = 0.0
+                        if df3_post is not None and len(df3_post) >= 15:
+                            pc = df3_post['close'].shift()
+                            tr = (df3_post['high'] - df3_post['low']).combine((df3_post['high'] - pc).abs(), max).combine((df3_post['low'] - pc).abs(), max)
+                            atr14_post = float(tr.rolling(14).mean().iloc[-1]) if tr.notna().sum() >= 14 else float((df3_post['high'] - df3_post['low']).iloc[-1])
+                        try:
+                            min_r_pct = float(((self.config.get('scalp', {}) or {}).get('min_r_pct', 0.005)))
+                        except Exception:
+                            min_r_pct = 0.005
+                        min_dist2 = max(float(actual_entry) * min_r_pct, 0.60 * atr14_post, float(actual_entry) * 0.002)
+                        if str(getattr(sig_obj, 'side','short')).lower() == 'short':
+                            if float(sig_obj.sl) - float(actual_entry) < min_dist2:
+                                sig_obj.sl = float(actual_entry) + min_dist2
+                                # Directional round
+                                sig_obj.sl = _ceil_tick(float(sig_obj.sl), tick_size)
+                        else:
+                            if float(actual_entry) - float(sig_obj.sl) < min_dist2:
+                                sig_obj.sl = float(actual_entry) - min_dist2
+                                sig_obj.sl = _floor_tick(float(sig_obj.sl), tick_size)
+                    except Exception:
+                        pass
                     # Compute current RR from signal and adjust TP distance to include fees/slippage
                     rr = None
                     try:
@@ -1646,11 +1695,19 @@ class TradingBot:
                             target_rr = max(0.1, (float(sig_obj.tp) - actual_entry)/Rv) if sig_obj.side=='long' else max(0.1, (actual_entry - float(sig_obj.tp))/Rv)
                         except Exception:
                             target_rr = 1.5
+                        # Format prices with symbol-specific decimals
+                        try:
+                            import decimal as _dec
+                            d_step = _dec.Decimal(str(tick_size))
+                            decs = -d_step.as_tuple().exponent if d_step.as_tuple().exponent < 0 else 4
+                        except Exception:
+                            decs = 4
+                        fmt = f"{{:.{decs}f}}"
                         msg = (
                             f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()}\n\n"
-                            f"Entry: {actual_entry:.4f}\n"
-                            f"Stop Loss: {float(sig_obj.sl):.4f}\n"
-                            f"Take Profit: {float(sig_obj.tp):.4f}\n"
+                            f"Entry: {fmt.format(actual_entry)}\n"
+                            f"Stop Loss: {fmt.format(float(sig_obj.sl))}\n"
+                            f"Take Profit: {fmt.format(float(sig_obj.tp))}\n"
                             f"Quantity: {qty}\n"
                             f"Target RR: {target_rr:.2f}"
                         )

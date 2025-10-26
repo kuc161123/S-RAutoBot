@@ -1284,11 +1284,16 @@ class TradingBot:
                     except Exception:
                         pass
                     return False
-            # Round TP/SL to tick size (directional for SL to guarantee protection)
+            # Round TP/SL to tick size (directional for SL). Mirror mode can bypass extra adjustments.
                 m = meta_for(sym, cfg.get('symbol_meta', {}))
                 from position_mgr import round_step
                 import math as _math
                 tick_size = float(m.get("tick_size", 0.000001))
+                # Mirror mode flag: execute with exact signal SL/TP (only round to tick, ensure 1-tick separation)
+                try:
+                    use_mirror = bool((((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('use_signal_sl_tp', True)))
+                except Exception:
+                    use_mirror = True
                 # Directional rounding helpers
                 def _floor_tick(x: float, step: float) -> float:
                     try:
@@ -1300,30 +1305,29 @@ class TradingBot:
                         return (_math.ceil(x / step)) * step
                     except Exception:
                         return round_step(x, step)
-                # First, enforce a minimum SL distance pre-sizing based on ATR and config to avoid micro-stops
-                try:
-                    df3_pre = self.frames_3m.get(sym)
-                    # Compute simple ATR(14) on 3m frame if available
-                    atr14 = 0.0
-                    if df3_pre is not None and len(df3_pre) >= 15:
-                        pc = df3_pre['close'].shift()
-                        tr = (df3_pre['high'] - df3_pre['low']).combine((df3_pre['high'] - pc).abs(), max).combine((df3_pre['low'] - pc).abs(), max)
-                        atr14 = float(tr.rolling(14).mean().iloc[-1]) if tr.notna().sum() >= 14 else float((df3_pre['high'] - df3_pre['low']).iloc[-1])
-                    # min_r_pct from config with sane default
+                # In non-mirror mode, enforce a minimum SL distance pre-sizing based on ATR and config
+                if not use_mirror:
                     try:
-                        min_r_pct = float(((self.config.get('scalp', {}) or {}).get('min_r_pct', 0.005)))
+                        df3_pre = self.frames_3m.get(sym)
+                        atr14 = 0.0
+                        if df3_pre is not None and len(df3_pre) >= 15:
+                            pc = df3_pre['close'].shift()
+                            tr = (df3_pre['high'] - df3_pre['low']).combine((df3_pre['high'] - pc).abs(), max).combine((df3_pre['low'] - pc).abs(), max)
+                            atr14 = float(tr.rolling(14).mean().iloc[-1]) if tr.notna().sum() >= 14 else float((df3_pre['high'] - df3_pre['low']).iloc[-1])
+                        try:
+                            min_r_pct = float(((self.config.get('scalp', {}) or {}).get('min_r_pct', 0.005)))
+                        except Exception:
+                            min_r_pct = 0.005
+                        entry_pre = float(getattr(sig_obj, 'entry', 0.0) or 0.0)
+                        min_dist = max(entry_pre * min_r_pct, 0.60 * atr14, entry_pre * 0.002)
+                        if str(getattr(sig_obj, 'side','short')).lower() == 'short':
+                            if float(sig_obj.sl) - entry_pre < min_dist:
+                                sig_obj.sl = entry_pre + min_dist
+                        else:
+                            if entry_pre - float(sig_obj.sl) < min_dist:
+                                sig_obj.sl = entry_pre - min_dist
                     except Exception:
-                        min_r_pct = 0.005
-                    entry_pre = float(getattr(sig_obj, 'entry', 0.0) or 0.0)
-                    min_dist = max(entry_pre * min_r_pct, 0.60 * atr14, entry_pre * 0.002)
-                    if str(getattr(sig_obj, 'side','short')).lower() == 'short':
-                        if float(sig_obj.sl) - entry_pre < min_dist:
-                            sig_obj.sl = entry_pre + min_dist
-                    else:
-                        if entry_pre - float(sig_obj.sl) < min_dist:
-                            sig_obj.sl = entry_pre - min_dist
-                except Exception:
-                    pass
+                        pass
                 # Round SL away from entry strictly
                 if str(getattr(sig_obj, 'side', 'short')).lower() == 'short':
                     sl_r = _ceil_tick(float(sig_obj.sl), tick_size)
@@ -1432,34 +1436,43 @@ class TradingBot:
                         rr_bias_pct = float((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('rr_bias_pct', 0.0)))
                     except Exception:
                         rr_bias_pct = 0.0
-                    # After we know actual entry, enforce minimum SL distance again relative to actual_entry
-                    try:
-                        # Reuse precomputed atr14/min_r_pct where possible
-                        df3_post = self.frames_3m.get(sym)
-                        atr14_post = 0.0
-                        if df3_post is not None and len(df3_post) >= 15:
-                            pc = df3_post['close'].shift()
-                            tr = (df3_post['high'] - df3_post['low']).combine((df3_post['high'] - pc).abs(), max).combine((df3_post['low'] - pc).abs(), max)
-                            atr14_post = float(tr.rolling(14).mean().iloc[-1]) if tr.notna().sum() >= 14 else float((df3_post['high'] - df3_post['low']).iloc[-1])
+                    # Post-exec enforcement: mirror mode only ensures 1-tick separation; enhanced mode repeats min-distance
+                    if use_mirror:
                         try:
-                            min_r_pct = float(((self.config.get('scalp', {}) or {}).get('min_r_pct', 0.005)))
+                            if str(getattr(sig_obj, 'side','short')).lower() == 'short':
+                                if float(sig_obj.sl) <= float(actual_entry):
+                                    sig_obj.sl = _ceil_tick(float(actual_entry) + tick_size, tick_size)
+                            else:
+                                if float(sig_obj.sl) >= float(actual_entry):
+                                    sig_obj.sl = _floor_tick(float(actual_entry) - tick_size, tick_size)
                         except Exception:
-                            min_r_pct = 0.005
-                        min_dist2 = max(float(actual_entry) * min_r_pct, 0.60 * atr14_post, float(actual_entry) * 0.002)
-                        if str(getattr(sig_obj, 'side','short')).lower() == 'short':
-                            if float(sig_obj.sl) - float(actual_entry) < min_dist2:
-                                sig_obj.sl = float(actual_entry) + min_dist2
-                                # Directional round
-                                sig_obj.sl = _ceil_tick(float(sig_obj.sl), tick_size)
-                        else:
-                            if float(actual_entry) - float(sig_obj.sl) < min_dist2:
-                                sig_obj.sl = float(actual_entry) - min_dist2
-                                sig_obj.sl = _floor_tick(float(sig_obj.sl), tick_size)
-                    except Exception:
-                        pass
-                    # Compute current RR from signal and adjust TP distance to include fees/slippage
+                            pass
+                    else:
+                        try:
+                            df3_post = self.frames_3m.get(sym)
+                            atr14_post = 0.0
+                            if df3_post is not None and len(df3_post) >= 15:
+                                pc = df3_post['close'].shift()
+                                tr = (df3_post['high'] - df3_post['low']).combine((df3_post['high'] - pc).abs(), max).combine((df3_post['low'] - pc).abs(), max)
+                                atr14_post = float(tr.rolling(14).mean().iloc[-1]) if df3_post['close'].notna().sum() >= 14 else float((df3_post['high'] - df3_post['low']).iloc[-1])
+                            try:
+                                min_r_pct = float(((self.config.get('scalp', {}) or {}).get('min_r_pct', 0.005)))
+                            except Exception:
+                                min_r_pct = 0.005
+                            min_dist2 = max(float(actual_entry) * min_r_pct, 0.60 * atr14_post, float(actual_entry) * 0.002)
+                            if str(getattr(sig_obj, 'side','short')).lower() == 'short':
+                                if float(sig_obj.sl) - float(actual_entry) < min_dist2:
+                                    sig_obj.sl = _ceil_tick(float(actual_entry) + min_dist2, tick_size)
+                            else:
+                                if float(actual_entry) - float(sig_obj.sl) < min_dist2:
+                                    sig_obj.sl = _floor_tick(float(actual_entry) - min_dist2, tick_size)
+                        except Exception:
+                            pass
+                    # Compute current RR and adjust TP distance (enhanced mode only). Mirror mode keeps signal TP.
                     rr = None
                     try:
+                        if use_mirror:
+                            raise RuntimeError('mirror_tp_keep')
                         if sig_obj.side == 'long':
                             R = max(1e-9, float(actual_entry) - float(sig_obj.sl))
                             rr = max(0.1, (float(sig_obj.tp) - float(actual_entry)) / R)

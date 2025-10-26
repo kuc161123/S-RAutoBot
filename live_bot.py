@@ -5042,6 +5042,21 @@ class TradingBot:
         except Exception:
             pass
 
+        # Mute legacy/unused strategies globally so logs focus on Trend/Range/Scalp
+        try:
+            for name in (
+                'strategy_mean_reversion', 'ml_scorer_mean_reversion', 'enhanced_mr_scorer', 'mr_phantom_tracker',
+                'ml_signal_scorer_immediate', 'strategy_trend_breakout', 'strategy_pullback_ml_learning',
+                'backtester', 'enhanced_backtester', 'bootstrap_pretrain', 'pretrain_trend_server',
+                'regime_classifier', 'market_regime', 'enhanced_features'
+            ):
+                try:
+                    logging.getLogger(name).setLevel(logging.WARNING)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # (removed duplicated helper definition mistakenly inserted here)
         
         # Extract configuration

@@ -122,6 +122,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalphighml", self.set_scalp_highml))
         self.app.add_handler(CommandHandler("mrhighml", self.set_mr_highml))
         self.app.add_handler(CommandHandler("trendhighml", self.set_trend_highml))
+        # Qscore threshold adjustments
+        self.app.add_handler(CommandHandler("set_qscore", self.set_qscore))
 
         self.running = False
 
@@ -1319,6 +1321,8 @@ class TGBot:
             "",
             "Settings (via dashboard → Settings)",
             "• Rule‑Mode thresholds (Exec≥Q, Phantom≥Q)",
+            "• Or use: /set_qscore <trend|range|scalp> <execQ> [phantomQ]",
+            "  Examples: /set_qscore trend 80 65 | /set_qscore scalp 90",
             "• Stream entry On/Off",
             "• Scale‑out (TP1/TP2, fraction) and BE move",
             "• Timeouts (HL/LH, confirmations, phantom)",
@@ -5619,6 +5623,66 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in training_status: {e}")
             await update.message.reply_text("Error getting training status")
+
+    async def set_qscore(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Set Qscore thresholds at runtime.
+        Usage: /set_qscore <trend|range|scalp> <execQ> [phantomQ]
+        Examples: /set_qscore trend 80 65 | /set_qscore scalp 90
+        """
+        try:
+            txt = (getattr(update, 'message', None) and update.message.text) or ''
+            parts = txt.strip().split()
+            if len(parts) < 3:
+                await self.safe_reply(update, "Usage: /set_qscore <trend|range|scalp> <execQ> [phantomQ]")
+                return
+            _, strat, exec_q, *rest = parts
+            strat = strat.lower()
+            if strat not in ('trend','range','scalp'):
+                await self.safe_reply(update, "Strategy must be: trend, range, scalp")
+                return
+            try:
+                exec_q = float(exec_q)
+            except Exception:
+                await self.safe_reply(update, "Exec Q must be a number")
+                return
+            ph_q = None
+            if rest:
+                try:
+                    ph_q = float(rest[0])
+                except Exception:
+                    await self.safe_reply(update, "Phantom Q must be a number")
+                    return
+            # Update shared config
+            cfg = self.shared.get('config', {})
+            cfg.setdefault(strat, {}).setdefault('rule_mode', {})
+            cfg[strat]['rule_mode']['execute_q_min'] = exec_q
+            if ph_q is not None:
+                cfg[strat]['rule_mode']['phantom_q_min'] = ph_q
+            # Update live bot config
+            bot = self.shared.get('bot_instance')
+            if bot and hasattr(bot, 'config') and isinstance(bot.config, dict):
+                bot.config.setdefault(strat, {}).setdefault('rule_mode', {})
+                bot.config[strat]['rule_mode']['execute_q_min'] = exec_q
+                if ph_q is not None:
+                    bot.config[strat]['rule_mode']['phantom_q_min'] = ph_q
+            # Persist in Redis for restarts
+            try:
+                import os, redis
+                url = os.getenv('REDIS_URL')
+                if url:
+                    r = redis.from_url(url, decode_responses=True)
+                    r.set(f'config_override:{strat}:rule_mode:execute_q_min', str(exec_q))
+                    if ph_q is not None:
+                        r.set(f'config_override:{strat}:rule_mode:phantom_q_min', str(ph_q))
+            except Exception:
+                pass
+            msg = [f"✅ Set {strat} execute_q_min={exec_q:.0f}"]
+            if ph_q is not None:
+                msg.append(f"phantom_q_min={ph_q:.0f}")
+            await self.safe_reply(update, " ".join(msg))
+        except Exception as e:
+            logger.error(f"set_qscore error: {e}")
+            await update.message.reply_text("Error setting Qscore")
 
     async def flow_debug(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show Flow Controller status: accepted, targets, relax per strategy."""

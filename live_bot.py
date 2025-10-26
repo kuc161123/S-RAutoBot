@@ -2677,6 +2677,26 @@ class TradingBot:
                                     if did_exec:
                                         self._scalp_exec_counter['count'] += 1
                                         exec_reason = 'qgate'
+                                        # On success, record executed mirror and short-circuit the rest of the loop
+                                        try:
+                                            scpt.record_scalp_signal(
+                                                sym,
+                                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                                float(ml_s or 0.0),
+                                                True,
+                                                sc_feats
+                                            )
+                                            _scalp_decision_logged = True
+                                            self._scalp_cooldown[sym] = bar_ts
+                                            blist.append(now_ts)
+                                            self._scalp_budget[sym] = blist
+                                            try:
+                                                logger.info(f"[{sym}] 🧮 Scalp decision final: exec_scalp (reason=qscore {float(sc_feats.get('qscore',0.0)):.1f}>={exec_thr:.0f})")
+                                            except Exception:
+                                                pass
+                                            continue
+                                        except Exception:
+                                            pass
                     except Exception:
                         did_exec = False
                     # If Q gate passed but blocked, notify
@@ -2734,28 +2754,6 @@ class TradingBot:
                                     continue
                         except Exception as _ee:
                             logger.info(f"[{sym}] Scalp High-ML override error: {_ee}")
-                    # If executed via Qscore gate, record mirror and short-circuit
-                    if did_exec:
-                        try:
-                            scpt.record_scalp_signal(
-                                sym,
-                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                float(ml_s or 0.0),
-                                True,
-                                sc_feats
-                            )
-                            _scalp_decision_logged = True
-                            self._scalp_cooldown[sym] = bar_ts
-                            blist.append(now_ts)
-                            self._scalp_budget[sym] = blist
-                            # Mark decision context
-                            try:
-                                logger.info(f"[{sym}] 🧮 Scalp decision final: exec_scalp (reason=qscore {float(sc_feats.get('qscore',0.0)):.1f}>={exec_thr:.0f})")
-                            except Exception:
-                                pass
-                            continue
-                        except Exception:
-                            pass
                     # Enforce per-strategy hourly per-symbol budget for scalp
                     hb = self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
                     sc_limit = int(hb.get('scalp', sc_limit))

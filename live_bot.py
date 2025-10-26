@@ -1676,6 +1676,25 @@ class TradingBot:
                     except Exception:
                         pass
 
+                    # TP/SL confirmation audit log (for faster ops review)
+                    try:
+                        # Refresh read-back to include any server-side rounding
+                        pos_chk = bybit.get_position(sym)
+                        tpc = pos_chk.get('takeProfit') if isinstance(pos_chk, dict) else None
+                        slc = pos_chk.get('stopLoss') if isinstance(pos_chk, dict) else None
+                        # Format using symbol tick precision
+                        try:
+                            import decimal as _dec
+                            d_step = _dec.Decimal(str(tick_size))
+                            decs = -d_step.as_tuple().exponent if d_step.as_tuple().exponent < 0 else 4
+                        except Exception:
+                            decs = 4
+                        fmt = f"{{:.{decs}f}}"
+                        if tpc not in (None, '', '0') and slc not in (None, '', '0'):
+                            logger.info(f"[{sym}] TP/SL confirmed: TP={fmt.format(float(tpc))} SL={fmt.format(float(slc))} (mode={applied_mode})")
+                    except Exception:
+                        pass
+
                     # Mark TP/SL applied to help future idempotency checks
                     try:
                         from time import time as _now

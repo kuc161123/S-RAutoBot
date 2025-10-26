@@ -1648,6 +1648,20 @@ class TradingBot:
                             except Exception:
                                 pass
                         if not (tp_present and sl_present):
+                            # As a last fallback before closing, try placing explicit reduce-only TP order and SL-only again
+                            try:
+                                tp_side = "Sell" if str(getattr(sig_obj, 'side','long')).lower() == 'long' else "Buy"
+                                bybit.place_reduce_only_limit(sym, tp_side, pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty, float(sig_obj.tp), post_only=True, reduce_only=True)
+                                bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty)
+                                await asyncio.sleep(0.4)
+                                pos_final = bybit.get_position(sym)
+                                tpv = pos_final.get('takeProfit') if pos_final else None
+                                slv = pos_final.get('stopLoss') if pos_final else None
+                                tp_present = (tpv not in (None, '', '0')) and (float(tpv) > 0)
+                                sl_present = (slv not in (None, '', '0')) and (float(slv) > 0)
+                            except Exception:
+                                pass
+                        if not (tp_present and sl_present):
                             # Emergency close to prevent unprotected exposure
                             try:
                                 # Use current position size for emergency close to avoid under/over sizing
@@ -1690,9 +1704,35 @@ class TradingBot:
                         except Exception:
                             decs = 4
                         fmt = f"{{:.{decs}f}}"
-                        if tpc not in (None, '', '0') and slc not in (None, '', '0'):
+                        # Order-level verification: ensure a reduce-only TP limit order exists
+                        tp_order_ok = False
+                        try:
+                            orders = bybit.get_open_orders(sym) or []
+                            # For long, TP is Sell; for short, TP is Buy
+                            tp_side = "Sell" if str(getattr(sig_obj, 'side','long')).lower() == 'long' else "Buy"
+                            # Consider price near our TP (within 2 ticks)
+                            tol = tick_size * 2.01
+                            for od in orders:
+                                try:
+                                    if str(od.get('reduceOnly')).lower() == 'true' and od.get('orderType') == 'Limit' and od.get('side') == tp_side:
+                                        p = float(od.get('price')) if od.get('price') not in (None, '', '0') else None
+                                        if p is not None and abs(p - float(sig_obj.tp)) <= tol:
+                                            tp_order_ok = True
+                                            break
+                                except Exception:
+                                    continue
+                            # If position-level TP not present or order-level TP missing, place fallback reduce-only TP
+                            if (tpc in (None, '', '0')) or (not tp_order_ok):
+                                bybit.place_reduce_only_limit(sym, tp_side, pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty, float(sig_obj.tp), post_only=True, reduce_only=True)
+                                # Refresh state
+                                pos_chk = bybit.get_position(sym)
+                                tpc = pos_chk.get('takeProfit') if isinstance(pos_chk, dict) else tpc
+                                tp_order_ok = True
+                        except Exception:
+                            pass
+                        # Confirm again after order-level fallback
+                        if tpc not in (None, '', '0') and slc not in (None, '', '0') and tp_order_ok:
                             logger.info(f"[{sym}] TP/SL confirmed: TP={fmt.format(float(tpc))} SL={fmt.format(float(slc))} (mode={applied_mode})")
-                            # Telegram confirmation for quick audit
                             try:
                                 if self.tg:
                                     await self.tg.send_message(

@@ -343,6 +343,40 @@ class Bybit:
         except Exception as e:
             logger.error(f"Failed to get positions: {e}")
             return []
+
+    def get_open_orders(self, symbol: str = None) -> list:
+        """Get open orders (reduce-only TP etc.) for a symbol or all symbols."""
+        try:
+            params = {"category": "linear"}
+            if symbol:
+                params["symbol"] = symbol
+            resp = self._request("GET", "/v5/order/realtime", params)
+            if resp and resp.get("result"):
+                return resp["result"].get("list", []) or []
+            return []
+        except Exception as e:
+            logger.error(f"Failed to get open orders: {e}")
+            return []
+
+    def place_conditional_stop(self, symbol: str, side: str, trigger_price: float, qty: float,
+                               reduce_only: bool = True) -> Dict[str, Any]:
+        """Place a conditional stop-market reduce-only order as SL fallback.
+
+        side is the order direction to close the position (Sell for long, Buy for short).
+        """
+        data = {
+            "category": "linear",
+            "symbol": symbol,
+            "side": side.capitalize(),
+            "orderType": "Market",
+            "qty": str(qty),
+            "timeInForce": "GTC",
+            "reduceOnly": reduce_only,
+            "triggerPrice": str(trigger_price),
+            "triggerBy": "LastPrice",
+            "positionIdx": 0,
+        }
+        return self._request("POST", "/v5/order/create", data)
     
     def cancel_all_orders(self, symbol:str=None) -> bool:
         """Cancel all orders for a symbol or all symbols"""

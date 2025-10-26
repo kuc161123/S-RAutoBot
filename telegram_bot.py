@@ -508,7 +508,7 @@ class TGBot:
                 extra = []
                 if isinstance(rp, (int,float)):
                     extra.append(f"Risk {float(rp):.2f}%")
-                if isinstance(cap, int):
+                if isinstance(cap, int) and cap > 0:
                     extra.append(f"Daily cap {cap}")
                 extra_s = f" | {' | '.join(extra)}" if extra else ""
                 lines.append(f"• Scalp Exec: {status} | TF {scp.get('timeframe','3')}m | Sessions {sess if sess else 'all'}{extra_s}")

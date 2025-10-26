@@ -2516,8 +2516,9 @@ class TradingBot:
                                 day_str = _dt.utcnow().strftime('%Y%m%d')
                                 if self._scalp_exec_counter['day'] != day_str:
                                     self._scalp_exec_counter = {'day': day_str, 'count': 0}
-                                daily_cap = int(e_cfg.get('daily_cap', 5) or 5)
-                                if self._scalp_exec_counter['count'] >= daily_cap:
+                                daily_cap = int(e_cfg.get('daily_cap', 0) or 0)
+                                # Treat daily_cap <= 0 as unlimited (no cap)
+                                if daily_cap > 0 and self._scalp_exec_counter['count'] >= daily_cap:
                                     exec_reason = 'daily_cap'
                                 else:
                                     # Risk override

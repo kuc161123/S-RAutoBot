@@ -557,7 +557,7 @@ scalp:
   exec:
     enabled: true                 # Enable Scalp executes behind Qscore threshold
     risk_percent: 1.0             # Per-trade risk for Scalp executes (percent of equity)
-    daily_cap: 5                  # Max Scalp executions per UTC day
+    daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
     # Allow stream-side immediate execution for extremely high ML scores
     allow_stream_high_ml: false   # Keep ML-override off; use Qscore gate
     high_ml_force: 70

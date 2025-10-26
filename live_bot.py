@@ -664,6 +664,8 @@ class TradingBot:
         self._stream_executed: Dict[str, float] = {}
         # Track if TP/SL has been applied for a symbol (best-effort idempotency)
         self._tpsl_applied: Dict[str, float] = {}
+        # Last scalp execution block reason per symbol (for diagnostics)
+        self._scalp_last_exec_reason: Dict[str, str] = {}
         # Cache of latest scalp detections per symbol (for promotion timing)
         self._scalp_last_signal: Dict[str, Dict[str, object]] = {}
         # HTF gating persistence (per-strategy per-symbol)
@@ -1327,15 +1329,22 @@ class TradingBot:
                     return False
                 side = "Buy" if sig_obj.side == "long" else "Sell"
                 _ = bybit.place_market(sym, side, qty, reduce_only=False)
-            # Read back avg entry and set TP/SL
+            # Read back position (avg entry and size) before setting TP/SL
                 actual_entry = float(sig_obj.entry)
+                pos_qty_for_tpsl = qty
                 try:
-                    await asyncio.sleep(0.4)
+                    await asyncio.sleep(0.6)
                     position = bybit.get_position(sym)
-                    if position and position.get("avgPrice"):
-                        actual_entry = float(position["avgPrice"]) or actual_entry
+                    if isinstance(position, dict):
+                        if position.get("avgPrice"):
+                            actual_entry = float(position["avgPrice"]) or actual_entry
+                        try:
+                            if position.get("size") is not None:
+                                pos_qty_for_tpsl = float(position.get("size")) or pos_qty_for_tpsl
+                        except Exception:
+                            pass
                 except Exception:
-                    pass
+                    position = None
             # Update dynamic slippage EWMA from fills (per-symbol)
                 try:
                     inst_slip = 0.0
@@ -1404,8 +1413,8 @@ class TradingBot:
                     try:
                         applied_mode = None  # 'partial' | 'full' | 'reduce_only'
                         try:
-                            # Prefer Partial (qty-aware, limit TP)
-                            bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=qty)
+                            # Prefer Partial (qty-aware, limit TP) using exchange-reported position size
+                            bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=pos_qty_for_tpsl)
                             applied_mode = 'partial'
                         except Exception:
                             try:
@@ -1415,8 +1424,8 @@ class TradingBot:
                             except Exception:
                                 # Final fallback: place a single reduce-only limit TP and SL-only
                                 tp_side = "Sell" if sig_obj.side == "long" else "Buy"
-                                bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
-                                bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
+                                bybit.place_reduce_only_limit(sym, tp_side, pos_qty_for_tpsl, float(sig_obj.tp), post_only=True, reduce_only=True)
+                                bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=pos_qty_for_tpsl)
                                 applied_mode = 'reduce_only'
                     except Exception:
                         pass
@@ -1493,8 +1502,8 @@ class TradingBot:
                     # Best-effort verification without reapplying (to avoid duplicate TP/SL sets)
                     try:
                         checks = 0
-                        while checks < 3:
-                            await asyncio.sleep(0.6)
+                        while checks < 5:
+                            await asyncio.sleep(0.8)
                             pos = bybit.get_position(sym)
                             tp_ok = False; sl_ok = False
                             try:
@@ -1509,19 +1518,75 @@ class TradingBot:
                             checks += 1
 
                         # If still missing and we used Full mode, one single re-apply try
-                        if checks >= 3 and applied_mode == 'full':
+                        if checks >= 5 and applied_mode == 'full':
                             try:
                                 bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
                             except Exception:
                                 pass
-                        elif checks >= 3 and applied_mode in ('partial', 'reduce_only'):
-                            # Avoid reapplying for partial/reduce_only to prevent duplicate limit orders
+                        elif checks >= 5 and applied_mode in ('partial', 'reduce_only'):
+                            # Attempt a safe fallback path when Partial/ReduceOnly did not reflect on server
                             try:
-                                logger.warning(f"[{sym}] TP/SL verification inconclusive after apply mode={applied_mode}; not reapplying to avoid duplicates")
-                                if self.tg:
-                                    await self.tg.send_message(f"🆘 {sym} TP/SL check inconclusive (mode={applied_mode}). Manual verify once.")
+                                if applied_mode == 'partial':
+                                    # Try Full mode once
+                                    bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
+                                else:
+                                    # applied_mode == 'reduce_only': ensure SL-only is present, and add a backup TP limit
+                                    tp_side = "Sell" if sig_obj.side == "long" else "Buy"
+                                    bybit.place_reduce_only_limit(sym, tp_side, qty, float(sig_obj.tp), post_only=True, reduce_only=True)
+                                    bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty)
                             except Exception:
                                 pass
+                    except Exception:
+                        pass
+
+                    # Final guard: ensure protection exists; else emergency close the position
+                    try:
+                        pos_final = bybit.get_position(sym)
+                        tp_present = False; sl_present = False
+                        if isinstance(pos_final, dict):
+                            tpv = pos_final.get('takeProfit')
+                            slv = pos_final.get('stopLoss')
+                            tp_present = (tpv not in (None, '', '0')) and (float(tpv) > 0)
+                            sl_present = (slv not in (None, '', '0')) and (float(slv) > 0)
+                        if not (tp_present and sl_present):
+                            # One more attempt: Full-mode apply if not already tried
+                            try:
+                                if applied_mode != 'full':
+                                    bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
+                                    await asyncio.sleep(0.4)
+                                    pos_final = bybit.get_position(sym)
+                                    tpv = pos_final.get('takeProfit') if pos_final else None
+                                    slv = pos_final.get('stopLoss') if pos_final else None
+                                    tp_present = (tpv not in (None, '', '0')) and (float(tpv) > 0)
+                                    sl_present = (slv not in (None, '', '0')) and (float(slv) > 0)
+                            except Exception:
+                                pass
+                        if not (tp_present and sl_present):
+                            # Emergency close to prevent unprotected exposure
+                            try:
+                                # Use current position size for emergency close to avoid under/over sizing
+                                em_pos = bybit.get_position(sym)
+                                em_qty = float(em_pos.get('size') or 0.0) if isinstance(em_pos, dict) else 0.0
+                                if em_qty <= 0.0:
+                                    em_qty = pos_qty_for_tpsl if pos_qty_for_tpsl else qty
+                                emergency_side = "Sell" if sig_obj.side == "long" else "Buy"
+                                close_result = bybit.place_market(sym, emergency_side, em_qty, reduce_only=True)
+                                try:
+                                    bybit.cancel_all_orders(sym)
+                                except Exception:
+                                    pass
+                                logger.critical(f"[{sym}] Emergency position closure executed due to missing TP/SL: {close_result}")
+                                if self.tg:
+                                    await self.tg.send_message(f"🚨 EMERGENCY CLOSURE: {sym} {sig_obj.side.upper()} closed — TP/SL not set reliably")
+                            except Exception as close_error:
+                                logger.critical(f"[{sym}] CRITICAL: Failed to close unprotected Scalp position: {close_error}")
+                                if self.tg:
+                                    await self.tg.send_message(f"🆘 CRITICAL: {sym} position UNPROTECTED — TP/SL failed and emergency close failed")
+                            try:
+                                self._scalp_last_exec_reason[sym] = 'tpsl_error'
+                            except Exception:
+                                pass
+                            return False
                     except Exception:
                         pass
 
@@ -7600,6 +7665,13 @@ class TradingBot:
                         async def _try_execute(strategy_name: str, sig_obj, ml_score: float = 0.0, threshold: float = 75.0):
                             nonlocal book, bybit, sizer
                             dbg_logger = logging.getLogger(__name__)
+                            # Route Scalp executions to the dedicated stream-side executor for robust TP/SL handling
+                            try:
+                                if strategy_name == 'scalp':
+                                    return await self._execute_scalp_trade(sym, sig_obj, ml_score=float(ml_score or 0.0))
+                            except Exception:
+                                # Fall through to generic path if executor is unavailable
+                                pass
                             # Optional 3m context enforcement (applies to both Trend and MR execution paths)
                             try:
                                 # Trend micro-context (bypass for HIGH-ML)

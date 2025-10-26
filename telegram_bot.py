@@ -1562,9 +1562,20 @@ class TGBot:
                 )
                 return
             
-            # Apply the change
+            # Apply the change (global risk used by all strategies)
             self.shared["risk"].risk_percent = value
             self.shared["risk"].use_percent_risk = True
+            # Also mirror to per-strategy exec configs so Range/Scalp overrides stay in sync
+            try:
+                cfg = self.shared.get('config', {})
+                cfg.setdefault('range', {}).setdefault('exec', {})['risk_percent'] = value
+                cfg.setdefault('scalp', {}).setdefault('exec', {})['risk_percent'] = value
+                bot = self.shared.get('bot_instance')
+                if bot and hasattr(bot, 'config') and isinstance(bot.config, dict):
+                    bot.config.setdefault('range', {}).setdefault('exec', {})['risk_percent'] = value
+                    bot.config.setdefault('scalp', {}).setdefault('exec', {})['risk_percent'] = value
+            except Exception:
+                pass
             
             # Calculate USD amount if balance available
             usd_info = ""

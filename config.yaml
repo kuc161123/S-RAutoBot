@@ -286,7 +286,7 @@ range:
     notify_suppress: true
   exec:
     enabled: true
-    risk_percent: 0.5
+    risk_percent: 1.0
     daily_cap: 3
     allow_stream_entry: false
     timeouts:
@@ -556,7 +556,7 @@ scalp:
     ml_enabled: false        # if true, seeds Scalp ML with historical phantom outcomes on startup
   exec:
     enabled: true                 # Enable Scalp executes behind Qscore threshold
-    risk_percent: 0.25            # Per-trade risk for Scalp executes (percent of equity)
+    risk_percent: 1.0             # Per-trade risk for Scalp executes (percent of equity)
     daily_cap: 5                  # Max Scalp executions per UTC day
     # Allow stream-side immediate execution for extremely high ML scores
     allow_stream_high_ml: false   # Keep ML-override off; use Qscore gate

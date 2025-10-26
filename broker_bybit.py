@@ -245,18 +245,19 @@ class Bybit:
                 "positionIdx": 0
             }
         else:
-            # Fallback: Use Full mode without sizes (simpler API)
-            logger.warning(f"Using Full mode for {symbol} - no position size available")
+            # Fallback: Use Full mode without sizes (simpler API), but prefer Limit TP per requirements
+            logger.warning(f"Using Full mode for {symbol} - no position size available (placing Limit TP)")
             data = {
                 "category": "linear",
                 "symbol": symbol,
                 "takeProfit": str(take_profit),
                 "stopLoss": str(stop_loss),
+                "tpLimitPrice": str(take_profit),  # ensure Limit TP even in Full mode
                 "tpTriggerBy": "LastPrice",
                 "slTriggerBy": "LastPrice",
                 "tpslMode": "Full",                # Full mode doesn't need sizes
-                "tpOrderType": "Market",           # Market for both in Full mode
-                "slOrderType": "Market",           # Market for both in Full mode
+                "tpOrderType": "Limit",            # Limit for TP (requested)
+                "slOrderType": "Market",           # Market for SL
                 "positionIdx": 0
             }
         

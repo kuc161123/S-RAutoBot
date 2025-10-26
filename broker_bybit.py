@@ -155,27 +155,47 @@ class Bybit:
             logger.error(f"Failed to get balance: {e}")
             return None
 
-    def set_leverage(self, symbol:str, leverage:int) -> Dict[str, Any]:
-        """Set leverage for a symbol"""
-        try:
-            data = {
-                "category": "linear",
-                "symbol": symbol,
-                "buyLeverage": str(leverage),
-                "sellLeverage": str(leverage)
-            }
-            return self._request("POST", "/v5/position/set-leverage", data)
-        except RuntimeError as e:
-            # Check if it's the "leverage not modified" error (already set to requested value)
-            if "leverage not modified" in str(e).lower():
-                logger.debug(f"{symbol}: Leverage already set to {leverage}x")
-                return {"result": "already_set"}  # Return success-like response
-            else:
-                logger.warning(f"Failed to set leverage for {symbol}: {e}")
-                return None
-        except Exception as e:
-            logger.warning(f"Failed to set leverage for {symbol}: {e}")
-            return None
+    def set_leverage(self, symbol:str, leverage:int) -> Dict[str, Any] | None:
+        """Set leverage for a symbol with graceful fallback.
+
+        Attempts requested leverage; on failure due to risk limit, retries with 20x then 10x.
+        Treats "leverage not modified" as success.
+        """
+        candidates = [int(leverage)]
+        # Common safe fallbacks
+        for alt in (20, 10):
+            if alt not in candidates:
+                candidates.append(alt)
+        last_err = None
+        for lev in candidates:
+            try:
+                data = {
+                    "category": "linear",
+                    "symbol": symbol,
+                    "buyLeverage": str(lev),
+                    "sellLeverage": str(lev)
+                }
+                resp = self._request("POST", "/v5/position/set-leverage", data)
+                if resp:
+                    if lev != leverage:
+                        logger.info(f"{symbol}: Set leverage fallback {lev}x (requested {leverage}x)")
+                    return resp
+            except RuntimeError as e:
+                last_err = e
+                msg = str(e).lower()
+                if "leverage not modified" in msg:
+                    logger.debug(f"{symbol}: Leverage already set (requested {lev}x)")
+                    return {"result": "already_set"}
+                # If risk limit rejected (e.g., "gt maxleverage"), try next candidate
+                if "maxleverage" in msg or "risk limit" in msg:
+                    logger.warning(f"{symbol}: leverage {lev}x rejected by risk limit; trying fallback")
+                    continue
+                logger.warning(f"Failed to set leverage for {symbol} at {lev}x: {e}")
+            except Exception as e:
+                last_err = e
+                logger.warning(f"Failed to set leverage for {symbol} at {lev}x: {e}")
+        logger.error(f"{symbol}: All leverage attempts failed (tried {candidates}). Last error: {last_err}")
+        return None
     
     def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False) -> Dict[str, Any]:
         """Place market order"""

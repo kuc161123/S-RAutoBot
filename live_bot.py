@@ -1277,6 +1277,10 @@ class TradingBot:
                 shared = getattr(self, 'shared', {}) or {}
             # One position per symbol
                 if sym in book.positions:
+                    try:
+                        self._scalp_last_exec_reason[sym] = 'position_exists'
+                    except Exception:
+                        pass
                     return False
             # Round TP/SL to tick size
                 m = meta_for(sym, cfg.get('symbol_meta', {}))
@@ -1295,6 +1299,10 @@ class TradingBot:
             # Sizing
                 qty = sizer.qty_for(float(sig_obj.entry), float(sig_obj.sl), m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
                 if qty <= 0:
+                    try:
+                        self._scalp_last_exec_reason[sym] = 'size_zero'
+                    except Exception:
+                        pass
                     return False
             # SL sanity
                 try:
@@ -1303,10 +1311,20 @@ class TradingBot:
                 except Exception:
                     current_price = float(sig_obj.entry)
                 if (sig_obj.side == "long" and float(sig_obj.sl) >= current_price) or (sig_obj.side == "short" and float(sig_obj.sl) <= current_price):
+                    try:
+                        self._scalp_last_exec_reason[sym] = 'invalid_sl'
+                    except Exception:
+                        pass
                     return False
             # Leverage and market order
                 max_lev = int(m.get("max_leverage", 10))
-                bybit.set_leverage(sym, max_lev)
+                lev_resp = bybit.set_leverage(sym, max_lev)
+                if lev_resp is None:
+                    try:
+                        self._scalp_last_exec_reason[sym] = 'leverage_error'
+                    except Exception:
+                        pass
+                    return False
                 side = "Buy" if sig_obj.side == "long" else "Sell"
                 _ = bybit.place_market(sym, side, qty, reduce_only=False)
             # Read back avg entry and set TP/SL
@@ -1514,6 +1532,10 @@ class TradingBot:
                     except Exception:
                         pass
                 except Exception:
+                    try:
+                        self._scalp_last_exec_reason[sym] = 'tpsl_error'
+                    except Exception:
+                        pass
                     return False
             # Update book
                 self.book.positions[sym] = Position(
@@ -2571,7 +2593,7 @@ class TradingBot:
                     try:
                         if (not did_exec) and exec_enabled and session_ok and float(sc_feats.get('qscore', 0.0)) >= exec_thr:
                             if self.tg:
-                                r = exec_reason or 'exec_guard'
+                                r = exec_reason or getattr(self, '_scalp_last_exec_reason', {}).get(sym) or 'exec_guard'
                                 comps = sc_feats.get('qscore_components', {}) or {}
                                 comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
                                 await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}) — phantom recorded\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")

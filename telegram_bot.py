@@ -414,6 +414,40 @@ class TGBot:
         except Exception:
             pass
 
+        # Executed trade aggregates by strategy (Trend / Range / Scalp)
+        try:
+            tt = self.shared.get('trade_tracker')
+            recs = getattr(tt, 'trades', []) if tt else []
+            def _agg(group):
+                arr = [t for t in recs if isinstance(getattr(t, 'strategy_name', None), str) and group(getattr(t,'strategy_name').lower()) and getattr(t, 'exit_time', None)]
+                total = len(arr)
+                wins = sum(1 for t in arr if getattr(t, 'pnl_usd', 0.0) > 0)
+                losses = total - wins
+                wr = (wins/total*100.0) if total else 0.0
+                pnl = sum(float(getattr(t, 'pnl_usd', 0.0) or 0.0) for t in arr)
+                return total, wins, losses, wr, pnl
+            # Trend executed
+            t_total, t_w, t_l, t_wr, t_pnl = _agg(lambda s: ('trend' in s))
+            if t_total or t_pnl or (self.shared.get('book') and self.shared.get('book').positions):
+                lines.append("")
+                lines.append("✅ *Trend Executed*")
+                lines.append(f"• Closed: {t_total} | WR: {t_wr:.1f}% (W/L {t_w}/{t_l}) | PnL: ${t_pnl:.2f}")
+            # Range executed
+            r_total, r_w, r_l, r_wr, r_pnl = _agg(lambda s: s.startswith('range'))
+            lines.append("")
+            lines.append("✅ *Range Executed*")
+            lines.append(f"• Closed: {r_total} | WR: {r_wr:.1f}% (W/L {r_w}/{r_l}) | PnL: ${r_pnl:.2f}")
+            # Scalp executed
+            s_total, s_w, s_l, s_wr, s_pnl = _agg(lambda s: s.startswith('scalp'))
+            lines.append("")
+            lines.append("✅ *Scalp Executed*")
+            lines.append(f"• Closed: {s_total} | WR: {s_wr:.1f}% (W/L {s_w}/{s_l}) | PnL: ${s_pnl:.2f}")
+        except Exception as exc:
+            try:
+                logger.debug(f"Executed aggregates error: {exc}")
+            except Exception:
+                pass
+
         # Trend ML snapshot
         try:
             ml_scorer = self.shared.get('ml_scorer')

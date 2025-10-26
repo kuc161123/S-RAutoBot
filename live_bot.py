@@ -56,6 +56,24 @@ except Exception as e:
 # Consider Scalp available if signal detection and tracker are present
 SCALP_AVAILABLE = bool(detect_scalp_signal is not None and get_scalp_phantom_tracker is not None)
 
+# Safe accessor for Scalp Phantom Tracker to avoid local scoping issues
+def _safe_get_scalp_phantom_tracker():
+    try:
+        # Prefer already-imported symbol
+        if callable(get_scalp_phantom_tracker):
+            return get_scalp_phantom_tracker()
+    except Exception:
+        pass
+    try:
+        from scalp_phantom_tracker import get_scalp_phantom_tracker as _g
+        return _g()
+    except Exception as e:
+        try:
+            logging.getLogger(__name__).debug(f"Scalp tracker import error: {e}")
+        except Exception:
+            pass
+        return None
+
 # Trade tracking with PostgreSQL fallback
 try:
     from trade_tracker_postgres import TradeTrackerPostgres as TradeTracker, Trade
@@ -2378,7 +2396,7 @@ class TradingBot:
                 # Dedup via Redis (phantom dedup scope)
                 dedup_ok = True
                 try:
-                    scpt = get_scalp_phantom_tracker()
+                    scpt = _safe_get_scalp_phantom_tracker()
                     r = scpt.redis_client
                     if r is not None:
                         key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),6)}:{round(float(sc_sig.sl),6)}:{round(float(sc_sig.tp),6)}"
@@ -2451,7 +2469,7 @@ class TradingBot:
                 blist = [ts for ts in self._scalp_budget.get(sym, []) if (now_ts - ts) < 3600]
                 self._scalp_budget[sym] = blist
                 try:
-                    scpt = get_scalp_phantom_tracker()
+                    scpt = _safe_get_scalp_phantom_tracker()
                     # Compute Scalp ML score if scorer is available
                     ml_s = 0.0
                     try:
@@ -2935,7 +2953,7 @@ class TradingBot:
                     logger.info(f"[{sym}] Scalp fallback execute error: {_ee}")
                     executed = False
                 try:
-                    scpt = get_scalp_phantom_tracker()
+                    scpt = _safe_get_scalp_phantom_tracker()
                     # Cancel actives if configured
                     try:
                         cancel_on_hi = bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('cancel_active_on_high_ml', True))
@@ -2964,7 +2982,7 @@ class TradingBot:
         # Redis dedup
         dedup_ok = True
         try:
-            scpt = get_scalp_phantom_tracker()
+            scpt = _safe_get_scalp_phantom_tracker()
             r = scpt.redis_client
             if r is not None:
                 key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),6)}:{round(float(sc_sig.sl),6)}:{round(float(sc_sig.tp),6)}"
@@ -3001,7 +3019,7 @@ class TradingBot:
         sc_feats['routing'] = 'fallback'
 
         try:
-            scpt = get_scalp_phantom_tracker()
+            scpt = _safe_get_scalp_phantom_tracker()
             hb = self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
             sc_limit = int(hb.get('scalp', 4))
             if not hasattr(self, '_scalp_budget'):
@@ -5546,7 +5564,7 @@ class TradingBot:
             try:
                 s_cfg = cfg.get('scalp', {}).get('explore', {})
                 if s_cfg and 'timeout_hours' in s_cfg and SCALP_AVAILABLE:
-                    scpt = get_scalp_phantom_tracker()
+                    scpt = _safe_get_scalp_phantom_tracker()
                     scpt.timeout_hours = int(s_cfg['timeout_hours'])
                     logger.info(f"Scalp phantom timeout set to {scpt.timeout_hours}h (exploration)")
             except Exception as e:

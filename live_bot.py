@@ -5209,6 +5209,14 @@ class TradingBot:
             self._trend_settings = trend_settings
         except Exception:
             pass
+        # Log effective Trend 3m timeouts for visibility
+        try:
+            logger.info(
+                f"🔧 Trend 3m timeouts: breakout→pullback={int(getattr(trend_settings,'breakout_to_pullback_bars_3m',0))} bars, "
+                f"pullback→BOS={int(getattr(trend_settings,'pullback_to_bos_bars_3m',0))} bars"
+            )
+        except Exception:
+            pass
         # Propagate rule_mode to strategy (disable SR hard gate when enabled)
         try:
             rm = (cfg.get('trend', {}) or {}).get('rule_mode', {})

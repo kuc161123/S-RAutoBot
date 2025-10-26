@@ -1284,12 +1284,36 @@ class TradingBot:
                     except Exception:
                         pass
                     return False
-            # Round TP/SL to tick size
+            # Round TP/SL to tick size (directional for SL to guarantee protection)
                 m = meta_for(sym, cfg.get('symbol_meta', {}))
                 from position_mgr import round_step
-                tick_size = m.get("tick_size", 0.000001)
-                sig_obj.tp = round_step(float(sig_obj.tp), tick_size)
-                sig_obj.sl = round_step(float(sig_obj.sl), tick_size)
+                import math as _math
+                tick_size = float(m.get("tick_size", 0.000001))
+                # Directional rounding helpers
+                def _floor_tick(x: float, step: float) -> float:
+                    try:
+                        return (_math.floor(x / step)) * step
+                    except Exception:
+                        return round_step(x, step)
+                def _ceil_tick(x: float, step: float) -> float:
+                    try:
+                        return (_math.ceil(x / step)) * step
+                    except Exception:
+                        return round_step(x, step)
+                # Round SL away from entry strictly
+                if str(getattr(sig_obj, 'side', 'short')).lower() == 'short':
+                    sl_r = _ceil_tick(float(sig_obj.sl), tick_size)
+                    if sl_r <= float(sig_obj.entry):
+                        sl_r = float(sig_obj.entry) + tick_size
+                    sig_obj.sl = float(sl_r)
+                    # TP can be rounded toward price safely
+                    sig_obj.tp = round_step(float(sig_obj.tp), tick_size)
+                else:
+                    sl_r = _floor_tick(float(sig_obj.sl), tick_size)
+                    if sl_r >= float(sig_obj.entry):
+                        sl_r = float(sig_obj.entry) - tick_size
+                    sig_obj.sl = float(sl_r)
+                    sig_obj.tp = round_step(float(sig_obj.tp), tick_size)
             # Update sizer balance
                 try:
                     bal = bybit.get_balance()
@@ -1633,7 +1657,8 @@ class TradingBot:
                         await self.tg.send_message(msg)
                 except Exception:
                     pass
-                    return True
+                # Successful execution
+                return True
         except Exception as e:
             logger.info(f"[{sym}] Scalp stream execute error: {e}")
             return False

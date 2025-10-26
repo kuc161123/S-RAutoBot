@@ -5350,9 +5350,15 @@ class TGBot:
                             b = _bucket(float(q))
                             strat = str(getattr(p, 'strategy_name','') or '').lower()
                             if strat.startswith('range'):
-                                (range_agg[b]['w'] if oc=='win' else range_agg[b].__setitem__('l', range_agg[b]['l']+1))
-                            elif 'trend' in strat or 'pullback' in strat:
-                                (trend_agg[b]['w'] if oc=='win' else trend_agg[b].__setitem__('l', trend_agg[b]['l']+1))
+                                if oc == 'win':
+                                    range_agg[b]['w'] += 1
+                                else:
+                                    range_agg[b]['l'] += 1
+                            elif ('trend' in strat) or ('pullback' in strat):
+                                if oc == 'win':
+                                    trend_agg[b]['w'] += 1
+                                else:
+                                    trend_agg[b]['l'] += 1
                         except Exception:
                             continue
             except Exception:

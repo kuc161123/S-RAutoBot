@@ -1692,6 +1692,14 @@ class TradingBot:
                         fmt = f"{{:.{decs}f}}"
                         if tpc not in (None, '', '0') and slc not in (None, '', '0'):
                             logger.info(f"[{sym}] TP/SL confirmed: TP={fmt.format(float(tpc))} SL={fmt.format(float(slc))} (mode={applied_mode})")
+                            # Telegram confirmation for quick audit
+                            try:
+                                if self.tg:
+                                    await self.tg.send_message(
+                                        f"✅ Scalp TP/SL confirmed: {sym}\nTP={fmt.format(float(tpc))} SL={fmt.format(float(slc))} (mode={applied_mode})"
+                                    )
+                            except Exception:
+                                pass
                     except Exception:
                         pass
 

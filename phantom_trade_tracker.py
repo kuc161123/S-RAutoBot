@@ -98,6 +98,13 @@ class PhantomTrade:
         d['signal_time'] = self.signal_time.isoformat()
         if self.exit_time:
             d['exit_time'] = self.exit_time.isoformat()
+        # Convert optional TP1 time if present
+        try:
+            if d.get('tp1_time'):
+                d['tp1_time'] = d['tp1_time'].isoformat()
+        except Exception:
+            # If conversion fails, drop tp1_time to avoid JSON errors
+            d['tp1_time'] = None
         return d
     
     @classmethod

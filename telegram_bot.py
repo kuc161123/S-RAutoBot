@@ -521,6 +521,7 @@ class TGBot:
             [InlineKeyboardButton("📜 Recent", callback_data="ui:recent"), InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:trend"), InlineKeyboardButton("📦 Range", callback_data="ui:phantom:range")],
             [InlineKeyboardButton("🤖 ML", callback_data="ui:ml:trend"), InlineKeyboardButton("🧠 Patterns", callback_data="ui:ml:patterns")],
             [InlineKeyboardButton("🩳 Scalp", callback_data="ui:scalp:qa"), InlineKeyboardButton("📈 Scalp Qscore", callback_data="ui:scalp:qscore")],
+            [InlineKeyboardButton("📊 Qscores (All)", callback_data="ui:qscore:all")],
             [InlineKeyboardButton("🧭 Events", callback_data="ui:events"), InlineKeyboardButton("⚙️ Settings", callback_data="ui:settings")]
         ])
 
@@ -2491,6 +2492,10 @@ class TGBot:
                 await query.answer()
                 fake_update = type('obj', (object,), {'message': query.message})
                 await self.scalp_qscore_report(fake_update, ctx)
+            elif data.startswith("ui:qscore:all"):
+                await query.answer()
+                fake_update = type('obj', (object,), {'message': query.message})
+                await self.qscore_all_report(fake_update, ctx)
             # Scalp promotion UI removed (feature disabled)
             elif data.startswith("ui:ml:main"):
                 await query.answer()
@@ -5286,6 +5291,105 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_qscore_report: {e}")
             await update.message.reply_text("Error computing Scalp Qscore report")
+
+    async def qscore_all_report(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show Qscore win/loss buckets for Trend, Range, and Scalp with simple recommendations.
+
+        Buckets in 5-pt steps from 50 to 100. Uses persisted phantom stores so it survives restarts.
+        """
+        try:
+            import math
+            # Helpers
+            def _bucket(q: float) -> int:
+                try:
+                    return max(50, min(100, int(math.floor(q/5.0)*5)))
+                except Exception:
+                    return 0
+            def _agg_map():
+                return {b: {'w':0,'l':0} for b in range(50, 101, 5)}
+            def _lines(title: str, agg: dict, exec_thr: int) -> list:
+                out = [f"{title} (thr {exec_thr})"]
+                # compute WR and rec
+                best_below = None; above = None
+                for b in range(50, 101, 5):
+                    d = agg.get(b, {'w':0,'l':0}); n = d['w']+d['l']
+                    if n==0: continue
+                    wr = (d['w']/n*100.0) if n else 0.0
+                    out.append(f"  {b:>2}+ : N={n} WR={wr:.1f}% (W/L {d['w']}/{d['l']})")
+                # recommendation around threshold
+                try:
+                    def _wr(d):
+                        n=d['w']+d['l']; return (d['w']/n*100.0) if n else 0.0
+                    below_bin = 5*int(math.floor((exec_thr-1)/5.0))
+                    above_bin = 5*int(math.floor(exec_thr/5.0))
+                    below = agg.get(below_bin, {'w':0,'l':0}); above = agg.get(above_bin, {'w':0,'l':0})
+                    wr_b = _wr(below); wr_a = _wr(above)
+                    nb = below['w']+below['l']; na = above['w']+above['l']
+                    rec = "Keep threshold"
+                    if nb >= 10 and wr_b >= wr_a - 2.0:
+                        rec = "Consider -3 thr (near-miss strong)"
+                    elif na >= 10 and wr_a < 45.0:
+                        rec = "Consider +3 thr (weak above cut)"
+                    out.append(f"  Recommendation: {rec}")
+                except Exception:
+                    pass
+                return out
+            # Build aggregates
+            trend_agg = _agg_map(); range_agg = _agg_map(); scalp_agg = _agg_map()
+            # Trend/Range from PhantomTradeTracker
+            try:
+                pt = self.shared.get('phantom_tracker')
+                for arr in (getattr(pt, 'phantom_trades', {}) or {}).values():
+                    for p in arr:
+                        try:
+                            oc = getattr(p, 'outcome', None)
+                            if oc not in ('win','loss'): continue
+                            feats = getattr(p, 'features', {}) or {}
+                            q = feats.get('qscore', None)
+                            if not isinstance(q, (int,float)): continue
+                            b = _bucket(float(q))
+                            strat = str(getattr(p, 'strategy_name','') or '').lower()
+                            if strat.startswith('range'):
+                                (range_agg[b]['w'] if oc=='win' else range_agg[b].__setitem__('l', range_agg[b]['l']+1))
+                            elif 'trend' in strat or 'pullback' in strat:
+                                (trend_agg[b]['w'] if oc=='win' else trend_agg[b].__setitem__('l', trend_agg[b]['l']+1))
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+            # Scalp from ScalpPhantomTracker
+            try:
+                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                scpt = get_scalp_phantom_tracker()
+                for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                    for p in arr:
+                        try:
+                            oc = getattr(p, 'outcome', None)
+                            if oc not in ('win','loss'): continue
+                            feats = getattr(p, 'features', {}) or {}
+                            q = feats.get('qscore', None)
+                            if not isinstance(q, (int,float)): continue
+                            b = _bucket(float(q))
+                            if oc=='win': scalp_agg[b]['w'] += 1
+                            else: scalp_agg[b]['l'] += 1
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+            # Thresholds from config
+            cfg = self.shared.get('config') or {}
+            t_thr = int(float(((cfg.get('trend',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
+            r_thr = int(float(((cfg.get('range',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
+            s_thr = int(float(((cfg.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 88)))
+            # Assemble message
+            msg = ["📊 *Qscore Buckets*", ""]
+            msg += _lines("Trend", trend_agg, t_thr); msg.append("")
+            msg += _lines("Range", range_agg, r_thr); msg.append("")
+            msg += _lines("Scalp", scalp_agg, s_thr)
+            await self.safe_reply(update, "\n".join(msg))
+        except Exception as e:
+            logger.error(f"qscore_all_report error: {e}")
+            await update.message.reply_text("Error computing Qscore stats")
 
     async def scalp_promotion_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Summarize Scalp promotion readiness (WR-based only)."""

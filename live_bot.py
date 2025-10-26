@@ -3283,6 +3283,11 @@ class TradingBot:
                 pnl = float(getattr(phantom, 'pnl_percent', 0.0) or 0.0)
                 exit_px = float(getattr(phantom, 'exit_price', 0.0) or 0.0)
                 rr = getattr(phantom, 'realized_rr', None)
+                q_close = None
+                try:
+                    q_close = float((feats or {}).get('qscore')) if isinstance(feats, dict) and ('qscore' in feats) else None
+                except Exception:
+                    q_close = None
                 lines = [
                     f"👻 *{label_title} {emoji}*{pid_suffix}",
                     f"{symbol} {side} | ML {ml:.1f}",
@@ -3292,6 +3297,11 @@ class TradingBot:
                 try:
                     if isinstance(rr, (int,float)):
                         lines.append(f"Realized R: {float(rr):.2f}R")
+                except Exception:
+                    pass
+                try:
+                    if isinstance(q_close, (int,float)):
+                        lines.append(f"Q={q_close:.1f}")
                 except Exception:
                     pass
                 if pid and pid in self._phantom_close_notified:
@@ -3438,6 +3448,12 @@ class TradingBot:
                 pnl = float(getattr(phantom, 'pnl_percent', 0.0) or 0.0)
                 exit_px = float(getattr(phantom, 'exit_price', 0.0) or 0.0)
                 rr = getattr(phantom, 'realized_rr', None)
+                qv = None
+                try:
+                    feats = getattr(phantom, 'features', {}) or {}
+                    qv = float(feats.get('qscore')) if 'qscore' in feats else None
+                except Exception:
+                    qv = None
                 lines = [
                     f"👻 *Scalp Phantom {emoji}*{pid_suffix}",
                     f"{symbol} {side} | ML {ml:.1f}",
@@ -3447,6 +3463,11 @@ class TradingBot:
                 try:
                     if isinstance(rr, (int,float)):
                         lines.append(f"Realized R: {float(rr):.2f}R")
+                except Exception:
+                    pass
+                try:
+                    if isinstance(qv, (int,float)):
+                        lines.append(f"Q={qv:.1f}")
                 except Exception:
                     pass
                 if pid and pid in getattr(self, '_phantom_close_notified', set()):

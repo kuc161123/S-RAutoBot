@@ -2707,6 +2707,12 @@ class TradingBot:
                             except Exception:
                                 pass
                             logger.info(f"[{sym}] 👻 Phantom-only (Scalp 3m none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                            # Ensure Telegram receives an open notification immediately (dedup-safe)
+                            try:
+                                if self.tg and hasattr(self, '_notify_scalp_phantom'):
+                                    await self._notify_scalp_phantom(_rec)
+                            except Exception:
+                                pass
                             try:
                                 # Explain why not executed: budgets or below ML override (still phantom)
                                 reason = 'unknown'

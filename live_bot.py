@@ -82,37 +82,26 @@ except ImportError:
     from trade_tracker import TradeTracker, Trade
     USING_POSTGRES_TRACKER = False
 
-# ML scoring system - Enhanced parallel system (Trend + Mean Reversion)
+# ML system (Trend + Enhanced Mean Reversion only)
 try:
-    from ml_signal_scorer_immediate import get_immediate_scorer
     from phantom_trade_tracker import get_phantom_tracker
     from enhanced_mr_scorer import get_enhanced_mr_scorer
     from mr_phantom_tracker import get_mr_phantom_tracker
     from ml_scorer_trend import get_trend_scorer
     from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
-    from ml_scorer_mean_reversion import get_mean_reversion_scorer
     logger = logging.getLogger(__name__)
-    logger.info("Using Enhanced Parallel ML System (Trend + Mean Reversion)")
+    logger.info("Using Enhanced ML System (Trend + Enhanced MR)")
     ML_AVAILABLE = True
     ENHANCED_ML_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
     ML_AVAILABLE = False
     ENHANCED_ML_AVAILABLE = False
     logger = logging.getLogger(__name__)
-    logger.warning(f"Enhanced ML not available: {e}")
-    # Fallback to original ML if available
-    try:
-        from ml_signal_scorer_immediate import get_immediate_scorer
-        from phantom_trade_tracker import get_phantom_tracker
-        from ml_scorer_mean_reversion import get_mean_reversion_scorer
-        try:
-            from ml_scorer_trend import get_trend_scorer
-        except Exception:
-            get_trend_scorer = None
-        ML_AVAILABLE = True
-        logger.info("Using Original ML Scorer only")
-    except ImportError as e2:
-        logger.warning(f"No ML available: {e2}")
+    logger.warning(f"ML system not available: {e}")
+
+# Disable legacy Mean Reversion (classic) path
+def detect_signal_mean_reversion(*args, **kwargs):
+    return None
 
 # Symbol data collection for ML learning
 try:
@@ -3072,7 +3061,7 @@ class TradingBot:
                             blist.append(now_ts)
                             self._scalp_budget[sym] = blist
                         else:
-                            logger.info(f"[{sym}] 🛑 Scalp phantom (none route) dropped by regime gate (tracker)")
+                            logger.debug(f"[{sym}] 🛑 Scalp phantom (none route) dropped by regime gate (tracker)")
                             _scalp_decision_logged = True
                         # Shadow execute Scalp if ML is trained and score ≥ threshold
                         try:
@@ -5398,10 +5387,10 @@ class TradingBot:
         # Mute legacy/unused strategies globally so logs focus on Trend/Range/Scalp
         try:
             for name in (
-                'strategy_mean_reversion', 'ml_scorer_mean_reversion', 'enhanced_mr_scorer', 'mr_phantom_tracker',
-                'ml_signal_scorer_immediate', 'strategy_trend_breakout', 'strategy_pullback_ml_learning',
-                'backtester', 'enhanced_backtester', 'bootstrap_pretrain', 'pretrain_trend_server',
-                'regime_classifier', 'market_regime', 'enhanced_features'
+                'enhanced_mr_scorer', 'mr_phantom_tracker',
+                'strategy_regimes', 'strategy_mean_reversion', 'ml_signal_scorer_immediate', 'ml_scorer_mean_reversion',
+                'backtester', 'enhanced_backtester',
+                'regime_classifier', 'market_regime', 'enhanced_market_regime'
             ):
                 try:
                     logging.getLogger(name).setLevel(logging.WARNING)
@@ -5410,7 +5399,15 @@ class TradingBot:
         except Exception:
             pass
 
-        # (removed duplicated helper definition mistakenly inserted here)
+        # Enforce MR disabled and disable enhanced-parallel router to keep only Trend Pullback, Range FBO and Scalp
+        try:
+            self._mr_disabled = True
+        except Exception:
+            pass
+        try:
+            cfg.setdefault('trade', {})['use_enhanced_parallel'] = False
+        except Exception:
+            pass
         
         # Extract configuration
         symbols = [s.upper() for s in cfg["trade"]["symbols"]]
@@ -7563,19 +7560,9 @@ class TradingBot:
                     # When central router is disabled, we rely solely on independent MR/Trend flows
                     router_choice = 'none'
                     tr_score = mr_score = 0.0
+                    # Disable central router (legacy regime selector)
                     central_router_enabled = False
-                    try:
-                        cr = (self.config.get('router', {}) or {})
-                        central_router_enabled = bool(cr.get('central_enabled', False))
-                    except Exception:
-                        central_router_enabled = False
-                    if central_router_enabled:
-                        try:
-                            from strategy_regimes import score_trend_regime, score_mr_regime
-                            tr_score, _ = score_trend_regime(df)
-                            mr_score, _ = score_mr_regime(df)
-                        except Exception:
-                            pass
+                    # Legacy regime selector disabled — no routing scores calculated
 
                     # Higher-timeframe gating/bias using enhanced regime (HTF)
                     htf = None
@@ -7882,10 +7869,10 @@ class TradingBot:
                     # regardless of enhanced ML availability.
                     if independence_enabled or getattr(self, '_trend_only', False):
                         # Take a regime snapshot once for per-strategy filters
-                        try:
-                            regime_analysis = get_enhanced_market_regime(df, sym)
-                        except Exception:
-                            regime_analysis = None
+        try:
+            regime_analysis = get_enhanced_market_regime(df, sym)
+        except Exception:
+            regime_analysis = None
 
                         # Helper to attempt execution for a given signal; returns True if executed
                         async def _try_execute(strategy_name: str, sig_obj, ml_score: float = 0.0, threshold: float = 75.0):

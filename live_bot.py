@@ -5873,12 +5873,17 @@ class TradingBot:
                             pass
 
                 else:
-                    # Initialize original ML system
+                    # Initialize original ML system (best-effort, don't fail phantom wiring if unavailable)
+                    ml_scorer = None
                     try:
-                        from ml_signal_scorer_immediate import get_immediate_scorer
-                    except Exception:
-                        pass
-                    ml_scorer = get_immediate_scorer()
+                        from ml_signal_scorer_immediate import get_immediate_scorer as _get_immediate_scorer
+                        try:
+                            ml_scorer = _get_immediate_scorer()
+                        except Exception as _ml_e:
+                            logger.debug(f"Immediate ML scorer init failed: {_ml_e}")
+                    except Exception as _imp_e:
+                        logger.debug(f"Immediate ML scorer import failed: {_imp_e}")
+                    # Always wire phantom notifiers
                     phantom_tracker = get_phantom_tracker()
                     try:
                         phantom_tracker.set_notifier(self._notify_trend_phantom)
@@ -5904,17 +5909,22 @@ class TradingBot:
                     mr_phantom_tracker = None
                     mean_reversion_scorer = None  # MR disabled
 
-                    # Get and log ML stats
-                    ml_stats = ml_scorer.get_stats()
-                    logger.info(f"✅ Original ML Scorer initialized")
-                    logger.info(f"   Status: {ml_stats['status']}")
-                    logger.info(f"   Threshold: {ml_stats['current_threshold']:.0f}")
-                    logger.info(f"   Completed trades: {ml_stats['completed_trades']}")
-                    if ml_stats['recent_win_rate'] > 0:
-                        logger.info(f"   Recent win rate: {ml_stats['recent_win_rate']:.1f}%")
-                    if ml_stats['models_active']:
-                        logger.info(f"   Active models: {', '.join(ml_stats['models_active'])}")
-                    # MR disabled: do not flush MR outcomes
+                    # Get and log ML stats (if available)
+                    if ml_scorer is not None:
+                        try:
+                            ml_stats = ml_scorer.get_stats()
+                            logger.info(f"✅ Original ML Scorer initialized")
+                            logger.info(f"   Status: {ml_stats['status']}")
+                            logger.info(f"   Threshold: {ml_stats['current_threshold']:.0f}")
+                            logger.info(f"   Completed trades: {ml_stats['completed_trades']}")
+                            if ml_stats['recent_win_rate'] > 0:
+                                logger.info(f"   Recent win rate: {ml_stats['recent_win_rate']:.1f}%")
+                            if ml_stats.get('models_active'):
+                                logger.info(f"   Active models: {', '.join(ml_stats['models_active'])}")
+                        except Exception as _stats_e:
+                            logger.debug(f"ML stats unavailable: {_stats_e}")
+                    else:
+                        logger.info("ℹ️ Original ML Scorer not available — running phantom-only tracking for Trend/Scalp.")
                 # Phantom trades now expire naturally on TP/SL - no timeout needed
                 
                 # Perform startup retrain with all available data

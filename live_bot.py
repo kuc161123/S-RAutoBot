@@ -1687,6 +1687,10 @@ class TradingBot:
                         if not ((tp_present or tp_order_ok) and (sl_present or sl_cond_ok)):
                             # Emergency close to prevent unprotected exposure
                             try:
+                                logger.critical(f"[{sym}] Protections not confirmed — closing. tp_present={tp_present} tp_order_ok={tp_order_ok} sl_present={sl_present} sl_cond_ok={sl_cond_ok}")
+                            except Exception:
+                                pass
+                            try:
                                 em_pos = bybit.get_position(sym)
                                 em_qty = float(em_pos.get('size') or 0.0) if isinstance(em_pos, dict) else 0.0
                                 if em_qty <= 0.0:

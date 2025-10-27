@@ -45,6 +45,7 @@ class Position:
     strategy_name:str = "unknown"
     ml_score:float = 0.0
     ml_reason:str = ""
+    qscore:float = 0.0
 
 @dataclass
 class Book:

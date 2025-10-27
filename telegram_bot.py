@@ -302,6 +302,71 @@ class TGBot:
         except Exception:
             lines.append("(unavailable)")
 
+        # Qscore WR at current thresholds (last 30d, phantoms)
+        try:
+            lines.append("")
+            lines.append("📈 *Qscore WR @ thr (30d)*")
+            # Thresholds
+            t_thr = int(float(((cfg.get('trend',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
+            r_thr = int(float(((cfg.get('range',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
+            s_thr = int(float(((cfg.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 88)))
+            # Helpers
+            import datetime as _dt
+            cutoff = _dt.datetime.utcnow() - _dt.timedelta(days=30)
+            # Trend/Range via PhantomTradeTracker
+            tr_w = tr_l = rg_w = rg_l = 0
+            try:
+                pt = self.shared.get('phantom_tracker')
+                for arr in (getattr(pt, 'phantom_trades', {}) or {}).values():
+                    for p in arr:
+                        try:
+                            et = getattr(p, 'exit_time', None)
+                            if not et or et < cutoff: continue
+                            oc = getattr(p, 'outcome', None)
+                            if oc not in ('win','loss'): continue
+                            q = (getattr(p, 'features', {}) or {}).get('qscore', None)
+                            if not isinstance(q, (int,float)): continue
+                            strat = str(getattr(p, 'strategy_name', '') or '').lower()
+                            if strat.startswith('range') and q >= r_thr:
+                                if oc=='win': rg_w += 1
+                                else: rg_l += 1
+                            if ('trend' in strat or 'pullback' in strat) and q >= t_thr:
+                                if oc=='win': tr_w += 1
+                                else: tr_l += 1
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+            # Scalp via ScalpPhantomTracker
+            sc_w = sc_l = 0
+            try:
+                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                scpt = get_scalp_phantom_tracker()
+                for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                    for p in arr:
+                        try:
+                            et = getattr(p, 'exit_time', None)
+                            if not et or et < cutoff: continue
+                            oc = getattr(p, 'outcome', None)
+                            if oc not in ('win','loss'): continue
+                            q = (getattr(p, 'features', {}) or {}).get('qscore', None)
+                            if not isinstance(q, (int,float)) or q < s_thr: continue
+                            if oc=='win': sc_w += 1
+                            else: sc_l += 1
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+            def _wr(w,l):
+                n=w+l
+                return (w/n*100.0) if n else 0.0, n
+            twr, tn = _wr(tr_w, tr_l); rwr, rn = _wr(rg_w, rg_l); swr, sn = _wr(sc_w, sc_l)
+            lines.append(f"• Trend ≥{t_thr}: N={tn} WR={twr:.1f}% (W/L {tr_w}/{tr_l})")
+            lines.append(f"• Range ≥{r_thr}: N={rn} WR={rwr:.1f}% (W/L {rg_w}/{rg_l})")
+            lines.append(f"• Scalp ≥{s_thr}: N={sn} WR={swr:.1f}% (W/L {sc_w}/{sc_l})")
+        except Exception:
+            pass
+
         # Positions
         positions = book.positions if book else {}
         lines.append("")

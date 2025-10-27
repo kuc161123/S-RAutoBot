@@ -1809,6 +1809,15 @@ class TradingBot:
                         pass
                     return False
             # Update book
+                # Capture last signal features for this symbol (to carry qscore into Position)
+                try:
+                    if not hasattr(self, '_last_signal_features'):
+                        self._last_signal_features = {}
+                    # Best-effort store of features used for this execution
+                    self._last_signal_features[sym] = dict(getattr(sig_obj, 'meta', {})) if isinstance(getattr(sig_obj, 'meta', {}), dict) else (self._last_signal_features.get(sym) or {})
+                except Exception:
+                    pass
+                # Update book with qscore if available
                 self.book.positions[sym] = Position(
                     sig_obj.side,
                     qty,
@@ -1817,7 +1826,8 @@ class TradingBot:
                     tp=float(sig_obj.tp),
                     entry_time=datetime.now(),
                     strategy_name='scalp',
-                    ml_score=float(ml_score or 0.0)
+                    ml_score=float(ml_score or 0.0),
+                    qscore=float(((getattr(self, '_last_signal_features', {}) or {}).get(sym, {}) or {}).get('qscore', 0.0) or 0.0)
                 )
             # Telegram notify
                 try:
@@ -1836,13 +1846,19 @@ class TradingBot:
                         except Exception:
                             decs = 4
                         fmt = f"{{:.{decs}f}}"
+                        # Include Qscore if available
+                        try:
+                            qv = float(((getattr(self, '_last_signal_features', {}) or {}).get(sym, {}) or {}).get('qscore', 0.0) or 0.0)
+                        except Exception:
+                            qv = 0.0
                         msg = (
                             f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()}\n\n"
                             f"Entry: {fmt.format(actual_entry)}\n"
                             f"Stop Loss: {fmt.format(float(sig_obj.sl))}\n"
                             f"Take Profit: {fmt.format(float(sig_obj.tp))}\n"
                             f"Quantity: {qty}\n"
-                            f"Target RR: {target_rr:.2f}"
+                            f"Target RR: {target_rr:.2f}\n"
+                            f"Q: {qv:.1f}"
                         )
                         await self.tg.send_message(msg)
                 except Exception:
@@ -2868,6 +2884,13 @@ class TradingBot:
                                         if self.tg:
                                             comps = sc_feats.get('qscore_components', {}) or {}
                                             comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
+                                            # Stash features to carry Q into Position and close-notify
+                                            try:
+                                                if not hasattr(self, '_last_signal_features'):
+                                                    self._last_signal_features = {}
+                                                self._last_signal_features[sym] = dict(sc_feats)
+                                            except Exception:
+                                                pass
                                             await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
                                     except Exception:
                                         pass
@@ -3487,9 +3510,15 @@ class TradingBot:
                 prefix = "👻" if not was_exec else "🟢"
                 pid = getattr(phantom, 'phantom_id', '')
                 pid_suffix = f" [#{pid}]" if isinstance(pid, str) and pid else ""
+                # Include Qscore if present in features
+                try:
+                    feats = getattr(phantom, 'features', {}) or {}
+                    qv = feats.get('qscore', None)
+                except Exception:
+                    qv = None
                 lines = [
                     f"{prefix} *{label} Phantom Opened*{pid_suffix}",
-                    f"{symbol} {side} | ML {ml_score:.1f}",
+                    f"{symbol} {side} | ML {ml_score:.1f}{(' | Q '+format(float(qv),'.1f')) if isinstance(qv,(int,float)) else ''}",
                     f"Entry: {entry_price:.4f}",
                     f"TP / SL: {tp:.4f} / {sl:.4f}"
                 ]
@@ -3505,6 +3534,14 @@ class TradingBot:
                             lines.append(f"Range pos: {float(pos):.2f}")
                     except Exception:
                         pass
+                try:
+                    # Append Qscore if available in features
+                    feats_local = getattr(phantom, 'features', {}) or {}
+                    qv = feats_local.get('qscore', None)
+                    if isinstance(qv, (int,float)):
+                        lines.append(f"Q={float(qv):.1f}")
+                except Exception:
+                    pass
                 await self.tg.send_message("\n".join([l for l in lines if l]))
                 # Log open event
                 try:
@@ -3524,9 +3561,15 @@ class TradingBot:
 
             pid = getattr(phantom, 'phantom_id', '')
             pid_suffix = f" [#{pid}]" if isinstance(pid, str) and pid else ""
+            # Include Qscore if present in features
+            try:
+                feats = getattr(phantom, 'features', {}) or {}
+                qv = feats.get('qscore', None)
+            except Exception:
+                qv = None
             lines = [
                 f"{prefix} *{label} Phantom {outcome_emoji}*{pid_suffix}",
-                f"{symbol} {side} | ML {ml_score:.1f}",
+                f"{symbol} {side} | ML {ml_score:.1f}{(' | Q '+format(float(qv),'.1f')) if isinstance(qv,(int,float)) else ''}",
                 f"Entry → Exit: {entry_price:.4f} → {exit_price:.4f}",
                 f"P&L: {pnl_percent:+.2f}% ({exit_label})"
             ]
@@ -3544,6 +3587,13 @@ class TradingBot:
                 if isinstance(range_pos, (int,float)):
                     lines.append(f"Range position: {float(range_pos):.2f}")
 
+            try:
+                feats_local = getattr(phantom, 'features', {}) or {}
+                qv = feats_local.get('qscore', None)
+                if isinstance(qv, (int,float)):
+                    lines.append(f"Q={float(qv):.1f}")
+            except Exception:
+                pass
             await self.tg.send_message("\n".join(lines))
             # Log close event
             try:
@@ -4296,11 +4346,21 @@ class TradingBot:
                     except Exception:
                         realized_r = None
                     rr_line = f"Realized R: {realized_r:.2f}R\n" if isinstance(realized_r, float) else ""
+                    # Include Qscore if known
+                    try:
+                        qv = float(getattr(pos, 'qscore', 0.0) or 0.0)
+                    except Exception:
+                        try:
+                            qv = float(((getattr(self, '_last_signal_features', {}) or {}).get(symbol, {}) or {}).get('qscore', 0.0) or 0.0)
+                        except Exception:
+                            qv = 0.0
+                    q_line = f"Q: {qv:.1f}\n" if qv else ""
                     message = (
                         f"{outcome_emoji} *Trade Closed* {symbol} {pos.side.upper()}\n\n"
                         f"Exit Price: {exit_price:.4f}\n"
                         f"PnL: ${pnl_usd:.2f} ({pnl_percent:.2f}%)\n"
                         f"{rr_line}"
+                        f"{q_line}"
                         f"Hold: {hold_minutes}m\n"
                         f"Exit: {exit_label}\n"
                         f"Strategy: {strategy_label}\n"
@@ -6481,7 +6541,12 @@ class TradingBot:
                                 # Track locally
                                 try:
                                     from position_mgr import Position
-                                    self.book.positions[symbol] = Position(side=side, qty=float(qty), entry=float(entry), sl=float(sl), tp=float(tp), entry_time=datetime.utcnow(), strategy_name='trend_pullback')
+                                    # Attach qscore from last signal features if present
+                                    try:
+                                        qv = float(((getattr(self, '_last_signal_features', {}) or {}).get(symbol, {}) or {}).get('qscore', 0.0) or 0.0)
+                                    except Exception:
+                                        qv = 0.0
+                                    self.book.positions[symbol] = Position(side=side, qty=float(qty), entry=float(entry), sl=float(sl), tp=float(tp), entry_time=datetime.utcnow(), strategy_name='trend_pullback', qscore=qv)
                                 except Exception:
                                     pass
                                 # Store per-position metadata for re-entry invalidation
@@ -8376,6 +8441,11 @@ class TradingBot:
                             except Exception:
                                 pass
                             # Update book
+                            # Attach qscore from last signal features if present
+                            try:
+                                qv = float(((getattr(self, '_last_signal_features', {}) or {}).get(sym, {}) or {}).get('qscore', 0.0) or 0.0)
+                            except Exception:
+                                qv = 0.0
                             book.positions[sym] = Position(
                                 sig_obj.side,
                                 qty,
@@ -8384,7 +8454,8 @@ class TradingBot:
                                 tp=(main_tp_applied if main_tp_applied is not None else sig_obj.tp),
                                 entry_time=datetime.now(),
                                 strategy_name=strategy_name,
-                                ml_score=float(ml_score or 0.0)
+                                ml_score=float(ml_score or 0.0),
+                                qscore=qv
                             )
                             # Optionally cancel active phantoms on execution (config)
                             try:
@@ -9816,6 +9887,11 @@ class TradingBot:
                                             # Set TP/SL
                                             bybit.set_tpsl(sym, take_profit=soft_sig_mr.tp, stop_loss=soft_sig_mr.sl, qty=qty)
                                             # Update book
+                                            # Attach qscore if known from last features
+                                            try:
+                                                qv = float(((getattr(self, '_last_signal_features', {}) or {}).get(sym, {}) or {}).get('qscore', 0.0) or 0.0)
+                                            except Exception:
+                                                qv = 0.0
                                             book.positions[sym] = Position(
                                                 soft_sig_mr.side,
                                                 qty,
@@ -9823,7 +9899,8 @@ class TradingBot:
                                                 sl=soft_sig_mr.sl,
                                                 tp=soft_sig_mr.tp,
                                                 entry_time=datetime.now(),
-                                                strategy_name='enhanced_mr'
+                                                strategy_name='enhanced_mr',
+                                                qscore=qv
                                             )
                                             # Mark promotion flag
                                             try:
@@ -10162,13 +10239,23 @@ class TradingBot:
                                         logger.info(f"[{sym}] 🧮 Rule-mode: EXECUTE (Q={q:.1f} ≥ {exec_min:.1f}) comps: {comps}")
                                         try:
                                             if self.tg:
-                                                # Append regime label
+                                                # Compute regime label if possible
                                                 try:
                                                     t15 = float(trend_features.get('ts15',0.0)); t60 = float(trend_features.get('ts60',0.0)); rc15 = float(trend_features.get('rc15',0.0)); rc60 = float(trend_features.get('rc60',0.0))
                                                     reg = 'Trending' if (t15>=60 or t60>=60) else ('Ranging' if (rc15>=0.6 or rc60>=0.6) else 'Neutral')
-                                                    await self.tg.send_message(f"🟢 Rule-mode EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {exec_min:.1f})\n{comps}\nRegime: {reg}")
                                                 except Exception:
-                                                    await self.tg.send_message(f"🟢 Rule-mode EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {exec_min:.1f})\n{comps}")
+                                                    reg = None
+                                                # Stash features for qscore carry-over
+                                                try:
+                                                    if not hasattr(self, '_last_signal_features'):
+                                                        self._last_signal_features = {}
+                                                    self._last_signal_features[sym] = dict(feats)
+                                                except Exception:
+                                                    pass
+                                                msg = f"🟢 Rule-mode EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {exec_min:.1f})\n{comps}"
+                                                if reg:
+                                                    msg += f"\nRegime: {reg}"
+                                                await self.tg.send_message(msg)
                                         except Exception:
                                             pass
                                         try:

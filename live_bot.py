@@ -5683,8 +5683,8 @@ class TradingBot:
             require_protective_lh_for_short=bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('micro', {}) or {}).get('require_protective_lh_for_short', True)),
             bos_body_min_ratio=float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('bos', {}) or {}).get('body_min_ratio', 0.25)),
             bos_confirm_closes=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('bos', {}) or {}).get('confirm_closes', 1)),
-            breakout_to_pullback_bars_3m=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('timeouts', {}) or {}).get('breakout_to_pullback_bars_3m', 10)),
-            pullback_to_bos_bars_3m=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('timeouts', {}) or {}).get('pullback_to_bos_bars_3m', 10)),
+            breakout_to_pullback_bars_3m=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('timeouts', {}) or {}).get('breakout_to_pullback_bars_3m', 15)),
+            pullback_to_bos_bars_3m=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('timeouts', {}) or {}).get('pullback_to_bos_bars_3m', 15)),
             breakout_buffer_atr=float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('breakout_buffer_atr', 0.05))),
             # Divergence config (TSI/RSI) for 3m strict gating
             div_enabled=bool(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('enabled', False))),

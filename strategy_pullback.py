@@ -196,8 +196,8 @@ class Settings:
     require_protective_lh_for_short: bool = True
     bos_body_min_ratio: float = 0.30
     bos_confirm_closes: int = 1  # extra 3m closes beyond pivot
-    breakout_to_pullback_bars_3m: int = 10
-    pullback_to_bos_bars_3m: int = 10
+    breakout_to_pullback_bars_3m: int = 15
+    pullback_to_bos_bars_3m: int = 15
     breakout_buffer_atr: float = 0.05  # invalidation buffer beyond level (15m ATR)
     # 15m breakout gating
     require_main_confirm_for_breakout: bool = True

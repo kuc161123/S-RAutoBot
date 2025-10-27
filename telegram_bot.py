@@ -309,7 +309,7 @@ class TGBot:
             # Thresholds
             t_thr = int(float(((cfg.get('trend',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
             r_thr = int(float(((cfg.get('range',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
-            s_thr = int(float(((cfg.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 88)))
+            s_thr = int(float(((cfg.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 75)))
             # Helpers
             import datetime as _dt
             cutoff = _dt.datetime.utcnow() - _dt.timedelta(days=30)
@@ -526,7 +526,7 @@ class TGBot:
             # Learned threshold snapshot (Scalp)
             try:
                 from ml_qscore_scalp_adapter import get_scalp_qadapter
-                thr = get_scalp_qadapter().get_threshold({'session': self._session_label(), 'volatility_regime': 'global'}, default=88.0)
+                thr = get_scalp_qadapter().get_threshold({'session': self._session_label(), 'volatility_regime': 'global'}, default=75.0)
                 lines.append(f"• Qthr (learned): {thr:.1f}")
             except Exception:
                 pass
@@ -1450,7 +1450,7 @@ class TGBot:
             "Settings (via dashboard → Settings)",
             "• Rule‑Mode thresholds (Exec≥Q, Phantom≥Q)",
             "• Or use: /set_qscore <trend|range|scalp> <execQ> [phantomQ]",
-            "  Examples: /set_qscore trend 80 65 | /set_qscore scalp 90",
+            "  Examples: /set_qscore trend 80 65 | /set_qscore scalp 75",
             "• Stream entry On/Off",
             "• Scale‑out (TP1/TP2, fraction) and BE move",
             "• Timeouts (HL/LH, confirmations, phantom)",
@@ -2416,7 +2416,7 @@ class TGBot:
                         rg_exec_q = 78.0; rg_ph_q = 65.0
                     try:
                         rm_sc = ((cfg.get('scalp', {}) or {}).get('rule_mode', {}) or {})
-                        sc_exec_q = float(rm_sc.get('execute_q_min', 88))
+                        sc_exec_q = float(rm_sc.get('execute_q_min', 75))
                         sc_ph_q = float(rm_sc.get('phantom_q_min', 80))
                     except Exception:
                         sc_exec_q = 88.0; sc_ph_q = 80.0
@@ -2506,7 +2506,7 @@ class TGBot:
                     strat = data.split(':')[-1]  # trend|range|scalp
                     cfg = self.shared.get('config', {}) or {}
                     rm = ((cfg.get(strat, {}) or {}).get('rule_mode', {}) or {})
-                    exec_q = float(rm.get('execute_q_min', 78 if strat != 'scalp' else 88))
+                    exec_q = float(rm.get('execute_q_min', 78 if strat != 'scalp' else 75))
                     ph_q = float(rm.get('phantom_q_min', 65 if strat != 'scalp' else 80))
                     header = f"⚙️ *{strat.title()} Thresholds*\n\nExec≥{exec_q:.0f} | Phantom≥{ph_q:.0f}"
                     # Map to prompts keys
@@ -2640,8 +2640,8 @@ class TGBot:
                         'phantom_q': "Send Phantom Q threshold for Trend (e.g., 65)",
                         'exec_q_range': "Send Exec Q threshold for Range (e.g., 78)",
                         'phantom_q_range': "Send Phantom Q threshold for Range (e.g., 65)",
-                        'exec_q_scalp': "Send Exec Q threshold for Scalp (e.g., 88)",
-                        'phantom_q_scalp': "Send Phantom Q threshold for Scalp (e.g., 80)",
+                        'exec_q_scalp': "Send Exec Q threshold for Scalp (e.g., 75)",
+                        'phantom_q_scalp': "Send Phantom Q threshold for Scalp (e.g., 65-80)",
                         'timeout_hl': "Send HL→PB timeout bars (integer, e.g., 25)",
                         'timeout_bos': "Send PB→BOS timeout bars (integer, e.g., 25)",
                         'htf_min_ts': "Send HTF min trend strength (e.g., 60)",
@@ -5458,7 +5458,7 @@ class TGBot:
             cfg = self.shared.get('config') or {}
             sc_cfg = (cfg.get('scalp', {}) or {})
             rm = (sc_cfg.get('rule_mode', {}) or {})
-            base_thr = int(float(rm.get('execute_q_min', 88)))
+            base_thr = int(float(rm.get('execute_q_min', 75)))
             thrs = sorted(set([base_thr - 5, base_thr - 3, base_thr, base_thr + 2, base_thr + 5]))
             def agg(sample: list) -> dict:
                 tot = len(sample)
@@ -5598,7 +5598,7 @@ class TGBot:
             cfg = self.shared.get('config') or {}
             t_thr = int(float(((cfg.get('trend',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
             r_thr = int(float(((cfg.get('range',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
-            s_thr = int(float(((cfg.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 88)))
+            s_thr = int(float(((cfg.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 75)))
             # Assemble message
             msg = ["📊 *Qscore Buckets*", ""]
             msg += _lines("Trend", trend_agg, t_thr); msg.append("")
@@ -5835,7 +5835,7 @@ class TGBot:
     async def set_qscore(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Set Qscore thresholds at runtime.
         Usage: /set_qscore <trend|range|scalp> <execQ> [phantomQ]
-        Examples: /set_qscore trend 80 65 | /set_qscore scalp 90
+        Examples: /set_qscore trend 80 65 | /set_qscore scalp 75
         """
         try:
             txt = (getattr(update, 'message', None) and update.message.text) or ''

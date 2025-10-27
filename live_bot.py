@@ -2731,23 +2731,24 @@ class TradingBot:
                 except Exception:
                     pass
 
-                # Dedup via Redis (phantom dedup scope)
+                # Dedup via Redis (phantom dedup scope) — optional
                 dedup_ok = True
                 try:
-                    scpt = _safe_get_scalp_phantom_tracker()
-                    r = scpt.redis_client
-                    if r is not None:
-                        key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),6)}:{round(float(sc_sig.sl),6)}:{round(float(sc_sig.tp),6)}"
-                        # TTL configurable
-                        try:
-                            s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
-                            dedup_hours = int(s_cfg.get('dedup_hours', 8))
-                        except Exception:
-                            dedup_hours = 8
-                        if r.exists(f"phantom:dedup:scalp:{key}"):
-                            dedup_ok = False
-                        else:
-                            r.setex(f"phantom:dedup:scalp:{key}", max(1, dedup_hours) * 3600, '1')
+                    s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+                    if bool(s_cfg.get('dedup_enabled', False)):
+                        scpt = _safe_get_scalp_phantom_tracker()
+                        r = scpt.redis_client
+                        if r is not None:
+                            key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),6)}:{round(float(sc_sig.sl),6)}:{round(float(sc_sig.tp),6)}"
+                            # TTL configurable
+                            try:
+                                dedup_hours = int(s_cfg.get('dedup_hours', 8))
+                            except Exception:
+                                dedup_hours = 8
+                            if r.exists(f"phantom:dedup:scalp:{key}"):
+                                dedup_ok = False
+                            else:
+                                r.setex(f"phantom:dedup:scalp:{key}", max(1, dedup_hours) * 3600, '1')
                 except Exception:
                     pass
                 if not dedup_ok:
@@ -2759,9 +2760,9 @@ class TradingBot:
                     try:
                         logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=dedup)")
                         _scalp_decision_logged = True
-                        # Telegram: notify dedup skip for visibility
+                        # Telegram: notify dedup skip for visibility (only when dedup is enabled)
                         try:
-                            if self.tg:
+                            if self.tg and bool(s_cfg.get('dedup_enabled', False)):
                                 await self.tg.send_message(f"🛑 Scalp: [{sym}] dedup skip — phantom suppressed")
                         except Exception:
                             pass
@@ -2831,14 +2832,14 @@ class TradingBot:
                         allow_hi = False; hi_thr = 92.0
                     # Scalp Qscore execution gate
                     exec_enabled = True
-                    exec_thr = 88.0
+                    exec_thr = 75.0
                     try:
                         # Default to enabled; allow config to explicitly disable
                         exec_enabled = bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('enabled', True))
-                        exec_thr = float((((self.config.get('scalp', {}) or {}).get('rule_mode', {}) or {}).get('execute_q_min', 88)))
+                        exec_thr = float((((self.config.get('scalp', {}) or {}).get('rule_mode', {}) or {}).get('execute_q_min', 75)))
                     except Exception:
                         exec_enabled = True
-                        exec_thr = 88.0
+                        exec_thr = 75.0
                     # Session gating for Scalp execution (skip when qscore_only=true)
                     try:
                         sc_cfg = (self.config.get('scalp', {}) or {})
@@ -3344,23 +3345,24 @@ class TradingBot:
         except Exception:
             pass
 
-        # Redis dedup
+        # Redis dedup (fallback path) — optional
         dedup_ok = True
         try:
-            scpt = _safe_get_scalp_phantom_tracker()
-            r = scpt.redis_client
-            if r is not None:
-                key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),6)}:{round(float(sc_sig.sl),6)}:{round(float(sc_sig.tp),6)}"
-                # TTL configurable
-                try:
-                    s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
-                    dedup_hours = int(s_cfg.get('dedup_hours', 8))
-                except Exception:
-                    dedup_hours = 8
-                if r.exists(f"phantom:dedup:scalp:{key}"):
-                    dedup_ok = False
-                else:
-                    r.setex(f"phantom:dedup:scalp:{key}", max(1, dedup_hours) * 3600, '1')
+            s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+            if bool(s_cfg.get('dedup_enabled', False)):
+                scpt = _safe_get_scalp_phantom_tracker()
+                r = scpt.redis_client
+                if r is not None:
+                    key = f"{sym}:{sc_sig.side}:{round(float(sc_sig.entry),6)}:{round(float(sc_sig.sl),6)}:{round(float(sc_sig.tp),6)}"
+                    # TTL configurable
+                    try:
+                        dedup_hours = int(s_cfg.get('dedup_hours', 8))
+                    except Exception:
+                        dedup_hours = 8
+                    if r.exists(f"phantom:dedup:scalp:{key}"):
+                        dedup_ok = False
+                    else:
+                        r.setex(f"phantom:dedup:scalp:{key}", max(1, dedup_hours) * 3600, '1')
         except Exception:
             pass
         if not dedup_ok:
@@ -3765,7 +3767,7 @@ class TradingBot:
                     if label_title.startswith('Range'):
                         exec_min = float((((self.config.get('range',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
                     elif label_title.startswith('Scalp'):
-                        exec_min = float((((self.config.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 88)))
+                        exec_min = float((((self.config.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 75)))
                     else:
                         exec_min = float(((self.config.get('trend',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78))
                     lt = "<" if float(q) < exec_min else ">="
@@ -5593,13 +5595,15 @@ class TradingBot:
             try:
                 hb = (cfg.get('phantom', {}).get('hourly_symbol_budget', {}) or {}).get('scalp', 'n/a')
                 cap_none = (cfg.get('phantom', {}).get('caps', {}).get('scalp', {}) or {}).get('none', 'n/a')
-                ddh = (cfg.get('scalp', {}) or {}).get('dedup_hours', 'n/a')
-                cdb = (cfg.get('scalp', {}) or {}).get('cooldown_bars', 'n/a')
-                dbg_force = bool(((cfg.get('scalp', {}).get('debug', {}) or {}).get('force_accept', False)) if isinstance(cfg.get('scalp', {}), dict) else False)
+                sc_cfg = (cfg.get('scalp', {}) or {})
+                dd_enabled = bool(sc_cfg.get('dedup_enabled', False))
+                ddh = sc_cfg.get('dedup_hours', 'n/a')
+                cdb = sc_cfg.get('cooldown_bars', 'n/a')
+                dbg_force = bool(((sc_cfg.get('debug', {}) or {}).get('force_accept', False)) if isinstance(sc_cfg, dict) else False)
             except Exception:
-                hb = cap_none = ddh = cdb = 'n/a'; dbg_force = False
+                hb = cap_none = ddh = cdb = 'n/a'; dbg_force = False; dd_enabled = False
             logger.info(
-                f"🔎 Startup fingerprint: central_router={central_enabled} scalp.hourly={hb} scalp.daily_none={cap_none} dedup_hours={ddh} cooldown_bars={cdb} debug.force_accept={dbg_force} backstop=ON"
+                f"🔎 Startup fingerprint: central_router={central_enabled} scalp.hourly={hb} scalp.daily_none={cap_none} dedup_enabled={dd_enabled} dedup_hours={ddh} cooldown_bars={cdb} debug.force_accept={dbg_force} backstop=ON"
             )
         except Exception:
             pass

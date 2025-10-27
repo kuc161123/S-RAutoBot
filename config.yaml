@@ -521,6 +521,7 @@ scalp:
   threshold: 70
   independent: true      # When true, Scalp runs fully independent of regime/router
   block_regime: false    # Do not block by regime (e.g., extreme volatility)
+  dedup_enabled: false   # Disable Redis-based dedup for Scalp phantoms (learn-first)
   session_only: ["us", "european"]
   rr: 2.0                # Target R:R (1:2)
   # Enforce minimum 1R distance (0.5%) so fees don’t erode R
@@ -569,7 +570,7 @@ scalp:
     rr_bias_pct: 0.03
   # Rule-mode scoring for Scalp (phantom-only). Used for telemetry/notifications; not for execution yet.
   rule_mode:
-    execute_q_min: 88     # Not used while exec is disabled; kept for symmetry
+    execute_q_min: 75     # Initial Exec Q threshold; adapter may override once learned
     phantom_q_min: 65     # Used only for labeling decisions
     weights:              # normalized automatically
       mom: 0.35           # momentum burst quality (impulse, wick direction, volume)

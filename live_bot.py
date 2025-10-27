@@ -7869,10 +7869,10 @@ class TradingBot:
                     # regardless of enhanced ML availability.
                     if independence_enabled or getattr(self, '_trend_only', False):
                         # Take a regime snapshot once for per-strategy filters
-        try:
-            regime_analysis = get_enhanced_market_regime(df, sym)
-        except Exception:
-            regime_analysis = None
+                        try:
+                            regime_analysis = get_enhanced_market_regime(df, sym)
+                        except Exception:
+                            regime_analysis = None
 
                         # Helper to attempt execution for a given signal; returns True if executed
                         async def _try_execute(strategy_name: str, sig_obj, ml_score: float = 0.0, threshold: float = 75.0):

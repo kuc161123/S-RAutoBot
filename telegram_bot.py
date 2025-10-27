@@ -367,15 +367,15 @@ class TGBot:
             try:
                 from ml_qscore_trend_adapter import get_trend_qadapter
                 thr = get_trend_qadapter().get_threshold({'session': self._session_label(), 'volatility_regime': 'global'}, default=78.0)
-            lines.append(f"• Qthr (learned): {thr:.1f}")
+                lines.append(f"• Qthr (learned): {thr:.1f}")
+            except Exception:
+                pass
             try:
                 from ml_qscore_trend_adapter import get_trend_qadapter
                 qa = get_trend_qadapter()
                 bcnt = len(getattr(qa, 'thresholds', {}) or {})
                 recs = int(getattr(qa, 'last_train_count', 0))
                 lines.append(f"  Buckets: {bcnt} | Records: {recs}")
-            except Exception:
-                pass
             except Exception:
                 pass
         except Exception:
@@ -413,15 +413,15 @@ class TGBot:
             try:
                 from ml_qscore_range_adapter import get_range_qadapter
                 thr = get_range_qadapter().get_threshold({'session': self._session_label(), 'volatility_regime': 'global'}, default=78.0)
-            lines.append(f"• Qthr (learned): {thr:.1f}")
+                lines.append(f"• Qthr (learned): {thr:.1f}")
+            except Exception:
+                pass
             try:
                 from ml_qscore_range_adapter import get_range_qadapter
                 qa = get_range_qadapter()
                 bcnt = len(getattr(qa, 'thresholds', {}) or {})
                 recs = int(getattr(qa, 'last_train_count', 0))
                 lines.append(f"  Buckets: {bcnt} | Records: {recs}")
-            except Exception:
-                pass
             except Exception:
                 pass
         except Exception:
@@ -462,15 +462,15 @@ class TGBot:
             try:
                 from ml_qscore_scalp_adapter import get_scalp_qadapter
                 thr = get_scalp_qadapter().get_threshold({'session': self._session_label(), 'volatility_regime': 'global'}, default=88.0)
-            lines.append(f"• Qthr (learned): {thr:.1f}")
+                lines.append(f"• Qthr (learned): {thr:.1f}")
+            except Exception:
+                pass
             try:
                 from ml_qscore_scalp_adapter import get_scalp_qadapter
                 qa = get_scalp_qadapter()
                 bcnt = len(getattr(qa, 'thresholds', {}) or {})
                 recs = int(getattr(qa, 'last_train_count', 0))
                 lines.append(f"  Buckets: {bcnt} | Records: {recs}")
-            except Exception:
-                pass
             except Exception:
                 pass
         except Exception:

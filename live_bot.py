@@ -8829,7 +8829,7 @@ class TradingBot:
                                         pass
                             except Exception:
                                 pass
-                            # Rule-mode: Qscore routing overrides ML gating until ML maturity
+                            # Rule-mode / Qscore-only: execute based on Qscore threshold when enabled
                             rule_mode = (cfg.get('trend', {}) or {}).get('rule_mode', {}) if 'cfg' in locals() else {}
                             rm_enabled = bool(rule_mode.get('enabled', False))
                             qscore = None; qcomp = {}; qreasons = []
@@ -8890,6 +8890,49 @@ class TradingBot:
                                     pass
                             else:
                                 tr_should = (ml_score_tr >= thr_tr)
+
+                            # Qscore-only override: if enabled (default true), ignore ML gating and execute purely on Qscore
+                            try:
+                                q_only = bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('qscore_only', True)))
+                            except Exception:
+                                q_only = True
+                            if q_only:
+                                try:
+                                    # Ensure qscore computed
+                                    if qscore is None:
+                                        qscore, qcomp, qreasons = self._compute_qscore(sym, sig_tr_ind.side, df, self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None)
+                                except Exception:
+                                    qscore = 50.0
+                                exec_min = float(rule_mode.get('execute_q_min', 78.0)) if isinstance(rule_mode, dict) else 78.0
+                                if float(qscore or 0.0) >= exec_min:
+                                    try:
+                                        logger.info(f"[{sym}] 🧮 Trend decision final: execute (Qscore {float(qscore):.1f} ≥ {exec_min:.1f})")
+                                    except Exception:
+                                        pass
+                                    # Execute immediately via stream executor
+                                    try:
+                                        self._last_signal_features[sym] = dict(trend_features)
+                                    except Exception:
+                                        pass
+                                    executed = await _try_execute('trend_pullback', sig_tr_ind, ml_score=0.0, threshold=exec_min)
+                                    if executed:
+                                        continue
+                                else:
+                                    # Below threshold → record phantom only when allowed
+                                    try:
+                                        if phantom_tracker and sig_tr_ind is not None:
+                                            phantom_tracker.record_signal(
+                                                sym,
+                                                {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp},
+                                                0.0,
+                                                False,
+                                                trend_features,
+                                                'trend_pullback'
+                                            )
+                                            logger.info(f"[{sym}] 🧮 Trend decision final: phantom (reason=qscore<thr {float(qscore or 0.0):.1f}<{exec_min:.1f})")
+                                    except Exception:
+                                        pass
+                                    continue
                             try:
                                 logger.info(f"[{sym}] Trend Pullback gating: ml={float(ml_score_tr):.1f} thr={float(thr_tr):.1f} should={tr_should}")
                             except Exception:
@@ -8920,9 +8963,9 @@ class TradingBot:
                                 sig_tr_ind.meta['high_ml'] = True
                                 # Allow/disallow Trend execution via config (default: disabled)
                                 try:
-                                    allow_tr_exec = bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('enabled', False)))
+                                    allow_tr_exec = bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('enabled', True)))
                                 except Exception:
-                                    allow_tr_exec = False
+                                    allow_tr_exec = True
                                 executed = False
                                 if allow_tr_exec:
                                     # Exec-only HTF gate (per-symbol) — independent of router.htf_bias

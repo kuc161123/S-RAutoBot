@@ -2868,7 +2868,9 @@ class TradingBot:
                         q_val = float(sc_feats.get('qscore', 0.0))
                         try:
                             ctx = {'session': self._session_label(), 'volatility_regime': sc_feats.get('volatility_regime', 'global')}
-                            if hasattr(self, '_qadapt_scalp') and self._qadapt_scalp:
+                            rm_sc = (((self.config.get('scalp', {}) or {}).get('rule_mode', {}) or {}))
+                            use_adapter = bool(rm_sc.get('adapter_enabled', True))
+                            if use_adapter and hasattr(self, '_qadapt_scalp') and self._qadapt_scalp:
                                 exec_thr = float(self._qadapt_scalp.get_threshold(ctx, floor=60.0, ceiling=95.0, default=exec_thr))
                         except Exception:
                             pass
@@ -7393,7 +7395,9 @@ class TradingBot:
                                                     thr_q = float((settings.get('rule_mode') or {}).get('execute_q_min', 78))
                                                     try:
                                                         ctx = {'session': self._session_label(), 'volatility_regime': getattr(htf, 'volatility_level', 'global') if 'htf' in locals() and htf else 'global'}
-                                                        if hasattr(self, '_qadapt_range') and self._qadapt_range:
+                                                        rm_rg = (((settings.get('rule_mode') or {})))
+                                                        use_adapter = bool(rm_rg.get('adapter_enabled', True))
+                                                        if use_adapter and hasattr(self, '_qadapt_range') and self._qadapt_range:
                                                             thr_q = float(self._qadapt_range.get_threshold(ctx, floor=60.0, ceiling=95.0, default=thr_q))
                                                     except Exception:
                                                         pass

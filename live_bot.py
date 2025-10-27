@@ -1667,7 +1667,13 @@ class TradingBot:
                                 bybit.place_reduce_only_limit(sym, tp_side, qty_for_orders, float(sig_obj.tp), post_only=True, reduce_only=True)
                                 tp_order_ok = True
                             except Exception:
-                                tp_order_ok = False
+                                # PostOnly rejection fallback: nudge by 2 ticks away from price
+                                try:
+                                    adj = float(sig_obj.tp) + (2.0 * tick_size) if tp_side == 'Sell' else float(sig_obj.tp) - (2.0 * tick_size)
+                                    bybit.place_reduce_only_limit(sym, tp_side, qty_for_orders, float(adj), post_only=True, reduce_only=True)
+                                    tp_order_ok = True
+                                except Exception:
+                                    tp_order_ok = False
                         if not sl_present and not sl_cond_ok:
                             try:
                                 bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty_for_orders)
@@ -1738,11 +1744,20 @@ class TradingBot:
                                     continue
                             # If position-level TP not present or order-level TP missing, place fallback reduce-only TP
                             if (tpc in (None, '', '0')) or (not tp_order_ok):
-                                bybit.place_reduce_only_limit(sym, tp_side, pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty, float(sig_obj.tp), post_only=True, reduce_only=True)
+                                try:
+                                    bybit.place_reduce_only_limit(sym, tp_side, pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty, float(sig_obj.tp), post_only=True, reduce_only=True)
+                                    tp_order_ok = True
+                                except Exception:
+                                    # PostOnly can fail if price would execute immediately; nudge away by 2 ticks
+                                    try:
+                                        adj = float(sig_obj.tp) + (2.0 * tick_size) if tp_side == 'Sell' else float(sig_obj.tp) - (2.0 * tick_size)
+                                        bybit.place_reduce_only_limit(sym, tp_side, pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty, float(adj), post_only=True, reduce_only=True)
+                                        tp_order_ok = True
+                                    except Exception:
+                                        tp_order_ok = False
                                 # Refresh state
                                 pos_chk = bybit.get_position(sym)
                                 tpc = pos_chk.get('takeProfit') if isinstance(pos_chk, dict) else tpc
-                                tp_order_ok = True
                         except Exception:
                             pass
                         # Confirm again after order-level fallback

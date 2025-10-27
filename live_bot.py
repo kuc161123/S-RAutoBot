@@ -2788,13 +2788,14 @@ class TradingBot:
                     except Exception:
                         allow_hi = False; hi_thr = 92.0
                     # Scalp Qscore execution gate
-                    exec_enabled = False
+                    exec_enabled = True
                     exec_thr = 88.0
                     try:
-                        exec_enabled = bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('enabled', False))
+                        # Default to enabled; allow config to explicitly disable
+                        exec_enabled = bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('enabled', True))
                         exec_thr = float((((self.config.get('scalp', {}) or {}).get('rule_mode', {}) or {}).get('execute_q_min', 88)))
                     except Exception:
-                        exec_enabled = False
+                        exec_enabled = True
                         exec_thr = 88.0
                     # Session gating for Scalp execution (phantoms still recorded)
                     try:
@@ -7861,9 +7862,10 @@ class TradingBot:
                     # Strategy independence: run Trend and MR fully independently (single-per-symbol concurrency)
                     try:
                         indep_cfg = cfg.get('strategy_independence', {}) if 'cfg' in locals() else {}
-                        independence_enabled = bool(indep_cfg.get('enabled', False))
+                        # Default to enabled so Trend/Scalp independent flows always run
+                        independence_enabled = bool(indep_cfg.get('enabled', True))
                     except Exception:
-                        independence_enabled = False
+                        independence_enabled = True
 
                     # In trend-only mode, always run independence block to ensure Trend logging,
                     # regardless of enhanced ML availability.

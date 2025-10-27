@@ -2401,13 +2401,25 @@ class TGBot:
                     except Exception:
                         sl_mode = 'breakout'; sl_buf = 0.30
                     htf_gate = ((((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('htf_gate',{}) or {}))
+                    # Rule-mode thresholds snapshot (Trend)
+                    try:
+                        rm = ((cfg.get('trend', {}) or {}).get('rule_mode', {}) or {})
+                        exec_q = float(rm.get('execute_q_min', 78))
+                        ph_q = float(rm.get('phantom_q_min', 65))
+                    except Exception:
+                        exec_q = 78.0; ph_q = 65.0
                     lines = ["⚙️ *Settings*", "",
+                             f"Rule‑Mode thresholds: Exec≥{exec_q:.0f} | Phantom≥{ph_q:.0f}",
                              f"Stream entry: {'On' if tr_exec.get('allow_stream_entry', True) else 'Off'}",
                              f"Scale‑out: {'On' if sc.get('enabled', False) else 'Off'}",
                              f"BE move: {'On' if sc.get('move_sl_to_be', True) else 'Off'}",
                              f"R:R: 1:{rr_val if rr_val is not None else '2.5'}",
                              f"TP1 R: {sc.get('tp1_r',1.6)} | TP2 R: {sc.get('tp2_r',3.0)} | Fraction: {sc.get('fraction',0.5):.2f}",
                              f"Confirm timeout bars: {conf_bars if conf_bars is not None else '6'} | Phantom timeout h: {(getattr(self.shared.get('phantom_tracker'), 'timeout_hours', 0) or 0)}",
+                             # HL/LH 3m timeouts from live trend_settings
+                             (lambda ts=self.shared.get('trend_settings'): (
+                                 f"HL→PB timeout: {getattr(ts, 'breakout_to_pullback_bars_3m', 25)} bars | PB→BOS timeout: {getattr(ts, 'pullback_to_bos_bars_3m', 25)} bars"
+                               ) if ts else "HL→PB timeout: 25 bars | PB→BOS timeout: 25 bars")(),
                              f"SL Mode: {sl_mode} | SL Buffer ATR: {sl_buf:.2f}",
                              f"HTF min trend strength: {min_ts:.1f}",
                              f"Recovery: BE reconcile: {'On' if ((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('recovery_reconcile_be', False) else 'Off'}",
@@ -2432,12 +2444,14 @@ class TGBot:
                              "Use the buttons below to toggle or set values."]
                     kb = InlineKeyboardMarkup([
                         [InlineKeyboardButton("Stream Entry", callback_data="ui:settings:toggle:stream")],
+                        [InlineKeyboardButton("Set Exec Q", callback_data="ui:settings:set:exec_q"), InlineKeyboardButton("Set Phantom Q", callback_data="ui:settings:set:phantom_q")],
                         [InlineKeyboardButton("Scale‑out", callback_data="ui:settings:toggle:scaleout")],
                         [InlineKeyboardButton("BE Move", callback_data="ui:settings:toggle:be")],
                         [InlineKeyboardButton("SL Mode", callback_data="ui:settings:toggle:sl_mode"), InlineKeyboardButton("Set SL Buffer", callback_data="ui:settings:set:sl_buffer")],
                         [InlineKeyboardButton("Set R:R", callback_data="ui:settings:set:rr"), InlineKeyboardButton("Set TP1 R", callback_data="ui:settings:set:tp1_r")],
                         [InlineKeyboardButton("Set TP2 R", callback_data="ui:settings:set:tp2_r"), InlineKeyboardButton("Set Fraction", callback_data="ui:settings:set:fraction")],
                         [InlineKeyboardButton("Set Confirm Bars", callback_data="ui:settings:set:confirm_bars"), InlineKeyboardButton("Set Phantom Hours", callback_data="ui:settings:set:phantom_hours")],
+                        [InlineKeyboardButton("Set HL→PB Bars", callback_data="ui:settings:set:timeout_hl"), InlineKeyboardButton("Set PB→BOS Bars", callback_data="ui:settings:set:timeout_bos")],
                         [InlineKeyboardButton("Set HTF Min TS", callback_data="ui:settings:set:htf_min_ts")],
                         [InlineKeyboardButton("HTF Gate", callback_data="ui:settings:toggle:htf_gate"), InlineKeyboardButton("Mode", callback_data="ui:settings:toggle:htf_mode")],
                         [InlineKeyboardButton("Set TS1H", callback_data="ui:settings:set:htf_ts1h"), InlineKeyboardButton("Set TS4H", callback_data="ui:settings:set:htf_ts4h")],
@@ -2575,6 +2589,10 @@ class TGBot:
                         'phantom_hours': "Send phantom timeout hours (integer, e.g., 100)",
                         'phantom_weight': "Send phantom training weight between 0.3 and 1.0 (e.g., 0.8)",
                         'sl_buffer': "Send breakout SL buffer ATR (e.g., 0.40)",
+                        'exec_q': "Send Exec Q threshold for Trend (e.g., 78)",
+                        'phantom_q': "Send Phantom Q threshold for Trend (e.g., 65)",
+                        'timeout_hl': "Send HL→PB timeout bars (integer, e.g., 25)",
+                        'timeout_bos': "Send PB→BOS timeout bars (integer, e.g., 25)",
                         'htf_min_ts': "Send HTF min trend strength (e.g., 60)",
                         'sr_strength': "Send SR min strength (e.g., 2.8)",
                         'sr_confluence': "Send SR confluence tolerance pct (e.g., 0.0025)",
@@ -5915,6 +5933,90 @@ class TGBot:
                 return ctx.application.create_task(self.send_message(msg))
 
             # Parse and apply
+            if key == 'exec_q':
+                try:
+                    val = float(text)
+                    cfg.setdefault('trend', {}).setdefault('rule_mode', {})
+                    cfg['trend']['rule_mode']['execute_q_min'] = val
+                    self.shared['config'] = cfg
+                    bot_instance = self.shared.get('bot_instance')
+                    if bot_instance and hasattr(bot_instance, 'config'):
+                        bot_instance.config = cfg
+                    # Persist in Redis for restarts
+                    try:
+                        import os, redis
+                        url = os.getenv('REDIS_URL')
+                        if url:
+                            r = redis.from_url(url, decode_responses=True)
+                            r.set('config_override:trend:rule_mode:execute_q_min', str(val))
+                    except Exception:
+                        pass
+                    await _ok(f"✅ Trend Exec≥Q set to {val:.0f}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 78")
+                return
+
+            if key == 'phantom_q':
+                try:
+                    val = float(text)
+                    cfg.setdefault('trend', {}).setdefault('rule_mode', {})
+                    cfg['trend']['rule_mode']['phantom_q_min'] = val
+                    self.shared['config'] = cfg
+                    bot_instance = self.shared.get('bot_instance')
+                    if bot_instance and hasattr(bot_instance, 'config'):
+                        bot_instance.config = cfg
+                    try:
+                        import os, redis
+                        url = os.getenv('REDIS_URL')
+                        if url:
+                            r = redis.from_url(url, decode_responses=True)
+                            r.set('config_override:trend:rule_mode:phantom_q_min', str(val))
+                    except Exception:
+                        pass
+                    await _ok(f"✅ Trend Phantom≥Q set to {val:.0f}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 65")
+                return
+
+            if key == 'timeout_hl':
+                try:
+                    val = int(text)
+                    if val < 1 or val > 60:
+                        await update.message.reply_text("Bars must be 1–60")
+                        return
+                    ts = self.shared.get('trend_settings')
+                    if ts:
+                        ts.breakout_to_pullback_bars_3m = val
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).setdefault('timeouts', {})
+                    cfg['trend']['exec']['timeouts']['breakout_to_pullback_bars_3m'] = val
+                    self.shared['config'] = cfg
+                    bot_instance = self.shared.get('bot_instance')
+                    if bot_instance and hasattr(bot_instance, 'config'):
+                        bot_instance.config = cfg
+                    await _ok(f"✅ HL→PB timeout set to {val} bars")
+                except Exception:
+                    await update.message.reply_text("Please send an integer, e.g., 25")
+                return
+
+            if key == 'timeout_bos':
+                try:
+                    val = int(text)
+                    if val < 1 or val > 60:
+                        await update.message.reply_text("Bars must be 1–60")
+                        return
+                    ts = self.shared.get('trend_settings')
+                    if ts:
+                        ts.pullback_to_bos_bars_3m = val
+                    cfg.setdefault('trend', {}).setdefault('exec', {}).setdefault('timeouts', {})
+                    cfg['trend']['exec']['timeouts']['pullback_to_bos_bars_3m'] = val
+                    self.shared['config'] = cfg
+                    bot_instance = self.shared.get('bot_instance')
+                    if bot_instance and hasattr(bot_instance, 'config'):
+                        bot_instance.config = cfg
+                    await _ok(f"✅ PB→BOS timeout set to {val} bars")
+                except Exception:
+                    await update.message.reply_text("Please send an integer, e.g., 25")
+                return
             if key == 'rr':
                 try:
                     val = float(text)

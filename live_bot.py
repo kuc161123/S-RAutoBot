@@ -4475,6 +4475,19 @@ class TradingBot:
 
                     # Record the trade
                     self.record_closed_trade(symbol, pos, exit_price, exit_reason, leverage)
+                    # Telegram close notify (all strategies)
+                    try:
+                        if self.tg:
+                            emoji = '✅' if exit_reason == 'tp' else ('❌' if exit_reason == 'sl' else '🔚')
+                            strat = str(getattr(pos, 'strategy_name', 'unknown')).replace('_',' ').title()
+                            await self.tg.send_message(
+                                f"{emoji} {symbol} CLOSED ({strat})\n"
+                                f"Side: {pos.side.upper()}\n"
+                                f"Entry: {float(pos.entry):.4f} → Exit: {float(exit_price):.4f}\n"
+                                f"Reason: {exit_reason.upper()}"
+                            )
+                    except Exception:
+                        pass
                     # Force-close executed phantom mirrors to align with exchange closure (Trend + MR)
                     try:
                         if pos.strategy_name in ['enhanced_mr', 'mean_reversion'] and mr_phantom_tracker is not None:
@@ -5631,6 +5644,14 @@ class TradingBot:
                 pass
         except Exception:
             phantom_tracker = None
+
+        # Always wire Scalp phantom notifier for lifecycle messages (open/close)
+        try:
+            if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
+                scpt_always = get_scalp_phantom_tracker()
+                scpt_always.set_notifier(self._notify_scalp_phantom)
+        except Exception:
+            pass
 
         if ML_AVAILABLE and use_ml:
             try:
@@ -8932,6 +8953,15 @@ class TradingBot:
                                         pass
                                     executed = await _try_execute('trend_pullback', sig_tr_ind, ml_score=0.0, threshold=exec_min)
                                     if executed:
+                                        # Telegram execution notify
+                                        try:
+                                            if self.tg:
+                                                await self.tg.send_message(
+                                                    f"🟢 Trend EXECUTE: {sym} {sig_tr_ind.side.upper()} Q={float(qscore or 0.0):.1f} (≥ {exec_min:.1f})\n"
+                                                    f"Entry: {float(sig_tr_ind.entry):.4f} SL: {float(sig_tr_ind.sl):.4f} TP: {float(sig_tr_ind.tp):.4f}"
+                                                )
+                                        except Exception:
+                                            pass
                                         # Record executed phantom mirror for WR by Qscore
                                         try:
                                             pt = self.shared.get('phantom_tracker') if hasattr(self, 'shared') else None
@@ -9063,6 +9093,15 @@ class TradingBot:
                                 if executed:
                                     try:
                                         logger.info(f"[{sym}] 🧮 Decision final: exec_trend (reason=ml_extreme {ml_score_tr:.1f}>={tr_hi_force:.0f})")
+                                    except Exception:
+                                        pass
+                                    # Telegram execution notify
+                                    try:
+                                        if self.tg:
+                                            await self.tg.send_message(
+                                                f"🟢 Trend EXECUTE: {sym} {sig_tr_ind.side.upper()} (HIGH-ML)\n"
+                                                f"Entry: {float(sig_tr_ind.entry):.4f} SL: {float(sig_tr_ind.sl):.4f} TP: {float(sig_tr_ind.tp):.4f}"
+                                            )
                                     except Exception:
                                         pass
                                     # Record executed phantom mirror for WR by Qscore/ML

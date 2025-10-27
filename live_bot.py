@@ -2129,8 +2129,9 @@ class TradingBot:
                 else:
                     sup = [lv for (lv, st, t) in vlevels if t == 'support']
                     dist_atr = min((abs(lv - price)/max(1e-9, atr14) for lv in sup), default=1.0)
-                # 0.3 ATR distance→100, 1.0 ATR→~0
-                comp['sr'] = max(0.0, min(100.0, (1.0 - (dist_atr / 0.30)) * 100.0))
+                # Clearance mapping: larger distance to next level = higher score
+                # 0.0 ATR -> 0, 0.6 ATR -> 100 (capped)
+                comp['sr'] = max(0.0, min(100.0, (dist_atr / 0.60) * 100.0))
             except Exception as _se:
                 comp['sr'] = 50.0; reasons.append(f'sr:error:{_se}')
 

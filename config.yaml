@@ -298,7 +298,7 @@ range:
     heartbeat: true       # Per-bar no-signal heartbeat: emit "no FBO" scans once per 15m bar
   rule_mode:
     execute_q_min: 78     # adapter uses this as default when a bucket is sparse
-    phantom_q_min: 55     # lower to record more phantoms for learning (was 60)
+    phantom_q_min: 20     # allow low‑Q phantoms for learning
     weights:              # normalized automatically
       rng: 0.35           # range quality (width/cleanliness)
       fbo: 0.25           # FBO strength (wick/vol spike)

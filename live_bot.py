@@ -7182,8 +7182,8 @@ class TradingBot:
                                                                         await self.tg.send_message(msg)
                                                                 except Exception:
                                                                     pass
-                                                                await self._range_exec_runner(sig, q)
-                                                                did_execute = True
+                                                            await self._range_exec_runner(sig, q)
+                                                            did_execute = True
                                                             finally:
                                                                 try:
                                                                     if old_risk is not None:
@@ -7192,6 +7192,15 @@ class TradingBot:
                                                                     pass
                                                             if did_execute:
                                                                 self._range_exec_counter['count'] += 1
+                                                                # Record executed phantom mirror for Range with Qscore
+                                                                try:
+                                                                    pt = self.shared.get('phantom_tracker') if hasattr(self, 'shared') else None
+                                                                    if pt is not None:
+                                                                        feats_exec = dict(feats) if isinstance(feats, dict) else {}
+                                                                        feats_exec['qscore'] = float(q)
+                                                                        pt.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, True, feats_exec, 'range_fbo')
+                                                                except Exception:
+                                                                    pass
                                                                 try:
                                                                     logger.info(f"[{sym}] 🧮 Range decision final: execute (reason=q>={float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):.1f} & htf_neutral)")
                                                                 except Exception:
@@ -7238,6 +7247,11 @@ class TradingBot:
                                             if pt is None:
                                                 from phantom_trade_tracker import get_phantom_tracker
                                                 pt = get_phantom_tracker()
+                                            try:
+                                                feats = dict(feats) if isinstance(feats, dict) else {}
+                                                feats['qscore'] = float(q)
+                                            except Exception:
+                                                pass
                                             pt.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, False, feats, 'range_fbo')
                                         except Exception:
                                             pass
@@ -8911,22 +8925,34 @@ class TradingBot:
                                         pass
                                     # Execute immediately via stream executor
                                     try:
-                                        self._last_signal_features[sym] = dict(trend_features)
+                                        tf_copy = dict(trend_features) if isinstance(trend_features, dict) else {}
+                                        tf_copy['qscore'] = float(qscore or 0.0)
+                                        self._last_signal_features[sym] = tf_copy
                                     except Exception:
                                         pass
                                     executed = await _try_execute('trend_pullback', sig_tr_ind, ml_score=0.0, threshold=exec_min)
                                     if executed:
+                                        # Record executed phantom mirror for WR by Qscore
+                                        try:
+                                            pt = self.shared.get('phantom_tracker') if hasattr(self, 'shared') else None
+                                            if pt is not None:
+                                                sigd = {'side': sig_tr_ind.side, 'entry': float(sig_tr_ind.entry), 'sl': float(sig_tr_ind.sl), 'tp': float(sig_tr_ind.tp)}
+                                                pt.record_signal(sym, sigd, 0.0, True, tf_copy, 'trend_pullback')
+                                        except Exception:
+                                            pass
                                         continue
                                 else:
                                     # Below threshold → record phantom only when allowed
                                     try:
                                         if phantom_tracker and sig_tr_ind is not None:
+                                            tf_copy = dict(trend_features) if isinstance(trend_features, dict) else {}
+                                            tf_copy['qscore'] = float(qscore or 0.0)
                                             phantom_tracker.record_signal(
                                                 sym,
                                                 {'side': sig_tr_ind.side, 'entry': sig_tr_ind.entry, 'sl': sig_tr_ind.sl, 'tp': sig_tr_ind.tp},
                                                 0.0,
                                                 False,
-                                                trend_features,
+                                                tf_copy,
                                                 'trend_pullback'
                                             )
                                             logger.info(f"[{sym}] 🧮 Trend decision final: phantom (reason=qscore<thr {float(qscore or 0.0):.1f}<{exec_min:.1f})")
@@ -9037,6 +9063,20 @@ class TradingBot:
                                 if executed:
                                     try:
                                         logger.info(f"[{sym}] 🧮 Decision final: exec_trend (reason=ml_extreme {ml_score_tr:.1f}>={tr_hi_force:.0f})")
+                                    except Exception:
+                                        pass
+                                    # Record executed phantom mirror for WR by Qscore/ML
+                                    try:
+                                        pt = self.shared.get('phantom_tracker') if hasattr(self, 'shared') else None
+                                        if pt is not None:
+                                            tf_copy2 = dict(trend_features) if isinstance(trend_features, dict) else {}
+                                            if 'qscore' not in tf_copy2:
+                                                try:
+                                                    q_tmp, _, _ = self._compute_qscore(sym, sig_tr_ind.side, df, self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None)
+                                                    tf_copy2['qscore'] = float(q_tmp)
+                                                except Exception:
+                                                    pass
+                                            pt.record_signal(sym, {'side': sig_tr_ind.side, 'entry': float(sig_tr_ind.entry), 'sl': float(sig_tr_ind.sl), 'tp': float(sig_tr_ind.tp)}, float(ml_score_tr or 0.0), True, tf_copy2, 'trend_pullback')
                                     except Exception:
                                         pass
                                     continue

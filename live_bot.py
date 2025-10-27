@@ -1020,14 +1020,40 @@ class TradingBot:
             # --- HTF quality (1H/4H + composite)
             try:
                 htf = self._compute_symbol_htf_exec_metrics(symbol, df15)
-                weight = 0.0
-                align1h = 100.0 if (htf.get('ema_dir_1h') == ('up' if side == 'long' else 'down')) else 50.0 if htf.get('ema_dir_1h') != 'none' else 0.0
-                align4h = 100.0 if (htf.get('ema_dir_4h') == ('up' if side == 'long' else 'down')) else 50.0 if htf.get('ema_dir_4h') != 'none' else 0.0
+                # Alignment mapping relaxed: match=100, mismatch=50, none=40 (neutral)
+                d_match = 'up' if side == 'long' else 'down'
+                d1 = str(htf.get('ema_dir_1h', 'none'))
+                d4 = str(htf.get('ema_dir_4h', 'none'))
+                if d1 == d_match:
+                    align1h = 100.0
+                elif d1 == 'none':
+                    align1h = 40.0
+                else:
+                    align1h = 50.0
+                if d4 == d_match:
+                    align4h = 100.0
+                elif d4 == 'none':
+                    align4h = 40.0
+                else:
+                    align4h = 50.0
                 ts1h = max(0.0, min(100.0, float(htf.get('ts1h', 0.0))))
                 ts4h = max(0.0, min(100.0, float(htf.get('ts4h', 0.0))))
                 adx = max(0.0, min(100.0, float(htf.get('adx_1h', 0.0)) * 3.0))  # scale ADX ~ 0–33 → 0–100
-                struct1h = 100.0 if (htf.get('struct_dir_1h') == ('up' if side == 'long' else 'down')) else 0.0
-                struct4h = 100.0 if (htf.get('struct_dir_4h') == ('up' if side == 'long' else 'down')) else 0.0
+                # Structure mapping relaxed: match=100, none=40, mismatch=0
+                s1 = str(htf.get('struct_dir_1h', 'none'))
+                s4 = str(htf.get('struct_dir_4h', 'none'))
+                if s1 == d_match:
+                    struct1h = 100.0
+                elif s1 == 'none':
+                    struct1h = 40.0
+                else:
+                    struct1h = 0.0
+                if s4 == d_match:
+                    struct4h = 100.0
+                elif s4 == 'none':
+                    struct4h = 40.0
+                else:
+                    struct4h = 0.0
                 comp['htf'] = 0.25 * ts1h + 0.10 * ts4h + 0.20 * align1h + 0.10 * align4h + 0.20 * adx + 0.10 * struct1h + 0.05 * struct4h
             except Exception as _e:
                 comp['htf'] = 40.0

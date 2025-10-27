@@ -2832,7 +2832,14 @@ class TradingBot:
                             self._scalp_symbol_state[sym] = {**(self._scalp_symbol_state.get(sym, {}) or {}), 'q_ge_thr': bool(qv >= exec_thr)}
                         except Exception:
                             pass
+                        # Use learned threshold if available
                         q_val = float(sc_feats.get('qscore', 0.0))
+                        try:
+                            ctx = {'session': self._session_label(), 'volatility_regime': sc_feats.get('volatility_regime', 'global')}
+                            if hasattr(self, '_qadapt_scalp') and self._qadapt_scalp:
+                                exec_thr = float(self._qadapt_scalp.get_threshold(ctx, floor=60.0, ceiling=95.0, default=exec_thr))
+                        except Exception:
+                            pass
                         if exec_enabled and session_ok and q_val >= exec_thr:
                             if sym in self.book.positions:
                                 exec_reason = 'position_exists'
@@ -5652,6 +5659,23 @@ class TradingBot:
         except Exception:
             phantom_tracker = None
 
+        # Initialize Qscore adapters for Trend/Range/Scalp and trigger startup retrain if enough data
+        try:
+            from ml_qscore_trend_adapter import get_trend_qadapter
+            from ml_qscore_range_adapter import get_range_qadapter
+            from ml_qscore_scalp_adapter import get_scalp_qadapter
+            self._qadapt_trend = get_trend_qadapter()
+            self._qadapt_range = get_range_qadapter()
+            self._qadapt_scalp = get_scalp_qadapter()
+            try:
+                self._qadapt_trend.retrain_if_ready()
+                self._qadapt_range.retrain_if_ready()
+                self._qadapt_scalp.retrain_if_ready()
+            except Exception:
+                pass
+        except Exception as _qe:
+            logger.debug(f"QAdapters init failed: {_qe}")
+
         # Always wire Scalp phantom notifier for lifecycle messages (open/close)
         try:
             if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
@@ -7178,10 +7202,18 @@ class TradingBot:
                                         try:
                                             # Existing position guard
                                             if sym not in self.book.positions:
-                                                if q_only_rg:
-                                                    # Execute solely on Qscore threshold
-                                                    if q >= float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):
-                                                        if hasattr(self, '_range_exec_runner'):
+                                                    if q_only_rg:
+                                                        # Execute solely on Qscore threshold
+                                                        # Use learned threshold if available
+                                                        thr_q = float((settings.get('rule_mode') or {}).get('execute_q_min', 78))
+                                                        try:
+                                                            ctx = {'session': self._session_label(), 'volatility_regime': getattr(htf, 'volatility_level', 'global') if 'htf' in locals() and htf else 'global'}
+                                                            if hasattr(self, '_qadapt_range') and self._qadapt_range:
+                                                                thr_q = float(self._qadapt_range.get_threshold(ctx, floor=60.0, ceiling=95.0, default=thr_q))
+                                                        except Exception:
+                                                            pass
+                                                        if q >= thr_q:
+                                                            if hasattr(self, '_range_exec_runner'):
                                                             try:
                                                                 # Temporarily adjust risk percent if provided
                                                                 old_risk = None
@@ -8982,6 +9014,13 @@ class TradingBot:
                                 except Exception:
                                     qscore = 50.0
                                 exec_min = float(rule_mode.get('execute_q_min', 78.0)) if isinstance(rule_mode, dict) else 78.0
+                                # Use learned threshold if available
+                                try:
+                                    ctx = {'session': self._session_label(), 'volatility_regime': getattr(htf, 'volatility_level', 'global') if 'htf' in locals() and htf else 'global'}
+                                    if hasattr(self, '_qadapt_trend') and self._qadapt_trend:
+                                        exec_min = float(self._qadapt_trend.get_threshold(ctx, floor=60.0, ceiling=95.0, default=exec_min))
+                                except Exception:
+                                    pass
                                 if float(qscore or 0.0) >= exec_min:
                                     try:
                                         logger.info(f"[{sym}] 🧮 Trend decision final: execute (Qscore {float(qscore):.1f} ≥ {exec_min:.1f})")
@@ -12096,3 +12135,14 @@ if __name__ == "__main__":
                 logging.getLogger().addFilter(_DecisionOnlyFilter())
             except Exception:
                 pass
+        # Helper: session label used by adapters/telemetry
+        def _sess_label() -> str:
+            try:
+                hr = datetime.utcnow().hour
+                return 'asian' if 0 <= hr < 8 else ('european' if hr < 16 else 'us')
+            except Exception:
+                return 'us'
+        try:
+            self._session_label = _sess_label
+        except Exception:
+            pass

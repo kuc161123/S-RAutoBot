@@ -7202,18 +7202,64 @@ class TradingBot:
                                         try:
                                             # Existing position guard
                                             if sym not in self.book.positions:
-                                                    if q_only_rg:
-                                                        # Execute solely on Qscore threshold
-                                                        # Use learned threshold if available
-                                                        thr_q = float((settings.get('rule_mode') or {}).get('execute_q_min', 78))
+                                                if q_only_rg:
+                                                    # Execute solely on Qscore threshold
+                                                    # Use learned threshold if available
+                                                    thr_q = float((settings.get('rule_mode') or {}).get('execute_q_min', 78))
+                                                    try:
+                                                        ctx = {'session': self._session_label(), 'volatility_regime': getattr(htf, 'volatility_level', 'global') if 'htf' in locals() and htf else 'global'}
+                                                        if hasattr(self, '_qadapt_range') and self._qadapt_range:
+                                                            thr_q = float(self._qadapt_range.get_threshold(ctx, floor=60.0, ceiling=95.0, default=thr_q))
+                                                    except Exception:
+                                                        pass
+                                                    if q >= thr_q and hasattr(self, '_range_exec_runner'):
                                                         try:
-                                                            ctx = {'session': self._session_label(), 'volatility_regime': getattr(htf, 'volatility_level', 'global') if 'htf' in locals() and htf else 'global'}
-                                                            if hasattr(self, '_qadapt_range') and self._qadapt_range:
-                                                                thr_q = float(self._qadapt_range.get_threshold(ctx, floor=60.0, ceiling=95.0, default=thr_q))
+                                                            # Temporarily adjust risk percent if provided
+                                                            old_risk = None
+                                                            try:
+                                                                old_risk = self.sizer.risk.risk_percent
+                                                                self.sizer.risk.risk_percent = float(exec_cfg.get('risk_percent', old_risk or 1.0))
+                                                            except Exception:
+                                                                pass
+                                                            # Pre-exec decision notification
+                                                            try:
+                                                                if self.tg:
+                                                                    msg = f"🟢 Range EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):.1f})\n{comps}"
+                                                                    if regime_label:
+                                                                        msg += f"\nRegime: {regime_label}"
+                                                                    await self.tg.send_message(msg)
+                                                            except Exception:
+                                                                pass
+                                                            await self._range_exec_runner(sig, q)
+                                                            did_execute = True
+                                                        finally:
+                                                            try:
+                                                                if old_risk is not None:
+                                                                    self.sizer.risk.risk_percent = old_risk
+                                                            except Exception:
+                                                                pass
+                                                else:
+                                                    # Legacy neutral and SR checks retained only when qscore_only disabled
+                                                    # Daily cap
+                                                    if not hasattr(self, '_range_exec_counter'):
+                                                        self._range_exec_counter = {'day': None, 'count': 0}
+                                                    from datetime import datetime as _dt
+                                                    day_str = _dt.utcnow().strftime('%Y%m%d')
+                                                    if self._range_exec_counter['day'] != day_str:
+                                                        self._range_exec_counter = {'day': day_str, 'count': 0}
+                                                    if self._range_exec_counter['count'] < int(exec_cfg.get('daily_cap', 3)):
+                                                        # HTF neutrality gate: avoid strong trend
+                                                        t15 = float(feats.get('ts15', 0.0)); t60 = float(feats.get('ts60', 0.0))
+                                                        sr_ok = True
+                                                        try:
+                                                            src = feats.get('sr_confluence', {}) or {}
+                                                            if src and float(src.get('dist_atr', 1.0)) > float((settings.get('sr_confluence') or {}).get('max_dist_atr', 0.30)) and bool((settings.get('sr_confluence') or {}).get('required', False)):
+                                                                sr_ok = False
                                                         except Exception:
-                                                            pass
-                                                        if q >= thr_q:
-                                                            if hasattr(self, '_range_exec_runner'):
+                                                            sr_ok = True
+                                                    if max(t15, t60) < 60 and sr_ok and q >= float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):
+                                                        # Execute using shared runner when ready
+                                                        if hasattr(self, '_range_exec_runner'):
                                                             try:
                                                                 # Temporarily adjust risk percent if provided
                                                                 old_risk = None
@@ -7239,68 +7285,21 @@ class TradingBot:
                                                                         self.sizer.risk.risk_percent = old_risk
                                                                 except Exception:
                                                                     pass
-                                                else:
-                                                    # Legacy neutral and SR checks retained only when qscore_only disabled
-                                                    # Daily cap
-                                                    if not hasattr(self, '_range_exec_counter'):
-                                                        self._range_exec_counter = {'day': None, 'count': 0}
-                                                    from datetime import datetime as _dt
-                                                    day_str = _dt.utcnow().strftime('%Y%m%d')
-                                                    if self._range_exec_counter['day'] != day_str:
-                                                        self._range_exec_counter = {'day': day_str, 'count': 0}
-                                                    if self._range_exec_counter['count'] < int(exec_cfg.get('daily_cap', 3)):
-                                                        # HTF neutrality gate: avoid strong trend
-                                                        t15 = float(feats.get('ts15', 0.0)); t60 = float(feats.get('ts60', 0.0))
-                                                        sr_ok = True
-                                                        try:
-                                                            src = feats.get('sr_confluence', {}) or {}
-                                                            if src and float(src.get('dist_atr', 1.0)) > float((settings.get('sr_confluence') or {}).get('max_dist_atr', 0.30)) and bool((settings.get('sr_confluence') or {}).get('required', False)):
-                                                                sr_ok = False
-                                                        except Exception:
-                                                            sr_ok = True
-                                                        if max(t15, t60) < 60 and sr_ok and q >= float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):
-                                                        # Execute using shared runner when ready
-                                                        if hasattr(self, '_range_exec_runner'):
+                                                        if did_execute:
+                                                            self._range_exec_counter['count'] += 1
+                                                            # Record executed phantom mirror for Range with Qscore
                                                             try:
-                                                                # Temporarily adjust risk percent if provided
-                                                                old_risk = None
-                                                                try:
-                                                                    old_risk = self.sizer.risk.risk_percent
-                                                                    self.sizer.risk.risk_percent = float(exec_cfg.get('risk_percent', old_risk or 1.0))
-                                                                except Exception:
-                                                                    pass
-                                                                # Pre-exec decision notification
-                                                                try:
-                                                                    if self.tg:
-                                                                        msg = f"🟢 Range EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):.1f})\n{comps}"
-                                                                        if regime_label:
-                                                                            msg += f"\nRegime: {regime_label}"
-                                                                        await self.tg.send_message(msg)
-                                                                except Exception:
-                                                                    pass
-                                                            await self._range_exec_runner(sig, q)
-                                                            did_execute = True
-                                                        finally:
-                                                            try:
-                                                                if old_risk is not None:
-                                                                    self.sizer.risk.risk_percent = old_risk
+                                                                pt = self.shared.get('phantom_tracker') if hasattr(self, 'shared') else None
+                                                                if pt is not None:
+                                                                    feats_exec = dict(feats) if isinstance(feats, dict) else {}
+                                                                    feats_exec['qscore'] = float(q)
+                                                                    pt.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, True, feats_exec, 'range_fbo')
                                                             except Exception:
                                                                 pass
-                                                        if did_execute:
-                                                                self._range_exec_counter['count'] += 1
-                                                                # Record executed phantom mirror for Range with Qscore
-                                                                try:
-                                                                    pt = self.shared.get('phantom_tracker') if hasattr(self, 'shared') else None
-                                                                    if pt is not None:
-                                                                        feats_exec = dict(feats) if isinstance(feats, dict) else {}
-                                                                        feats_exec['qscore'] = float(q)
-                                                                        pt.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, True, feats_exec, 'range_fbo')
-                                                                except Exception:
-                                                                    pass
-                                                                try:
-                                                                    logger.info(f"[{sym}] 🧮 Range decision final: execute (reason=q>={float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):.1f} & htf_neutral)")
-                                                                except Exception:
-                                                                    pass
+                                                            try:
+                                                                logger.info(f"[{sym}] 🧮 Range decision final: execute (reason=q>={float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):.1f} & htf_neutral)")
+                                                            except Exception:
+                                                                pass
                                         except Exception:
                                             did_execute = False
                                     if not did_execute:

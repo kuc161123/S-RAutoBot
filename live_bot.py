@@ -2049,6 +2049,12 @@ class TradingBot:
         comp = {}; reasons = []
         try:
             f = sc_feats or {}
+            # Ensure target RR is included for ML training quality
+            try:
+                R = abs(float(entry) - float(sl))
+                f['rr_target'] = float(abs(float(tp) - float(entry)) / R) if R > 0 else 0.0
+            except Exception:
+                f['rr_target'] = f.get('rr_target', 0.0)
             # Momentum: impulse vs ATR + wick direction + volume
             imp = float(f.get('impulse_ratio', 0.0) or 0.0)
             volr = float(f.get('volume_ratio', 1.0) or 1.0)
@@ -2819,17 +2825,8 @@ class TradingBot:
                         q_only_sc = bool(((sc_cfg.get('exec') or {}).get('qscore_only', True)))
                     except Exception:
                         q_only_sc = True
-                    try:
-                        if not q_only_sc:
-                            allowed_sessions = [str(x) for x in (sc_cfg.get('session_only') or [])]
-                            from datetime import datetime as _dt
-                            hr = _dt.utcnow().hour
-                            cur_session = 'asian' if 0 <= hr < 8 else ('european' if hr < 16 else 'us')
-                            session_ok = (not allowed_sessions) or (cur_session in allowed_sessions)
-                        else:
-                            session_ok = True
-                    except Exception:
-                        session_ok = True
+                    # No session restrictions for Scalp (always allow)
+                    session_ok = True
                     # EV-based threshold bump for Scalp
                     try:
                         from ml_scorer_scalp import get_scalp_scorer
@@ -3950,6 +3947,7 @@ class TradingBot:
                 q, qc, qr = self._compute_qscore_range(symbol, sig.side, df, self.frames_3m.get(symbol) if hasattr(self, 'frames_3m') else None)
             except Exception:
                 q, qc, qr = 50.0, {}, []
+            # Build robust features for Range handoff phantom
             feats = {
                 'handoff': True,
                 'handoff_reason': 'trend_invalidation',
@@ -3988,6 +3986,26 @@ class TradingBot:
                 })
             except Exception:
                 pass
+            # Session and cluster context
+            try:
+                from datetime import datetime as _dt
+                hr = _dt.utcnow().hour
+                feats['session'] = 'asian' if 0 <= hr < 8 else ('european' if hr < 16 else 'us')
+            except Exception:
+                feats['session'] = 'us'
+            try:
+                from symbol_clustering import load_symbol_clusters
+                clusters = load_symbol_clusters()
+                feats['symbol_cluster'] = int(clusters.get(symbol, 3))
+            except Exception:
+                feats['symbol_cluster'] = 3
+            # RR target
+            try:
+                entry = float(sig.entry); sl_v = float(sig.sl); tp_v = float(sig.tp)
+                R = abs(entry - sl_v)
+                feats['rr_target'] = float(abs(tp_v - entry) / R) if R > 0 else 0.0
+            except Exception:
+                feats['rr_target'] = 0.0
             try:
                 comp = self._get_htf_metrics(symbol, df)
                 feats['ts15'] = float(comp.get('ts15', 0.0)); feats['ts60'] = float(comp.get('ts60', 0.0))
@@ -5856,6 +5874,10 @@ class TradingBot:
 
                 else:
                     # Initialize original ML system
+                    try:
+                        from ml_signal_scorer_immediate import get_immediate_scorer
+                    except Exception:
+                        pass
                     ml_scorer = get_immediate_scorer()
                     phantom_tracker = get_phantom_tracker()
                     try:
@@ -7194,6 +7216,7 @@ class TradingBot:
                                     except Exception:
                                         q, qc, qr = 50.0, {}, []
                                     # Build features
+                                    # Build features for Range FBO ML training
                                     feats = {
                                         'range_high': float(sig.meta.get('range_high', 0.0)),
                                         'range_low': float(sig.meta.get('range_low', 0.0)),
@@ -7207,6 +7230,26 @@ class TradingBot:
                                         'qscore_reasons': list(qr),
                                         'volatility_regime': getattr(self, 'last_volatility_level', 'normal') if hasattr(self, 'last_volatility_level') else 'normal',
                                     }
+                                    # Add session and symbol cluster context
+                                    try:
+                                        from datetime import datetime as _dt
+                                        hr = _dt.utcnow().hour
+                                        feats['session'] = 'asian' if 0 <= hr < 8 else ('european' if hr < 16 else 'us')
+                                    except Exception:
+                                        feats['session'] = 'us'
+                                    try:
+                                        from symbol_clustering import load_symbol_clusters
+                                        clusters = load_symbol_clusters()
+                                        feats['symbol_cluster'] = int(clusters.get(sym, 3))
+                                    except Exception:
+                                        feats['symbol_cluster'] = 3
+                                    # Compute target RR for training quality
+                                    try:
+                                        entry = float(sig.entry); sl_v = float(sig.sl); tp_v = float(sig.tp)
+                                        R = abs(entry - sl_v)
+                                        feats['rr_target'] = float(abs(tp_v - entry) / R) if R > 0 else 0.0
+                                    except Exception:
+                                        feats['rr_target'] = 0.0
                                     # Attach HTF composite for context
                                     try:
                                         comp = self._get_htf_metrics(sym, df)
@@ -8943,6 +8986,15 @@ class TradingBot:
                                     'div_rsi_delta': float(getattr(sig_tr_ind, 'meta', {}).get('div_rsi_delta', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0),
                                     'div_tsi_delta': float(getattr(sig_tr_ind, 'meta', {}).get('div_tsi_delta', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0),
                                 }
+                                # Add RR target for executed/phantom quality learning
+                                try:
+                                    e = float(getattr(sig_tr_ind, 'entry', 0.0) or 0.0)
+                                    sl_v = float(getattr(sig_tr_ind, 'sl', 0.0) or 0.0)
+                                    tp_v = float(getattr(sig_tr_ind, 'tp', 0.0) or 0.0)
+                                    R = abs(e - sl_v)
+                                    trend_features['rr_target'] = float(abs(tp_v - e) / R) if R > 0 else 0.0
+                                except Exception:
+                                    trend_features['rr_target'] = 0.0
                                 # Attach full HTF snapshots and composite (flattened)
                                 try:
                                     htfm = self._compute_symbol_htf_exec_metrics(sym, df)

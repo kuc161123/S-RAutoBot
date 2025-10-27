@@ -2612,6 +2612,13 @@ class TradingBot:
                         except Exception:
                             _df_src_hi = df
                         sc_feats_hi = self._build_scalp_features(_df_src_hi, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                        # Attach HTF composite metrics to features for ML training
+                        try:
+                            comp = self._get_htf_metrics(sym, self.frames.get(sym))
+                            sc_feats_hi['ts15'] = float(comp.get('ts15', 0.0)); sc_feats_hi['ts60'] = float(comp.get('ts60', 0.0))
+                            sc_feats_hi['rc15'] = float(comp.get('rc15', 0.0)); sc_feats_hi['rc60'] = float(comp.get('rc60', 0.0))
+                        except Exception:
+                            pass
                         # Score ML for learning even though we execute immediately
                         ml_s_immediate = 0.0
                         try:
@@ -2683,6 +2690,12 @@ class TradingBot:
                             except Exception:
                                 _df_src = df
                             sc_feats_early = self._build_scalp_features(_df_src, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                            try:
+                                comp = self._get_htf_metrics(sym, self.frames.get(sym))
+                                sc_feats_early['ts15'] = float(comp.get('ts15', 0.0)); sc_feats_early['ts60'] = float(comp.get('ts60', 0.0))
+                                sc_feats_early['rc15'] = float(comp.get('rc15', 0.0)); sc_feats_early['rc60'] = float(comp.get('rc60', 0.0))
+                            except Exception:
+                                pass
                             # Compute Scalp ML score for visibility (heuristic if model not ready)
                             ml_s_early = 0.0
                             try:
@@ -2775,6 +2788,12 @@ class TradingBot:
                 except Exception:
                     _df_src2 = df
                 sc_feats = self._build_scalp_features(_df_src2, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                try:
+                    comp = self._get_htf_metrics(sym, self.frames.get(sym))
+                    sc_feats['ts15'] = float(comp.get('ts15', 0.0)); sc_feats['ts60'] = float(comp.get('ts60', 0.0))
+                    sc_feats['rc15'] = float(comp.get('rc15', 0.0)); sc_feats['rc60'] = float(comp.get('rc60', 0.0))
+                except Exception:
+                    pass
                 try:
                     _qs = self._compute_qscore_scalp(sym, sc_sig.side, float(sc_sig.entry), float(sc_sig.sl), float(sc_sig.tp), df3=_df_src2, df15=self.frames.get(sym), sc_feats=sc_feats)
                     sc_feats['qscore'] = float(_qs[0]); sc_feats['qscore_components'] = dict(_qs[1]); sc_feats['qscore_reasons'] = list(_qs[2])
@@ -3271,6 +3290,12 @@ class TradingBot:
             except Exception:
                 vol_level = 'normal'
             sc_feats = self._build_scalp_features(df_for_scalp, sc_meta, vol_level, cluster_id)
+            try:
+                comp = self._get_htf_metrics(sym, self.frames.get(sym))
+                sc_feats['ts15'] = float(comp.get('ts15', 0.0)); sc_feats['ts60'] = float(comp.get('ts60', 0.0))
+                sc_feats['rc15'] = float(comp.get('rc15', 0.0)); sc_feats['rc60'] = float(comp.get('rc60', 0.0))
+            except Exception:
+                pass
             # Score Scalp ML for learning even on immediate executes
             ml_s_immediate = 0.0
             try:
@@ -3353,6 +3378,12 @@ class TradingBot:
         except Exception:
             vol_level = 'normal'
         sc_feats = self._build_scalp_features(df_for_scalp, sc_meta, vol_level, cluster_id)
+        try:
+            comp = self._get_htf_metrics(sym, self.frames.get(sym))
+            sc_feats['ts15'] = float(comp.get('ts15', 0.0)); sc_feats['ts60'] = float(comp.get('ts60', 0.0))
+            sc_feats['rc15'] = float(comp.get('rc15', 0.0)); sc_feats['rc60'] = float(comp.get('rc60', 0.0))
+        except Exception:
+            pass
         sc_feats['routing'] = 'fallback'
 
         try:
@@ -11108,6 +11139,12 @@ class TradingBot:
                                         if sc_sig and _not_duplicate(sym, sc_sig):
                                             sc_meta = getattr(sc_sig, 'meta', {}) or {}
                                             sc_feats = self._build_scalp_features(df_for_scalp, sc_meta, regime_analysis.volatility_level, cluster_id)
+                                            try:
+                                                comp = self._get_htf_metrics(sym, self.frames.get(sym))
+                                                sc_feats['ts15'] = float(comp.get('ts15', 0.0)); sc_feats['ts60'] = float(comp.get('ts60', 0.0))
+                                                sc_feats['rc15'] = float(comp.get('rc15', 0.0)); sc_feats['rc60'] = float(comp.get('rc60', 0.0))
+                                            except Exception:
+                                                pass
                                             sc_feats['routing'] = 'none'
                                             logger.info(f"[{sym}] 👻 Phantom-only (Scalp none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
                                             try:

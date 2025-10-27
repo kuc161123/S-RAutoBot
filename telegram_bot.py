@@ -5850,11 +5850,6 @@ class TGBot:
             cfg = self.shared.get('config', {})
             cfg.setdefault(strat, {}).setdefault('rule_mode', {})
             cfg[strat]['rule_mode']['execute_q_min'] = exec_q
-            # If user sets thresholds manually, disable adapter for that strategy to honor manual setting
-            try:
-                cfg[strat]['rule_mode']['adapter_enabled'] = False
-            except Exception:
-                pass
             if ph_q is not None:
                 cfg[strat]['rule_mode']['phantom_q_min'] = ph_q
             # Update live bot config
@@ -5862,10 +5857,6 @@ class TGBot:
             if bot and hasattr(bot, 'config') and isinstance(bot.config, dict):
                 bot.config.setdefault(strat, {}).setdefault('rule_mode', {})
                 bot.config[strat]['rule_mode']['execute_q_min'] = exec_q
-                try:
-                    bot.config[strat]['rule_mode']['adapter_enabled'] = False
-                except Exception:
-                    pass
                 if ph_q is not None:
                     bot.config[strat]['rule_mode']['phantom_q_min'] = ph_q
             # Persist in Redis for restarts
@@ -6427,7 +6418,6 @@ class TGBot:
                     val = float(text)
                     cfg.setdefault('range', {}).setdefault('rule_mode', {})
                     cfg['range']['rule_mode']['execute_q_min'] = val
-                    cfg['range']['rule_mode']['adapter_enabled'] = False
                     self.shared['config'] = cfg
                     bot_instance = self.shared.get('bot_instance')
                     if bot_instance and hasattr(bot_instance, 'config'):
@@ -6472,7 +6462,6 @@ class TGBot:
                     val = float(text)
                     cfg.setdefault('scalp', {}).setdefault('rule_mode', {})
                     cfg['scalp']['rule_mode']['execute_q_min'] = val
-                    cfg['scalp']['rule_mode']['adapter_enabled'] = False
                     self.shared['config'] = cfg
                     bot_instance = self.shared.get('bot_instance')
                     if bot_instance and hasattr(bot_instance, 'config'):

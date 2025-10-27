@@ -284,6 +284,14 @@ class TGBot:
             lines.append("🧭 *Rule‑Mode*")
             lines.append(f"• Enabled: {'On' if enabled else 'Off'} | Exec≥{exec_min:.0f} | Phantom≥{ph_min:.0f} | Extreme‑vol block: {'On' if extreme else 'Off'}")
             lines.append(f"• ML tie‑break: {'Active' if matured else 'Not ready'} (records {t}/{rec_need}, executed {e}/{exe_need})")
+            try:
+                lines.append(
+                    f"• Qscore-only: Trend {bool((cfg.get('trend',{}).get('exec',{}) or {}).get('qscore_only', True))} | "
+                    f"Range {bool((cfg.get('range',{}).get('exec',{}) or {}).get('qscore_only', True))} | "
+                    f"Scalp {bool((cfg.get('scalp',{}).get('exec',{}) or {}).get('qscore_only', True))}"
+                )
+            except Exception:
+                pass
         except Exception:
             lines.append("(unavailable)")
 
@@ -348,6 +356,13 @@ class TGBot:
             lines.append("")
             lines.append("👻 *Trend Phantom*")
             lines.append(f"• Tracked: {total} | Open: {open_cnt} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}")
+            # Learned threshold snapshot (Trend)
+            try:
+                from ml_qscore_trend_adapter import get_trend_qadapter
+                thr = get_trend_qadapter().get_threshold({'session': self._session_label(), 'volatility_regime': 'global'}, default=78.0)
+                lines.append(f"• Qthr (learned): {thr:.1f}")
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -379,6 +394,13 @@ class TGBot:
             lines.append("")
             lines.append("📦 *Range Phantom*")
             lines.append(f"• Tracked: {total} | Open: {open_cnt} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}")
+            # Learned threshold snapshot (Range)
+            try:
+                from ml_qscore_range_adapter import get_range_qadapter
+                thr = get_range_qadapter().get_threshold({'session': self._session_label(), 'volatility_regime': 'global'}, default=78.0)
+                lines.append(f"• Qthr (learned): {thr:.1f}")
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -413,6 +435,13 @@ class TGBot:
             lines.append("")
             lines.append("🩳 *Scalp Phantom*")
             lines.append(f"• Tracked: {total} | Open: {open_cnt} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}")
+            # Learned threshold snapshot (Scalp)
+            try:
+                from ml_qscore_scalp_adapter import get_scalp_qadapter
+                thr = get_scalp_qadapter().get_threshold({'session': self._session_label(), 'volatility_regime': 'global'}, default=88.0)
+                lines.append(f"• Qthr (learned): {thr:.1f}")
+            except Exception:
+                pass
         except Exception:
             pass
 

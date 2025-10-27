@@ -2420,11 +2420,25 @@ class TGBot:
                         sc_ph_q = float(rm_sc.get('phantom_q_min', 80))
                     except Exception:
                         sc_exec_q = 88.0; sc_ph_q = 80.0
+                    # Adapters status
+                    try:
+                        ad_tr = bool(((cfg.get('trend', {}) or {}).get('rule_mode', {}) or {}).get('adapter_enabled', True))
+                    except Exception:
+                        ad_tr = True
+                    try:
+                        ad_rg = bool(((cfg.get('range', {}) or {}).get('rule_mode', {}) or {}).get('adapter_enabled', True))
+                    except Exception:
+                        ad_rg = True
+                    try:
+                        ad_sc = bool(((cfg.get('scalp', {}) or {}).get('rule_mode', {}) or {}).get('adapter_enabled', True))
+                    except Exception:
+                        ad_sc = True
                     lines = ["⚙️ *Settings*", "",
                              f"Rule‑Mode thresholds:",
                              f"• Trend: Exec≥{tr_exec_q:.0f} | Phantom≥{tr_ph_q:.0f}",
                              f"• Range: Exec≥{rg_exec_q:.0f} | Phantom≥{rg_ph_q:.0f}",
                              f"• Scalp: Exec≥{sc_exec_q:.0f} | Phantom≥{sc_ph_q:.0f}",
+                             f"Adapters: Trend {'On' if ad_tr else 'Off'} | Range {'On' if ad_rg else 'Off'} | Scalp {'On' if ad_sc else 'Off'}",
                              f"Stream entry: {'On' if tr_exec.get('allow_stream_entry', True) else 'Off'}",
                              f"Scale‑out: {'On' if sc.get('enabled', False) else 'Off'}",
                              f"BE move: {'On' if sc.get('move_sl_to_be', True) else 'Off'}",

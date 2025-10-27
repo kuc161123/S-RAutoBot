@@ -273,7 +273,7 @@ class MultiTimeframeSR:
         self.sr_levels[symbol] = sorted(self.sr_levels[symbol], 
                                       key=lambda x: x[1], reverse=True)[:20]
         
-        logger.info(f"Updated S/R for {symbol}: {len(self.sr_levels[symbol])} levels found")
+        logger.debug(f"Updated S/R for {symbol}: {len(self.sr_levels[symbol])} levels found")
     
     def is_near_major_level(self, symbol: str, price: float, 
                            tolerance_pct: float = 0.002) -> Tuple[bool, float, str]:

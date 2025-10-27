@@ -2977,8 +2977,9 @@ class TradingBot:
                     except Exception:
                         pass
                     # Visibility into decision inputs
+                    # Decision context (reduce to DEBUG to avoid log noise)
                     try:
-                        logger.info(f"[{sym}] 🩳 Scalp decision context: dedup={dedup_ok} hourly_remaining={max(0, sc_remaining)} daily_ok={daily_ok}")
+                        logger.debug(f"[{sym}] 🩳 Scalp decision context: dedup_ok={dedup_ok} hourly_remaining={max(0, sc_remaining)} daily_ok={daily_ok}")
                     except Exception:
                         pass
                     # Force-accept disabled in high-ML-only mode
@@ -3072,6 +3073,7 @@ class TradingBot:
                             self._scalp_budget[sym] = blist
                         else:
                             logger.info(f"[{sym}] 🛑 Scalp phantom (none route) dropped by regime gate (tracker)")
+                            _scalp_decision_logged = True
                         # Shadow execute Scalp if ML is trained and score ≥ threshold
                         try:
                             scorer = get_scalp_scorer() if get_scalp_scorer is not None else None
@@ -3113,7 +3115,7 @@ class TradingBot:
                     # Backstop: ensure a decision-final line is always emitted
                     try:
                         if not _scalp_decision_logged:
-                            logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=unknown_path)")
+                            logger.debug(f"[{sym}] 🧮 Scalp decision final: blocked (reason=unknown_path)")
                     except Exception:
                         pass
                 # Periodically publish Scalp state snapshot (approx every 30s)

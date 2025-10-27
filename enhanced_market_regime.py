@@ -654,7 +654,8 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
         
         # ===== COMPREHENSIVE FALLBACK SYSTEM =====
         elif recommended_strategy == "none":
-            logger.info(f"[{symbol}] 🛡️ FALLBACK ANALYSIS:")
+            # Reduce verbosity: fallback analysis is mainly for debugging
+            logger.debug(f"[{symbol}] 🛡️ FALLBACK ANALYSIS:")
             
             # STRICT fallback - no permissive defaults
             if volatility_level in ["low", "normal"]:
@@ -671,7 +672,7 @@ def get_enhanced_market_regime(df: pd.DataFrame, symbol: str = "UNKNOWN") -> Reg
                 else:
                     # No weak signals allowed - prefer safety
                     recommended_strategy = "none"
-                    logger.info(f"[{symbol}] ❌ FALLBACK: No exceptional signals - safer to avoid trading")
+                    logger.debug(f"[{symbol}] ❌ FALLBACK: No exceptional signals - safer to avoid trading")
             else:
                 # High volatility markets get no fallback
                 recommended_strategy = "none"

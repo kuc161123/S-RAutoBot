@@ -3993,6 +3993,24 @@ class TradingBot:
                 feats['session'] = 'asian' if 0 <= hr < 8 else ('european' if hr < 16 else 'us')
             except Exception:
                 feats['session'] = 'us'
+            # Volatility regime and range position extras
+            try:
+                reg = get_enhanced_market_regime(df, symbol)
+                feats['volatility_regime'] = str(getattr(reg, 'volatility_level', 'normal') or 'normal')
+            except Exception:
+                feats['volatility_regime'] = 'normal'
+            try:
+                clp = float(df['close'].iloc[-1]) if len(df) else 0.0
+                rh = float(feats.get('range_high', 0.0)); rl = float(feats.get('range_low', 0.0))
+                rng_w = max(1e-9, (rh - rl))
+                feats['range_pos_pct'] = float(min(1.0, max(0.0, (clp - rl) / rng_w)))
+                prev = df['close'].shift()
+                trarr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                atr14 = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
+                edge_dist = min(abs(clp - rl), abs(rh - clp))
+                feats['edge_distance_atr'] = float(edge_dist / max(1e-9, atr14))
+            except Exception:
+                pass
             try:
                 from symbol_clustering import load_symbol_clusters
                 clusters = load_symbol_clusters()
@@ -7238,8 +7256,26 @@ class TradingBot:
                                         'qscore': float(q),
                                         'qscore_components': dict(qc),
                                         'qscore_reasons': list(qr),
-                                        'volatility_regime': getattr(self, 'last_volatility_level', 'normal') if hasattr(self, 'last_volatility_level') else 'normal',
+                                        'volatility_regime': 'normal',
                                     }
+                                    # Volatility regime, range position, and edge distance
+                                    try:
+                                        reg = get_enhanced_market_regime(df, sym)
+                                        feats['volatility_regime'] = str(getattr(reg, 'volatility_level', 'normal') or 'normal')
+                                    except Exception:
+                                        pass
+                                    try:
+                                        clp = float(df['close'].iloc[-1]) if len(df) else 0.0
+                                        rh = float(feats['range_high']); rl = float(feats['range_low'])
+                                        rng_w = max(1e-9, (rh - rl))
+                                        feats['range_pos_pct'] = float(min(1.0, max(0.0, (clp - rl) / rng_w)))
+                                        prev = df['close'].shift()
+                                        trarr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
+                                        atr14 = float(trarr.rolling(14).mean().iloc[-1]) if len(trarr) >= 14 else float(trarr.iloc[-1])
+                                        edge_dist = min(abs(clp - rl), abs(rh - clp))
+                                        feats['edge_distance_atr'] = float(edge_dist / max(1e-9, atr14))
+                                    except Exception:
+                                        pass
                                     # Add session and symbol cluster context
                                     try:
                                         from datetime import datetime as _dt
@@ -7405,12 +7441,16 @@ class TradingBot:
                                                                     pass
                                                         if did_execute:
                                                             self._range_exec_counter['count'] += 1
-                                                            # Record executed phantom mirror for Range with Qscore
+                                                            # Record executed phantom mirror for Range with full features snapshot
                                                             try:
                                                                 pt = self.shared.get('phantom_tracker') if hasattr(self, 'shared') else None
                                                                 if pt is not None:
                                                                     feats_exec = dict(feats) if isinstance(feats, dict) else {}
                                                                     feats_exec['qscore'] = float(q)
+                                                                    try:
+                                                                        feats_exec['htf'] = dict(self._compute_symbol_htf_exec_metrics(sym, df))
+                                                                    except Exception:
+                                                                        pass
                                                                     pt.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, True, feats_exec, 'range_fbo')
                                                             except Exception:
                                                                 pass

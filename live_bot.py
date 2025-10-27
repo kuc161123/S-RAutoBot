@@ -1385,7 +1385,7 @@ class TradingBot:
                 actual_entry = float(sig_obj.entry)
                 pos_qty_for_tpsl = qty
                 try:
-                    await asyncio.sleep(0.6)
+                    await asyncio.sleep(1.0)
                     position = bybit.get_position(sym)
                     if isinstance(position, dict):
                         if position.get("avgPrice"):
@@ -1628,56 +1628,71 @@ class TradingBot:
                     # Final guard: ensure protection exists; else emergency close the position
                     try:
                         pos_final = bybit.get_position(sym)
-                        tp_present = False; sl_present = False
-                        if isinstance(pos_final, dict):
-                            tpv = pos_final.get('takeProfit')
-                            slv = pos_final.get('stopLoss')
-                            tp_present = (tpv not in (None, '', '0')) and (float(tpv) > 0)
-                            sl_present = (slv not in (None, '', '0')) and (float(slv) > 0)
-                        if not (tp_present and sl_present):
-                            # One more attempt: Full-mode apply if not already tried
+                        tpv = pos_final.get('takeProfit') if isinstance(pos_final, dict) else None
+                        slv = pos_final.get('stopLoss') if isinstance(pos_final, dict) else None
+                        tp_present = (tpv not in (None, '', '0')) and (float(tpv) > 0)
+                        sl_present = (slv not in (None, '', '0')) and (float(slv) > 0)
+                        # Also verify order-book protections
+                        qty_step = float(m.get('qty_step', 0.001)) if 'm' in locals() else 0.001
+                        from position_mgr import round_step as _rstep
+                        qty_for_orders = _rstep(pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty, qty_step)
+                        tp_order_ok = False; sl_cond_ok = False
+                        try:
+                            orders = bybit.get_open_orders(sym) or []
+                            tp_side = "Sell" if str(getattr(sig_obj, 'side','long')).lower() == 'long' else "Buy"
+                            sl_side = "Sell" if str(getattr(sig_obj, 'side','long')).lower() == 'short' else "Buy"  # to close adverse move
+                            tol = tick_size * 2.01
+                            for od in orders:
+                                try:
+                                    if str(od.get('reduceOnly')).lower() == 'true':
+                                        p = None
+                                        if od.get('orderType') == 'Limit' and od.get('side') == tp_side:
+                                            p = float(od.get('price')) if od.get('price') not in (None, '', '0') else None
+                                            if p is not None and abs(p - float(sig_obj.tp)) <= tol:
+                                                tp_order_ok = True
+                                        # Conditional stop orders present as Market with triggerPrice
+                                        trig = od.get('triggerPrice')
+                                        if od.get('orderType') == 'Market' and trig not in (None, '', '0'):
+                                            if od.get('side') == sl_side:
+                                                pp = float(trig)
+                                                if abs(pp - float(sig_obj.sl)) <= tol:
+                                                    sl_cond_ok = True
+                                except Exception:
+                                    continue
+                        except Exception:
+                            pass
+                        # Attempt to add missing protections
+                        if not tp_present and not tp_order_ok:
                             try:
-                                if applied_mode != 'full':
-                                    bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
-                                    await asyncio.sleep(0.4)
-                                    pos_final = bybit.get_position(sym)
-                                    tpv = pos_final.get('takeProfit') if pos_final else None
-                                    slv = pos_final.get('stopLoss') if pos_final else None
-                                    tp_present = (tpv not in (None, '', '0')) and (float(tpv) > 0)
-                                    sl_present = (slv not in (None, '', '0')) and (float(slv) > 0)
+                                bybit.place_reduce_only_limit(sym, tp_side, qty_for_orders, float(sig_obj.tp), post_only=True, reduce_only=True)
+                                tp_order_ok = True
                             except Exception:
-                                pass
-                        if not (tp_present and sl_present):
-                            # As a last fallback before closing, try placing explicit reduce-only TP order and SL-only again
+                                tp_order_ok = False
+                        if not sl_present and not sl_cond_ok:
                             try:
-                                tp_side = "Sell" if str(getattr(sig_obj, 'side','long')).lower() == 'long' else "Buy"
-                                bybit.place_reduce_only_limit(sym, tp_side, pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty, float(sig_obj.tp), post_only=True, reduce_only=True)
-                                bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty)
-                                await asyncio.sleep(0.4)
-                                pos_final = bybit.get_position(sym)
-                                tpv = pos_final.get('takeProfit') if pos_final else None
-                                slv = pos_final.get('stopLoss') if pos_final else None
-                                tp_present = (tpv not in (None, '', '0')) and (float(tpv) > 0)
-                                sl_present = (slv not in (None, '', '0')) and (float(slv) > 0)
+                                bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty_for_orders)
+                                # place conditional stop as visible backup on order book
+                                bybit.place_conditional_stop(sym, sl_side, float(sig_obj.sl), qty_for_orders, reduce_only=True)
+                                sl_cond_ok = True
                             except Exception:
-                                pass
-                        if not (tp_present and sl_present):
+                                sl_cond_ok = False
+                        # Evaluate final protection status
+                        if not ((tp_present or tp_order_ok) and (sl_present or sl_cond_ok)):
                             # Emergency close to prevent unprotected exposure
                             try:
-                                # Use current position size for emergency close to avoid under/over sizing
                                 em_pos = bybit.get_position(sym)
                                 em_qty = float(em_pos.get('size') or 0.0) if isinstance(em_pos, dict) else 0.0
                                 if em_qty <= 0.0:
-                                    em_qty = pos_qty_for_tpsl if pos_qty_for_tpsl else qty
+                                    em_qty = qty_for_orders
                                 emergency_side = "Sell" if sig_obj.side == "long" else "Buy"
                                 close_result = bybit.place_market(sym, emergency_side, em_qty, reduce_only=True)
                                 try:
                                     bybit.cancel_all_orders(sym)
                                 except Exception:
                                     pass
-                                logger.critical(f"[{sym}] Emergency position closure executed due to missing TP/SL: {close_result}")
+                                logger.critical(f"[{sym}] Emergency position closure executed due to missing TP/SL protections: {close_result}")
                                 if self.tg:
-                                    await self.tg.send_message(f"🚨 EMERGENCY CLOSURE: {sym} {sig_obj.side.upper()} closed — TP/SL not set reliably")
+                                    await self.tg.send_message(f"🚨 EMERGENCY CLOSURE: {sym} {sig_obj.side.upper()} closed — TP/SL protections not confirmed")
                             except Exception as close_error:
                                 logger.critical(f"[{sym}] CRITICAL: Failed to close unprotected Scalp position: {close_error}")
                                 if self.tg:

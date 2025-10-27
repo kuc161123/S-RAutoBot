@@ -8959,7 +8959,7 @@ class TradingBot:
                                 vol_reg = 'normal'
                                 try:
                                     mrk = get_enhanced_market_regime(df, sym)
-                                    vol_reg = str(getattr(mrk, 'volatility', 'normal') or 'normal')
+                                    vol_reg = str(getattr(mrk, 'volatility_level', 'normal') or 'normal')
                                 except Exception:
                                     pass
                                 try:
@@ -8981,11 +8981,14 @@ class TradingBot:
                                 confirms = int(getattr(sig_tr_ind, 'meta', {}).get('confirm_candles', 0) if getattr(sig_tr_ind, 'meta', None) else 0)
                                 trend_features = {
                                     'atr_pct': atr_pct,
+                                    'trend_slope_pct': trend_slope_pct,
                                     'break_dist_atr': break_dist,
                                     'retrace_depth_atr': retrace_depth,
                                     'confirm_candles': confirms,
                                     'ema_stack_score': ema_stack_score,
                                     'range_expansion': range_expansion,
+                                    'close_vs_ema20_pct': close_vs_ema20_pct,
+                                    'bb_width_pct': bb_width_pct,
                                     'session': sess,
                                     'symbol_cluster': sym_cluster,
                                     'volatility_regime': vol_reg,
@@ -8996,6 +8999,15 @@ class TradingBot:
                                     'div_rsi_delta': float(getattr(sig_tr_ind, 'meta', {}).get('div_rsi_delta', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0),
                                     'div_tsi_delta': float(getattr(sig_tr_ind, 'meta', {}).get('div_tsi_delta', 0.0) if getattr(sig_tr_ind, 'meta', None) else 0.0),
                                 }
+                                # Include last counter-pivot if provided (HL/LH)
+                                try:
+                                    cp = None
+                                    if isinstance(getattr(sig_tr_ind, 'meta', None), dict):
+                                        cp = sig_tr_ind.meta.get('lh_pivot') if sig_tr_ind.side == 'long' else sig_tr_ind.meta.get('hl_pivot')
+                                    if isinstance(cp, (int, float)):
+                                        trend_features['counter_pivot'] = float(cp)
+                                except Exception:
+                                    pass
                                 # Add RR target for executed/phantom quality learning
                                 try:
                                     e = float(getattr(sig_tr_ind, 'entry', 0.0) or 0.0)
@@ -9025,6 +9037,15 @@ class TradingBot:
                                     rule_mode = (cfg.get('trend', {}) or {}).get('rule_mode', {}) if 'cfg' in locals() else {}
                                     if bool(rule_mode.get('enabled', False)):
                                         q, qc, qr = self._compute_qscore(sym, soft_sig_tr.side, df, self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None)
+                                        trend_features['qscore'] = float(q)
+                                        trend_features['qscore_components'] = dict(qc)
+                                        trend_features['qscore_reasons'] = list(qr)
+                                except Exception:
+                                    pass
+                                # Ensure Qscore is present for training even when rule-mode disabled
+                                try:
+                                    if 'qscore' not in trend_features:
+                                        q, qc, qr = self._compute_qscore(sym, sig_tr_ind.side, df, self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None)
                                         trend_features['qscore'] = float(q)
                                         trend_features['qscore_components'] = dict(qc)
                                         trend_features['qscore_reasons'] = list(qr)

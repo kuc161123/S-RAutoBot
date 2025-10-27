@@ -2401,15 +2401,30 @@ class TGBot:
                     except Exception:
                         sl_mode = 'breakout'; sl_buf = 0.30
                     htf_gate = ((((cfg.get('trend',{}) or {}).get('exec',{}) or {}).get('htf_gate',{}) or {}))
-                    # Rule-mode thresholds snapshot (Trend)
+                    # Rule-mode thresholds snapshot (Trend/Range/Scalp)
                     try:
-                        rm = ((cfg.get('trend', {}) or {}).get('rule_mode', {}) or {})
-                        exec_q = float(rm.get('execute_q_min', 78))
-                        ph_q = float(rm.get('phantom_q_min', 65))
+                        rm_tr = ((cfg.get('trend', {}) or {}).get('rule_mode', {}) or {})
+                        tr_exec_q = float(rm_tr.get('execute_q_min', 78))
+                        tr_ph_q = float(rm_tr.get('phantom_q_min', 65))
                     except Exception:
-                        exec_q = 78.0; ph_q = 65.0
+                        tr_exec_q = 78.0; tr_ph_q = 65.0
+                    try:
+                        rm_rg = ((cfg.get('range', {}) or {}).get('rule_mode', {}) or {})
+                        rg_exec_q = float(rm_rg.get('execute_q_min', 78))
+                        rg_ph_q = float(rm_rg.get('phantom_q_min', 65))
+                    except Exception:
+                        rg_exec_q = 78.0; rg_ph_q = 65.0
+                    try:
+                        rm_sc = ((cfg.get('scalp', {}) or {}).get('rule_mode', {}) or {})
+                        sc_exec_q = float(rm_sc.get('execute_q_min', 88))
+                        sc_ph_q = float(rm_sc.get('phantom_q_min', 80))
+                    except Exception:
+                        sc_exec_q = 88.0; sc_ph_q = 80.0
                     lines = ["⚙️ *Settings*", "",
-                             f"Rule‑Mode thresholds: Exec≥{exec_q:.0f} | Phantom≥{ph_q:.0f}",
+                             f"Rule‑Mode thresholds:",
+                             f"• Trend: Exec≥{tr_exec_q:.0f} | Phantom≥{tr_ph_q:.0f}",
+                             f"• Range: Exec≥{rg_exec_q:.0f} | Phantom≥{rg_ph_q:.0f}",
+                             f"• Scalp: Exec≥{sc_exec_q:.0f} | Phantom≥{sc_ph_q:.0f}",
                              f"Stream entry: {'On' if tr_exec.get('allow_stream_entry', True) else 'Off'}",
                              f"Scale‑out: {'On' if sc.get('enabled', False) else 'Off'}",
                              f"BE move: {'On' if sc.get('move_sl_to_be', True) else 'Off'}",
@@ -2445,6 +2460,8 @@ class TGBot:
                     kb = InlineKeyboardMarkup([
                         [InlineKeyboardButton("Stream Entry", callback_data="ui:settings:toggle:stream")],
                         [InlineKeyboardButton("Set Exec Q", callback_data="ui:settings:set:exec_q"), InlineKeyboardButton("Set Phantom Q", callback_data="ui:settings:set:phantom_q")],
+                        [InlineKeyboardButton("Set Range Exec Q", callback_data="ui:settings:set:exec_q_range"), InlineKeyboardButton("Set Range Phantom Q", callback_data="ui:settings:set:phantom_q_range")],
+                        [InlineKeyboardButton("Set Scalp Exec Q", callback_data="ui:settings:set:exec_q_scalp"), InlineKeyboardButton("Set Scalp Phantom Q", callback_data="ui:settings:set:phantom_q_scalp")],
                         [InlineKeyboardButton("Scale‑out", callback_data="ui:settings:toggle:scaleout")],
                         [InlineKeyboardButton("BE Move", callback_data="ui:settings:toggle:be")],
                         [InlineKeyboardButton("SL Mode", callback_data="ui:settings:toggle:sl_mode"), InlineKeyboardButton("Set SL Buffer", callback_data="ui:settings:set:sl_buffer")],
@@ -2591,6 +2608,10 @@ class TGBot:
                         'sl_buffer': "Send breakout SL buffer ATR (e.g., 0.40)",
                         'exec_q': "Send Exec Q threshold for Trend (e.g., 78)",
                         'phantom_q': "Send Phantom Q threshold for Trend (e.g., 65)",
+                        'exec_q_range': "Send Exec Q threshold for Range (e.g., 78)",
+                        'phantom_q_range': "Send Phantom Q threshold for Range (e.g., 65)",
+                        'exec_q_scalp': "Send Exec Q threshold for Scalp (e.g., 88)",
+                        'phantom_q_scalp': "Send Phantom Q threshold for Scalp (e.g., 80)",
                         'timeout_hl': "Send HL→PB timeout bars (integer, e.g., 25)",
                         'timeout_bos': "Send PB→BOS timeout bars (integer, e.g., 25)",
                         'htf_min_ts': "Send HTF min trend strength (e.g., 60)",
@@ -6376,3 +6397,90 @@ class TGBot:
         except Exception:
             # swallow
             pass
+            if key == 'exec_q_range':
+                try:
+                    val = float(text)
+                    cfg.setdefault('range', {}).setdefault('rule_mode', {})
+                    cfg['range']['rule_mode']['execute_q_min'] = val
+                    self.shared['config'] = cfg
+                    bot_instance = self.shared.get('bot_instance')
+                    if bot_instance and hasattr(bot_instance, 'config'):
+                        bot_instance.config = cfg
+                    try:
+                        import os, redis
+                        url = os.getenv('REDIS_URL')
+                        if url:
+                            r = redis.from_url(url, decode_responses=True)
+                            r.set('config_override:range:rule_mode:execute_q_min', str(val))
+                    except Exception:
+                        pass
+                    await _ok(f"✅ Range Exec≥Q set to {val:.0f}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 78")
+                return
+
+            if key == 'phantom_q_range':
+                try:
+                    val = float(text)
+                    cfg.setdefault('range', {}).setdefault('rule_mode', {})
+                    cfg['range']['rule_mode']['phantom_q_min'] = val
+                    self.shared['config'] = cfg
+                    bot_instance = self.shared.get('bot_instance')
+                    if bot_instance and hasattr(bot_instance, 'config'):
+                        bot_instance.config = cfg
+                    try:
+                        import os, redis
+                        url = os.getenv('REDIS_URL')
+                        if url:
+                            r = redis.from_url(url, decode_responses=True)
+                            r.set('config_override:range:rule_mode:phantom_q_min', str(val))
+                    except Exception:
+                        pass
+                    await _ok(f"✅ Range Phantom≥Q set to {val:.0f}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 65")
+                return
+
+            if key == 'exec_q_scalp':
+                try:
+                    val = float(text)
+                    cfg.setdefault('scalp', {}).setdefault('rule_mode', {})
+                    cfg['scalp']['rule_mode']['execute_q_min'] = val
+                    self.shared['config'] = cfg
+                    bot_instance = self.shared.get('bot_instance')
+                    if bot_instance and hasattr(bot_instance, 'config'):
+                        bot_instance.config = cfg
+                    try:
+                        import os, redis
+                        url = os.getenv('REDIS_URL')
+                        if url:
+                            r = redis.from_url(url, decode_responses=True)
+                            r.set('config_override:scalp:rule_mode:execute_q_min', str(val))
+                    except Exception:
+                        pass
+                    await _ok(f"✅ Scalp Exec≥Q set to {val:.0f}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 90")
+                return
+
+            if key == 'phantom_q_scalp':
+                try:
+                    val = float(text)
+                    cfg.setdefault('scalp', {}).setdefault('rule_mode', {})
+                    cfg['scalp']['rule_mode']['phantom_q_min'] = val
+                    self.shared['config'] = cfg
+                    bot_instance = self.shared.get('bot_instance')
+                    if bot_instance and hasattr(bot_instance, 'config'):
+                        bot_instance.config = cfg
+                    try:
+                        import os, redis
+                        url = os.getenv('REDIS_URL')
+                        if url:
+                            r = redis.from_url(url, decode_responses=True)
+                            r.set('config_override:scalp:rule_mode:phantom_q_min', str(val))
+                    except Exception:
+                        pass
+                    await _ok(f"✅ Scalp Phantom≥Q set to {val:.0f}")
+                except Exception:
+                    await update.message.reply_text("Please send a number, e.g., 80")
+                return

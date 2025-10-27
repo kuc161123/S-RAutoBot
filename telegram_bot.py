@@ -2458,10 +2458,9 @@ class TGBot:
                              "",
                              "Use the buttons below to toggle or set values."]
                     kb = InlineKeyboardMarkup([
+                        # Strategy selector for Q thresholds submenus
+                        [InlineKeyboardButton("Trend Q", callback_data="ui:settings:q:trend"), InlineKeyboardButton("Range Q", callback_data="ui:settings:q:range"), InlineKeyboardButton("Scalp Q", callback_data="ui:settings:q:scalp")],
                         [InlineKeyboardButton("Stream Entry", callback_data="ui:settings:toggle:stream")],
-                        [InlineKeyboardButton("Set Exec Q", callback_data="ui:settings:set:exec_q"), InlineKeyboardButton("Set Phantom Q", callback_data="ui:settings:set:phantom_q")],
-                        [InlineKeyboardButton("Set Range Exec Q", callback_data="ui:settings:set:exec_q_range"), InlineKeyboardButton("Set Range Phantom Q", callback_data="ui:settings:set:phantom_q_range")],
-                        [InlineKeyboardButton("Set Scalp Exec Q", callback_data="ui:settings:set:exec_q_scalp"), InlineKeyboardButton("Set Scalp Phantom Q", callback_data="ui:settings:set:phantom_q_scalp")],
                         [InlineKeyboardButton("Scale‑out", callback_data="ui:settings:toggle:scaleout")],
                         [InlineKeyboardButton("BE Move", callback_data="ui:settings:toggle:be")],
                         [InlineKeyboardButton("SL Mode", callback_data="ui:settings:toggle:sl_mode"), InlineKeyboardButton("Set SL Buffer", callback_data="ui:settings:set:sl_buffer")],
@@ -2487,6 +2486,23 @@ class TGBot:
                         [InlineKeyboardButton("🔙 Back", callback_data="ui:dash:refresh")]
                     ])
                     await query.edit_message_text("\n".join(lines), reply_markup=kb, parse_mode='Markdown')
+                    return
+                if data.startswith("ui:settings:q:"):
+                    await query.answer()
+                    strat = data.split(':')[-1]  # trend|range|scalp
+                    cfg = self.shared.get('config', {}) or {}
+                    rm = ((cfg.get(strat, {}) or {}).get('rule_mode', {}) or {})
+                    exec_q = float(rm.get('execute_q_min', 78 if strat != 'scalp' else 88))
+                    ph_q = float(rm.get('phantom_q_min', 65 if strat != 'scalp' else 80))
+                    header = f"⚙️ *{strat.title()} Thresholds*\n\nExec≥{exec_q:.0f} | Phantom≥{ph_q:.0f}"
+                    # Map to prompts keys
+                    key_exec = 'exec_q' if strat == 'trend' else ('exec_q_range' if strat == 'range' else 'exec_q_scalp')
+                    key_ph = 'phantom_q' if strat == 'trend' else ('phantom_q_range' if strat == 'range' else 'phantom_q_scalp')
+                    kb = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("Set Exec Q", callback_data=f"ui:settings:set:{key_exec}"), InlineKeyboardButton("Set Phantom Q", callback_data=f"ui:settings:set:{key_ph}")],
+                        [InlineKeyboardButton("🔙 Back", callback_data="ui:settings")]
+                    ])
+                    await query.edit_message_text(header, reply_markup=kb, parse_mode='Markdown')
                     return
                 if data.startswith("ui:settings:toggle:"):
                     await query.answer()

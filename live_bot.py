@@ -5621,16 +5621,23 @@ class TradingBot:
             except Exception as e:
                 logger.warning(f"Could not initialize symbol collector: {e}")
         
+        # Always initialize Trend Phantom Tracker so Telegram dashboard has stats
+        try:
+            from phantom_trade_tracker import get_phantom_tracker as _get_pt
+            phantom_tracker = _get_pt()
+            try:
+                phantom_tracker.set_notifier(self._notify_trend_phantom)
+            except Exception:
+                pass
+        except Exception:
+            phantom_tracker = None
+
         if ML_AVAILABLE and use_ml:
             try:
                 if use_enhanced_parallel and ENHANCED_ML_AVAILABLE:
                     # Initialize Enhanced Parallel ML System
                     ml_scorer = get_trend_scorer() if ('get_trend_scorer' in globals() and get_trend_scorer is not None) else None  # Trend ML
-                    phantom_tracker = get_phantom_tracker()  # Phantom tracker
-                    try:
-                        phantom_tracker.set_notifier(self._notify_trend_phantom)
-                    except Exception:
-                        pass
+                    # Phantom tracker already initialized above (kept for clarity)
                     # Wire Scalp phantom notifier for Telegram lifecycle messages
                     try:
                         if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:

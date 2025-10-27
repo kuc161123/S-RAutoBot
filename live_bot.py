@@ -1640,7 +1640,8 @@ class TradingBot:
                         try:
                             orders = bybit.get_open_orders(sym) or []
                             tp_side = "Sell" if str(getattr(sig_obj, 'side','long')).lower() == 'long' else "Buy"
-                            sl_side = "Sell" if str(getattr(sig_obj, 'side','long')).lower() == 'short' else "Buy"  # to close adverse move
+                            # To close a long, we Sell; to close a short, we Buy
+                            sl_side = "Sell" if str(getattr(sig_obj, 'side','long')).lower() == 'long' else "Buy"
                             tol = tick_size * 2.01
                             for od in orders:
                                 try:
@@ -1725,43 +1726,72 @@ class TradingBot:
                         except Exception:
                             decs = 4
                         fmt = f"{{:.{decs}f}}"
-                        # Order-level verification: ensure a reduce-only TP limit order exists
-                        tp_order_ok = False
+                        # Order-level verification: ensure reduce-only TP limit and conditional SL exist
+                        tp_order_ok = False; sl_cond_ok = False
                         try:
                             orders = bybit.get_open_orders(sym) or []
                             # For long, TP is Sell; for short, TP is Buy
-                            tp_side = "Sell" if str(getattr(sig_obj, 'side','long')).lower() == 'long' else "Buy"
+                            side_str = str(getattr(sig_obj, 'side','long')).lower()
+                            tp_side = "Sell" if side_str == 'long' else "Buy"
+                            # For SL conditional stop (to close), long=>Sell, short=>Buy
+                            sl_side = "Sell" if side_str == 'long' else "Buy"
+                            # Round qty to step
+                            try:
+                                from position_mgr import round_step as _rstep
+                                qty_step = float(m.get('qty_step', 0.001)) if 'm' in locals() else 0.001
+                                qty_orders = _rstep(pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty, qty_step)
+                            except Exception:
+                                qty_orders = pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty
                             # Consider price near our TP (within 2 ticks)
                             tol = tick_size * 2.01
                             for od in orders:
                                 try:
-                                    if str(od.get('reduceOnly')).lower() == 'true' and od.get('orderType') == 'Limit' and od.get('side') == tp_side:
-                                        p = float(od.get('price')) if od.get('price') not in (None, '', '0') else None
-                                        if p is not None and abs(p - float(sig_obj.tp)) <= tol:
-                                            tp_order_ok = True
-                                            break
+                                    if str(od.get('reduceOnly')).lower() == 'true':
+                                        # TP limit order
+                                        if od.get('orderType') == 'Limit' and od.get('side') == tp_side:
+                                            p = float(od.get('price')) if od.get('price') not in (None, '', '0') else None
+                                            if p is not None and abs(p - float(sig_obj.tp)) <= tol:
+                                                tp_order_ok = True
+                                        # Conditional stop-market (SL)
+                                        trig = od.get('triggerPrice')
+                                        if od.get('orderType') == 'Market' and trig not in (None, '', '0') and od.get('side') == sl_side:
+                                            pp = float(trig)
+                                            if abs(pp - float(sig_obj.sl)) <= tol:
+                                                sl_cond_ok = True
                                 except Exception:
                                     continue
                             # If position-level TP not present or order-level TP missing, place fallback reduce-only TP
                             if (tpc in (None, '', '0')) or (not tp_order_ok):
                                 try:
-                                    bybit.place_reduce_only_limit(sym, tp_side, pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty, float(sig_obj.tp), post_only=True, reduce_only=True)
+                                    bybit.place_reduce_only_limit(sym, tp_side, qty_orders, float(sig_obj.tp), post_only=True, reduce_only=True)
                                     tp_order_ok = True
                                 except Exception:
                                     # PostOnly can fail if price would execute immediately; nudge away by 2 ticks
                                     try:
                                         adj = float(sig_obj.tp) + (2.0 * tick_size) if tp_side == 'Sell' else float(sig_obj.tp) - (2.0 * tick_size)
-                                        bybit.place_reduce_only_limit(sym, tp_side, pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty, float(adj), post_only=True, reduce_only=True)
+                                        bybit.place_reduce_only_limit(sym, tp_side, qty_orders, float(adj), post_only=True, reduce_only=True)
                                         tp_order_ok = True
                                     except Exception:
                                         tp_order_ok = False
-                                # Refresh state
-                                pos_chk = bybit.get_position(sym)
-                                tpc = pos_chk.get('takeProfit') if isinstance(pos_chk, dict) else tpc
+                            # If position-level SL not present and no conditional stop, place fallback conditional stop
+                            if (slc in (None, '', '0')) and (not sl_cond_ok):
+                                try:
+                                    bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty_orders)
+                                except Exception:
+                                    pass
+                                try:
+                                    bybit.place_conditional_stop(sym, sl_side, float(sig_obj.sl), qty_orders, reduce_only=True)
+                                    sl_cond_ok = True
+                                except Exception:
+                                    sl_cond_ok = False
+                            # Refresh state
+                            pos_chk = bybit.get_position(sym)
+                            tpc = pos_chk.get('takeProfit') if isinstance(pos_chk, dict) else tpc
+                            slc = pos_chk.get('stopLoss') if isinstance(pos_chk, dict) else slc
                         except Exception:
                             pass
                         # Confirm again after order-level fallback
-                        if tpc not in (None, '', '0') and slc not in (None, '', '0') and tp_order_ok:
+                        if ((tpc not in (None, '', '0')) or tp_order_ok) and ((slc not in (None, '', '0')) or sl_cond_ok):
                             logger.info(f"[{sym}] TP/SL confirmed: TP={fmt.format(float(tpc))} SL={fmt.format(float(slc))} (mode={applied_mode})")
                             try:
                                 if self.tg:

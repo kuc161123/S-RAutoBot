@@ -11894,3 +11894,31 @@ if __name__ == "__main__":
         if hasattr(bot, 'storage'):
             bot.storage.close()
         logger.info("Bot terminated")
+        # Decision-only log filter: keep INFO logs focused on decisions (phantom/execution) for core strategies
+        try:
+            log_cfg = (cfg.get('logging', {}) or {})
+            decision_only = bool(log_cfg.get('decision_only', True))
+        except Exception:
+            decision_only = True
+        if decision_only:
+            class _DecisionOnlyFilter(logging.Filter):
+                def filter(self, record: logging.LogRecord) -> bool:
+                    try:
+                        # Always allow warnings and errors
+                        if record.levelno >= logging.WARNING:
+                            return True
+                        msg = str(record.getMessage())
+                        # Allow core decision/execution lines for Trend/Range/Scalp and TP/SL confirmations
+                        allow_tokens = (
+                            'Decision final:', 'decision final:',
+                            'Trend decision final', 'Range decision final',
+                            'exec_scalp', 'Scalp: Executing', 'TP/SL confirmed',
+                            'Range PHANTOM', '👻', 'phantom', 'Phantom'
+                        )
+                        return any(t in msg for t in allow_tokens)
+                    except Exception:
+                        return True
+            try:
+                logging.getLogger().addFilter(_DecisionOnlyFilter())
+            except Exception:
+                pass

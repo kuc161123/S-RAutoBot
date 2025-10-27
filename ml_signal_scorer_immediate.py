@@ -360,11 +360,9 @@ class ImmediateMLScorer:
         reasoning.insert(0, f"Rule-based: {score:.1f}")
         return score, reasoning
     
-    def _prepare_features(self, features: dict) -> list:
-        """Convert feature dict to vector for ML - simplified high-signal set"""
-        features = features or {}
-        # Minimal, de-correlated pullback feature set
-        feature_order = [
+    def _feature_names(self) -> list:
+        """Canonical feature order used by the immediate scorer."""
+        return [
             'trend_strength',
             'higher_tf_alignment',
             'ema_distance_ratio',
@@ -380,6 +378,10 @@ class ImmediateMLScorer:
             'symbol_cluster'         # keep only coarse cluster id
         ]
 
+    def _prepare_features(self, features: dict) -> list:
+        """Convert feature dict to vector for ML - simplified high-signal set"""
+        features = features or {}
+        feature_order = self._feature_names()
         vector = []
         for feat in feature_order:
             val = features.get(feat, 0)
@@ -973,20 +975,8 @@ class ImmediateMLScorer:
         try:
             # Get feature importance from Random Forest
             if 'rf' in self.models:
-                feature_names = [
-                    'trend_strength', 'higher_tf_alignment', 'ema_distance_ratio',
-                    'volume_ratio', 'volume_trend', 'breakout_volume',
-                    'support_resistance_strength', 'pullback_depth', 'confirmation_candle_strength',
-                    'atr_percentile', 'risk_reward_ratio', 'atr_stop_distance',
-                    'hour_of_day', 'day_of_week', 'candle_body_ratio', 'upper_wick_ratio',
-                    'lower_wick_ratio', 'candle_range_atr', 'volume_ma_ratio',
-                    'rsi', 'bb_position', 'volume_percentile',
-                    # Cluster features
-                    'symbol_cluster', 'cluster_volatility_norm', 'cluster_volume_norm',
-                    'btc_correlation_bucket', 'price_tier',
-                    # Enhanced cluster features
-                    'cluster_confidence', 'cluster_secondary', 'cluster_mixed', 'cluster_conf_ratio'
-                ]
+                # Use the same canonical names as used to train/score
+                feature_names = self._feature_names()
                 
                 importances = self.models['rf'].feature_importances_
                 

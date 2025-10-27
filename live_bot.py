@@ -2797,15 +2797,21 @@ class TradingBot:
                     except Exception:
                         exec_enabled = True
                         exec_thr = 88.0
-                    # Session gating for Scalp execution (phantoms still recorded)
+                    # Session gating for Scalp execution (skip when qscore_only=true)
                     try:
                         sc_cfg = (self.config.get('scalp', {}) or {})
-                        allowed_sessions = [str(x) for x in (sc_cfg.get('session_only') or [])]
-                        # Determine current session (UTC)
-                        from datetime import datetime as _dt
-                        hr = _dt.utcnow().hour
-                        cur_session = 'asian' if 0 <= hr < 8 else ('european' if hr < 16 else 'us')
-                        session_ok = (not allowed_sessions) or (cur_session in allowed_sessions)
+                        q_only_sc = bool(((sc_cfg.get('exec') or {}).get('qscore_only', True)))
+                    except Exception:
+                        q_only_sc = True
+                    try:
+                        if not q_only_sc:
+                            allowed_sessions = [str(x) for x in (sc_cfg.get('session_only') or [])]
+                            from datetime import datetime as _dt
+                            hr = _dt.utcnow().hour
+                            cur_session = 'asian' if 0 <= hr < 8 else ('european' if hr < 16 else 'us')
+                            session_ok = (not allowed_sessions) or (cur_session in allowed_sessions)
+                        else:
+                            session_ok = True
                     except Exception:
                         session_ok = True
                     # EV-based threshold bump for Scalp
@@ -2826,7 +2832,8 @@ class TradingBot:
                             self._scalp_symbol_state[sym] = {**(self._scalp_symbol_state.get(sym, {}) or {}), 'q_ge_thr': bool(qv >= exec_thr)}
                         except Exception:
                             pass
-                        if exec_enabled and session_ok and float(sc_feats.get('qscore', 0.0)) >= exec_thr:
+                        q_val = float(sc_feats.get('qscore', 0.0))
+                        if exec_enabled and session_ok and q_val >= exec_thr:
                             if sym in self.book.positions:
                                 exec_reason = 'position_exists'
                             else:
@@ -7159,6 +7166,11 @@ class TradingBot:
                                     except Exception:
                                         pass
                                     exec_cfg = (settings.get('exec') or {})
+                                    # Qscore-only gating for Range (default true)
+                                    try:
+                                        q_only_rg = bool(exec_cfg.get('qscore_only', True))
+                                    except Exception:
+                                        q_only_rg = True
                                     exec_enabled = bool(exec_cfg.get('enabled', False)) and not bool(settings.get('phantom_only', True))
                                     did_execute = False
                                     # Range exec gating
@@ -7166,24 +7178,55 @@ class TradingBot:
                                         try:
                                             # Existing position guard
                                             if sym not in self.book.positions:
-                                                # Daily cap
-                                                if not hasattr(self, '_range_exec_counter'):
-                                                    self._range_exec_counter = {'day': None, 'count': 0}
-                                                from datetime import datetime as _dt
-                                                day_str = _dt.utcnow().strftime('%Y%m%d')
-                                                if self._range_exec_counter['day'] != day_str:
-                                                    self._range_exec_counter = {'day': day_str, 'count': 0}
-                                                if self._range_exec_counter['count'] < int(exec_cfg.get('daily_cap', 3)):
-                                                    # Simple HTF neutrality gate: avoid strong trend
-                                                    t15 = float(feats.get('ts15', 0.0)); t60 = float(feats.get('ts60', 0.0))
-                                                    sr_ok = True
-                                                    try:
-                                                        src = feats.get('sr_confluence', {}) or {}
-                                                        if src and float(src.get('dist_atr', 1.0)) > float((settings.get('sr_confluence') or {}).get('max_dist_atr', 0.30)) and bool((settings.get('sr_confluence') or {}).get('required', False)):
-                                                            sr_ok = False
-                                                    except Exception:
+                                                if q_only_rg:
+                                                    # Execute solely on Qscore threshold
+                                                    if q >= float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):
+                                                        if hasattr(self, '_range_exec_runner'):
+                                                            try:
+                                                                # Temporarily adjust risk percent if provided
+                                                                old_risk = None
+                                                                try:
+                                                                    old_risk = self.sizer.risk.risk_percent
+                                                                    self.sizer.risk.risk_percent = float(exec_cfg.get('risk_percent', old_risk or 1.0))
+                                                                except Exception:
+                                                                    pass
+                                                                # Pre-exec decision notification
+                                                                try:
+                                                                    if self.tg:
+                                                                        msg = f"🟢 Range EXECUTE: {sym} {sig.side.upper()} Q={q:.1f} (≥ {float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):.1f})\n{comps}"
+                                                                        if regime_label:
+                                                                            msg += f"\nRegime: {regime_label}"
+                                                                        await self.tg.send_message(msg)
+                                                                except Exception:
+                                                                    pass
+                                                                await self._range_exec_runner(sig, q)
+                                                                did_execute = True
+                                                            finally:
+                                                                try:
+                                                                    if old_risk is not None:
+                                                                        self.sizer.risk.risk_percent = old_risk
+                                                                except Exception:
+                                                                    pass
+                                                else:
+                                                    # Legacy neutral and SR checks retained only when qscore_only disabled
+                                                    # Daily cap
+                                                    if not hasattr(self, '_range_exec_counter'):
+                                                        self._range_exec_counter = {'day': None, 'count': 0}
+                                                    from datetime import datetime as _dt
+                                                    day_str = _dt.utcnow().strftime('%Y%m%d')
+                                                    if self._range_exec_counter['day'] != day_str:
+                                                        self._range_exec_counter = {'day': day_str, 'count': 0}
+                                                    if self._range_exec_counter['count'] < int(exec_cfg.get('daily_cap', 3)):
+                                                        # HTF neutrality gate: avoid strong trend
+                                                        t15 = float(feats.get('ts15', 0.0)); t60 = float(feats.get('ts60', 0.0))
                                                         sr_ok = True
-                                                    if max(t15, t60) < 60 and sr_ok and q >= float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):
+                                                        try:
+                                                            src = feats.get('sr_confluence', {}) or {}
+                                                            if src and float(src.get('dist_atr', 1.0)) > float((settings.get('sr_confluence') or {}).get('max_dist_atr', 0.30)) and bool((settings.get('sr_confluence') or {}).get('required', False)):
+                                                                sr_ok = False
+                                                        except Exception:
+                                                            sr_ok = True
+                                                        if max(t15, t60) < 60 and sr_ok and q >= float((settings.get('rule_mode') or {}).get('execute_q_min', 78)):
                                                         # Execute using shared runner when ready
                                                         if hasattr(self, '_range_exec_runner'):
                                                             try:
@@ -7205,13 +7248,13 @@ class TradingBot:
                                                                     pass
                                                             await self._range_exec_runner(sig, q)
                                                             did_execute = True
-                                                            finally:
-                                                                try:
-                                                                    if old_risk is not None:
-                                                                        self.sizer.risk.risk_percent = old_risk
-                                                                except Exception:
-                                                                    pass
-                                                            if did_execute:
+                                                        finally:
+                                                            try:
+                                                                if old_risk is not None:
+                                                                    self.sizer.risk.risk_percent = old_risk
+                                                            except Exception:
+                                                                pass
+                                                        if did_execute:
                                                                 self._range_exec_counter['count'] += 1
                                                                 # Record executed phantom mirror for Range with Qscore
                                                                 try:

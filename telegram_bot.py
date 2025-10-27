@@ -37,6 +37,8 @@ class TGBot:
             self.app = Application.builder().token(token).build()
         self.chat_id = chat_id
         self.shared = shared
+        # Running flag early to avoid attribute errors if start_polling is called immediately
+        self.running = False
         # Simple per-command cooldown
         self._cooldowns = {}
         self._cooldown_seconds = 2.0
@@ -131,8 +133,6 @@ class TGBot:
         self.app.add_handler(CommandHandler("trendhighml", self.set_trend_highml))
         # Qscore threshold adjustments
         self.app.add_handler(CommandHandler("set_qscore", self.set_qscore))
-
-        self.running = False
 
     def _cooldown_ok(self, name: str) -> bool:
         """Return True if command is not rate-limited; otherwise False."""
@@ -1261,6 +1261,9 @@ class TGBot:
 
     async def start_polling(self):
         """Start the bot polling"""
+        # Defensive: ensure running flag exists
+        if not hasattr(self, 'running'):
+            self.running = False
         if not self.running:
             await self.app.initialize()
             await self.app.start()
@@ -1274,7 +1277,7 @@ class TGBot:
 
     async def stop(self):
         """Stop the bot"""
-        if self.running:
+        if getattr(self, 'running', False):
             await self.app.updater.stop()
             await self.app.stop()
             await self.app.shutdown()

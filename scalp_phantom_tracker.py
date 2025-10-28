@@ -379,13 +379,10 @@ class ScalpPhantomTracker:
             logger.error(f"Scalp Phantom save error: {e}")
 
     def record_scalp_signal(self, symbol: str, signal: Dict, ml_score: float, was_executed: bool, features: Dict) -> ScalpPhantomTrade | None:
-        # Regime gating for phantom quality: allow only normal/high volatility and micro-trend match
+        # Regime context: do not drop by volatility or micro-trend; only annotate for learning
         try:
             if not was_executed:
                 vol = str((features or {}).get('volatility_regime', 'normal'))
-                if vol not in ('normal', 'high'):
-                    logger.info(f"[{symbol}] 🛑 Scalp phantom dropped by regime (vol={vol})")
-                    return None
                 # Previously: micro-trend gating by EMA slopes. Now: do not drop — just annotate for analysis.
                 try:
                     sl_fast = float((features or {}).get('ema_slope_fast', 0.0))
@@ -399,6 +396,7 @@ class ScalpPhantomTracker:
                 try:
                     if isinstance(features, dict):
                         features = features.copy()
+                        features['volatility_regime'] = vol
                         features['micro_slope_fast'] = sl_fast
                         features['micro_slope_slow'] = sl_slow
                         features['micro_match'] = bool((sl_fast >= 0.0 and sl_slow >= 0.0) if side=='long' else (sl_fast <= 0.0 and sl_slow <= 0.0))

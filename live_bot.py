@@ -2977,14 +2977,14 @@ class TradingBot:
                         allow_hi = False; hi_thr = 92.0
                     # Scalp Qscore execution gate
                     exec_enabled = True
-                    exec_thr = 75.0
+                    exec_thr = 60.0
                     try:
                         # Default to enabled; allow config to explicitly disable
                         exec_enabled = bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('enabled', True))
-                        exec_thr = float((((self.config.get('scalp', {}) or {}).get('rule_mode', {}) or {}).get('execute_q_min', 75)))
+                        exec_thr = float((((self.config.get('scalp', {}) or {}).get('rule_mode', {}) or {}).get('execute_q_min', 60)))
                     except Exception:
                         exec_enabled = True
-                        exec_thr = 75.0
+                        exec_thr = 60.0
                     # Session gating for Scalp execution (skip when qscore_only=true)
                     try:
                         sc_cfg = (self.config.get('scalp', {}) or {})
@@ -3923,7 +3923,7 @@ class TradingBot:
                     if label_title.startswith('Range'):
                         exec_min = float((((self.config.get('range',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
                     elif label_title.startswith('Scalp'):
-                        exec_min = float((((self.config.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 75)))
+                        exec_min = float((((self.config.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 60)))
                     else:
                         exec_min = float(((self.config.get('trend',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78))
                     lt = "<" if float(q) < exec_min else ">="

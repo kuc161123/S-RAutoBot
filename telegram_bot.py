@@ -309,7 +309,7 @@ class TGBot:
             # Thresholds
             t_thr = int(float(((cfg.get('trend',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
             r_thr = int(float(((cfg.get('range',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
-            s_thr = int(float(((cfg.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 75)))
+            s_thr = int(float(((cfg.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 60)))
             # Helpers
             import datetime as _dt
             cutoff = _dt.datetime.utcnow() - _dt.timedelta(days=30)
@@ -526,7 +526,7 @@ class TGBot:
             # Learned threshold snapshot (Scalp)
             try:
                 from ml_qscore_scalp_adapter import get_scalp_qadapter
-                thr = get_scalp_qadapter().get_threshold({'session': self._session_label(), 'volatility_regime': 'global'}, default=75.0)
+                thr = get_scalp_qadapter().get_threshold({'session': self._session_label(), 'volatility_regime': 'global'}, default=60.0)
                 lines.append(f"• Qthr (learned): {thr:.1f}")
             except Exception:
                 pass
@@ -648,7 +648,7 @@ class TGBot:
             [InlineKeyboardButton("📜 Recent", callback_data="ui:recent"), InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:trend"), InlineKeyboardButton("📦 Range", callback_data="ui:phantom:range")],
             [InlineKeyboardButton("🤖 ML", callback_data="ui:ml:trend"), InlineKeyboardButton("🧠 Patterns", callback_data="ui:ml:patterns")],
             [InlineKeyboardButton("🩳 Scalp", callback_data="ui:scalp:qa"), InlineKeyboardButton("📈 Scalp Qscore", callback_data="ui:scalp:qscore")],
-            [InlineKeyboardButton("📊 Qscores (All)", callback_data="ui:qscore:all")],
+            [InlineKeyboardButton("📊 Qscores (All)", callback_data="ui:qscore:all"), InlineKeyboardButton("🧠 ML Stats", callback_data="ui:ml:stats")],
             [InlineKeyboardButton("🧭 Events", callback_data="ui:events"), InlineKeyboardButton("⚙️ Settings", callback_data="ui:settings")]
         ])
 
@@ -1251,6 +1251,8 @@ class TGBot:
             [InlineKeyboardButton("🧪 Shadow", callback_data="ui:shadow:stats")],
             [InlineKeyboardButton("🩳 Scalp QA", callback_data="ui:scalp:qa"),
             InlineKeyboardButton("📈 Scalp Qscore", callback_data="ui:scalp:qscore")],
+            [InlineKeyboardButton("📊 Qscores (All)", callback_data="ui:qscore:all"),
+             InlineKeyboardButton("🧠 ML Stats", callback_data="ui:ml:stats")],
             [InlineKeyboardButton("🧱 HTF S/R", callback_data="ui:htf:status"),
              InlineKeyboardButton("🔄 Update S/R", callback_data="ui:htf:update")],
             [InlineKeyboardButton("⚙️ Risk", callback_data="ui:risk:main"),
@@ -1450,7 +1452,7 @@ class TGBot:
             "Settings (via dashboard → Settings)",
             "• Rule‑Mode thresholds (Exec≥Q, Phantom≥Q)",
             "• Or use: /set_qscore <trend|range|scalp> <execQ> [phantomQ]",
-            "  Examples: /set_qscore trend 80 65 | /set_qscore scalp 75",
+            "  Examples: /set_qscore trend 80 65 | /set_qscore scalp 60",
             "• Stream entry On/Off",
             "• Scale‑out (TP1/TP2, fraction) and BE move",
             "• Timeouts (HL/LH, confirmations, phantom)",
@@ -2416,7 +2418,7 @@ class TGBot:
                         rg_exec_q = 78.0; rg_ph_q = 65.0
                     try:
                         rm_sc = ((cfg.get('scalp', {}) or {}).get('rule_mode', {}) or {})
-                        sc_exec_q = float(rm_sc.get('execute_q_min', 75))
+                        sc_exec_q = float(rm_sc.get('execute_q_min', 60))
                         sc_ph_q = float(rm_sc.get('phantom_q_min', 80))
                     except Exception:
                         sc_exec_q = 88.0; sc_ph_q = 80.0
@@ -2506,7 +2508,7 @@ class TGBot:
                     strat = data.split(':')[-1]  # trend|range|scalp
                     cfg = self.shared.get('config', {}) or {}
                     rm = ((cfg.get(strat, {}) or {}).get('rule_mode', {}) or {})
-                    exec_q = float(rm.get('execute_q_min', 78 if strat != 'scalp' else 75))
+                    exec_q = float(rm.get('execute_q_min', 78 if strat != 'scalp' else 60))
                     ph_q = float(rm.get('phantom_q_min', 65 if strat != 'scalp' else 80))
                     header = f"⚙️ *{strat.title()} Thresholds*\n\nExec≥{exec_q:.0f} | Phantom≥{ph_q:.0f}"
                     # Map to prompts keys
@@ -2708,6 +2710,10 @@ class TGBot:
                 await query.answer()
                 fake_update = type('obj', (object,), {'message': query.message})
                 await self.qscore_all_report(fake_update, ctx)
+            elif data.startswith("ui:ml:stats"):
+                await query.answer()
+                fake_update = type('obj', (object,), {'message': query.message})
+                await self.ml_all_report(fake_update, ctx)
             # Scalp promotion UI removed (feature disabled)
             elif data.startswith("ui:ml:main"):
                 await query.answer()
@@ -5458,7 +5464,7 @@ class TGBot:
             cfg = self.shared.get('config') or {}
             sc_cfg = (cfg.get('scalp', {}) or {})
             rm = (sc_cfg.get('rule_mode', {}) or {})
-            base_thr = int(float(rm.get('execute_q_min', 75)))
+            base_thr = int(float(rm.get('execute_q_min', 60)))
             thrs = sorted(set([base_thr - 5, base_thr - 3, base_thr, base_thr + 2, base_thr + 5]))
             def agg(sample: list) -> dict:
                 tot = len(sample)
@@ -5598,7 +5604,7 @@ class TGBot:
             cfg = self.shared.get('config') or {}
             t_thr = int(float(((cfg.get('trend',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
             r_thr = int(float(((cfg.get('range',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 78)))
-            s_thr = int(float(((cfg.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 75)))
+            s_thr = int(float(((cfg.get('scalp',{}) or {}).get('rule_mode',{}) or {}).get('execute_q_min', 60)))
             # Assemble message
             msg = ["📊 *Qscore Buckets*", ""]
             msg += _lines("Trend", trend_agg, t_thr); msg.append("")
@@ -5608,6 +5614,81 @@ class TGBot:
         except Exception as e:
             logger.error(f"qscore_all_report error: {e}")
             await update.message.reply_text("Error computing Qscore stats")
+
+    async def ml_all_report(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show ML-score win/loss buckets for Trend, Range, and Scalp.
+
+        Buckets in 10-pt steps from 50 to 100. Uses phantom stores so it survives restarts.
+        Excludes timeouts.
+        """
+        try:
+            import math
+            def _bucket(s: float) -> int:
+                try:
+                    return max(50, min(100, int(math.floor(s/10.0)*10)))
+                except Exception:
+                    return 0
+            def _agg_map():
+                return {b: {'w':0,'l':0} for b in range(50, 101, 10)}
+            def _lines(title: str, agg: dict) -> list:
+                out = [title]
+                for b in range(50, 101, 10):
+                    d = agg.get(b, {'w':0,'l':0}); n = d['w']+d['l']
+                    if n==0: continue
+                    wr = (d['w']/n*100.0) if n else 0.0
+                    out.append(f"  {b:>2}+ : N={n} WR={wr:.1f}% (W/L {d['w']}/{d['l']})")
+                return out
+            # Aggregates
+            trend_agg = _agg_map(); range_agg = _agg_map(); scalp_agg = _agg_map()
+            # Trend/Range from PhantomTradeTracker
+            try:
+                pt = self.shared.get('phantom_tracker')
+                for arr in (getattr(pt, 'phantom_trades', {}) or {}).values():
+                    for p in arr:
+                        try:
+                            oc = getattr(p, 'outcome', None)
+                            if oc not in ('win','loss'): continue
+                            ms = getattr(p, 'ml_score', None)
+                            if not isinstance(ms, (int,float)): continue
+                            b = _bucket(float(ms))
+                            strat = str(getattr(p, 'strategy_name','') or '').lower()
+                            if strat.startswith('range'):
+                                if oc=='win': range_agg[b]['w'] += 1
+                                else: range_agg[b]['l'] += 1
+                            elif ('trend' in strat) or ('pullback' in strat):
+                                if oc=='win': trend_agg[b]['w'] += 1
+                                else: trend_agg[b]['l'] += 1
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+            # Scalp from ScalpPhantomTracker
+            try:
+                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                scpt = get_scalp_phantom_tracker()
+                for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                    for p in arr:
+                        try:
+                            oc = getattr(p, 'outcome', None)
+                            if oc not in ('win','loss'): continue
+                            ms = getattr(p, 'ml_score', None)
+                            if not isinstance(ms, (int,float)): continue
+                            b = _bucket(float(ms))
+                            if oc=='win': scalp_agg[b]['w'] += 1
+                            else: scalp_agg[b]['l'] += 1
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+            # Assemble
+            msg = ["🧠 *ML Buckets (All Strategies)*", ""]
+            msg += _lines("Trend", trend_agg); msg.append("")
+            msg += _lines("Range", range_agg); msg.append("")
+            msg += _lines("Scalp", scalp_agg)
+            await self.safe_reply(update, "\n".join(msg))
+        except Exception as e:
+            logger.error(f"ml_all_report error: {e}")
+            await update.message.reply_text("Error computing ML report")
 
     async def scalp_promotion_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Summarize Scalp promotion readiness (WR-based only)."""
@@ -5835,7 +5916,7 @@ class TGBot:
     async def set_qscore(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Set Qscore thresholds at runtime.
         Usage: /set_qscore <trend|range|scalp> <execQ> [phantomQ]
-        Examples: /set_qscore trend 80 65 | /set_qscore scalp 75
+        Examples: /set_qscore trend 80 65 | /set_qscore scalp 60
         """
         try:
             txt = (getattr(update, 'message', None) and update.message.text) or ''

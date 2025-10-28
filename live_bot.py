@@ -2012,11 +2012,7 @@ class TradingBot:
                                 logger.warning(f"[{sym}|id={exec_id}] Protections not yet confirmed at position-level: posTP={tpc not in (None,'','0')} posSL={slc not in (None,'','0')} tp_order_ok={tp_order_ok} sl_cond_ok={sl_cond_ok} tp_id={tp_id} sl_id={sl_id}")
                             except Exception:
                                 pass
-                        else:
-                            try:
-                                logger.warning(f"[{sym}] Protections not yet confirmed: posTP={tpc not in (None,'','0')} posSL={slc not in (None,'','0')} tp_order_ok={tp_order_ok} sl_cond_ok={sl_cond_ok}")
-                            except Exception:
-                                pass
+                        
                     except Exception:
                         pass
 

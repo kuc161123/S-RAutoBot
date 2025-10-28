@@ -445,7 +445,11 @@ class ScalpPhantomTracker:
         )
         self.active.setdefault(symbol, []).append(ph)
         self._save()
-        logger.info(f"[{symbol}] Scalp phantom recorded: {signal['side'].upper()} {signal['entry']:.4f}")
+        try:
+            tag = 'mirror' if bool(was_executed) else 'phantom'
+            logger.info(f"[{symbol}] Scalp {tag} recorded: {signal['side'].upper()} {signal['entry']:.4f}")
+        except Exception:
+            logger.info(f"[{symbol}] Scalp phantom recorded: {signal['side'].upper()} {signal['entry']:.4f}")
         # Notify on open immediately (phantom-only)
         try:
             if self.notifier and not was_executed:

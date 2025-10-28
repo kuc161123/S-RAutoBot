@@ -1304,6 +1304,14 @@ class TradingBot:
                 from position_mgr import round_step
                 import math as _math
                 tick_size = float(m.get("tick_size", 0.000001))
+                # Price formatter based on tick size for consistent logs
+                try:
+                    import decimal as _dec
+                    _d = _dec.Decimal(str(tick_size))
+                    _decs = -_d.as_tuple().exponent if _d.as_tuple().exponent < 0 else 4
+                except Exception:
+                    _decs = 4
+                fmt = f"{{:.{_decs}f}}"
                 # Mirror mode flag: execute with exact signal SL/TP (only round to tick, ensure 1-tick separation)
                 try:
                     use_mirror = bool((((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('use_signal_sl_tp', True)))
@@ -1512,6 +1520,14 @@ class TradingBot:
                     pass
                     # Set TP/SL exactly once: prefer Partial mode, fallback to Full, final fallback reduce-only limit + SL
                     try:
+                        # Pre-log the TP/SL request so we can audit even if confirmation fails
+                        try:
+                            logger.info(
+                                f"[{sym}] Requesting TP/SL: preferred=Partial qty={pos_qty_for_tpsl} "
+                                f"TP={fmt.format(float(sig_obj.tp))} SL={fmt.format(float(sig_obj.sl))}"
+                            )
+                        except Exception:
+                            pass
                         applied_mode = None  # 'partial' | 'full' | 'reduce_only'
                         try:
                             # Prefer Partial (qty-aware, limit TP) using exchange-reported position size
@@ -1839,8 +1855,11 @@ class TradingBot:
                 try:
                     if not hasattr(self, '_last_signal_features'):
                         self._last_signal_features = {}
-                    # Best-effort store of features used for this execution
-                    self._last_signal_features[sym] = dict(getattr(sig_obj, 'meta', {})) if isinstance(getattr(sig_obj, 'meta', {}), dict) else (self._last_signal_features.get(sym) or {})
+                    # Merge any meta into existing features to preserve qscore/components
+                    prev_feats = dict(self._last_signal_features.get(sym, {}) or {})
+                    meta_feats = dict(getattr(sig_obj, 'meta', {}) or {})
+                    merged = {**prev_feats, **meta_feats}
+                    self._last_signal_features[sym] = merged
                 except Exception:
                     pass
                 # Update book with qscore if available

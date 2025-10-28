@@ -1403,7 +1403,26 @@ class TradingBot:
                         pass
                     return False
                 side = "Buy" if sig_obj.side == "long" else "Sell"
-                _ = bybit.place_market(sym, side, qty, reduce_only=False)
+                try:
+                    m_resp = bybit.place_market(sym, side, qty, reduce_only=False)
+                    try:
+                        rc = str(m_resp.get('retCode')) if isinstance(m_resp, dict) else 'n/a'
+                        rm = str(m_resp.get('retMsg')) if isinstance(m_resp, dict) else 'n/a'
+                        oid = None
+                        try:
+                            oid = (m_resp.get('result') or {}).get('orderId')
+                        except Exception:
+                            oid = None
+                    except Exception:
+                        rc = rm = 'n/a'; oid = None
+                    logger.info(f"[{sym}] Market order placed: side={side} qty={qty} retCode={rc} retMsg={rm} orderId={oid}")
+                except Exception as _me:
+                    logger.error(f"[{sym}] Market order error: {_me}")
+                    try:
+                        self._scalp_last_exec_reason[sym] = 'market_order_error'
+                    except Exception:
+                        pass
+                    return False
             # Read back position (avg entry and size) before setting TP/SL
                 actual_entry = float(sig_obj.entry)
                 pos_qty_for_tpsl = qty
@@ -1420,6 +1439,10 @@ class TradingBot:
                             pass
                 except Exception:
                     position = None
+                try:
+                    logger.info(f"[{sym}] Fill readback: entry={fmt.format(actual_entry)} size={pos_qty_for_tpsl}")
+                except Exception:
+                    pass
             # Rebase SL/TP distances to actual fill to avoid zero-distance protections due to slippage
                 try:
                     e_sig = float(getattr(sig_obj, 'entry', actual_entry))
@@ -1571,18 +1594,40 @@ class TradingBot:
                         applied_mode = None  # 'partial' | 'full' | 'reduce_only'
                         try:
                             # Prefer Partial (qty-aware, limit TP) using exchange-reported position size
-                            bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=pos_qty_for_tpsl)
+                            tpsl_resp = bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl), qty=pos_qty_for_tpsl)
                             applied_mode = 'partial'
-                        except Exception:
+                            try:
+                                rc = str(tpsl_resp.get('retCode')) if isinstance(tpsl_resp, dict) else 'n/a'
+                                rm = str(tpsl_resp.get('retMsg')) if isinstance(tpsl_resp, dict) else 'n/a'
+                                logger.info(f"[{sym}] trading-stop (Partial) retCode={rc} retMsg={rm}")
+                            except Exception:
+                                pass
+                        except Exception as _pe:
+                            logger.warning(f"[{sym}] trading-stop Partial failed: {_pe}; trying Full")
                             try:
                                 # Fallback to Full (no qty); does not place limit TP orders
-                                bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
+                                tpsl_resp = bybit.set_tpsl(sym, take_profit=float(sig_obj.tp), stop_loss=float(sig_obj.sl))
                                 applied_mode = 'full'
-                            except Exception:
+                                try:
+                                    rc = str(tpsl_resp.get('retCode')) if isinstance(tpsl_resp, dict) else 'n/a'
+                                    rm = str(tpsl_resp.get('retMsg')) if isinstance(tpsl_resp, dict) else 'n/a'
+                                    logger.info(f"[{sym}] trading-stop (Full) retCode={rc} retMsg={rm}")
+                                except Exception:
+                                    pass
+                            except Exception as _fe:
+                                logger.warning(f"[{sym}] trading-stop Full failed: {_fe}; placing reduce-only TP and SL-only")
                                 # Final fallback: place a single reduce-only limit TP and SL-only
                                 tp_side = "Sell" if sig_obj.side == "long" else "Buy"
-                                bybit.place_reduce_only_limit(sym, tp_side, pos_qty_for_tpsl, float(sig_obj.tp), post_only=True, reduce_only=True)
-                                bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=pos_qty_for_tpsl)
+                                try:
+                                    ro_resp = bybit.place_reduce_only_limit(sym, tp_side, pos_qty_for_tpsl, float(sig_obj.tp), post_only=True, reduce_only=True)
+                                    logger.info(f"[{sym}] reduce-only TP placed: side={tp_side} qty={pos_qty_for_tpsl} price={fmt.format(float(sig_obj.tp))}")
+                                except Exception as _re:
+                                    logger.warning(f"[{sym}] reduce-only TP failed: {_re}")
+                                try:
+                                    sl_resp = bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=pos_qty_for_tpsl)
+                                    logger.info(f"[{sym}] SL-only placed via trading-stop (Partial)")
+                                except Exception as _se:
+                                    logger.warning(f"[{sym}] SL-only placement failed: {_se}")
                                 applied_mode = 'reduce_only'
                     except Exception:
                         pass
@@ -1806,6 +1851,10 @@ class TradingBot:
                         tp_order_ok = False; sl_cond_ok = False
                         try:
                             orders = bybit.get_open_orders(sym) or []
+                            try:
+                                logger.info(f"[{sym}] Open orders fetched: count={len(orders)}")
+                            except Exception:
+                                pass
                             # For long, TP is Sell; for short, TP is Buy
                             side_str = str(getattr(sig_obj, 'side','long')).lower()
                             tp_side = "Sell" if side_str == 'long' else "Buy"
@@ -1879,6 +1928,11 @@ class TradingBot:
                                     await self.tg.send_message(
                                         f"✅ Scalp TP/SL confirmed: {sym}\nTP={fmt.format(float(tpc))} SL={fmt.format(float(slc))} (mode={applied_mode})"
                                     )
+                            except Exception:
+                                pass
+                        else:
+                            try:
+                                logger.warning(f"[{sym}] Protections not yet confirmed: posTP={tpc not in (None,'','0')} posSL={slc not in (None,'','0')} tp_order_ok={tp_order_ok} sl_cond_ok={sl_cond_ok}")
                             except Exception:
                                 pass
                     except Exception:

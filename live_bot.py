@@ -1389,6 +1389,9 @@ class TradingBot:
                 if qty <= 0:
                     try:
                         self._scalp_last_exec_reason[sym] = 'size_zero'
+                        if not hasattr(self, '_scalp_last_exec_detail'):
+                            self._scalp_last_exec_detail = {}
+                        self._scalp_last_exec_detail[sym] = f"qty={qty}"
                     except Exception:
                         pass
                     return False
@@ -1401,6 +1404,9 @@ class TradingBot:
                 if (sig_obj.side == "long" and float(sig_obj.sl) >= current_price) or (sig_obj.side == "short" and float(sig_obj.sl) <= current_price):
                     try:
                         self._scalp_last_exec_reason[sym] = 'invalid_sl'
+                        if not hasattr(self, '_scalp_last_exec_detail'):
+                            self._scalp_last_exec_detail = {}
+                        self._scalp_last_exec_detail[sym] = f"side={sig_obj.side} sl={float(sig_obj.sl)} price={current_price}"
                     except Exception:
                         pass
                     return False
@@ -1410,6 +1416,9 @@ class TradingBot:
                 if lev_resp is None:
                     try:
                         self._scalp_last_exec_reason[sym] = 'leverage_error'
+                        if not hasattr(self, '_scalp_last_exec_detail'):
+                            self._scalp_last_exec_detail = {}
+                        self._scalp_last_exec_detail[sym] = 'set_leverage returned None'
                     except Exception:
                         pass
                     return False
@@ -1431,6 +1440,9 @@ class TradingBot:
                     logger.error(f"[{sym}|id={exec_id}] Market order error: {_me}")
                     try:
                         self._scalp_last_exec_reason[sym] = 'market_order_error'
+                        if not hasattr(self, '_scalp_last_exec_detail'):
+                            self._scalp_last_exec_detail = {}
+                        self._scalp_last_exec_detail[sym] = f"{type(_me).__name__}: {_me}"
                     except Exception:
                         pass
                     return False
@@ -1996,9 +2008,12 @@ class TradingBot:
                         self._tpsl_applied[sym] = float(_now())
                     except Exception:
                         pass
-                except Exception:
+                except Exception as _tpsle:
                     try:
                         self._scalp_last_exec_reason[sym] = 'tpsl_error'
+                        if not hasattr(self, '_scalp_last_exec_detail'):
+                            self._scalp_last_exec_detail = {}
+                        self._scalp_last_exec_detail[sym] = f"{type(_tpsle).__name__}: {_tpsle}"
                     except Exception:
                         pass
                     return False
@@ -3075,50 +3090,50 @@ class TradingBot:
                                 daily_cap = int(e_cfg.get('daily_cap', 0) or 0)
                                 # Ignore daily_cap for Scalp (no execution gating by cap)
                                 # Risk override
-                                    old_risk = None
-                                    try:
-                                        old_risk = self.sizer.risk.risk_percent
-                                        self.sizer.risk.risk_percent = float(e_cfg.get('risk_percent', old_risk or 1.0))
-                                    except Exception:
-                                        pass
-                                    # Pre-exec notify
-                                    try:
-                                        if self.tg:
-                                            # Create an execution id and stash it on the signal/meta and features
-                                            try:
-                                                import uuid as _uuid
-                                                exec_id = getattr(sc_sig, 'meta', {}).get('exec_id') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
-                                                if not exec_id:
-                                                    exec_id = _uuid.uuid4().hex[:8]
-                                                    if isinstance(getattr(sc_sig, 'meta', {}), dict):
-                                                        sc_sig.meta['exec_id'] = exec_id
-                                                sc_feats['exec_id'] = exec_id
-                                            except Exception:
-                                                exec_id = 'unknown'
-                                            comps = sc_feats.get('qscore_components', {}) or {}
-                                            comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
-                                            # Stash features to carry Q into Position and close-notify
-                                            try:
-                                                if not hasattr(self, '_last_signal_features'):
-                                                    self._last_signal_features = {}
-                                                self._last_signal_features[sym] = dict(sc_feats)
-                                            except Exception:
-                                                pass
-                                            await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f}) (id={exec_id})\n{comp_line}")
-                                    except Exception:
-                                        pass
-                                    try:
-                                        # Prefer new signature with exec_id; fallback to legacy signature if unavailable
+                                old_risk = None
+                                try:
+                                    old_risk = self.sizer.risk.risk_percent
+                                    self.sizer.risk.risk_percent = float(e_cfg.get('risk_percent', old_risk or 1.0))
+                                except Exception:
+                                    pass
+                                # Pre-exec notify
+                                try:
+                                    if self.tg:
+                                        # Create an execution id and stash it on the signal/meta and features
                                         try:
-                                            did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)
-                                        except TypeError:
-                                            did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
-                                    finally:
+                                            import uuid as _uuid
+                                            exec_id = getattr(sc_sig, 'meta', {}).get('exec_id') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
+                                            if not exec_id:
+                                                exec_id = _uuid.uuid4().hex[:8]
+                                                if isinstance(getattr(sc_sig, 'meta', {}), dict):
+                                                    sc_sig.meta['exec_id'] = exec_id
+                                            sc_feats['exec_id'] = exec_id
+                                        except Exception:
+                                            exec_id = 'unknown'
+                                        comps = sc_feats.get('qscore_components', {}) or {}
+                                        comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
+                                        # Stash features to carry Q into Position and close-notify
                                         try:
-                                            if old_risk is not None:
-                                                self.sizer.risk.risk_percent = old_risk
+                                            if not hasattr(self, '_last_signal_features'):
+                                                self._last_signal_features = {}
+                                            self._last_signal_features[sym] = dict(sc_feats)
                                         except Exception:
                                             pass
+                                        await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f}) (id={exec_id})\n{comp_line}")
+                                except Exception:
+                                    pass
+                                try:
+                                    # Prefer new signature with exec_id; fallback to legacy signature if unavailable
+                                    try:
+                                        did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)
+                                    except TypeError:
+                                        did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                                finally:
+                                    try:
+                                        if old_risk is not None:
+                                            self.sizer.risk.risk_percent = old_risk
+                                    except Exception:
+                                        pass
                                     if did_exec:
                                         self._scalp_exec_counter['count'] += 1
                                         exec_reason = 'qgate'
@@ -3142,6 +3157,12 @@ class TradingBot:
                                             continue
                                         except Exception:
                                             pass
+                                    else:
+                                        # Pull detailed reason from executor if set
+                                        try:
+                                            exec_reason = (getattr(self, '_scalp_last_exec_reason', {}) or {}).get(sym, exec_reason)
+                                        except Exception:
+                                            pass
                     except Exception as _xe:
                         did_exec = False
                         try:
@@ -3153,20 +3174,30 @@ class TradingBot:
                             if not hasattr(self, '_scalp_last_exec_reason'):
                                 self._scalp_last_exec_reason = {}
                             self._scalp_last_exec_reason[sym] = 'exec_exception'
+                            if not hasattr(self, '_scalp_last_exec_detail'):
+                                self._scalp_last_exec_detail = {}
+                            self._scalp_last_exec_detail[sym] = f"{type(_xe).__name__}: {_xe}"
                         except Exception:
                             pass
                     # If Q gate passed but blocked, notify
                     try:
                         if (not did_exec) and exec_enabled and session_ok and float(sc_feats.get('qscore', 0.0)) >= exec_thr:
                             if self.tg:
+                                # Prefer explicit exec_reason, then last_exec_reason from executor; include detail if available
                                 r = exec_reason or getattr(self, '_scalp_last_exec_reason', {}).get(sym) or 'exec_guard'
+                                det = None
+                                try:
+                                    det = (getattr(self, '_scalp_last_exec_detail', {}) or {}).get(sym)
+                                except Exception:
+                                    det = None
                                 comps = sc_feats.get('qscore_components', {}) or {}
                                 comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
                                 try:
                                     ex_id = (getattr(sc_sig, 'meta', {}) or {}).get('exec_id') if isinstance(getattr(sc_sig,'meta',{}), dict) else None
                                 except Exception:
                                     ex_id = None
-                                await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}) — phantom recorded (id={ex_id or 'n/a'})\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
+                                extra = f"; detail={det}" if det else ""
+                                await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}{extra}) — phantom recorded (id={ex_id or 'n/a'})\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
                     except Exception:
                         pass
 

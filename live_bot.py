@@ -1721,8 +1721,6 @@ class TradingBot:
                                         pass
                                 except Exception:
                                     pass
-                    except Exception:
-                        pass
 
                     # Best-effort verification without reapplying (to avoid duplicate TP/SL sets)
                     try:

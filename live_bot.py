@@ -3101,8 +3101,19 @@ class TradingBot:
                                             continue
                                         except Exception:
                                             pass
-                    except Exception:
+                    except Exception as _xe:
                         did_exec = False
+                        try:
+                            exec_id = (getattr(sc_sig, 'meta', {}) or {}).get('exec_id') if isinstance(getattr(sc_sig,'meta',{}), dict) else None
+                        except Exception:
+                            exec_id = None
+                        try:
+                            logger.warning(f"[{sym}|id={exec_id or 'n/a'}] Scalp execute exception: {_xe}")
+                            if not hasattr(self, '_scalp_last_exec_reason'):
+                                self._scalp_last_exec_reason = {}
+                            self._scalp_last_exec_reason[sym] = 'exec_exception'
+                        except Exception:
+                            pass
                     # If Q gate passed but blocked, notify
                     try:
                         if (not did_exec) and exec_enabled and session_ok and float(sc_feats.get('qscore', 0.0)) >= exec_thr:
@@ -3110,7 +3121,11 @@ class TradingBot:
                                 r = exec_reason or getattr(self, '_scalp_last_exec_reason', {}).get(sym) or 'exec_guard'
                                 comps = sc_feats.get('qscore_components', {}) or {}
                                 comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
-                                await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}) — phantom recorded\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
+                                try:
+                                    ex_id = (getattr(sc_sig, 'meta', {}) or {}).get('exec_id') if isinstance(getattr(sc_sig,'meta',{}), dict) else None
+                                except Exception:
+                                    ex_id = None
+                                await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}) — phantom recorded (id={ex_id or 'n/a'})\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
                     except Exception:
                         pass
 

@@ -1652,27 +1652,27 @@ class TradingBot:
                                 except Exception as _se:
                                     logger.warning(f"[{sym}] SL-only placement failed: {_se}")
                                 applied_mode = 'reduce_only'
-                    except Exception:
-                        pass
+                except Exception:
+                    pass
 
-                    # Optional scale-out: place reduce-only limit for partial at TP1 and keep main TP at TP2; move SL to BE upon TP1 hit
-                    try:
-                        sc_cfg = ((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('scaleout', {}) or {}))
-                        if bool(sc_cfg.get('enabled', False)) and qty > 0:
-                            frac = max(0.1, min(0.9, float(sc_cfg.get('fraction', 0.5))))
-                            tp1_r = float(sc_cfg.get('tp1_r', 1.6))
-                            tp2_r = float(sc_cfg.get('tp2_r', 3.0))
-                            # Compute R using current entry and stop
-                            R = abs(float(actual_entry) - float(sig_obj.sl))
-                            if R > 0:
-                                if sig_obj.side == 'long':
-                                    tp1 = float(actual_entry) + tp1_r * R
-                                    tp2 = float(actual_entry) + tp2_r * R
-                                    tp_side = "Sell"
-                                else:
-                                    tp1 = float(actual_entry) - tp1_r * R
-                                    tp2 = float(actual_entry) - tp2_r * R
-                                    tp_side = "Buy"
+                # Optional scale-out: place reduce-only limit for partial at TP1 and keep main TP at TP2; move SL to BE upon TP1 hit
+                try:
+                    sc_cfg = ((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('scaleout', {}) or {}))
+                    if bool(sc_cfg.get('enabled', False)) and qty > 0:
+                        frac = max(0.1, min(0.9, float(sc_cfg.get('fraction', 0.5))))
+                        tp1_r = float(sc_cfg.get('tp1_r', 1.6))
+                        tp2_r = float(sc_cfg.get('tp2_r', 3.0))
+                        # Compute R using current entry and stop
+                        R = abs(float(actual_entry) - float(sig_obj.sl))
+                        if R > 0:
+                            if sig_obj.side == 'long':
+                                tp1 = float(actual_entry) + tp1_r * R
+                                tp2 = float(actual_entry) + tp2_r * R
+                                tp_side = "Sell"
+                            else:
+                                tp1 = float(actual_entry) - tp1_r * R
+                                tp2 = float(actual_entry) - tp2_r * R
+                                tp_side = "Buy"
                                 # Set main TP to TP2
                                 try:
                                     bybit.set_tpsl(sym, take_profit=float(tp2), stop_loss=float(sig_obj.sl))

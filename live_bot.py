@@ -1604,8 +1604,8 @@ class TradingBot:
                         pass
                 except Exception:
                     pass
-                    # Set TP/SL exactly once: prefer Partial mode, fallback to Full, final fallback reduce-only limit + SL
-                    try:
+                # Set TP/SL exactly once: prefer Partial mode, fallback to Full, final fallback reduce-only limit + SL
+                try:
                         # Pre-log the TP/SL request so we can audit even if confirmation fails
                         try:
                             logger.info(

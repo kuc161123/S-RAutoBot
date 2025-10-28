@@ -1888,28 +1888,69 @@ class TradingBot:
                                     continue
                             # If position-level TP not present or order-level TP missing, place fallback reduce-only TP
                             if (tpc in (None, '', '0')) or (not tp_order_ok):
-                                try:
-                                    bybit.place_reduce_only_limit(sym, tp_side, qty_orders, float(sig_obj.tp), post_only=True, reduce_only=True)
-                                    tp_order_ok = True
-                                except Exception:
-                                    # PostOnly can fail if price would execute immediately; nudge away by 2 ticks
+                                # Iteratively adjust TP price away from market until accepted (bounded attempts)
+                                max_tp_attempts = 6
+                                tp_price = float(sig_obj.tp)
+                                for i in range(max_tp_attempts):
                                     try:
-                                        adj = float(sig_obj.tp) + (2.0 * tick_size) if tp_side == 'Sell' else float(sig_obj.tp) - (2.0 * tick_size)
-                                        bybit.place_reduce_only_limit(sym, tp_side, qty_orders, float(adj), post_only=True, reduce_only=True)
+                                        bybit.place_reduce_only_limit(sym, tp_side, qty_orders, float(tp_price), post_only=True, reduce_only=True)
                                         tp_order_ok = True
-                                    except Exception:
-                                        tp_order_ok = False
+                                        try:
+                                            logger.info(f"[{sym}|id={exec_id}] Reduce-only TP placed (attempt {i+1}/{max_tp_attempts}) price={fmt.format(tp_price)}")
+                                        except Exception:
+                                            pass
+                                        break
+                                    except Exception as _re:
+                                        # Move price further away to satisfy PostOnly/precision constraints
+                                        step = float((i+1) * 2.0 * tick_size)
+                                        tp_price = float(tp_price + step) if tp_side == 'Sell' else float(tp_price - step)
+                                        try:
+                                            logger.warning(f"[{sym}|id={exec_id}] Reduce-only TP failed (attempt {i+1}): {_re}; adjust→{fmt.format(tp_price)}")
+                                        except Exception:
+                                            pass
+                                # Persist last attempted TP
+                                try:
+                                    sig_obj.tp = float(tp_price)
+                                except Exception:
+                                    pass
                             # If position-level SL not present and no conditional stop, place fallback conditional stop
                             if (slc in (None, '', '0')) and (not sl_cond_ok):
                                 try:
                                     bybit.set_sl_only(sym, stop_loss=float(sig_obj.sl), qty=qty_orders)
+                                    try:
+                                        logger.info(f"[{sym}|id={exec_id}] SL-only via trading-stop placed @ {fmt.format(float(sig_obj.sl))}")
+                                    except Exception:
+                                        pass
+                                except Exception as _se1:
+                                    try:
+                                        logger.warning(f"[{sym}|id={exec_id}] SL-only via trading-stop failed: {_se1}")
+                                    except Exception:
+                                        pass
+                                # Conditional stop fallback with iterative price backing off
+                                max_sl_attempts = 6
+                                sl_price = float(sig_obj.sl)
+                                for i in range(max_sl_attempts):
+                                    try:
+                                        bybit.place_conditional_stop(sym, sl_side, float(sl_price), qty_orders, reduce_only=True)
+                                        sl_cond_ok = True
+                                        try:
+                                            logger.info(f"[{sym}|id={exec_id}] Conditional SL placed (attempt {i+1}/{max_sl_attempts}) trigger={fmt.format(sl_price)}")
+                                        except Exception:
+                                            pass
+                                        break
+                                    except Exception as _se2:
+                                        step = float((i+1) * 2.0 * tick_size)
+                                        # For long (close Sell), push SL lower; for short (close Buy), push SL higher
+                                        sl_price = float(sl_price - step) if sl_side == 'Sell' else float(sl_price + step)
+                                        try:
+                                            logger.warning(f"[{sym}|id={exec_id}] Conditional SL failed (attempt {i+1}): {_se2}; adjust→{fmt.format(sl_price)}")
+                                        except Exception:
+                                            pass
+                                # Persist last attempted SL
+                                try:
+                                    sig_obj.sl = float(sl_price)
                                 except Exception:
                                     pass
-                                try:
-                                    bybit.place_conditional_stop(sym, sl_side, float(sig_obj.sl), qty_orders, reduce_only=True)
-                                    sl_cond_ok = True
-                                except Exception:
-                                    sl_cond_ok = False
                             # Refresh state with a short wait for server-side propagation
                             try:
                                 await asyncio.sleep(0.5)

@@ -1420,6 +1420,46 @@ class TradingBot:
                             pass
                 except Exception:
                     position = None
+            # Rebase SL/TP distances to actual fill to avoid zero-distance protections due to slippage
+                try:
+                    e_sig = float(getattr(sig_obj, 'entry', actual_entry))
+                    sl_sig = float(getattr(sig_obj, 'sl', actual_entry))
+                    tp_sig = float(getattr(sig_obj, 'tp', actual_entry))
+                    if sig_obj.side == 'long':
+                        R = max(tick_size, e_sig - sl_sig)
+                        rr = ((tp_sig - e_sig) / R) if R > 0 else float(((self.config.get('scalp', {}) or {}).get('rr', 2.0)))
+                        new_sl = actual_entry - R
+                        new_tp = actual_entry + rr * R
+                        new_sl = _floor_tick(new_sl, tick_size)
+                        if new_sl >= actual_entry:
+                            new_sl = _floor_tick(actual_entry - (2.0 * tick_size), tick_size)
+                        new_tp = _ceil_tick(new_tp, tick_size)
+                    else:
+                        R = max(tick_size, sl_sig - e_sig)
+                        rr = ((e_sig - tp_sig) / R) if R > 0 else float(((self.config.get('scalp', {}) or {}).get('rr', 2.0)))
+                        new_sl = actual_entry + R
+                        new_tp = actual_entry - rr * R
+                        new_sl = _ceil_tick(new_sl, tick_size)
+                        if new_sl <= actual_entry:
+                            new_sl = _ceil_tick(actual_entry + (2.0 * tick_size), tick_size)
+                        new_tp = _floor_tick(new_tp, tick_size)
+                    sig_obj.sl = float(new_sl)
+                    sig_obj.tp = float(new_tp)
+                    try:
+                        import decimal as _dec
+                        _d = _dec.Decimal(str(tick_size))
+                        _decs = -_d.as_tuple().exponent if _d.as_tuple().exponent < 0 else 4
+                    except Exception:
+                        _decs = 4
+                    _fmt = f"{{:.{_decs}f}}"
+                    try:
+                        logger.info(
+                            f"[{sym}] Rebased protections to fill: sig_entry={_fmt.format(e_sig)} fill={_fmt.format(actual_entry)} R={R:.8f} RR={rr:.2f} -> TP={_fmt.format(sig_obj.tp)} SL={_fmt.format(sig_obj.sl)}"
+                        )
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
             # Update dynamic slippage EWMA from fills (per-symbol)
                 try:
                     inst_slip = 0.0
@@ -1676,15 +1716,16 @@ class TradingBot:
                             tol = tick_size * 2.01
                             for od in orders:
                                 try:
-                                    if str(od.get('reduceOnly')).lower() == 'true':
+                                    ro = od.get('reduceOnly')
+                                    if (ro is True) or (str(ro).lower() == 'true') or (str(ro) == '1'):
                                         p = None
                                         if od.get('orderType') == 'Limit' and od.get('side') == tp_side:
                                             p = float(od.get('price')) if od.get('price') not in (None, '', '0') else None
                                             if p is not None and abs(p - float(sig_obj.tp)) <= tol:
                                                 tp_order_ok = True
-                                        # Conditional stop orders present as Market with triggerPrice
+                                        # Conditional stop orders may appear as Market/Stop/StopMarket with triggerPrice
                                         trig = od.get('triggerPrice')
-                                        if od.get('orderType') == 'Market' and trig not in (None, '', '0'):
+                                        if od.get('orderType') in ('Market','Stop','StopMarket') and trig not in (None, '', '0'):
                                             if od.get('side') == sl_side:
                                                 pp = float(trig)
                                                 if abs(pp - float(sig_obj.sl)) <= tol:
@@ -1781,7 +1822,8 @@ class TradingBot:
                             tol = tick_size * 2.01
                             for od in orders:
                                 try:
-                                    if str(od.get('reduceOnly')).lower() == 'true':
+                                    ro = od.get('reduceOnly')
+                                    if (ro is True) or (str(ro).lower() == 'true') or (str(ro) == '1'):
                                         # TP limit order
                                         if od.get('orderType') == 'Limit' and od.get('side') == tp_side:
                                             p = float(od.get('price')) if od.get('price') not in (None, '', '0') else None
@@ -1789,7 +1831,7 @@ class TradingBot:
                                                 tp_order_ok = True
                                         # Conditional stop-market (SL)
                                         trig = od.get('triggerPrice')
-                                        if od.get('orderType') == 'Market' and trig not in (None, '', '0') and od.get('side') == sl_side:
+                                        if od.get('orderType') in ('Market','Stop','StopMarket') and trig not in (None, '', '0') and od.get('side') == sl_side:
                                             pp = float(trig)
                                             if abs(pp - float(sig_obj.sl)) <= tol:
                                                 sl_cond_ok = True
@@ -1819,7 +1861,11 @@ class TradingBot:
                                     sl_cond_ok = True
                                 except Exception:
                                     sl_cond_ok = False
-                            # Refresh state
+                            # Refresh state with a short wait for server-side propagation
+                            try:
+                                await asyncio.sleep(0.5)
+                            except Exception:
+                                pass
                             pos_chk = bybit.get_position(sym)
                             tpc = pos_chk.get('takeProfit') if isinstance(pos_chk, dict) else tpc
                             slc = pos_chk.get('stopLoss') if isinstance(pos_chk, dict) else slc

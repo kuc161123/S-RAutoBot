@@ -1958,19 +1958,19 @@ class TradingBot:
                                 max_sl_attempts = 6
                                 sl_price = float(sig_obj.sl)
                                 for i in range(max_sl_attempts):
-                                try:
-                                    cs_resp = bybit.place_conditional_stop(sym, sl_side, float(sl_price), qty_orders, reduce_only=True)
-                                    sl_cond_ok = True
-                                    sl_order_id = None
                                     try:
-                                        sl_order_id = (cs_resp.get('result', {}) or {}).get('orderId') if isinstance(cs_resp, dict) else None
-                                    except Exception:
+                                        cs_resp = bybit.place_conditional_stop(sym, sl_side, float(sl_price), qty_orders, reduce_only=True)
+                                        sl_cond_ok = True
                                         sl_order_id = None
-                                    try:
-                                        logger.info(f"[{sym}|id={exec_id}] Conditional SL placed (attempt {i+1}/{max_sl_attempts}) trigger={fmt.format(sl_price)} orderId={sl_order_id}")
-                                    except Exception:
-                                        pass
-                                    break
+                                        try:
+                                            sl_order_id = (cs_resp.get('result', {}) or {}).get('orderId') if isinstance(cs_resp, dict) else None
+                                        except Exception:
+                                            sl_order_id = None
+                                        try:
+                                            logger.info(f"[{sym}|id={exec_id}] Conditional SL placed (attempt {i+1}/{max_sl_attempts}) trigger={fmt.format(sl_price)} orderId={sl_order_id}")
+                                        except Exception:
+                                            pass
+                                        break
                                     except Exception as _se2:
                                         step = float((i+1) * 2.0 * tick_size)
                                         # For long (close Sell), push SL lower; for short (close Buy), push SL higher

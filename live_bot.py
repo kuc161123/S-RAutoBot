@@ -3112,7 +3112,11 @@ class TradingBot:
                                     except Exception:
                                         pass
                                     try:
-                                        did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)
+                                        # Prefer new signature with exec_id; fallback to legacy signature if unavailable
+                                        try:
+                                            did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)
+                                        except TypeError:
+                                            did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                                     finally:
                                         try:
                                             if old_risk is not None:
@@ -3185,7 +3189,20 @@ class TradingBot:
                                     logger.info(f"[{sym}] 🛑 Scalp execution blocked by regime gate (vol={sc_feats.get('volatility_regime')} fast={fast:.2f} slow={slow:.2f} side={side})")
                                     executed = False
                                 else:
-                                    executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                                    # Generate/propagate exec_id for high-ML path as well
+                                    try:
+                                        import uuid as _uuid
+                                        exec_id_h = (getattr(sc_sig, 'meta', {}) or {}).get('exec_id') if isinstance(getattr(sc_sig,'meta',{}), dict) else None
+                                        if not exec_id_h:
+                                            exec_id_h = _uuid.uuid4().hex[:8]
+                                            if isinstance(getattr(sc_sig, 'meta', {}), dict):
+                                                sc_sig.meta['exec_id'] = exec_id_h
+                                    except Exception:
+                                        exec_id_h = None
+                                    try:
+                                        executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id_h)
+                                    except TypeError:
+                                        executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                                 # Optionally cancel any pre-existing active scalp phantom to avoid duplicate tracking
                                 try:
                                     cancel_on_hi = bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('cancel_active_on_high_ml', True))

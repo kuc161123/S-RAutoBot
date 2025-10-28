@@ -386,7 +386,7 @@ class ScalpPhantomTracker:
                 if vol not in ('normal', 'high'):
                     logger.info(f"[{symbol}] 🛑 Scalp phantom dropped by regime (vol={vol})")
                     return None
-                # Micro-trend match using EMA slopes (fast/slow)
+                # Previously: micro-trend gating by EMA slopes. Now: do not drop — just annotate for analysis.
                 try:
                     sl_fast = float((features or {}).get('ema_slope_fast', 0.0))
                 except Exception:
@@ -396,12 +396,14 @@ class ScalpPhantomTracker:
                 except Exception:
                     sl_slow = 0.0
                 side = str(signal.get('side', ''))
-                if side == 'long' and not (sl_fast >= 0.0 and sl_slow >= 0.0):
-                    logger.info(f"[{symbol}] 🛑 Scalp phantom dropped by micro-trend (need up; fast={sl_fast:.2f} slow={sl_slow:.2f})")
-                    return None
-                if side == 'short' and not (sl_fast <= 0.0 and sl_slow <= 0.0):
-                    logger.info(f"[{symbol}] 🛑 Scalp phantom dropped by micro-trend (need down; fast={sl_fast:.2f} slow={sl_slow:.2f})")
-                    return None
+                try:
+                    if isinstance(features, dict):
+                        features = features.copy()
+                        features['micro_slope_fast'] = sl_fast
+                        features['micro_slope_slow'] = sl_slow
+                        features['micro_match'] = bool((sl_fast >= 0.0 and sl_slow >= 0.0) if side=='long' else (sl_fast <= 0.0 and sl_slow <= 0.0))
+                except Exception:
+                    pass
         except Exception:
             # On any error in gating, default to recording to avoid losing data silently
             pass

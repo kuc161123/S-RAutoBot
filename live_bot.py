@@ -1914,12 +1914,17 @@ class TradingBot:
                                 # Iteratively adjust TP price away from market until accepted (bounded attempts)
                                 max_tp_attempts = 6
                                 tp_price = float(sig_obj.tp)
+                                tp_order_id = None
                                 for i in range(max_tp_attempts):
                                     try:
-                                        bybit.place_reduce_only_limit(sym, tp_side, qty_orders, float(tp_price), post_only=True, reduce_only=True)
+                                        ro_resp = bybit.place_reduce_only_limit(sym, tp_side, qty_orders, float(tp_price), post_only=True, reduce_only=True)
                                         tp_order_ok = True
                                         try:
-                                            logger.info(f"[{sym}|id={exec_id}] Reduce-only TP placed (attempt {i+1}/{max_tp_attempts}) price={fmt.format(tp_price)}")
+                                            tp_order_id = (ro_resp.get('result', {}) or {}).get('orderId') if isinstance(ro_resp, dict) else None
+                                        except Exception:
+                                            tp_order_id = None
+                                        try:
+                                            logger.info(f"[{sym}|id={exec_id}] Reduce-only TP placed (attempt {i+1}/{max_tp_attempts}) price={fmt.format(tp_price)} orderId={tp_order_id}")
                                         except Exception:
                                             pass
                                         break
@@ -1953,14 +1958,19 @@ class TradingBot:
                                 max_sl_attempts = 6
                                 sl_price = float(sig_obj.sl)
                                 for i in range(max_sl_attempts):
+                                try:
+                                    cs_resp = bybit.place_conditional_stop(sym, sl_side, float(sl_price), qty_orders, reduce_only=True)
+                                    sl_cond_ok = True
+                                    sl_order_id = None
                                     try:
-                                        bybit.place_conditional_stop(sym, sl_side, float(sl_price), qty_orders, reduce_only=True)
-                                        sl_cond_ok = True
-                                        try:
-                                            logger.info(f"[{sym}|id={exec_id}] Conditional SL placed (attempt {i+1}/{max_sl_attempts}) trigger={fmt.format(sl_price)}")
-                                        except Exception:
-                                            pass
-                                        break
+                                        sl_order_id = (cs_resp.get('result', {}) or {}).get('orderId') if isinstance(cs_resp, dict) else None
+                                    except Exception:
+                                        sl_order_id = None
+                                    try:
+                                        logger.info(f"[{sym}|id={exec_id}] Conditional SL placed (attempt {i+1}/{max_sl_attempts}) trigger={fmt.format(sl_price)} orderId={sl_order_id}")
+                                    except Exception:
+                                        pass
+                                    break
                                     except Exception as _se2:
                                         step = float((i+1) * 2.0 * tick_size)
                                         # For long (close Sell), push SL lower; for short (close Buy), push SL higher
@@ -1992,6 +2002,14 @@ class TradingBot:
                                     await self.tg.send_message(
                                         f"✅ Scalp TP/SL confirmed: {sym} (id={exec_id})\nTP={fmt.format(float(tpc))} SL={fmt.format(float(slc))} (mode={applied_mode})"
                                     )
+                            except Exception:
+                                pass
+                        else:
+                            # If we created orderIds, include them in diagnostic detail even if position fields are empty
+                            try:
+                                tp_id = locals().get('tp_order_id', None)
+                                sl_id = locals().get('sl_order_id', None)
+                                logger.warning(f"[{sym}|id={exec_id}] Protections not yet confirmed at position-level: posTP={tpc not in (None,'','0')} posSL={slc not in (None,'','0')} tp_order_ok={tp_order_ok} sl_cond_ok={sl_cond_ok} tp_id={tp_id} sl_id={sl_id}")
                             except Exception:
                                 pass
                         else:

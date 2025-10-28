@@ -1804,7 +1804,7 @@ class TradingBot:
                         if not ((tp_present or tp_order_ok) and (sl_present or sl_cond_ok)):
                             # Emergency close to prevent unprotected exposure
                             try:
-                                logger.critical(f"[{sym}] Protections not confirmed — closing. tp_present={tp_present} tp_order_ok={tp_order_ok} sl_present={sl_present} sl_cond_ok={sl_cond_ok}")
+                                logger.critical(f"[{sym}|id={exec_id}] Protections not confirmed — closing. tp_present={tp_present} tp_order_ok={tp_order_ok} sl_present={sl_present} sl_cond_ok={sl_cond_ok}")
                             except Exception:
                                 pass
                             try:
@@ -1818,13 +1818,13 @@ class TradingBot:
                                     bybit.cancel_all_orders(sym)
                                 except Exception:
                                     pass
-                                logger.critical(f"[{sym}] Emergency position closure executed due to missing TP/SL protections: {close_result}")
+                                logger.critical(f"[{sym}|id={exec_id}] Emergency position closure executed due to missing TP/SL protections: {close_result}")
                                 if self.tg:
-                                    await self.tg.send_message(f"🚨 EMERGENCY CLOSURE: {sym} {sig_obj.side.upper()} closed — TP/SL protections not confirmed")
+                                    await self.tg.send_message(f"🚨 EMERGENCY CLOSURE: {sym} {sig_obj.side.upper()} (id={exec_id}) closed — TP/SL protections not confirmed")
                             except Exception as close_error:
-                                logger.critical(f"[{sym}] CRITICAL: Failed to close unprotected Scalp position: {close_error}")
+                                logger.critical(f"[{sym}|id={exec_id}] CRITICAL: Failed to close unprotected Scalp position: {close_error}")
                                 if self.tg:
-                                    await self.tg.send_message(f"🆘 CRITICAL: {sym} position UNPROTECTED — TP/SL failed and emergency close failed")
+                                    await self.tg.send_message(f"🆘 CRITICAL: {sym} (id={exec_id}) position UNPROTECTED — TP/SL failed and emergency close failed")
                             try:
                                 self._scalp_last_exec_reason[sym] = 'tpsl_error'
                             except Exception:
@@ -1852,7 +1852,7 @@ class TradingBot:
                         try:
                             orders = bybit.get_open_orders(sym) or []
                             try:
-                                logger.info(f"[{sym}] Open orders fetched: count={len(orders)}")
+                                logger.info(f"[{sym}|id={exec_id}] Open orders fetched: count={len(orders)}")
                             except Exception:
                                 pass
                             # For long, TP is Sell; for short, TP is Buy
@@ -1922,11 +1922,11 @@ class TradingBot:
                             pass
                         # Confirm again after order-level fallback
                         if ((tpc not in (None, '', '0')) or tp_order_ok) and ((slc not in (None, '', '0')) or sl_cond_ok):
-                            logger.info(f"[{sym}] TP/SL confirmed: TP={fmt.format(float(tpc))} SL={fmt.format(float(slc))} (mode={applied_mode})")
+                            logger.info(f"[{sym}|id={exec_id}] TP/SL confirmed: TP={fmt.format(float(tpc))} SL={fmt.format(float(slc))} (mode={applied_mode})")
                             try:
                                 if self.tg:
                                     await self.tg.send_message(
-                                        f"✅ Scalp TP/SL confirmed: {sym}\nTP={fmt.format(float(tpc))} SL={fmt.format(float(slc))} (mode={applied_mode})"
+                                        f"✅ Scalp TP/SL confirmed: {sym} (id={exec_id})\nTP={fmt.format(float(tpc))} SL={fmt.format(float(slc))} (mode={applied_mode})"
                                     )
                             except Exception:
                                 pass
@@ -1997,7 +1997,7 @@ class TradingBot:
                         except Exception:
                             qv = 0.0
                         msg = (
-                            f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()}\n\n"
+                            f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()} (id={exec_id})\n\n"
                             f"Entry: {fmt.format(actual_entry)}\n"
                             f"Stop Loss: {fmt.format(float(sig_obj.sl))}\n"
                             f"Take Profit: {fmt.format(float(sig_obj.tp))}\n"
@@ -3047,6 +3047,17 @@ class TradingBot:
                                     # Pre-exec notify
                                     try:
                                         if self.tg:
+                                            # Create an execution id and stash it on the signal/meta and features
+                                            try:
+                                                import uuid as _uuid
+                                                exec_id = getattr(sc_sig, 'meta', {}).get('exec_id') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
+                                                if not exec_id:
+                                                    exec_id = _uuid.uuid4().hex[:8]
+                                                    if isinstance(getattr(sc_sig, 'meta', {}), dict):
+                                                        sc_sig.meta['exec_id'] = exec_id
+                                                sc_feats['exec_id'] = exec_id
+                                            except Exception:
+                                                exec_id = 'unknown'
                                             comps = sc_feats.get('qscore_components', {}) or {}
                                             comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
                                             # Stash features to carry Q into Position and close-notify
@@ -3056,11 +3067,11 @@ class TradingBot:
                                                 self._last_signal_features[sym] = dict(sc_feats)
                                             except Exception:
                                                 pass
-                                            await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
+                                            await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f}) (id={exec_id})\n{comp_line}")
                                     except Exception:
                                         pass
                                     try:
-                                        did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                                        did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)
                                     finally:
                                         try:
                                             if old_risk is not None:
@@ -3084,7 +3095,7 @@ class TradingBot:
                                             blist.append(now_ts)
                                             self._scalp_budget[sym] = blist
                                             try:
-                                                logger.info(f"[{sym}] 🧮 Scalp decision final: exec_scalp (reason=qscore {float(sc_feats.get('qscore',0.0)):.1f}>={exec_thr:.0f})")
+                                                logger.info(f"[{sym}|id={exec_id}] 🧮 Scalp decision final: exec_scalp (reason=qscore {float(sc_feats.get('qscore',0.0)):.1f}>={exec_thr:.0f})")
                                             except Exception:
                                                 pass
                                             continue

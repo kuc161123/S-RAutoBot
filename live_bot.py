@@ -1270,7 +1270,7 @@ class TradingBot:
             pass
         return task
 
-    async def _execute_scalp_trade(self, sym: str, sig_obj, ml_score: float = 0.0) -> bool:
+    async def _execute_scalp_trade(self, sym: str, sig_obj, ml_score: float = 0.0, exec_id: str = None) -> bool:
         """Execute a Scalp trade immediately. Returns True if executed.
 
         Bypasses routing/regime/micro gates. Still subject to hard execution guards
@@ -1299,6 +1299,17 @@ class TradingBot:
                     except Exception:
                         pass
                     return False
+            # Determine execution id for tracing
+                try:
+                    if exec_id is None:
+                        meta = getattr(sig_obj, 'meta', {}) if hasattr(sig_obj, 'meta') else {}
+                        if isinstance(meta, dict):
+                            exec_id = meta.get('exec_id')
+                    if exec_id is None:
+                        import uuid as _uuid
+                        exec_id = _uuid.uuid4().hex[:8]
+                except Exception:
+                    exec_id = 'n/a'
             # Round TP/SL to tick size (directional for SL). Mirror mode can bypass extra adjustments.
                 m = meta_for(sym, cfg.get('symbol_meta', {}))
                 from position_mgr import round_step
@@ -1415,9 +1426,9 @@ class TradingBot:
                             oid = None
                     except Exception:
                         rc = rm = 'n/a'; oid = None
-                    logger.info(f"[{sym}] Market order placed: side={side} qty={qty} retCode={rc} retMsg={rm} orderId={oid}")
+                    logger.info(f"[{sym}|id={exec_id}] Market order placed: side={side} qty={qty} retCode={rc} retMsg={rm} orderId={oid}")
                 except Exception as _me:
-                    logger.error(f"[{sym}] Market order error: {_me}")
+                    logger.error(f"[{sym}|id={exec_id}] Market order error: {_me}")
                     try:
                         self._scalp_last_exec_reason[sym] = 'market_order_error'
                     except Exception:
@@ -1440,7 +1451,7 @@ class TradingBot:
                 except Exception:
                     position = None
                 try:
-                    logger.info(f"[{sym}] Fill readback: entry={fmt.format(actual_entry)} size={pos_qty_for_tpsl}")
+                    logger.info(f"[{sym}|id={exec_id}] Fill readback: entry={fmt.format(actual_entry)} size={pos_qty_for_tpsl}")
                 except Exception:
                     pass
             # Rebase SL/TP distances to actual fill to avoid zero-distance protections due to slippage
@@ -2606,20 +2617,8 @@ class TradingBot:
                     bar_seconds = int(timeframe) * 60
                 except Exception:
                     bar_seconds = 180
-                if last_ts is not None:
-                    try:
-                        if (bar_ts - last_ts).total_seconds() < (cooldown_bars * bar_seconds):
-                            try:
-                                self._scalp_stats['cooldown_skips'] = self._scalp_stats.get('cooldown_skips', 0) + 1
-                            except Exception:
-                                pass
-                            try:
-                                logger.debug(f"[{sym}] 🧮 Scalp decision final: blocked (reason=cooldown)")
-                            except Exception:
-                                pass
-                            continue
-                    except Exception:
-                        pass
+                # Cooldown disabled: do not block Scalp detections by cooldown between bars
+                # (kept structure for future toggle; intentionally no early return here)
 
                 # Run scalper on 3m df (independent of regime)
                 # Build ScalpSettings, applying phantom-only relaxed thresholds if enabled
@@ -3074,11 +3073,8 @@ class TradingBot:
                                 if self._scalp_exec_counter['day'] != day_str:
                                     self._scalp_exec_counter = {'day': day_str, 'count': 0}
                                 daily_cap = int(e_cfg.get('daily_cap', 0) or 0)
-                                # Treat daily_cap <= 0 as unlimited (no cap)
-                                if daily_cap > 0 and self._scalp_exec_counter['count'] >= daily_cap:
-                                    exec_reason = 'daily_cap'
-                                else:
-                                    # Risk override
+                                # Ignore daily_cap for Scalp (no execution gating by cap)
+                                # Risk override
                                     old_risk = None
                                     try:
                                         old_risk = self.sizer.risk.risk_percent

@@ -1655,74 +1655,9 @@ class TradingBot:
                 except Exception:
                     pass
 
-                # Optional scale-out: place reduce-only limit for partial at TP1 and keep main TP at TP2; move SL to BE upon TP1 hit
-                try:
-                    sc_cfg = ((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('scaleout', {}) or {}))
-                    if bool(sc_cfg.get('enabled', False)) and qty > 0:
-                        frac = max(0.1, min(0.9, float(sc_cfg.get('fraction', 0.5))))
-                        tp1_r = float(sc_cfg.get('tp1_r', 1.6))
-                        tp2_r = float(sc_cfg.get('tp2_r', 3.0))
-                        # Compute R using current entry and stop
-                        R = abs(float(actual_entry) - float(sig_obj.sl))
-                        if R > 0:
-                            if sig_obj.side == 'long':
-                                tp1 = float(actual_entry) + tp1_r * R
-                                tp2 = float(actual_entry) + tp2_r * R
-                                tp_side = "Sell"
-                            else:
-                                tp1 = float(actual_entry) - tp1_r * R
-                                tp2 = float(actual_entry) - tp2_r * R
-                                tp_side = "Buy"
-                                # Set main TP to TP2
-                                try:
-                                    bybit.set_tpsl(sym, take_profit=float(tp2), stop_loss=float(sig_obj.sl))
-                                except Exception:
-                                    pass
-                                # Place reduce-only limit for partial TP1
-                                try:
-                                    # Round partial qty to step for exchange safety
-                                    try:
-                                        from position_mgr import round_step
-                                        qty_step = float(meta_for(sym, shared["meta"]).get('qty_step', 0.001)) if 'shared' in locals() else 0.001
-                                    except Exception:
-                                        qty_step = 0.001
-                                    qty1 = round_step(float(qty) * frac, qty_step)
-                                    bybit.place_reduce_only_limit(sym, tp_side, float(qty1), float(tp1), post_only=True, reduce_only=True)
-                                except Exception:
-                                    pass
-                                # Track scale-out for BE move monitoring
-                                try:
-                                    if not hasattr(self, '_scaleout'):
-                                        self._scaleout = {}
-                                    self._scaleout[sym] = {
-                                        'tp1': float(tp1), 'tp2': float(tp2), 'entry': float(actual_entry),
-                                        'side': sig_obj.side, 'be_moved': False, 'move_be': bool(sc_cfg.get('move_sl_to_be', True)),
-                                        'qty1': float(qty1), 'qty2': max(0.0, float(qty) - float(qty1)),
-                                        'tp1_order_id': None,
-                                        'tp1_hit': False, 'tp1_notified': False,
-                                        'recovered': False
-                                    }
-                                    # Persist scaleout hints for recovery
-                                    try:
-                                        if getattr(self, '_redis', None) is not None:
-                                            import json as _json
-                                            self._redis.set(f'openpos:scaleout:{sym}', _json.dumps(self._scaleout[sym]))
-                                    except Exception:
-                                        pass
-                                    # Notify scale-out armed
-                                    try:
-                                        if self.tg:
-                                            pct = int(round(frac*100))
-                                            qty2 = max(0.0, float(qty) - float(qty1))
-                                            await self.tg.send_message(
-                                                f"📊 Scale-out armed: {sym} TP1={tp1:.4f} qty1={qty1:.4f} ({pct}%) TP2={tp2:.4f} qty2={qty2:.4f} | SL→BE after TP1"
-                                            )
-                                    except Exception:
-                                        pass
-                                except Exception:
-                                    pass
+                # Scalp: scale-out disabled — single TP/SL only
 
-                    # Best-effort verification without reapplying (to avoid duplicate TP/SL sets)
+                # Best-effort verification without reapplying (to avoid duplicate TP/SL sets)
                     try:
                         checks = 0
                         while checks < 5:

@@ -570,7 +570,7 @@ scalp:
     rr_bias_pct: 0.03
   # Rule-mode scoring for Scalp (phantom-only). Used for telemetry/notifications; not for execution yet.
   rule_mode:
-    execute_q_min: 15     # Match phantom minimum - body gate is the sole quality filter
+    execute_q_min: 60     # Quality filter - combined with body gate, volatility, and F&G filtering
     phantom_q_min: 15     # Phantom recording threshold - capture wide range for gate analysis
     weights:              # normalized automatically
       mom: 0.35           # momentum burst quality (impulse, wick direction, volume)

@@ -221,7 +221,7 @@ trend:
   rule_mode:
     enabled: true           # Use rule-based quality scoring for routing/exec (all symbols)
     execute_q_min: 78       # A-tier: execute when Qscore ≥ this
-    phantom_q_min: 65       # B-tier: phantom when Qscore between phantom_q_min and execute_q_min
+    phantom_q_min: 30       # B-tier: phantom when Qscore between phantom_q_min and execute_q_min (lowered from 65 to capture more marginal data)
     phantom_low_weight_below: 65  # C-tier: low-quality; still record but down-weight in training (via phantom_weight policy)
     weights:                # Live-tunable Qscore component weights (sum auto-normalized)
       sr: 0.25              # HTF S/R quality (strength, confluence, clearance)
@@ -571,7 +571,7 @@ scalp:
   # Rule-mode scoring for Scalp (phantom-only). Used for telemetry/notifications; not for execution yet.
   rule_mode:
     execute_q_min: 40     # Initial Exec Q threshold; adapter may override once learned
-    phantom_q_min: 65     # Used only for labeling decisions
+    phantom_q_min: 20     # Phantom recording threshold - cut extreme noise (Q<20) while preserving marginal learning data
     weights:              # normalized automatically
       mom: 0.35           # momentum burst quality (impulse, wick direction, volume)
       pull: 0.20          # pullback fit (VWAP distance, BB width)

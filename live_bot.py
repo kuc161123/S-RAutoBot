@@ -3366,6 +3366,12 @@ class TradingBot:
                     except Exception:
                         force_accept = False
                     if force_accept:
+                        # Check phantom Q-score threshold even for force_accept
+                        ph_min = float(((self.config.get('scalp', {}) or {}).get('rule_mode', {}) or {}).get('phantom_q_min', 20))
+                        q_score = float(sc_feats.get('qscore', 0.0))
+                        if q_score < ph_min:
+                            logger.info(f"[{sym}] 📦 Scalp phantom REJECTED (force_accept): Q={q_score:.1f} < {ph_min:.1f}")
+                            continue
                         _rec = scpt.record_scalp_signal(
                             sym,
                             {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
@@ -3390,6 +3396,13 @@ class TradingBot:
                         else:
                             logger.info(f"[{sym}] 🛑 Scalp phantom (none route debug) dropped by regime gate (tracker)")
                     elif sc_remaining > 0 and daily_ok:
+                        # Check phantom Q-score threshold (cut extreme noise)
+                        ph_min = float(((self.config.get('scalp', {}) or {}).get('rule_mode', {}) or {}).get('phantom_q_min', 20))
+                        q_score = float(sc_feats.get('qscore', 0.0))
+                        if q_score < ph_min:
+                            logger.info(f"[{sym}] 📦 Scalp phantom REJECTED: Q={q_score:.1f} < {ph_min:.1f}")
+                            continue
+                        logger.info(f"[{sym}] 📝 Scalp phantom ACCEPTED: Q={q_score:.1f} ≥ {ph_min:.1f}")
                         _rec = scpt.record_scalp_signal(
                             sym,
                             {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},

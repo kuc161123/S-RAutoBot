@@ -29,7 +29,7 @@ from position_mgr import RiskConfig, Book, Position
 from sizer import Sizer
 from strategy_pullback import Settings  # Settings are the same for both strategies
 from telegram_bot import TGBot
-from fear_greed_fetcher import FearGreedFetcher
+# from fear_greed_fetcher import FearGreedFetcher  # Disabled - not using sentiment filtering
 
 # Optional scalping modules (import granularly; ML scorer optional)
 detect_scalp_signal = None
@@ -612,7 +612,7 @@ class TradingBot:
         self.storage = CandleStorage()  # Will use DATABASE_URL from environment
         self.last_save_time = datetime.now()
         self.trade_tracker = TradeTracker()  # Initialize trade tracker
-        self.fear_greed = FearGreedFetcher()  # Initialize Fear & Greed Index fetcher
+        # self.fear_greed = FearGreedFetcher()  # Disabled - not using sentiment filtering
         self._tasks = set()
         # Background DB write queue for 3m candles to avoid blocking the event loop
         try:

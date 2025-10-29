@@ -4461,10 +4461,10 @@ class TradingBot:
             width_pct = ((rng_high - rng_low) / max(1e-9, rng_low)) if (rng_high > rng_low > 0) else 0.0
             # Range quality: best in mid band of configured bounds
             try:
-                width_min = float(((self.config.get('range', {}) or {}).get('width_min_pct', 0.01)))
-                width_max = float(((self.config.get('range', {}) or {}).get('width_max_pct', 0.08)))
+                width_min = float(((self.config.get('range', {}) or {}).get('width_min_pct', 0.008)))
+                width_max = float(((self.config.get('range', {}) or {}).get('width_max_pct', 0.16)))
             except Exception:
-                width_min, width_max = 0.01, 0.08
+                width_min, width_max = 0.008, 0.16  # Match config defaults
             if width_pct <= 0:
                 comp['rng'] = 20.0; reasons.append('rng:none')
             elif width_pct < width_min:
@@ -7831,6 +7831,16 @@ class TradingBot:
                                         except Exception:
                                             did_execute = False
                                     if not did_execute:
+                                        # Check phantom Q-score threshold
+                                        ph_min = float((settings.get('rule_mode') or {}).get('phantom_q_min', 20))
+                                        if q < ph_min:
+                                            logger.info(f"[{sym}] 📦 Range phantom REJECTED: Q={q:.1f} < {ph_min:.1f}")
+                                            continue
+
+                                        # Phantom accepted - log acceptance
+                                        exec_thr = float((settings.get('rule_mode') or {}).get('execute_q_min', 78))
+                                        logger.info(f"[{sym}] 📝 Range phantom ACCEPTED: Q={q:.1f} ≥ {ph_min:.1f} (exec_q={exec_thr:.1f})")
+
                                         # Verbose decision reason
                                         try:
                                             log_cfg = (settings.get('logging') or {})
@@ -7876,8 +7886,8 @@ class TradingBot:
                                             except Exception:
                                                 pass
                                             pt.record_signal(sym, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, False, feats, 'range_fbo')
-                                        except Exception:
-                                            pass
+                                        except Exception as e:
+                                            logger.error(f"[{sym}] ❌ Range phantom recording FAILED: {e}")
                                     # Update per-symbol Range state using latest band info
                                     try:
                                         cl = float(df['close'].iloc[-1])

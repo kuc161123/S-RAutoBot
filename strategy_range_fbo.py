@@ -46,10 +46,10 @@ def detect_range_fbo_signal(df, settings: Dict, symbol: str) -> Optional[Signal]
         if df is None or len(df) < 50:
             return None
         s = settings or {}
-        lookback = int(s.get('lookback', 40))
-        width_min = float(s.get('width_min_pct', 0.01))   # 1%
-        width_max = float(s.get('width_max_pct', 0.08))   # 8%
-        reentry_max_bars = int(s.get('reentry_max_bars', 4))
+        lookback = int(s.get('lookback', 30))              # Match config: 30 bars
+        width_min = float(s.get('width_min_pct', 0.008))   # Match config: 0.8%
+        width_max = float(s.get('width_max_pct', 0.16))    # Match config: 16%
+        reentry_max_bars = int(s.get('reentry_max_bars', 18))  # Match config: 18 bars
         atr_buf = float(s.get('sl_atr_buf', 0.6))
 
         high = df['high']

@@ -8147,20 +8147,23 @@ class TradingBot:
                                 hit = (side == 'long' and last_px >= tp1) or (side == 'short' and last_px <= tp1)
                                 if hit:
                                     try:
-                                        # First, notify TP1 reached
-                                        try:
-                                            if self.tg:
-                                                qty1 = None
-                                                try:
-                                                    qty1 = so.get('qty1')
-                                                except Exception:
+                                        # First, notify TP1 reached (only once)
+                                        if not bool(so.get('tp1_notified', False)):
+                                            try:
+                                                if self.tg:
                                                     qty1 = None
-                                                msg_tp1 = f"🎯 TP1 reached: {sym} price {last_px:.4f} {'≥' if side=='long' else '≤'} TP1 {tp1:.4f}"
-                                                if qty1:
-                                                    msg_tp1 += f" | qty1={float(qty1):.4f}"
-                                                await self.tg.send_message(msg_tp1)
-                                        except Exception:
-                                            pass
+                                                    try:
+                                                        qty1 = so.get('qty1')
+                                                    except Exception:
+                                                        qty1 = None
+                                                    msg_tp1 = f"🎯 TP1 reached: {sym} price {last_px:.4f} {'≥' if side=='long' else '≤'} TP1 {tp1:.4f}"
+                                                    if qty1:
+                                                        msg_tp1 += f" | qty1={float(qty1):.4f}"
+                                                    await self.tg.send_message(msg_tp1)
+                                            except Exception:
+                                                pass
+                                            # Mark TP1 notified (separate from be_moved in case BE move fails)
+                                            self._scaleout[sym]['tp1_notified'] = True
                                         # Move stop to break-even (entry price)
                                         self.bybit.set_tpsl(sym, stop_loss=float(entry_px))
                                         self._scaleout[sym]['be_moved'] = True

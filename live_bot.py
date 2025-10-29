@@ -676,6 +676,80 @@ class TradingBot:
         self._phantom_tp1_notified: set[str] = set()
         self._phantom_close_notified: set[str] = set()
 
+    def _btc_micro_trend(self) -> str:
+        """Compute BTC 1–3m micro-trend direction: up/down/none."""
+        try:
+            for sym in ('BTCUSDT','BTCUSD','BTCUSDC'):
+                df3 = self.frames_3m.get(sym)
+                if df3 is not None and not df3.empty and len(df3['close']) >= 50:
+                    e20 = df3['close'].ewm(span=20, adjust=False).mean()
+                    e50 = df3['close'].ewm(span=50, adjust=False).mean()
+                    if float(e20.iloc[-1]) > float(e50.iloc[-1]):
+                        return 'up'
+                    if float(e20.iloc[-1]) < float(e50.iloc[-1]):
+                        return 'down'
+                    return 'none'
+        except Exception:
+            pass
+        return 'none'
+
+    def _scalp_hard_gates_pass(self, symbol: str, side: str, feats: dict) -> tuple[bool, list[str]]:
+        """Execution-only hard gates for Scalp. Returns (ok, reasons)."""
+        reasons = []
+        try:
+            cfg = getattr(self, 'config', {}) or {}
+            sc = (cfg.get('scalp', {}) or {})
+            hg = (sc.get('hard_gates', {}) or {})
+            if not bool(hg.get('apply_to_exec', True)):
+                return True, reasons
+            # HTF ts15
+            try:
+                ts15 = float(feats.get('ts15', 0.0) or 0.0)
+                thr_ts = float(hg.get('htf_min_ts15', 60.0))
+                if ts15 < thr_ts:
+                    reasons.append(f"htf<{thr_ts:.0f}")
+            except Exception:
+                reasons.append('htf:na')
+            # Volume ratio (3m)
+            try:
+                vr = float(feats.get('volume_ratio', 0.0) or 0.0)
+                vmin = float(hg.get('vol_ratio_min_3m', 1.3))
+                if vr < vmin:
+                    reasons.append(f"vol<{vmin:.2f}")
+            except Exception:
+                reasons.append('vol:na')
+            # Body ratio with direction
+            try:
+                br = float(feats.get('body_ratio', 0.0) or 0.0)
+                bmin = float(hg.get('body_ratio_min_3m', 0.35))
+                bsgn = str(feats.get('body_sign', 'flat'))
+                if br < bmin:
+                    reasons.append(f"body<{bmin:.2f}")
+                else:
+                    if (side == 'long' and bsgn != 'up') or (side == 'short' and bsgn != 'down'):
+                        reasons.append('body_dir')
+            except Exception:
+                reasons.append('body:na')
+            # 15m alignment
+            try:
+                if bool(hg.get('align_15m', True)):
+                    dir15 = str(feats.get('ema_dir_15m', 'none'))
+                    if (side == 'long' and dir15 != 'up') or (side == 'short' and dir15 != 'down'):
+                        reasons.append('15m_align')
+            except Exception:
+                reasons.append('15m:na')
+            # Leader alignment with BTC 1–3m micro-trend
+            try:
+                if bool(hg.get('leader_align_btc', True)) and not symbol.upper().startswith('BTC'):
+                    btcd = self._btc_micro_trend()
+                    if (side == 'long' and btcd == 'down') or (side == 'short' and btcd == 'up'):
+                        reasons.append('btc_opposes')
+            except Exception:
+                reasons.append('btc:na')
+        except Exception:
+            reasons.append('gates:error')
+        return (len(reasons) == 0), reasons
+
     def _phantom_trend_regime_ok(self, sym: str, df: 'pd.DataFrame', regime_analysis) -> tuple[bool, str]:
         """Return whether Trend phantom should be recorded under current regime.
 
@@ -2114,6 +2188,33 @@ class TradingBot:
             else:
                 out['volume_ratio'] = float(sc_meta.get('vol_ratio', 1.0))
 
+            # Body ratio and 15m EMA direction for gating
+            try:
+                if len(tail) >= 1:
+                    o = float(open_.iloc[-1]); c = float(close.iloc[-1]); h = float(high.iloc[-1]); l = float(low.iloc[-1])
+                    rng = max(1e-9, h - l)
+                    out['body_ratio'] = float(abs(c - o) / rng)
+                    out['body_sign'] = 'up' if (c - o) > 0 else 'down' if (c - o) < 0 else 'flat'
+                else:
+                    out['body_ratio'] = 0.0
+                    out['body_sign'] = 'flat'
+            except Exception:
+                out['body_ratio'] = 0.0
+                out['body_sign'] = 'flat'
+
+            # 15m EMA alignment direction (up/down/none)
+            try:
+                sym = sc_meta.get('symbol') if isinstance(sc_meta, dict) else None
+                df15 = self.frames.get(sym) if hasattr(self, 'frames') and sym in getattr(self, 'frames', {}) else None
+                if df15 is not None and not df15.empty and len(df15['close']) >= 50:
+                    e20 = df15['close'].ewm(span=20, adjust=False).mean()
+                    e50 = df15['close'].ewm(span=50, adjust=False).mean()
+                    out['ema_dir_15m'] = 'up' if float(e20.iloc[-1]) > float(e50.iloc[-1]) else ('down' if float(e20.iloc[-1]) < float(e50.iloc[-1]) else 'none')
+                else:
+                    out['ema_dir_15m'] = 'none'
+            except Exception:
+                out['ema_dir_15m'] = 'none'
+
             # VWAP distance in ATR
             try:
                 if 'dist_vwap_atr' in sc_meta and sc_meta.get('dist_vwap_atr') is not None:
@@ -2140,12 +2241,12 @@ class TradingBot:
                 out['session'] = 'off_hours'
 
             # Volatility regime & cluster
-            out['volatility_regime'] = vol_level if isinstance(vol_level, str) else 'normal'
-            out['symbol_cluster'] = int(cluster_id) if cluster_id is not None else 3
+        out['volatility_regime'] = vol_level if isinstance(vol_level, str) else 'normal'
+        out['symbol_cluster'] = int(cluster_id) if cluster_id is not None else 3
 
-            # --- Additional micro features (v2) ---
-            try:
-                # Short-horizon returns (%)
+        # --- Additional micro features (v2) ---
+        try:
+            # Short-horizon returns (%)
                 if len(close) >= 2 and close.iloc[-2] != 0:
                     out['ret_1'] = float((close.iloc[-1] - close.iloc[-2]) / close.iloc[-2] * 100.0)
                 else:
@@ -3024,6 +3125,34 @@ class TradingBot:
                         except Exception:
                             pass
                         if exec_enabled and session_ok and q_val >= exec_thr:
+                            # Execution-only hard gates for Scalp
+                            try:
+                                ok_g, reasons = self._scalp_hard_gates_pass(sym, sc_sig.side, sc_feats)
+                            except Exception as _ge:
+                                ok_g, reasons = False, [f"gates:error:{_ge}"]
+                            if not ok_g:
+                                # Block execution but record phantom for learning
+                                exec_reason = 'hard_gates'
+                                try:
+                                    if self.tg:
+                                        await self.tg.send_message(
+                                            f"🛑 Scalp EXEC hard-gate blocked: {sym} reasons={','.join(reasons)} — phantom recorded\n"
+                                            f"Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})"
+                                        )
+                                except Exception:
+                                    pass
+                                try:
+                                    scpt.record_scalp_signal(
+                                        sym,
+                                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                        float(ml_s or 0.0),
+                                        False,
+                                        sc_feats
+                                    )
+                                    _scalp_decision_logged = True
+                                except Exception:
+                                    pass
+                                continue
                             if sym in self.book.positions:
                                 exec_reason = 'position_exists'
                             else:

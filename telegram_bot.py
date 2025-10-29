@@ -2508,7 +2508,7 @@ class TGBot:
                     strat = data.split(':')[-1]  # trend|range|scalp
                     cfg = self.shared.get('config', {}) or {}
                     rm = ((cfg.get(strat, {}) or {}).get('rule_mode', {}) or {})
-                    exec_q = float(rm.get('execute_q_min', 78 if strat != 'scalp' else 60))
+                    exec_q = float(rm.get('execute_q_min', 78 if strat != 'scalp' else 40))
                     ph_q = float(rm.get('phantom_q_min', 65 if strat != 'scalp' else 80))
                     header = f"⚙️ *{strat.title()} Thresholds*\n\nExec≥{exec_q:.0f} | Phantom≥{ph_q:.0f}"
                     # Map to prompts keys

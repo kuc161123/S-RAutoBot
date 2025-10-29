@@ -570,7 +570,7 @@ scalp:
     rr_bias_pct: 0.03
   # Rule-mode scoring for Scalp (phantom-only). Used for telemetry/notifications; not for execution yet.
   rule_mode:
-    execute_q_min: 60     # Initial Exec Q threshold; adapter may override once learned
+    execute_q_min: 40     # Initial Exec Q threshold; adapter may override once learned
     phantom_q_min: 65     # Used only for labeling decisions
     weights:              # normalized automatically
       mom: 0.35           # momentum burst quality (impulse, wick direction, volume)
@@ -1947,3 +1947,11 @@ reporting:
     daily: true          # send 24h summary
     weekly: true         # send 7d summary
     hour_utc: 0          # target UTC hour for daily push (best-effort)
+  hard_gates:
+    apply_to_exec: true
+    apply_to_phantoms: false
+    htf_min_ts15: 60.0
+    vol_ratio_min_3m: 1.30
+    body_ratio_min_3m: 0.35
+    align_15m: true
+    leader_align_btc: true

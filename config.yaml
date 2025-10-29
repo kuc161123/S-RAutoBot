@@ -1953,9 +1953,9 @@ reporting:
     # Individual gate enables (only apply to execution, phantoms track all)
     htf_enabled: false          # DISABLED - Let phantom data show value over 2 weeks
     htf_min_ts15: 60.0
-    vol_enabled: true           # ENABLED - Volume confirmation for liquidity and momentum
+    vol_enabled: false          # DISABLED - Phantom data shows neutral/negative impact
     vol_ratio_min_3m: 1.30
-    body_enabled: false         # DISABLED - Let phantom data show value over 2 weeks
+    body_enabled: true          # ENABLED - Phantom data shows 64.4% WR (+20.4%!)
     body_ratio_min_3m: 0.35
     align_15m_enabled: false    # DISABLED - Let phantom data show value over 2 weeks
     leader_align_btc_enabled: false  # DISABLED - Let phantom data show value over 2 weeks

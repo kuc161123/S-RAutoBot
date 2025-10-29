@@ -2259,12 +2259,12 @@ class TradingBot:
                     out['ret_5'] = float((close.iloc[-1] - close.iloc[-6]) / close.iloc[-6] * 100.0)
                 else:
                     out['ret_5'] = 0.0
-            except Exception:
-                out['ret_1'] = out.get('ret_1', 0.0)
-                out['ret_3'] = out.get('ret_3', 0.0)
-                out['ret_5'] = out.get('ret_5', 0.0)
+        except Exception:
+            out['ret_1'] = out.get('ret_1', 0.0)
+            out['ret_3'] = out.get('ret_3', 0.0)
+            out['ret_5'] = out.get('ret_5', 0.0)
 
-            try:
+        try:
                 # ATR slope over last 10 bars, scaled to % of price
                 if len(tr) >= 11 and price:
                     atr_prev = float(tr.rolling(14).mean().iloc[-11]) if len(tr) >= 14 else float(tr.iloc[-11])
@@ -2272,31 +2272,27 @@ class TradingBot:
                     out['atr_slope'] = float((atr_slope / max(1e-9, price)) * 100.0)
                 else:
                     out['atr_slope'] = 0.0
-            except Exception:
-                out['atr_slope'] = out.get('atr_slope', 0.0)
+        except Exception:
+            out['atr_slope'] = out.get('atr_slope', 0.0)
 
-            try:
+        try:
                 # Volatility-of-volatility: std of last 10 returns (%)
                 if len(close) >= 11 and price:
                     rets = close.pct_change().tail(10).dropna().values
                     out['vol_of_vol'] = float(np.std(rets) * 100.0)
                 else:
                     out['vol_of_vol'] = 0.0
-            except Exception:
-                out['vol_of_vol'] = out.get('vol_of_vol', 0.0)
+        except Exception:
+            out['vol_of_vol'] = out.get('vol_of_vol', 0.0)
 
-            try:
+        try:
                 # Round tick distance proxy: distance to nearest .00/.25/.50/.75 (% of price)
                 q = [0.00, 0.25, 0.50, 0.75]
                 frac = (price * 100.0) % 1.0  # rough proxy at 0.01 scale
                 nearest = min(q, key=lambda x: abs(frac - x)) if isinstance(frac, float) else 0.0
                 out['round_tick_dist'] = float(abs(frac - nearest) * 100.0)
-            except Exception:
-                out['round_tick_dist'] = out.get('round_tick_dist', 0.0)
-
         except Exception:
-            # Return whatever computed; scorer will default missing
-            pass
+            out['round_tick_dist'] = out.get('round_tick_dist', 0.0)
         return out
 
     def _compute_qscore_scalp(self, symbol: str, side: str, entry: float, sl: float, tp: float,

@@ -418,7 +418,7 @@ phantom:
   hourly_symbol_budget:
     trend: 1
     mr: 2
-    scalp: 8
+    scalp: 12
   # Per-strategy daily caps (UTC) — isolation across strategies
   caps:
     trend:
@@ -547,10 +547,10 @@ scalp:
   explore:
     relax_enabled: true
     # Relaxed, phantom-only thresholds to widen net (execution unchanged)
-    vwap_dist_atr_max: 1.00  # was 0.80 — allow a bit farther from VWAP
+    vwap_dist_atr_max: 1.20  # increased from 1.00 to capture deeper pullbacks for phantom learning
     min_bb_width_pct: 0.55   # was 0.60 — accept slightly narrower bands
     vol_ratio_min: 1.05      # was 1.10 — accept lighter volume expansion
-    wick_ratio_min: 0.25     # was 0.30 default — allow smaller wick confirms
+    wick_ratio_min: 0.20     # reduced from 0.25 to capture smaller reversal wicks for phantom learning
     timeout_hours: 8         # auto-close scalp phantoms after 8h for learning
   backfill:
     active_labeling: false   # if true, uses recent 3m bars to label open phantoms during downtime
@@ -570,8 +570,8 @@ scalp:
     rr_bias_pct: 0.03
   # Rule-mode scoring for Scalp (phantom-only). Used for telemetry/notifications; not for execution yet.
   rule_mode:
-    execute_q_min: 40     # Initial Exec Q threshold; adapter may override once learned
-    phantom_q_min: 20     # Phantom recording threshold - cut extreme noise (Q<20) while preserving marginal learning data
+    execute_q_min: 20     # Reduced from 40 to increase execution rate - hard gates still apply for quality control
+    phantom_q_min: 15     # Phantom recording threshold - lowered to capture more marginal learning data (Q=15-20 range)
     weights:              # normalized automatically
       mom: 0.35           # momentum burst quality (impulse, wick direction, volume)
       pull: 0.20          # pullback fit (VWAP distance, BB width)

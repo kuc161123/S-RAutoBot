@@ -1951,11 +1951,11 @@ reporting:
     apply_to_exec: true
     apply_to_phantoms: false  # Phantoms always recorded for gate analysis
     # Individual gate enables (only apply to execution, phantoms track all)
-    htf_enabled: false          # DISABLED - Q≥60 primary filter, phantoms will show if needed
+    htf_enabled: false          # DISABLED - Q≥50 primary filter, phantoms will show if needed
     htf_min_ts15: 60.0
     vol_enabled: false          # DISABLED - Let phantom data show value over 2 weeks
     vol_ratio_min_3m: 1.30
     body_enabled: false         # DISABLED - Let phantom data show value over 2 weeks
     body_ratio_min_3m: 0.35
-    align_15m_enabled: true     # ENABLED - Directional filter (trade with trend)
-    leader_align_btc_enabled: true  # ENABLED - BTC alignment check
+    align_15m_enabled: false    # DISABLED - Let phantom data show value over 2 weeks
+    leader_align_btc_enabled: true  # ENABLED - BTC alignment check (only active gate)

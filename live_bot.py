@@ -3191,6 +3191,9 @@ class TradingBot:
                                             exec_id = 'unknown'
                                         comps = sc_feats.get('qscore_components', {}) or {}
                                         comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
+                                        # Extract volume ratio for display
+                                        vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
+                                        vol_str = f" Vol={vol_ratio:.2f}x" if vol_ratio > 0 else ""
                                         # Stash features to carry Q into Position and close-notify
                                         try:
                                             if not hasattr(self, '_last_signal_features'):
@@ -3198,7 +3201,7 @@ class TradingBot:
                                             self._last_signal_features[sym] = dict(sc_feats)
                                         except Exception:
                                             pass
-                                        await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f}) (id={exec_id})\n{comp_line}")
+                                        await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f}){vol_str} (id={exec_id})\n{comp_line}")
                                 except Exception:
                                     pass
                                 try:

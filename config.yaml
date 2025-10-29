@@ -520,7 +520,7 @@ scalp:
   use_ml: true
   threshold: 70
   independent: true      # When true, Scalp runs fully independent of regime/router
-  block_regime: false    # Do not block by regime (e.g., extreme volatility)
+  block_regime: true     # Block trades during extreme volatility (ATR > 4%, BB > 90th percentile)
   dedup_enabled: false   # Disable Redis-based dedup for Scalp phantoms (learn-first)
   session_only: ["us", "european"]
   rr: 2.1                # Target R:R (1:2.1)
@@ -579,6 +579,14 @@ scalp:
       htf: 0.10           # 15m/1h directional nudge
       sr: 0.10            # HTF S/R clearance in direction
       risk: 0.10          # RR and stop geometry
+# Fear & Greed Index filtering (applies to all strategies)
+fear_greed:
+  enabled: true           # Enable Fear & Greed Index filtering
+  min_value: 20           # Block trades if index < 20 (extreme fear)
+  max_value: 80           # Block trades if index > 80 (extreme greed)
+  apply_to_scalp: true    # Apply to scalp strategy
+  apply_to_trend: false   # Don't apply to trend strategy (optional)
+  apply_to_mr: false      # Don't apply to mean reversion strategy (optional)
 symbol_meta:
   default:
     qty_step: 0.001

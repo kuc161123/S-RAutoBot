@@ -29,6 +29,7 @@ from position_mgr import RiskConfig, Book, Position
 from sizer import Sizer
 from strategy_pullback import Settings  # Settings are the same for both strategies
 from telegram_bot import TGBot
+from fear_greed_fetcher import FearGreedFetcher
 
 # Optional scalping modules (import granularly; ML scorer optional)
 detect_scalp_signal = None
@@ -611,6 +612,7 @@ class TradingBot:
         self.storage = CandleStorage()  # Will use DATABASE_URL from environment
         self.last_save_time = datetime.now()
         self.trade_tracker = TradeTracker()  # Initialize trade tracker
+        self.fear_greed = FearGreedFetcher()  # Initialize Fear & Greed Index fetcher
         self._tasks = set()
         # Background DB write queue for 3m candles to avoid blocking the event loop
         try:
@@ -3156,6 +3158,37 @@ class TradingBot:
                                 except Exception:
                                     pass
                                 continue
+                            # Fear & Greed Index gate check
+                            try:
+                                fg_cfg = self.cfg.get('fear_greed', {})
+                                if fg_cfg.get('enabled', False) and fg_cfg.get('apply_to_scalp', True):
+                                    fg_index = await self.fear_greed.get_index()
+                                    fg_min = int(fg_cfg.get('min_value', 20))
+                                    fg_max = int(fg_cfg.get('max_value', 80))
+                                    if self.fear_greed.should_block_trade(fg_index, fg_min, fg_max):
+                                        exec_reason = 'fear_greed_gate'
+                                        if self.tg:
+                                            classification = self.fear_greed.get_classification(fg_index) if fg_index else "Unknown"
+                                            side_emoji = "🟢" if sc_sig.side == 'long' else "🔴"
+                                            await self.tg.send_message(
+                                                f"🛑 Scalp EXEC Fear & Greed blocked: {sym} {side_emoji} {sc_sig.side.upper()} @ {sc_sig.entry:.4f}\n"
+                                                f"F&G Index: {fg_index} ({classification}) — phantom recorded\n"
+                                                f"Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})"
+                                            )
+                                        try:
+                                            scpt.record_scalp_signal(
+                                                sym,
+                                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                                float(ml_s or 0.0),
+                                                False,
+                                                sc_feats
+                                            )
+                                            _scalp_decision_logged = True
+                                        except Exception:
+                                            pass
+                                        continue
+                            except Exception as fg_err:
+                                logger.warning(f"Fear & Greed check failed: {fg_err}")
                             if sym in self.book.positions:
                                 exec_reason = 'position_exists'
                             else:

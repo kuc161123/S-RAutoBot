@@ -23,7 +23,6 @@ class ScalpSettings:
     vol_ratio_min: float = 1.3     # 1.3x 20-bar avg
     wick_ratio_min: float = 0.4    # Raised from 0.3 for stronger rejection wicks
     vwap_dist_atr_max: float = 0.45 # Tightened from 0.6 for cleaner pullbacks
-    min_body_ratio: float = 0.35   # Body must be ≥35% of candle range (phantom data: 64.4% WR)
     orb_enabled: bool = False      # Optional ORB continuation filter
     # Enforce minimum 1R distance (as % of price) so fees don't erode R
     min_r_pct: float = 0.005
@@ -98,10 +97,6 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
     upper_w = max(0.0, h - max(c, o)) / rng
     lower_w = max(0.0, min(c, o) - l) / rng
 
-    # Body ratio and direction (size + alignment)
-    body_ratio = abs(c - o) / rng
-    body_sign = 'up' if (c - o) > 0 else 'down' if (c - o) < 0 else 'flat'
-
     # Trend check (continuation)
     ema_aligned_up = (c > ema_f.iloc[-1] > ema_s.iloc[-1])
     ema_aligned_dn = (c < ema_f.iloc[-1] < ema_s.iloc[-1])
@@ -122,7 +117,7 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
             orb_ok = False
 
     # Long scalp candidate
-    if ema_aligned_up and bbw_pct >= s.min_bb_width_pct and vol_ratio >= s.vol_ratio_min and lower_w >= s.wick_ratio_min and dist_vwap_atr <= s.vwap_dist_atr_max and body_ratio >= s.min_body_ratio and body_sign == 'up' and orb_ok:
+    if ema_aligned_up and bbw_pct >= s.min_bb_width_pct and vol_ratio >= s.vol_ratio_min and lower_w >= s.wick_ratio_min and dist_vwap_atr <= s.vwap_dist_atr_max and orb_ok:
         # Stop below VWAP/EMA band with high-volatility widening
         buf_mult = 0.8
         if bbw_pct >= 0.85:
@@ -151,7 +146,7 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
         )
 
     # Short scalp candidate
-    if ema_aligned_dn and bbw_pct >= s.min_bb_width_pct and vol_ratio >= s.vol_ratio_min and upper_w >= s.wick_ratio_min and dist_vwap_atr <= s.vwap_dist_atr_max and body_ratio >= s.min_body_ratio and body_sign == 'down' and orb_ok:
+    if ema_aligned_dn and bbw_pct >= s.min_bb_width_pct and vol_ratio >= s.vol_ratio_min and upper_w >= s.wick_ratio_min and dist_vwap_atr <= s.vwap_dist_atr_max and orb_ok:
         buf_mult = 0.8
         if bbw_pct >= 0.85:
             buf_mult = 1.2

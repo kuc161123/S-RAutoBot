@@ -735,7 +735,7 @@ class TradingBot:
                     reasons.append('body:na')
             # 15m alignment (check if enabled - using new flag name)
             try:
-                if bool(hg.get('align_15m_enabled', hg.get('align_15m', True))):
+                if bool(hg.get('align_15m_enabled', hg.get('align_15m', False))):
                     dir15 = str(feats.get('ema_dir_15m', 'none'))
                     if (side == 'long' and dir15 != 'up') or (side == 'short' and dir15 != 'down'):
                         reasons.append('15m_align')
@@ -743,7 +743,7 @@ class TradingBot:
                 reasons.append('15m:na')
             # Leader alignment with BTC 1–3m micro-trend (check if enabled - using new flag name)
             try:
-                if bool(hg.get('leader_align_btc_enabled', hg.get('leader_align_btc', True))) and not symbol.upper().startswith('BTC'):
+                if bool(hg.get('leader_align_btc_enabled', hg.get('leader_align_btc', False))) and not symbol.upper().startswith('BTC'):
                     btcd = self._btc_micro_trend()
                     if (side == 'long' and btcd == 'down') or (side == 'short' and btcd == 'up'):
                         reasons.append('btc_opposes')

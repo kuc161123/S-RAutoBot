@@ -1950,8 +1950,8 @@ reporting:
   hard_gates:
     apply_to_exec: true
     apply_to_phantoms: false
-    htf_min_ts15: 50.0      # Reduced from 60 to allow moderate trends
-    vol_ratio_min_3m: 1.20  # Reduced from 1.30 to allow 20% volume spikes
-    body_ratio_min_3m: 0.25 # Reduced from 0.35 to capture reversal wicks
+    htf_min_ts15: 60.0      # HTF trend strength minimum (strict)
+    vol_ratio_min_3m: 1.30  # Volume ratio minimum (strict)
+    body_ratio_min_3m: 0.35 # Body ratio minimum (strict)
     align_15m: true
     leader_align_btc: true

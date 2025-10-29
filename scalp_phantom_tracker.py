@@ -634,6 +634,176 @@ class ScalpPhantomTracker:
         wr = (wins/total*100) if total else 0.0
         return {'total': total, 'wins': wins, 'losses': losses, 'wr': wr}
 
+    def compute_gate_status(self, phantom: ScalpPhantomTrade, config: Dict = None) -> Dict:
+        """
+        Compute which hard gates would pass/fail for this phantom based on its features.
+        Uses current config gate thresholds or provided overrides.
+        Returns: {htf: bool, vol: bool, body: bool, align_15m: bool, all: bool}
+        """
+        feats = phantom.features or {}
+        side = phantom.side
+
+        # Load gate thresholds from config if not provided
+        if config is None:
+            try:
+                with open('config.yaml', 'r') as f:
+                    cfg = yaml.safe_load(f) or {}
+                gate_cfg = ((cfg.get('reporting', {}) or {}).get('hard_gates', {}) or {})
+            except Exception:
+                gate_cfg = {}
+        else:
+            gate_cfg = config
+
+        htf_min = float(gate_cfg.get('htf_min_ts15', 60.0))
+        vol_min = float(gate_cfg.get('vol_ratio_min_3m', 1.30))
+        body_min = float(gate_cfg.get('body_ratio_min_3m', 0.35))
+
+        # HTF gate
+        ts15 = float(feats.get('ts15', 0.0) or 0.0)
+        htf_pass = ts15 >= htf_min
+
+        # Volume gate
+        vol_ratio = float(feats.get('volume_ratio', 0.0) or 0.0)
+        vol_pass = vol_ratio >= vol_min
+
+        # Body gate (size + direction)
+        body_ratio = float(feats.get('body_ratio', 0.0) or 0.0)
+        body_sign = str(feats.get('body_sign', ''))
+        body_size_ok = body_ratio >= body_min
+        body_dir_ok = (
+            (side == 'long' and body_sign == 'up') or
+            (side == 'short' and body_sign == 'down')
+        )
+        body_pass = body_size_ok and body_dir_ok
+
+        # 15m alignment gate
+        ema_dir_15m = str(feats.get('ema_dir_15m', 'none'))
+        align_15m_pass = (
+            (side == 'long' and ema_dir_15m == 'up') or
+            (side == 'short' and ema_dir_15m == 'down')
+        )
+
+        # All gates pass
+        all_pass = htf_pass and vol_pass and body_pass and align_15m_pass
+
+        return {
+            'htf': htf_pass,
+            'vol': vol_pass,
+            'body': body_pass,
+            'align_15m': align_15m_pass,
+            'all': all_pass,
+            # Include values for debugging
+            'htf_value': ts15,
+            'vol_value': vol_ratio,
+            'body_value': body_ratio,
+            'body_sign': body_sign,
+            'ema_dir_15m': ema_dir_15m
+        }
+
+    def get_gate_analysis(self, days: int = 30, min_samples: int = 20) -> Dict:
+        """
+        Analyze phantom win rates by gate pass/fail combinations.
+
+        Args:
+            days: Look back period in days
+            min_samples: Minimum sample size to show a stat (default 20)
+
+        Returns:
+            Dict with overall stats, per-gate breakdowns, and combinations
+        """
+        cutoff = datetime.utcnow() - timedelta(days=days)
+
+        # Filter completed phantoms within time window with defined outcomes
+        phantoms = [
+            p for arr in self.completed.values() for p in arr
+            if p.exit_time and p.exit_time >= cutoff and p.outcome in ('win', 'loss')
+        ]
+
+        if not phantoms:
+            return {'error': 'No phantom data available', 'total': 0}
+
+        total = len(phantoms)
+        wins = sum(1 for p in phantoms if p.outcome == 'win')
+        baseline_wr = (wins / total * 100) if total > 0 else 0.0
+
+        # Compute gate status for each phantom
+        gate_statuses = [self.compute_gate_status(p) for p in phantoms]
+
+        # Overall: all gates pass
+        all_pass_phantoms = [p for i, p in enumerate(phantoms) if gate_statuses[i]['all']]
+        all_pass_wins = sum(1 for p in all_pass_phantoms if p.outcome == 'win')
+        all_pass_total = len(all_pass_phantoms)
+        all_pass_wr = (all_pass_wins / all_pass_total * 100) if all_pass_total > 0 else 0.0
+
+        # Per-gate analysis
+        gates = ['htf', 'vol', 'body', 'align_15m']
+        gate_stats = {}
+
+        for gate in gates:
+            gate_pass = [p for i, p in enumerate(phantoms) if gate_statuses[i][gate]]
+            gate_fail = [p for i, p in enumerate(phantoms) if not gate_statuses[i][gate]]
+
+            pass_wins = sum(1 for p in gate_pass if p.outcome == 'win')
+            pass_total = len(gate_pass)
+            pass_wr = (pass_wins / pass_total * 100) if pass_total > 0 else 0.0
+
+            fail_wins = sum(1 for p in gate_fail if p.outcome == 'win')
+            fail_total = len(gate_fail)
+            fail_wr = (fail_wins / fail_total * 100) if fail_total > 0 else 0.0
+
+            delta = pass_wr - fail_wr if (pass_total >= min_samples and fail_total >= min_samples) else None
+
+            gate_stats[gate] = {
+                'pass_wins': pass_wins,
+                'pass_total': pass_total,
+                'pass_wr': pass_wr,
+                'fail_wins': fail_wins,
+                'fail_total': fail_total,
+                'fail_wr': fail_wr,
+                'delta': delta,
+                'sufficient_samples': pass_total >= min_samples and fail_total >= min_samples
+            }
+
+        # Gate combinations (bitmap: HVBA = HTF, Vol, Body, Align)
+        from collections import defaultdict
+        combo_stats = defaultdict(lambda: {'wins': 0, 'total': 0})
+
+        for i, p in enumerate(phantoms):
+            gs = gate_statuses[i]
+            bitmap = ''.join(['1' if gs[g] else '0' for g in gates])
+            combo_stats[bitmap]['total'] += 1
+            if p.outcome == 'win':
+                combo_stats[bitmap]['wins'] += 1
+
+        # Sort combinations by total count
+        sorted_combos = sorted(combo_stats.items(), key=lambda x: x[1]['total'], reverse=True)
+        top_combos = []
+        for bitmap, stats in sorted_combos[:10]:  # Top 10 combinations
+            if stats['total'] >= min_samples:
+                wr = (stats['wins'] / stats['total'] * 100) if stats['total'] > 0 else 0.0
+                top_combos.append({
+                    'bitmap': bitmap,
+                    'wins': stats['wins'],
+                    'total': stats['total'],
+                    'wr': wr
+                })
+
+        return {
+            'days': days,
+            'total_phantoms': total,
+            'total_wins': wins,
+            'baseline_wr': baseline_wr,
+            'all_gates_pass': {
+                'wins': all_pass_wins,
+                'total': all_pass_total,
+                'wr': all_pass_wr,
+                'delta': all_pass_wr - baseline_wr
+            },
+            'gate_stats': gate_stats,
+            'top_combinations': top_combos,
+            'min_samples': min_samples
+        }
+
 
 _scalp_phantom_tracker = None
 

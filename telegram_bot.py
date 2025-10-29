@@ -103,6 +103,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("trainingstatus", self.training_status))  # Alternative command name
         self.app.add_handler(CommandHandler("phantomqa", self.phantom_qa))
         self.app.add_handler(CommandHandler("scalpqa", self.scalp_qa))
+        self.app.add_handler(CommandHandler("scalpgates", self.scalp_gate_analysis))
         self.app.add_handler(CommandHandler("scalppromote", self.scalp_promotion_status))
         self.app.add_handler(CommandHandler("trendpromote", self.trend_promotion_status))
         # Trend ML high-ML threshold changer
@@ -5413,11 +5414,22 @@ class TGBot:
                 sh_wr = sstats.get('wr', 0.0)
             except Exception:
                 pass
+            # Gate pass rate
+            gate_pass_count = 0
+            gate_pass_pct = 0.0
+            try:
+                phantoms = [p for arr in scpt.completed.values() for p in arr if p.outcome in ('win', 'loss')]
+                if phantoms:
+                    gate_pass_count = sum(1 for p in phantoms if scpt.compute_gate_status(p)['all'])
+                    gate_pass_pct = (gate_pass_count / len(phantoms) * 100) if len(phantoms) > 0 else 0.0
+            except Exception:
+                pass
             msg = [
                 "🩳 *Scalp QA*",
                 f"• ML: {'✅ Ready' if ml_ready else '⏳ Training'} | Records: {total_rec if total_rec is not None else samples} | Trainable: {trainable if trainable is not None else '-'} | Thr: {thr}",
                 f"• Next retrain in: {nxt if nxt is not None else '-'} trades",
                 f"• Phantom recorded: {total} | WR: {wr:.1f}% (W/L {wins}/{losses})",
+                f"• All gates pass: {gate_pass_count}/{total} ({gate_pass_pct:.1f}%)",
                 f"• Shadow (ML-based): {int(sh_total)} | WR: {sh_wr:.1f}% (W/L {sh_w}/{sh_l})",
                 "_Scalp runs phantom-only; shadow sim reflects ML decision quality_"
             ]
@@ -5509,6 +5521,82 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_qscore_report: {e}")
             await update.message.reply_text("Error computing Scalp Qscore report")
+
+    async def scalp_gate_analysis(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Analyze Scalp phantom performance by hard gate pass/fail combinations."""
+        try:
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+
+            # Parse days argument
+            days = 30
+            if ctx.args and len(ctx.args) > 0:
+                try:
+                    days = int(ctx.args[0])
+                    days = max(1, min(365, days))  # Clamp to 1-365 days
+                except Exception:
+                    await self.safe_reply(update, "Usage: /scalp_gate_analysis [days]\nExample: /scalp_gate_analysis 30")
+                    return
+
+            # Get gate analysis
+            analysis = scpt.get_gate_analysis(days=days, min_samples=20)
+
+            if analysis.get('error'):
+                await self.safe_reply(update, f"🚪 *Scalp Gate Analysis*\n\n{analysis['error']}")
+                return
+
+            # Build message
+            total = analysis['total_phantoms']
+            baseline_wr = analysis['baseline_wr']
+            all_gates = analysis['all_gates_pass']
+            gate_stats = analysis['gate_stats']
+            combos = analysis['top_combinations']
+
+            msg = [
+                f"🚪 *Scalp Gate Analysis* ({days}d)\n",
+                f"📊 Baseline: {total} phantoms, {baseline_wr:.1f}% WR\n",
+                f"✅ All Gates Pass: {all_gates['total']} trades, {all_gates['wr']:.1f}% WR ({all_gates['delta']:+.1f}%)\n",
+                "*Individual Gates:*"
+            ]
+
+            gate_names = {
+                'htf': 'HTF≥60',
+                'vol': 'Vol≥1.3',
+                'body': 'Body≥0.35',
+                'align_15m': '15m Align'
+            }
+
+            for gate_key, gate_name in gate_names.items():
+                gs = gate_stats[gate_key]
+                if gs['sufficient_samples']:
+                    delta_str = f"({gs['delta']:+.1f}%)" if gs['delta'] is not None else ""
+                    msg.append(
+                        f"🟢 {gate_name}: {gs['pass_total']} trades, {gs['pass_wr']:.1f}% WR {delta_str}"
+                    )
+                    msg.append(
+                        f"🔴 !{gate_name}: {gs['fail_total']} trades, {gs['fail_wr']:.1f}% WR"
+                    )
+                else:
+                    msg.append(f"⚠️ {gate_name}: Insufficient samples (<20)")
+
+            # Top combinations
+            if combos:
+                msg.append("\n*Top Gate Combinations:*")
+                msg.append("(H=HTF, V=Vol, B=Body, A=Align)")
+                for combo in combos[:5]:
+                    bitmap = combo['bitmap']
+                    visual = ''.join(['🟢' if c == '1' else '🔴' for c in bitmap])
+                    msg.append(
+                        f"{visual} {combo['wins']}/{combo['total']} ({combo['wr']:.1f}% WR)"
+                    )
+
+            msg.append(f"\n_Min samples: {analysis['min_samples']} per gate status_")
+
+            await self.safe_reply(update, "\n".join(msg))
+
+        except Exception as e:
+            logger.error(f"Error in scalp_gate_analysis: {e}")
+            await update.message.reply_text(f"❌ Error: {e}")
 
     async def qscore_all_report(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show Qscore win/loss buckets for Trend, Range, and Scalp with simple recommendations.

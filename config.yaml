@@ -581,7 +581,7 @@ scalp:
       risk: 0.10          # RR and stop geometry
 # Fear & Greed Index filtering (applies to all strategies)
 fear_greed:
-  enabled: true           # Enable Fear & Greed Index filtering
+  enabled: false          # DISABLED - no sentiment filtering, technical/volatility gates only
   min_value: 20           # Block trades if index < 20 (extreme fear)
   max_value: 80           # Block trades if index > 80 (extreme greed)
   apply_to_scalp: true    # Apply to scalp strategy

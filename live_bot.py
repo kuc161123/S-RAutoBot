@@ -3136,8 +3136,10 @@ class TradingBot:
                                 exec_reason = 'hard_gates'
                                 try:
                                     if self.tg:
+                                        side_emoji = "🟢" if sc_sig.side == 'long' else "🔴"
                                         await self.tg.send_message(
-                                            f"🛑 Scalp EXEC hard-gate blocked: {sym} reasons={','.join(reasons)} — phantom recorded\n"
+                                            f"🛑 Scalp EXEC hard-gate blocked: {sym} {side_emoji} {sc_sig.side.upper()} @ {sc_sig.entry:.4f}\n"
+                                            f"Gate failures: {','.join(reasons)} — phantom recorded\n"
                                             f"Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})"
                                         )
                                 except Exception:

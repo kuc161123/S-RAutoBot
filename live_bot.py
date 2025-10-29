@@ -702,45 +702,48 @@ class TradingBot:
             hg = (sc.get('hard_gates', {}) or {})
             if not bool(hg.get('apply_to_exec', True)):
                 return True, reasons
-            # HTF ts15
+            # HTF ts15 (check if enabled)
+            if bool(hg.get('htf_enabled', False)):
+                try:
+                    ts15 = float(feats.get('ts15', 0.0) or 0.0)
+                    thr_ts = float(hg.get('htf_min_ts15', 60.0))
+                    if ts15 < thr_ts:
+                        reasons.append(f"htf<{thr_ts:.0f}")
+                except Exception:
+                    reasons.append('htf:na')
+            # Volume ratio (3m) (check if enabled)
+            if bool(hg.get('vol_enabled', False)):
+                try:
+                    vr = float(feats.get('volume_ratio', 0.0) or 0.0)
+                    vmin = float(hg.get('vol_ratio_min_3m', 1.3))
+                    if vr < vmin:
+                        reasons.append(f"vol<{vmin:.2f}")
+                except Exception:
+                    reasons.append('vol:na')
+            # Body ratio with direction (check if enabled)
+            if bool(hg.get('body_enabled', False)):
+                try:
+                    br = float(feats.get('body_ratio', 0.0) or 0.0)
+                    bmin = float(hg.get('body_ratio_min_3m', 0.35))
+                    bsgn = str(feats.get('body_sign', 'flat'))
+                    if br < bmin:
+                        reasons.append(f"body<{bmin:.2f}")
+                    else:
+                        if (side == 'long' and bsgn != 'up') or (side == 'short' and bsgn != 'down'):
+                            reasons.append('body_dir')
+                except Exception:
+                    reasons.append('body:na')
+            # 15m alignment (check if enabled - using new flag name)
             try:
-                ts15 = float(feats.get('ts15', 0.0) or 0.0)
-                thr_ts = float(hg.get('htf_min_ts15', 60.0))
-                if ts15 < thr_ts:
-                    reasons.append(f"htf<{thr_ts:.0f}")
-            except Exception:
-                reasons.append('htf:na')
-            # Volume ratio (3m)
-            try:
-                vr = float(feats.get('volume_ratio', 0.0) or 0.0)
-                vmin = float(hg.get('vol_ratio_min_3m', 1.3))
-                if vr < vmin:
-                    reasons.append(f"vol<{vmin:.2f}")
-            except Exception:
-                reasons.append('vol:na')
-            # Body ratio with direction
-            try:
-                br = float(feats.get('body_ratio', 0.0) or 0.0)
-                bmin = float(hg.get('body_ratio_min_3m', 0.35))
-                bsgn = str(feats.get('body_sign', 'flat'))
-                if br < bmin:
-                    reasons.append(f"body<{bmin:.2f}")
-                else:
-                    if (side == 'long' and bsgn != 'up') or (side == 'short' and bsgn != 'down'):
-                        reasons.append('body_dir')
-            except Exception:
-                reasons.append('body:na')
-            # 15m alignment
-            try:
-                if bool(hg.get('align_15m', True)):
+                if bool(hg.get('align_15m_enabled', hg.get('align_15m', True))):
                     dir15 = str(feats.get('ema_dir_15m', 'none'))
                     if (side == 'long' and dir15 != 'up') or (side == 'short' and dir15 != 'down'):
                         reasons.append('15m_align')
             except Exception:
                 reasons.append('15m:na')
-            # Leader alignment with BTC 1–3m micro-trend
+            # Leader alignment with BTC 1–3m micro-trend (check if enabled - using new flag name)
             try:
-                if bool(hg.get('leader_align_btc', True)) and not symbol.upper().startswith('BTC'):
+                if bool(hg.get('leader_align_btc_enabled', hg.get('leader_align_btc', True))) and not symbol.upper().startswith('BTC'):
                     btcd = self._btc_micro_trend()
                     if (side == 'long' and btcd == 'down') or (side == 'short' and btcd == 'up'):
                         reasons.append('btc_opposes')

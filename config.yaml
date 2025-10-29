@@ -570,8 +570,8 @@ scalp:
     rr_bias_pct: 0.03
   # Rule-mode scoring for Scalp (phantom-only). Used for telemetry/notifications; not for execution yet.
   rule_mode:
-    execute_q_min: 20     # Reduced from 40 to increase execution rate - hard gates still apply for quality control
-    phantom_q_min: 15     # Phantom recording threshold - lowered to capture more marginal learning data (Q=15-20 range)
+    execute_q_min: 60     # Primary quality filter - only high-Q signals execute
+    phantom_q_min: 15     # Phantom recording threshold - capture wide range for gate analysis
     weights:              # normalized automatically
       mom: 0.35           # momentum burst quality (impulse, wick direction, volume)
       pull: 0.20          # pullback fit (VWAP distance, BB width)
@@ -1949,9 +1949,13 @@ reporting:
     hour_utc: 0          # target UTC hour for daily push (best-effort)
   hard_gates:
     apply_to_exec: true
-    apply_to_phantoms: false
-    htf_min_ts15: 60.0      # HTF trend strength minimum (strict)
-    vol_ratio_min_3m: 1.30  # Volume ratio minimum (strict)
-    body_ratio_min_3m: 0.35 # Body ratio minimum (strict)
-    align_15m: true
-    leader_align_btc: true
+    apply_to_phantoms: false  # Phantoms always recorded for gate analysis
+    # Individual gate enables (only apply to execution, phantoms track all)
+    htf_enabled: false          # DISABLED - Q≥60 primary filter, phantoms will show if needed
+    htf_min_ts15: 60.0
+    vol_enabled: false          # DISABLED - Let phantom data show value over 2 weeks
+    vol_ratio_min_3m: 1.30
+    body_enabled: false         # DISABLED - Let phantom data show value over 2 weeks
+    body_ratio_min_3m: 0.35
+    align_15m_enabled: true     # ENABLED - Directional filter (trade with trend)
+    leader_align_btc_enabled: true  # ENABLED - BTC alignment check

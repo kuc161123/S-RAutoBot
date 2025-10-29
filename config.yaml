@@ -523,7 +523,7 @@ scalp:
   block_regime: false    # Do not block by regime (e.g., extreme volatility)
   dedup_enabled: false   # Disable Redis-based dedup for Scalp phantoms (learn-first)
   session_only: ["us", "european"]
-  rr: 2.0                # Target R:R (1:2)
+  rr: 2.1                # Target R:R (1:2.1)
   # Enforce minimum 1R distance (0.5%) so fees don’t erode R
   min_r_pct: 0.005
   dedup_hours: 3         # Slightly stricter dedup window to cut repeats

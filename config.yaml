@@ -101,6 +101,7 @@ strategy_regimes:
   tie_breaker_margin: 7  # within this margin, prefer previous route (more stability)
 
 trend:
+  enabled: false           # Master kill switch - complete shutdown (no detection, phantoms, or notifications)
   channel_len: 20
   atr_len: 14
   breakout_k_atr: 0.3
@@ -271,7 +272,7 @@ router:
 
 # Range FBO (failed breakout) strategy — start phantom-only
 range:
-  enabled: true
+  enabled: false           # Master kill switch - complete shutdown (no detection, phantoms, or notifications)
   phantom_only: false      # Allow execution when exec.enabled=true
   lookback: 30            # was 40 — shorter bands for more FBO opportunities
   width_min_pct: 0.008    # loosen: accept slightly tighter ranges (was 0.01)

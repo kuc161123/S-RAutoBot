@@ -2544,7 +2544,8 @@ class TradingBot:
                 # Advance Trend microstructure on each confirmed 3m bar (no 15m wait)
                 try:
                     df15 = self.frames.get(sym)
-                    if df15 is not None and not df15.empty and getattr(self, '_detect_trend_signal', None) is not None and getattr(self, '_trend_settings', None) is not None:
+                    trend_enabled = bool((self.config.get('trend', {}) or {}).get('enabled', True))
+                    if trend_enabled and df15 is not None and not df15.empty and getattr(self, '_detect_trend_signal', None) is not None and getattr(self, '_trend_settings', None) is not None:
                         # Run micro-step by invoking pullback detection (it consults 3m frames internally)
                         _ = self._detect_trend_signal(df15.copy(), self._trend_settings, sym)
                 except Exception as _te:
@@ -4322,8 +4323,8 @@ class TradingBot:
             cfg = self.config if hasattr(self, 'config') else {}
             rcfg = (cfg.get('range', {}) or {})
             hcfg = (rcfg.get('handoff', {}) or {})
-            if not bool(rcfg.get('enabled', True)) or not bool(hcfg.get('enabled', True)):
-                return
+            if not bool(rcfg.get('enabled', False)) or not bool(hcfg.get('enabled', True)):
+                return  # Skip if Range strategy disabled
             # Cooldown
             if not hasattr(self, '_range_handoff_last'):
                 self._range_handoff_last = {}
@@ -7584,7 +7585,7 @@ class TradingBot:
 
         # Start Range FBO scanner (phantom-first; can execute when enabled)
         try:
-            if bool(((cfg.get('range', {}) or {}).get('enabled', True))):
+            if bool(((cfg.get('range', {}) or {}).get('enabled', False))):
                 async def _range_fbo_scanner():
                     from strategy_range_fbo import detect_range_fbo_signal
                     settings = cfg.get('range', {}) or {}
@@ -9359,7 +9360,9 @@ class TradingBot:
                                     except Exception:
                                         pass
 
-                        # 2) Trend independent
+                        # 2) Trend independent (check enabled flag)
+                        if not bool((cfg.get('trend', {}) or {}).get('enabled', True)):
+                            continue  # Skip entirely - complete shutdown
                         try:
                             # Verbose heartbeat for Trend analysis
                             try:

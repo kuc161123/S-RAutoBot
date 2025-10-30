@@ -528,6 +528,18 @@ scalp:
   min_r_pct: 0.005
   dedup_hours: 3         # Slightly stricter dedup window to cut repeats
   cooldown_bars: 4       # Stricter cooldown to reduce noise
+  hard_gates:
+    apply_to_exec: true
+    apply_to_phantoms: false  # Phantoms always recorded for gate analysis
+    # Individual gate enables (only apply to execution, phantoms track all)
+    htf_enabled: false          # DISABLED - Let phantom data show value over 2 weeks
+    htf_min_ts15: 60.0
+    vol_enabled: false          # DISABLED - Phantom data shows neutral/negative impact
+    vol_ratio_min_3m: 1.30
+    body_enabled: true          # ENABLED - Phantom data shows 64.4% WR (+20.4%!)
+    body_ratio_min_3m: 0.35
+    align_15m_enabled: false    # DISABLED - Let phantom data show value over 2 weeks
+    leader_align_btc_enabled: false  # DISABLED - Let phantom data show value over 2 weeks
   logging:
     heartbeat: true      # Per 3m-bar heartbeat when no Scalp signal
     decision_only: false # If true, suppress analysis/heartbeat and show only decisions
@@ -1955,15 +1967,3 @@ reporting:
     daily: true          # send 24h summary
     weekly: true         # send 7d summary
     hour_utc: 0          # target UTC hour for daily push (best-effort)
-  hard_gates:
-    apply_to_exec: true
-    apply_to_phantoms: false  # Phantoms always recorded for gate analysis
-    # Individual gate enables (only apply to execution, phantoms track all)
-    htf_enabled: false          # DISABLED - Let phantom data show value over 2 weeks
-    htf_min_ts15: 60.0
-    vol_enabled: false          # DISABLED - Phantom data shows neutral/negative impact
-    vol_ratio_min_3m: 1.30
-    body_enabled: true          # ENABLED - Phantom data shows 64.4% WR (+20.4%!)
-    body_ratio_min_3m: 0.35
-    align_15m_enabled: false    # DISABLED - Let phantom data show value over 2 weeks
-    leader_align_btc_enabled: false  # DISABLED - Let phantom data show value over 2 weeks

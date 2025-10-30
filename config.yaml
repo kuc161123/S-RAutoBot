@@ -261,7 +261,7 @@ phantom:
     scalp: 8    # was 4 (default). Allow up to 8 scalp phantoms per symbol per hour
   caps:
     scalp:
-      none: 400 # max daily scalp phantoms when accepted in 'none' bucket
+      none: 0 # 0 = unlimited daily scalp phantoms (hourly budget still enforced)
 
 # Higher-timeframe router bias and gating (enabled by default)
 router:

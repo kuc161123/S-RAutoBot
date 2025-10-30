@@ -2646,27 +2646,29 @@ class TradingBot:
                 if not use_scalp or detect_scalp_signal is None:
                     continue
 
-                # Regime independence: if scalp.independent=true, do NOT gate by regime/volatility
+                # Extreme volatility blocking: check block_regime flag (execution only, phantoms continue)
                 vol_level = 'normal'
                 try:
                     scalp_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
-                    scalp_independent = bool(scalp_cfg.get('independent', False))
+                    block_regime = bool(scalp_cfg.get('block_regime', True))
                 except Exception:
-                    scalp_independent = False
-                if not scalp_independent:
-                    # Legacy behavior: block extreme volatility
+                    block_regime = True
+                if block_regime:
+                    # Check for extreme volatility
                     vol_level = 'unknown'
                     if 'frames' in dir(self) and sym in self.frames and not self.frames[sym].empty and ENHANCED_ML_AVAILABLE:
                         try:
                             analysis = get_enhanced_market_regime(self.frames[sym].tail(200), sym)
                             vol_level = analysis.volatility_level
                             if vol_level == 'extreme':
-                                logger.debug(f"[{sym}] 🩳 Scalp(3m) skipped: volatility={vol_level}")
+                                logger.info(f"[{sym}] 🩳 Scalp EXEC blocked: extreme volatility (score={analysis.volatility_score:.2f})")
+                                # Record phantom for learning (hard_gates.apply_to_phantoms = false)
+                                # Phantom tracking happens later in the flow, we just skip execution
                                 try:
                                     logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=volatility_extreme)")
                                 except Exception:
                                     pass
-                                # Do not continue; proceed to Trend analysis
+                                continue  # ← FIX: Actually block execution (was missing!)
                         except Exception:
                             pass
 

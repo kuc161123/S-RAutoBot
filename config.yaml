@@ -519,7 +519,6 @@ scalp:
   timeframe: 3           # Future: stream 3m for scalps; current uses main tf
   use_ml: true
   threshold: 70
-  independent: true      # When true, Scalp runs fully independent of regime/router
   block_regime: true     # Block trades during extreme volatility (ATR > 4%, BB > 90th percentile)
   dedup_enabled: false   # Disable Redis-based dedup for Scalp phantoms (learn-first)
   session_only: []       # Trade all sessions 24/7 (only block extreme volatility)

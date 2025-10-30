@@ -116,7 +116,7 @@ trend:
   regime:
     execute_only: true   # Apply regime gates only for execution; phantoms remain free
   exec:
-    enabled: true
+    enabled: false       # DISABLED - Running Scalp strategy only
     # When true, bot may run Trend in phantom-only mode during cold start.
     # Corking (promotion) can override this if allow_cork_override is true.
     bootstrap_phantom_only: true
@@ -285,7 +285,7 @@ range:
     require_close_inside: true
     notify_suppress: true
   exec:
-    enabled: true
+    enabled: false       # DISABLED - Running Scalp strategy only
     risk_percent: 1.0
     daily_cap: 3
     allow_stream_entry: false

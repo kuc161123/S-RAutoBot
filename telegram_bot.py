@@ -5549,35 +5549,39 @@ class TGBot:
             total = analysis['total_phantoms']
             baseline_wr = analysis['baseline_wr']
             all_gates = analysis['all_gates_pass']
-            gate_stats = analysis['gate_stats']
+            sorted_vars = analysis.get('sorted_variables', [])
             combos = analysis['top_combinations']
 
             msg = [
-                f"🚪 *Scalp Gate Analysis* ({days}d)\n",
+                f"🚪 *Scalp Variable Analysis* ({days}d)\n",
                 f"📊 Baseline: {total} phantoms, {baseline_wr:.1f}% WR\n",
-                f"✅ All Gates Pass: {all_gates['total']} trades, {all_gates['wr']:.1f}% WR ({all_gates['delta']:+.1f}%)\n",
-                "*Individual Gates:*"
             ]
 
-            gate_names = {
-                'htf': 'HTF≥60',
-                'vol': 'Vol≥1.3',
-                'body': 'Body≥0.35',
-                'align_15m': '15m Align'
-            }
+            # Show top 10 positive-impact variables
+            if sorted_vars:
+                positive_vars = [(k, v) for k, v in sorted_vars if v['delta'] and v['delta'] > 0]
+                if positive_vars:
+                    msg.append("*🟢 Top Filters (Improve WR):*")
+                    for var_name, stats in positive_vars[:10]:
+                        msg.append(
+                            f"✅ {var_name}: {stats['pass_total']} trades, "
+                            f"{stats['pass_wr']:.1f}% WR ({stats['delta']:+.1f}%)"
+                        )
 
-            for gate_key, gate_name in gate_names.items():
-                gs = gate_stats[gate_key]
-                if gs['sufficient_samples']:
-                    delta_str = f"({gs['delta']:+.1f}%)" if gs['delta'] is not None else ""
-                    msg.append(
-                        f"🟢 {gate_name}: {gs['pass_total']} trades, {gs['pass_wr']:.1f}% WR {delta_str}"
-                    )
-                    msg.append(
-                        f"🔴 !{gate_name}: {gs['fail_total']} trades, {gs['fail_wr']:.1f}% WR"
-                    )
-                else:
-                    msg.append(f"⚠️ {gate_name}: Insufficient samples (<20)")
+                # Show top 10 negative-impact variables
+                negative_vars = [(k, v) for k, v in sorted_vars if v['delta'] and v['delta'] < 0]
+                if negative_vars:
+                    msg.append("\n*🔴 Worst Filters (Hurt WR):*")
+                    for var_name, stats in reversed(negative_vars[-10:]):
+                        msg.append(
+                            f"❌ {var_name}: {stats['pass_total']} trades, "
+                            f"{stats['pass_wr']:.1f}% WR ({stats['delta']:+.1f}%)"
+                        )
+
+                # Show neutral/insufficient data
+                insufficient = len([v for k, v in analysis['variable_stats'].items() if not v['sufficient_samples']])
+                if insufficient > 0:
+                    msg.append(f"\n⚠️ {insufficient} variables with insufficient samples (<20)")
 
             # Top combinations
             if combos:

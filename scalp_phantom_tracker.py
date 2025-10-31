@@ -636,9 +636,9 @@ class ScalpPhantomTracker:
 
     def compute_gate_status(self, phantom: ScalpPhantomTrade, config: Dict = None) -> Dict:
         """
-        Compute which hard gates would pass/fail for this phantom based on its features.
-        Uses current config gate thresholds or provided overrides.
-        Returns: {htf: bool, vol: bool, body: bool, align_15m: bool, all: bool}
+        Compute which hard gates and variables would pass/fail for this phantom.
+        Now tracks 26+ variables across multiple categories for optimization.
+        Returns: Dict with boolean pass/fail for each variable + debug values
         """
         feats = phantom.features or {}
         side = phantom.side
@@ -658,6 +658,7 @@ class ScalpPhantomTracker:
         vol_min = float(gate_cfg.get('vol_ratio_min_3m', 1.30))
         body_min = float(gate_cfg.get('body_ratio_min_3m', 0.35))
 
+        # === ORIGINAL 4 GATES (backward compatible) ===
         # HTF gate
         ts15 = float(feats.get('ts15', 0.0) or 0.0)
         htf_pass = ts15 >= htf_min
@@ -686,18 +687,117 @@ class ScalpPhantomTracker:
         # All gates pass
         all_pass = htf_pass and vol_pass and body_pass and align_15m_pass
 
+        # === NEW BODY VARIATIONS ===
+        body_040 = body_ratio >= 0.40 and body_dir_ok
+        body_045 = body_ratio >= 0.45 and body_dir_ok
+        body_050 = body_ratio >= 0.50 and body_dir_ok
+        body_060 = body_ratio >= 0.60 and body_dir_ok
+
+        # Wick alignment (rejection wick in trade direction)
+        upper_wick = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
+        lower_wick = float(feats.get('lower_wick_ratio', 0.0) or 0.0)
+        wick_align = (lower_wick > upper_wick) if side == 'long' else (upper_wick > lower_wick)
+
+        # === NEW VWAP DISTANCE VARIATIONS ===
+        vwap_dist = float(feats.get('vwap_dist_atr', 999.0) or 999.0)
+        vwap_045 = vwap_dist < 0.45
+        vwap_060 = vwap_dist < 0.60
+        vwap_080 = vwap_dist < 0.80
+        vwap_100 = vwap_dist < 1.00
+
+        # === NEW VOLUME VARIATIONS ===
+        vol_110 = vol_ratio >= 1.10
+        vol_120 = vol_ratio >= 1.20
+        vol_150 = vol_ratio >= 1.50
+
+        # === BB WIDTH PERCENTILES ===
+        # Using absolute thresholds as proxy (can be refined later with percentile calc)
+        bb_width = float(feats.get('bb_width_pct', 0.0) or 0.0)
+        bb_width_60p = bb_width >= 0.015  # Rough proxy for 60th percentile
+        bb_width_70p = bb_width >= 0.018  # 70th percentile proxy
+        bb_width_80p = bb_width >= 0.022  # 80th percentile proxy
+
+        # === Q-SCORE VARIATIONS ===
+        # Note: q_score may not be stored in features yet - will be 0 if missing
+        q_score = float(feats.get('q_score', 0.0) or 0.0)
+        q_040 = q_score >= 40.0
+        q_050 = q_score >= 50.0
+        q_060 = q_score >= 60.0
+        q_070 = q_score >= 70.0
+
+        # === IMPULSE VARIATIONS ===
+        impulse = float(feats.get('impulse_ratio', 0.0) or 0.0)
+        impulse_040 = impulse >= 0.40
+        impulse_060 = impulse >= 0.60
+
+        # === MICRO SEQUENCE ===
+        # Will be False if not yet implemented in feature storage
+        micro_seq = bool(feats.get('micro_seq_aligned', False))
+
+        # === HTF VARIATIONS ===
+        htf_070 = ts15 >= 70.0
+        htf_080 = ts15 >= 80.0
+
         return {
+            # ===== ORIGINAL 4 (backward compatible) =====
             'htf': htf_pass,
             'vol': vol_pass,
             'body': body_pass,
             'align_15m': align_15m_pass,
             'all': all_pass,
-            # Include values for debugging
+
+            # ===== BODY VARIATIONS (5) =====
+            'body_040': body_040,
+            'body_045': body_045,
+            'body_050': body_050,
+            'body_060': body_060,
+            'wick_align': wick_align,
+
+            # ===== VWAP VARIATIONS (4) =====
+            'vwap_045': vwap_045,
+            'vwap_060': vwap_060,
+            'vwap_080': vwap_080,
+            'vwap_100': vwap_100,
+
+            # ===== VOLUME VARIATIONS (3) =====
+            'vol_110': vol_110,
+            'vol_120': vol_120,
+            'vol_150': vol_150,
+
+            # ===== BB WIDTH (3) =====
+            'bb_width_60p': bb_width_60p,
+            'bb_width_70p': bb_width_70p,
+            'bb_width_80p': bb_width_80p,
+
+            # ===== Q-SCORE (4) =====
+            'q_040': q_040,
+            'q_050': q_050,
+            'q_060': q_060,
+            'q_070': q_070,
+
+            # ===== IMPULSE (2) =====
+            'impulse_040': impulse_040,
+            'impulse_060': impulse_060,
+
+            # ===== MICRO (1) =====
+            'micro_seq': micro_seq,
+
+            # ===== HTF VARIATIONS (2) =====
+            'htf_070': htf_070,
+            'htf_080': htf_080,
+
+            # ===== DEBUG VALUES =====
             'htf_value': ts15,
             'vol_value': vol_ratio,
             'body_value': body_ratio,
             'body_sign': body_sign,
-            'ema_dir_15m': ema_dir_15m
+            'ema_dir_15m': ema_dir_15m,
+            'vwap_dist_value': vwap_dist,
+            'upper_wick_value': upper_wick,
+            'lower_wick_value': lower_wick,
+            'bb_width_value': bb_width,
+            'q_score_value': q_score,
+            'impulse_value': impulse
         }
 
     def get_gate_analysis(self, days: int = 30, min_samples: int = 20) -> Dict:
@@ -735,25 +835,46 @@ class ScalpPhantomTracker:
         all_pass_total = len(all_pass_phantoms)
         all_pass_wr = (all_pass_wins / all_pass_total * 100) if all_pass_total > 0 else 0.0
 
-        # Per-gate analysis
-        gates = ['htf', 'vol', 'body', 'align_15m']
-        gate_stats = {}
+        # Per-variable analysis (all 26+ variables)
+        # Define all trackable variables
+        all_variables = [
+            # Original 4
+            'htf', 'vol', 'body', 'align_15m',
+            # Body variations
+            'body_040', 'body_045', 'body_050', 'body_060', 'wick_align',
+            # VWAP variations
+            'vwap_045', 'vwap_060', 'vwap_080', 'vwap_100',
+            # Volume variations
+            'vol_110', 'vol_120', 'vol_150',
+            # BB width
+            'bb_width_60p', 'bb_width_70p', 'bb_width_80p',
+            # Q-score
+            'q_040', 'q_050', 'q_060', 'q_070',
+            # Impulse
+            'impulse_040', 'impulse_060',
+            # Micro
+            'micro_seq',
+            # HTF variations
+            'htf_070', 'htf_080',
+        ]
 
-        for gate in gates:
-            gate_pass = [p for i, p in enumerate(phantoms) if gate_statuses[i][gate]]
-            gate_fail = [p for i, p in enumerate(phantoms) if not gate_statuses[i][gate]]
+        variable_stats = {}
 
-            pass_wins = sum(1 for p in gate_pass if p.outcome == 'win')
-            pass_total = len(gate_pass)
+        for var in all_variables:
+            var_pass = [p for i, p in enumerate(phantoms) if gate_statuses[i].get(var, False)]
+            var_fail = [p for i, p in enumerate(phantoms) if not gate_statuses[i].get(var, False)]
+
+            pass_wins = sum(1 for p in var_pass if p.outcome == 'win')
+            pass_total = len(var_pass)
             pass_wr = (pass_wins / pass_total * 100) if pass_total > 0 else 0.0
 
-            fail_wins = sum(1 for p in gate_fail if p.outcome == 'win')
-            fail_total = len(gate_fail)
+            fail_wins = sum(1 for p in var_fail if p.outcome == 'win')
+            fail_total = len(var_fail)
             fail_wr = (fail_wins / fail_total * 100) if fail_total > 0 else 0.0
 
             delta = pass_wr - fail_wr if (pass_total >= min_samples and fail_total >= min_samples) else None
 
-            gate_stats[gate] = {
+            variable_stats[var] = {
                 'pass_wins': pass_wins,
                 'pass_total': pass_total,
                 'pass_wr': pass_wr,
@@ -763,6 +884,17 @@ class ScalpPhantomTracker:
                 'delta': delta,
                 'sufficient_samples': pass_total >= min_samples and fail_total >= min_samples
             }
+
+        # Sort variables by delta (descending) to show best filters first
+        sorted_variables = sorted(
+            [(k, v) for k, v in variable_stats.items() if v['sufficient_samples']],
+            key=lambda x: x[1]['delta'] if x[1]['delta'] is not None else -999,
+            reverse=True
+        )
+
+        # Backward compatibility: keep gate_stats for original 4
+        gates = ['htf', 'vol', 'body', 'align_15m']
+        gate_stats = {g: variable_stats[g] for g in gates if g in variable_stats}
 
         # Gate combinations (bitmap: HVBA = HTF, Vol, Body, Align)
         from collections import defaultdict
@@ -799,7 +931,9 @@ class ScalpPhantomTracker:
                 'wr': all_pass_wr,
                 'delta': all_pass_wr - baseline_wr
             },
-            'gate_stats': gate_stats,
+            'gate_stats': gate_stats,  # Original 4 gates (backward compat)
+            'variable_stats': variable_stats,  # All 26+ variables
+            'sorted_variables': sorted_variables,  # Ranked by delta impact
             'top_combinations': top_combos,
             'min_samples': min_samples
         }

@@ -5634,7 +5634,7 @@ class TGBot:
             analysis = scpt.get_comprehensive_analysis(month=month, top_n=10, min_samples=20)
 
             if analysis.get('error'):
-                await self.safe_reply(update, f"🔍 *Scalp Comprehensive Analysis*\\n\\n{analysis['error']}")
+                await self.safe_reply(update, f"🔍 <b>Scalp Comprehensive Analysis</b>\n\n{analysis['error']}", parse_mode='HTML')
                 return
 
             # Build message
@@ -5646,13 +5646,13 @@ class TGBot:
             triplet_analysis = analysis.get('triplet_analysis', {})
 
             msg = [
-                f"🔍 *Scalp Comprehensive Analysis* ({period})\\n",
-                f"📊 Dataset: {total} phantoms, {baseline_wr:.1f}% baseline WR\\n",
+                f"🔍 <b>Scalp Comprehensive Analysis</b> ({period})\n",
+                f"📊 Dataset: {total} phantoms, {baseline_wr:.1f}% baseline WR\n",
             ]
 
             # Top 10 solo variables
             if ranked_vars:
-                msg.append("━━━ *SOLO VARIABLES (Top 10)* ━━━")
+                msg.append("━━━ <b>SOLO VARIABLES (Top 10)</b> ━━━")
                 for var_name, stats in ranked_vars[:10]:
                     emoji = "✅" if stats['delta'] > 0 else "⚠️"
                     msg.append(
@@ -5662,7 +5662,7 @@ class TGBot:
 
             # Best pairs
             if pair_analysis:
-                msg.append("\\n━━━ *BEST PAIRS* ━━━")
+                msg.append("\n━━━ <b>BEST PAIRS</b> ━━━")
                 for (v1, v2), stats in list(pair_analysis.items())[:5]:
                     synergy_str = f" synergy{stats.get('synergy', 0):+.1f}%" if stats.get('synergy') else ""
                     msg.append(
@@ -5672,16 +5672,16 @@ class TGBot:
 
             # Best triplets
             if triplet_analysis:
-                msg.append("\\n━━━ *BEST TRIPLETS* ━━━")
+                msg.append("\n━━━ <b>BEST TRIPLETS</b> ━━━")
                 for (v1, v2, v3), stats in list(triplet_analysis.items())[:3]:
                     msg.append(
                         f"🚀 {v1} + {v2} + {v3}: {stats['wr']:.1f}% WR "
                         f"[{stats['total']} trades]"
                     )
 
-            msg.append("\\n💡 Use /scalprecommend for config snippet")
+            msg.append("\n💡 Use /scalprecommend for config snippet")
 
-            await self.safe_reply(update, "\\n".join(msg))
+            await self.safe_reply(update, "\n".join(msg), parse_mode='HTML')
 
         except Exception as e:
             logger.error(f"Error in scalp_comprehensive_analysis: {e}")
@@ -5697,24 +5697,24 @@ class TGBot:
             analysis = scpt.get_comprehensive_analysis(month=None, top_n=10, min_samples=20)
 
             if analysis.get('error'):
-                await self.safe_reply(update, f"🎯 *Scalp Recommendations*\\n\\n{analysis['error']}")
+                await self.safe_reply(update, f"🎯 <b>Scalp Recommendations</b>\n\n{analysis['error']}", parse_mode='HTML')
                 return
 
             recs = scpt.generate_recommendations(analysis, min_wr=60.0, min_samples=30)
 
             if recs.get('error'):
-                await self.safe_reply(update, f"🎯 *Scalp Recommendations*\\n\\n{recs['error']}")
+                await self.safe_reply(update, f"🎯 <b>Scalp Recommendations</b>\n\n{recs['error']}", parse_mode='HTML')
                 return
 
             # Build message
             msg = [
-                f"🎯 *Scalp Config Recommendations*\\n",
-                f"📊 Based on {analysis['total_phantoms']} phantoms ({analysis['period']})\\n",
+                f"🎯 <b>Scalp Config Recommendations</b>\n",
+                f"📊 Based on {analysis['total_phantoms']} phantoms ({analysis['period']})\n",
             ]
 
             # Enable recommendations
             if recs['enable']:
-                msg.append("━━━ *ENABLE (High WR)* ━━━")
+                msg.append("━━━ <b>ENABLE (High WR)</b> ━━━")
                 for rec in recs['enable'][:5]:
                     msg.append(
                         f"✅ {rec['variable']}: {rec['reason']}, {rec['count']} trades"
@@ -5722,7 +5722,7 @@ class TGBot:
 
             # Disable recommendations
             if recs['disable']:
-                msg.append("\\n━━━ *DISABLE (Low WR)* ━━━")
+                msg.append("\n━━━ <b>DISABLE (Low WR)</b> ━━━")
                 for rec in recs['disable'][:5]:
                     msg.append(
                         f"❌ {rec['variable']}: {rec['reason']}, {rec['count']} trades"
@@ -5730,7 +5730,7 @@ class TGBot:
 
             # Best combinations
             if recs['best_pairs']:
-                msg.append("\\n━━━ *BEST COMBINATIONS* ━━━")
+                msg.append("\n━━━ <b>BEST COMBINATIONS</b> ━━━")
                 for combo in recs['best_pairs'][:3]:
                     msg.append(
                         f"🎯 {' + '.join(combo['variables'])}: {combo['wr']:.1f}% WR "
@@ -5739,11 +5739,11 @@ class TGBot:
 
             # Config snippet
             if recs['config_snippet']:
-                msg.append(f"\\n━━━ *CONFIG SNIPPET* ━━━")
-                msg.append(f"```\\n{recs['config_snippet']}\\n```")
-                msg.append("\\n_Copy/paste to config.yaml_")
+                msg.append(f"\n━━━ <b>CONFIG SNIPPET</b> ━━━")
+                msg.append(f"<pre>\n{recs['config_snippet']}\n</pre>")
+                msg.append("\n<i>Copy/paste to config.yaml</i>")
 
-            await self.safe_reply(update, "\\n".join(msg))
+            await self.safe_reply(update, "\n".join(msg), parse_mode='HTML')
 
         except Exception as e:
             logger.error(f"Error in scalp_recommendations: {e}")

@@ -3230,17 +3230,20 @@ class TradingBot:
                                         # Extract volume ratio and body ratio for display
                                         vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
                                         vol_str = f" Vol={vol_ratio:.2f}x" if vol_ratio > 0 else ""
-                                        # Gate status indicators with pass/fail
+                                        # Gate status indicators with pass/fail + HTF value (always shown)
                                         gate_str = ""
                                         try:
                                             hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
-                                            # HTF gate
+                                            # HTF value (always shown, with gate status if enabled)
+                                            ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
                                             if bool(hg.get('htf_enabled', False)):
-                                                ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
                                                 thr_ts = float(hg.get('htf_min_ts15', 70.0))
                                                 htf_pass = ts15 >= thr_ts
                                                 htf_emoji = "✅" if htf_pass else "❌"
                                                 gate_str += f" HTF:{htf_emoji}{ts15:.0f}"
+                                            else:
+                                                # Show HTF value even when gate disabled
+                                                gate_str += f" HTF:{ts15:.0f}"
                                             # Body gate
                                             if bool(hg.get('body_enabled', False)):
                                                 body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)

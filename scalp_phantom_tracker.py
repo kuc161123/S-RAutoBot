@@ -478,7 +478,11 @@ class ScalpPhantomTracker:
         try:
             cur_high = float(df['high'].iloc[-1]) if df is not None else current_price
             cur_low = float(df['low'].iloc[-1]) if df is not None else current_price
-        except Exception:
+            # Warn if df is None - intrabar TP/SL hits may be missed
+            if df is None:
+                logger.debug(f"[{symbol}] Phantom update: No df provided, using current_price for high/low (may miss intrabar hits)")
+        except Exception as e:
+            logger.warning(f"[{symbol}] Phantom update: Error getting high/low from df: {e}, using current_price")
             cur_high = current_price
             cur_low = current_price
         for ph in act_list:
@@ -516,13 +520,16 @@ class ScalpPhantomTracker:
                             ph.exit_reason = 'timeout'
                             self._close(symbol, ph, current_price, 'timeout')
                             continue
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[{symbol}] Phantom timeout check error for {getattr(ph, 'phantom_id', 'unknown')}: {e}")
 
                 # Keep active if not closed by TP/SL/timeout
                 remaining.append(ph)
-            except Exception:
+            except Exception as e:
                 # On error, keep the phantom to try again next tick
+                logger.error(f"[{symbol}] Phantom update error for {getattr(ph, 'phantom_id', 'unknown')}: {e} "
+                           f"(side={ph.side}, entry={ph.entry_price}, tp={ph.take_profit}, sl={ph.stop_loss}, "
+                           f"cur_price={current_price}, cur_high={cur_high}, cur_low={cur_low})")
                 remaining.append(ph)
 
         if remaining:
@@ -532,6 +539,16 @@ class ScalpPhantomTracker:
                 del self.active[symbol]
             except Exception:
                 pass
+
+        # Health monitoring: Alert if too many active phantoms
+        try:
+            total_active = sum(len(v) for v in self.active.values())
+            if total_active > 100:
+                logger.warning(f"⚠️ PHANTOM HEALTH: {total_active} active phantoms (threshold: 100) - possible outcome detection issues")
+            elif total_active > 50:
+                logger.info(f"Phantom count elevated: {total_active} active (threshold: 50)")
+        except Exception as e:
+            logger.debug(f"Phantom health check error: {e}")
 
     def _close(self, symbol: str, ph: ScalpPhantomTrade, exit_price: float, outcome: str):
         ph.outcome = outcome

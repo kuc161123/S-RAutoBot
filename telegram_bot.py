@@ -104,6 +104,9 @@ class TGBot:
         self.app.add_handler(CommandHandler("phantomqa", self.phantom_qa))
         self.app.add_handler(CommandHandler("scalpqa", self.scalp_qa))
         self.app.add_handler(CommandHandler("scalpgates", self.scalp_gate_analysis))
+        self.app.add_handler(CommandHandler("scalpcomprehensive", self.scalp_comprehensive_analysis))
+        self.app.add_handler(CommandHandler("scalprecommend", self.scalp_recommendations))
+        self.app.add_handler(CommandHandler("scalptrends", self.scalp_monthly_trends))
         self.app.add_handler(CommandHandler("scalppromote", self.scalp_promotion_status))
         self.app.add_handler(CommandHandler("trendpromote", self.trend_promotion_status))
         # Trend ML high-ML threshold changer
@@ -1443,6 +1446,13 @@ class TGBot:
             "ML",
             "• /ml — Trend ML status",
             "• /mlpatterns — Learned patterns",
+            "",
+            "Scalp Analysis",
+            "• /scalpqa — Scalp quality report",
+            "• /scalpgates — Gate analysis (26+ variables)",
+            "• /scalpcomprehensive [month] — Full analysis with combinations",
+            "• /scalprecommend — Config recommendations",
+            "• /scalptrends — Month-over-month trends",
             "",
             "Risk",
             "• /risk — Show current risk",
@@ -5600,6 +5610,210 @@ class TGBot:
 
         except Exception as e:
             logger.error(f"Error in scalp_gate_analysis: {e}")
+            await update.message.reply_text(f"❌ Error: {e}")
+
+    async def scalp_comprehensive_analysis(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Comprehensive Scalp analysis: all variables, combinations, recommendations."""
+        try:
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+
+            # Parse month argument
+            month = None
+            if ctx.args and len(ctx.args) > 0:
+                month = ctx.args[0]
+                # Validate format YYYY-MM
+                try:
+                    year, mon = month.split('-')
+                    int(year), int(mon)
+                except Exception:
+                    await self.safe_reply(update, "Usage: /scalpcomprehensive [YYYY-MM]\\nExample: /scalpcomprehensive 2025-10")
+                    return
+
+            # Get comprehensive analysis
+            analysis = scpt.get_comprehensive_analysis(month=month, top_n=10, min_samples=20)
+
+            if analysis.get('error'):
+                await self.safe_reply(update, f"🔍 *Scalp Comprehensive Analysis*\\n\\n{analysis['error']}")
+                return
+
+            # Build message
+            total = analysis['total_phantoms']
+            baseline_wr = analysis['baseline_wr']
+            period = analysis['period']
+            ranked_vars = analysis.get('ranked_variables', [])
+            pair_analysis = analysis.get('pair_analysis', {})
+            triplet_analysis = analysis.get('triplet_analysis', {})
+
+            msg = [
+                f"🔍 *Scalp Comprehensive Analysis* ({period})\\n",
+                f"📊 Dataset: {total} phantoms, {baseline_wr:.1f}% baseline WR\\n",
+            ]
+
+            # Top 10 solo variables
+            if ranked_vars:
+                msg.append("━━━ *SOLO VARIABLES (Top 10)* ━━━")
+                for var_name, stats in ranked_vars[:10]:
+                    emoji = "✅" if stats['delta'] > 0 else "⚠️"
+                    msg.append(
+                        f"{emoji} {var_name}: {stats['pass_wr']:.1f}% WR "
+                        f"({stats['delta']:+.1f}%) [{stats['pass_total']} trades]"
+                    )
+
+            # Best pairs
+            if pair_analysis:
+                msg.append("\\n━━━ *BEST PAIRS* ━━━")
+                for (v1, v2), stats in list(pair_analysis.items())[:5]:
+                    synergy_str = f" synergy{stats.get('synergy', 0):+.1f}%" if stats.get('synergy') else ""
+                    msg.append(
+                        f"🎯 {v1} + {v2}: {stats['wr']:.1f}% WR "
+                        f"[{stats['total']} trades] {stats['delta']:+.1f}%{synergy_str}"
+                    )
+
+            # Best triplets
+            if triplet_analysis:
+                msg.append("\\n━━━ *BEST TRIPLETS* ━━━")
+                for (v1, v2, v3), stats in list(triplet_analysis.items())[:3]:
+                    msg.append(
+                        f"🚀 {v1} + {v2} + {v3}: {stats['wr']:.1f}% WR "
+                        f"[{stats['total']} trades]"
+                    )
+
+            msg.append("\\n💡 Use /scalprecommend for config snippet")
+
+            await self.safe_reply(update, "\\n".join(msg))
+
+        except Exception as e:
+            logger.error(f"Error in scalp_comprehensive_analysis: {e}")
+            await update.message.reply_text(f"❌ Error: {e}")
+
+    async def scalp_recommendations(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Generate actionable recommendations with config snippet."""
+        try:
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+
+            # Get analysis and recommendations
+            analysis = scpt.get_comprehensive_analysis(month=None, top_n=10, min_samples=20)
+
+            if analysis.get('error'):
+                await self.safe_reply(update, f"🎯 *Scalp Recommendations*\\n\\n{analysis['error']}")
+                return
+
+            recs = scpt.generate_recommendations(analysis, min_wr=60.0, min_samples=30)
+
+            if recs.get('error'):
+                await self.safe_reply(update, f"🎯 *Scalp Recommendations*\\n\\n{recs['error']}")
+                return
+
+            # Build message
+            msg = [
+                f"🎯 *Scalp Config Recommendations*\\n",
+                f"📊 Based on {analysis['total_phantoms']} phantoms ({analysis['period']})\\n",
+            ]
+
+            # Enable recommendations
+            if recs['enable']:
+                msg.append("━━━ *ENABLE (High WR)* ━━━")
+                for rec in recs['enable'][:5]:
+                    msg.append(
+                        f"✅ {rec['variable']}: {rec['reason']}, {rec['count']} trades"
+                    )
+
+            # Disable recommendations
+            if recs['disable']:
+                msg.append("\\n━━━ *DISABLE (Low WR)* ━━━")
+                for rec in recs['disable'][:5]:
+                    msg.append(
+                        f"❌ {rec['variable']}: {rec['reason']}, {rec['count']} trades"
+                    )
+
+            # Best combinations
+            if recs['best_pairs']:
+                msg.append("\\n━━━ *BEST COMBINATIONS* ━━━")
+                for combo in recs['best_pairs'][:3]:
+                    msg.append(
+                        f"🎯 {' + '.join(combo['variables'])}: {combo['wr']:.1f}% WR "
+                        f"[{combo['count']} trades]"
+                    )
+
+            # Config snippet
+            if recs['config_snippet']:
+                msg.append(f"\\n━━━ *CONFIG SNIPPET* ━━━")
+                msg.append(f"```\\n{recs['config_snippet']}\\n```")
+                msg.append("\\n_Copy/paste to config.yaml_")
+
+            await self.safe_reply(update, "\\n".join(msg))
+
+        except Exception as e:
+            logger.error(f"Error in scalp_recommendations: {e}")
+            await update.message.reply_text(f"❌ Error: {e}")
+
+    async def scalp_monthly_trends(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Analyze Scalp variable performance trends across months."""
+        try:
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+
+            # Parse months argument (optional)
+            months = None
+            if ctx.args:
+                months = ctx.args  # e.g., ['2025-10', '2025-09', '2025-08']
+
+            # Get monthly trends
+            trends = scpt.get_monthly_trends(months=months)
+
+            if trends.get('error'):
+                await self.safe_reply(update, f"📈 *Scalp Monthly Trends*\\n\\n{trends['error']}")
+                return
+
+            # Build message
+            months_str = ', '.join(trends['months'])
+            summary = trends.get('summary', {})
+            var_trends = trends.get('variable_trends', {})
+
+            msg = [
+                f"📈 *Scalp Variable Trends* ({len(trends['months'])} months)\\n",
+                f"📅 Months: {months_str}\\n",
+                f"📊 Summary: {summary.get('improving_count', 0)} improving, "
+                f"{summary.get('degrading_count', 0)} degrading, "
+                f"{summary.get('stable_count', 0)} stable\\n",
+            ]
+
+            # Show top improving variables
+            improving = summary.get('improving_vars', [])
+            if improving:
+                msg.append("━━━ *📈 IMPROVING* ━━━")
+                for var in improving[:5]:
+                    if var in var_trends:
+                        t = var_trends[var]
+                        monthly = t.get('monthly_data', {})
+                        msg.append(f"✅ {var}:")
+                        for month in sorted(monthly.keys())[-3:]:  # Last 3 months
+                            data = monthly[month]
+                            msg.append(f"  {month}: {data['wr']:.1f}% ({data['delta']:+.1f}%) [{data['count']}]")
+                        msg.append(f"  📈 +{t['wr_change']:.1f}% over period\\n")
+
+            # Show top degrading variables
+            degrading = summary.get('degrading_vars', [])
+            if degrading:
+                msg.append("━━━ *📉 DEGRADING* ━━━")
+                for var in degrading[:5]:
+                    if var in var_trends:
+                        t = var_trends[var]
+                        monthly = t.get('monthly_data', {})
+                        msg.append(f"⚠️ {var}:")
+                        for month in sorted(monthly.keys())[-3:]:
+                            data = monthly[month]
+                            msg.append(f"  {month}: {data['wr']:.1f}% ({data['delta']:+.1f}%) [{data['count']}]")
+                        msg.append(f"  📉 {t['wr_change']:.1f}% over period\\n")
+
+            msg.append("\\n💡 Focus on improving variables for config")
+
+            await self.safe_reply(update, "\\n".join(msg))
+
+        except Exception as e:
+            logger.error(f"Error in scalp_monthly_trends: {e}")
             await update.message.reply_text(f"❌ Error: {e}")
 
     async def qscore_all_report(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):

@@ -3230,8 +3230,28 @@ class TradingBot:
                                         # Extract volume ratio and body ratio for display
                                         vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
                                         vol_str = f" Vol={vol_ratio:.2f}x" if vol_ratio > 0 else ""
-                                        body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
-                                        body_str = f" Body={body_ratio:.2f}" if body_ratio > 0 else ""
+                                        # Gate status indicators with pass/fail
+                                        gate_str = ""
+                                        try:
+                                            hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                            # HTF gate
+                                            if bool(hg.get('htf_enabled', False)):
+                                                ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
+                                                thr_ts = float(hg.get('htf_min_ts15', 70.0))
+                                                htf_pass = ts15 >= thr_ts
+                                                htf_emoji = "✅" if htf_pass else "❌"
+                                                gate_str += f" HTF:{htf_emoji}{ts15:.0f}"
+                                            # Body gate
+                                            if bool(hg.get('body_enabled', False)):
+                                                body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
+                                                bmin = float(hg.get('body_ratio_min_3m', 0.35))
+                                                body_sign = str(sc_feats.get('body_sign', 'flat'))
+                                                body_dir_ok = (sc_sig.side == 'long' and body_sign == 'up') or (sc_sig.side == 'short' and body_sign == 'down')
+                                                body_pass = body_ratio >= bmin and body_dir_ok
+                                                body_emoji = "✅" if body_pass else "❌"
+                                                gate_str += f" Body:{body_emoji}{body_ratio:.2f}"
+                                        except Exception:
+                                            pass
                                         # Stash features to carry Q into Position and close-notify
                                         try:
                                             if not hasattr(self, '_last_signal_features'):
@@ -3239,7 +3259,7 @@ class TradingBot:
                                             self._last_signal_features[sym] = dict(sc_feats)
                                         except Exception:
                                             pass
-                                        await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f}){vol_str}{body_str} (id={exec_id})\n{comp_line}")
+                                        await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f}){vol_str}{gate_str} (id={exec_id})\n{comp_line}")
                                 except Exception:
                                     pass
                                 try:

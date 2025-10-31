@@ -938,6 +938,410 @@ class ScalpPhantomTracker:
             'min_samples': min_samples
         }
 
+    def _filter_phantoms_by_month(self, month_str: str) -> List:
+        """
+        Filter completed phantoms by calendar month.
+
+        Args:
+            month_str: 'YYYY-MM' format (e.g., '2025-10')
+
+        Returns:
+            List of phantoms from that month with defined outcomes
+        """
+        try:
+            from datetime import datetime
+            year, month = month_str.split('-')
+            year, month = int(year), int(month)
+
+            filtered = []
+            for arr in self.completed.values():
+                for p in arr:
+                    if p.exit_time and p.outcome in ('win', 'loss'):
+                        if p.exit_time.year == year and p.exit_time.month == month:
+                            filtered.append(p)
+
+            return filtered
+        except Exception:
+            return []
+
+    def _compute_combination_wr(self, phantoms: List, variables: List[str]) -> Dict:
+        """
+        Compute win rate for phantoms that pass ALL specified variables.
+
+        Args:
+            phantoms: List of ScalpPhantomTrade objects
+            variables: List of variable names (e.g., ['body_050', 'vwap_045'])
+
+        Returns:
+            {'wins': int, 'total': int, 'wr': float, 'delta': float}
+        """
+        if not phantoms or not variables:
+            return {'wins': 0, 'total': 0, 'wr': 0.0, 'delta': 0.0}
+
+        # Compute gate status for each phantom
+        gate_statuses = [self.compute_gate_status(p) for p in phantoms]
+
+        # Filter phantoms where ALL variables pass
+        passing_phantoms = []
+        for i, p in enumerate(phantoms):
+            gs = gate_statuses[i]
+            if all(gs.get(var, False) for var in variables):
+                passing_phantoms.append(p)
+
+        # Calculate WR
+        total = len(passing_phantoms)
+        wins = sum(1 for p in passing_phantoms if p.outcome == 'win')
+        wr = (wins / total * 100) if total > 0 else 0.0
+
+        # Calculate delta vs baseline
+        baseline_wins = sum(1 for p in phantoms if p.outcome == 'win')
+        baseline_wr = (baseline_wins / len(phantoms) * 100) if len(phantoms) > 0 else 0.0
+        delta = wr - baseline_wr
+
+        return {'wins': wins, 'total': total, 'wr': wr, 'delta': delta}
+
+    def get_comprehensive_analysis(self, month: str = None, top_n: int = 10, min_samples: int = 20) -> Dict:
+        """
+        Comprehensive variable analysis: all variables, combinations, recommendations.
+
+        Args:
+            month: 'YYYY-MM' for specific month, None for last 30 days
+            top_n: Limit combination search to top N solo performers (default 10)
+            min_samples: Minimum sample size for valid statistics (default 20)
+
+        Returns:
+            Dict with solo_analysis, pair_analysis, triplet_analysis, recommendations
+        """
+        from itertools import combinations
+        from datetime import datetime, timedelta
+
+        # Get phantoms for analysis period
+        if month:
+            phantoms = self._filter_phantoms_by_month(month)
+            period_desc = month
+        else:
+            cutoff = datetime.utcnow() - timedelta(days=30)
+            phantoms = [
+                p for arr in self.completed.values() for p in arr
+                if p.exit_time and p.exit_time >= cutoff and p.outcome in ('win', 'loss')
+            ]
+            period_desc = "last 30 days"
+
+        if not phantoms:
+            return {'error': 'No phantom data available', 'period': period_desc, 'total': 0}
+
+        total = len(phantoms)
+        wins = sum(1 for p in phantoms if p.outcome == 'win')
+        baseline_wr = (wins / total * 100) if total > 0 else 0.0
+
+        # Define all trackable variables (50+)
+        all_variables = [
+            # Original 4 gates
+            'htf', 'vol', 'body', 'align_15m',
+            # Body variations
+            'body_040', 'body_045', 'body_050', 'body_060', 'wick_align',
+            # VWAP variations
+            'vwap_045', 'vwap_060', 'vwap_080', 'vwap_100',
+            # Volume variations
+            'vol_110', 'vol_120', 'vol_150',
+            # BB width
+            'bb_width_60p', 'bb_width_70p', 'bb_width_80p',
+            # Q-score
+            'q_040', 'q_050', 'q_060', 'q_070',
+            # Impulse
+            'impulse_040', 'impulse_060',
+            # Micro
+            'micro_seq',
+            # HTF variations
+            'htf_070', 'htf_080',
+        ]
+
+        # Step 1: Analyze all variables individually
+        gate_statuses = [self.compute_gate_status(p) for p in phantoms]
+        variable_stats = {}
+
+        for var in all_variables:
+            var_pass = [p for i, p in enumerate(phantoms) if gate_statuses[i].get(var, False)]
+            var_fail = [p for i, p in enumerate(phantoms) if not gate_statuses[i].get(var, False)]
+
+            pass_wins = sum(1 for p in var_pass if p.outcome == 'win')
+            pass_total = len(var_pass)
+            pass_wr = (pass_wins / pass_total * 100) if pass_total > 0 else 0.0
+
+            fail_wins = sum(1 for p in var_fail if p.outcome == 'win')
+            fail_total = len(var_fail)
+            fail_wr = (fail_wins / fail_total * 100) if fail_total > 0 else 0.0
+
+            delta = pass_wr - baseline_wr
+            sufficient = pass_total >= min_samples and fail_total >= min_samples
+
+            # Impact score: delta weighted by sample size (for ranking)
+            import math
+            impact_score = delta * math.sqrt(pass_total) if pass_total > 0 else -999
+
+            variable_stats[var] = {
+                'pass_wins': pass_wins,
+                'pass_total': pass_total,
+                'pass_wr': pass_wr,
+                'fail_wins': fail_wins,
+                'fail_total': fail_total,
+                'fail_wr': fail_wr,
+                'delta': delta,
+                'sufficient_samples': sufficient,
+                'impact_score': impact_score
+            }
+
+        # Step 2: Rank variables and select top N for combination analysis
+        ranked_vars = sorted(
+            [(k, v) for k, v in variable_stats.items() if v['sufficient_samples']],
+            key=lambda x: x[1]['impact_score'],
+            reverse=True
+        )
+        top_variables = [var for var, stats in ranked_vars[:top_n]]
+
+        # Step 3: Analyze pairs (top N → N choose 2 combinations)
+        pair_stats = {}
+        if len(top_variables) >= 2:
+            for v1, v2 in combinations(top_variables, 2):
+                result = self._compute_combination_wr(phantoms, [v1, v2])
+                if result['total'] >= min_samples:
+                    # Calculate synergy (combo WR vs average of individual WRs)
+                    expected_wr = (variable_stats[v1]['pass_wr'] + variable_stats[v2]['pass_wr']) / 2
+                    synergy = result['wr'] - expected_wr
+
+                    pair_stats[(v1, v2)] = {
+                        **result,
+                        'expected_wr': expected_wr,
+                        'synergy': synergy
+                    }
+
+        # Sort pairs by WR
+        sorted_pairs = sorted(pair_stats.items(), key=lambda x: x[1]['wr'], reverse=True)
+
+        # Step 4: Analyze triplets (top N → N choose 3 combinations)
+        triplet_stats = {}
+        if len(top_variables) >= 3:
+            for v1, v2, v3 in combinations(top_variables, 3):
+                result = self._compute_combination_wr(phantoms, [v1, v2, v3])
+                if result['total'] >= max(min_samples // 2, 10):  # Lower threshold for triplets
+                    triplet_stats[(v1, v2, v3)] = result
+
+        # Sort triplets by WR
+        sorted_triplets = sorted(triplet_stats.items(), key=lambda x: x[1]['wr'], reverse=True)
+
+        return {
+            'period': period_desc,
+            'total_phantoms': total,
+            'total_wins': wins,
+            'baseline_wr': baseline_wr,
+            'solo_analysis': variable_stats,
+            'ranked_variables': ranked_vars,
+            'top_variables': top_variables,
+            'pair_analysis': dict(sorted_pairs[:20]),  # Top 20 pairs
+            'triplet_analysis': dict(sorted_triplets[:10]),  # Top 10 triplets
+            'min_samples': min_samples
+        }
+
+    def generate_recommendations(self, analysis: Dict, min_wr: float = 60.0, min_samples: int = 30) -> Dict:
+        """
+        Generate actionable recommendations from comprehensive analysis.
+
+        Args:
+            analysis: Output from get_comprehensive_analysis()
+            min_wr: Minimum win rate to recommend enabling (default 60%)
+            min_samples: Minimum sample size for recommendations (default 30)
+
+        Returns:
+            Dict with enable/disable lists, best combos, and config snippet
+        """
+        if analysis.get('error'):
+            return {'error': analysis['error']}
+
+        baseline_wr = analysis['baseline_wr']
+        solo_stats = analysis['solo_analysis']
+        pair_stats = analysis.get('pair_analysis', {})
+        triplet_stats = analysis.get('triplet_analysis', {})
+
+        recommendations = {
+            'enable': [],
+            'disable': [],
+            'best_pairs': [],
+            'best_triplets': [],
+            'config_snippet': ""
+        }
+
+        # Enable: High WR, sufficient samples, strong positive delta
+        for var, stats in solo_stats.items():
+            if (stats['pass_wr'] >= min_wr and
+                stats['pass_total'] >= min_samples and
+                stats['delta'] > 5.0 and
+                stats['sufficient_samples']):
+                recommendations['enable'].append({
+                    'variable': var,
+                    'wr': stats['pass_wr'],
+                    'delta': stats['delta'],
+                    'count': stats['pass_total'],
+                    'reason': f"{stats['pass_wr']:.1f}% WR ({stats['delta']:+.1f}%)"
+                })
+
+        # Disable: Low WR or strong negative delta
+        for var, stats in solo_stats.items():
+            if ((stats['pass_wr'] < baseline_wr - 3.0 or stats['delta'] < -5.0) and
+                stats['pass_total'] >= 20 and
+                stats['sufficient_samples']):
+                recommendations['disable'].append({
+                    'variable': var,
+                    'wr': stats['pass_wr'],
+                    'delta': stats['delta'],
+                    'count': stats['pass_total'],
+                    'reason': f"{stats['pass_wr']:.1f}% WR ({stats['delta']:+.1f}%)"
+                })
+
+        # Sort by delta impact
+        recommendations['enable'] = sorted(recommendations['enable'], key=lambda x: x['delta'], reverse=True)
+        recommendations['disable'] = sorted(recommendations['disable'], key=lambda x: x['delta'])
+
+        # Best pairs
+        for (v1, v2), stats in sorted(pair_stats.items(), key=lambda x: x[1]['wr'], reverse=True)[:5]:
+            if stats['total'] >= min_samples and stats['wr'] >= min_wr:
+                recommendations['best_pairs'].append({
+                    'variables': [v1, v2],
+                    'wr': stats['wr'],
+                    'delta': stats['delta'],
+                    'count': stats['total'],
+                    'synergy': stats.get('synergy', 0)
+                })
+
+        # Best triplets
+        for (v1, v2, v3), stats in sorted(triplet_stats.items(), key=lambda x: x[1]['wr'], reverse=True)[:3]:
+            if stats['total'] >= max(min_samples // 2, 10) and stats['wr'] >= min_wr:
+                recommendations['best_triplets'].append({
+                    'variables': [v1, v2, v3],
+                    'wr': stats['wr'],
+                    'delta': stats['delta'],
+                    'count': stats['total']
+                })
+
+        # Generate YAML config snippet
+        config_lines = ["# Scalp Strategy - Recommended Configuration"]
+        config_lines.append("# Based on phantom data analysis\n")
+        config_lines.append("scalp:")
+        config_lines.append("  hard_gates:")
+        config_lines.append("    apply_to_exec: true")
+        config_lines.append("    apply_to_phantoms: false\n")
+
+        # Add top 5 enable recommendations as comments
+        config_lines.append("    # ━━━ ENABLE (High Win Rate) ━━━")
+        for rec in recommendations['enable'][:5]:
+            config_lines.append(f"    # {rec['variable']}: {rec['reason']}")
+
+        # Add top 3 disable recommendations as comments
+        if recommendations['disable']:
+            config_lines.append("\n    # ━━━ AVOID (Low Win Rate) ━━━")
+            for rec in recommendations['disable'][:3]:
+                config_lines.append(f"    # {rec['variable']}: {rec['reason']}")
+
+        # Add best combination as comment
+        if recommendations['best_pairs']:
+            best = recommendations['best_pairs'][0]
+            config_lines.append(f"\n    # 🎯 Best Combo: {' + '.join(best['variables'])}: {best['wr']:.1f}% WR")
+
+        recommendations['config_snippet'] = '\n'.join(config_lines)
+
+        return recommendations
+
+    def get_monthly_trends(self, months: List[str] = None) -> Dict:
+        """
+        Analyze variable performance trends across multiple months.
+
+        Args:
+            months: List of 'YYYY-MM' strings (e.g., ['2025-10', '2025-09'])
+                   If None, auto-generates last 3 months
+
+        Returns:
+            Dict with variable_trends and overall_trend summary
+        """
+        from datetime import datetime, timedelta
+
+        # Auto-generate last 3 months if not specified
+        if months is None:
+            now = datetime.utcnow()
+            months = []
+            for i in range(3):
+                dt = now - timedelta(days=30 * i)
+                months.append(f"{dt.year}-{dt.month:02d}")
+
+        if not months:
+            return {'error': 'No months specified', 'months': []}
+
+        # Get comprehensive analysis for each month
+        monthly_analyses = {}
+        for month in months:
+            analysis = self.get_comprehensive_analysis(month=month, top_n=10, min_samples=15)
+            if not analysis.get('error'):
+                monthly_analyses[month] = analysis
+
+        if not monthly_analyses:
+            return {'error': 'No data available for specified months', 'months': months}
+
+        # Track each variable across months
+        variable_trends = {}
+
+        # Get all variables from first month
+        first_month = list(monthly_analyses.keys())[0]
+        all_vars = monthly_analyses[first_month]['solo_analysis'].keys()
+
+        for var in all_vars:
+            var_monthly = {}
+            wr_values = []
+            delta_values = []
+            count_values = []
+
+            for month in sorted(monthly_analyses.keys()):
+                stats = monthly_analyses[month]['solo_analysis'].get(var, {})
+                if stats.get('sufficient_samples'):
+                    var_monthly[month] = {
+                        'wr': stats['pass_wr'],
+                        'delta': stats['delta'],
+                        'count': stats['pass_total']
+                    }
+                    wr_values.append(stats['pass_wr'])
+                    delta_values.append(stats['delta'])
+                    count_values.append(stats['pass_total'])
+
+            # Calculate trend
+            if len(wr_values) >= 2:
+                wr_change = wr_values[-1] - wr_values[0]
+                trend = 'improving' if wr_change > 2 else 'degrading' if wr_change < -2 else 'stable'
+                avg_wr = sum(wr_values) / len(wr_values)
+                avg_delta = sum(delta_values) / len(delta_values)
+
+                variable_trends[var] = {
+                    'monthly_data': var_monthly,
+                    'trend': trend,
+                    'wr_change': wr_change,
+                    'avg_wr': avg_wr,
+                    'avg_delta': avg_delta,
+                    'months_tracked': len(wr_values)
+                }
+
+        # Overall trend summary
+        improving = [v for v, t in variable_trends.items() if t['trend'] == 'improving']
+        degrading = [v for v, t in variable_trends.items() if t['trend'] == 'degrading']
+        stable = [v for v, t in variable_trends.items() if t['trend'] == 'stable']
+
+        return {
+            'months': sorted(monthly_analyses.keys()),
+            'variable_trends': variable_trends,
+            'summary': {
+                'improving_count': len(improving),
+                'degrading_count': len(degrading),
+                'stable_count': len(stable),
+                'improving_vars': improving[:10],
+                'degrading_vars': degrading[:10]
+            }
+        }
+
 
 _scalp_phantom_tracker = None
 

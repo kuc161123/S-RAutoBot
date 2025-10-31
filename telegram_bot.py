@@ -1358,13 +1358,18 @@ class TGBot:
                 return  # Success, exit
             except telegram.error.BadRequest as e:
                 if "can't parse entities" in str(e).lower():
-                    logger.warning(f"Markdown parsing failed in reply, trying escaped")
+                    logger.warning(f"Parse entities failed in reply, trying escaped (mode={parse_mode})")
                     try:
-                        # More comprehensive escaping
+                        # Escape based on parse mode
                         escaped_text = text
-                        # Escape special markdown characters
-                        for char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
-                            escaped_text = escaped_text.replace(char, f'\\{char}')
+                        if parse_mode == 'HTML':
+                            # HTML entity escaping
+                            import html
+                            escaped_text = html.escape(text)
+                        else:
+                            # Markdown backslash escaping
+                            for char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
+                                escaped_text = escaped_text.replace(char, f'\\{char}')
                         await update.message.reply_text(escaped_text, parse_mode=parse_mode)
                         return  # Success, exit
                     except Exception as e2:

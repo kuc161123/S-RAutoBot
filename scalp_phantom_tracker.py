@@ -79,6 +79,19 @@ class ScalpPhantomTracker:
         # Optional notifier (e.g., Telegram) for open/close events
         self.notifier: Optional[Callable] = None
         self._load()
+
+        # Startup health check
+        try:
+            total_active = sum(len(v) for v in self.active.values())
+            total_completed = sum(len(v) for v in self.completed.values())
+            logger.info(f"🩳 Scalp Phantom Tracker initialized: {total_active} active, {total_completed} completed")
+            if total_active > 100:
+                logger.warning(f"⚠️ PHANTOM HEALTH: {total_active} active phantoms (threshold: 100) - check outcome detection!")
+            elif total_active > 50:
+                logger.warning(f"⚠️ Elevated phantom count: {total_active} active (threshold: 50) - monitor closely")
+        except Exception as e:
+            logger.debug(f"Scalp phantom startup health check error: {e}")
+
         # Default timeout hours for scalp phantom (config override available)
         self.timeout_hours: int = 24
         # Symbol meta for tick size
@@ -334,6 +347,8 @@ class ScalpPhantomTracker:
         if not self.redis_client:
             return
         try:
+            # Load active phantoms
+            cnt_active = 0
             act = self.redis_client.get('scalp_phantom:active')
             if act:
                 data = json.loads(act)
@@ -352,12 +367,24 @@ class ScalpPhantomTracker:
                             pass
                     if items:
                         self.active[sym] = items
+                        cnt_active += len(items)
+
+            # Log active phantoms loaded
+            num_symbols = len(self.active)
+            logger.info(f"Loaded {cnt_active} active scalp phantom trades across {num_symbols} symbols")
+
+            # Load completed phantoms
             comp = self.redis_client.get('scalp_phantom:completed')
             if comp:
                 arr = json.loads(comp)
                 for rec in arr:
                     pt = ScalpPhantomTrade.from_dict(rec)
                     self.completed.setdefault(pt.symbol, []).append(pt)
+
+            # Log completed phantoms loaded
+            total_completed = sum(len(trades) for trades in self.completed.values())
+            logger.info(f"Loaded {total_completed} completed scalp phantom trades")
+
         except Exception as e:
             logger.error(f"Scalp Phantom load error: {e}")
 

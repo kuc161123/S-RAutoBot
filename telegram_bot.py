@@ -715,6 +715,27 @@ class TGBot:
         except Exception:
             pass
 
+        # Scalp executed stats
+        try:
+            tt = self.shared.get('trade_tracker')
+            recs = getattr(tt, 'trades', []) if tt else []
+            arr = [t for t in recs if isinstance(getattr(t, 'strategy_name', None), str)
+                   and getattr(t, 'strategy_name').lower().startswith('scalp')
+                   and getattr(t, 'exit_time', None)]
+            total = len(arr)
+            wins = sum(1 for t in arr if float(getattr(t, 'pnl_usd', 0.0) or 0.0) > 0.0)
+            losses = total - wins
+            wr = (wins/total*100.0) if total else 0.0
+            pnl = sum(float(getattr(t, 'pnl_usd', 0.0) or 0.0) for t in arr)
+            lines.append("")
+            lines.append("✅ *Scalp Executed*")
+            lines.append(f"• Closed: {total} | WR: {wr:.1f}% (W/L {wins}/{losses}) | PnL: ${pnl:.2f}")
+        except Exception as _se:
+            try:
+                logger.debug(f"Scalp executed stats unavailable: {_se}")
+            except Exception:
+                pass
+
         # Config snapshot for Scalp
         try:
             ex = (scalp_cfg.get('exec', {}) or {})

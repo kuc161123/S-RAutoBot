@@ -2194,6 +2194,21 @@ class TradingBot:
                     ml_score=float(ml_score or 0.0),
                     qscore=float(((getattr(self, '_last_signal_features', {}) or {}).get(sym, {}) or {}).get('qscore', 0.0) or 0.0)
                 )
+                # Stash per-position metadata (gate + risk) for upgrades
+                try:
+                    if not hasattr(self, '_position_meta'):
+                        self._position_meta = {}
+                    mrec = self._position_meta.get(sym, {}) if isinstance(self._position_meta, dict) else {}
+                    gate_decision = None
+                    try:
+                        gate_decision = getattr(sig_obj, 'meta', {}).get('gate_decision') if isinstance(getattr(sig_obj, 'meta', {}), dict) else None
+                    except Exception:
+                        gate_decision = None
+                    risk_used = float(risk_percent_override) if risk_percent_override is not None else float(getattr(self.sizer.risk, 'risk_percent', 0.0) or 0.0)
+                    mrec.update({'strategy': 'scalp', 'scalp_gate': gate_decision or 'qscore', 'risk_pct': risk_used, 'exec_id': exec_id or ''})
+                    self._position_meta[sym] = mrec
+                except Exception:
+                    pass
             # Telegram notify
                 try:
                     if self.tg:
@@ -3260,6 +3275,54 @@ class TradingBot:
                                 continue
                         else:
                             logger.debug(f"[{sym}] FLIP not allowed: opp signal but gates insufficient")
+                    # Upgrade logic: same direction, current position was Body-only, and now HTF or BOTH pass
+                    try:
+                        pos = self.book.positions.get(sym)
+                        cur_meta = (self._position_meta.get(sym) if hasattr(self, '_position_meta') else {}) or {}
+                        cur_gate = str(cur_meta.get('scalp_gate', ''))
+                        same_dir = bool(pos and str(getattr(pos, 'side', '')) == str(sc_sig.side))
+                    except Exception:
+                        cur_gate = ''; same_dir = False
+                    if same_dir and cur_gate == 'body':
+                        try:
+                            hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                            ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
+                            thr_ts = float(hg.get('htf_min_ts15', 70.0))
+                            htf_pass = bool(hg.get('htf_enabled', False)) and (ts15 >= thr_ts)
+                            body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
+                            bmin = float(hg.get('body_ratio_min_3m', 0.50 if bool(hg.get('body_enabled', False)) else 0.35))
+                            bdir = str(sc_feats.get('body_sign', 'flat'))
+                            body_pass = bool(hg.get('body_enabled', False)) and (body_ratio >= bmin and ((sc_sig.side == 'long' and bdir == 'up') or (sc_sig.side == 'short' and bdir == 'down')))
+                        except Exception:
+                            htf_pass = False; body_pass = False
+                        if htf_pass or (htf_pass and body_pass):
+                            # Upgrade: close and re-open same direction with higher risk tier (HTF or BOTH)
+                            try:
+                                import uuid as _uuid
+                                exec_id = _uuid.uuid4().hex[:8]
+                            except Exception:
+                                exec_id = 'upgrade'
+                            # Stamp meta to reflect new gate
+                            try:
+                                if not hasattr(sc_sig, 'meta') or not isinstance(getattr(sc_sig, 'meta'), dict):
+                                    sc_sig.meta = {}
+                                sc_sig.meta['gate_decision'] = 'both' if (htf_pass and body_pass) else 'htf'
+                            except Exception:
+                                pass
+                            did_up = await self._flip_scalp_position(sym, sc_sig, sc_feats, htf_pass=True, body_pass=body_pass, exec_id=exec_id)
+                            if did_up:
+                                try:
+                                    scpt.record_scalp_signal(
+                                        sym,
+                                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                        float(ml_s or 0.0),
+                                        True,
+                                        sc_feats
+                                    )
+                                except Exception:
+                                    pass
+                                self._scalp_cooldown[sym] = bar_ts
+                                continue
                     # Scalp Qscore execution gate
                     exec_enabled = True
                     exec_thr = 60.0
@@ -3308,6 +3371,14 @@ class TradingBot:
                             risk_pct = 15.0 if (htf_pass and body_pass) else (10.0 if htf_pass else 2.0)
                         # Prepare detailed notify
                         try:
+                            # Stamp gate decision into signal meta for downstream bookkeeping
+                            try:
+                                if not hasattr(sc_sig, 'meta') or not isinstance(getattr(sc_sig, 'meta'), dict):
+                                    sc_sig.meta = {}
+                                sc_sig.meta['gate_decision'] = 'both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body')
+                                sc_sig.meta['gate_risk_pct'] = float(risk_pct)
+                            except Exception:
+                                pass
                             if self.tg:
                                 import uuid as _uuid
                                 exec_id = getattr(sc_sig, 'meta', {}).get('exec_id') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None

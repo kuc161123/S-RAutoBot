@@ -112,6 +112,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalpgaterisk", self.scalp_gate_risk))
         self.app.add_handler(CommandHandler("scalprisk", self.scalp_gate_risk))  # alias
         self.app.add_handler(CommandHandler("scalppatterns", self.scalp_patterns))
+        self.app.add_handler(CommandHandler("scalpqwr", self.scalp_qscore_wr))
+        self.app.add_handler(CommandHandler("scalpmlwr", self.scalp_mlscore_wr))
         self.app.add_handler(CommandHandler("trendpromote", self.trend_promotion_status))
         # Trend ML high-ML threshold changer
         self.app.add_handler(CommandHandler("trendhighml", self.trend_high_ml))
@@ -827,6 +829,7 @@ class TGBot:
             [InlineKeyboardButton("🔄 Refresh", callback_data="ui:dash:refresh:scalp")],
             [InlineKeyboardButton("🧪 QA", callback_data="ui:scalp:qa"), InlineKeyboardButton("🧰 Gates", callback_data="ui:scalp:gates")],
             [InlineKeyboardButton("🤖 Patterns", callback_data="ui:scalp:patterns"), InlineKeyboardButton("⚖️ Risk", callback_data="ui:scalp:risk")],
+            [InlineKeyboardButton("📈 Q WR", callback_data="ui:scalp:qwr"), InlineKeyboardButton("📈 ML WR", callback_data="ui:scalp:mlwr")],
             [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
         ])
 
@@ -1633,6 +1636,8 @@ class TGBot:
             "• /scalprecommend — Config recommendations",
             "• /scalptrends — Month-over-month trends",
             "• /scalppatterns — ML feature/time/condition patterns",
+            "• /scalpqwr — Qscore WR buckets (30d)",
+            "• /scalpmlwr — ML WR buckets (30d)",
             "• /scalpgaterisk [body|htf|both] <percent> — Set risk% for gate-based executes",
             "",
             "Risk",
@@ -2379,6 +2384,14 @@ class TGBot:
             if data == "ui:scalp:patterns":
                 await query.answer()
                 await self.scalp_patterns(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:qwr":
+                await query.answer()
+                await self.scalp_qscore_wr(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:mlwr":
+                await query.answer()
+                await self.scalp_mlscore_wr(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data == "ui:scalp:promote":
                 await query.answer()
@@ -6002,6 +6015,113 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_patterns: {e}")
             await update.message.reply_text("Error fetching Scalp ML patterns")
+
+    async def scalp_qscore_wr(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show 30d Qscore bucket win rates for Scalp phantoms (decisive outcomes only)."""
+        try:
+            from datetime import datetime, timedelta
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            cutoff = datetime.utcnow() - timedelta(days=30)
+            # Collect decisive phantoms with qscore
+            items = []
+            for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                for p in arr:
+                    try:
+                        et = getattr(p, 'exit_time', None)
+                        if not et or et < cutoff:
+                            continue
+                        oc = getattr(p, 'outcome', None)
+                        if oc not in ('win','loss'):
+                            continue
+                        q = (getattr(p, 'features', {}) or {}).get('qscore', None)
+                        if isinstance(q, (int,float)):
+                            items.append((float(q), oc))
+                    except Exception:
+                        continue
+            if not items:
+                await self.safe_reply(update, "📈 *Scalp Qscore WR (30d)*\nNo data yet.")
+                return
+            # 10-pt bins from 40 to 100
+            bins = list(range(40, 101, 10))
+            def _bkey(q: float) -> str:
+                if q < 40:
+                    return "<40"
+                for b in bins:
+                    if q < b+10:
+                        return f"{b}-{b+9}"
+                return "100+"
+            agg = {}
+            for q, oc in items:
+                k = _bkey(q)
+                s = agg.setdefault(k, {'w':0,'n':0})
+                s['n'] += 1
+                if oc == 'win':
+                    s['w'] += 1
+            ordered = [k for k in ["<40"] + [f"{b}-{b+9}" for b in bins]] if any(k in agg for k in ["<40"]) else [f"{b}-{b+9}" for b in bins]
+            msg = ["📈 *Scalp Qscore WR (30d)*", ""]
+            for k in ordered:
+                if k in agg:
+                    s = agg[k]
+                    wr = (s['w']/s['n']*100.0) if s['n'] else 0.0
+                    msg.append(f"• {k}: WR {wr:.1f}% (N={s['n']})")
+            await self.safe_reply(update, "\n".join(msg))
+        except Exception as e:
+            logger.error(f"Error in scalp_qscore_wr: {e}")
+            await update.message.reply_text("Error computing Qscore WR")
+
+    async def scalp_mlscore_wr(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show 30d ML-score bucket win rates for Scalp phantoms (decisive outcomes only)."""
+        try:
+            from datetime import datetime, timedelta
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            cutoff = datetime.utcnow() - timedelta(days=30)
+            # Collect decisive phantoms with ml score
+            items = []
+            for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                for p in arr:
+                    try:
+                        et = getattr(p, 'exit_time', None)
+                        if not et or et < cutoff:
+                            continue
+                        oc = getattr(p, 'outcome', None)
+                        if oc not in ('win','loss'):
+                            continue
+                        ml = (getattr(p, 'features', {}) or {}).get('ml', None)
+                        if isinstance(ml, (int,float)):
+                            items.append((float(ml), oc))
+                    except Exception:
+                        continue
+            if not items:
+                await self.safe_reply(update, "📈 *Scalp ML WR (30d)*\nNo data yet.")
+                return
+            bins = list(range(40, 101, 10))
+            def _bkey(v: float) -> str:
+                if v < 40:
+                    return "<40"
+                for b in bins:
+                    if v < b+10:
+                        return f"{b}-{b+9}"
+                return "100+"
+            agg = {}
+            for v, oc in items:
+                k = _bkey(v)
+                s = agg.setdefault(k, {'w':0,'n':0})
+                s['n'] += 1
+                if oc == 'win':
+                    s['w'] += 1
+            ordered = [k for k in ["<40"] + [f"{b}-{b+9}" for b in bins]] if any(k in agg for k in ["<40"]) else [f"{b}-{b+9}" for b in bins]
+            msg = ["📈 *Scalp ML WR (30d)*", ""]
+            for k in ordered:
+                if k in agg:
+                    s = agg[k]
+                    wr = (s['w']/s['n']*100.0) if s['n'] else 0.0
+                    msg.append(f"• {k}: WR {wr:.1f}% (N={s['n']})")
+            await self.safe_reply(update, "\n".join(msg))
+        except Exception as e:
+            logger.error(f"Error in scalp_mlscore_wr: {e}")
+            await update.message.reply_text("Error computing ML WR")
 
     async def scalp_recommendations(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Generate actionable recommendations with config snippet."""

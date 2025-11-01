@@ -4308,6 +4308,17 @@ class TradingBot:
                     self._phantom_close_notified.add(pid)
                 except Exception:
                     pass
+                # Telemetry counters for scalp phantom outcomes (non-executed only)
+                try:
+                    if hasattr(self.tg, 'shared') and not getattr(phantom, 'was_executed', False):
+                        tel = self.tg.shared.get('telemetry', {})
+                        if isinstance(tel, dict):
+                            if outcome == 'win':
+                                tel['phantom_wins'] = tel.get('phantom_wins', 0) + 1
+                            elif outcome == 'loss':
+                                tel['phantom_losses'] = tel.get('phantom_losses', 0) + 1
+                except Exception:
+                    pass
                 return
 
             # Open notification with Qscore breakdown
@@ -8155,6 +8166,15 @@ class TradingBot:
                             phantom_tracker.update_phantom_prices(
                                 sym, current_price, df=df, btc_price=btc_price, symbol_collector=symbol_collector
                             )
+                            # Ensure Scalp phantom outcomes progress even when enhanced_parallel is disabled
+                            try:
+                                scpt = _safe_get_scalp_phantom_tracker()
+                                if scpt is not None:
+                                    df3u = self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None
+                                    src_df = df3u if (df3u is not None and not getattr(df3u, 'empty', True)) else df
+                                    scpt.update_scalp_phantom_prices(sym, current_price, df=src_df)
+                            except Exception:
+                                pass
                     # Update shadow simulations with current price
                     try:
                         get_shadow_tracker().update_prices(sym, float(df['close'].iloc[-1]))

@@ -1349,6 +1349,121 @@ class TradingBot:
             pass
         return task
 
+    async def _flip_scalp_position(self, sym: str, sc_sig, sc_feats: dict, htf_pass: bool, body_pass: bool, exec_id: str = None) -> bool:
+        """Safely flip an existing one-way Scalp position to the opposite direction.
+
+        Steps:
+        1) Close current position to flat using reduce-only market
+        2) Cancel stale orders
+        3) Re-enter with new direction using gate-based risk tiers
+        """
+        # Acquire per-symbol execution lock to serialize close/open
+        try:
+            lock = self._exec_locks.get(sym)
+        except Exception:
+            lock = None
+        if lock is None:
+            import asyncio as _asyncio
+            lock = _asyncio.Lock()
+            self._exec_locks[sym] = lock
+        async with lock:
+            bybit = self.bybit
+            book = self.book
+            # Generate an exec id if not present
+            if not exec_id:
+                try:
+                    import uuid as _uuid
+                    exec_id = _uuid.uuid4().hex[:8]
+                except Exception:
+                    exec_id = 'flip'
+            # Determine risk tier for re-entry based on gates
+            try:
+                rmap = (self.shared.get('scalp_gate_risk') or {}) if hasattr(self, 'shared') else {}
+                risk_pct = float(rmap.get('both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body'), 15.0 if (htf_pass and body_pass) else (10.0 if htf_pass else 2.0)))
+            except Exception:
+                risk_pct = 10.0
+            # Snapshot current position
+            pos = book.positions.get(sym)
+            if not pos:
+                # Nothing to flip
+                return False
+            current_side = str(getattr(pos, 'side', ''))
+            qty = float(getattr(pos, 'qty', 0.0) or 0.0)
+            if qty <= 0.0:
+                return False
+            # 1) Close to flat with reduce-only
+            try:
+                close_side = 'Sell' if current_side == 'long' else 'Buy'
+                resp = bybit.place_market(sym, close_side, qty, reduce_only=True)
+                try:
+                    rc = str(resp.get('retCode')) if isinstance(resp, dict) else 'n/a'
+                except Exception:
+                    rc = 'n/a'
+                logger.info(f"[{sym}|id={exec_id}] FLIP: reduce-only close {current_side} qty={qty} retCode={rc}")
+            except Exception as e:
+                logger.warning(f"[{sym}|id={exec_id}] FLIP close error: {e}")
+                return False
+            # Verify flat and cancel orders
+            try:
+                # Best-effort check once
+                open_positions = bybit.get_positions() or []
+                still = False
+                for p in open_positions:
+                    try:
+                        if str(p.get('symbol')) == sym and float(p.get('size') or 0) > 0:
+                            still = True
+                            break
+                    except Exception:
+                        continue
+                # Cancel any leftover reduce-only orders; even if still not flat, proceed to avoid stale TP/SL
+                bybit.cancel_all_orders(sym)
+                if still:
+                    logger.info(f"[{sym}|id={exec_id}] FLIP: position still present after close attempt; proceeding with caution")
+            except Exception:
+                pass
+            # Update local book: mark flat
+            try:
+                if sym in book.positions:
+                    del book.positions[sym]
+                if hasattr(self, '_scaleout') and isinstance(self._scaleout, dict):
+                    self._scaleout.pop(sym, None)
+            except Exception:
+                pass
+            # 2) Re-enter with risk override using existing executor
+            # Keep HTF/Body values in notify
+            try:
+                if self.tg:
+                    ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
+                    body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
+                    bdir = str(sc_feats.get('body_sign', 'flat'))
+                    hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                    thr_ts = float(hg.get('htf_min_ts15', 70.0))
+                    bmin = float(hg.get('body_ratio_min_3m', 0.50 if bool(hg.get('body_enabled', False)) else 0.35))
+                    reason_txt = 'HTF+Body' if (htf_pass and body_pass) else ('HTF70' if htf_pass else 'Body50')
+                    await self.tg.send_message(
+                        f"🔁 Scalp FLIP (Gate): {sym} {current_side.upper()} → {sc_sig.side.upper()} id={exec_id}\n"
+                        f"Entry={sc_sig.entry:.4f} SL={sc_sig.sl:.4f} TP={sc_sig.tp:.4f}\n"
+                        f"Risk={risk_pct:.1f}% | Reason: {reason_txt}\n"
+                        f"HTF: {'✅' if htf_pass else '❌'} {ts15:.0f} (≥ {thr_ts:.0f}) | "
+                        f"Body: {'✅' if body_pass else '❌'} {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})"
+                    )
+            except Exception:
+                pass
+            # Execute new side
+            try:
+                did = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(sc_feats.get('ml', 0.0) or 0.0), exec_id=exec_id, risk_percent_override=risk_pct)
+                if did:
+                    logger.info(f"[{sym}|id={exec_id}] FLIP: re-entry placed successfully ({sc_sig.side})")
+                    return True
+            except TypeError:
+                # Fallback when older signature is present
+                did = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(sc_feats.get('ml', 0.0) or 0.0))
+                if did:
+                    return True
+            except Exception as e:
+                logger.warning(f"[{sym}|id={exec_id}] FLIP re-entry error: {e}")
+            return False
+
     async def _execute_scalp_trade(self, sym: str, sig_obj, ml_score: float = 0.0, exec_id: str = None, risk_percent_override: float | None = None) -> bool:
         """Execute a Scalp trade immediately. Returns True if executed.
 
@@ -3096,6 +3211,55 @@ class TradingBot:
                         hi_thr = float(e_cfg.get('high_ml_force', 92))
                     except Exception:
                         allow_hi = False; hi_thr = 92.0
+                    # Flip logic (no caps): if opposite direction and gates allow
+                    try:
+                        pos = self.book.positions.get(sym)
+                        if pos is not None:
+                            cur_side = str(getattr(pos, 'side', ''))
+                            opp = (cur_side == 'long' and sc_sig.side == 'short') or (cur_side == 'short' and sc_sig.side == 'long')
+                        else:
+                            opp = False
+                    except Exception:
+                        opp = False
+                    if opp:
+                        try:
+                            hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                            ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
+                            thr_ts = float(hg.get('htf_min_ts15', 70.0))
+                            htf_pass = bool(hg.get('htf_enabled', False)) and (ts15 >= thr_ts)
+                            body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
+                            bmin = float(hg.get('body_ratio_min_3m', 0.50 if bool(hg.get('body_enabled', False)) else 0.35))
+                            bdir = str(sc_feats.get('body_sign', 'flat'))
+                            body_pass = bool(hg.get('body_enabled', False)) and (body_ratio >= bmin and ((sc_sig.side == 'long' and bdir == 'up') or (sc_sig.side == 'short' and bdir == 'down')))
+                            # Flip policy require: default 'htf_or_both'
+                            flip_req = str((((self.config.get('scalp', {}) or {}).get('flip', {}) or {}).get('require', 'htf_or_both'))).lower()
+                            allow_flip = (htf_pass and body_pass) if flip_req == 'both' else (htf_pass if flip_req in ('htf','htf_or_both') else False)
+                        except Exception:
+                            allow_flip = False; htf_pass = False; body_pass = False
+                        if allow_flip:
+                            # Perform flip (no daily caps)
+                            try:
+                                import uuid as _uuid
+                                exec_id = _uuid.uuid4().hex[:8]
+                            except Exception:
+                                exec_id = 'flip'
+                            did_flip = await self._flip_scalp_position(sym, sc_sig, sc_feats, htf_pass, body_pass, exec_id=exec_id)
+                            if did_flip:
+                                # Mirror executed for learning
+                                try:
+                                    scpt.record_scalp_signal(
+                                        sym,
+                                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                        float(ml_s or 0.0),
+                                        True,
+                                        sc_feats
+                                    )
+                                except Exception:
+                                    pass
+                                self._scalp_cooldown[sym] = bar_ts
+                                continue
+                        else:
+                            logger.debug(f"[{sym}] FLIP not allowed: opp signal but gates insufficient")
                     # Scalp Qscore execution gate
                     exec_enabled = True
                     exec_thr = 60.0

@@ -575,6 +575,21 @@ class TGBot:
             lines.append("")
             lines.append("✅ *Scalp Executed*")
             lines.append(f"• Closed: {s_total} | WR: {s_wr:.1f}% (W/L {s_w}/{s_l}) | PnL: ${s_pnl:.2f}")
+            # 30d executed view for Scalp
+            try:
+                from datetime import datetime, timedelta
+                cutoff = datetime.utcnow() - timedelta(days=30)
+                arr30 = [t for t in recs if isinstance(getattr(t, 'strategy_name', None), str)
+                         and getattr(t, 'strategy_name').lower().startswith('scalp')
+                         and getattr(t, 'exit_time', None) and getattr(t, 'exit_time') >= cutoff]
+                tot30 = len(arr30)
+                w30 = sum(1 for t in arr30 if float(getattr(t, 'pnl_usd', 0.0) or 0.0) > 0.0)
+                l30 = tot30 - w30
+                wr30 = (w30/tot30*100.0) if tot30 else 0.0
+                pnl30 = sum(float(getattr(t, 'pnl_usd', 0.0) or 0.0) for t in arr30)
+                lines.append(f"• 30d: Closed {tot30} | WR: {wr30:.1f}% (W/L {w30}/{l30}) | PnL: ${pnl30:.2f}")
+            except Exception:
+                pass
         except Exception as exc:
             try:
                 logger.debug(f"Executed aggregates error: {exc}")
@@ -712,6 +727,29 @@ class TGBot:
                 lines[-1] += f" | Open: {active}"
             except Exception:
                 pass
+            # 30d phantom view (decisive only; exclude timeouts)
+            try:
+                from datetime import datetime, timedelta
+                cutoff = datetime.utcnow() - timedelta(days=30)
+                decis = []
+                tout = 0
+                for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                    for p in arr:
+                        et = getattr(p, 'exit_time', None)
+                        if not et or et < cutoff:
+                            continue
+                        oc = getattr(p, 'outcome', None)
+                        if oc in ('win','loss'):
+                            decis.append(p)
+                        elif oc == 'timeout':
+                            tout += 1
+                dtot = len(decis)
+                dw = sum(1 for p in decis if getattr(p, 'outcome', None) == 'win')
+                dl = sum(1 for p in decis if getattr(p, 'outcome', None) == 'loss')
+                dwr = (dw/dtot*100.0) if dtot else 0.0
+                lines.append(f"• 30d: Decisive {dtot} | WR: {dwr:.1f}% (W/L {dw}/{dl}) | Timeouts: {tout}")
+            except Exception:
+                pass
         except Exception:
             pass
 
@@ -730,6 +768,19 @@ class TGBot:
             lines.append("")
             lines.append("✅ *Scalp Executed*")
             lines.append(f"• Closed: {total} | WR: {wr:.1f}% (W/L {wins}/{losses}) | PnL: ${pnl:.2f}")
+            # 30d executed view
+            try:
+                from datetime import datetime, timedelta
+                cutoff = datetime.utcnow() - timedelta(days=30)
+                arr30 = [t for t in arr if getattr(t, 'exit_time', None) and getattr(t, 'exit_time') >= cutoff]
+                tot30 = len(arr30)
+                w30 = sum(1 for t in arr30 if float(getattr(t, 'pnl_usd', 0.0) or 0.0) > 0.0)
+                l30 = tot30 - w30
+                wr30 = (w30/tot30*100.0) if tot30 else 0.0
+                pnl30 = sum(float(getattr(t, 'pnl_usd', 0.0) or 0.0) for t in arr30)
+                lines.append(f"• 30d: Closed {tot30} | WR: {wr30:.1f}% (W/L {w30}/{l30}) | PnL: ${pnl30:.2f}")
+            except Exception:
+                pass
         except Exception as _se:
             try:
                 logger.debug(f"Scalp executed stats unavailable: {_se}")

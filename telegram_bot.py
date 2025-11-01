@@ -108,6 +108,9 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalprecommend", self.scalp_recommendations))
         self.app.add_handler(CommandHandler("scalptrends", self.scalp_monthly_trends))
         self.app.add_handler(CommandHandler("scalppromote", self.scalp_promotion_status))
+        # Scalp gate risk adjustments
+        self.app.add_handler(CommandHandler("scalpgaterisk", self.scalp_gate_risk))
+        self.app.add_handler(CommandHandler("scalprisk", self.scalp_gate_risk))  # alias
         self.app.add_handler(CommandHandler("trendpromote", self.trend_promotion_status))
         # Trend ML high-ML threshold changer
         self.app.add_handler(CommandHandler("trendhighml", self.trend_high_ml))
@@ -1549,12 +1552,13 @@ class TGBot:
             "• /ml — Trend ML status",
             "• /mlpatterns — Learned patterns",
             "",
-            "Scalp Analysis",
+            "Scalp",
             "• /scalpqa — Scalp quality report",
             "• /scalpgates — Gate analysis (26+ variables)",
             "• /scalpcomprehensive [month] — Full analysis with combinations",
             "• /scalprecommend — Config recommendations",
             "• /scalptrends — Month-over-month trends",
+            "• /scalpgaterisk [body|htf|both] <percent> — Set risk% for gate-based executes",
             "",
             "Risk",
             "• /risk — Show current risk",
@@ -5819,6 +5823,59 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_comprehensive_analysis: {e}")
             await update.message.reply_text(f"❌ Error: {e}")
+
+    async def scalp_gate_risk(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Adjust per-gate risk percentages for Scalp gate-based execution.
+
+        Usage:
+          /scalpgaterisk              → show current values
+          /scalpgaterisk body 2.5     → set Body pass risk to 2.5%
+          /scalpgaterisk htf 10       → set HTF pass risk to 10%
+          /scalpgaterisk both 15      → set Both pass risk to 15%
+        Aliases: /scalprisk
+        """
+        try:
+            args = ctx.args if hasattr(ctx, 'args') else []
+            shared = self.shared
+            if 'scalp_gate_risk' not in shared or not isinstance(shared['scalp_gate_risk'], dict):
+                shared['scalp_gate_risk'] = {'body': 2.0, 'htf': 10.0, 'both': 15.0}
+            rmap = shared['scalp_gate_risk']
+            if not args or len(args) == 0:
+                await self.safe_reply(update,
+                    "🩳 *Scalp Gate Risk*\n"+
+                    f"• Body pass: {float(rmap.get('body',2.0)):.2f}%\n"+
+                    f"• HTF70 pass: {float(rmap.get('htf',10.0)):.2f}%\n"+
+                    f"• Both pass: {float(rmap.get('both',15.0)):.2f}%\n\n"+
+                    "Usage: /scalpgaterisk [body|htf|both] <percent>"
+                )
+                return
+            if len(args) != 2:
+                await self.safe_reply(update, "Usage: /scalpgaterisk [body|htf|both] <percent>")
+                return
+            gate = args[0].strip().lower()
+            if gate not in ('body', 'htf', 'both'):
+                await self.safe_reply(update, "Gate must be one of: body, htf, both")
+                return
+            try:
+                pct = float(args[1])
+            except Exception:
+                await self.safe_reply(update, "Percent must be a number (e.g., 2.5)")
+                return
+            # Clamp reasonable bounds
+            if pct < 0.01 or pct > 25.0:
+                await self.safe_reply(update, "Percent out of bounds (0.01–25)")
+                return
+            rmap[gate] = float(pct)
+            self.shared['scalp_gate_risk'] = rmap
+            await self.safe_reply(update,
+                "✅ *Scalp Gate Risk Updated*\n"+
+                f"• Body: {float(rmap.get('body',2.0)):.2f}%\n"+
+                f"• HTF70: {float(rmap.get('htf',10.0)):.2f}%\n"+
+                f"• Both: {float(rmap.get('both',15.0)):.2f}%"
+            )
+        except Exception as e:
+            logger.error(f"Error in scalp_gate_risk: {e}")
+            await update.message.reply_text("Error updating scalp gate risk")
 
     async def scalp_recommendations(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Generate actionable recommendations with config snippet."""

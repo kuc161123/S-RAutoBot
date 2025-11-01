@@ -3137,7 +3137,11 @@ class TradingBot:
                         htf_pass = False; body_pass = False; thr_ts = 70.0
                     if exec_enabled and (htf_pass or body_pass):
                         # Determine risk percent per rule
-                        risk_pct = 15.0 if (htf_pass and body_pass) else (10.0 if htf_pass else 2.0)
+                        try:
+                            rmap = (self.shared.get('scalp_gate_risk') or {}) if hasattr(self, 'shared') else {}
+                            risk_pct = float(rmap.get('both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body'), 15.0 if (htf_pass and body_pass) else (10.0 if htf_pass else 2.0)))
+                        except Exception:
+                            risk_pct = 15.0 if (htf_pass and body_pass) else (10.0 if htf_pass else 2.0)
                         # Prepare detailed notify
                         try:
                             if self.tg:
@@ -6577,7 +6581,13 @@ class TradingBot:
                     "config": cfg,
                     "broker": bybit,
                     "frames": self.frames,
-                    "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0, "policy_rejects": 0}
+                    "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0, "policy_rejects": 0},
+                    # Default Scalp gate risk tiers (overridable at runtime via Telegram)
+                    "scalp_gate_risk": (lambda c: {
+                        'body': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('body', 2.0)),
+                        'htf': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('htf', 10.0)),
+                        'both': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('both', 15.0)),
+                    })(cfg)
                 }
                 self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), early_shared)
                 self.shared = early_shared
@@ -6713,7 +6723,13 @@ class TradingBot:
                 "count": 0
             },
             # Routing stickiness state per symbol
-            "routing_state": {}
+            "routing_state": {},
+            # Ensure Scalp gate risk tiers are present (preserve existing values if already set)
+            "scalp_gate_risk": (lambda prev, c: prev if isinstance(prev, dict) and {'body','htf','both'} <= set(prev.keys()) else {
+                'body': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('body', 2.0)),
+                'htf': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('htf', 10.0)),
+                'both': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('both', 15.0)),
+            })(self.shared.get('scalp_gate_risk') if hasattr(self,'shared') and isinstance(self.shared, dict) else None, cfg)
         }
         if getattr(self, 'tg', None) and getattr(self.tg, 'shared', None):
             shared = self.tg.shared

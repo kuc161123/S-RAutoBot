@@ -3219,6 +3219,10 @@ class TradingBot:
                         ml_s, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats)
                     except Exception:
                         ml_s = 0.0
+                    try:
+                        sc_feats['ml'] = float(ml_s or 0.0)
+                    except Exception:
+                        pass
                     # Qscore-gated execution (primary) OR High-ML override (optional)
                     try:
                         e_cfg = (self.config.get('scalp', {}) or {}).get('exec', {})
@@ -3397,7 +3401,7 @@ class TradingBot:
                                 await self.tg.send_message(
                                     f"🟢 Scalp EXECUTE (Gate): {sym} {sc_sig.side.upper()} id={exec_id} — Reason: {reason_txt}\n"
                                     f"Entry={sc_sig.entry:.4f} SL={sc_sig.sl:.4f} TP={sc_sig.tp:.4f}\n"
-                                    f"Q={qv:.1f} | Risk={risk_pct:.1f}% per trade\n"
+                                    f"ML={float(ml_s or 0.0):.1f} | Q={qv:.1f} | Risk={risk_pct:.1f}% per trade\n"
                                     f"{gate_lines[0]} | {gate_lines[1]}\n"
                                     f"{comp_line}"
                                 )
@@ -3472,7 +3476,7 @@ class TradingBot:
                                             f"🛑 Scalp EXEC hard-gate blocked: {sym} {side_emoji} {sc_sig.side.upper()} @ {sc_sig.entry:.4f}\n"
                                             f"Gate failures: {','.join(reasons)} — phantom recorded\n"
                                             f"{gate_vals}\n"
-                                            f"Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})"
+                                            f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})"
                                         )
                                 except Exception:
                                     pass

@@ -111,6 +111,7 @@ class TGBot:
         # Scalp gate risk adjustments
         self.app.add_handler(CommandHandler("scalpgaterisk", self.scalp_gate_risk))
         self.app.add_handler(CommandHandler("scalprisk", self.scalp_gate_risk))  # alias
+        self.app.add_handler(CommandHandler("scalppatterns", self.scalp_patterns))
         self.app.add_handler(CommandHandler("trendpromote", self.trend_promotion_status))
         # Trend ML high-ML threshold changer
         self.app.add_handler(CommandHandler("trendhighml", self.trend_high_ml))
@@ -825,6 +826,7 @@ class TGBot:
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Refresh", callback_data="ui:dash:refresh:scalp")],
             [InlineKeyboardButton("🧪 QA", callback_data="ui:scalp:qa"), InlineKeyboardButton("🧰 Gates", callback_data="ui:scalp:gates")],
+            [InlineKeyboardButton("🤖 Patterns", callback_data="ui:scalp:patterns"), InlineKeyboardButton("⚖️ Risk", callback_data="ui:scalp:risk")],
             [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
         ])
 
@@ -1630,6 +1632,7 @@ class TGBot:
             "• /scalpcomprehensive [month] — Full analysis with combinations",
             "• /scalprecommend — Config recommendations",
             "• /scalptrends — Month-over-month trends",
+            "• /scalppatterns — ML feature/time/condition patterns",
             "• /scalpgaterisk [body|htf|both] <percent> — Set risk% for gate-based executes",
             "",
             "Risk",
@@ -2372,6 +2375,10 @@ class TGBot:
             if data == "ui:scalp:comp":
                 await query.answer()
                 await self.scalp_comprehensive_analysis(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:patterns":
+                await query.answer()
+                await self.scalp_patterns(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data == "ui:scalp:promote":
                 await query.answer()
@@ -5948,6 +5955,53 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_gate_risk: {e}")
             await update.message.reply_text("Error updating scalp gate risk")
+
+    async def scalp_patterns(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show Scalp ML patterns: feature importances, time patterns, and condition buckets."""
+        try:
+            from ml_scorer_scalp import get_scalp_scorer
+            s = get_scalp_scorer()
+            pat = s.get_patterns() if s else {}
+            lines = ["🤖 *Scalp ML Patterns*", ""]
+            # Feature importance
+            fi = pat.get('feature_importance', {}) or {}
+            if fi:
+                lines.append("🔧 Feature Importance (RF)")
+                for k, v in fi.items():
+                    lines.append(f"• {k}: {float(v):.1f}%")
+                lines.append("")
+            # Time patterns
+            tp = pat.get('time_patterns', {}) or {}
+            sp = tp.get('session_performance', {}) or {}
+            if sp:
+                lines.append("🕒 Sessions")
+                for k, v in sp.items():
+                    lines.append(f"• {k}: {v}")
+                lines.append("")
+            # Market conditions
+            mc = pat.get('market_conditions', {}) or {}
+            for title, mp in mc.items():
+                if mp:
+                    label = {
+                        'volatility_regime': '🌪️ Volatility',
+                        'vwap_dist_atr': '📏 VWAP Dist (ATR)',
+                        'bb_width_pct': '📦 BB Width'
+                    }.get(title, title)
+                    lines.append(label)
+                    for k, v in mp.items():
+                        lines.append(f"• {k}: {v}")
+                    lines.append("")
+            # Simple narrative
+            for n in (pat.get('winning_patterns') or []):
+                lines.append(f"✅ {n}")
+            for n in (pat.get('losing_patterns') or []):
+                lines.append(f"❌ {n}")
+            if len(lines) <= 2:
+                lines.append("(no ML patterns available yet)")
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"Error in scalp_patterns: {e}")
+            await update.message.reply_text("Error fetching Scalp ML patterns")
 
     async def scalp_recommendations(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Generate actionable recommendations with config snippet."""

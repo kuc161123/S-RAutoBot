@@ -6461,6 +6461,33 @@ class TradingBot:
         else:
             logger.warning("Could not fetch balance, continuing anyway...")
         
+        # Early Telegram startup notification to reduce perceived restart latency
+        try:
+            if not getattr(self, 'tg', None):
+                early_shared = {
+                    "risk": risk,
+                    "book": book,
+                    "panic": panic_list,
+                    "meta": cfg.get("symbol_meta", {}),
+                    "config": cfg,
+                    "broker": bybit,
+                    "frames": self.frames,
+                    "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0, "policy_rejects": 0}
+                }
+                self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), early_shared)
+                self.shared = early_shared
+                await self.tg.start_polling()
+                try:
+                    # Compact early signal that bot has restarted; detailed banner will follow later
+                    sym_ct = len(symbols)
+                    await self.tg.send_message(
+                        f"🔄 Bot restart acknowledged — initializing ({sym_ct} symbols, {tf}m)."
+                    )
+                except Exception:
+                    pass
+        except Exception as _etg:
+            logger.debug(f"Early Telegram init skipped: {_etg}")
+        
         # Fetch historical data for all symbols
         await self.load_or_fetch_initial_data(symbols, tf)
 
@@ -6540,7 +6567,8 @@ class TradingBot:
         last_analysis = {}
         
         # Setup shared data for Telegram - all ML components are now in scope
-        shared = {
+        # If Telegram was started early, reuse and update the existing shared dict
+        shared_updates = {
             "risk": risk,
             "book": book,
             "panic": panic_list,
@@ -6580,10 +6608,18 @@ class TradingBot:
                 "count": 0
             },
             # Routing stickiness state per symbol
-            "routing_state": {},
-            # Simple telemetry counters
-            "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0, "policy_rejects": 0}
+            "routing_state": {}
         }
+        if getattr(self, 'tg', None) and getattr(self.tg, 'shared', None):
+            shared = self.tg.shared
+            try:
+                shared.update(shared_updates)
+            except Exception:
+                # Fallback to replace reference if update fails
+                for k, v in shared_updates.items():
+                    shared[k] = v
+        else:
+            shared = dict(shared_updates)
         # Initialize Range/Scalp states with Redis-backed continuity
         try:
             if not hasattr(self, '_range_symbol_state'):
@@ -6610,14 +6646,21 @@ class TradingBot:
         except Exception:
             pass
         
-        # Initialize Telegram bot with retry on conflict
+        # Initialize Telegram bot with retry on conflict (or reuse existing instance)
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), shared)
+                if not getattr(self, 'tg', None):
+                    self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), shared)
+                    await self.tg.start_polling()
+                else:
+                    # Ensure the bot sees the updated shared dict
+                    try:
+                        self.tg.shared = shared
+                    except Exception:
+                        pass
                 # Keep shared available to stream
                 self.shared = shared
-                await self.tg.start_polling()
                 # Send shorter startup message for 20 symbols
                 # Format risk display
                 if risk.use_percent_risk:

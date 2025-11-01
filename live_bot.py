@@ -1349,7 +1349,7 @@ class TradingBot:
             pass
         return task
 
-    async def _execute_scalp_trade(self, sym: str, sig_obj, ml_score: float = 0.0, exec_id: str = None) -> bool:
+    async def _execute_scalp_trade(self, sym: str, sig_obj, ml_score: float = 0.0, exec_id: str = None, risk_percent_override: float | None = None) -> bool:
         """Execute a Scalp trade immediately. Returns True if executed.
 
         Bypasses routing/regime/micro gates. Still subject to hard execution guards
@@ -1368,7 +1368,7 @@ class TradingBot:
             async with lock:
                 bybit = self.bybit
                 book = self.book
-                sizer = getattr(self, 'sizer', None)
+                base_sizer = getattr(self, 'sizer', None)
                 cfg = getattr(self, 'config', {}) or {}
                 shared = getattr(self, 'shared', {}) or {}
             # One position per symbol
@@ -1459,12 +1459,24 @@ class TradingBot:
                 try:
                     bal = bybit.get_balance()
                     if bal:
-                        sizer.account_balance = bal
+                        base_sizer.account_balance = bal
                         shared["last_balance"] = bal
                 except Exception:
                     pass
-            # Sizing
-                qty = sizer.qty_for(float(sig_obj.entry), float(sig_obj.sl), m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
+            # Sizing (with optional per-trade risk override)
+                try:
+                    if risk_percent_override is not None:
+                        # Clone risk config for isolated per-trade sizing
+                        from copy import deepcopy
+                        local_risk = deepcopy(base_sizer.risk) if hasattr(base_sizer, 'risk') else RiskConfig()
+                        local_risk.use_percent_risk = True
+                        local_risk.risk_percent = float(max(0.01, risk_percent_override))
+                        local_sizer = Sizer(local_risk, account_balance=getattr(base_sizer, 'account_balance', None), fee_total_pct=getattr(base_sizer, 'fee_total_pct', 0.0), include_fees=getattr(base_sizer, 'include_fees', False))
+                    else:
+                        local_sizer = base_sizer
+                except Exception:
+                    local_sizer = base_sizer
+                qty = local_sizer.qty_for(float(sig_obj.entry), float(sig_obj.sl), m.get("qty_step",0.001), m.get("min_qty",0.001), ml_score=ml_score)
                 if qty <= 0:
                     try:
                         self._scalp_last_exec_reason[sym] = 'size_zero'
@@ -3110,6 +3122,70 @@ class TradingBot:
                         hi_thr = max(hi_thr, ev_thr_sc)
                     except Exception:
                         pass
+                    # Gate-based execution override: if either HTF>=thr or Body≥thr (dir aligned), execute with risk tiers
+                    try:
+                        hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                        ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
+                        thr_ts = float(hg.get('htf_min_ts15', 70.0))
+                        htf_pass = bool(hg.get('htf_enabled', False)) and (ts15 >= thr_ts)
+                        body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
+                        bmin = float(hg.get('body_ratio_min_3m', 0.35))
+                        bdir = str(sc_feats.get('body_sign', 'flat'))
+                        body_dir_ok = (sc_sig.side == 'long' and bdir == 'up') or (sc_sig.side == 'short' and bdir == 'down')
+                        body_pass = bool(hg.get('body_enabled', False)) and (body_ratio >= bmin and body_dir_ok)
+                    except Exception:
+                        htf_pass = False; body_pass = False; thr_ts = 70.0
+                    if exec_enabled and (htf_pass or body_pass):
+                        # Determine risk percent per rule
+                        risk_pct = 15.0 if (htf_pass and body_pass) else (10.0 if htf_pass else 2.0)
+                        # Prepare detailed notify
+                        try:
+                            if self.tg:
+                                import uuid as _uuid
+                                exec_id = getattr(sc_sig, 'meta', {}).get('exec_id') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
+                                if not exec_id:
+                                    exec_id = _uuid.uuid4().hex[:8]
+                                    if isinstance(getattr(sc_sig, 'meta', {}), dict):
+                                        sc_sig.meta['exec_id'] = exec_id
+                                sc_feats['exec_id'] = exec_id
+                                gate_lines = []
+                                gate_lines.append(f"HTF: {'✅' if htf_pass else '❌'} {ts15:.0f} (≥ {thr_ts:.0f})")
+                                gate_lines.append(f"Body: {'✅' if body_pass else '❌'} {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})")
+                                qv = float(sc_feats.get('qscore', 0.0) or 0.0)
+                                comps = sc_feats.get('qscore_components', {}) or {}
+                                comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
+                                reason_txt = 'HTF+Body' if (htf_pass and body_pass) else ('HTF70' if htf_pass else 'Body50')
+                                await self.tg.send_message(
+                                    f"🟢 Scalp EXECUTE (Gate): {sym} {sc_sig.side.upper()} id={exec_id} — Reason: {reason_txt}\n"
+                                    f"Entry={sc_sig.entry:.4f} SL={sc_sig.sl:.4f} TP={sc_sig.tp:.4f}\n"
+                                    f"Q={qv:.1f} | Risk={risk_pct:.1f}% per trade\n"
+                                    f"{gate_lines[0]} | {gate_lines[1]}\n"
+                                    f"{comp_line}"
+                                )
+                        except Exception:
+                            pass
+                        # Execute with risk override
+                        try:
+                            did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=sc_feats.get('exec_id','n/a'), risk_percent_override=risk_pct)
+                        except TypeError:
+                            did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                        if did_exec:
+                            try:
+                                scpt.record_scalp_signal(
+                                    sym,
+                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                    float(ml_s or 0.0),
+                                    True,
+                                    sc_feats
+                                )
+                                _scalp_decision_logged = True
+                                self._scalp_cooldown[sym] = bar_ts
+                                blist.append(now_ts)
+                                self._scalp_budget[sym] = blist
+                                logger.info(f"[{sym}|id={sc_feats.get('exec_id','n/a')}] 🧮 Scalp decision final: exec_scalp (reason=gate {'HTF+Body' if (htf_pass and body_pass) else ('HTF' if htf_pass else 'Body')})")
+                            except Exception:
+                                pass
+                            continue
                     # Attempt Qscore execution first (if enabled)
                     did_exec = False
                     exec_reason = None
@@ -4321,7 +4397,7 @@ class TradingBot:
                     pass
                 return
 
-            # Open notification with Qscore breakdown
+            # Open notification with Qscore breakdown and gate values
             q = feats.get('qscore', None)
             comps = feats.get('qscore_components', {}) or {}
             reason_line = f"Q={float(q):.1f}" if isinstance(q, (int,float)) else None
@@ -4336,6 +4412,23 @@ class TradingBot:
             try:
                 if comps:
                     lines.append(f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}")
+            except Exception:
+                pass
+            # Include HTF and Body values with pass/fail against current thresholds for context
+            try:
+                from math import isfinite
+                ts15 = float(feats.get('ts15', 0.0) or 0.0)
+                body_ratio = float(feats.get('body_ratio', 0.0) or 0.0)
+                bdir = str(feats.get('body_sign', 'flat'))
+                import yaml as _y
+                with open('config.yaml','r') as _f:
+                    _cfg = _y.safe_load(_f) or {}
+                hg = ((_cfg.get('scalp', {}) or {}).get('hard_gates', {}) or {})
+                thr_ts = float(hg.get('htf_min_ts15', 70.0))
+                bmin = float(hg.get('body_ratio_min_3m', 0.50 if bool(hg.get('body_enabled', False)) else 0.35))
+                htf_pass = ts15 >= thr_ts
+                body_pass = (body_ratio >= bmin) and ((side == 'LONG' and bdir=='up') or (side=='SHORT' and bdir=='down'))
+                lines.append(f"HTF: {'✅' if htf_pass else '❌'} {ts15:.0f} (≥ {thr_ts:.0f}) | Body: {'✅' if body_pass else '❌'} {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})")
             except Exception:
                 pass
             if pid and pid in getattr(self, '_phantom_open_notified', set()):

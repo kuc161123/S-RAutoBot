@@ -118,6 +118,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalpoffhours", self.scalp_offhours_toggle))
         self.app.add_handler(CommandHandler("scalpoffhourswindow", self.scalp_offhours_window))
         self.app.add_handler(CommandHandler("scalpoffhoursexception", self.scalp_offhours_exception))
+        # Vars-by-time command (implemented below); keep registration here
+        self.app.add_handler(CommandHandler("scalptimewrvars", self.scalp_time_vars_cmd))
         self.app.add_handler(CommandHandler("trendpromote", self.trend_promotion_status))
         # Trend ML high-ML threshold changer
         self.app.add_handler(CommandHandler("trendhighml", self.trend_high_ml))
@@ -1644,6 +1646,7 @@ class TGBot:
             "• /scalpqwr — Qscore WR buckets (30d)",
             "• /scalpmlwr — ML WR buckets (30d)",
             "• /scalptimewr — Sessions/Days WR (30d)",
+            "• /scalptimewrvars <sessions|days> <key> — Variable WR filtered by session/day",
             "• /scalpgaterisk [body|htf|both] <percent> — Set risk% for gate-based executes",
             "• /scalpoffhours on|off — Toggle off-hours exec block",
             "• /scalpoffhourswindow add|remove HH:MM-HH:MM — Manage off-hours windows",
@@ -2405,6 +2408,16 @@ class TGBot:
             if data == "ui:scalp:timewr":
                 await query.answer()
                 await self.scalp_time_wr(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data.startswith("ui:scalp:timewr_vars:session:"):
+                await query.answer()
+                key = data.split(":")[-1]
+                await self._scalp_time_vars(type('obj', (object,), {'message': query.message}), ctx, kind='session', key=key)
+                return
+            if data.startswith("ui:scalp:timewr_vars:day:"):
+                await query.answer()
+                key = data.split(":")[-1]
+                await self._scalp_time_vars(type('obj', (object,), {'message': query.message}), ctx, kind='day', key=key)
                 return
             if data == "ui:scalp:promote":
                 await query.answer()
@@ -6197,10 +6210,245 @@ class TGBot:
                         best = (i, wr, s['n'])
             if best:
                 lines.append(f"\nBest day: {day_names[best[0]]} {best[1]:.1f}% (N={best[2]})")
-            await self.safe_reply(update, "\n".join(lines))
+            # Inline keyboard: direct links to Vars-by-Session/Day views
+            kb_rows = []
+            try:
+                from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+                kb_rows.append([
+                    InlineKeyboardButton("Vars: asian", callback_data="ui:scalp:timewr_vars:session:asian"),
+                    InlineKeyboardButton("Vars: european", callback_data="ui:scalp:timewr_vars:session:european")
+                ])
+                kb_rows.append([
+                    InlineKeyboardButton("Vars: us", callback_data="ui:scalp:timewr_vars:session:us"),
+                    InlineKeyboardButton("Vars: off_hours", callback_data="ui:scalp:timewr_vars:session:off_hours")
+                ])
+                # Days (Mon..Sun)
+                day_keys = ['mon','tue','wed','thu','fri','sat','sun']
+                row = []
+                for i, dk in enumerate(day_keys):
+                    row.append(InlineKeyboardButton(dk.title(), callback_data=f"ui:scalp:timewr_vars:day:{dk}"))
+                    if (i % 4) == 3:
+                        kb_rows.append(row)
+                        row = []
+                if row:
+                    kb_rows.append(row)
+                kb = InlineKeyboardMarkup(kb_rows)
+                try:
+                    await update.message.reply_text("\n".join(lines), reply_markup=kb)
+                except Exception:
+                    # Fallback without keyboard
+                    await self.safe_reply(update, "\n".join(lines))
+            except Exception:
+                await self.safe_reply(update, "\n".join(lines))
         except Exception as e:
             logger.error(f"Error in scalp_time_wr: {e}")
             await update.message.reply_text("Error computing Sessions/Days WR")
+
+    async def scalp_time_vars_cmd(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Command wrapper: /scalptimewrvars <sessions|session|days|day> <key>
+
+        Examples:
+          /scalptimewrvars sessions asian
+          /scalptimewrvars days fri
+        """
+        try:
+            args = ctx.args if hasattr(ctx, 'args') else []
+            if not args or len(args) < 2:
+                await self.safe_reply(update, "Usage: /scalptimewrvars <sessions|days> <asian|european|us|off_hours|mon..sun>")
+                return
+            kind = args[0].strip().lower()
+            key = args[1].strip().lower()
+            if kind in ('sessions','session'):
+                await self._scalp_time_vars(update, ctx, kind='session', key=key)
+                return
+            if kind in ('days','day'):
+                await self._scalp_time_vars(update, ctx, kind='day', key=key)
+                return
+            await self.safe_reply(update, "First arg must be 'sessions' or 'days'")
+        except Exception as e:
+            logger.error(f"Error in scalp_time_vars_cmd: {e}")
+            await update.message.reply_text("Error computing Vars-by-time view")
+
+    async def _scalp_time_vars(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, *, kind: str, key: str, days: int = 30, min_samples: int = 20):
+        """Compute Scalp variable/gate WR for a subset filtered by session or day.
+
+        kind: 'session' or 'day'
+        key:  session in {'asian','european','us','off_hours'} or day in {'mon'..'sun'|'monday'..}
+        """
+        try:
+            from datetime import datetime, timedelta
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+
+            cutoff = datetime.utcnow() - timedelta(days=days)
+
+            def _session_fallback(dt: datetime) -> str:
+                hr = dt.hour if dt else 0
+                if 0 <= hr < 8: return 'asian'
+                if 8 <= hr < 16: return 'european'
+                return 'us'
+
+            # Normalize key
+            k = key.strip().lower()
+            dow_map = {
+                'mon': 0, 'monday': 0,
+                'tue': 1, 'tuesday': 1,
+                'wed': 2, 'wednesday': 2,
+                'thu': 3, 'thursday': 3,
+                'fri': 4, 'friday': 4,
+                'sat': 5, 'saturday': 5,
+                'sun': 6, 'sunday': 6,
+            }
+
+            # Collect filtered decisive phantoms
+            phantoms = []
+            for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                for p in arr:
+                    try:
+                        et = getattr(p, 'exit_time', None)
+                        if not et or et < cutoff:
+                            continue
+                        oc = getattr(p, 'outcome', None)
+                        if oc not in ('win','loss'):
+                            continue
+                        if kind == 'session':
+                            feats = getattr(p, 'features', {}) or {}
+                            sess = str(feats.get('session')) if feats.get('session') else _session_fallback(et)
+                            if sess != k:
+                                continue
+                        elif kind == 'day':
+                            didx = dow_map.get(k)
+                            if didx is None:
+                                continue
+                            if et.weekday() != didx:
+                                continue
+                        else:
+                            continue
+                        phantoms.append(p)
+                    except Exception:
+                        continue
+
+            total = len(phantoms)
+            if total == 0:
+                await self.safe_reply(update, f"🚪 *Scalp Variable Analysis* ({days}d)\nNo data for {kind}={key}.")
+                return
+            wins = sum(1 for p in phantoms if getattr(p, 'outcome', None) == 'win')
+            baseline_wr = (wins / total * 100.0) if total else 0.0
+
+            # Compute gate statuses once
+            gate_statuses = [scpt.compute_gate_status(p) for p in phantoms]
+
+            # Variables list (align with tracker)
+            all_variables = [
+                'htf', 'vol', 'body', 'align_15m',
+                'body_040', 'body_045', 'body_050', 'body_060', 'wick_align',
+                'vwap_045', 'vwap_060', 'vwap_080', 'vwap_100',
+                'vol_110', 'vol_120', 'vol_150',
+                'bb_width_60p', 'bb_width_70p', 'bb_width_80p',
+                'q_040', 'q_050', 'q_060', 'q_070',
+                'impulse_040', 'impulse_060',
+                'micro_seq',
+                'htf_070', 'htf_080',
+            ]
+
+            variable_stats = {}
+            for var in all_variables:
+                var_pass_idx = [i for i, gs in enumerate(gate_statuses) if bool(gs.get(var, False))]
+                var_fail_idx = [i for i, gs in enumerate(gate_statuses) if not bool(gs.get(var, False))]
+
+                pass_total = len(var_pass_idx)
+                fail_total = len(var_fail_idx)
+                pass_wins = sum(1 for i in var_pass_idx if getattr(phantoms[i], 'outcome', None) == 'win')
+                fail_wins = sum(1 for i in var_fail_idx if getattr(phantoms[i], 'outcome', None) == 'win')
+                pass_wr = (pass_wins / pass_total * 100.0) if pass_total else 0.0
+                fail_wr = (fail_wins / fail_total * 100.0) if fail_total else 0.0
+                # Delta vs fail_wr (consistent with get_gate_analysis)
+                delta = (pass_wr - fail_wr) if (pass_total >= min_samples and fail_total >= min_samples) else None
+                variable_stats[var] = {
+                    'pass_wins': pass_wins,
+                    'pass_total': pass_total,
+                    'pass_wr': pass_wr,
+                    'fail_wins': fail_wins,
+                    'fail_total': fail_total,
+                    'fail_wr': fail_wr,
+                    'delta': delta,
+                    'sufficient_samples': (pass_total >= min_samples and fail_total >= min_samples)
+                }
+
+            # Ranked variables by delta
+            sorted_variables = sorted(
+                [(k, v) for k, v in variable_stats.items() if v['sufficient_samples']],
+                key=lambda x: x[1]['delta'], reverse=True
+            )
+
+            # Combinations for original 4 gates (HVBA)
+            gates = ['htf', 'vol', 'body', 'align_15m']
+            from collections import defaultdict
+            combo_stats = defaultdict(lambda: {'wins': 0, 'total': 0})
+            for i, p in enumerate(phantoms):
+                gs = gate_statuses[i]
+                bitmap = ''.join(['1' if gs.get(g, False) else '0' for g in gates])
+                combo_stats[bitmap]['total'] += 1
+                if getattr(p, 'outcome', None) == 'win':
+                    combo_stats[bitmap]['wins'] += 1
+            sorted_combos = sorted(combo_stats.items(), key=lambda x: x[1]['total'], reverse=True)
+
+            def _pretty(v: str) -> str:
+                try:
+                    return v.replace('bb_width_', 'bbwidth').replace('_', '')
+                except Exception:
+                    return v
+
+            # Build message
+            scope = f"Session: {key}" if kind == 'session' else f"Day: {key.title()}"
+            msg = [
+                f"🚪 *Scalp Variable Analysis* ({days}d)",
+                f"📊 Baseline: {total} phantoms, {baseline_wr:.1f}% WR",
+                "",
+            ]
+            # Top and Worst filters
+            if sorted_variables:
+                positive = [(k, v) for k, v in sorted_variables if v['delta'] and v['delta'] > 0]
+                negative = [(k, v) for k, v in sorted_variables if v['delta'] and v['delta'] < 0]
+                if positive:
+                    msg.append("🟢 Top Filters (Improve WR):")
+                    for var_name, stats in positive[:10]:
+                        msg.append(
+                            f"✅ {_pretty(var_name)}: {stats['pass_total']} trades, {stats['pass_wr']:.1f}% WR ({stats['delta']:+.1f}%)"
+                        )
+                    msg.append("")
+                if negative:
+                    msg.append("*🔴 Worst Filters (Hurt WR):*")
+                    # Show worst 10
+                    for var_name, stats in list(reversed(negative[-10:])):
+                        msg.append(
+                            f"❌ {_pretty(var_name)}: {stats['pass_total']} trades, {stats['pass_wr']:.1f}% WR ({stats['delta']:+.1f}%)"
+                        )
+                    msg.append("")
+                # Insufficient samples
+                insuff = len([1 for _, v in variable_stats.items() if not v['sufficient_samples']])
+                if insuff:
+                    msg.append(f"⚠️ {insuff} variables with insufficient samples (<{min_samples})")
+            # Top combinations
+            tops = []
+            for bitmap, stats in sorted_combos[:5]:
+                if stats['total'] >= min_samples:
+                    wr = (stats['wins']/stats['total']*100.0) if stats['total'] else 0.0
+                    visual = ''.join(['🟢' if c == '1' else '🔴' for c in bitmap])
+                    tops.append(f"{visual} {stats['wins']}/{stats['total']} ({wr:.1f}% WR)")
+            if tops:
+                msg.append("")
+                msg.append("Top Gate Combinations:")
+                msg.append("(H=HTF, V=Vol, B=Body, A=Align)")
+                msg.extend(tops)
+            # Append scope and footer
+            msg.insert(1, scope)
+            msg.append(f"\nMin samples: {min_samples} per gate status")
+
+            await self.safe_reply(update, "\n".join(msg))
+        except Exception as e:
+            logger.error(f"Error in _scalp_time_vars: {e}")
+            await update.message.reply_text("Error computing Variables by Session/Day")
 
     async def scalp_offhours_toggle(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Toggle off-hours execution block for Scalp (phantoms continue). Usage: /scalpoffhours on|off"""

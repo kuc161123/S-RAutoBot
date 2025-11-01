@@ -672,11 +672,30 @@ class ScalpPhantomTracker:
         return out
 
     def get_scalp_phantom_stats(self) -> Dict:
-        total = sum(len(v) for v in self.completed.values())
-        wins = sum(1 for arr in self.completed.values() for t in arr if t.outcome=='win')
-        losses = total - wins
-        wr = (wins/total*100) if total else 0.0
-        return {'total': total, 'wins': wins, 'losses': losses, 'wr': wr}
+        """Return Scalp phantom stats excluding timeouts from WR.
+
+        - total: decisive count (wins + losses)
+        - wins: outcome == 'win'
+        - losses: outcome == 'loss'
+        - timeouts: outcome == 'timeout' (not included in WR)
+        - wr: wins / (wins + losses)
+        """
+        decisive = []
+        timeouts = 0
+        for arr in self.completed.values():
+            for t in arr:
+                try:
+                    if t.outcome in ('win', 'loss'):
+                        decisive.append(t)
+                    elif t.outcome == 'timeout':
+                        timeouts += 1
+                except Exception:
+                    continue
+        total = len(decisive)
+        wins = sum(1 for t in decisive if getattr(t, 'outcome', None) == 'win')
+        losses = sum(1 for t in decisive if getattr(t, 'outcome', None) == 'loss')
+        wr = (wins/total*100.0) if total else 0.0
+        return {'total': total, 'wins': wins, 'losses': losses, 'wr': wr, 'timeouts': timeouts}
 
     def compute_gate_status(self, phantom: ScalpPhantomTrade, config: Dict = None) -> Dict:
         """

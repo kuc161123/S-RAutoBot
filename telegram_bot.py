@@ -647,13 +647,110 @@ class TGBot:
             pass
 
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Refresh", callback_data="ui:dash:refresh")],
+            [InlineKeyboardButton("🔄 Refresh", callback_data="ui:dash:refresh:trend")],
             [InlineKeyboardButton("📐 Trend States", callback_data="ui:trend:states"), InlineKeyboardButton("📊 Positions", callback_data="ui:positions")],
             [InlineKeyboardButton("📜 Recent", callback_data="ui:recent"), InlineKeyboardButton("👻 Phantom", callback_data="ui:phantom:trend"), InlineKeyboardButton("📦 Range", callback_data="ui:phantom:range")],
             [InlineKeyboardButton("🤖 ML", callback_data="ui:ml:trend"), InlineKeyboardButton("🧠 Patterns", callback_data="ui:ml:patterns")],
             [InlineKeyboardButton("🩳 Scalp", callback_data="ui:scalp:qa"), InlineKeyboardButton("📈 Scalp Qscore", callback_data="ui:scalp:qscore")],
             [InlineKeyboardButton("📊 Qscores (All)", callback_data="ui:qscore:all"), InlineKeyboardButton("🧠 ML Stats", callback_data="ui:ml:stats")],
             [InlineKeyboardButton("🧭 Events", callback_data="ui:events"), InlineKeyboardButton("⚙️ Settings", callback_data="ui:settings")]
+        ])
+
+        return "\n".join(lines), kb
+
+    def _build_scalp_dashboard(self):
+        """Build Scalp‑only dashboard text and keyboard."""
+        frames = self.shared.get("frames", {})
+        per_trade_risk, _risk_label = self._compute_risk_snapshot()
+        cfg = self.shared.get('config', {}) or {}
+        scalp_cfg = (cfg.get('scalp', {}) or {})
+
+        lines = ["🩳 *Scalp Dashboard*", "━━━━━━━━━━━━━━━━━━━━━", ""]
+        # System
+        lines.append("⚡ *System*")
+        lines.append(f"• Status: {'✅ Online' if frames else '⏳ Starting up'}")
+        try:
+            tf3 = str(scalp_cfg.get('timeframe', '3'))
+            lines.append(f"• Timeframe: {tf3}m")
+        except Exception:
+            pass
+        symbols_cfg = self.shared.get("symbols_config")
+        if symbols_cfg:
+            lines.append(f"• Universe: {len(symbols_cfg)} symbols")
+        bal = self.shared.get('last_balance')
+        if isinstance(bal, (int,float)):
+            lines.append(f"• Balance: ${float(bal):.2f} USDT")
+
+        # Scalp States summary (from shared redis snapshot if available)
+        ss = self.shared.get('scalp_states') or {}
+        lines.append("")
+        lines.append("🧭 *Scalp States*")
+        if ss:
+            try:
+                lines.append(
+                    f"MOM {int(ss.get('mom',0))} | PULL {int(ss.get('pull',0))} | VWAP {int(ss.get('vwap',0))} | Q≥thr {int(ss.get('q_ge_thr',0))} | EXEC {int(ss.get('exec_today',0))} | PHANTOM {int(ss.get('phantom_open',0))}"
+                )
+            except Exception:
+                lines.append("(summary unavailable)")
+        else:
+            lines.append("(unavailable)")
+
+        # Scalp phantom stats
+        try:
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            st = scpt.get_scalp_phantom_stats()
+            lines.append("")
+            lines.append("👻 *Scalp Phantom*")
+            lines.append(f"• Tracked: {st.get('total',0)} | WR: {st.get('wr',0.0):.1f}% (W/L {st.get('wins',0)}/{st.get('losses',0)})")
+            # Show active count if available
+            try:
+                active = sum(len(v) for v in (getattr(scpt, 'active', {}) or {}).values())
+                lines[-1] += f" | Open: {active}"
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        # Config snapshot for Scalp
+        try:
+            ex = (scalp_cfg.get('exec', {}) or {})
+            status = 'On' if bool(ex.get('enabled', False)) else 'Off'
+            thr = int(float(((scalp_cfg.get('rule_mode', {}) or {}).get('execute_q_min', 60))))
+            lines.append("")
+            lines.append("⚙️ *Config*")
+            lines.append(f"• Exec: {status} | Qthr: {thr}")
+            # Risk and caps
+            rp = ex.get('risk_percent', None)
+            cap = ex.get('daily_cap', None)
+            extras = []
+            if isinstance(rp, (int,float)):
+                extras.append(f"Risk {float(rp):.2f}%")
+            if isinstance(cap, int) and cap > 0:
+                extras.append(f"Daily cap {cap}")
+            if extras:
+                lines.append("• " + " | ".join(extras))
+        except Exception:
+            pass
+
+        # Positions snapshot (global)
+        try:
+            book = self.shared.get("book")
+            positions = (book.positions if book else {})
+            lines.append("")
+            lines.append("📊 *Positions*")
+            if positions:
+                est = per_trade_risk * len(positions)
+                lines.append(f"• Open positions: {len(positions)} | Est. risk: ${est:.2f}")
+            else:
+                lines.append("• No open positions")
+        except Exception:
+            pass
+
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Refresh", callback_data="ui:dash:refresh:scalp")],
+            [InlineKeyboardButton("🧪 QA", callback_data="ui:scalp:qa"), InlineKeyboardButton("🧰 Gates", callback_data="ui:scalp:gates")],
+            [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
         ])
 
         return "\n".join(lines), kb
@@ -2151,8 +2248,15 @@ class TGBot:
             if not self._cooldown_ok('dashboard'):
                 await self.safe_reply(update, "⏳ Please wait before using /dashboard again")
                 return
-            # Use Trend-only dashboard with inline Settings for consistency
-            text, kb = self._build_trend_dashboard()
+            # Pick dashboard based on enabled strategies; show Scalp-only when others are disabled
+            cfg = self.shared.get('config', {}) or {}
+            trend_enabled = bool(((cfg.get('trend', {}) or {}).get('enabled', True)))
+            range_enabled = bool(((cfg.get('range', {}) or {}).get('enabled', True)))
+            if (not trend_enabled) and (not range_enabled):
+                text, kb = self._build_scalp_dashboard()
+            else:
+                # Default to Trend-centric dashboard when any other strategy is active
+                text, kb = self._build_trend_dashboard()
             await update.message.reply_text(text, reply_markup=kb)
 
         except Exception as e:
@@ -2165,13 +2269,37 @@ class TGBot:
             query = update.callback_query
             data = query.data or ""
             # Trend-only UI routes (take precedence)
-            if data == "ui:dash:refresh":
+            if data in ("ui:dash:refresh", "ui:dash:refresh:trend"):
                 await query.answer("Refreshing…")
                 text, kb = self._build_trend_dashboard()
                 try:
                     await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
                 except Exception:
                     await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
+                return
+            if data == "ui:dash:refresh:scalp":
+                await query.answer("Refreshing…")
+                text, kb = self._build_scalp_dashboard()
+                try:
+                    await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
+                except Exception:
+                    await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
+                return
+            if data == "ui:scalp:qa":
+                await query.answer()
+                await self.scalp_qa(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:gates":
+                await query.answer()
+                await self.scalp_gate_analysis(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:comp":
+                await query.answer()
+                await self.scalp_comprehensive_analysis(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:promote":
+                await query.answer()
+                await self.scalp_promotion_status(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data in ("ui:trend:states", "ui:positions", "ui:recent", "ui:phantom:trend", "ui:phantom:range", "ui:ml:trend", "ui:ml:patterns", "ui:events", "ui:settings") or data.startswith("ui:settings:toggle:") or data.startswith("ui:settings:set:"):
                 # Re-dispatch into the simpler trend-only handlers by faking a small switch

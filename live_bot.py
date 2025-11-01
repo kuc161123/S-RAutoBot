@@ -3218,9 +3218,21 @@ class TradingBot:
                                 try:
                                     if self.tg:
                                         side_emoji = "🟢" if sc_sig.side == 'long' else "🔴"
+                                        # Include exact HTF and Body values for transparency
+                                        try:
+                                            hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                            ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
+                                            thr_ts = float(hg.get('htf_min_ts15', 70.0))
+                                            body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
+                                            bmin = float(hg.get('body_ratio_min_3m', 0.50 if bool(hg.get('body_enabled', False)) else 0.35))
+                                            bdir = str(sc_feats.get('body_sign', 'flat'))
+                                            gate_vals = f"HTF {ts15:.0f} (≥ {thr_ts:.0f}) | Body {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})"
+                                        except Exception:
+                                            gate_vals = ""
                                         await self.tg.send_message(
                                             f"🛑 Scalp EXEC hard-gate blocked: {sym} {side_emoji} {sc_sig.side.upper()} @ {sc_sig.entry:.4f}\n"
                                             f"Gate failures: {','.join(reasons)} — phantom recorded\n"
+                                            f"{gate_vals}\n"
                                             f"Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})"
                                         )
                                 except Exception:

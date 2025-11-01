@@ -115,6 +115,9 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalpqwr", self.scalp_qscore_wr))
         self.app.add_handler(CommandHandler("scalpmlwr", self.scalp_mlscore_wr))
         self.app.add_handler(CommandHandler("scalptimewr", self.scalp_time_wr))
+        self.app.add_handler(CommandHandler("scalpoffhours", self.scalp_offhours_toggle))
+        self.app.add_handler(CommandHandler("scalpoffhourswindow", self.scalp_offhours_window))
+        self.app.add_handler(CommandHandler("scalpoffhoursexception", self.scalp_offhours_exception))
         self.app.add_handler(CommandHandler("trendpromote", self.trend_promotion_status))
         # Trend ML high-ML threshold changer
         self.app.add_handler(CommandHandler("trendhighml", self.trend_high_ml))
@@ -1640,7 +1643,11 @@ class TGBot:
             "• /scalppatterns — ML feature/time/condition patterns",
             "• /scalpqwr — Qscore WR buckets (30d)",
             "• /scalpmlwr — ML WR buckets (30d)",
+            "• /scalptimewr — Sessions/Days WR (30d)",
             "• /scalpgaterisk [body|htf|both] <percent> — Set risk% for gate-based executes",
+            "• /scalpoffhours on|off — Toggle off-hours exec block",
+            "• /scalpoffhourswindow add|remove HH:MM-HH:MM — Manage off-hours windows",
+            "• /scalpoffhoursexception htf on|off | both on|off — Allow HTF≥70 or BOTH during off-hours",
             "",
             "Risk",
             "• /risk — Show current risk",
@@ -6194,6 +6201,74 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_time_wr: {e}")
             await update.message.reply_text("Error computing Sessions/Days WR")
+
+    async def scalp_offhours_toggle(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Toggle off-hours execution block for Scalp (phantoms continue). Usage: /scalpoffhours on|off"""
+        try:
+            args = ctx.args if hasattr(ctx, 'args') else []
+            if not args or args[0].lower() not in ('on','off'):
+                state = bool(((self.shared.get('scalp_offhours') or {}).get('enabled', False)))
+                await self.safe_reply(update, f"🕘 Off-hours exec block is {'ON' if state else 'OFF'}\nUsage: /scalpoffhours on|off")
+                return
+            state = args[0].lower() == 'on'
+            cfg = self.shared.get('scalp_offhours') or {}
+            cfg['enabled'] = state
+            cfg.setdefault('windows', [])
+            cfg.setdefault('allow_htf', False)
+            cfg.setdefault('allow_both', False)
+            self.shared['scalp_offhours'] = cfg
+            await self.safe_reply(update, f"✅ Off-hours exec block set to {'ON' if state else 'OFF'}")
+        except Exception as e:
+            logger.error(f"Error in scalp_offhours_toggle: {e}")
+            await update.message.reply_text("Error toggling off-hours")
+
+    async def scalp_offhours_window(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Manage off-hours windows. Usage: /scalpoffhourswindow add HH:MM-HH:MM | remove HH:MM-HH:MM | list"""
+        try:
+            args = ctx.args if hasattr(ctx, 'args') else []
+            cfg = self.shared.get('scalp_offhours') or {'enabled': False, 'windows': [], 'allow_htf': False, 'allow_both': False}
+            windows = cfg.get('windows', []) or []
+            if not args or args[0].lower() == 'list':
+                await self.safe_reply(update, "🕘 *Off-hours windows*\n"+ ("\n".join([f"• {w}" for w in windows]) if windows else "(none)"))
+                self.shared['scalp_offhours'] = cfg
+                return
+            action = args[0].lower()
+            if action not in ('add','remove') or len(args) < 2:
+                await self.safe_reply(update, "Usage: /scalpoffhourswindow add HH:MM-HH:MM | remove HH:MM-HH:MM | list")
+                return
+            win = args[1]
+            if action == 'add':
+                if win not in windows:
+                    windows.append(win)
+            else:
+                if win in windows:
+                    windows.remove(win)
+            cfg['windows'] = windows
+            self.shared['scalp_offhours'] = cfg
+            await self.safe_reply(update, f"✅ Off-hours windows: {', '.join(windows) if windows else '(none)'}")
+        except Exception as e:
+            logger.error(f"Error in scalp_offhours_window: {e}")
+            await update.message.reply_text("Error updating off-hours windows")
+
+    async def scalp_offhours_exception(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Toggle exceptions during off-hours. Usage: /scalpoffhoursexception htf on|off | both on|off | status"""
+        try:
+            args = ctx.args if hasattr(ctx, 'args') else []
+            cfg = self.shared.get('scalp_offhours') or {'enabled': False, 'windows': [], 'allow_htf': False, 'allow_both': False}
+            if not args or args[0].lower() == 'status':
+                await self.safe_reply(update, f"🕘 Off-hours exceptions\n• allow_htf: {cfg.get('allow_htf', False)}\n• allow_both: {cfg.get('allow_both', False)}")
+                self.shared['scalp_offhours'] = cfg
+                return
+            if len(args) != 2 or args[0].lower() not in ('htf','both') or args[1].lower() not in ('on','off'):
+                await self.safe_reply(update, "Usage: /scalpoffhoursexception htf on|off | both on|off | status")
+                return
+            key = 'allow_htf' if args[0].lower() == 'htf' else 'allow_both'
+            cfg[key] = (args[1].lower() == 'on')
+            self.shared['scalp_offhours'] = cfg
+            await self.safe_reply(update, f"✅ Off-hours {args[0].lower()} set to {args[1].lower()}")
+        except Exception as e:
+            logger.error(f"Error in scalp_offhours_exception: {e}")
+            await update.message.reply_text("Error updating off-hours exceptions")
 
     async def scalp_recommendations(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Generate actionable recommendations with config snippet."""

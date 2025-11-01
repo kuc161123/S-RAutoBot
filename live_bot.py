@@ -3223,6 +3223,79 @@ class TradingBot:
                         sc_feats['ml'] = float(ml_s or 0.0)
                     except Exception:
                         pass
+                    # Off-hours execution block (phantoms continue learning)
+                    try:
+                        oh_cfg = (((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('off_hours', {})) if hasattr(self, 'config') else {}
+                        if hasattr(self, 'shared') and isinstance(self.shared, dict) and self.shared.get('scalp_offhours'):
+                            oh_cfg = self.shared.get('scalp_offhours') or {}
+                        oh_enabled = bool(oh_cfg.get('enabled', False))
+                    except Exception:
+                        oh_enabled = False
+                    if oh_enabled:
+                        try:
+                            from datetime import datetime as _dt
+                            now = _dt.utcnow(); mins = now.hour * 60 + now.minute
+                            inside = False
+                            wins = oh_cfg.get('windows', []) if isinstance(oh_cfg, dict) else []
+                            def _m(s):
+                                try:
+                                    hh, mm = s.split(':'); return int(hh) * 60 + int(mm)
+                                except Exception:
+                                    return None
+                            for w in wins:
+                                try:
+                                    if isinstance(w, str) and '-' in w:
+                                        a, b = w.split('-', 1)
+                                        sa = _m(a.strip()); sb = _m(b.strip())
+                                        if sa is None or sb is None:
+                                            continue
+                                        if sa <= sb:
+                                            if sa <= mins <= sb:
+                                                inside = True; break
+                                        else:
+                                            if mins >= sa or mins <= sb:
+                                                inside = True; break
+                                except Exception:
+                                    continue
+                        except Exception:
+                            inside = False
+                        if inside:
+                            # Exceptions: allow exec if HTF>=thr or BOTH pass
+                            try:
+                                hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
+                                thr_ts = float(hg.get('htf_min_ts15', 70.0))
+                                htf_pass = bool(hg.get('htf_enabled', False)) and (ts15 >= thr_ts)
+                                body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
+                                bmin = float(hg.get('body_ratio_min_3m', 0.50 if bool(hg.get('body_enabled', False)) else 0.35))
+                                bdir = str(sc_feats.get('body_sign', 'flat'))
+                                body_pass = bool(hg.get('body_enabled', False)) and (body_ratio >= bmin and ((sc_sig.side == 'long' and bdir == 'up') or (sc_sig.side == 'short' and bdir == 'down')))
+                            except Exception:
+                                htf_pass = False; body_pass = False
+                            allow_htf = bool(oh_cfg.get('allow_htf', False))
+                            allow_both = bool(oh_cfg.get('allow_both', False))
+                            exception_ok = (allow_both and htf_pass and body_pass) or (allow_htf and htf_pass)
+                            if not exception_ok:
+                                try:
+                                    if self.tg:
+                                        await self.tg.send_message(
+                                            f"🛑 Scalp EXEC blocked: off-hours {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                            f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f} | windows={','.join(wins) if wins else '—'}"
+                                        )
+                                except Exception:
+                                    pass
+                                try:
+                                    scpt.record_scalp_signal(
+                                        sym,
+                                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                        float(ml_s or 0.0),
+                                        False,
+                                        sc_feats
+                                    )
+                                    _scalp_decision_logged = True
+                                except Exception:
+                                    pass
+                                continue
                     # Qscore-gated execution (primary) OR High-ML override (optional)
                     try:
                         e_cfg = (self.config.get('scalp', {}) or {}).get('exec', {})

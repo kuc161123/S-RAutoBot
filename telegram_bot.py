@@ -114,6 +114,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalppatterns", self.scalp_patterns))
         self.app.add_handler(CommandHandler("scalpqwr", self.scalp_qscore_wr))
         self.app.add_handler(CommandHandler("scalpmlwr", self.scalp_mlscore_wr))
+        self.app.add_handler(CommandHandler("scalptimewr", self.scalp_time_wr))
         self.app.add_handler(CommandHandler("trendpromote", self.trend_promotion_status))
         # Trend ML high-ML threshold changer
         self.app.add_handler(CommandHandler("trendhighml", self.trend_high_ml))
@@ -830,6 +831,7 @@ class TGBot:
             [InlineKeyboardButton("🧪 QA", callback_data="ui:scalp:qa"), InlineKeyboardButton("🧰 Gates", callback_data="ui:scalp:gates")],
             [InlineKeyboardButton("🤖 Patterns", callback_data="ui:scalp:patterns"), InlineKeyboardButton("⚖️ Risk", callback_data="ui:scalp:risk")],
             [InlineKeyboardButton("📈 Q WR", callback_data="ui:scalp:qwr"), InlineKeyboardButton("📈 ML WR", callback_data="ui:scalp:mlwr")],
+            [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr")],
             [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
         ])
 
@@ -2392,6 +2394,10 @@ class TGBot:
             if data == "ui:scalp:mlwr":
                 await query.answer()
                 await self.scalp_mlscore_wr(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:timewr":
+                await query.answer()
+                await self.scalp_time_wr(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data == "ui:scalp:promote":
                 await query.answer()
@@ -6122,6 +6128,72 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_mlscore_wr: {e}")
             await update.message.reply_text("Error computing ML WR")
+
+    async def scalp_time_wr(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show 30d WR by session and day of week for Scalp phantoms (decisive only)."""
+        try:
+            from datetime import datetime, timedelta
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            cutoff = datetime.utcnow() - timedelta(days=30)
+            # Aggregate
+            sess_map = {'asian': {'w':0,'n':0}, 'european': {'w':0,'n':0}, 'us': {'w':0,'n':0}, 'off_hours': {'w':0,'n':0}}
+            dow_map = {i: {'w':0,'n':0} for i in range(7)}  # 0=Mon..6=Sun
+            def _session_fallback(dt: datetime) -> str:
+                hr = dt.hour if dt else 0
+                if 0 <= hr < 8: return 'asian'
+                if 8 <= hr < 16: return 'european'
+                return 'us'
+            for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                for p in arr:
+                    try:
+                        et = getattr(p, 'exit_time', None)
+                        if not et or et < cutoff:
+                            continue
+                        oc = getattr(p, 'outcome', None)
+                        if oc not in ('win','loss'):
+                            continue
+                        # Session
+                        feats = getattr(p, 'features', {}) or {}
+                        sess = str(feats.get('session')) if feats.get('session') else _session_fallback(et)
+                        if sess not in sess_map:
+                            sess = 'off_hours'
+                        sess_map[sess]['n'] += 1
+                        if oc == 'win': sess_map[sess]['w'] += 1
+                        # Day of week
+                        d = et.weekday()
+                        if d in dow_map:
+                            dow_map[d]['n'] += 1
+                            if oc == 'win': dow_map[d]['w'] += 1
+                    except Exception:
+                        continue
+            # Build message
+            lines = ["🗓 *Scalp Sessions/Days (30d)*", ""]
+            # Sessions
+            lines.append("Sessions")
+            order = ['asian','european','us','off_hours']
+            for k in order:
+                s = sess_map.get(k, {'w':0,'n':0}); wr = (s['w']/s['n']*100.0) if s['n'] else 0.0
+                low = " (low N)" if s['n'] and s['n'] < 5 else ""
+                lines.append(f"• {k}: WR {wr:.1f}% (N={s['n']}){low}")
+            # Days of week
+            lines.append("")
+            lines.append("Days")
+            day_names = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+            best = None
+            for i in range(7):
+                s = dow_map[i]; wr = (s['w']/s['n']*100.0) if s['n'] else 0.0
+                low = " (low N)" if s['n'] and s['n'] < 5 else ""
+                lines.append(f"• {day_names[i]}: WR {wr:.1f}% (N={s['n']}){low}")
+                if s['n'] >= 5:
+                    if best is None or wr > best[1]:
+                        best = (i, wr, s['n'])
+            if best:
+                lines.append(f"\nBest day: {day_names[best[0]]} {best[1]:.1f}% (N={best[2]})")
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"Error in scalp_time_wr: {e}")
+            await update.message.reply_text("Error computing Sessions/Days WR")
 
     async def scalp_recommendations(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Generate actionable recommendations with config snippet."""

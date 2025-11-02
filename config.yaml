@@ -580,6 +580,18 @@ scalp:
     slippage_pct: 0.0005
     # Small bias to extend TP distance to better match net realized R after fees/slippage
     rr_bias_pct: 0.03
+    # Auto off-hours execution block: when volatility and volume are low (phantoms continue)
+    off_hours:
+      enabled: true
+      mode: auto        # auto | fixed | hybrid (fixed uses windows below)
+      windows: []       # e.g., ["00:00-06:00", "22:00-23:59"] when mode=fixed/hybrid
+      allow_htf: false  # allow executes when HTF≥70 during off-hours
+      allow_both: false # allow executes when both HTF and Body gates pass during off-hours
+      auto:
+        atr_pct_max: 0.35         # ATR% of price threshold to consider low-vol
+        bb_width_pct_max: 0.012   # Bollinger width fraction (≈1.2%) threshold
+        vol_ratio_max: 1.05       # Volume spike threshold (≤ means low-volume)
+        weekend_tighten_pct: 0.15 # Tighten thresholds by 15% on weekends (UTC)
   # Rule-mode scoring for Scalp (phantom-only). Used for telemetry/notifications; not for execution yet.
   rule_mode:
     execute_q_min: 15     # Match phantom minimum - body gate (64.4% WR) is primary quality filter

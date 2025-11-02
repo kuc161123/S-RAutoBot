@@ -3232,9 +3232,11 @@ class TradingBot:
                     except Exception:
                         oh_enabled = False
                     if oh_enabled:
+                        # Evaluate fixed-window and/or auto low-activity modes
                         try:
                             from datetime import datetime as _dt
                             now = _dt.utcnow(); mins = now.hour * 60 + now.minute
+                            # Fixed windows
                             inside = False
                             wins = oh_cfg.get('windows', []) if isinstance(oh_cfg, dict) else []
                             def _m(s):
@@ -3257,9 +3259,37 @@ class TradingBot:
                                                 inside = True; break
                                 except Exception:
                                     continue
+                            # Auto low-activity
+                            mode = str(oh_cfg.get('mode', 'auto')).lower()
+                            auto = (oh_cfg.get('auto') or {}) if isinstance(oh_cfg, dict) else {}
+                            atr_max = float(auto.get('atr_pct_max', 0.35))
+                            bb_max = float(auto.get('bb_width_pct_max', 0.012))
+                            vol_max = float(auto.get('vol_ratio_max', 1.05))
+                            weekend_tight = float(auto.get('weekend_tighten_pct', 0.15))
+                            # Weekend bias (UTC Sat/Sun)
+                            try:
+                                is_weekend = now.weekday() >= 5
+                            except Exception:
+                                is_weekend = False
+                            if is_weekend:
+                                atr_max = max(0.0, atr_max * (1.0 - weekend_tight))
+                                bb_max = max(0.0, bb_max * (1.0 - weekend_tight))
+                                vol_max = max(0.0, vol_max * (1.0 - weekend_tight))
+                            atr_pct = float(sc_feats.get('atr_pct', 0.0) or 0.0)
+                            bbp = float(sc_feats.get('bb_width_pct', 0.0) or 0.0)
+                            volr = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
+                            low_activity = (atr_pct <= atr_max and bbp <= bb_max and volr <= vol_max)
                         except Exception:
-                            inside = False
-                        if inside:
+                            mode = 'auto'; inside = False; low_activity = False; is_weekend = False; atr_pct = bbp = volr = 0.0; atr_max = bb_max = vol_max = 0.0
+                        # Determine block condition by mode
+                        block_now = False
+                        if mode == 'auto':
+                            block_now = low_activity
+                        elif mode == 'fixed':
+                            block_now = inside
+                        else:  # hybrid
+                            block_now = (inside or low_activity)
+                        if block_now:
                             # Exceptions: allow exec if HTF>=thr or BOTH pass
                             try:
                                 hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
@@ -3278,10 +3308,19 @@ class TradingBot:
                             if not exception_ok:
                                 try:
                                     if self.tg:
-                                        await self.tg.send_message(
-                                            f"🛑 Scalp EXEC blocked: off-hours {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
-                                            f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f} | windows={','.join(wins) if wins else '—'}"
-                                        )
+                                        if mode == 'auto':
+                                            await self.tg.send_message(
+                                                f"🛑 Scalp EXEC blocked: auto off-hours (low activity) {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                                f"atr%={atr_pct:.2f} (≤{atr_max:.2f}) | bb%={bbp*100.0:.2f}% (≤{bb_max*100.0:.2f}%) | vol={volr:.2f} (≤{vol_max:.2f})\n"
+                                                f"weekend_bias={'on' if is_weekend else 'off'}\n"
+                                                f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
+                                            )
+                                        else:
+                                            await self.tg.send_message(
+                                                f"🛑 Scalp EXEC blocked: off-hours {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                                f"mode={mode} | windows={','.join(wins) if wins else '—'}\n"
+                                                f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
+                                            )
                                 except Exception:
                                     pass
                                 try:
@@ -6899,7 +6938,25 @@ class TradingBot:
                         'body': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('body', 2.0)),
                         'htf': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('htf', 10.0)),
                         'both': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('both', 15.0)),
-                    })(cfg)
+                    })(cfg),
+                    # Off-hours: seed from config (default auto low-activity)
+                    "scalp_offhours": (lambda c: (
+                        ((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('off_hours')
+                        if isinstance(((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('off_hours'), dict) else
+                        {
+                            'enabled': True,
+                            'mode': 'auto',
+                            'windows': [],
+                            'allow_htf': False,
+                            'allow_both': False,
+                            'auto': {
+                                'atr_pct_max': 0.35,
+                                'bb_width_pct_max': 0.012,
+                                'vol_ratio_max': 1.05,
+                                'weekend_tighten_pct': 0.15
+                            }
+                        }
+                    ))(cfg)
                 }
                 self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), early_shared)
                 self.shared = early_shared

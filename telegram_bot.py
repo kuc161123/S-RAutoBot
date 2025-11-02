@@ -814,6 +814,24 @@ class TGBot:
                 extras.append(f"Daily cap {cap}")
             if extras:
                 lines.append("• " + " | ".join(extras))
+            # Off-hours status (auto/fixed)
+            try:
+                oh = self.shared.get('scalp_offhours') or {}
+                if oh:
+                    if bool(oh.get('enabled', False)):
+                        mode = str(oh.get('mode','auto')).lower()
+                        if mode == 'auto':
+                            lines.append("• Off-hours: Auto ON")
+                        elif mode == 'fixed':
+                            wins = oh.get('windows', []) or []
+                            lines.append(f"• Off-hours: Fixed ON ({len(wins)} window{'s' if len(wins)!=1 else ''})")
+                        else:
+                            wins = oh.get('windows', []) or []
+                            lines.append(f"• Off-hours: Hybrid ON ({len(wins)} fixed windows)")
+                    else:
+                        lines.append("• Off-hours: OFF")
+            except Exception:
+                pass
         except Exception:
             pass
 

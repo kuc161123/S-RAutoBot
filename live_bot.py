@@ -3476,9 +3476,48 @@ class TradingBot:
                         bdir = str(sc_feats.get('body_sign', 'flat'))
                         body_dir_ok = (sc_sig.side == 'long' and bdir == 'up') or (sc_sig.side == 'short' and bdir == 'down')
                         body_pass = bool(hg.get('body_enabled', False)) and (body_ratio >= bmin and body_dir_ok)
+                        # Volume pass (used to confirm Body move when enabled)
+                        vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
+                        vmin = float(hg.get('vol_ratio_min_3m', 1.30))
+                        vol_enabled = bool(hg.get('vol_enabled', False))
+                        vol_pass = vol_enabled and (vol_ratio >= vmin)
                     except Exception:
-                        htf_pass = False; body_pass = False; thr_ts = 70.0
-                    if exec_enabled and (htf_pass or body_pass):
+                        htf_pass = False; body_pass = False; thr_ts = 70.0; vol_enabled = False; vol_pass = False; vol_ratio = 0.0; vmin = 1.30
+                    if exec_enabled:
+                        # HTF path unaffected by Volume gate
+                        if htf_pass:
+                            pass  # proceed into execute block
+                        elif body_pass:
+                            # Require Volume confirmation when enabled
+                            if vol_enabled and not vol_pass:
+                                # Block execution: Body passed but Volume did not
+                                try:
+                                    if self.tg:
+                                        await self.tg.send_message(
+                                            f"🛑 Scalp EXEC blocked: Body without Volume {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                            f"Vol={vol_ratio:.2f} (≥ {vmin:.2f}) required | Body={body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})\n"
+                                            f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
+                                        )
+                                except Exception:
+                                    pass
+                                try:
+                                    scpt.record_scalp_signal(
+                                        sym,
+                                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                        float(ml_s or 0.0),
+                                        False,
+                                        sc_feats
+                                    )
+                                    _scalp_decision_logged = True
+                                except Exception:
+                                    pass
+                                # Skip further execution paths for this signal
+                                continue
+                            # else: body_pass and (vol not enabled or vol_pass) → proceed
+                        else:
+                            # Neither HTF nor Body → no gate-based override
+                            pass
+                        # If here: proceed to execute via gate-based override
                         # Determine risk percent per rule
                         try:
                             rmap = (self.shared.get('scalp_gate_risk') or {}) if hasattr(self, 'shared') else {}
@@ -3503,20 +3542,22 @@ class TradingBot:
                                     if isinstance(getattr(sc_sig, 'meta', {}), dict):
                                         sc_sig.meta['exec_id'] = exec_id
                                 sc_feats['exec_id'] = exec_id
-                                gate_lines = []
-                                gate_lines.append(f"HTF: {'✅' if htf_pass else '❌'} {ts15:.0f} (≥ {thr_ts:.0f})")
-                                gate_lines.append(f"Body: {'✅' if body_pass else '❌'} {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})")
-                                qv = float(sc_feats.get('qscore', 0.0) or 0.0)
-                                comps = sc_feats.get('qscore_components', {}) or {}
-                                comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
-                                reason_txt = 'HTF+Body' if (htf_pass and body_pass) else ('HTF70' if htf_pass else 'Body50')
-                                await self.tg.send_message(
-                                    f"🟢 Scalp EXECUTE (Gate): {sym} {sc_sig.side.upper()} id={exec_id} — Reason: {reason_txt}\n"
-                                    f"Entry={sc_sig.entry:.4f} SL={sc_sig.sl:.4f} TP={sc_sig.tp:.4f}\n"
-                                    f"ML={float(ml_s or 0.0):.1f} | Q={qv:.1f} | Risk={risk_pct:.1f}% per trade\n"
-                                    f"{gate_lines[0]} | {gate_lines[1]}\n"
-                                    f"{comp_line}"
-                                )
+                            gate_lines = []
+                            gate_lines.append(f"HTF: {'✅' if htf_pass else '❌'} {ts15:.0f} (≥ {thr_ts:.0f})")
+                            gate_lines.append(f"Body: {'✅' if body_pass else '❌'} {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})")
+                            if vol_enabled:
+                                gate_lines.append(f"Vol: {'✅' if vol_pass else '❌'} {vol_ratio:.2f} (≥ {vmin:.2f})")
+                            qv = float(sc_feats.get('qscore', 0.0) or 0.0)
+                            comps = sc_feats.get('qscore_components', {}) or {}
+                            comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
+                            reason_txt = 'HTF+Body' if (htf_pass and body_pass) else ('HTF70' if htf_pass else 'Body50')
+                            await self.tg.send_message(
+                                f"🟢 Scalp EXECUTE (Gate): {sym} {sc_sig.side.upper()} id={exec_id} — Reason: {reason_txt}\n"
+                                f"Entry={sc_sig.entry:.4f} SL={sc_sig.sl:.4f} TP={sc_sig.tp:.4f}\n"
+                                f"ML={float(ml_s or 0.0):.1f} | Q={qv:.1f} | Risk={risk_pct:.1f}% per trade\n"
+                                f"{' | '.join(gate_lines)}\n"
+                                f"{comp_line}"
+                            )
                         except Exception:
                             pass
                         # Execute with risk override
@@ -3573,7 +3614,7 @@ class TradingBot:
                                 try:
                                     if self.tg:
                                         side_emoji = "🟢" if sc_sig.side == 'long' else "🔴"
-                                        # Include exact HTF and Body values for transparency
+                                        # Include exact HTF, Body, and Vol values for transparency
                                         try:
                                             hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
                                             ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
@@ -3581,7 +3622,15 @@ class TradingBot:
                                             body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
                                             bmin = float(hg.get('body_ratio_min_3m', 0.50 if bool(hg.get('body_enabled', False)) else 0.35))
                                             bdir = str(sc_feats.get('body_sign', 'flat'))
-                                            gate_vals = f"HTF {ts15:.0f} (≥ {thr_ts:.0f}) | Body {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})"
+                                            vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
+                                            vmin = float(hg.get('vol_ratio_min_3m', 1.30))
+                                            parts = [
+                                                f"HTF {ts15:.0f} (≥ {thr_ts:.0f})",
+                                                f"Body {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})"
+                                            ]
+                                            if bool(hg.get('vol_enabled', False)):
+                                                parts.append(f"Vol {vol_ratio:.2f} (≥ {vmin:.2f})")
+                                            gate_vals = " | ".join(parts)
                                         except Exception:
                                             gate_vals = ""
                                         await self.tg.send_message(

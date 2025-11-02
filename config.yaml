@@ -532,11 +532,11 @@ scalp:
     apply_to_exec: true
     apply_to_phantoms: false  # Phantoms always recorded for gate analysis
     # Individual gate enables (only apply to execution, phantoms track all)
-    htf_enabled: true           # ENABLED - Phantom data shows 88.2% WR at ts15=70 (+46%)
+    htf_enabled: true           # ENABLED - Keep HTF gate available (exec + exceptions)
     htf_min_ts15: 70.0
-    vol_enabled: false          # DISABLED - Phantom data shows neutral/negative impact
+    vol_enabled: true           # ENABLED - Require volume expansion with Body gate for Scalp
     vol_ratio_min_3m: 1.30
-    body_enabled: true          # ENABLED - Turn on Body 50 gate per analysis
+    body_enabled: true          # ENABLED - Body gate used with Volume to confirm move
     body_ratio_min_3m: 0.50
     align_15m_enabled: false    # DISABLED - Let phantom data show value over 2 weeks
     leader_align_btc_enabled: false  # DISABLED - Let phantom data show value over 2 weeks

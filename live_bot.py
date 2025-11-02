@@ -3517,71 +3517,76 @@ class TradingBot:
                         else:
                             # Neither HTF nor Body → no gate-based override
                             pass
-                        # If here: proceed to execute via gate-based override
-                        # Determine risk percent per rule
-                        try:
-                            rmap = (self.shared.get('scalp_gate_risk') or {}) if hasattr(self, 'shared') else {}
-                            risk_pct = float(rmap.get('both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body'), 15.0 if (htf_pass and body_pass) else (10.0 if htf_pass else 2.0)))
-                        except Exception:
-                            risk_pct = 15.0 if (htf_pass and body_pass) else (10.0 if htf_pass else 2.0)
-                        # Prepare detailed notify
-                        try:
-                            # Stamp gate decision into signal meta for downstream bookkeeping
-                            try:
-                                if not hasattr(sc_sig, 'meta') or not isinstance(getattr(sc_sig, 'meta'), dict):
-                                    sc_sig.meta = {}
-                                sc_sig.meta['gate_decision'] = 'both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body')
-                                sc_sig.meta['gate_risk_pct'] = float(risk_pct)
-                            except Exception:
-                                pass
-                            if self.tg:
-                                import uuid as _uuid
-                                exec_id = getattr(sc_sig, 'meta', {}).get('exec_id') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
-                                if not exec_id:
-                                    exec_id = _uuid.uuid4().hex[:8]
-                                    if isinstance(getattr(sc_sig, 'meta', {}), dict):
-                                        sc_sig.meta['exec_id'] = exec_id
-                                sc_feats['exec_id'] = exec_id
-                            gate_lines = []
-                            gate_lines.append(f"HTF: {'✅' if htf_pass else '❌'} {ts15:.0f} (≥ {thr_ts:.0f})")
-                            gate_lines.append(f"Body: {'✅' if body_pass else '❌'} {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})")
-                            if vol_enabled:
-                                gate_lines.append(f"Vol: {'✅' if vol_pass else '❌'} {vol_ratio:.2f} (≥ {vmin:.2f})")
-                            qv = float(sc_feats.get('qscore', 0.0) or 0.0)
-                            comps = sc_feats.get('qscore_components', {}) or {}
-                            comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
-                            reason_txt = 'HTF+Body' if (htf_pass and body_pass) else ('HTF70' if htf_pass else 'Body50')
-                            await self.tg.send_message(
-                                f"🟢 Scalp EXECUTE (Gate): {sym} {sc_sig.side.upper()} id={exec_id} — Reason: {reason_txt}\n"
-                                f"Entry={sc_sig.entry:.4f} SL={sc_sig.sl:.4f} TP={sc_sig.tp:.4f}\n"
-                                f"ML={float(ml_s or 0.0):.1f} | Q={qv:.1f} | Risk={risk_pct:.1f}% per trade\n"
-                                f"{' | '.join(gate_lines)}\n"
-                                f"{comp_line}"
-                            )
-                        except Exception:
+                        # If here: decide whether to execute via gate-based override
+                        if not (htf_pass or (body_pass and (not vol_enabled or vol_pass))):
+                            # Neither HTF nor (Body+Volume) passed → skip gate-based execute and fall through to Q-score path
                             pass
-                        # Execute with risk override
-                        try:
-                            did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=sc_feats.get('exec_id','n/a'), risk_percent_override=risk_pct)
-                        except TypeError:
-                            did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
-                        if did_exec:
+                        else:
+                            # Proceed to execute via gate-based override
+                            # Determine risk percent per rule
                             try:
-                                scpt.record_scalp_signal(
-                                    sym,
-                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                    float(ml_s or 0.0),
-                                    True,
-                                    sc_feats
+                                rmap = (self.shared.get('scalp_gate_risk') or {}) if hasattr(self, 'shared') else {}
+                                risk_pct = float(rmap.get('both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body'), 15.0 if (htf_pass and body_pass) else (10.0 if htf_pass else 2.0)))
+                            except Exception:
+                                risk_pct = 15.0 if (htf_pass and body_pass) else (10.0 if htf_pass else 2.0)
+                            # Prepare detailed notify
+                            try:
+                                # Stamp gate decision into signal meta for downstream bookkeeping
+                                try:
+                                    if not hasattr(sc_sig, 'meta') or not isinstance(getattr(sc_sig, 'meta'), dict):
+                                        sc_sig.meta = {}
+                                    sc_sig.meta['gate_decision'] = 'both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body')
+                                    sc_sig.meta['gate_risk_pct'] = float(risk_pct)
+                                except Exception:
+                                    pass
+                                if self.tg:
+                                    import uuid as _uuid
+                                    exec_id = getattr(sc_sig, 'meta', {}).get('exec_id') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
+                                    if not exec_id:
+                                        exec_id = _uuid.uuid4().hex[:8]
+                                        if isinstance(getattr(sc_sig, 'meta', {}), dict):
+                                            sc_sig.meta['exec_id'] = exec_id
+                                    sc_feats['exec_id'] = exec_id
+                                gate_lines = []
+                                gate_lines.append(f"HTF: {'✅' if htf_pass else '❌'} {ts15:.0f} (≥ {thr_ts:.0f})")
+                                gate_lines.append(f"Body: {'✅' if body_pass else '❌'} {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})")
+                                if vol_enabled:
+                                    gate_lines.append(f"Vol: {'✅' if vol_pass else '❌'} {vol_ratio:.2f} (≥ {vmin:.2f})")
+                                qv = float(sc_feats.get('qscore', 0.0) or 0.0)
+                                comps = sc_feats.get('qscore_components', {}) or {}
+                                comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
+                                reason_txt = 'HTF+Body' if (htf_pass and body_pass) else ('HTF70' if htf_pass else 'Body50')
+                                await self.tg.send_message(
+                                    f"🟢 Scalp EXECUTE (Gate): {sym} {sc_sig.side.upper()} id={exec_id} — Reason: {reason_txt}\n"
+                                    f"Entry={sc_sig.entry:.4f} SL={sc_sig.sl:.4f} TP={sc_sig.tp:.4f}\n"
+                                    f"ML={float(ml_s or 0.0):.1f} | Q={qv:.1f} | Risk={risk_pct:.1f}% per trade\n"
+                                    f"{' | '.join(gate_lines)}\n"
+                                    f"{comp_line}"
                                 )
-                                _scalp_decision_logged = True
-                                self._scalp_cooldown[sym] = bar_ts
-                                blist.append(now_ts)
-                                self._scalp_budget[sym] = blist
-                                logger.info(f"[{sym}|id={sc_feats.get('exec_id','n/a')}] 🧮 Scalp decision final: exec_scalp (reason=gate {'HTF+Body' if (htf_pass and body_pass) else ('HTF' if htf_pass else 'Body')})")
                             except Exception:
                                 pass
-                            continue
+                            # Execute with risk override
+                            try:
+                                did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=sc_feats.get('exec_id','n/a'), risk_percent_override=risk_pct)
+                            except TypeError:
+                                did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                            if did_exec:
+                                try:
+                                    scpt.record_scalp_signal(
+                                        sym,
+                                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                        float(ml_s or 0.0),
+                                        True,
+                                        sc_feats
+                                    )
+                                    _scalp_decision_logged = True
+                                    self._scalp_cooldown[sym] = bar_ts
+                                    blist.append(now_ts)
+                                    self._scalp_budget[sym] = blist
+                                    logger.info(f"[{sym}|id={sc_feats.get('exec_id','n/a')}] 🧮 Scalp decision final: exec_scalp (reason=gate {'HTF+Body' if (htf_pass and body_pass) else ('HTF' if htf_pass else 'Body')})")
+                                except Exception:
+                                    pass
+                                continue
                     # Attempt Qscore execution first (if enabled)
                     did_exec = False
                     exec_reason = None

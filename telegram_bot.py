@@ -788,6 +788,27 @@ class TGBot:
                 wr30 = (w30/tot30*100.0) if tot30 else 0.0
                 pnl30 = sum(float(getattr(t, 'pnl_usd', 0.0) or 0.0) for t in arr30)
                 lines.append(f"• 30d: Closed {tot30} | WR: {wr30:.1f}% (W/L {w30}/{l30}) | PnL: ${pnl30:.2f}")
+                # Current open Scalp positions summary (inline here for quick context)
+                try:
+                    book = self.shared.get('book')
+                    pos_map = getattr(book, 'positions', {}) if book else {}
+                    open_scalp = []
+                    for sym, p in (pos_map.items() if isinstance(pos_map, dict) else []):
+                        try:
+                            sname = str(getattr(p, 'strategy_name', '') or '')
+                            if sname.lower().startswith('scalp'):
+                                side = str(getattr(p, 'side', '?')).upper()
+                                open_scalp.append((sym, side))
+                        except Exception:
+                            continue
+                    if open_scalp:
+                        # Show up to 8 tickers to keep line short
+                        preview = ", ".join([f"{s} {sd}" for s, sd in open_scalp[:8]])
+                        more = len(open_scalp) - min(8, len(open_scalp))
+                        tail = f" (+{more} more)" if more > 0 else ""
+                        lines.append(f"• Open: {len(open_scalp)} | {preview}{tail}")
+                except Exception:
+                    pass
             except Exception:
                 pass
         except Exception as _se:

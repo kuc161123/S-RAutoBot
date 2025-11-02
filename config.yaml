@@ -582,7 +582,7 @@ scalp:
     rr_bias_pct: 0.03
     # Auto off-hours execution block: when volatility and volume are low (phantoms continue)
     off_hours:
-      enabled: true
+      enabled: false
       mode: auto        # auto | fixed | hybrid (fixed uses windows below)
       windows: []       # e.g., ["00:00-06:00", "22:00-23:59"] when mode=fixed/hybrid
       allow_htf: false  # allow executes when HTF≥70 during off-hours

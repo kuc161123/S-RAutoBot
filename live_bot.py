@@ -3555,7 +3555,15 @@ class TradingBot:
                                 qv = float(sc_feats.get('qscore', 0.0) or 0.0)
                                 comps = sc_feats.get('qscore_components', {}) or {}
                                 comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
-                                reason_txt = 'HTF+Body' if (htf_pass and body_pass) else ('HTF70' if htf_pass else 'Body50')
+                                # Label the reason based on actual passing gates
+                                if htf_pass and body_pass:
+                                    reason_txt = 'HTF+Body'
+                                elif htf_pass:
+                                    reason_txt = 'HTF70'
+                                elif body_pass:
+                                    reason_txt = 'Body50'
+                                else:
+                                    reason_txt = 'Gate'
                                 await self.tg.send_message(
                                     f"🟢 Scalp EXECUTE (Gate): {sym} {sc_sig.side.upper()} id={exec_id} — Reason: {reason_txt}\n"
                                     f"Entry={sc_sig.entry:.4f} SL={sc_sig.sl:.4f} TP={sc_sig.tp:.4f}\n"

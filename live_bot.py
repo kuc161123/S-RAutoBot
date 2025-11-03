@@ -751,6 +751,36 @@ class TradingBot:
                         reasons.append('btc_opposes')
             except Exception:
                 reasons.append('btc:na')
+            # EMA slope alignment (fast/slow) with optional magnitude thresholds
+            try:
+                if bool(hg.get('slope_enabled', False)):
+                    fast = float(feats.get('ema_slope_fast', 0.0) or 0.0)
+                    slow = float(feats.get('ema_slope_slow', 0.0) or 0.0)
+                    min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+                    min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+                    fast_only = bool(hg.get('slope_fast_only', False))
+                    # Direction checks
+                    if side == 'long':
+                        if fast <= 0.0:
+                            reasons.append('slope_dir')
+                        if not fast_only and slow <= 0.0:
+                            reasons.append('slope_dir')
+                        # Magnitude checks
+                        if abs(fast) < min_fast:
+                            reasons.append('slope_fast<min')
+                        if not fast_only and abs(slow) < min_slow:
+                            reasons.append('slope_slow<min')
+                    else:  # short
+                        if fast >= 0.0:
+                            reasons.append('slope_dir')
+                        if not fast_only and slow >= 0.0:
+                            reasons.append('slope_dir')
+                        if abs(fast) < min_fast:
+                            reasons.append('slope_fast<min')
+                        if not fast_only and abs(slow) < min_slow:
+                            reasons.append('slope_slow<min')
+            except Exception:
+                reasons.append('slope:na')
         except Exception:
             reasons.append('gates:error')
         return (len(reasons) == 0), reasons
@@ -3481,8 +3511,15 @@ class TradingBot:
                         vmin = float(hg.get('vol_ratio_min_3m', 1.30))
                         vol_enabled = bool(hg.get('vol_enabled', False))
                         vol_pass = vol_enabled and (vol_ratio >= vmin)
+                        # Slope quick read (used for notifications/override path check)
+                        slope_enabled = bool(hg.get('slope_enabled', False))
+                        fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
+                        slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
+                        min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+                        min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+                        fast_only = bool(hg.get('slope_fast_only', False))
                     except Exception:
-                        htf_pass = False; body_pass = False; thr_ts = 70.0; vol_enabled = False; vol_pass = False; vol_ratio = 0.0; vmin = 1.30
+                        htf_pass = False; body_pass = False; thr_ts = 70.0; vol_enabled = False; vol_pass = False; vol_ratio = 0.0; vmin = 1.30; slope_enabled = False; fast = 0.0; slow = 0.0; min_fast = 0.03; min_slow = 0.015; fast_only = False
                     if exec_enabled:
                         # HTF path unaffected by Volume gate
                         if htf_pass:
@@ -3523,6 +3560,42 @@ class TradingBot:
                             pass
                         else:
                             # Proceed to execute via gate-based override
+                            # Apply Slope gate (execution-only) before executing
+                            try:
+                                if slope_enabled:
+                                    side = str(sc_sig.side)
+                                    if side == 'long':
+                                        slope_ok = (fast > 0.0) and ((slow >= 0.0) if fast_only else (slow > 0.0)) and (abs(fast) >= min_fast) and (abs(slow) >= (0.0 if fast_only else min_slow))
+                                    else:
+                                        slope_ok = (fast < 0.0) and ((slow <= 0.0) if fast_only else (slow < 0.0)) and (abs(fast) >= min_fast) and (abs(slow) >= (0.0 if fast_only else min_slow))
+                                    if not slope_ok:
+                                        # Notify and record phantom; skip exec
+                                        try:
+                                            if self.tg:
+                                                await self.tg.send_message(
+                                                    f"🛑 Scalp EXEC blocked: EMA slope misaligned {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                                    f"Fast={fast:.3f}% (≥ {min_fast:.3f}%) | Slow={slow:.3f}% (≥ {min_slow:.3f}%{' fast-only' if fast_only else ''})\n"
+                                                    f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
+                                                )
+                                        except Exception:
+                                            pass
+                                        try:
+                                            scpt.record_scalp_signal(
+                                                sym,
+                                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                                float(ml_s or 0.0),
+                                                False,
+                                                sc_feats
+                                            )
+                                            _scalp_decision_logged = True
+                                            self._scalp_cooldown[sym] = bar_ts
+                                            blist.append(now_ts)
+                                            self._scalp_budget[sym] = blist
+                                        except Exception:
+                                            pass
+                                        continue
+                            except Exception:
+                                pass
                             # Determine risk percent per rule
                             try:
                                 rmap = (self.shared.get('scalp_gate_risk') or {}) if hasattr(self, 'shared') else {}
@@ -3637,12 +3710,19 @@ class TradingBot:
                                             bdir = str(sc_feats.get('body_sign', 'flat'))
                                             vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
                                             vmin = float(hg.get('vol_ratio_min_3m', 1.30))
+                                            # Slope details
+                                            fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
+                                            slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
+                                            min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+                                            min_slow = float(hg.get('slope_slow_min_pb', 0.015))
                                             parts = [
                                                 f"HTF {ts15:.0f} (≥ {thr_ts:.0f})",
                                                 f"Body {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})"
                                             ]
                                             if bool(hg.get('vol_enabled', False)):
                                                 parts.append(f"Vol {vol_ratio:.2f} (≥ {vmin:.2f})")
+                                            if bool(hg.get('slope_enabled', False)):
+                                                parts.append(f"Slope F/S {fast:.3f}/{slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f})")
                                             gate_vals = " | ".join(parts)
                                         except Exception:
                                             gate_vals = ""
@@ -3765,6 +3845,23 @@ class TradingBot:
                                             if not hasattr(self, '_last_signal_features'):
                                                 self._last_signal_features = {}
                                             self._last_signal_features[sym] = dict(sc_feats)
+                                        except Exception:
+                                            pass
+                                        # Add Slope status to gate_str when enabled
+                                        try:
+                                            hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                            if bool(hg.get('slope_enabled', False)):
+                                                fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
+                                                slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
+                                                min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+                                                min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+                                                side = str(sc_sig.side)
+                                                if side == 'long':
+                                                    slope_ok = (fast > 0.0) and (slow >= 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
+                                                else:
+                                                    slope_ok = (fast < 0.0) and (slow <= 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
+                                                sl_emoji = '✅' if slope_ok else '❌'
+                                                gate_str += f" Slope:{sl_emoji}{fast:.3f}/{slow:.3f}%"
                                         except Exception:
                                             pass
                                         await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f}){vol_str}{gate_str} (id={exec_id})\n{comp_line}")

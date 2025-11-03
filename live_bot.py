@@ -3580,8 +3580,13 @@ class TradingBot:
                                         # Notify and record phantom; skip exec
                                         try:
                                             if self.tg:
+                                                # Gate summary at-a-glance
+                                                v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
+                                                s_show = '❌'  # slope misaligned here
+                                                summary_line = f"Gates: HTF{'✅' if htf_pass else '❌'} Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
                                                 await self.tg.send_message(
                                                     f"🛑 Scalp EXEC blocked: EMA slope misaligned {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                                    f"{summary_line}\n"
                                                     f"Fast={fast:.3f}% (≥ {min_fast:.3f}%) | Slow={slow:.3f}% (≥ {min_slow:.3f}%) | mode={'fast-only' if fast_only else 'full'}\n"
                                                     f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
                                                 )
@@ -3668,10 +3673,28 @@ class TradingBot:
                                     reason_txt = 'Body+Vol'
                                 else:
                                     reason_txt = 'Gate'
+                                # Compact gate summary line
+                                try:
+                                    v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
+                                    # slope ok computed above; recompute for summary
+                                    sl_ok = False
+                                    if slope_enabled:
+                                        if fast_only:
+                                            sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                        else:
+                                            if sc_sig.side == 'long':
+                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                            else:
+                                                sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                    s_show = ('✅' if sl_ok else ('❌' if slope_enabled else '—'))
+                                    summary_line = f"Gates: HTF{'✅' if htf_pass else '❌'} Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
+                                except Exception:
+                                    summary_line = ""
                                 await self.tg.send_message(
                                     f"🟢 Scalp EXECUTE (Gate): {sym} {sc_sig.side.upper()} id={exec_id} — Reason: {reason_txt}\n"
                                     f"Entry={sc_sig.entry:.4f} SL={sc_sig.sl:.4f} TP={sc_sig.tp:.4f}\n"
                                     f"ML={float(ml_s or 0.0):.1f} | Q={qv:.1f} | Risk={risk_pct:.1f}% per trade\n"
+                                    f"{summary_line}\n"
                                     f"{' | '.join(gate_lines)}\n"
                                     f"{comp_line}"
                                 )
@@ -3758,9 +3781,32 @@ class TradingBot:
                                             gate_vals = " | ".join(parts)
                                         except Exception:
                                             gate_vals = ""
+                                        # Compact gate summary line
+                                        try:
+                                            # recompute slope_ok for summary (if enabled)
+                                            sl_ok = True
+                                            if bool(hg.get('slope_enabled', False)):
+                                                fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
+                                                slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
+                                                min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+                                                min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+                                                fast_only = bool(hg.get('slope_fast_only', False))
+                                                if fast_only:
+                                                    sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                                else:
+                                                    if sc_sig.side == 'long':
+                                                        sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                                    else:
+                                                        sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                            v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
+                                            s_show = ('✅' if sl_ok else ('❌' if bool(hg.get('slope_enabled', False)) else '—'))
+                                            summary_line = f"Gates: HTF{'✅' if htf_pass else '❌'} Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
+                                        except Exception:
+                                            summary_line = ""
                                         await self.tg.send_message(
                                             f"🛑 Scalp EXEC hard-gate blocked: {sym} {side_emoji} {sc_sig.side.upper()} @ {sc_sig.entry:.4f}\n"
                                             f"Gate failures: {','.join(reasons)} — phantom recorded\n"
+                                            f"{summary_line}\n"
                                             f"{gate_vals}\n"
                                             f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})"
                                         )
@@ -3989,7 +4035,42 @@ class TradingBot:
                                 except Exception:
                                     ex_id = None
                                 extra = f"; detail={det}" if det else ""
-                                await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}{extra}) — phantom recorded (id={ex_id or 'n/a'})\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
+                                # Compact gate summary for blocked events
+                                try:
+                                    hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                    ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
+                                    thr_ts = float(hg.get('htf_min_ts15', 70.0))
+                                    htf_pass = bool(hg.get('htf_enabled', False)) and (ts15 >= thr_ts)
+                                    body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
+                                    bmin = float(hg.get('body_ratio_min_3m', 0.35))
+                                    bdir = str(sc_feats.get('body_sign', 'flat'))
+                                    body_pass = bool(hg.get('body_enabled', False)) and (body_ratio >= bmin and ((sc_sig.side == 'long' and bdir == 'up') or (sc_sig.side == 'short' and bdir == 'down')))
+                                    vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
+                                    vmin = float(hg.get('vol_ratio_min_3m', 1.30))
+                                    vol_enabled = bool(hg.get('vol_enabled', False))
+                                    vol_pass = vol_enabled and (vol_ratio >= vmin)
+                                    # slope
+                                    slope_enabled = bool(hg.get('slope_enabled', False))
+                                    fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
+                                    slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
+                                    min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+                                    min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+                                    fast_only = bool(hg.get('slope_fast_only', False))
+                                    sl_ok = False
+                                    if slope_enabled:
+                                        if fast_only:
+                                            sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                        else:
+                                            if sc_sig.side == 'long':
+                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                            else:
+                                                sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                    v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
+                                    s_show = ('✅' if sl_ok else ('❌' if slope_enabled else '—'))
+                                    summary_line = f"Gates: HTF{'✅' if htf_pass else '❌'} Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
+                                except Exception:
+                                    summary_line = ""
+                                await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}{extra}) — phantom recorded (id={ex_id or 'n/a'})\nGates: {summary_line}\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
                     except Exception:
                         pass
 

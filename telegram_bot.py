@@ -680,6 +680,7 @@ class TGBot:
             [InlineKeyboardButton("🤖 ML", callback_data="ui:ml:trend"), InlineKeyboardButton("🧠 Patterns", callback_data="ui:ml:patterns")],
             [InlineKeyboardButton("🩳 Scalp", callback_data="ui:scalp:qa"), InlineKeyboardButton("📈 Scalp Qscore", callback_data="ui:scalp:qscore")],
             [InlineKeyboardButton("📊 Qscores (All)", callback_data="ui:qscore:all"), InlineKeyboardButton("🧠 ML Stats", callback_data="ui:ml:stats")],
+            [InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr")],
             [InlineKeyboardButton("🧭 Events", callback_data="ui:events"), InlineKeyboardButton("⚙️ Settings", callback_data="ui:settings")]
         ])
 
@@ -875,7 +876,7 @@ class TGBot:
             [InlineKeyboardButton("🧪 QA", callback_data="ui:scalp:qa"), InlineKeyboardButton("🧰 Gates", callback_data="ui:scalp:gates")],
             [InlineKeyboardButton("🤖 Patterns", callback_data="ui:scalp:patterns"), InlineKeyboardButton("⚖️ Risk", callback_data="ui:scalp:risk")],
             [InlineKeyboardButton("📈 Q WR", callback_data="ui:scalp:qwr"), InlineKeyboardButton("📈 ML WR", callback_data="ui:scalp:mlwr")],
-            [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr")],
+            [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr"), InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr")],
             [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
         ])
 
@@ -2411,6 +2412,10 @@ class TGBot:
                     await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
                 except Exception:
                     await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
+                return
+            if data == "ui:exec:wr":
+                await query.answer()
+                await self.exec_winrates(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data == "ui:dash:refresh:scalp":
                 await query.answer("Refreshing…")
@@ -6282,6 +6287,88 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_time_wr: {e}")
             await update.message.reply_text("Error computing Sessions/Days WR")
+
+    async def exec_winrates(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, days_sessions: int = 30):
+        """Show execution-only win rates: Today, Yesterday, 7-day daily, and 30d sessions (asian/european/us).
+
+        Uses exit_time for bucketing and counts only decisive closed trades.
+        """
+        try:
+            tracker = self.shared.get("trade_tracker")
+            trades = getattr(tracker, 'trades', []) if tracker else []
+            if not trades:
+                await self.safe_reply(update, "📈 *Execution WR*\n\n_No executed trades yet_")
+                return
+
+            from datetime import datetime, timedelta
+            now = datetime.utcnow()
+            today = now.date()
+            yday = (now - timedelta(days=1)).date()
+
+            def _is_win(t):
+                try:
+                    return float(getattr(t, 'pnl_usd', 0.0) or 0.0) > 0.0
+                except Exception:
+                    return False
+
+            # Filter executed (with exit_time)
+            execd = [t for t in trades if getattr(t, 'exit_time', None)]
+
+            # Today / Yesterday
+            def _day_wr(d):
+                arr = [t for t in execd if getattr(t, 'exit_time').date() == d]
+                n = len(arr)
+                w = sum(1 for t in arr if _is_win(t))
+                wr = (w / n * 100.0) if n else 0.0
+                return wr, n, w
+
+            t_wr, t_n, t_w = _day_wr(today)
+            y_wr, y_n, y_w = _day_wr(yday)
+
+            # Last 7 days breakdown
+            daily_lines = []
+            day_names = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+            for i in range(7):
+                d = (now - timedelta(days=i)).date()
+                wr, n, w = _day_wr(d)
+                name = day_names[(d.weekday())]
+                low = " (low N)" if n and n < 5 else ""
+                daily_lines.append(f"• {name} {d.isoformat()}: WR {wr:.1f}% (N={n}){low}")
+            daily_lines = list(reversed(daily_lines))
+
+            # Sessions (30d)
+            cutoff = now - timedelta(days=days_sessions)
+            sess_map = {'asian': {'w':0,'n':0}, 'european': {'w':0,'n':0}, 'us': {'w':0,'n':0}}
+            def _session(dt: datetime) -> str:
+                h = dt.hour
+                if 0 <= h < 8:
+                    return 'asian'
+                if 8 <= h < 16:
+                    return 'european'
+                return 'us'
+            for t in execd:
+                try:
+                    et = getattr(t, 'exit_time', None)
+                    if not et or et < cutoff:
+                        continue
+                    s = _session(et)
+                    sess_map[s]['n'] += 1
+                    if _is_win(t):
+                        sess_map[s]['w'] += 1
+                except Exception:
+                    continue
+
+            lines = ["📈 *Execution WR*", "", f"Today: WR {t_wr:.1f}% (N={t_n})", f"Yesterday: WR {y_wr:.1f}% (N={y_n})", "", "🗓 *Last 7 days*", *daily_lines, "",
+                     f"🕘 *Sessions ({days_sessions}d)*"]
+            for k in ['asian','european','us']:
+                s = sess_map[k]; wr = (s['w']/s['n']*100.0) if s['n'] else 0.0
+                low = " (low N)" if s['n'] and s['n'] < 10 else ""
+                lines.append(f"• {k}: WR {wr:.1f}% (N={s['n']}){low}")
+
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"Error in exec_winrates: {e}")
+            await update.message.reply_text("Error computing execution win rates")
 
     async def scalp_time_vars_cmd(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Command wrapper: /scalptimewrvars <sessions|session|days|day> <key>

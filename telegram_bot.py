@@ -6049,9 +6049,25 @@ class TGBot:
             # Feature importance
             fi = pat.get('feature_importance', {}) or {}
             if fi:
+                # Normalize feature names to compact style to match user preference
+                name_map = {
+                    'ema_slope_fast': 'emaslopefast',
+                    'ema_slope_slow': 'emaslopeslow',
+                    'atr_pct': 'atrpct',
+                    'bb_width_pct': 'bbwidthpct',
+                    'impulse_ratio': 'impulseratio',
+                    'volume_ratio': 'volumeratio',
+                    'upper_wick_ratio': 'upperwickratio',
+                    'lower_wick_ratio': 'lowerwickratio',
+                    'vwap_dist_atr': 'vwapdistatr',
+                    'session': 'session',
+                    'volatility_regime': 'volatilityregime',
+                    'symbol_cluster': 'symbolcluster'
+                }
                 lines.append("🔧 Feature Importance (RF)")
                 for k, v in fi.items():
-                    lines.append(f"• {k}: {float(v):.1f}%")
+                    disp = name_map.get(k, k.replace('_',''))
+                    lines.append(f"• {disp}: {float(v):.1f}%")
                 lines.append("")
             # Time patterns
             tp = pat.get('time_patterns', {}) or {}

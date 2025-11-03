@@ -6005,10 +6005,10 @@ class TGBot:
             if not args or len(args) == 0:
                 await self.safe_reply(update,
                     "🩳 *Scalp Gate Risk*\n"+
-                    f"• Body pass: {float(rmap.get('body',2.0)):.2f}%\n"+
-                    f"• HTF70 pass: {float(rmap.get('htf',10.0)):.2f}%\n"+
-                    f"• Both pass: {float(rmap.get('both',15.0)):.2f}%\n\n"+
-                    "Usage: /scalpgaterisk [body|htf|both] <percent>"
+                    f"• Body+Vol+Slope: {float(rmap.get('body',2.0)):.2f}%\n"+
+                    f"• HTF+Slope: {float(rmap.get('htf',10.0)):.2f}%\n"+
+                    f"• ALL aligned: {float(rmap.get('both',15.0)):.2f}%\n\n"+
+                    "• /scalpgaterisk [body|htf|both] <percent> — Set risk% for gate-based executes"
                 )
                 return
             if len(args) != 2:

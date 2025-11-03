@@ -3554,7 +3554,7 @@ class TradingBot:
                         else:
                             # Neither HTF nor Body → no gate-based override
                             pass
-                        # If here: decide whether to execute via gate-based override
+                        # If here: decide whether to execute via gate-based override (three paths)
                         if not (htf_pass or (body_pass and (not vol_enabled or vol_pass))):
                             # Neither HTF nor (Body+Volume) passed → skip gate-based execute and fall through to Q-score path
                             pass
@@ -3607,16 +3607,25 @@ class TradingBot:
                             # Determine risk percent per rule
                             try:
                                 rmap = (self.shared.get('scalp_gate_risk') or {}) if hasattr(self, 'shared') else {}
-                                risk_pct = float(rmap.get('both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body'), 15.0 if (htf_pass and body_pass) else (10.0 if htf_pass else 2.0)))
+                                # Path selection with slope_ok enforced above:
+                                # 1) HTF+Slope, 2) Body+Vol+Slope, 3) ALL (HTF+Body(+Vol)+Slope)
+                                if htf_pass and (body_pass and (not vol_enabled or vol_pass)):
+                                    path = 'both'  # ALL aligned
+                                elif htf_pass:
+                                    path = 'htf'
+                                else:
+                                    path = 'body'
+                                risk_pct = float(rmap.get(path, 15.0 if path == 'both' else (10.0 if path == 'htf' else 2.0)))
                             except Exception:
-                                risk_pct = 15.0 if (htf_pass and body_pass) else (10.0 if htf_pass else 2.0)
+                                path = 'both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body')
+                                risk_pct = 15.0 if path == 'both' else (10.0 if path == 'htf' else 2.0)
                             # Prepare detailed notify
                             try:
                                 # Stamp gate decision into signal meta for downstream bookkeeping
                                 try:
                                     if not hasattr(sc_sig, 'meta') or not isinstance(getattr(sc_sig, 'meta'), dict):
                                         sc_sig.meta = {}
-                                    sc_sig.meta['gate_decision'] = 'both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body')
+                                    sc_sig.meta['gate_decision'] = path
                                     sc_sig.meta['gate_risk_pct'] = float(risk_pct)
                                 except Exception:
                                     pass
@@ -3633,16 +3642,30 @@ class TradingBot:
                                 gate_lines.append(f"Body: {'✅' if body_pass else '❌'} {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})")
                                 if vol_enabled:
                                     gate_lines.append(f"Vol: {'✅' if vol_pass else '❌'} {vol_ratio:.2f} (≥ {vmin:.2f})")
+                                # Slope line
+                                try:
+                                    if slope_enabled:
+                                        sl_ok = False
+                                        if fast_only:
+                                            sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                        else:
+                                            if sc_sig.side == 'long':
+                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                            else:
+                                                sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                        gate_lines.append(f"Slope: {'✅' if sl_ok else '❌'} F={fast:.3f}% S={slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}{' fast-only' if fast_only else ''})")
+                                except Exception:
+                                    pass
                                 qv = float(sc_feats.get('qscore', 0.0) or 0.0)
                                 comps = sc_feats.get('qscore_components', {}) or {}
                                 comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
                                 # Label the reason based on actual passing gates
-                                if htf_pass and body_pass:
-                                    reason_txt = 'HTF+Body'
+                                if htf_pass and (body_pass and (not vol_enabled or vol_pass)):
+                                    reason_txt = 'ALL'
                                 elif htf_pass:
                                     reason_txt = 'HTF70'
                                 elif body_pass:
-                                    reason_txt = 'Body50'
+                                    reason_txt = 'Body+Vol'
                                 else:
                                     reason_txt = 'Gate'
                                 await self.tg.send_message(
@@ -3847,6 +3870,16 @@ class TradingBot:
                                                 body_pass = body_ratio >= bmin and body_dir_ok
                                                 body_emoji = "✅" if body_pass else "❌"
                                                 gate_str += f" Body:{body_emoji}{body_ratio:.2f}"
+                                        except Exception:
+                                            pass
+                                        # Vol status (emoji) in acceptance line when enabled
+                                        try:
+                                            hg2 = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                            if bool(hg2.get('vol_enabled', False)):
+                                                vmin2 = float(hg2.get('vol_ratio_min_3m', 1.30))
+                                                v_ok2 = vol_ratio >= vmin2
+                                                v_emoji2 = '✅' if v_ok2 else '❌'
+                                                gate_str += f" Vol:{v_emoji2}{vol_ratio:.2f}"
                                         except Exception:
                                             pass
                                         # Stash features to carry Q into Position and close-notify

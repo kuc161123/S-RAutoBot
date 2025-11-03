@@ -696,46 +696,78 @@ class TradingBot:
         return 'none'
 
     def _scalp_hard_gates_pass(self, symbol: str, side: str, feats: dict) -> tuple[bool, list[str]]:
-        """Execution-only hard gates for Scalp. Returns (ok, reasons)."""
-        reasons = []
+        """Execution-only hard gates for Scalp with three allowed paths (all require Slope):
+        1) HTF + Slope  2) Body + Volume + Slope  3) ALL (HTF + Body + Volume + Slope)
+        Returns (ok, reasons). Reasons populated only on failure.
+        """
         try:
             cfg = getattr(self, 'config', {}) or {}
             sc = (cfg.get('scalp', {}) or {})
             hg = (sc.get('hard_gates', {}) or {})
             if not bool(hg.get('apply_to_exec', True)):
-                return True, reasons
-            # HTF ts15 (check if enabled)
-            if bool(hg.get('htf_enabled', False)):
-                try:
-                    ts15 = float(feats.get('ts15', 0.0) or 0.0)
-                    thr_ts = float(hg.get('htf_min_ts15', 60.0))
-                    if ts15 < thr_ts:
-                        reasons.append(f"htf<{thr_ts:.0f}")
-                except Exception:
-                    reasons.append('htf:na')
-            # Volume ratio (3m) (check if enabled)
-            if bool(hg.get('vol_enabled', False)):
-                try:
-                    vr = float(feats.get('volume_ratio', 0.0) or 0.0)
-                    vmin = float(hg.get('vol_ratio_min_3m', 1.3))
-                    if vr < vmin:
-                        reasons.append(f"vol<{vmin:.2f}")
-                except Exception:
-                    reasons.append('vol:na')
-            # Body ratio with direction (check if enabled)
-            if bool(hg.get('body_enabled', False)):
-                try:
-                    br = float(feats.get('body_ratio', 0.0) or 0.0)
-                    bmin = float(hg.get('body_ratio_min_3m', 0.35))
-                    bsgn = str(feats.get('body_sign', 'flat'))
-                    if br < bmin:
-                        reasons.append(f"body<{bmin:.2f}")
-                    else:
-                        if (side == 'long' and bsgn != 'up') or (side == 'short' and bsgn != 'down'):
-                            reasons.append('body_dir')
-                except Exception:
-                    reasons.append('body:na')
-            # 15m alignment (check if enabled - using new flag name)
+                return True, []
+            # Read individual gates
+            htf_enabled = bool(hg.get('htf_enabled', False))
+            ts15 = float(feats.get('ts15', 0.0) or 0.0)
+            thr_ts = float(hg.get('htf_min_ts15', 60.0))
+            htf_pass = (ts15 >= thr_ts) if htf_enabled else False
+
+            vol_enabled = bool(hg.get('vol_enabled', False))
+            vr = float(feats.get('volume_ratio', 0.0) or 0.0)
+            vmin = float(hg.get('vol_ratio_min_3m', 1.3))
+            vol_pass = (vr >= vmin) if vol_enabled else False
+
+            body_enabled = bool(hg.get('body_enabled', False))
+            br = float(feats.get('body_ratio', 0.0) or 0.0)
+            bmin = float(hg.get('body_ratio_min_3m', 0.35))
+            bsgn = str(feats.get('body_sign', 'flat'))
+            body_dir_ok = (side == 'long' and bsgn == 'up') or (side == 'short' and bsgn == 'down')
+            body_pass = (br >= bmin and body_dir_ok) if body_enabled else False
+
+            slope_enabled = bool(hg.get('slope_enabled', False))
+            fast = float(feats.get('ema_slope_fast', 0.0) or 0.0)
+            slow = float(feats.get('ema_slope_slow', 0.0) or 0.0)
+            min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+            min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+            fast_only = bool(hg.get('slope_fast_only', False))
+            if slope_enabled:
+                if side == 'long':
+                    slope_ok = (fast > 0.0 and abs(fast) >= min_fast) and (True if fast_only else (slow > 0.0 and abs(slow) >= min_slow))
+                else:
+                    slope_ok = (fast < 0.0 and abs(fast) >= min_fast) and (True if fast_only else (slow < 0.0 and abs(slow) >= min_slow))
+            else:
+                slope_ok = True
+
+            allowed = slope_ok and (
+                (htf_pass) or
+                (body_pass and (not vol_enabled or vol_pass)) or
+                (htf_pass and body_pass and (not vol_enabled or vol_pass))
+            )
+            if allowed:
+                return True, []
+
+            # Build reasons on failure
+            reasons = []
+            if htf_enabled and not htf_pass:
+                reasons.append(f"htf<{thr_ts:.0f}")
+            if vol_enabled and not vol_pass:
+                reasons.append(f"vol<{vmin:.2f}")
+            if body_enabled:
+                if br < bmin:
+                    reasons.append(f"body<{bmin:.2f}")
+                if not body_dir_ok:
+                    reasons.append('body_dir')
+            if slope_enabled:
+                if (side == 'long' and fast <= 0.0) or (side == 'short' and fast >= 0.0):
+                    reasons.append('slope_dir')
+                if abs(fast) < min_fast:
+                    reasons.append('slope_fast<min')
+                if not fast_only:
+                    if (side == 'long' and slow <= 0.0) or (side == 'short' and slow >= 0.0):
+                        reasons.append('slope_dir')
+                    if abs(slow) < min_slow:
+                        reasons.append('slope_slow<min')
+            # Optional 15m/BTC alignment reasons (if enabled)
             try:
                 if bool(hg.get('align_15m_enabled', hg.get('align_15m', False))):
                     dir15 = str(feats.get('ema_dir_15m', 'none'))
@@ -743,7 +775,6 @@ class TradingBot:
                         reasons.append('15m_align')
             except Exception:
                 reasons.append('15m:na')
-            # Leader alignment with BTC 1–3m micro-trend (check if enabled - using new flag name)
             try:
                 if bool(hg.get('leader_align_btc_enabled', hg.get('leader_align_btc', False))) and not symbol.upper().startswith('BTC'):
                     btcd = self._btc_micro_trend()
@@ -751,39 +782,9 @@ class TradingBot:
                         reasons.append('btc_opposes')
             except Exception:
                 reasons.append('btc:na')
-            # EMA slope alignment (fast/slow) with optional magnitude thresholds
-            try:
-                if bool(hg.get('slope_enabled', False)):
-                    fast = float(feats.get('ema_slope_fast', 0.0) or 0.0)
-                    slow = float(feats.get('ema_slope_slow', 0.0) or 0.0)
-                    min_fast = float(hg.get('slope_fast_min_pb', 0.03))
-                    min_slow = float(hg.get('slope_slow_min_pb', 0.015))
-                    fast_only = bool(hg.get('slope_fast_only', False))
-                    # Direction checks
-                    if side == 'long':
-                        if fast <= 0.0:
-                            reasons.append('slope_dir')
-                        if not fast_only and slow <= 0.0:
-                            reasons.append('slope_dir')
-                        # Magnitude checks
-                        if abs(fast) < min_fast:
-                            reasons.append('slope_fast<min')
-                        if not fast_only and abs(slow) < min_slow:
-                            reasons.append('slope_slow<min')
-                    else:  # short
-                        if fast >= 0.0:
-                            reasons.append('slope_dir')
-                        if not fast_only and slow >= 0.0:
-                            reasons.append('slope_dir')
-                        if abs(fast) < min_fast:
-                            reasons.append('slope_fast<min')
-                        if not fast_only and abs(slow) < min_slow:
-                            reasons.append('slope_slow<min')
-            except Exception:
-                reasons.append('slope:na')
+            return False, reasons
         except Exception:
-            reasons.append('gates:error')
-        return (len(reasons) == 0), reasons
+            return False, ['gates:error']
 
     def _phantom_trend_regime_ok(self, sym: str, df: 'pd.DataFrame', regime_analysis) -> tuple[bool, str]:
         """Return whether Trend phantom should be recorded under current regime.

@@ -3564,17 +3564,25 @@ class TradingBot:
                             try:
                                 if slope_enabled:
                                     side = str(sc_sig.side)
-                                    if side == 'long':
-                                        slope_ok = (fast > 0.0) and ((slow >= 0.0) if fast_only else (slow > 0.0)) and (abs(fast) >= min_fast) and (abs(slow) >= (0.0 if fast_only else min_slow))
+                                    if fast_only:
+                                        # Fast-only mode: require only fast slope sign and magnitude
+                                        if side == 'long':
+                                            slope_ok = (fast > 0.0) and (abs(fast) >= min_fast)
+                                        else:
+                                            slope_ok = (fast < 0.0) and (abs(fast) >= min_fast)
                                     else:
-                                        slope_ok = (fast < 0.0) and ((slow <= 0.0) if fast_only else (slow < 0.0)) and (abs(fast) >= min_fast) and (abs(slow) >= (0.0 if fast_only else min_slow))
+                                        # Full mode: require both fast and slow alignment and magnitudes
+                                        if side == 'long':
+                                            slope_ok = (fast > 0.0) and (slow > 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
+                                        else:
+                                            slope_ok = (fast < 0.0) and (slow < 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
                                     if not slope_ok:
                                         # Notify and record phantom; skip exec
                                         try:
                                             if self.tg:
                                                 await self.tg.send_message(
                                                     f"🛑 Scalp EXEC blocked: EMA slope misaligned {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
-                                                    f"Fast={fast:.3f}% (≥ {min_fast:.3f}%) | Slow={slow:.3f}% (≥ {min_slow:.3f}%{' fast-only' if fast_only else ''})\n"
+                                                    f"Fast={fast:.3f}% (≥ {min_fast:.3f}%) | Slow={slow:.3f}% (≥ {min_slow:.3f}%) | mode={'fast-only' if fast_only else 'full'}\n"
                                                     f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
                                                 )
                                         except Exception:
@@ -3722,7 +3730,8 @@ class TradingBot:
                                             if bool(hg.get('vol_enabled', False)):
                                                 parts.append(f"Vol {vol_ratio:.2f} (≥ {vmin:.2f})")
                                             if bool(hg.get('slope_enabled', False)):
-                                                parts.append(f"Slope F/S {fast:.3f}/{slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f})")
+                                                mode = 'fast-only' if bool(hg.get('slope_fast_only', False)) else 'full'
+                                                parts.append(f"Slope F/S {fast:.3f}/{slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}) mode={mode}")
                                             gate_vals = " | ".join(parts)
                                         except Exception:
                                             gate_vals = ""
@@ -3855,13 +3864,18 @@ class TradingBot:
                                                 slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
                                                 min_fast = float(hg.get('slope_fast_min_pb', 0.03))
                                                 min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+                                                fast_only = bool(hg.get('slope_fast_only', False))
                                                 side = str(sc_sig.side)
-                                                if side == 'long':
-                                                    slope_ok = (fast > 0.0) and (slow >= 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
+                                                if fast_only:
+                                                    slope_ok = ((fast > 0.0) if side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
                                                 else:
-                                                    slope_ok = (fast < 0.0) and (slow <= 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
+                                                    if side == 'long':
+                                                        slope_ok = (fast > 0.0) and (slow > 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
+                                                    else:
+                                                        slope_ok = (fast < 0.0) and (slow < 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
                                                 sl_emoji = '✅' if slope_ok else '❌'
-                                                gate_str += f" Slope:{sl_emoji}{fast:.3f}/{slow:.3f}%"
+                                                mode = '(fast-only)' if fast_only else ''
+                                                gate_str += f" Slope:{sl_emoji}{fast:.3f}/{slow:.3f}%{(' '+mode) if mode else ''}"
                                         except Exception:
                                             pass
                                         await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f}){vol_str}{gate_str} (id={exec_id})\n{comp_line}")

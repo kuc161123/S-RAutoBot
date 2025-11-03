@@ -6336,6 +6336,18 @@ class TGBot:
                 daily_lines.append(f"• {name} {d.isoformat()}: WR {wr:.1f}% (N={n}){low}")
             daily_lines = list(reversed(daily_lines))
 
+            # Aggregate WR windows (7d already detailed above; add 30d and 60d aggregates)
+            def _agg_wr(days: int) -> tuple[float,int,int]:
+                cutoff = now - timedelta(days=days)
+                arr = [t for t in execd if getattr(t, 'exit_time', None) and getattr(t, 'exit_time') >= cutoff]
+                n = len(arr)
+                w = sum(1 for t in arr if _is_win(t))
+                wr = (w / n * 100.0) if n else 0.0
+                return wr, n, w
+
+            wr30, n30, w30 = _agg_wr(30)
+            wr60, n60, w60 = _agg_wr(60)
+
             # Sessions (30d)
             cutoff = now - timedelta(days=days_sessions)
             sess_map = {'asian': {'w':0,'n':0}, 'european': {'w':0,'n':0}, 'us': {'w':0,'n':0}}
@@ -6358,8 +6370,20 @@ class TGBot:
                 except Exception:
                     continue
 
-            lines = ["📈 *Execution WR*", "", f"Today: WR {t_wr:.1f}% (N={t_n})", f"Yesterday: WR {y_wr:.1f}% (N={y_n})", "", "🗓 *Last 7 days*", *daily_lines, "",
-                     f"🕘 *Sessions ({days_sessions}d)*"]
+            lines = [
+                "📈 *Execution WR*",
+                "",
+                f"Today: WR {t_wr:.1f}% (N={t_n})",
+                f"Yesterday: WR {y_wr:.1f}% (N={y_n})",
+                "",
+                "🗓 *Last 7 days*",
+                *daily_lines,
+                "",
+                f"📆 Last 30d: WR {wr30:.1f}% (N={n30})",
+                f"📆 Last 60d: WR {wr60:.1f}% (N={n60})",
+                "",
+                f"🕘 *Sessions ({days_sessions}d)*",
+            ]
             for k in ['asian','european','us']:
                 s = sess_map[k]; wr = (s['w']/s['n']*100.0) if s['n'] else 0.0
                 low = " (low N)" if s['n'] and s['n'] < 10 else ""

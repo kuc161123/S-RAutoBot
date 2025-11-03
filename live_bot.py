@@ -3907,7 +3907,7 @@ class TradingBot:
                                             else:
                                                 # Show HTF value even when gate disabled
                                                 gate_str += f" HTF:{ts15:.0f}"
-                                            # Body gate
+                                            # Body gate (show pass/fail, threshold and direction)
                                             if bool(hg.get('body_enabled', False)):
                                                 body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
                                                 bmin = float(hg.get('body_ratio_min_3m', 0.35))
@@ -3915,7 +3915,7 @@ class TradingBot:
                                                 body_dir_ok = (sc_sig.side == 'long' and body_sign == 'up') or (sc_sig.side == 'short' and body_sign == 'down')
                                                 body_pass = body_ratio >= bmin and body_dir_ok
                                                 body_emoji = "✅" if body_pass else "❌"
-                                                gate_str += f" Body:{body_emoji}{body_ratio:.2f}"
+                                                gate_str += f" Body:{body_emoji}{body_ratio:.2f}(≥{bmin:.2f}) dir={body_sign}"
                                         except Exception:
                                             pass
                                         # Vol status (emoji) in acceptance line when enabled

@@ -3636,7 +3636,7 @@ class TradingBot:
                                                 # Gate summary at-a-glance
                                                 v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
                                                 s_show = '❌'  # slope misaligned here
-                                    summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
+                                                summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
                                                 await self.tg.send_message(
                                                     f"🛑 Scalp EXEC blocked: EMA slope misaligned {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
                                                     f"{summary_line}\n"

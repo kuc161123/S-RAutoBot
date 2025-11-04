@@ -22,7 +22,7 @@ class ScalpSettings:
     min_bb_width_pct: float = 0.7  # 70th percentile of BB width
     vol_ratio_min: float = 1.3     # 1.3x 20-bar avg
     wick_ratio_min: float = 0.4    # Raised from 0.3 for stronger rejection wicks
-    vwap_dist_atr_max: float = 0.45 # Tightened from 0.6 for cleaner pullbacks
+    vwap_dist_atr_max: float = 0.70 # Allow mid-band up to 0.7 ATR for detection
     orb_enabled: bool = False      # Optional ORB continuation filter
     # Enforce minimum 1R distance (as % of price) so fees don't erode R
     min_r_pct: float = 0.005

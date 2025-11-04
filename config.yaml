@@ -545,8 +545,8 @@ scalp:
     slope_fast_only: false        # REQUIRE fast + slow alignment (full slope)
     slope_fast_min_pb: 0.03       # 0.03% per bar minimum for fast slope
     slope_slow_min_pb: 0.015      # 0.015% per bar minimum for slow slope
-    # VWAP mid-band (execution-only) — enforce best WR bucket 0.4–0.8 ATR
-    vwap_exec_enabled: true
+    # VWAP execution gate disabled (use in signal only)
+    vwap_exec_enabled: false
     vwap_dist_atr_min: 0.40
     vwap_dist_atr_max: 0.80
   logging:

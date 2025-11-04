@@ -756,10 +756,8 @@ class TradingBot:
             vmax_band = float(hg.get('vwap_dist_atr_max', 1e9))
             vwap_pass = (vmin_band <= vwap <= vmax_band) if vwap_exec_enabled else True
 
-            # Allowed paths: (Body + Volume + Slope) OR (Volume + Slope) — both honor VWAP mid-band when enabled
-            allowed_body = slope_ok and body_pass and (not vol_enabled or vol_pass) and vwap_pass
-            allowed_vol = slope_ok and (not body_enabled or not body_pass) and (not vol_enabled or vol_pass) and vwap_pass
-            allowed = allowed_body or allowed_vol
+            # Allowed path: Body + Volume + Slope (single primary path)
+            allowed = slope_ok and body_pass and (not vol_enabled or vol_pass)
             if allowed:
                 return True, []
 
@@ -784,8 +782,7 @@ class TradingBot:
                         reasons.append('slope_dir')
                     if abs(slow) < min_slow:
                         reasons.append('slope_slow<min')
-            if vwap_exec_enabled and not vwap_pass:
-                reasons.append('vwap_mid')
+            # VWAP exec disabled in this mode
             # Optional 15m/BTC alignment reasons (if enabled)
             try:
                 if bool(hg.get('align_15m_enabled', hg.get('align_15m', False))):

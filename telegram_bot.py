@@ -6006,18 +6006,18 @@ class TGBot:
                 await self.safe_reply(update,
                     "🩳 *Scalp Gate Risk*\n"+
                     f"• Body+Vol+Slope (active): {float(rmap.get('body',2.0)):.2f}%\n"+
-                    f"• Vol+Slope (active): {float(rmap.get('vol',0.5)):.2f}%\n"+
+                    f"• Vol+Slope (disabled): {float(rmap.get('vol',0.5)):.2f}%\n"+
                     f"• HTF+Slope (disabled): {float(rmap.get('htf',10.0)):.2f}%\n"+
                     f"• ALL aligned (disabled): {float(rmap.get('both',15.0)):.2f}%\n\n"+
-                    "• /scalpgaterisk [body|vol|htf|both] <percent> — Set risk% for gate-based executes"
+                    "• /scalpgaterisk [body] <percent> — Set risk% for gate-based executes"
                 )
                 return
             if len(args) != 2:
-                await self.safe_reply(update, "Usage: /scalpgaterisk [body|vol|htf|both] <percent>")
+                await self.safe_reply(update, "Usage: /scalpgaterisk [body] <percent>")
                 return
             gate = args[0].strip().lower()
-            if gate not in ('body', 'vol', 'htf', 'both'):
-                await self.safe_reply(update, "Gate must be one of: body, vol, htf, both")
+            if gate not in ('body',):
+                await self.safe_reply(update, "Gate must be: body")
                 return
             try:
                 pct = float(args[1])

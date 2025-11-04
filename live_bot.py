@@ -3951,20 +3951,10 @@ class TradingBot:
                                         # Extract volume ratio and body ratio for display
                                         vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
                                         vol_str = f" Vol={vol_ratio:.2f}x" if vol_ratio > 0 else ""
-                                        # Gate status indicators with pass/fail + HTF value (always shown)
+                                        # Gate status indicators (Body/Vol/Slope/VWAP) and ATR snapshot
                                         gate_str = ""
                                         try:
                                             hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
-                                            # HTF value (always shown, with gate status if enabled)
-                                            ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
-                                            if bool(hg.get('htf_enabled', False)):
-                                                thr_ts = float(hg.get('htf_min_ts15', 70.0))
-                                                htf_pass = ts15 >= thr_ts
-                                                htf_emoji = "✅" if htf_pass else "❌"
-                                                gate_str += f" HTF:{htf_emoji}{ts15:.0f}"
-                                            else:
-                                                # Show HTF value even when gate disabled
-                                                gate_str += f" HTF:{ts15:.0f}"
                                             # Body gate (show pass/fail, threshold and direction)
                                             if bool(hg.get('body_enabled', False)):
                                                 body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
@@ -3974,6 +3964,46 @@ class TradingBot:
                                                 body_pass = body_ratio >= bmin and body_dir_ok
                                                 body_emoji = "✅" if body_pass else "❌"
                                                 gate_str += f" Body:{body_emoji}{body_ratio:.2f}(≥{bmin:.2f}) dir={body_sign}"
+                                            # Vol gate
+                                            if bool(hg.get('vol_enabled', False)):
+                                                vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
+                                                vmin = float(hg.get('vol_ratio_min_3m', 1.30))
+                                                v_ok = vol_ratio >= vmin
+                                                v_emoji = '✅' if v_ok else '❌'
+                                                gate_str += f" Vol:{v_emoji}{vol_ratio:.2f}"
+                                            # VWAP mid-band
+                                            if bool(hg.get('vwap_exec_enabled', False)):
+                                                try:
+                                                    vda = float(sc_feats.get('vwap_dist_atr', 0.0) or 0.0)
+                                                    vminb = float(hg.get('vwap_dist_atr_min', 0.40)); vmaxb = float(hg.get('vwap_dist_atr_max', 0.80))
+                                                    v_ok2 = (vda >= vminb) and (vda <= vmaxb)
+                                                    gate_str += f" VWAP:{'✅' if v_ok2 else '❌'}{vda:.2f}"
+                                                except Exception:
+                                                    pass
+                                            # Slope
+                                            if bool(hg.get('slope_enabled', False)):
+                                                fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
+                                                slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
+                                                min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+                                                min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+                                                fast_only = bool(hg.get('slope_fast_only', False))
+                                                side = str(sc_sig.side)
+                                                if fast_only:
+                                                    slope_ok = ((fast > 0.0) if side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                                else:
+                                                    if side == 'long':
+                                                        slope_ok = (fast > 0.0) and (slow > 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
+                                                    else:
+                                                        slope_ok = (fast < 0.0) and (slow < 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
+                                                sl_emoji = '✅' if slope_ok else '❌'
+                                                mode = '(fast-only)' if fast_only else '(full)'
+                                                gate_str += f" Slope:{sl_emoji}{fast:.3f}/{slow:.3f}%{(' '+mode) if mode else ''}"
+                                            # ATR snapshot
+                                            try:
+                                                atrp = float(sc_feats.get('atr_pct', 0.0) or 0.0)
+                                                gate_str += f" ATR:{atrp:.2f}%"
+                                            except Exception:
+                                                pass
                                         except Exception:
                                             pass
                                         # Vol status (emoji) in acceptance line when enabled

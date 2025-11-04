@@ -532,19 +532,23 @@ scalp:
     apply_to_exec: true
     apply_to_phantoms: false  # Phantoms always recorded for gate analysis
     # Individual gate enables (only apply to execution, phantoms track all)
-    htf_enabled: true           # ENABLED - Keep HTF gate available (exec + exceptions)
+    htf_enabled: false          # DISABLED - HTF gate removed from execution paths
     htf_min_ts15: 70.0
     vol_enabled: true           # ENABLED - Require volume expansion with Body gate for Scalp
-    vol_ratio_min_3m: 1.20      # 1.2x 20-bar avg (from 1.50) for better flow
-    body_enabled: true          # ENABLED - Body gate used with Volume to confirm move
+    vol_ratio_min_3m: 1.20      # 1.2x 20-bar avg (execution gate)
+    body_enabled: true          # ENABLED - Body direction + low magnitude threshold
     body_ratio_min_3m: 0.30
-    align_15m_enabled: false    # DISABLED - Let phantom data show value over 2 weeks
-    leader_align_btc_enabled: false  # DISABLED - BTC micro-trend alignment
+    align_15m_enabled: false    # DISABLED
+    leader_align_btc_enabled: false  # DISABLED
     # EMA slope gate (execution only)
     slope_enabled: true
-    slope_fast_only: true         # Use fast-only for more flow; slow must match sign but magnitude not required
+    slope_fast_only: false        # REQUIRE fast + slow alignment (full slope)
     slope_fast_min_pb: 0.03       # 0.03% per bar minimum for fast slope
-    slope_slow_min_pb: 0.015      # 0.015% per bar minimum for slow slope (used when fast_only=false)
+    slope_slow_min_pb: 0.015      # 0.015% per bar minimum for slow slope
+    # VWAP mid-band (execution-only) — enforce best WR bucket 0.4–0.8 ATR
+    vwap_exec_enabled: true
+    vwap_dist_atr_min: 0.40
+    vwap_dist_atr_max: 0.80
   logging:
     heartbeat: true      # Per 3m-bar heartbeat when no Scalp signal
     decision_only: false # If true, suppress analysis/heartbeat and show only decisions

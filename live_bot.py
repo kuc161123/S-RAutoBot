@@ -702,8 +702,10 @@ class TradingBot:
         return 'none'
 
     def _scalp_hard_gates_pass(self, symbol: str, side: str, feats: dict) -> tuple[bool, list[str]]:
-        """Execution-only hard gates for Scalp with three allowed paths (all require Slope):
-        1) HTF + Slope  2) Body + Volume + Slope  3) ALL (HTF + Body + Volume + Slope)
+        """Execution-only hard gates for Scalp (Body + Volume + full Slope + optional VWAP mid-band).
+
+        Enforces a single allowed path by default: Body + Volume + (fast+slow) Slope.
+        HTF is disabled in config for execution paths.
         Returns (ok, reasons). Reasons populated only on failure.
         """
         try:
@@ -738,17 +740,24 @@ class TradingBot:
             fast_only = bool(hg.get('slope_fast_only', False))
             if slope_enabled:
                 if side == 'long':
-                    slope_ok = (fast > 0.0 and abs(fast) >= min_fast) and (True if fast_only else (slow > 0.0 and abs(slow) >= min_slow))
+                    slope_ok = (fast > 0.0 and abs(fast) >= min_fast) and ((slow > 0.0 and abs(slow) >= min_slow) if not fast_only else True)
                 else:
-                    slope_ok = (fast < 0.0 and abs(fast) >= min_fast) and (True if fast_only else (slow < 0.0 and abs(slow) >= min_slow))
+                    slope_ok = (fast < 0.0 and abs(fast) >= min_fast) and ((slow < 0.0 and abs(slow) >= min_slow) if not fast_only else True)
             else:
                 slope_ok = True
 
-            allowed = slope_ok and (
-                (htf_pass) or
-                (body_pass and (not vol_enabled or vol_pass)) or
-                (htf_pass and body_pass and (not vol_enabled or vol_pass))
-            )
+            # VWAP mid-band (execution-only)
+            vwap_exec_enabled = bool(hg.get('vwap_exec_enabled', False))
+            try:
+                vwap = float(feats.get('vwap_dist_atr', 0.0) or 0.0)
+            except Exception:
+                vwap = 0.0
+            vmin_band = float(hg.get('vwap_dist_atr_min', 0.0))
+            vmax_band = float(hg.get('vwap_dist_atr_max', 1e9))
+            vwap_pass = (vmin_band <= vwap <= vmax_band) if vwap_exec_enabled else True
+
+            # Allowed path: Body + Volume + Slope (+ VWAP mid when enabled)
+            allowed = slope_ok and body_pass and (not vol_enabled or vol_pass) and vwap_pass
             if allowed:
                 return True, []
 
@@ -773,6 +782,8 @@ class TradingBot:
                         reasons.append('slope_dir')
                     if abs(slow) < min_slow:
                         reasons.append('slope_slow<min')
+            if vwap_exec_enabled and not vwap_pass:
+                reasons.append('vwap_mid')
             # Optional 15m/BTC alignment reasons (if enabled)
             try:
                 if bool(hg.get('align_15m_enabled', hg.get('align_15m', False))):
@@ -3704,13 +3715,9 @@ class TradingBot:
                                 qv = float(sc_feats.get('qscore', 0.0) or 0.0)
                                 comps = sc_feats.get('qscore_components', {}) or {}
                                 comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
-                                # Label the reason based on actual passing gates
-                                if htf_pass and (body_pass and (not vol_enabled or vol_pass)):
-                                    reason_txt = 'ALL'
-                                elif htf_pass:
-                                    reason_txt = 'HTF70'
-                                elif body_pass:
-                                    reason_txt = 'Body+Vol'
+                                # Label the reason based on actual passing gates (HTF disabled; only Body+Vol+Slope active)
+                                if body_pass and (not vol_enabled or vol_pass):
+                                    reason_txt = 'Body+Vol+Slope'
                                 else:
                                     reason_txt = 'Gate'
                                 # Compact gate summary line
@@ -3727,7 +3734,18 @@ class TradingBot:
                                             else:
                                                 sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                     s_show = ('✅' if sl_ok else ('❌' if slope_enabled else '—'))
-                                    summary_line = f"Gates: HTF{'✅' if htf_pass else '❌'} Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
+                                    # VWAP mid-band in summary
+                                    try:
+                                        if bool(hg.get('vwap_exec_enabled', False)):
+                                            vda = float(sc_feats.get('vwap_dist_atr', 0.0) or 0.0)
+                                            vminb = float(hg.get('vwap_dist_atr_min', 0.40)); vmaxb = float(hg.get('vwap_dist_atr_max', 0.80))
+                                            v_ok = (vda >= vminb) and (vda <= vmaxb)
+                                            vwap_show = '✅' if v_ok else '❌'
+                                        else:
+                                            vwap_show = '—'
+                                    except Exception:
+                                        vwap_show = '—'
+                                    summary_line = f"Gates: HTF{'✅' if htf_pass else '❌'} Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} VWAP{vwap_show}"
                                 except Exception:
                                     summary_line = ""
                                 await self.tg.send_message(

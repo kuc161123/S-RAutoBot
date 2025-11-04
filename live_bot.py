@@ -677,6 +677,12 @@ class TradingBot:
         self._phantom_open_notified: set[str] = set()
         self._phantom_tp1_notified: set[str] = set()
         self._phantom_close_notified: set[str] = set()
+        # Main stream watchdog (timestamp of last received kline)
+        try:
+            import time as _time
+            self._last_main_kline: float = _time.monotonic()
+        except Exception:
+            self._last_main_kline = 0.0
 
     def _btc_micro_trend(self) -> str:
         """Compute BTC 1–3m micro-trend direction: up/down/none."""
@@ -1379,6 +1385,39 @@ class TradingBot:
         except Exception:
             pass
         return task
+
+    async def _watch_main_stream(self, idle_seconds: float = 600.0):
+        """Watchdog: if no main-stream klines for idle_seconds, force a reconnect.
+
+        This closes the current WebSocket; kline_stream() will reconnect on close.
+        """
+        import time as _t
+        check_period = max(30.0, min(120.0, idle_seconds / 3.0))
+        while self.running:
+            try:
+                await asyncio.sleep(check_period)
+                last = getattr(self, '_last_main_kline', 0.0) or 0.0
+                delta = _t.monotonic() - last if last else 0.0
+                if self.running and idle_seconds > 0 and delta > idle_seconds:
+                    try:
+                        logger.warning(f"Main stream idle for {int(delta)}s (> {int(idle_seconds)}s). Forcing reconnect…")
+                    except Exception:
+                        pass
+                    try:
+                        if getattr(self, 'ws', None) is not None:
+                            await self.ws.close()
+                    except Exception:
+                        pass
+                    # Reset timer to avoid repeated closes before reconnection
+                    try:
+                        self._last_main_kline = _t.monotonic()
+                    except Exception:
+                        pass
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                # Keep watchdog alive on errors
+                continue
 
     async def _flip_scalp_position(self, sym: str, sc_sig, sc_feats: dict, htf_pass: bool, body_pass: bool, exec_id: str = None) -> bool:
         """Safely flip an existing one-way Scalp position to the opposite direction.
@@ -6457,6 +6496,12 @@ class TradingBot:
                             if topic.startswith("kline."):
                                 sym = topic.split(".")[-1]
                                 for k in msg.get("data", []):
+                                    try:
+                                        # Update main-stream watchdog timestamp
+                                        import time as _t
+                                        self._last_main_kline = _t.monotonic()
+                                    except Exception:
+                                        pass
                                     yield sym, k
                         except asyncio.TimeoutError:
                             # Idle: send ping. Reconnect only after prolonged idle (> 3x timeout) or ping failure.
@@ -8895,6 +8940,19 @@ class TradingBot:
             return await _try_execute('range_fbo', sig_obj, ml_score=0.0, threshold=thr)
         try:
             self._range_exec_runner = _range_exec_runner
+        except Exception:
+            pass
+
+        # Start main-stream watchdog (idle triggers reconnect)
+        try:
+            tf_int = int(str(tf)) if str(tf).isdigit() else 15
+        except Exception:
+            tf_int = 15
+        # Allow 3 full bars + buffer before forcing reconnect
+        idle_seconds = max(180, 3 * tf_int * 60 + 30)
+        try:
+            self._create_task(self._watch_main_stream(idle_seconds))
+            logger.info(f"Main stream watchdog started (idle>{idle_seconds}s)")
         except Exception:
             pass
 

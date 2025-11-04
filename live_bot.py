@@ -756,8 +756,10 @@ class TradingBot:
             vmax_band = float(hg.get('vwap_dist_atr_max', 1e9))
             vwap_pass = (vmin_band <= vwap <= vmax_band) if vwap_exec_enabled else True
 
-            # Allowed path: Body + Volume + Slope (+ VWAP mid when enabled)
-            allowed = slope_ok and body_pass and (not vol_enabled or vol_pass) and vwap_pass
+            # Allowed paths: (Body + Volume + Slope) OR (Volume + Slope) — both honor VWAP mid-band when enabled
+            allowed_body = slope_ok and body_pass and (not vol_enabled or vol_pass) and vwap_pass
+            allowed_vol = slope_ok and (not body_enabled or not body_pass) and (not vol_enabled or vol_pass) and vwap_pass
+            allowed = allowed_body or allowed_vol
             if allowed:
                 return True, []
 
@@ -3634,7 +3636,7 @@ class TradingBot:
                                                 # Gate summary at-a-glance
                                                 v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
                                                 s_show = '❌'  # slope misaligned here
-                                                summary_line = f"Gates: HTF{'✅' if htf_pass else '❌'} Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
+                                    summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
                                                 await self.tg.send_message(
                                                     f"🛑 Scalp EXEC blocked: EMA slope misaligned {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
                                                     f"{summary_line}\n"
@@ -3663,17 +3665,20 @@ class TradingBot:
                             # Determine risk percent per rule
                             try:
                                 rmap = (self.shared.get('scalp_gate_risk') or {}) if hasattr(self, 'shared') else {}
-                                # Path selection with slope_ok enforced above:
-                                # 1) HTF+Slope, 2) Body+Vol+Slope, 3) ALL (HTF+Body(+Vol)+Slope)
-                                if htf_pass and (body_pass and (not vol_enabled or vol_pass)):
-                                    path = 'both'  # ALL aligned
+                                # Path selection (HTF disabled): prefer Body+Vol+Slope, else Vol+Slope
+                                if body_pass and (not vol_enabled or vol_pass):
+                                    path = 'body'
+                                elif (not body_pass) and (not vol_enabled or vol_pass):
+                                    path = 'vol'
+                                elif htf_pass and (body_pass and (not vol_enabled or vol_pass)):
+                                    path = 'both'  # legacy ALL case if HTF is enabled later
                                 elif htf_pass:
                                     path = 'htf'
                                 else:
                                     path = 'body'
                                 risk_pct = float(rmap.get(path, 15.0 if path == 'both' else (10.0 if path == 'htf' else 2.0)))
                             except Exception:
-                                path = 'both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body')
+                                path = 'body' if (body_pass and (not vol_enabled or vol_pass)) else ('vol' if (not body_pass and (not vol_enabled or vol_pass)) else ('both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body')))
                                 risk_pct = 15.0 if path == 'both' else (10.0 if path == 'htf' else 2.0)
                             # Prepare detailed notify
                             try:
@@ -3715,9 +3720,11 @@ class TradingBot:
                                 qv = float(sc_feats.get('qscore', 0.0) or 0.0)
                                 comps = sc_feats.get('qscore_components', {}) or {}
                                 comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
-                                # Label the reason based on actual passing gates (HTF disabled; only Body+Vol+Slope active)
+                                # Label the reason based on actual passing gates
                                 if body_pass and (not vol_enabled or vol_pass):
                                     reason_txt = 'Body+Vol+Slope'
+                                elif (not body_pass) and (not vol_enabled or vol_pass):
+                                    reason_txt = 'Vol+Slope'
                                 else:
                                     reason_txt = 'Gate'
                                 # Compact gate summary line
@@ -3745,7 +3752,7 @@ class TradingBot:
                                             vwap_show = '—'
                                     except Exception:
                                         vwap_show = '—'
-                                    summary_line = f"Gates: HTF{'✅' if htf_pass else '❌'} Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} VWAP{vwap_show}"
+                                    summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} VWAP{vwap_show}"
                                 except Exception:
                                     summary_line = ""
                                 await self.tg.send_message(
@@ -3858,7 +3865,7 @@ class TradingBot:
                                                         sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                             v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
                                             s_show = ('✅' if sl_ok else ('❌' if bool(hg.get('slope_enabled', False)) else '—'))
-                                            summary_line = f"Gates: HTF{'✅' if htf_pass else '❌'} Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
+                                            summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
                                         except Exception:
                                             summary_line = ""
                                         await self.tg.send_message(
@@ -4155,7 +4162,7 @@ class TradingBot:
                                                 sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                     v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
                                     s_show = ('✅' if sl_ok else ('❌' if slope_enabled else '—'))
-                                    summary_line = f"Gates: HTF{'✅' if htf_pass else '❌'} Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
+                                    summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
                                 except Exception:
                                     summary_line = ""
                                 await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}{extra}) — phantom recorded (id={ex_id or 'n/a'})\nGates: {summary_line}\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
@@ -7317,6 +7324,7 @@ class TradingBot:
                     # Default Scalp gate risk tiers (overridable at runtime via Telegram)
                     "scalp_gate_risk": (lambda c: {
                         'body': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('body', 2.0)),
+                        'vol': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('vol', 0.5)),
                         'htf': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('htf', 10.0)),
                         'both': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('both', 15.0)),
                     })(cfg),

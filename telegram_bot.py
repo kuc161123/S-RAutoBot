@@ -6006,17 +6006,18 @@ class TGBot:
                 await self.safe_reply(update,
                     "🩳 *Scalp Gate Risk*\n"+
                     f"• Body+Vol+Slope (active): {float(rmap.get('body',2.0)):.2f}%\n"+
+                    f"• Vol+Slope (active): {float(rmap.get('vol',0.5)):.2f}%\n"+
                     f"• HTF+Slope (disabled): {float(rmap.get('htf',10.0)):.2f}%\n"+
                     f"• ALL aligned (disabled): {float(rmap.get('both',15.0)):.2f}%\n\n"+
-                    "• /scalpgaterisk [body|htf|both] <percent> — Set risk% for gate-based executes"
+                    "• /scalpgaterisk [body|vol|htf|both] <percent> — Set risk% for gate-based executes"
                 )
                 return
             if len(args) != 2:
-                await self.safe_reply(update, "Usage: /scalpgaterisk [body|htf|both] <percent>")
+                await self.safe_reply(update, "Usage: /scalpgaterisk [body|vol|htf|both] <percent>")
                 return
             gate = args[0].strip().lower()
-            if gate not in ('body', 'htf', 'both'):
-                await self.safe_reply(update, "Gate must be one of: body, htf, both")
+            if gate not in ('body', 'vol', 'htf', 'both'):
+                await self.safe_reply(update, "Gate must be one of: body, vol, htf, both")
                 return
             try:
                 pct = float(args[1])
@@ -6031,9 +6032,10 @@ class TGBot:
             self.shared['scalp_gate_risk'] = rmap
             await self.safe_reply(update,
                 "✅ *Scalp Gate Risk Updated*\n"+
-                f"• Body: {float(rmap.get('body',2.0)):.2f}%\n"+
-                f"• HTF70: {float(rmap.get('htf',10.0)):.2f}%\n"+
-                f"• Both: {float(rmap.get('both',15.0)):.2f}%"
+                f"• Body+Vol+Slope: {float(rmap.get('body',2.0)):.2f}%\n"+
+                f"• Vol+Slope: {float(rmap.get('vol',0.5)):.2f}%\n"+
+                f"• HTF+Slope: {float(rmap.get('htf',10.0)):.2f}%\n"+
+                f"• ALL aligned: {float(rmap.get('both',15.0)):.2f}%"
             )
         except Exception as e:
             logger.error(f"Error in scalp_gate_risk: {e}")

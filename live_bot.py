@@ -746,7 +746,7 @@ class TradingBot:
             else:
                 slope_ok = True
 
-            # VWAP mid-band (execution-only)
+            # VWAP mid-band (execution-only) [disabled via config currently]
             vwap_exec_enabled = bool(hg.get('vwap_exec_enabled', False))
             try:
                 vwap = float(feats.get('vwap_dist_atr', 0.0) or 0.0)
@@ -755,9 +755,18 @@ class TradingBot:
             vmin_band = float(hg.get('vwap_dist_atr_min', 0.0))
             vmax_band = float(hg.get('vwap_dist_atr_max', 1e9))
             vwap_pass = (vmin_band <= vwap <= vmax_band) if vwap_exec_enabled else True
+            # BBW percentile execution band
+            bbw_exec_enabled = bool(hg.get('bbw_exec_enabled', False))
+            try:
+                bbw_pct = float(feats.get('bb_width_pctile', 0.0) or 0.0)
+            except Exception:
+                bbw_pct = 0.0
+            bbw_min = float(hg.get('bbw_min_pct', 0.60))
+            bbw_max = float(hg.get('bbw_max_pct', 0.90))
+            bbw_pass = (bbw_pct >= bbw_min) and (bbw_pct <= bbw_max) if bbw_exec_enabled else True
 
             # Allowed path: Body + Volume + Slope (single primary path)
-            allowed = slope_ok and body_pass and (not vol_enabled or vol_pass)
+            allowed = slope_ok and body_pass and (not vol_enabled or vol_pass) and (not bbw_exec_enabled or bbw_pass)
             if allowed:
                 return True, []
 
@@ -783,6 +792,8 @@ class TradingBot:
                     if abs(slow) < min_slow:
                         reasons.append('slope_slow<min')
             # VWAP exec disabled in this mode
+            if bbw_exec_enabled and not bbw_pass:
+                reasons.append('bbw_band')
             # Optional 15m/BTC alignment reasons (if enabled)
             try:
                 if bool(hg.get('align_15m_enabled', hg.get('align_15m', False))):
@@ -2354,7 +2365,7 @@ class TradingBot:
             atr_pct = float((atr / max(1e-9, price)) * 100.0) if price else 0.0
             out['atr_pct'] = max(0.0, atr_pct)
 
-            # Bollinger bands width percent (20)
+            # Bollinger bands width percent (20) and percentile of current width vs recent
             if len(close) >= 20:
                 ma = close.rolling(20).mean()
                 sd = close.rolling(20).std()
@@ -2362,9 +2373,17 @@ class TradingBot:
                 lower = ma - 2 * sd
                 bb_width = float((upper.iloc[-1] - lower.iloc[-1]))
                 bb_width_pct = float(bb_width / max(1e-9, price))
+                try:
+                    bbw_series = (upper - lower) / close
+                    last_bbw = float(bbw_series.iloc[-1])
+                    bb_pctile = float((bbw_series <= last_bbw).mean())
+                except Exception:
+                    bb_pctile = 0.0
             else:
                 bb_width_pct = 0.0
+                bb_pctile = 0.0
             out['bb_width_pct'] = max(0.0, bb_width_pct)
+            out['bb_width_pctile'] = max(0.0, min(1.0, bb_pctile))
 
             # Impulse ratio: |close change| / ATR
             if len(close) >= 2 and atr > 0:
@@ -3700,6 +3719,15 @@ class TradingBot:
                                 gate_lines.append(f"Body: {'✅' if body_pass else '❌'} {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})")
                                 if vol_enabled:
                                     gate_lines.append(f"Vol: {'✅' if vol_pass else '❌'} {vol_ratio:.2f} (≥ {vmin:.2f})")
+                                # BBW percentile
+                                try:
+                                    if bool(hg.get('bbw_exec_enabled', False)):
+                                        bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                        bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                        bbw_ok = (bbw_p >= bbw_min) and (bbw_p <= bbw_max)
+                                        gate_lines.append(f"BBW: {'✅' if bbw_ok else '❌'} {bbw_p:.2f}p (in {bbw_min:.2f}-{bbw_max:.2f}p)")
+                                except Exception:
+                                    pass
                                 # Slope line
                                 try:
                                     if slope_enabled:
@@ -3749,7 +3777,17 @@ class TradingBot:
                                             vwap_show = '—'
                                     except Exception:
                                         vwap_show = '—'
-                                    summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} VWAP{vwap_show}"
+                                    # BBW summary
+                                    try:
+                                        if bool(hg.get('bbw_exec_enabled', False)):
+                                            bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                            bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                            bbw_show = '✅' if (bbw_p >= bbw_min and bbw_p <= bbw_max) else '❌'
+                                        else:
+                                            bbw_show = '—'
+                                    except Exception:
+                                        bbw_show = '—'
+                                    summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show}"
                                 except Exception:
                                     summary_line = ""
                                 await self.tg.send_message(
@@ -3832,11 +3870,18 @@ class TradingBot:
                                             min_fast = float(hg.get('slope_fast_min_pb', 0.03))
                                             min_slow = float(hg.get('slope_slow_min_pb', 0.015))
                                             parts = [
-                                                f"HTF {ts15:.0f} (≥ {thr_ts:.0f})",
                                                 f"Body {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})"
                                             ]
                                             if bool(hg.get('vol_enabled', False)):
                                                 parts.append(f"Vol {vol_ratio:.2f} (≥ {vmin:.2f})")
+                                            # BBW percentile
+                                            try:
+                                                if bool(hg.get('bbw_exec_enabled', False)):
+                                                    bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                                    bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                                    parts.append(f"BBW {bbw_p:.2f}p (in {bbw_min:.2f}-{bbw_max:.2f}p)")
+                                            except Exception:
+                                                pass
                                             if bool(hg.get('slope_enabled', False)):
                                                 mode = 'fast-only' if bool(hg.get('slope_fast_only', False)) else 'full'
                                                 parts.append(f"Slope F/S {fast:.3f}/{slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}) mode={mode}")

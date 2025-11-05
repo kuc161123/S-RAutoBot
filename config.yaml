@@ -528,6 +528,10 @@ scalp:
   min_r_pct: 0.005
   dedup_hours: 3         # Slightly stricter dedup window to cut repeats
   cooldown_bars: 4       # Stricter cooldown to reduce noise
+  # Signal-generation thresholds (phantoms also benefit)
+  signal:
+    body_ratio_min: 0.30
+    wick_delta_min: 0.10
   hard_gates:
     apply_to_exec: true
     apply_to_phantoms: false  # Phantoms always recorded for gate analysis
@@ -536,8 +540,14 @@ scalp:
     htf_min_ts15: 70.0
     vol_enabled: true           # ENABLED - Require volume expansion with Body gate for Scalp
     vol_ratio_min_3m: 1.20      # 1.2x 20-bar avg (execution gate)
-    body_enabled: true          # ENABLED - Body direction + low magnitude threshold
+    body_enabled: false         # DISABLED - Body is handled in signal generator, not execution
     body_ratio_min_3m: 0.30
+    # Wick alignment gate (execution): dominant wick in trade direction by delta
+    wick_enabled: true
+    wick_delta_min: 0.10
+    # Volatility regime gate (execution): allow only configured regimes
+    regime_enabled: true
+    allowed_regimes: ['normal']
     align_15m_enabled: false    # DISABLED
     leader_align_btc_enabled: false  # DISABLED
     # EMA slope gate (execution only)

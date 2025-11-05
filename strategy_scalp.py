@@ -22,6 +22,9 @@ class ScalpSettings:
     min_bb_width_pct: float = 0.7  # 70th percentile of BB width
     vol_ratio_min: float = 1.3     # 1.3x 20-bar avg
     wick_ratio_min: float = 0.4    # Raised from 0.3 for stronger rejection wicks
+    # New: body and wick alignment constraints for signal generation (so phantoms benefit)
+    body_ratio_min: float = 0.30   # require a meaningful body in signal direction
+    wick_delta_min: float = 0.10   # require dominant wick in trade direction by at least this delta
     vwap_dist_atr_max: float = 0.70 # Allow mid-band up to 0.7 ATR for detection
     orb_enabled: bool = False      # Optional ORB continuation filter
     # Enforce minimum 1R distance (as % of price) so fees don't erode R
@@ -96,6 +99,10 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
     rng = max(1e-9, h - l)
     upper_w = max(0.0, h - max(c, o)) / rng
     lower_w = max(0.0, min(c, o) - l) / rng
+    # Body ratio and direction
+    body_ratio = abs(c - o) / rng if rng > 0 else 0.0
+    body_up = (c > o)
+    body_dn = (c < o)
 
     # Trend check (continuation)
     ema_aligned_up = (c > ema_f.iloc[-1] > ema_s.iloc[-1])
@@ -117,7 +124,15 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
             orb_ok = False
 
     # Long scalp candidate
-    if ema_aligned_up and bbw_pct >= s.min_bb_width_pct and vol_ratio >= s.vol_ratio_min and lower_w >= s.wick_ratio_min and dist_vwap_atr <= s.vwap_dist_atr_max and orb_ok:
+    if (
+        ema_aligned_up
+        and bbw_pct >= s.min_bb_width_pct
+        and vol_ratio >= s.vol_ratio_min
+        and lower_w >= max(s.wick_ratio_min, upper_w + s.wick_delta_min)
+        and body_up and body_ratio >= s.body_ratio_min
+        and dist_vwap_atr <= s.vwap_dist_atr_max
+        and orb_ok
+    ):
         # Stop below VWAP/EMA band with high-volatility widening
         buf_mult = 0.8
         if bbw_pct >= 0.85:
@@ -146,7 +161,15 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
         )
 
     # Short scalp candidate
-    if ema_aligned_dn and bbw_pct >= s.min_bb_width_pct and vol_ratio >= s.vol_ratio_min and upper_w >= s.wick_ratio_min and dist_vwap_atr <= s.vwap_dist_atr_max and orb_ok:
+    if (
+        ema_aligned_dn
+        and bbw_pct >= s.min_bb_width_pct
+        and vol_ratio >= s.vol_ratio_min
+        and upper_w >= max(s.wick_ratio_min, lower_w + s.wick_delta_min)
+        and body_dn and body_ratio >= s.body_ratio_min
+        and dist_vwap_atr <= s.vwap_dist_atr_max
+        and orb_ok
+    ):
         buf_mult = 0.8
         if bbw_pct >= 0.85:
             buf_mult = 1.2

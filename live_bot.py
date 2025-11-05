@@ -725,12 +725,15 @@ class TradingBot:
             vmin = float(hg.get('vol_ratio_min_3m', 1.3))
             vol_pass = (vr >= vmin) if vol_enabled else False
 
-            body_enabled = bool(hg.get('body_enabled', False))
-            br = float(feats.get('body_ratio', 0.0) or 0.0)
-            bmin = float(hg.get('body_ratio_min_3m', 0.35))
-            bsgn = str(feats.get('body_sign', 'flat'))
-            body_dir_ok = (side == 'long' and bsgn == 'up') or (side == 'short' and bsgn == 'down')
-            body_pass = (br >= bmin and body_dir_ok) if body_enabled else False
+            # Wick alignment gate (execution-only): require dominant wick in trade direction by delta
+            wick_enabled = bool(hg.get('wick_enabled', True))
+            uw = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
+            lw = float(feats.get('lower_wick_ratio', 0.0) or 0.0)
+            wdelta = float(hg.get('wick_delta_min', 0.10))
+            if wick_enabled:
+                wick_pass = (lw >= uw + wdelta) if side == 'long' else (uw >= lw + wdelta)
+            else:
+                wick_pass = True
 
             slope_enabled = bool(hg.get('slope_enabled', False))
             fast = float(feats.get('ema_slope_fast', 0.0) or 0.0)
@@ -765,8 +768,17 @@ class TradingBot:
             bbw_max = float(hg.get('bbw_max_pct', 0.90))
             bbw_pass = (bbw_pct >= bbw_min) and (bbw_pct <= bbw_max) if bbw_exec_enabled else True
 
-            # Allowed path: Body + Volume + Slope (single primary path)
-            allowed = slope_ok and body_pass and (not vol_enabled or vol_pass) and (not bbw_exec_enabled or bbw_pass)
+            # Volatility regime gate: allow only configured regimes (default: normal only)
+            regime_enabled = bool(hg.get('regime_enabled', True))
+            try:
+                allowed_regs = list(hg.get('allowed_regimes', ['normal']))
+            except Exception:
+                allowed_regs = ['normal']
+            cur_reg = str(feats.get('volatility_regime', 'normal'))
+            regime_ok = (cur_reg in allowed_regs) if regime_enabled else True
+
+            # Allowed path: Wick + Volume + Slope (+BBW) [+Regime]
+            allowed = slope_ok and wick_pass and (not vol_enabled or vol_pass) and (not bbw_exec_enabled or bbw_pass) and regime_ok
             if allowed:
                 return True, []
 
@@ -776,11 +788,8 @@ class TradingBot:
                 reasons.append(f"htf<{thr_ts:.0f}")
             if vol_enabled and not vol_pass:
                 reasons.append(f"vol<{vmin:.2f}")
-            if body_enabled:
-                if br < bmin:
-                    reasons.append(f"body<{bmin:.2f}")
-                if not body_dir_ok:
-                    reasons.append('body_dir')
+            if wick_enabled and not wick_pass:
+                reasons.append('wick_align')
             if slope_enabled:
                 if (side == 'long' and fast <= 0.0) or (side == 'short' and fast >= 0.0):
                     reasons.append('slope_dir')
@@ -794,6 +803,8 @@ class TradingBot:
             # VWAP exec disabled in this mode
             if bbw_exec_enabled and not bbw_pass:
                 reasons.append('bbw_band')
+            if regime_enabled and not regime_ok:
+                reasons.append('regime')
             # Optional 15m/BTC alignment reasons (if enabled)
             try:
                 if bool(hg.get('align_15m_enabled', hg.get('align_15m', False))):
@@ -2415,7 +2426,7 @@ class TradingBot:
             else:
                 out['ema_slope_slow'] = 0.0
 
-            # Wick ratios (last candle)
+            # Wick ratios (last candle) and body features
             if len(tail) >= 1:
                 o = float(open_.iloc[-1]); c = float(close.iloc[-1]); h = float(high.iloc[-1]); l = float(low.iloc[-1])
                 rng = max(1e-9, h - l)
@@ -2423,9 +2434,13 @@ class TradingBot:
                 lower_wick = min(o, c) - l
                 out['upper_wick_ratio'] = float(max(0.0, upper_wick / rng))
                 out['lower_wick_ratio'] = float(max(0.0, lower_wick / rng))
+                out['body_ratio'] = float(abs(c - o) / rng) if rng > 0 else 0.0
+                out['body_sign'] = 'up' if (c - o) > 0 else 'down' if (c - o) < 0 else 'flat'
             else:
                 out['upper_wick_ratio'] = 0.0
                 out['lower_wick_ratio'] = 0.0
+                out['body_ratio'] = 0.0
+                out['body_sign'] = 'flat'
 
             # Volume ratio
             vol = tail['volume']
@@ -2434,19 +2449,16 @@ class TradingBot:
             else:
                 out['volume_ratio'] = float(sc_meta.get('vol_ratio', 1.0))
 
-            # Body ratio and 15m EMA direction for gating
+            # 15m EMA direction for gating
             try:
                 if len(tail) >= 1:
                     o = float(open_.iloc[-1]); c = float(close.iloc[-1]); h = float(high.iloc[-1]); l = float(low.iloc[-1])
                     rng = max(1e-9, h - l)
-                    out['body_ratio'] = float(abs(c - o) / rng)
-                    out['body_sign'] = 'up' if (c - o) > 0 else 'down' if (c - o) < 0 else 'flat'
+                # body_sign/body_ratio already set above
                 else:
-                    out['body_ratio'] = 0.0
-                    out['body_sign'] = 'flat'
+                    pass
             except Exception:
-                out['body_ratio'] = 0.0
-                out['body_sign'] = 'flat'
+                pass
 
             # 15m EMA alignment direction (up/down/none)
             try:
@@ -2937,6 +2949,7 @@ class TradingBot:
                     try:
                         s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
                         exp = s_cfg.get('explore', {})
+                        sig_cfg = s_cfg.get('signal', {})
                         # Allow RR override via config (defaults to 2.0 in ScalpSettings)
                         try:
                             if 'rr' in s_cfg:
@@ -2947,6 +2960,14 @@ class TradingBot:
                         try:
                             if 'min_r_pct' in s_cfg:
                                 sc_settings.min_r_pct = float(s_cfg.get('min_r_pct'))
+                        except Exception:
+                            pass
+                        # Apply signal-generation specific thresholds (body, wick alignment)
+                        try:
+                            if 'body_ratio_min' in sig_cfg:
+                                sc_settings.body_ratio_min = float(sig_cfg.get('body_ratio_min', sc_settings.body_ratio_min))
+                            if 'wick_delta_min' in sig_cfg:
+                                sc_settings.wick_delta_min = float(sig_cfg.get('wick_delta_min', sc_settings.wick_delta_min))
                         except Exception:
                             pass
                         if exp.get('relax_enabled', False):
@@ -3524,7 +3545,7 @@ class TradingBot:
                                 sc_sig.meta['gate_decision'] = 'both' if (htf_pass and body_pass) else 'htf'
                             except Exception:
                                 pass
-                            did_up = await self._flip_scalp_position(sym, sc_sig, sc_feats, htf_pass=True, body_pass=body_pass, exec_id=exec_id)
+                            did_up = await self._flip_scalp_position(sym, sc_sig, sc_feats, htf_pass=True, body_pass=False, exec_id=exec_id)
                             if did_up:
                                 try:
                                     scpt.record_scalp_signal(
@@ -3570,11 +3591,16 @@ class TradingBot:
                         ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
                         thr_ts = float(hg.get('htf_min_ts15', 70.0))
                         htf_pass = bool(hg.get('htf_enabled', False)) and (ts15 >= thr_ts)
+                        # Wick alignment gate for override path (replaces Body gate)
+                        uw = float(sc_feats.get('upper_wick_ratio', 0.0) or 0.0)
+                        lw = float(sc_feats.get('lower_wick_ratio', 0.0) or 0.0)
+                        wdelta = float(hg.get('wick_delta_min', 0.10))
+                        wick_enabled = bool(hg.get('wick_enabled', True))
+                        wick_pass = (lw >= uw + wdelta) if (wick_enabled and sc_sig.side == 'long') else ((uw >= lw + wdelta) if wick_enabled and sc_sig.side == 'short' else True)
+                        # Keep body for informational output only
                         body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
                         bmin = float(hg.get('body_ratio_min_3m', 0.35))
                         bdir = str(sc_feats.get('body_sign', 'flat'))
-                        body_dir_ok = (sc_sig.side == 'long' and bdir == 'up') or (sc_sig.side == 'short' and bdir == 'down')
-                        body_pass = bool(hg.get('body_enabled', False)) and (body_ratio >= bmin and body_dir_ok)
                         # Volume pass (used to confirm Body move when enabled)
                         vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
                         vmin = float(hg.get('vol_ratio_min_3m', 1.30))
@@ -3593,15 +3619,15 @@ class TradingBot:
                         # HTF path unaffected by Volume gate
                         if htf_pass:
                             pass  # proceed into execute block
-                        elif body_pass:
+                        elif wick_pass:
                             # Require Volume confirmation when enabled
                             if vol_enabled and not vol_pass:
-                                # Block execution: Body passed but Volume did not
+                                # Block execution: Wick passed but Volume did not
                                 try:
                                     if self.tg:
                                         await self.tg.send_message(
-                                            f"🛑 Scalp EXEC blocked: Body without Volume {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
-                                            f"Vol={vol_ratio:.2f} (≥ {vmin:.2f}) required | Body={body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})\n"
+                                            f"🛑 Scalp EXEC blocked: Wick without Volume {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                            f"Vol={vol_ratio:.2f} (≥ {vmin:.2f}) required | Wick L/U={lw:.2f}/{uw:.2f} Δ≥{wdelta:.2f}\n"
                                             f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
                                         )
                                 except Exception:
@@ -3619,13 +3645,13 @@ class TradingBot:
                                     pass
                                 # Skip further execution paths for this signal
                                 continue
-                            # else: body_pass and (vol not enabled or vol_pass) → proceed
+                            # else: wick_pass and (vol not enabled or vol_pass) → proceed
                         else:
-                            # Neither HTF nor Body → no gate-based override
+                            # Neither HTF nor Wick → no gate-based override
                             pass
                         # If here: decide whether to execute via gate-based override (three paths)
-                        if not (htf_pass or (body_pass and (not vol_enabled or vol_pass))):
-                            # Neither HTF nor (Body+Volume) passed → skip gate-based execute and fall through to Q-score path
+                        if not (htf_pass or (wick_pass and (not vol_enabled or vol_pass))):
+                            # Neither HTF nor (Wick+Volume) passed → skip gate-based execute and fall through to Q-score path
                             pass
                         else:
                             # Proceed to execute via gate-based override
@@ -3662,7 +3688,16 @@ class TradingBot:
                                                         bbw_show = '—'
                                                 except Exception:
                                                     bbw_show = '—'
-                                                summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show}"
+                                                # Wick summary for quick glance
+                                                try:
+                                                    uw = float(sc_feats.get('upper_wick_ratio', 0.0) or 0.0)
+                                                    lw = float(sc_feats.get('lower_wick_ratio', 0.0) or 0.0)
+                                                    wdelta = float(hg.get('wick_delta_min', 0.10))
+                                                    w_ok = (lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta)
+                                                    w_show = '✅' if w_ok else '❌'
+                                                except Exception:
+                                                    w_show = '—'
+                                                summary_line = f"Gates: Wick{w_show} Vol{v_show} Slope{s_show} BBW{bbw_show}"
                                                 await self.tg.send_message(
                                                     f"🛑 Scalp EXEC blocked: EMA slope misaligned {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
                                                     f"{summary_line}\n"
@@ -3733,7 +3768,16 @@ class TradingBot:
                                                                 sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                                     s_show = ('✅' if sl_ok else ('❌' if bool(hg.get('slope_enabled', False)) else '—'))
                                                     bbw_show = '✅' if bbw_ok else '❌'
-                                                    summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show}"
+                                                    # Wick summary indicator
+                                                    try:
+                                                        uw = float(sc_feats.get('upper_wick_ratio', 0.0) or 0.0)
+                                                        lw = float(sc_feats.get('lower_wick_ratio', 0.0) or 0.0)
+                                                        wdelta = float(hg.get('wick_delta_min', 0.10))
+                                                        w_ok = (lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta)
+                                                        w_show = '✅' if w_ok else '❌'
+                                                    except Exception:
+                                                        w_show = '—'
+                                                    summary_line = f"Gates: Wick{w_show} Vol{v_show} Slope{s_show} BBW{bbw_show}"
                                                 except Exception:
                                                     summary_line = ""
                                                 await self.tg.send_message(
@@ -3762,23 +3806,104 @@ class TradingBot:
                                         continue
                             except Exception:
                                 pass
+                            # Enforce Regime (execution-only gate)
+                            try:
+                                reg_en = bool(hg.get('regime_enabled', True))
+                                if reg_en:
+                                    cur_reg = str(sc_feats.get('volatility_regime', 'normal'))
+                                    allowed_regs = list(hg.get('allowed_regimes', ['normal']))
+                                    reg_ok = (cur_reg in allowed_regs)
+                                    if not reg_ok:
+                                        # Block execution due to regime, notify and record phantom
+                                        try:
+                                            if self.tg:
+                                                side_emoji = "🟢" if sc_sig.side == 'long' else "🔴"
+                                                # Gate values
+                                                try:
+                                                    uw = float(sc_feats.get('upper_wick_ratio', 0.0) or 0.0)
+                                                    lw = float(sc_feats.get('lower_wick_ratio', 0.0) or 0.0)
+                                                    wdelta = float(hg.get('wick_delta_min', 0.10))
+                                                    w_ok = (lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta)
+                                                    fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
+                                                    slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
+                                                    min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+                                                    min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+                                                    parts = [
+                                                        f"Regime {'✅' if reg_ok else '❌'} {cur_reg} (allow {','.join(allowed_regs)})",
+                                                        f"Wick {'✅' if w_ok else '❌'} L={lw:.2f} U={uw:.2f} Δ≥{wdelta:.2f}"
+                                                    ]
+                                                    if bool(hg.get('vol_enabled', False)):
+                                                        parts.append(f"Vol {vol_ratio:.2f} (≥ {vmin:.2f})")
+                                                    if bool(hg.get('bbw_exec_enabled', False)):
+                                                        bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                                        bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                                        bbw_ok = (bbw_p >= bbw_min) and (bbw_p <= bbw_max)
+                                                        parts.append(f"BBW {'✅' if bbw_ok else '❌'} {bbw_p:.2f}p (in {bbw_min:.2f}-{bbw_max:.2f}p)")
+                                                    if bool(hg.get('slope_enabled', False)):
+                                                        mode = 'fast-only' if bool(hg.get('slope_fast_only', False)) else 'full'
+                                                        parts.append(f"Slope F/S {fast:.3f}/{slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}) mode={mode}")
+                                                    gate_vals = " | ".join(parts)
+                                                except Exception:
+                                                    gate_vals = ""
+                                                # Summary
+                                                try:
+                                                    v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
+                                                    s_show = '✅'  # slope already passed here
+                                                    bbw_show = '—'
+                                                    try:
+                                                        if bool(hg.get('bbw_exec_enabled', False)):
+                                                            bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                                            bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                                            bbw_show = '✅' if (bbw_p >= bbw_min and bbw_p <= bbw_max) else '❌'
+                                                    except Exception:
+                                                        pass
+                                                    reg_show = '✅' if reg_ok else '❌'
+                                                    summary_line = f"Gates: Wick{'✅' if w_ok else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show} Reg{reg_show}"
+                                                except Exception:
+                                                    summary_line = ""
+                                                await self.tg.send_message(
+                                                    f"🛑 Scalp EXEC hard-gate blocked: {sym} {side_emoji} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                                    f"Gate failures: regime — phantom recorded\n"
+                                                    f"{summary_line}\n"
+                                                    f"{gate_vals}\n"
+                                                    f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
+                                                )
+                                        except Exception:
+                                            pass
+                                        try:
+                                            scpt.record_scalp_signal(
+                                                sym,
+                                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                                float(ml_s or 0.0),
+                                                False,
+                                                sc_feats
+                                            )
+                                            _scalp_decision_logged = True
+                                            self._scalp_cooldown[sym] = bar_ts
+                                            blist.append(now_ts)
+                                            self._scalp_budget[sym] = blist
+                                        except Exception:
+                                            pass
+                                        continue
+                            except Exception:
+                                pass
                             # Determine risk percent per rule
                             try:
                                 rmap = (self.shared.get('scalp_gate_risk') or {}) if hasattr(self, 'shared') else {}
-                                # Path selection (HTF disabled): prefer Body+Vol+Slope, else Vol+Slope
-                                if body_pass and (not vol_enabled or vol_pass):
-                                    path = 'body'
-                                elif (not body_pass) and (not vol_enabled or vol_pass):
+                                # Path selection (HTF disabled): prefer Wick+Vol+Slope, else Vol+Slope
+                                if wick_pass and (not vol_enabled or vol_pass):
+                                    path = 'wick'
+                                elif (not wick_pass) and (not vol_enabled or vol_pass):
                                     path = 'vol'
-                                elif htf_pass and (body_pass and (not vol_enabled or vol_pass)):
+                                elif htf_pass and (wick_pass and (not vol_enabled or vol_pass)):
                                     path = 'both'  # legacy ALL case if HTF is enabled later
                                 elif htf_pass:
                                     path = 'htf'
                                 else:
-                                    path = 'body'
+                                    path = 'wick'
                                 risk_pct = float(rmap.get(path, 15.0 if path == 'both' else (10.0 if path == 'htf' else 2.0)))
                             except Exception:
-                                path = 'body' if (body_pass and (not vol_enabled or vol_pass)) else ('vol' if (not body_pass and (not vol_enabled or vol_pass)) else ('both' if (htf_pass and body_pass) else ('htf' if htf_pass else 'body')))
+                                path = 'wick' if (wick_pass and (not vol_enabled or vol_pass)) else ('vol' if (not wick_pass and (not vol_enabled or vol_pass)) else ('both' if (htf_pass and wick_pass) else ('htf' if htf_pass else 'wick')))
                                 risk_pct = 15.0 if path == 'both' else (10.0 if path == 'htf' else 2.0)
                             # Prepare detailed notify
                             try:
@@ -3799,8 +3924,23 @@ class TradingBot:
                                             sc_sig.meta['exec_id'] = exec_id
                                     sc_feats['exec_id'] = exec_id
                                 gate_lines = []
-                                gate_lines.append(f"HTF: {'✅' if htf_pass else '❌'} {ts15:.0f} (≥ {thr_ts:.0f})")
-                                gate_lines.append(f"Body: {'✅' if body_pass else '❌'} {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})")
+                                # Regime gate (normal-only by default)
+                                try:
+                                    reg_ok = True
+                                    reg_en = bool(hg.get('regime_enabled', True))
+                                    cur_reg = str(sc_feats.get('volatility_regime', 'normal'))
+                                    allowed_regs = list(hg.get('allowed_regimes', ['normal']))
+                                    reg_ok = (cur_reg in allowed_regs) if reg_en else True
+                                    gate_lines.append(f"Regime: {'✅' if reg_ok else '❌'} {cur_reg} (allow {','.join(allowed_regs)})")
+                                except Exception:
+                                    pass
+                                # Wick alignment line
+                                try:
+                                    if wick_enabled:
+                                        w_ok = (lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta)
+                                        gate_lines.append(f"Wick: {'✅' if w_ok else '❌'} L={lw:.2f} U={uw:.2f} Δ≥{wdelta:.2f}")
+                                except Exception:
+                                    pass
                                 if vol_enabled:
                                     gate_lines.append(f"Vol: {'✅' if vol_pass else '❌'} {vol_ratio:.2f} (≥ {vmin:.2f})")
                                 # BBW percentile
@@ -3830,9 +3970,9 @@ class TradingBot:
                                 comps = sc_feats.get('qscore_components', {}) or {}
                                 comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
                                 # Label the reason based on actual passing gates
-                                if body_pass and (not vol_enabled or vol_pass):
-                                    reason_txt = 'Body+Vol+Slope'
-                                elif (not body_pass) and (not vol_enabled or vol_pass):
+                                if wick_pass and (not vol_enabled or vol_pass):
+                                    reason_txt = 'Wick+Vol+Slope'
+                                elif (not wick_pass) and (not vol_enabled or vol_pass):
                                     reason_txt = 'Vol+Slope'
                                 else:
                                     reason_txt = 'Gate'
@@ -3871,7 +4011,17 @@ class TradingBot:
                                             bbw_show = '—'
                                     except Exception:
                                         bbw_show = '—'
-                                    summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show}"
+                                    # Regime summary
+                                    try:
+                                        if bool(hg.get('regime_enabled', True)):
+                                            cur_reg = str(sc_feats.get('volatility_regime', 'normal'))
+                                            reg_ok = cur_reg in list(hg.get('allowed_regimes', ['normal']))
+                                            reg_show = '✅' if reg_ok else '❌'
+                                        else:
+                                            reg_show = '—'
+                                    except Exception:
+                                        reg_show = '—'
+                                    summary_line = f"Gates: Wick{'✅' if wick_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show} Reg{reg_show}"
                                 except Exception:
                                     summary_line = ""
                                 await self.tg.send_message(
@@ -3902,7 +4052,7 @@ class TradingBot:
                                     self._scalp_cooldown[sym] = bar_ts
                                     blist.append(now_ts)
                                     self._scalp_budget[sym] = blist
-                                    logger.info(f"[{sym}|id={sc_feats.get('exec_id','n/a')}] 🧮 Scalp decision final: exec_scalp (reason=gate {'HTF+Body' if (htf_pass and body_pass) else ('HTF' if htf_pass else 'Body')})")
+                                    logger.info(f"[{sym}|id={sc_feats.get('exec_id','n/a')}] 🧮 Scalp decision final: exec_scalp (reason=gate {'HTF+Wick' if (htf_pass and wick_pass) else ('HTF' if htf_pass else 'Wick')})")
                                 except Exception:
                                     pass
                                 continue
@@ -3943,9 +4093,10 @@ class TradingBot:
                                             hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
                                             ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
                                             thr_ts = float(hg.get('htf_min_ts15', 70.0))
-                                            body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
-                                            bmin = float(hg.get('body_ratio_min_3m', 0.50 if bool(hg.get('body_enabled', False)) else 0.35))
-                                            bdir = str(sc_feats.get('body_sign', 'flat'))
+                                            # Wick values
+                                            uw = float(sc_feats.get('upper_wick_ratio', 0.0) or 0.0)
+                                            lw = float(sc_feats.get('lower_wick_ratio', 0.0) or 0.0)
+                                            wdelta = float(hg.get('wick_delta_min', 0.10))
                                             vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
                                             vmin = float(hg.get('vol_ratio_min_3m', 1.30))
                                             # Slope details
@@ -3953,9 +4104,13 @@ class TradingBot:
                                             slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
                                             min_fast = float(hg.get('slope_fast_min_pb', 0.03))
                                             min_slow = float(hg.get('slope_slow_min_pb', 0.015))
-                                            parts = [
-                                                f"Body {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})"
-                                            ]
+                                            parts = []
+                                            # Wick align presentation
+                                            try:
+                                                w_ok = (lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta)
+                                                parts.append(f"Wick {'✅' if w_ok else '❌'} L={lw:.2f} U={uw:.2f} Δ≥{wdelta:.2f}")
+                                            except Exception:
+                                                pass
                                             if bool(hg.get('vol_enabled', False)):
                                                 parts.append(f"Vol {vol_ratio:.2f} (≥ {vmin:.2f})")
                                             # BBW percentile
@@ -4002,7 +4157,23 @@ class TradingBot:
                                                     bbw_show = '—'
                                             except Exception:
                                                 bbw_show = '—'
-                                            summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show}"
+                                            # Regime summary indicator
+                                            try:
+                                                if bool(hg.get('regime_enabled', True)):
+                                                    cur_reg = str(sc_feats.get('volatility_regime', 'normal'))
+                                                    reg_ok = cur_reg in list(hg.get('allowed_regimes', ['normal']))
+                                                    reg_show = '✅' if reg_ok else '❌'
+                                                else:
+                                                    reg_show = '—'
+                                            except Exception:
+                                                reg_show = '—'
+                                            # Wick summary indicator
+                                            try:
+                                                w_ok = (lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta)
+                                                w_show = '✅' if w_ok else '❌'
+                                            except Exception:
+                                                w_show = '—'
+                                            summary_line = f"Gates: Wick{w_show} Vol{v_show} Slope{s_show} BBW{bbw_show} Reg{reg_show}"
                                         except Exception:
                                             summary_line = ""
                                         await self.tg.send_message(
@@ -4095,19 +4266,18 @@ class TradingBot:
                                         # Extract volume ratio and body ratio for display
                                         vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
                                         vol_str = f" Vol={vol_ratio:.2f}x" if vol_ratio > 0 else ""
-                                        # Gate status indicators (Body/Vol/Slope/VWAP) and ATR snapshot
+                                        # Gate status indicators (Wick/Vol/Slope/VWAP/Regime) and ATR snapshot
                                         gate_str = ""
                                         try:
                                             hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
-                                            # Body gate (show pass/fail, threshold and direction)
-                                            if bool(hg.get('body_enabled', False)):
-                                                body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
-                                                bmin = float(hg.get('body_ratio_min_3m', 0.35))
-                                                body_sign = str(sc_feats.get('body_sign', 'flat'))
-                                                body_dir_ok = (sc_sig.side == 'long' and body_sign == 'up') or (sc_sig.side == 'short' and body_sign == 'down')
-                                                body_pass = body_ratio >= bmin and body_dir_ok
-                                                body_emoji = "✅" if body_pass else "❌"
-                                                gate_str += f" Body:{body_emoji}{body_ratio:.2f}(≥{bmin:.2f}) dir={body_sign}"
+                                            # Wick gate (show pass/fail and delta)
+                                            if bool(hg.get('wick_enabled', True)):
+                                                uw = float(sc_feats.get('upper_wick_ratio', 0.0) or 0.0)
+                                                lw = float(sc_feats.get('lower_wick_ratio', 0.0) or 0.0)
+                                                wdelta = float(hg.get('wick_delta_min', 0.10))
+                                                w_ok = (lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta)
+                                                w_emoji = '✅' if w_ok else '❌'
+                                                gate_str += f" Wick:{w_emoji}L={lw:.2f} U={uw:.2f} Δ≥{wdelta:.2f}"
                                             # Vol gate
                                             if bool(hg.get('vol_enabled', False)):
                                                 vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
@@ -4273,10 +4443,12 @@ class TradingBot:
                                     ts15 = float(sc_feats.get('ts15', 0.0) or 0.0)
                                     thr_ts = float(hg.get('htf_min_ts15', 70.0))
                                     htf_pass = bool(hg.get('htf_enabled', False)) and (ts15 >= thr_ts)
-                                    body_ratio = float(sc_feats.get('body_ratio', 0.0) or 0.0)
-                                    bmin = float(hg.get('body_ratio_min_3m', 0.35))
-                                    bdir = str(sc_feats.get('body_sign', 'flat'))
-                                    body_pass = bool(hg.get('body_enabled', False)) and (body_ratio >= bmin and ((sc_sig.side == 'long' and bdir == 'up') or (sc_sig.side == 'short' and bdir == 'down')))
+                                    # Wick alignment
+                                    uw = float(sc_feats.get('upper_wick_ratio', 0.0) or 0.0)
+                                    lw = float(sc_feats.get('lower_wick_ratio', 0.0) or 0.0)
+                                    wdelta = float(hg.get('wick_delta_min', 0.10))
+                                    wick_enabled = bool(hg.get('wick_enabled', True))
+                                    wick_pass = (lw >= uw + wdelta) if (wick_enabled and sc_sig.side == 'long') else ((uw >= lw + wdelta) if wick_enabled and sc_sig.side == 'short' else True)
                                     vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
                                     vmin = float(hg.get('vol_ratio_min_3m', 1.30))
                                     vol_enabled = bool(hg.get('vol_enabled', False))
@@ -4309,7 +4481,15 @@ class TradingBot:
                                             bbw_show = '—'
                                     except Exception:
                                         bbw_show = '—'
-                                    summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show}"
+                                    # Regime
+                                    try:
+                                        reg_en = bool(hg.get('regime_enabled', True))
+                                        cur_reg = str(sc_feats.get('volatility_regime', 'normal'))
+                                        reg_ok = (cur_reg in list(hg.get('allowed_regimes', ['normal']))) if reg_en else True
+                                        reg_show = '✅' if reg_ok else '❌'
+                                    except Exception:
+                                        reg_show = '—'
+                                    summary_line = f"Gates: Wick{'✅' if wick_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show} Reg{reg_show}"
                                 except Exception:
                                     summary_line = ""
                                 await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}{extra}) — phantom recorded (id={ex_id or 'n/a'})\nGates: {summary_line}\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
@@ -7470,7 +7650,7 @@ class TradingBot:
                     "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0, "policy_rejects": 0},
                     # Default Scalp gate risk tiers (overridable at runtime via Telegram)
                     "scalp_gate_risk": (lambda c: {
-                        'body': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('body', 2.0)),
+                        'wick': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('wick', 2.0)),
                         'vol': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('vol', 0.5)),
                         'htf': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('htf', 10.0)),
                         'both': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('both', 15.0)),
@@ -7630,8 +7810,8 @@ class TradingBot:
             # Routing stickiness state per symbol
             "routing_state": {},
             # Ensure Scalp gate risk tiers are present (preserve existing values if already set)
-            "scalp_gate_risk": (lambda prev, c: prev if isinstance(prev, dict) and {'body','htf','both'} <= set(prev.keys()) else {
-                'body': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('body', 2.0)),
+            "scalp_gate_risk": (lambda prev, c: prev if isinstance(prev, dict) and {'wick','htf','both'} <= set(prev.keys()) else {
+                'wick': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('wick', 2.0)),
                 'htf': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('htf', 10.0)),
                 'both': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('both', 15.0)),
             })(self.shared.get('scalp_gate_risk') if hasattr(self,'shared') and isinstance(self.shared, dict) else None, cfg)

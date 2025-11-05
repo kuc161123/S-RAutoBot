@@ -1687,7 +1687,7 @@ class TGBot:
             "• /scalpmlwr — ML WR buckets (30d)",
             "• /scalptimewr — Sessions/Days WR (30d)",
             "• /scalptimewrvars <sessions|days> <key> — Variable WR filtered by session/day",
-            "• /scalpgaterisk [body|htf|both] <percent> — Set risk% for gate-based executes",
+            "• /scalpgaterisk [wick] <percent> — Set risk% for gate-based executes",
             "• /scalpoffhours on|off — Toggle off-hours exec block",
             "• /scalpoffhourswindow add|remove HH:MM-HH:MM — Manage off-hours windows",
             "• /scalpoffhoursexception htf on|off | both on|off — Allow HTF≥70 or BOTH during off-hours",
@@ -5991,7 +5991,7 @@ class TGBot:
 
         Usage:
           /scalpgaterisk              → show current values
-          /scalpgaterisk body 2.5     → set Body pass risk to 2.5%
+          /scalpgaterisk wick 2.5     → set Wick pass risk to 2.5%
           /scalpgaterisk htf 10       → set HTF pass risk to 10%
           /scalpgaterisk both 15      → set Both pass risk to 15%
         Aliases: /scalprisk
@@ -6000,24 +6000,24 @@ class TGBot:
             args = ctx.args if hasattr(ctx, 'args') else []
             shared = self.shared
             if 'scalp_gate_risk' not in shared or not isinstance(shared['scalp_gate_risk'], dict):
-                shared['scalp_gate_risk'] = {'body': 2.0, 'htf': 10.0, 'both': 15.0}
+                shared['scalp_gate_risk'] = {'wick': 2.0, 'htf': 10.0, 'both': 15.0, 'vol': 0.5}
             rmap = shared['scalp_gate_risk']
             if not args or len(args) == 0:
                 await self.safe_reply(update,
                     "🩳 *Scalp Gate Risk*\n"+
-                    f"• Body+Vol+Slope (active): {float(rmap.get('body',2.0)):.2f}%\n"+
+                    f"• Wick+Vol+Slope (active): {float(rmap.get('wick',2.0)):.2f}%\n"+
                     f"• Vol+Slope (disabled): {float(rmap.get('vol',0.5)):.2f}%\n"+
                     f"• HTF+Slope (disabled): {float(rmap.get('htf',10.0)):.2f}%\n"+
                     f"• ALL aligned (disabled): {float(rmap.get('both',15.0)):.2f}%\n\n"+
-                    "• /scalpgaterisk [body] <percent> — Set risk% for gate-based executes"
+                    "• /scalpgaterisk [wick] <percent> — Set risk% for gate-based executes"
                 )
                 return
             if len(args) != 2:
-                await self.safe_reply(update, "Usage: /scalpgaterisk [body] <percent>")
+                await self.safe_reply(update, "Usage: /scalpgaterisk [wick] <percent>")
                 return
             gate = args[0].strip().lower()
-            if gate not in ('body',):
-                await self.safe_reply(update, "Gate must be: body")
+            if gate not in ('wick',):
+                await self.safe_reply(update, "Gate must be: wick")
                 return
             try:
                 pct = float(args[1])
@@ -6032,7 +6032,7 @@ class TGBot:
             self.shared['scalp_gate_risk'] = rmap
             await self.safe_reply(update,
                 "✅ *Scalp Gate Risk Updated*\n"+
-                f"• Body+Vol+Slope: {float(rmap.get('body',2.0)):.2f}%\n"+
+                f"• Wick+Vol+Slope: {float(rmap.get('wick',2.0)):.2f}%\n"+
                 f"• Vol+Slope: {float(rmap.get('vol',0.5)):.2f}%\n"+
                 f"• HTF+Slope: {float(rmap.get('htf',10.0)):.2f}%\n"+
                 f"• ALL aligned: {float(rmap.get('both',15.0)):.2f}%"

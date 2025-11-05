@@ -3652,11 +3652,95 @@ class TradingBot:
                                                 # Gate summary at-a-glance
                                                 v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
                                                 s_show = '❌'  # slope misaligned here
-                                                summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
+                                                # BBW summary indicator (if enabled)
+                                                try:
+                                                    if bool(hg.get('bbw_exec_enabled', False)):
+                                                        bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                                        bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                                        bbw_show = '✅' if (bbw_p >= bbw_min and bbw_p <= bbw_max) else '❌'
+                                                    else:
+                                                        bbw_show = '—'
+                                                except Exception:
+                                                    bbw_show = '—'
+                                                summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show}"
                                                 await self.tg.send_message(
                                                     f"🛑 Scalp EXEC blocked: EMA slope misaligned {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
                                                     f"{summary_line}\n"
                                                     f"Fast={fast:.3f}% (≥ {min_fast:.3f}%) | Slow={slow:.3f}% (≥ {min_slow:.3f}%) | mode={'fast-only' if fast_only else 'full'}\n"
+                                                    f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
+                                                )
+                                        except Exception:
+                                            pass
+                                        try:
+                                            scpt.record_scalp_signal(
+                                                sym,
+                                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                                float(ml_s or 0.0),
+                                                False,
+                                                sc_feats
+                                            )
+                                            _scalp_decision_logged = True
+                                            self._scalp_cooldown[sym] = bar_ts
+                                            blist.append(now_ts)
+                                            self._scalp_budget[sym] = blist
+                                        except Exception:
+                                            pass
+                                        continue
+                            except Exception:
+                                pass
+                            # Enforce BBW band (execution-only gate)
+                            try:
+                                bbw_exec_enabled = bool(hg.get('bbw_exec_enabled', False))
+                                if bbw_exec_enabled:
+                                    bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                    bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                    bbw_ok = (bbw_p >= bbw_min) and (bbw_p <= bbw_max)
+                                    if not bbw_ok:
+                                        # Block execution due to BBW band, notify and record phantom
+                                        try:
+                                            if self.tg:
+                                                side_emoji = "🟢" if sc_sig.side == 'long' else "🔴"
+                                                # Build detailed gate value line
+                                                try:
+                                                    fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
+                                                    slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
+                                                    min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+                                                    min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+                                                    parts = [
+                                                        f"Body {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})"
+                                                    ]
+                                                    if bool(hg.get('vol_enabled', False)):
+                                                        parts.append(f"Vol {vol_ratio:.2f} (≥ {vmin:.2f})")
+                                                    parts.append(f"BBW {'✅' if bbw_ok else '❌'} {bbw_p:.2f}p (in {bbw_min:.2f}-{bbw_max:.2f}p)")
+                                                    if bool(hg.get('slope_enabled', False)):
+                                                        mode = 'fast-only' if bool(hg.get('slope_fast_only', False)) else 'full'
+                                                        parts.append(f"Slope F/S {fast:.3f}/{slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}) mode={mode}")
+                                                    gate_vals = " | ".join(parts)
+                                                except Exception:
+                                                    gate_vals = ""
+                                                # Compact summary line with BBW
+                                                try:
+                                                    v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
+                                                    # slope ok by this point; recompute
+                                                    sl_ok = True
+                                                    if bool(hg.get('slope_enabled', False)):
+                                                        if fast_only:
+                                                            sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                                        else:
+                                                            if sc_sig.side == 'long':
+                                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                                            else:
+                                                                sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                                    s_show = ('✅' if sl_ok else ('❌' if bool(hg.get('slope_enabled', False)) else '—'))
+                                                    bbw_show = '✅' if bbw_ok else '❌'
+                                                    summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show}"
+                                                except Exception:
+                                                    summary_line = ""
+                                                await self.tg.send_message(
+                                                    f"🛑 Scalp EXEC hard-gate blocked: {sym} {side_emoji} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                                    f"Gate failures: bbw_band — phantom recorded\n"
+                                                    f"{summary_line}\n"
+                                                    f"{gate_vals}\n"
                                                     f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
                                                 )
                                         except Exception:
@@ -3879,7 +3963,8 @@ class TradingBot:
                                                 if bool(hg.get('bbw_exec_enabled', False)):
                                                     bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
                                                     bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
-                                                    parts.append(f"BBW {bbw_p:.2f}p (in {bbw_min:.2f}-{bbw_max:.2f}p)")
+                                                    bbw_ok = (bbw_p >= bbw_min) and (bbw_p <= bbw_max)
+                                                    parts.append(f"BBW {'✅' if bbw_ok else '❌'} {bbw_p:.2f}p (in {bbw_min:.2f}-{bbw_max:.2f}p)")
                                             except Exception:
                                                 pass
                                             if bool(hg.get('slope_enabled', False)):
@@ -3907,7 +3992,17 @@ class TradingBot:
                                                         sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                             v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
                                             s_show = ('✅' if sl_ok else ('❌' if bool(hg.get('slope_enabled', False)) else '—'))
-                                            summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
+                                            # BBW summary indicator
+                                            try:
+                                                if bool(hg.get('bbw_exec_enabled', False)):
+                                                    bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                                    bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                                    bbw_show = '✅' if (bbw_p >= bbw_min and bbw_p <= bbw_max) else '❌'
+                                                else:
+                                                    bbw_show = '—'
+                                            except Exception:
+                                                bbw_show = '—'
+                                            summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show}"
                                         except Exception:
                                             summary_line = ""
                                         await self.tg.send_message(
@@ -4204,7 +4299,17 @@ class TradingBot:
                                                 sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                     v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
                                     s_show = ('✅' if sl_ok else ('❌' if slope_enabled else '—'))
-                                    summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show}"
+                                    # BBW summary indicator (if enabled)
+                                    try:
+                                        if bool(hg.get('bbw_exec_enabled', False)):
+                                            bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                            bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                            bbw_show = '✅' if (bbw_p >= bbw_min and bbw_p <= bbw_max) else '❌'
+                                        else:
+                                            bbw_show = '—'
+                                    except Exception:
+                                        bbw_show = '—'
+                                    summary_line = f"Gates: Body{'✅' if body_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show}"
                                 except Exception:
                                     summary_line = ""
                                 await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}{extra}) — phantom recorded (id={ex_id or 'n/a'})\nGates: {summary_line}\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")

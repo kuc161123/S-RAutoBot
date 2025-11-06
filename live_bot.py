@@ -3625,8 +3625,49 @@ class TradingBot:
                                 # Block execution: Wick passed but Volume did not
                                 try:
                                     if self.tg:
+                                        # Build compact gate summary including Regime
+                                        try:
+                                            v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
+                                            # recompute slope ok status for display
+                                            sl_ok = True
+                                            if bool(hg.get('slope_enabled', False)):
+                                                if fast_only:
+                                                    sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                                else:
+                                                    if sc_sig.side == 'long':
+                                                        sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                                    else:
+                                                        sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                            s_show = ('✅' if sl_ok else ('❌' if bool(hg.get('slope_enabled', False)) else '—'))
+                                            # BBW
+                                            try:
+                                                if bool(hg.get('bbw_exec_enabled', False)):
+                                                    bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                                    bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                                    bbw_show = '✅' if (bbw_p >= bbw_min and bbw_p <= bbw_max) else '❌'
+                                                else:
+                                                    bbw_show = '—'
+                                            except Exception:
+                                                bbw_show = '—'
+                                            # Wick
+                                            w_ok = (lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta)
+                                            w_show = '✅' if w_ok else '❌'
+                                            # Regime
+                                            try:
+                                                if bool(hg.get('regime_enabled', True)):
+                                                    cur_reg = str(sc_feats.get('volatility_regime', 'normal'))
+                                                    reg_ok = cur_reg in list(hg.get('allowed_regimes', ['normal']))
+                                                    reg_show = '✅' if reg_ok else '❌'
+                                                else:
+                                                    reg_show = '—'
+                                            except Exception:
+                                                reg_show = '—'
+                                            summary_line = f"Gates: Wick{w_show} Vol{v_show} Slope{s_show} BBW{bbw_show} Reg{reg_show}"
+                                        except Exception:
+                                            summary_line = ""
                                         await self.tg.send_message(
                                             f"🛑 Scalp EXEC blocked: Wick without Volume {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                            f"{summary_line}\n"
                                             f"Vol={vol_ratio:.2f} (≥ {vmin:.2f}) required | Wick L/U={lw:.2f}/{uw:.2f} Δ≥{wdelta:.2f}\n"
                                             f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
                                         )
@@ -3697,7 +3738,17 @@ class TradingBot:
                                                     w_show = '✅' if w_ok else '❌'
                                                 except Exception:
                                                     w_show = '—'
-                                                summary_line = f"Gates: Wick{w_show} Vol{v_show} Slope{s_show} BBW{bbw_show}"
+                                                # Regime summary
+                                                try:
+                                                    if bool(hg.get('regime_enabled', True)):
+                                                        cur_reg = str(sc_feats.get('volatility_regime', 'normal'))
+                                                        reg_ok = cur_reg in list(hg.get('allowed_regimes', ['normal']))
+                                                        reg_show = '✅' if reg_ok else '❌'
+                                                    else:
+                                                        reg_show = '—'
+                                                except Exception:
+                                                    reg_show = '—'
+                                                summary_line = f"Gates: Wick{w_show} Vol{v_show} Slope{s_show} BBW{bbw_show} Reg{reg_show}"
                                                 await self.tg.send_message(
                                                     f"🛑 Scalp EXEC blocked: EMA slope misaligned {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
                                                     f"{summary_line}\n"
@@ -3777,7 +3828,17 @@ class TradingBot:
                                                         w_show = '✅' if w_ok else '❌'
                                                     except Exception:
                                                         w_show = '—'
-                                                    summary_line = f"Gates: Wick{w_show} Vol{v_show} Slope{s_show} BBW{bbw_show}"
+                                                    # Regime summary
+                                                    try:
+                                                        if bool(hg.get('regime_enabled', True)):
+                                                            cur_reg = str(sc_feats.get('volatility_regime', 'normal'))
+                                                            reg_ok = cur_reg in list(hg.get('allowed_regimes', ['normal']))
+                                                            reg_show = '✅' if reg_ok else '❌'
+                                                        else:
+                                                            reg_show = '—'
+                                                    except Exception:
+                                                        reg_show = '—'
+                                                    summary_line = f"Gates: Wick{w_show} Vol{v_show} Slope{s_show} BBW{bbw_show} Reg{reg_show}"
                                                 except Exception:
                                                     summary_line = ""
                                                 await self.tg.send_message(

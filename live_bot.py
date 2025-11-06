@@ -3665,10 +3665,53 @@ class TradingBot:
                                             summary_line = f"Gates: Wick{w_show} Vol{v_show} Slope{s_show} BBW{bbw_show} Reg{reg_show}"
                                         except Exception:
                                             summary_line = ""
+                                        # Build full gate values line
+                                        try:
+                                            # Slope
+                                            sl_ok = True
+                                            if bool(hg.get('slope_enabled', False)):
+                                                if fast_only:
+                                                    sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                                else:
+                                                    if sc_sig.side == 'long':
+                                                        sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                                    else:
+                                                        sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                            slope_line = f"Slope: {'✅' if sl_ok else '❌'} F={fast:.3f}% S={slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}{' fast-only' if fast_only else ''})" if bool(hg.get('slope_enabled', False)) else "Slope: —"
+                                            # Vol
+                                            vol_line = f"Vol: {'✅' if (vol_enabled and vol_pass) else '❌'} {vol_ratio:.2f} (≥ {vmin:.2f})" if vol_enabled else "Vol: —"
+                                            # Wick
+                                            w_ok = (lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta)
+                                            wick_line = f"Wick: {'✅' if w_ok else '❌'} L={lw:.2f} U={uw:.2f} Δ≥{wdelta:.2f}"
+                                            # BBW
+                                            try:
+                                                if bool(hg.get('bbw_exec_enabled', False)):
+                                                    bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                                    bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                                    bbw_ok = (bbw_p >= bbw_min) and (bbw_p <= bbw_max)
+                                                    bbw_line = f"BBW: {'✅' if bbw_ok else '❌'} {bbw_p:.2f}p (in {bbw_min:.2f}-{bbw_max:.2f}p)"
+                                                else:
+                                                    bbw_line = "BBW: —"
+                                            except Exception:
+                                                bbw_line = "BBW: —"
+                                            # Regime
+                                            try:
+                                                if bool(hg.get('regime_enabled', True)):
+                                                    cur_reg = str(sc_feats.get('volatility_regime', 'normal'))
+                                                    allowed_regs = list(hg.get('allowed_regimes', ['normal']))
+                                                    reg_ok = cur_reg in allowed_regs
+                                                    reg_line = f"Regime: {'✅' if reg_ok else '❌'} {cur_reg} (allow {','.join(allowed_regs)})"
+                                                else:
+                                                    reg_line = "Regime: —"
+                                            except Exception:
+                                                reg_line = "Regime: —"
+                                            gate_vals_line = " | ".join([wick_line, vol_line, slope_line, bbw_line, reg_line])
+                                        except Exception:
+                                            gate_vals_line = ""
                                         await self.tg.send_message(
                                             f"🛑 Scalp EXEC blocked: Wick without Volume {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
                                             f"{summary_line}\n"
-                                            f"Vol={vol_ratio:.2f} (≥ {vmin:.2f}) required | Wick L/U={lw:.2f}/{uw:.2f} Δ≥{wdelta:.2f}\n"
+                                            f"{gate_vals_line}\n"
                                             f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
                                         )
                                 except Exception:
@@ -3749,9 +3792,45 @@ class TradingBot:
                                                 except Exception:
                                                     reg_show = '—'
                                                 summary_line = f"Gates: Wick{w_show} Vol{v_show} Slope{s_show} BBW{bbw_show} Reg{reg_show}"
+                                                # Build full gate values line
+                                                try:
+                                                    # Wick
+                                                    uw = float(sc_feats.get('upper_wick_ratio', 0.0) or 0.0)
+                                                    lw = float(sc_feats.get('lower_wick_ratio', 0.0) or 0.0)
+                                                    wdelta = float(hg.get('wick_delta_min', 0.10))
+                                                    w_ok = (lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta)
+                                                    wick_line = f"Wick: {'✅' if w_ok else '❌'} L={lw:.2f} U={uw:.2f} Δ≥{wdelta:.2f}"
+                                                except Exception:
+                                                    wick_line = "Wick: —"
+                                                # Vol
+                                                vol_line = f"Vol: {'✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—')} {vol_ratio:.2f} (≥ {vmin:.2f})" if vol_enabled else "Vol: —"
+                                                # BBW
+                                                try:
+                                                    if bool(hg.get('bbw_exec_enabled', False)):
+                                                        bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                                        bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                                        bbw_ok = (bbw_p >= bbw_min) and (bbw_p <= bbw_max)
+                                                        bbw_line = f"BBW: {'✅' if bbw_ok else '❌'} {bbw_p:.2f}p (in {bbw_min:.2f}-{bbw_max:.2f}p)"
+                                                    else:
+                                                        bbw_line = "BBW: —"
+                                                except Exception:
+                                                    bbw_line = "BBW: —"
+                                                # Regime
+                                                try:
+                                                    if bool(hg.get('regime_enabled', True)):
+                                                        cur_reg = str(sc_feats.get('volatility_regime', 'normal'))
+                                                        allowed_regs = list(hg.get('allowed_regimes', ['normal']))
+                                                        reg_ok = cur_reg in allowed_regs
+                                                        reg_line = f"Regime: {'✅' if reg_ok else '❌'} {cur_reg} (allow {','.join(allowed_regs)})"
+                                                    else:
+                                                        reg_line = "Regime: —"
+                                                except Exception:
+                                                    reg_line = "Regime: —"
+                                                vals_line = " | ".join([wick_line, vol_line, bbw_line, reg_line])
                                                 await self.tg.send_message(
                                                     f"🛑 Scalp EXEC blocked: EMA slope misaligned {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
                                                     f"{summary_line}\n"
+                                                    f"{vals_line}\n"
                                                     f"Fast={fast:.3f}% (≥ {min_fast:.3f}%) | Slow={slow:.3f}% (≥ {min_slow:.3f}%) | mode={'fast-only' if fast_only else 'full'}\n"
                                                     f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
                                                 )
@@ -4553,7 +4632,64 @@ class TradingBot:
                                     summary_line = f"Gates: Wick{'✅' if wick_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show} Reg{reg_show}"
                                 except Exception:
                                     summary_line = ""
-                                await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}{extra}) — phantom recorded (id={ex_id or 'n/a'})\nGates: {summary_line}\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
+                                # Build full gate values line (Wick/Vol/Slope/BBW/Regime)
+                                try:
+                                    hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                    # Wick
+                                    uw = float(sc_feats.get('upper_wick_ratio', 0.0) or 0.0)
+                                    lw = float(sc_feats.get('lower_wick_ratio', 0.0) or 0.0)
+                                    wdelta = float(hg.get('wick_delta_min', 0.10))
+                                    w_ok = (lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta)
+                                    wick_line = f"Wick: {'✅' if w_ok else '❌'} L={lw:.2f} U={uw:.2f} Δ≥{wdelta:.2f}"
+                                    # Vol
+                                    vol_enabled = bool(hg.get('vol_enabled', False))
+                                    vol_ratio = float(sc_feats.get('volume_ratio', 0.0) or 0.0)
+                                    vmin = float(hg.get('vol_ratio_min_3m', 1.30))
+                                    vol_line = f"Vol: {'✅' if (vol_enabled and vol_ratio >= vmin) else ('❌' if vol_enabled else '—')} {vol_ratio:.2f} (≥ {vmin:.2f})" if vol_enabled else "Vol: —"
+                                    # Slope
+                                    s_en = bool(hg.get('slope_enabled', False))
+                                    fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
+                                    slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
+                                    min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+                                    min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+                                    fast_only = bool(hg.get('slope_fast_only', False))
+                                    if s_en:
+                                        if fast_only:
+                                            sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                        else:
+                                            if sc_sig.side == 'long':
+                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                            else:
+                                                sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                        slope_line = f"Slope: {'✅' if sl_ok else '❌'} F={fast:.3f}% S={slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}{' fast-only' if fast_only else ''})"
+                                    else:
+                                        slope_line = "Slope: —"
+                                    # BBW
+                                    try:
+                                        if bool(hg.get('bbw_exec_enabled', False)):
+                                            bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                            bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                            bbw_ok = (bbw_p >= bbw_min) and (bbw_p <= bbw_max)
+                                            bbw_line = f"BBW: {'✅' if bbw_ok else '❌'} {bbw_p:.2f}p (in {bbw_min:.2f}-{bbw_max:.2f}p)"
+                                        else:
+                                            bbw_line = "BBW: —"
+                                    except Exception:
+                                        bbw_line = "BBW: —"
+                                    # Regime
+                                    try:
+                                        if bool(hg.get('regime_enabled', True)):
+                                            cur_reg = str(sc_feats.get('volatility_regime', 'normal'))
+                                            allowed_regs = list(hg.get('allowed_regimes', ['normal']))
+                                            reg_ok = cur_reg in allowed_regs
+                                            reg_line = f"Regime: {'✅' if reg_ok else '❌'} {cur_reg} (allow {','.join(allowed_regs)})"
+                                        else:
+                                            reg_line = "Regime: —"
+                                    except Exception:
+                                        reg_line = "Regime: —"
+                                    gate_vals2 = " | ".join([wick_line, vol_line, slope_line, bbw_line, reg_line])
+                                except Exception:
+                                    gate_vals2 = ""
+                                await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}{extra}) — phantom recorded (id={ex_id or 'n/a'})\nGates: {summary_line}\n{gate_vals2}\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
                     except Exception:
                         pass
 

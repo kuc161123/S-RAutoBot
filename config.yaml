@@ -559,7 +559,7 @@ scalp:
     wick_delta_min: 0.10
     # Volatility regime gate (execution): allow only configured regimes
     regime_enabled: true
-    allowed_regimes: ['normal']
+    allowed_regimes: ['normal','high']
     align_15m_enabled: false    # DISABLED
     leader_align_btc_enabled: false  # DISABLED
     # EMA slope gate (execution only)

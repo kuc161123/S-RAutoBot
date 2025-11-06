@@ -3108,12 +3108,15 @@ class TradingBot:
                                     reasons.append('filters_unmet')
                                 # Update per-symbol Scalp state flags
                                 try:
+                                    import time as _t
                                     self._scalp_symbol_state[sym] = {
                                         'mom': bool(_ema_up or _ema_dn),
                                         'pull': bool((_bbw_pct >= float(sc_settings.min_bb_width_pct)) and (max(_upper_w, _lower_w) >= float(sc_settings.wick_ratio_min))),
                                         'vwap': bool(_dist_vwap_atr <= float(sc_settings.vwap_dist_atr_max)),
                                         # Keep last q_ge_thr flag value until a new signal evaluates
-                                        **({'q_ge_thr': self._scalp_symbol_state.get(sym, {}).get('q_ge_thr', False)} if hasattr(self, '_scalp_symbol_state') else {})
+                                        **({'q_ge_thr': self._scalp_symbol_state.get(sym, {}).get('q_ge_thr', False)} if hasattr(self, '_scalp_symbol_state') else {}),
+                                        # Timestamp for TTL-based aggregation
+                                        'updated_at': float(_t.time())
                                     }
                                 except Exception:
                                     pass
@@ -5028,10 +5031,39 @@ class TradingBot:
                     now_ts = _t.time()
                     last = getattr(self, '_scalp_state_flush_ts', 0.0)
                     if (now_ts - float(last)) >= 30.0:
-                        mom = sum(1 for st in (self._scalp_symbol_state or {}).values() if st.get('mom'))
-                        pull = sum(1 for st in (self._scalp_symbol_state or {}).values() if st.get('pull'))
-                        vwap = sum(1 for st in (self._scalp_symbol_state or {}).values() if st.get('vwap'))
-                        qthr = sum(1 for st in (self._scalp_symbol_state or {}).values() if st.get('q_ge_thr'))
+                        # TTL for symbol state aggregation (seconds)
+                        TTL = 600.0  # 10 minutes default
+                        # Purge and aggregate with TTL
+                        nowf = float(now_ts)
+                        agg_mom = agg_pull = agg_vwap = agg_qthr = 0
+                        try:
+                            if hasattr(self, '_scalp_symbol_state') and isinstance(self._scalp_symbol_state, dict):
+                                stale_keys = []
+                                for k, st in self._scalp_symbol_state.items():
+                                    try:
+                                        tsu = float(st.get('updated_at', 0.0) or 0.0)
+                                    except Exception:
+                                        tsu = 0.0
+                                    if tsu and (nowf - tsu) <= TTL:
+                                        agg_mom += 1 if st.get('mom') else 0
+                                        agg_pull += 1 if st.get('pull') else 0
+                                        agg_vwap += 1 if st.get('vwap') else 0
+                                        agg_qthr += 1 if st.get('q_ge_thr') else 0
+                                    else:
+                                        # Mark for purge if older than 1 hour to avoid unbounded growth
+                                        try:
+                                            if tsu and (nowf - tsu) > 3600.0:
+                                                stale_keys.append(k)
+                                        except Exception:
+                                            pass
+                                for k in stale_keys:
+                                    try:
+                                        del self._scalp_symbol_state[k]
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                        mom = agg_mom; pull = agg_pull; vwap = agg_vwap; qthr = agg_qthr
                         exec_today = 0
                         try:
                             if hasattr(self, '_scalp_exec_counter'):
@@ -5064,6 +5096,11 @@ class TradingBot:
                         except Exception:
                             pass
                         self._scalp_state_flush_ts = now_ts
+                        # Reset reasons histogram after publish to avoid cumulative drift
+                        try:
+                            self._scalp_reasons = {}
+                        except Exception:
+                            pass
                 except Exception:
                     pass
             except Exception as e:

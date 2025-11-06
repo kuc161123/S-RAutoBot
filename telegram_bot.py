@@ -111,6 +111,7 @@ class TGBot:
         # Scalp gate risk adjustments
         self.app.add_handler(CommandHandler("scalpgaterisk", self.scalp_gate_risk))
         self.app.add_handler(CommandHandler("scalprisk", self.scalp_gate_risk))  # alias
+        self.app.add_handler(CommandHandler("scalpreset", self.scalp_reset))
         self.app.add_handler(CommandHandler("scalppatterns", self.scalp_patterns))
         self.app.add_handler(CommandHandler("scalpqwr", self.scalp_qscore_wr))
         self.app.add_handler(CommandHandler("scalpmlwr", self.scalp_mlscore_wr))
@@ -6040,6 +6041,45 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_gate_risk: {e}")
             await update.message.reply_text("Error updating scalp gate risk")
+
+    async def scalp_reset(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Force reset Scalp state counters and summary snapshot.
+
+        Clears per-symbol MOM/PULL/VWAP/Q flags, reasons histogram, and the Redis summary key.
+        Does not touch any open phantoms or positions.
+        """
+        try:
+            bot = (self.shared or {}).get('bot_instance') if hasattr(self, 'shared') else None
+            cleared = False
+            if bot is not None:
+                try:
+                    # Clear in-memory flags
+                    if hasattr(bot, '_scalp_symbol_state'):
+                        bot._scalp_symbol_state = {}
+                    if hasattr(bot, '_scalp_reasons'):
+                        bot._scalp_reasons = {}
+                    if hasattr(bot, '_scalp_state_flush_ts'):
+                        bot._scalp_state_flush_ts = 0.0
+                    cleared = True
+                except Exception:
+                    pass
+                # Clear Redis snapshot
+                try:
+                    if hasattr(bot, '_redis') and bot._redis is not None:
+                        bot._redis.delete('state:scalp:summary')
+                except Exception:
+                    pass
+                # Update shared summary to zeroed counters
+                try:
+                    from datetime import datetime as _dt
+                    snapshot = {'ts': _dt.utcnow().isoformat()+'Z', 'mom': 0, 'pull': 0, 'vwap': 0, 'q_ge_thr': 0, 'exec_today': 0, 'phantom_open': 0, 'reasons': {}}
+                    self.shared['scalp_states'] = snapshot
+                except Exception:
+                    pass
+            await self.safe_reply(update, "✅ Scalp states reset. Counters will repopulate with fresh data.")
+        except Exception as e:
+            logger.error(f"Error in scalp_reset: {e}")
+            await update.message.reply_text("❌ Error resetting scalp states")
 
     async def scalp_patterns(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show Scalp ML patterns: feature importances, time patterns, and condition buckets."""

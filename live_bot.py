@@ -2962,12 +2962,52 @@ class TradingBot:
                                 sc_settings.min_r_pct = float(s_cfg.get('min_r_pct'))
                         except Exception:
                             pass
-                        # Apply signal-generation specific thresholds (body, wick alignment)
+                        # Apply signal-generation specific thresholds (body, wick alignment, plus vwap/bbw/vol)
                         try:
                             if 'body_ratio_min' in sig_cfg:
                                 sc_settings.body_ratio_min = float(sig_cfg.get('body_ratio_min', sc_settings.body_ratio_min))
                             if 'wick_delta_min' in sig_cfg:
                                 sc_settings.wick_delta_min = float(sig_cfg.get('wick_delta_min', sc_settings.wick_delta_min))
+                            if 'vwap_dist_atr_max' in sig_cfg:
+                                sc_settings.vwap_dist_atr_max = float(sig_cfg.get('vwap_dist_atr_max', sc_settings.vwap_dist_atr_max))
+                            if 'min_bb_width_pct' in sig_cfg:
+                                sc_settings.min_bb_width_pct = float(sig_cfg.get('min_bb_width_pct', sc_settings.min_bb_width_pct))
+                            if 'vol_ratio_min' in sig_cfg:
+                                sc_settings.vol_ratio_min = float(sig_cfg.get('vol_ratio_min', sc_settings.vol_ratio_min))
+                        except Exception:
+                            pass
+                        # Optional soft ORB relax (signal-only): if price has broken the recent 20-bar range in trend direction
+                        try:
+                            orb_soft = sig_cfg.get('orb_soft', {}) or {}
+                            if bool(orb_soft.get('enabled', False)) and df3_for_sig is not None and len(df3_for_sig) >= 40:
+                                _c = df3_for_sig['close']; _h = df3_for_sig['high']; _l = df3_for_sig['low']
+                                # compute EMAs using current sc_settings
+                                _ema_f = _c.ewm(span=sc_settings.ema_fast, adjust=False).mean()
+                                _ema_s = _c.ewm(span=sc_settings.ema_slow, adjust=False).mean()
+                                _cl = float(_c.iloc[-1]); _recent_high = float(_h.iloc[-20:].max()); _recent_low = float(_l.iloc[-20:].min())
+                                _ema_up = (_cl > float(_ema_f.iloc[-1]) > float(_ema_s.iloc[-1]))
+                                _ema_dn = (_cl < float(_ema_f.iloc[-1]) < float(_ema_s.iloc[-1]))
+                                orb_true = (_ema_up and _cl >= _recent_high) or (_ema_dn and _cl <= _recent_low)
+                                if orb_true:
+                                    # Session-aware factor
+                                    try:
+                                        sess = self._session_label().lower() if hasattr(self, '_session_label') else 'us'
+                                        rf = (sig_cfg.get('relax_by_session', {}) or {}).get(sess, 1.0)
+                                        rf = float(rf) if rf else 1.0
+                                    except Exception:
+                                        rf = 1.0
+                                    try:
+                                        sc_settings.vwap_dist_atr_max = float(sc_settings.vwap_dist_atr_max) + rf * float(orb_soft.get('vwap_cap_bump', 0.0))
+                                    except Exception:
+                                        pass
+                                    try:
+                                        sc_settings.wick_delta_min = max(0.0, float(sc_settings.wick_delta_min) - rf * float(orb_soft.get('wick_delta_relax', 0.0)))
+                                    except Exception:
+                                        pass
+                                    try:
+                                        sc_settings.body_ratio_min = max(0.0, float(sc_settings.body_ratio_min) - rf * float(orb_soft.get('body_min_relax', 0.0)))
+                                    except Exception:
+                                        pass
                         except Exception:
                             pass
                         if exp.get('relax_enabled', False):

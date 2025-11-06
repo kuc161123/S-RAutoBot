@@ -259,7 +259,7 @@ ml:
 # Phantom pacing (per-strategy) — increase Scalp flow, keep exec strict via Qscore
 phantom:
   hourly_symbol_budget:
-    scalp: 8    # was 4 (default). Allow up to 8 scalp phantoms per symbol per hour
+    scalp: 12   # increase phantom throughput per symbol per hour
   caps:
     scalp:
       none: 0 # 0 = unlimited daily scalp phantoms (hourly budget still enforced)
@@ -530,8 +530,20 @@ scalp:
   cooldown_bars: 4       # Stricter cooldown to reduce noise
   # Signal-generation thresholds (phantoms also benefit)
   signal:
-    body_ratio_min: 0.30
-    wick_delta_min: 0.10
+    # Signal-only thresholds (do not affect execution hard gates)
+    body_ratio_min: 0.25       # was 0.30
+    wick_delta_min: 0.05       # was 0.10
+    vwap_dist_atr_max: 1.50    # allow deeper pulls for detection
+    min_bb_width_pct: 0.45     # accept narrower bands in signal
+    vol_ratio_min: 0.90        # accept lighter volume expansion
+    # Optional soft ORB relax that slightly loosens thresholds when price has broken out of 20-bar range in trend direction
+    orb_soft:
+      enabled: false           # set true to activate soft relax on ORB
+      vwap_cap_bump: 0.20      # adds to vwap_dist_atr_max when ORB=true
+      wick_delta_relax: 0.05   # subtract from wick_delta_min when ORB=true
+      body_min_relax: 0.05     # subtract from body_ratio_min when ORB=true
+    # Session-aware relax multipliers (applied to soft relax amounts)
+    relax_by_session: {us: 1.0, european: 0.9, asian: 0.85, off_hours: 0.85}
   hard_gates:
     apply_to_exec: true
     apply_to_phantoms: false  # Phantoms always recorded for gate analysis

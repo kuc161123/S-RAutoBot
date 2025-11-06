@@ -3011,10 +3011,13 @@ class TradingBot:
                         except Exception:
                             pass
                         if exp.get('relax_enabled', False):
-                            # Apply relaxed thresholds for phantom exploration only
-                            sc_settings.vwap_dist_atr_max = float(exp.get('vwap_dist_atr_max', sc_settings.vwap_dist_atr_max))
-                            sc_settings.min_bb_width_pct = float(exp.get('min_bb_width_pct', sc_settings.min_bb_width_pct))
-                            sc_settings.vol_ratio_min = float(exp.get('vol_ratio_min', sc_settings.vol_ratio_min))
+                            # Apply relaxed thresholds for phantom exploration only (do NOT override explicit signal overrides)
+                            if 'vwap_dist_atr_max' not in (sig_cfg or {}):
+                                sc_settings.vwap_dist_atr_max = float(exp.get('vwap_dist_atr_max', sc_settings.vwap_dist_atr_max))
+                            if 'min_bb_width_pct' not in (sig_cfg or {}):
+                                sc_settings.min_bb_width_pct = float(exp.get('min_bb_width_pct', sc_settings.min_bb_width_pct))
+                            if 'vol_ratio_min' not in (sig_cfg or {}):
+                                sc_settings.vol_ratio_min = float(exp.get('vol_ratio_min', sc_settings.vol_ratio_min))
                             # Allow tuning of additional params if provided
                             if 'wick_ratio_min' in exp:
                                 sc_settings.wick_ratio_min = float(exp.get('wick_ratio_min', sc_settings.wick_ratio_min))

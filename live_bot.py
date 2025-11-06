@@ -4499,7 +4499,63 @@ class TradingBot:
                                                 gate_str += f" Slope:{sl_emoji}{fast:.3f}/{slow:.3f}%{(' '+mode) if mode else ''}"
                                         except Exception:
                                             pass
-                                        await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f}){vol_str}{gate_str} (id={exec_id})\n{comp_line}")
+                                        # Build full gate values line for parity (Wick/Vol/Slope/BBW/Regime)
+                                        try:
+                                            hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                            # Wick
+                                            uw = float(sc_feats.get('upper_wick_ratio', 0.0) or 0.0)
+                                            lw = float(sc_feats.get('lower_wick_ratio', 0.0) or 0.0)
+                                            wdelta = float(hg.get('wick_delta_min', 0.10))
+                                            w_ok = (lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta)
+                                            wick_line = f"Wick: {'✅' if w_ok else '❌'} L={lw:.2f} U={uw:.2f} Δ≥{wdelta:.2f}"
+                                            # Vol
+                                            vol_enabled2 = bool(hg.get('vol_enabled', False))
+                                            vmin2 = float(hg.get('vol_ratio_min_3m', 1.30))
+                                            vol_line = f"Vol: {'✅' if (vol_enabled2 and vol_ratio >= vmin2) else ('❌' if vol_enabled2 else '—')} {vol_ratio:.2f} (≥ {vmin2:.2f})" if vol_enabled2 else "Vol: —"
+                                            # Slope
+                                            s_en = bool(hg.get('slope_enabled', False))
+                                            fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
+                                            slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
+                                            min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+                                            min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+                                            fast_only = bool(hg.get('slope_fast_only', False))
+                                            if s_en:
+                                                if fast_only:
+                                                    sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                                else:
+                                                    if sc_sig.side == 'long':
+                                                        sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                                    else:
+                                                        sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                                slope_line = f"Slope: {'✅' if sl_ok else '❌'} F={fast:.3f}% S={slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}{' fast-only' if fast_only else ''})"
+                                            else:
+                                                slope_line = "Slope: —"
+                                            # BBW
+                                            try:
+                                                if bool(hg.get('bbw_exec_enabled', False)):
+                                                    bbw_p = float(sc_feats.get('bb_width_pctile', 0.0) or 0.0)
+                                                    bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                                                    bbw_ok = (bbw_p >= bbw_min) and (bbw_p <= bbw_max)
+                                                    bbw_line = f"BBW: {'✅' if bbw_ok else '❌'} {bbw_p:.2f}p (in {bbw_min:.2f}-{bbw_max:.2f}p)"
+                                                else:
+                                                    bbw_line = "BBW: —"
+                                            except Exception:
+                                                bbw_line = "BBW: —"
+                                            # Regime
+                                            try:
+                                                if bool(hg.get('regime_enabled', True)):
+                                                    cur_reg = str(sc_feats.get('volatility_regime', 'normal'))
+                                                    allowed_regs = list(hg.get('allowed_regimes', ['normal']))
+                                                    reg_ok = cur_reg in allowed_regs
+                                                    reg_line = f"Regime: {'✅' if reg_ok else '❌'} {cur_reg} (allow {','.join(allowed_regs)})"
+                                                else:
+                                                    reg_line = "Regime: —"
+                                            except Exception:
+                                                reg_line = "Regime: —"
+                                            gate_vals3 = " | ".join([wick_line, vol_line, slope_line, bbw_line, reg_line])
+                                        except Exception:
+                                            gate_vals3 = ""
+                                        await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f}){vol_str}{gate_str} (id={exec_id})\n{gate_vals3}\n{comp_line}")
                                 except Exception:
                                     pass
                                 try:

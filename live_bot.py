@@ -3066,8 +3066,12 @@ class TradingBot:
                             _ema_f = _c.ewm(span=sc_settings.ema_fast, adjust=False).mean()
                             _ema_s = _c.ewm(span=sc_settings.ema_slow, adjust=False).mean()
                             _tp = (_h + _l + _c) / 3
-                            _pv = _tp * _v.clip(lower=0.0)
-                            _vwap = _pv.rolling(sc_settings.vwap_window).sum() / _v.rolling(sc_settings.vwap_window).sum().replace(0, _np.nan)
+                            # Exponential VWAP: ema(pv)/ema(vol) for faster adaptation
+                            _vol_clipped = _v.clip(lower=0.0)
+                            _pv = _tp * _vol_clipped
+                            _num = _pv.ewm(span=sc_settings.vwap_window, adjust=False).mean()
+                            _den = _vol_clipped.ewm(span=sc_settings.vwap_window, adjust=False).mean().replace(0, _np.nan)
+                            _vwap = _num / _den
                             _std20 = _c.rolling(20).std(); _bbw = (_std20 / _c).fillna(0)
                             _bbw_pct = float((_bbw <= float(_bbw.iloc[-1])).mean()) if len(_bbw) else 0.0
                             _vol20 = _v.rolling(20).mean(); _vol_ratio = float((_v.iloc[-1] / _vol20.iloc[-1]) if _vol20.iloc[-1] > 0 else 1.0)

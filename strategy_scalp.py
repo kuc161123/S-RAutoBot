@@ -1,7 +1,7 @@
 """
 Scalping Strategy (Phase 0 - Phantom-only pilot)
 
-Design: VWAP pullback + ORB continuation on the current timeframe (recommended 1–3m in future).
+Design: EVWAP (exponential VWAP) pullback + ORB continuation on the current timeframe (recommended 1–3m in future).
 For now, operates on the provided DataFrame with minimal dependencies.
 
 Outputs a Signal-like object compatible with existing flow.
@@ -56,12 +56,16 @@ def _ema(s: pd.Series, n: int) -> pd.Series:
 
 
 def _vwap(df: pd.DataFrame, window: int) -> pd.Series:
-    # Simple rolling VWAP (not session anchored) for short windows
+    """Exponential VWAP (not session-anchored): ema(pv) / ema(vol).
+
+    Using ewm provides faster adaptation than rolling sums, so EVWAP "follows"
+    price with less lag while retaining volume weighting.
+    """
     tp = (df['high'] + df['low'] + df['close']) / 3
     vol = df['volume'].clip(lower=0.0)
     pv = tp * vol
-    num = pv.rolling(window).sum()
-    den = vol.rolling(window).sum().replace(0, np.nan)
+    num = pv.ewm(span=window, adjust=False).mean()
+    den = vol.ewm(span=window, adjust=False).mean().replace(0, np.nan)
     return num / den
 
 

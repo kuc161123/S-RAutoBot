@@ -8090,17 +8090,26 @@ class TradingBot:
                 await self.tg.start_polling()
                 try:
                     # Compact early signal that bot has restarted; detailed banner will follow later
+                    # Note: stream-first startup — streams begin immediately, backfills run in background
                     sym_ct = len(symbols)
                     await self.tg.send_message(
-                        f"🔄 Bot restart acknowledged — initializing ({sym_ct} symbols, {tf}m)."
+                        f"🔄 Bot restart acknowledged — initializing stream-first ({sym_ct} symbols, main {tf}m + scalp 3m)."
                     )
                 except Exception:
                     pass
         except Exception as _etg:
             logger.debug(f"Early Telegram init skipped: {_etg}")
         
-        # Fetch historical data for all symbols
-        await self.load_or_fetch_initial_data(symbols, tf)
+        # Fetch historical 15m data in background (stream-first startup)
+        try:
+            self._create_task(self.load_or_fetch_initial_data(symbols, tf))
+            try:
+                logger.info("⏳ Stream-first: 15m initial load scheduled in background")
+            except Exception:
+                pass
+        except Exception:
+            # Fall back silently — streaming can still proceed
+            pass
 
         # Wire Trend pullback state persistence + hydrate from Redis
         try:
@@ -8114,16 +8123,20 @@ class TradingBot:
         
         # Optional pre-run setup (scalp backfill, phantom timeouts)
         try:
-            # Backfill 3m frames for scalper if enabled before analysis begins
+            # Backfill 3m frames for scalper in background (do not block streams)
             try:
                 scalp_cfg = cfg.get('scalp', {})
                 use_scalp = bool(scalp_cfg.get('enabled', False) and SCALP_AVAILABLE)
                 if use_scalp:
-                    await self.backfill_frames_3m(symbols, use_api_fallback=True, limit=200)
+                    self._create_task(self.backfill_frames_3m(symbols, use_api_fallback=True, limit=200))
+                    try:
+                        logger.info("⏳ Stream-first: 3m backfill scheduled in background for Scalp")
+                    except Exception:
+                        pass
                 else:
                     logger.debug("Scalp disabled in config; skipping 3m backfill")
             except Exception as e:
-                logger.warning(f"3m backfill skipped due to error: {e}")
+                logger.warning(f"3m backfill scheduling failed: {e}")
             # Apply MR phantom timeout override from config (exploration)
             try:
                 if mr_explore and 'timeout_hours' in mr_explore and mr_phantom_tracker is not None:

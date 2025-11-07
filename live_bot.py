@@ -9887,7 +9887,9 @@ class TradingBot:
                         df = self.frames[sym]
                     else:
                         df = new_frame()
-                    
+                except Exception:
+                    # Defensive: skip this kline on parse/build errors
+                    continue
                 # Ensure both dataframes have consistent timezone handling
                 if df.index.tz is None and row.index.tz is not None:
                     # Convert existing df to UTC if it's timezone-naive

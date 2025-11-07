@@ -7369,6 +7369,15 @@ class TradingBot:
                                         self._last_main_kline = _t.monotonic()
                                     except Exception:
                                         pass
+                                    # Per-message kline trace (confirm and partial)
+                                    try:
+                                        if getattr(self, '_ws_kline_trace', False):
+                                            cfm = bool(k.get('confirm', False))
+                                            o = k.get('open'); h = k.get('high'); l = k.get('low'); c = k.get('close'); v = k.get('volume')
+                                            ts0 = k.get('start')
+                                            logger.info(f"[WS-KLINE] {sym} confirm={cfm} o={o} h={h} l={l} c={c} v={v} ts={ts0}")
+                                    except Exception:
+                                        pass
                                     yield sym, k
                         except asyncio.TimeoutError:
                             # Idle: send ping. Reconnect only after prolonged idle (> 3x timeout) or ping failure.
@@ -7667,6 +7676,13 @@ class TradingBot:
         logger.info(f"Trading symbols: {symbols}")
         logger.info(f"Timeframe: {tf} minutes")
         logger.info("📌 Bot Policy: Existing positions and orders will NOT be modified - they will run their course")
+        # Optional per-message WS kline tracing for diagnostics
+        try:
+            self._ws_kline_trace = bool((((cfg.get('scalp', {}) or {}).get('logging', {}) or {}).get('kline_trace', False)))
+            if self._ws_kline_trace:
+                logger.info("[WS] Kline trace enabled (per-message logging)")
+        except Exception:
+            self._ws_kline_trace = False
 
         # Scalp configuration diagnostics (early visibility)
         try:

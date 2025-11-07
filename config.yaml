@@ -586,6 +586,7 @@ scalp:
   logging:
     heartbeat: true      # Per 3m-bar heartbeat when no Scalp signal
     decision_only: false # If true, suppress analysis/heartbeat and show only decisions
+    kline_trace: true    # Enable per-message WS kline logs (confirm and partial)
   debug:
     force_accept: false  # Off: return to normal acceptance with decision reasons
   promote_enabled: false

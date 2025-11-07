@@ -3980,16 +3980,16 @@ class TradingBot:
                                                         mode = 'fast-only' if bool(hg.get('slope_fast_only', False)) else 'full'
                                                         parts.append(f"Slope F/S {fast:.3f}/{slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}) mode={mode}")
                                                 # Path and Means (from signal meta) appended
-                                                    ap = getattr(sc_sig, 'meta', {}).get('acceptance_path') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
-                                                    if ap:
-                                                        parts.append(f"Path {ap}")
-                                                    m = getattr(sc_sig, 'meta', {}).get('means') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
-                                                    if isinstance(m, dict):
-                                                        mev = '✅' if m.get('evwap_ok') else '❌'
-                                                        mem = '✅' if m.get('ema_ok') else '❌'
-                                                        mbb = '✅' if m.get('bb_ok') else '❌'
-                                                        capv = float(m.get('cap', 0.0) or 0.0)
-                                                        parts.append(f"Means EVWAP {mev} {float(m.get('dist_evwap',0)):.2f} | EMA {mem} {float(m.get('dist_ema',0)):.2f} | BB {mbb} {float(m.get('dist_bb',0)):.2f} cap={capv:.2f}")
+                                                ap = getattr(sc_sig, 'meta', {}).get('acceptance_path') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
+                                                if ap:
+                                                    parts.append(f"Path {ap}")
+                                                m = getattr(sc_sig, 'meta', {}).get('means') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
+                                                if isinstance(m, dict):
+                                                    mev = '✅' if m.get('evwap_ok') else '❌'
+                                                    mem = '✅' if m.get('ema_ok') else '❌'
+                                                    mbb = '✅' if m.get('bb_ok') else '❌'
+                                                    capv = float(m.get('cap', 0.0) or 0.0)
+                                                    parts.append(f"Means EVWAP {mev} {float(m.get('dist_evwap',0)):.2f} | EMA {mem} {float(m.get('dist_ema',0)):.2f} | BB {mbb} {float(m.get('dist_bb',0)):.2f} cap={capv:.2f}")
                                                 gate_vals = " | ".join(parts)
                                                 except Exception:
                                                     gate_vals = ""

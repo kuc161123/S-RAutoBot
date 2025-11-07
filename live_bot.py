@@ -6360,6 +6360,69 @@ class TradingBot:
             logger.info(f"🩳 3m backfill complete: DB={loaded_db} symbols, API={fetched_api} symbols")
         else:
             logger.info("🩳 3m backfill: no data found (DB empty, API disabled or unavailable)")
+
+    async def quick_seed_frames(self, timeframe: str, symbols: list[str], limit: int = 200, target: str = 'frames', min_bars: int = 50):
+        """Quickly seed in-memory frames with recent klines without waiting on DB backfills.
+
+        - Non-blocking best-effort fetch of up to `limit` bars via REST.
+        - Writes only to memory (`self.frames` or `self.frames_3m`), no DB I/O.
+        - Skips symbols that already have at least `min_bars` bars in memory for the target.
+        """
+        try:
+            seeded = 0
+            # Very light per-symbol delay to reduce burstiness with many symbols
+            delay = 0.0
+            if len(symbols) > 40:
+                delay = 0.02
+            elif len(symbols) > 80:
+                delay = 0.03
+            for idx, symbol in enumerate(symbols):
+                try:
+                    # Skip if already sufficiently populated in memory
+                    if target == 'frames':
+                        df_cur = self.frames.get(symbol)
+                    else:
+                        df_cur = self.frames_3m.get(symbol)
+                    if df_cur is not None and hasattr(df_cur, 'empty') and not df_cur.empty and len(df_cur) >= min_bars:
+                        continue
+                    # Small pacing for large symbol sets
+                    if delay and idx > 0:
+                        try:
+                            await asyncio.sleep(delay)
+                        except Exception:
+                            pass
+                    # Fetch recent klines
+                    kl = self.bybit.get_klines(symbol, str(timeframe), limit=limit)
+                    if not kl:
+                        continue
+                    rows = []
+                    for k in kl:
+                        rows.append({
+                            'open': float(k[1]),
+                            'high': float(k[2]),
+                            'low': float(k[3]),
+                            'close': float(k[4]),
+                            'volume': float(k[5])
+                        })
+                    import pandas as pd
+                    df = pd.DataFrame(rows)
+                    df.index = pd.to_datetime([int(k[0]) for k in kl], unit='ms', utc=True)
+                    df.sort_index(inplace=True)
+                    if target == 'frames':
+                        self.frames[symbol] = df.tail(1000)
+                    else:
+                        self.frames_3m[symbol] = df.tail(1000)
+                    seeded += 1
+                except Exception:
+                    continue
+            try:
+                tf_lbl = f"{timeframe}m" if str(timeframe).isdigit() else str(timeframe)
+                logger.info(f"⚡ Quick-seed: populated {seeded} symbols for {tf_lbl} ({target})")
+            except Exception:
+                pass
+        except Exception:
+            # Silent best-effort
+            pass
     
     def record_closed_trade(self, symbol: str, pos: Position, exit_price: float, exit_reason: str, leverage: float = 1.0):
         """Record a closed trade to history"""
@@ -8110,6 +8173,11 @@ class TradingBot:
         except Exception:
             # Fall back silently — streaming can still proceed
             pass
+        # Also quick-seed in-memory 15m frames from REST to enable signals before DB load finishes
+        try:
+            self._create_task(self.quick_seed_frames(str(tf), symbols, limit=200, target='frames', min_bars=50))
+        except Exception:
+            pass
 
         # Wire Trend pullback state persistence + hydrate from Redis
         try:
@@ -8131,6 +8199,11 @@ class TradingBot:
                     self._create_task(self.backfill_frames_3m(symbols, use_api_fallback=True, limit=200))
                     try:
                         logger.info("⏳ Stream-first: 3m backfill scheduled in background for Scalp")
+                    except Exception:
+                        pass
+                    # Also quick-seed in-memory 3m frames from REST so Scalp can begin immediately
+                    try:
+                        self._create_task(self.quick_seed_frames('3', symbols, limit=200, target='frames_3m', min_bars=50))
                     except Exception:
                         pass
                 else:

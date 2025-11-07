@@ -14579,6 +14579,34 @@ def signal_handler(signum, frame):
 # Global bot instance
 bot = TradingBot()
 
+def _notify_fatal_sync(summary: str, detail: str = ""):
+    """Best-effort sync Telegram notify for fatal crashes without relying on the event loop.
+
+    Reads token/chat from config.yaml and posts via requests. Fully guarded.
+    """
+    try:
+        import yaml, requests
+        with open('config.yaml', 'r') as _f:
+            _cfg = yaml.safe_load(_f)
+        tok = str((((_cfg or {}).get('telegram') or {}).get('token')))
+        chat = int((((_cfg or {}).get('telegram') or {}).get('chat_id')))
+        if tok and chat:
+            text = f"❌ Fatal crash: {summary}"
+            if detail:
+                # keep message compact; full trace is stored in crash.log
+                text += f"\n{detail[:800]}"
+            try:
+                requests.post(
+                    f"https://api.telegram.org/bot{tok}/sendMessage",
+                    json={"chat_id": chat, "text": text},
+                    timeout=5
+                )
+            except Exception:
+                pass
+    except Exception:
+        # Silently ignore notification failures
+        pass
+
 if __name__ == "__main__":
     # Setup signal handlers
     signal.signal(signal.SIGINT, signal_handler)
@@ -14593,48 +14621,24 @@ if __name__ == "__main__":
             logger.info("Saving candles to database before shutdown...")
             bot.storage.save_all_frames(bot.frames)
     except Exception as e:
-        logger.error(f"Fatal error: {e}")
+        import traceback, datetime as _dt
+        tb = traceback.format_exc()
+        summary = f"{type(e).__name__}: {e}"
+        logger.error(f"Fatal error: {summary}")
+        logger.error(f"Traceback:\n{tb}")
+        # Persist crash details to file for post-mortem
+        try:
+            with open('crash.log', 'a') as _cl:
+                _cl.write(f"[{_dt.datetime.utcnow().isoformat()}Z] {summary}\n{tb}\n\n")
+        except Exception:
+            pass
+        # Best-effort synchronous Telegram notify
+        try:
+            _notify_fatal_sync(summary, tb)
+        except Exception:
+            pass
     finally:
         # Final cleanup
         if hasattr(bot, 'storage'):
             bot.storage.close()
         logger.info("Bot terminated")
-        # Decision-only log filter: keep INFO logs focused on decisions (phantom/execution) for core strategies
-        try:
-            log_cfg = (cfg.get('logging', {}) or {})
-            decision_only = bool(log_cfg.get('decision_only', True))
-        except Exception:
-            decision_only = True
-        if decision_only:
-            class _DecisionOnlyFilter(logging.Filter):
-                def filter(self, record: logging.LogRecord) -> bool:
-                    try:
-                        # Always allow warnings and errors
-                        if record.levelno >= logging.WARNING:
-                            return True
-                        msg = str(record.getMessage())
-                        # Allow core decision/execution lines for Trend/Range/Scalp and TP/SL confirmations
-                        allow_tokens = (
-                            'Decision final:', 'decision final:',
-                            'Trend decision final', 'Range decision final',
-                            'exec_scalp', 'Scalp: Executing', 'TP/SL confirmed',
-                            'Range PHANTOM', '👻', 'phantom', 'Phantom'
-                        )
-                        return any(t in msg for t in allow_tokens)
-                    except Exception:
-                        return True
-            try:
-                logging.getLogger().addFilter(_DecisionOnlyFilter())
-            except Exception:
-                pass
-        # Helper: session label used by adapters/telemetry
-        def _sess_label() -> str:
-            try:
-                hr = datetime.utcnow().hour
-                return 'asian' if 0 <= hr < 8 else ('european' if hr < 16 else 'us')
-            except Exception:
-                return 'us'
-        try:
-            self._session_label = _sess_label
-        except Exception:
-            pass

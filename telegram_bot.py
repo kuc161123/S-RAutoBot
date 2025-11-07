@@ -39,6 +39,11 @@ class TGBot:
         self.shared = shared
         # Running flag early to avoid attribute errors if start_polling is called immediately
         self.running = False
+        # Downgrade noisy PTB warning about CancelledError during graceful shutdown
+        try:
+            logging.getLogger("telegram.ext.Application").setLevel(logging.ERROR)
+        except Exception:
+            pass
         # Simple per-command cooldown
         self._cooldowns = {}
         self._cooldown_seconds = 2.0
@@ -1509,7 +1514,7 @@ class TGBot:
     async def stop(self):
         """Stop the bot"""
         if getattr(self, 'running', False):
-            await self.app.updater.stop()
+            # Application.stop() stops the updater internally; avoid double-stop which can log CancelledError
             await self.app.stop()
             await self.app.shutdown()
             self.running = False

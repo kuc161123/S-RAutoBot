@@ -7644,6 +7644,13 @@ class TradingBot:
         # Extract configuration
         symbols = [s.upper() for s in cfg["trade"]["symbols"]]
         tf = cfg["trade"]["timeframe"]
+        # Optional override: run only a 3m stream and disable main 15m stream
+        try:
+            stream_3m_only = bool(((cfg.get('scalp', {}) or {}).get('stream_3m_only', False)))
+        except Exception:
+            stream_3m_only = False
+        if stream_3m_only:
+            tf = '3'
         topics = [f"{tf}.{s}" for s in symbols]
 
         logger.info(f"Trading symbols: {symbols}")
@@ -8155,29 +8162,34 @@ class TradingBot:
                     # Compact early signal that bot has restarted; detailed banner will follow later
                     # Note: stream-first startup — streams begin immediately, backfills run in background
                     sym_ct = len(symbols)
-                    await self.tg.send_message(
-                        f"🔄 Bot restart acknowledged — initializing stream-first ({sym_ct} symbols, main {tf}m + scalp 3m)."
-                    )
+                    if stream_3m_only:
+                        await self.tg.send_message(
+                            f"🔄 Bot restart acknowledged — initializing stream-first ({sym_ct} symbols, main 3m only)."
+                        )
+                    else:
+                        await self.tg.send_message(
+                            f"🔄 Bot restart acknowledged — initializing stream-first ({sym_ct} symbols, main {tf}m + scalp 3m)."
+                        )
                 except Exception:
                     pass
         except Exception as _etg:
             logger.debug(f"Early Telegram init skipped: {_etg}")
         
         # Fetch historical 15m data in background (stream-first startup)
-        try:
-            self._create_task(self.load_or_fetch_initial_data(symbols, tf))
+        if not stream_3m_only:
             try:
-                logger.info("⏳ Stream-first: 15m initial load scheduled in background")
+                self._create_task(self.load_or_fetch_initial_data(symbols, tf))
+                try:
+                    logger.info("⏳ Stream-first: 15m initial load scheduled in background")
+                except Exception:
+                    pass
             except Exception:
                 pass
-        except Exception:
-            # Fall back silently — streaming can still proceed
-            pass
-        # Also quick-seed in-memory 15m frames from REST to enable signals before DB load finishes
-        try:
-            self._create_task(self.quick_seed_frames(str(tf), symbols, limit=200, target='frames', min_bars=50))
-        except Exception:
-            pass
+            # Also quick-seed in-memory 15m frames from REST to enable signals before DB load finishes
+            try:
+                self._create_task(self.quick_seed_frames(str(tf), symbols, limit=200, target='frames', min_bars=50))
+            except Exception:
+                pass
 
         # Wire Trend pullback state persistence + hydrate from Redis
         try:
@@ -9806,7 +9818,7 @@ class TradingBot:
                                       (cfg.get('mr', {}).get('context', {}) or {}).get('use_3m_context', False))
         except Exception:
             use_3m_for_context = False
-        if (use_scalp and SCALP_AVAILABLE and scalp_stream_tf) or (use_3m_for_context and scalp_stream_tf):
+        if (not stream_3m_only) and ((use_scalp and SCALP_AVAILABLE and scalp_stream_tf) or (use_3m_for_context and scalp_stream_tf)):
             try:
                 self._create_task(self._collect_secondary_stream(cfg['bybit']['ws_public'], scalp_stream_tf, symbols))
                 self._scalp_secondary_started = True
@@ -9876,20 +9888,37 @@ class TradingBot:
                     else:
                         df = new_frame()
                     
-                    # Ensure both dataframes have consistent timezone handling
-                    if df.index.tz is None and row.index.tz is not None:
-                        # Convert existing df to UTC if it's timezone-naive
-                        df.index = df.index.tz_localize('UTC')
-                    elif df.index.tz is not None and row.index.tz is None:
-                        # Convert new row to UTC if it's timezone-naive
-                        row.index = row.index.tz_localize('UTC')
-                        
-                    df.loc[row.index[0]] = row.iloc[0]
-                    df.sort_index(inplace=True)
-                    # Limit candles per symbol based on total symbols to control memory
-                    max_candles_per_symbol = max(2000, 100000 // len(self.config['trade']['symbols']))
-                    df = df.tail(max_candles_per_symbol)  # Dynamic limit based on symbol count
-                    self.frames[sym] = df
+                # Ensure both dataframes have consistent timezone handling
+                if df.index.tz is None and row.index.tz is not None:
+                    # Convert existing df to UTC if it's timezone-naive
+                    df.index = df.index.tz_localize('UTC')
+                elif df.index.tz is not None and row.index.tz is None:
+                    # Convert new row to UTC if it's timezone-naive
+                    row.index = row.index.tz_localize('UTC')
+                
+                df.loc[row.index[0]] = row.iloc[0]
+                df.sort_index(inplace=True)
+                # Limit candles per symbol based on total symbols to control memory
+                max_candles_per_symbol = max(2000, 100000 // len(self.config['trade']['symbols']))
+                df = df.tail(max_candles_per_symbol)  # Dynamic limit based on symbol count
+                self.frames[sym] = df
+
+                # If main stream is 3m-only, mirror updates into frames_3m for Scalp
+                try:
+                    if str(tf) == '3':
+                        df3 = self.frames_3m.get(sym)
+                        if df3 is None:
+                            df3 = new_frame()
+                        # TZ consistency for 3m frame
+                        if df3.index.tz is None and row.index.tz is not None:
+                            df3.index = df3.index.tz_localize('UTC')
+                        elif df3.index.tz is not None and row.index.tz is None:
+                            row.index = row.index.tz_localize('UTC')
+                        df3.loc[row.index[0]] = row.iloc[0]
+                        df3.sort_index(inplace=True)
+                        self.frames_3m[sym] = df3.tail(2000)
+                except Exception:
+                    pass
                     
                     # Update phantom trades with current price
                     if phantom_tracker is not None:

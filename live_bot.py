@@ -683,6 +683,11 @@ class TradingBot:
             self._last_main_kline: float = _time.monotonic()
         except Exception:
             self._last_main_kline = 0.0
+        # Track initial kline visibility after subscribe
+        try:
+            self._ws_first_kline_logs: int = 0
+        except Exception:
+            self._ws_first_kline_logs = 0
 
     def _btc_micro_trend(self) -> str:
         """Compute BTC 1–3m micro-trend direction: up/down/none."""
@@ -1424,12 +1429,18 @@ class TradingBot:
         This closes the current WebSocket; kline_stream() will reconnect on close.
         """
         import time as _t
-        check_period = max(30.0, min(120.0, idle_seconds / 3.0))
+        check_period = max(30.0, min(90.0, idle_seconds / 3.0))
         while self.running:
             try:
                 await asyncio.sleep(check_period)
                 last = getattr(self, '_last_main_kline', 0.0) or 0.0
                 delta = _t.monotonic() - last if last else 0.0
+                # Idle heartbeat for visibility
+                try:
+                    remaining = max(0, int(idle_seconds - delta))
+                    logger.info(f"WS idle heartbeat: last_kline={int(delta)}s ago, reconnect_in~{remaining}s")
+                except Exception:
+                    pass
                 if self.running and idle_seconds > 0 and delta > idle_seconds:
                     try:
                         logger.warning(f"Main stream idle for {int(delta)}s (> {int(idle_seconds)}s). Forcing reconnect…")
@@ -9840,8 +9851,15 @@ class TradingBot:
             tf_int = int(str(tf)) if str(tf).isdigit() else 15
         except Exception:
             tf_int = 15
-        # Allow 3 full bars + buffer before forcing reconnect
-        idle_seconds = max(180, 3 * tf_int * 60 + 30)
+        # Reconnect policy: shorter idle threshold to surface stuck streams sooner
+        # Use 240s for <=3m, else ~2 bars + 30s
+        try:
+            if tf_int <= 3:
+                idle_seconds = 240
+            else:
+                idle_seconds = max(120, 2 * tf_int * 60 + 30)
+        except Exception:
+            idle_seconds = 240
         try:
             self._create_task(self._watch_main_stream(idle_seconds))
             logger.info(f"Main stream watchdog started (idle>{idle_seconds}s)")
@@ -9849,6 +9867,11 @@ class TradingBot:
             pass
 
         # Start streaming
+        # Reset initial kline visibility counter after subscribe
+        try:
+            self._ws_first_kline_logs = 0
+        except Exception:
+            pass
         async for sym, k in stream:
                 if not self.running:
                     break
@@ -9860,6 +9883,14 @@ class TradingBot:
                 try:
                     # Parse kline
                     ts = int(k["start"])
+                    # One-time visibility: log first few raw klines after subscribe
+                    try:
+                        if getattr(self, '_ws_first_kline_logs', 0) < 5:
+                            cfm = bool(k.get('confirm', False))
+                            logger.info(f"WS first kline {self._ws_first_kline_logs+1}/5: {sym} confirm={cfm} ts={ts}")
+                            self._ws_first_kline_logs = int(getattr(self, '_ws_first_kline_logs', 0)) + 1
+                    except Exception:
+                        pass
                     row = pd.DataFrame(
                         [[float(k["open"]), float(k["high"]), float(k["low"]), float(k["close"]), float(k["volume"])]],
                         index=[pd.to_datetime(ts, unit="ms", utc=True)],

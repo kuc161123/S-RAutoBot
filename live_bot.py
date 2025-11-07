@@ -3979,7 +3979,18 @@ class TradingBot:
                                                     if bool(hg.get('slope_enabled', False)):
                                                         mode = 'fast-only' if bool(hg.get('slope_fast_only', False)) else 'full'
                                                         parts.append(f"Slope F/S {fast:.3f}/{slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}) mode={mode}")
-                                                    gate_vals = " | ".join(parts)
+                                                # Path and Means (from signal meta) appended
+                                                    ap = getattr(sc_sig, 'meta', {}).get('acceptance_path') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
+                                                    if ap:
+                                                        parts.append(f"Path {ap}")
+                                                    m = getattr(sc_sig, 'meta', {}).get('means') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
+                                                    if isinstance(m, dict):
+                                                        mev = '✅' if m.get('evwap_ok') else '❌'
+                                                        mem = '✅' if m.get('ema_ok') else '❌'
+                                                        mbb = '✅' if m.get('bb_ok') else '❌'
+                                                        capv = float(m.get('cap', 0.0) or 0.0)
+                                                        parts.append(f"Means EVWAP {mev} {float(m.get('dist_evwap',0)):.2f} | EMA {mem} {float(m.get('dist_ema',0)):.2f} | BB {mbb} {float(m.get('dist_bb',0)):.2f} cap={capv:.2f}")
+                                                gate_vals = " | ".join(parts)
                                                 except Exception:
                                                     gate_vals = ""
                                                 # Compact summary line with BBW
@@ -4189,6 +4200,20 @@ class TradingBot:
                                         bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
                                         bbw_ok = (bbw_p >= bbw_min) and (bbw_p <= bbw_max)
                                         gate_lines.append(f"BBW: {'✅' if bbw_ok else '❌'} {bbw_p:.2f}p (in {bbw_min:.2f}-{bbw_max:.2f}p)")
+                                except Exception:
+                                    pass
+                                # Path and Means lines (from signal meta)
+                                try:
+                                    ap = getattr(sc_sig, 'meta', {}).get('acceptance_path') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
+                                    if ap:
+                                        gate_lines.append(f"Path: {ap}")
+                                    m = getattr(sc_sig, 'meta', {}).get('means') if isinstance(getattr(sc_sig, 'meta', {}), dict) else None
+                                    if isinstance(m, dict):
+                                        mev = '✅' if m.get('evwap_ok') else '❌'
+                                        mem = '✅' if m.get('ema_ok') else '❌'
+                                        mbb = '✅' if m.get('bb_ok') else '❌'
+                                        capv = float(m.get('cap', 0.0) or 0.0)
+                                        gate_lines.append(f"Means: EVWAP {mev} {float(m.get('dist_evwap',0)):.2f} | EMA {mem} {float(m.get('dist_ema',0)):.2f} | BB {mbb} {float(m.get('dist_bb',0)):.2f} cap={capv:.2f}")
                                 except Exception:
                                     pass
                                 # Slope line

@@ -35,6 +35,20 @@ class ScalpSettings:
     vwap_session_warmup_bars: int = 30
     vwap_cap_warmup: float = 2.0
     vwap_session_windows: Optional[Dict[str, str]] = None  # e.g., {'asian': '00:00-08:00', ...}
+    # Multi-anchor means OR (EVWAP OR EMA-band OR BB-mid) for signals
+    means_enabled: bool = True
+    ema_band_cap_atr: float = 1.5
+    bb_mid_cap_atr: float = 1.5
+    # K-of-N acceptance (phantoms): slope mandatory + K of [means, volume, wick_body, bbw]
+    kofn_enabled: bool = True
+    kofn_k: int = 2
+    # ATR fallback (phantoms): accept when pullback size to last swing in [min,max] ATR
+    atr_fallback_enabled: bool = True
+    atr_fb_min: float = 0.5
+    atr_fb_max: float = 1.5
+    atr_fb_lookback_bars: int = 20
+    # Near-miss phantom: accept when exactly one gate fails (informational learning)
+    near_miss_enabled: bool = True
 
 
 @dataclass
@@ -139,6 +153,8 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
         return None
     last_bbw = float(bbw.iloc[-1])
     bbw_pct = (bbw <= last_bbw).mean()  # percentile of current width
+    # BB midline (20 SMA)
+    ma20 = close.rolling(20).mean()
 
     # Volume spike ratio
     vol20 = volume.rolling(20).mean()
@@ -161,10 +177,12 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
     ema_aligned_up = (c > ema_f.iloc[-1] > ema_s.iloc[-1])
     ema_aligned_dn = (c < ema_f.iloc[-1] < ema_s.iloc[-1])
 
-    # Distance to VWAP (normalized by ATR)
+    # Distances to means (normalized by ATR)
     cur_vwap = float(vwap.iloc[-1]) if not np.isnan(vwap.iloc[-1]) else c
     cur_atr = float(atr.iloc[-1]) if atr.iloc[-1] > 0 else max(1e-9, rng)
     dist_vwap_atr = abs(c - cur_vwap) / cur_atr
+    dist_ema_band = abs(c - float(ema_s.iloc[-1])) / cur_atr if len(ema_s) else 1e9
+    dist_bb_mid = abs(c - float(ma20.iloc[-1])) / cur_atr if len(ma20) else 1e9
     # Effective VWAP cap (warmup may allow looser cap)
     eff_vwap_cap = max(float(s.vwap_dist_atr_max), float(s.vwap_cap_warmup)) if warmup else float(s.vwap_dist_atr_max)
 
@@ -178,14 +196,23 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
         if ema_aligned_dn and c >= recent_low:
             orb_ok = False
 
-    # Long scalp candidate
+    # Multi-anchor mean proximity and gate booleans
+    means_evwap_ok = dist_vwap_atr <= eff_vwap_cap
+    means_ema_ok = dist_ema_band <= float(s.ema_band_cap_atr)
+    means_bb_ok = dist_bb_mid <= float(s.bb_mid_cap_atr)
+    means_ok = means_evwap_ok or (bool(s.means_enabled) and (means_ema_ok or means_bb_ok))
+    vol_ok = (float(vol_ratio) >= float(s.vol_ratio_min))
+    bbw_ok = (float(bbw_pct) >= float(s.min_bb_width_pct))
+    wick_body_long = (lower_w >= max(float(s.wick_ratio_min), float(upper_w) + float(s.wick_delta_min))) and body_up and (body_ratio >= float(s.body_ratio_min))
+    wick_body_short = (upper_w >= max(float(s.wick_ratio_min), float(lower_w) + float(s.wick_delta_min))) and body_dn and (body_ratio >= float(s.body_ratio_min))
+
+    # Long scalp candidate (means OR)
     if (
         ema_aligned_up
-        and bbw_pct >= s.min_bb_width_pct
-        and vol_ratio >= s.vol_ratio_min
-        and lower_w >= max(s.wick_ratio_min, upper_w + s.wick_delta_min)
-        and body_up and body_ratio >= s.body_ratio_min
-        and dist_vwap_atr <= eff_vwap_cap
+        and bbw_ok
+        and vol_ok
+        and wick_body_long
+        and means_ok
         and orb_ok
     ):
         # Stop below VWAP/EMA band with high-volatility widening
@@ -205,24 +232,29 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
         tp = entry + s.rr * (entry - sl)
         return ScalpSignal(
             side='long', entry=entry, sl=sl, tp=tp,
-            reason=f"SCALP: VWAP pullback + EMA band + vol spike",
+            reason=f"SCALP: accept=means_or",
             meta={
                 'vwap': cur_vwap,
                 'atr': cur_atr,
                 'bbw_pct': bbw_pct,
                 'vol_ratio': vol_ratio,
-                'dist_vwap_atr': dist_vwap_atr
+                'dist_vwap_atr': dist_vwap_atr,
+                'means': {
+                    'evwap_ok': bool(means_evwap_ok), 'ema_ok': bool(means_ema_ok), 'bb_ok': bool(means_bb_ok),
+                    'dist_evwap': float(dist_vwap_atr), 'dist_ema': float(dist_ema_band), 'dist_bb': float(dist_bb_mid),
+                    'cap': float(eff_vwap_cap)
+                },
+                'acceptance_path': 'means_or'
             }
         )
 
     # Short scalp candidate
     if (
         ema_aligned_dn
-        and bbw_pct >= s.min_bb_width_pct
-        and vol_ratio >= s.vol_ratio_min
-        and upper_w >= max(s.wick_ratio_min, lower_w + s.wick_delta_min)
-        and body_dn and body_ratio >= s.body_ratio_min
-        and dist_vwap_atr <= eff_vwap_cap
+        and bbw_ok
+        and vol_ok
+        and wick_body_short
+        and means_ok
         and orb_ok
     ):
         buf_mult = 0.8
@@ -241,14 +273,139 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
         tp = entry - s.rr * (sl - entry)
         return ScalpSignal(
             side='short', entry=entry, sl=sl, tp=tp,
-            reason=f"SCALP: VWAP pullback + EMA band + vol spike",
+            reason=f"SCALP: accept=means_or",
             meta={
                 'vwap': cur_vwap,
                 'atr': cur_atr,
                 'bbw_pct': bbw_pct,
                 'vol_ratio': vol_ratio,
-                'dist_vwap_atr': dist_vwap_atr
+                'dist_vwap_atr': dist_vwap_atr,
+                'means': {
+                    'evwap_ok': bool(means_evwap_ok), 'ema_ok': bool(means_ema_ok), 'bb_ok': bool(means_bb_ok),
+                    'dist_evwap': float(dist_vwap_atr), 'dist_ema': float(dist_ema_band), 'dist_bb': float(dist_bb_mid),
+                    'cap': float(eff_vwap_cap)
+                },
+                'acceptance_path': 'means_or'
             }
         )
+    # K-of-N (phantom) path — slope mandatory
+    if bool(s.kofn_enabled):
+        if ema_aligned_up:
+            gates = [bool(means_ok), bool(vol_ok), bool(wick_body_long), bool(bbw_ok)]
+            if sum(1 for g in gates if g) >= int(s.kofn_k):
+                buf_mult = 0.8
+                if bbw_pct >= 0.85:
+                    buf_mult = 1.2
+                elif bbw_pct >= 0.70:
+                    buf_mult = 1.0
+                sl = min(cur_vwap, ema_s.iloc[-1]) - buf_mult * cur_atr
+                entry = c
+                min_dist = max(entry * s.min_r_pct, 0.6 * cur_atr, entry * 0.002)
+                if entry - sl < min_dist:
+                    sl = entry - min_dist
+                if entry > sl:
+                    tp = entry + s.rr * (entry - sl)
+                    return ScalpSignal(
+                        side='long', entry=entry, sl=sl, tp=tp,
+                        reason=f"SCALP: accept=kofn",
+                        meta={'acceptance_path': 'kofn'}
+                    )
+        if ema_aligned_dn:
+            gates = [bool(means_ok), bool(vol_ok), bool(wick_body_short), bool(bbw_ok)]
+            if sum(1 for g in gates if g) >= int(s.kofn_k):
+                buf_mult = 0.8
+                if bbw_pct >= 0.85:
+                    buf_mult = 1.2
+                elif bbw_pct >= 0.70:
+                    buf_mult = 1.0
+                sl = max(cur_vwap, ema_s.iloc[-1]) + buf_mult * cur_atr
+                entry = c
+                min_dist = max(entry * s.min_r_pct, 0.6 * cur_atr, entry * 0.002)
+                if sl - entry < min_dist:
+                    sl = entry + min_dist
+                if sl > entry:
+                    tp = entry - s.rr * (sl - entry)
+                    return ScalpSignal(
+                        side='short', entry=entry, sl=sl, tp=tp,
+                        reason=f"SCALP: accept=kofn",
+                        meta={'acceptance_path': 'kofn'}
+                    )
+    # ATR fallback (phantom)
+    if bool(s.atr_fallback_enabled):
+        lb = int(max(2, s.atr_fb_lookback_bars))
+        if ema_aligned_up and wick_body_long:
+            try:
+                swing_low = float(low.iloc[-lb:].min())
+                size_atr = (c - swing_low) / cur_atr if cur_atr > 0 else 0.0
+            except Exception:
+                size_atr = 0.0
+            if float(s.atr_fb_min) <= size_atr <= float(s.atr_fb_max):
+                buf_mult = 0.8
+                sl = min(cur_vwap, ema_s.iloc[-1]) - buf_mult * cur_atr
+                entry = c
+                min_dist = max(entry * s.min_r_pct, 0.6 * cur_atr, entry * 0.002)
+                if entry - sl < min_dist:
+                    sl = entry - min_dist
+                if entry > sl:
+                    tp = entry + s.rr * (entry - sl)
+                    return ScalpSignal(
+                        side='long', entry=entry, sl=sl, tp=tp,
+                        reason=f"SCALP: accept=atr_fallback size={size_atr:.2f}ATR",
+                        meta={'acceptance_path': 'atr_fallback', 'atr_fallback_size': float(size_atr)}
+                    )
+        if ema_aligned_dn and wick_body_short:
+            try:
+                swing_high = float(high.iloc[-lb:].max())
+                size_atr = (swing_high - c) / cur_atr if cur_atr > 0 else 0.0
+            except Exception:
+                size_atr = 0.0
+            if float(s.atr_fb_min) <= size_atr <= float(s.atr_fb_max):
+                buf_mult = 0.8
+                sl = max(cur_vwap, ema_s.iloc[-1]) + buf_mult * cur_atr
+                entry = c
+                min_dist = max(entry * s.min_r_pct, 0.6 * cur_atr, entry * 0.002)
+                if sl - entry < min_dist:
+                    sl = entry + min_dist
+                if sl > entry:
+                    tp = entry - s.rr * (sl - entry)
+                    return ScalpSignal(
+                        side='short', entry=entry, sl=sl, tp=tp,
+                        reason=f"SCALP: accept=atr_fallback size={size_atr:.2f}ATR",
+                        meta={'acceptance_path': 'atr_fallback', 'atr_fallback_size': float(size_atr)}
+                    )
+    # Near-miss phantom acceptance
+    if bool(s.near_miss_enabled):
+        if ema_aligned_up:
+            fails = [not means_ok, not vol_ok, not wick_body_long, not bbw_ok]
+            if sum(1 for f in fails if f) == 1:
+                buf_mult = 0.8
+                sl = min(cur_vwap, ema_s.iloc[-1]) - buf_mult * cur_atr
+                entry = c
+                min_dist = max(entry * s.min_r_pct, 0.6 * cur_atr, entry * 0.002)
+                if entry - sl < min_dist:
+                    sl = entry - min_dist
+                if entry > sl:
+                    tp = entry + s.rr * (entry - sl)
+                    return ScalpSignal(
+                        side='long', entry=entry, sl=sl, tp=tp,
+                        reason=f"SCALP: accept=near_miss",
+                        meta={'acceptance_path': 'near_miss'}
+                    )
+        if ema_aligned_dn:
+            fails = [not means_ok, not vol_ok, not wick_body_short, not bbw_ok]
+            if sum(1 for f in fails if f) == 1:
+                buf_mult = 0.8
+                sl = max(cur_vwap, ema_s.iloc[-1]) + buf_mult * cur_atr
+                entry = c
+                min_dist = max(entry * s.min_r_pct, 0.6 * cur_atr, entry * 0.002)
+                if sl - entry < min_dist:
+                    sl = entry + min_dist
+                if sl > entry:
+                    tp = entry - s.rr * (sl - entry)
+                    return ScalpSignal(
+                        side='short', entry=entry, sl=sl, tp=tp,
+                        reason=f"SCALP: accept=near_miss",
+                        meta={'acceptance_path': 'near_miss'}
+                    )
 
     return None

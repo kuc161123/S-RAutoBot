@@ -7,7 +7,7 @@ For now, operates on the provided DataFrame with minimal dependencies.
 Outputs a Signal-like object compatible with existing flow.
 """
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict
 import pandas as pd
 import numpy as np
 
@@ -29,6 +29,12 @@ class ScalpSettings:
     orb_enabled: bool = False      # Optional ORB continuation filter
     # Enforce minimum 1R distance (as % of price) so fees don't erode R
     min_r_pct: float = 0.005
+    # VWAP mode and session anchoring (signal-only behavior configured by live flow)
+    vwap_mode: str = 'evwap'                  # 'evwap' | 'session_evwap'
+    vwap_session_scheme: str = 'utc_day'      # 'utc_day' | 'sessions'
+    vwap_session_warmup_bars: int = 30
+    vwap_cap_warmup: float = 2.0
+    vwap_session_windows: Optional[Dict[str, str]] = None  # e.g., {'asian': '00:00-08:00', ...}
 
 
 @dataclass
@@ -69,6 +75,31 @@ def _vwap(df: pd.DataFrame, window: int) -> pd.Series:
     return num / den
 
 
+def _session_start_for(ts: pd.Timestamp, scheme: str, windows: Optional[Dict[str, str]] = None) -> pd.Timestamp:
+    """Return UTC session start timestamp for given ts based on scheme/windows."""
+    tsu = ts.tz_convert('UTC') if ts.tzinfo else ts.tz_localize('UTC')
+    day = tsu.normalize()
+    if scheme == 'utc_day':
+        return day
+    # sessions scheme: choose from windows, default 00-08,08-16,16-24
+    wins = windows or {'asian': '00:00-08:00', 'european': '08:00-16:00', 'us': '16:00-24:00'}
+    hhmm = tsu.strftime('%H:%M')
+    h = int(hhmm[:2]); m = int(hhmm[3:5])
+    mins = h*60 + m
+    def _parse(seg: str):
+        a, b = seg.split('-'); ah, am = map(int, a.split(':')); bh, bm = map(int, b.split(':'))
+        return ah*60+am, bh*60+bm
+    start_min = 0
+    for _, seg in wins.items():
+        smin, emin = _parse(seg)
+        if smin <= mins < emin:
+            start_min = smin
+            break
+    # build start timestamp
+    sh = start_min // 60; sm = start_min % 60
+    return day + pd.Timedelta(hours=sh, minutes=sm)
+
+
 def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), symbol: str = "") -> Optional[ScalpSignal]:
     if df is None or len(df) < max(s.vwap_window, 50):
         return None
@@ -81,7 +112,25 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
     atr = _atr(df, s.atr_len)
     ema_f = _ema(close, s.ema_fast)
     ema_s = _ema(close, s.ema_slow)
-    vwap = _vwap(df, s.vwap_window)
+    # VWAP/EVWAP (optionally session-anchored)
+    if s.vwap_mode == 'session_evwap':
+        try:
+            last_ts = df.index[-1]
+        except Exception:
+            last_ts = None
+        if last_ts is not None:
+            start_ts = _session_start_for(last_ts, s.vwap_session_scheme, s.vwap_session_windows)
+            df_sess = df[df.index >= start_ts]
+            vwap_s = _vwap(df_sess, s.vwap_window)
+            vwap = vwap_s
+            sess_len = len(df_sess)
+            warmup = sess_len < int(s.vwap_session_warmup_bars)
+        else:
+            vwap = _vwap(df, s.vwap_window)
+            warmup = False
+    else:
+        vwap = _vwap(df, s.vwap_window)
+        warmup = False
 
     # BB width percentile proxy (use rolling std percentage)
     std20 = close.rolling(20).std()
@@ -116,6 +165,8 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
     cur_vwap = float(vwap.iloc[-1]) if not np.isnan(vwap.iloc[-1]) else c
     cur_atr = float(atr.iloc[-1]) if atr.iloc[-1] > 0 else max(1e-9, rng)
     dist_vwap_atr = abs(c - cur_vwap) / cur_atr
+    # Effective VWAP cap (warmup may allow looser cap)
+    eff_vwap_cap = max(float(s.vwap_dist_atr_max), float(s.vwap_cap_warmup)) if warmup else float(s.vwap_dist_atr_max)
 
     # Optional ORB filter: require price beyond recent 20-bar range for continuation bias
     orb_ok = True
@@ -134,7 +185,7 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
         and vol_ratio >= s.vol_ratio_min
         and lower_w >= max(s.wick_ratio_min, upper_w + s.wick_delta_min)
         and body_up and body_ratio >= s.body_ratio_min
-        and dist_vwap_atr <= s.vwap_dist_atr_max
+        and dist_vwap_atr <= eff_vwap_cap
         and orb_ok
     ):
         # Stop below VWAP/EMA band with high-volatility widening
@@ -171,7 +222,7 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
         and vol_ratio >= s.vol_ratio_min
         and upper_w >= max(s.wick_ratio_min, lower_w + s.wick_delta_min)
         and body_dn and body_ratio >= s.body_ratio_min
-        and dist_vwap_atr <= s.vwap_dist_atr_max
+        and dist_vwap_atr <= eff_vwap_cap
         and orb_ok
     ):
         buf_mult = 0.8

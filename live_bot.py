@@ -2974,6 +2974,17 @@ class TradingBot:
                                 sc_settings.min_bb_width_pct = float(sig_cfg.get('min_bb_width_pct', sc_settings.min_bb_width_pct))
                             if 'vol_ratio_min' in sig_cfg:
                                 sc_settings.vol_ratio_min = float(sig_cfg.get('vol_ratio_min', sc_settings.vol_ratio_min))
+                            # VWAP session settings
+                            if 'vwap_mode' in sig_cfg:
+                                sc_settings.vwap_mode = str(sig_cfg.get('vwap_mode'))
+                            if 'vwap_session_scheme' in sig_cfg:
+                                sc_settings.vwap_session_scheme = str(sig_cfg.get('vwap_session_scheme'))
+                            if 'vwap_session_warmup_bars' in sig_cfg:
+                                sc_settings.vwap_session_warmup_bars = int(sig_cfg.get('vwap_session_warmup_bars'))
+                            if 'vwap_cap_warmup' in sig_cfg:
+                                sc_settings.vwap_cap_warmup = float(sig_cfg.get('vwap_cap_warmup'))
+                            if 'vwap_session_windows' in sig_cfg:
+                                sc_settings.vwap_session_windows = dict(sig_cfg.get('vwap_session_windows') or {})
                         except Exception:
                             pass
                         # Optional soft ORB relax (signal-only): if price has broken the recent 20-bar range in trend direction
@@ -3069,12 +3080,50 @@ class TradingBot:
                             _ema_f = _c.ewm(span=sc_settings.ema_fast, adjust=False).mean()
                             _ema_s = _c.ewm(span=sc_settings.ema_slow, adjust=False).mean()
                             _tp = (_h + _l + _c) / 3
-                            # Exponential VWAP: ema(pv)/ema(vol) for faster adaptation
+                            # EVWAP or Session EVWAP for heartbeat
                             _vol_clipped = _v.clip(lower=0.0)
-                            _pv = _tp * _vol_clipped
-                            _num = _pv.ewm(span=sc_settings.vwap_window, adjust=False).mean()
-                            _den = _vol_clipped.ewm(span=sc_settings.vwap_window, adjust=False).mean().replace(0, _np.nan)
-                            _vwap = _num / _den
+                            def _evwap_series(dfC):
+                                pv = ((dfC['high']+dfC['low']+dfC['close'])/3) * dfC['volume'].clip(lower=0.0)
+                                num = pv.ewm(span=sc_settings.vwap_window, adjust=False).mean()
+                                den = dfC['volume'].clip(lower=0.0).ewm(span=sc_settings.vwap_window, adjust=False).mean().replace(0, _np.nan)
+                                return num/den
+                            if str(getattr(sc_settings, 'vwap_mode','evwap')) == 'session_evwap':
+                                # Determine session start
+                                try:
+                                    _last_ts = df3_for_sig.index[-1]
+                                except Exception:
+                                    _last_ts = df3_for_sig.index.max()
+                                # Compute session start time
+                                def _sess_start(tsu):
+                                    tsu = tsu.tz_convert('UTC') if tsu.tzinfo else tsu.tz_localize('UTC')
+                                    day = tsu.normalize()
+                                    scheme = str(getattr(sc_settings,'vwap_session_scheme','utc_day'))
+                                    if scheme == 'utc_day':
+                                        return day
+                                    wins = getattr(sc_settings,'vwap_session_windows', None) or {'asian': '00:00-08:00','european': '08:00-16:00','us': '16:00-24:00'}
+                                    hh = int(tsu.strftime('%H')); mm = int(tsu.strftime('%M'))
+                                    mins = hh*60+mm
+                                    def _parse(seg):
+                                        a,b = seg.split('-'); ah,am = map(int,a.split(':')); bh,bm = map(int,b.split(':'))
+                                        return ah*60+am, bh*60+bm
+                                    start_min = 0
+                                    for seg in wins.values():
+                                        smin,emin = _parse(seg)
+                                        if smin <= mins < emin:
+                                            start_min = smin; break
+                                    sh = start_min//60; sm = start_min%60
+                                    return day + _pd.Timedelta(hours=sh, minutes=sm)
+                                import pandas as _pd
+                                _start = _sess_start(_last_ts)
+                                _df_sess = df3_for_sig[df3_for_sig.index >= _start]
+                                _vwap_s = _evwap_series(_df_sess)
+                                _vwap = _vwap_s
+                                _sess_len = len(_df_sess)
+                                _warmup = _sess_len < int(getattr(sc_settings,'vwap_session_warmup_bars',30))
+                                _cap = max(float(sc_settings.vwap_dist_atr_max), float(getattr(sc_settings,'vwap_cap_warmup',2.0))) if _warmup else float(sc_settings.vwap_dist_atr_max)
+                            else:
+                                _vwap = _evwap_series(df3_for_sig)
+                                _cap = float(sc_settings.vwap_dist_atr_max)
                             _std20 = _c.rolling(20).std(); _bbw = (_std20 / _c).fillna(0)
                             _bbw_pct = float((_bbw <= float(_bbw.iloc[-1])).mean()) if len(_bbw) else 0.0
                             _vol20 = _v.rolling(20).mean(); _vol_ratio = float((_v.iloc[-1] / _vol20.iloc[-1]) if _vol20.iloc[-1] > 0 else 1.0)
@@ -3097,7 +3146,7 @@ class TradingBot:
                             logger.info(
                                 f"[{sym}] 🩳 Scalp: no signal (up={_ema_up} dn={_ema_dn} bbw={_bbw_pct:.2f}/{sc_settings.min_bb_width_pct:.2f} "
                                 f"vol={_vol_ratio:.2f}/{sc_settings.vol_ratio_min:.2f} wickL={_lower_w:.2f} wickU={_upper_w:.2f}/{sc_settings.wick_ratio_min:.2f} "
-                                f"vwap={_dist_vwap_atr:.2f}/{sc_settings.vwap_dist_atr_max:.2f} orb={_orb_ok})"
+                                f"vwap={_dist_vwap_atr:.2f}/{_cap:.2f} orb={_orb_ok})"
                             )
                             try:
                                 reasons = []

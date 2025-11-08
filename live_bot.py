@@ -8242,8 +8242,9 @@ class TradingBot:
 
         # Always wire Scalp phantom notifier for lifecycle messages (open/close)
         try:
-            if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
-                scpt_always = get_scalp_phantom_tracker()
+            if SCALP_AVAILABLE:
+                from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                scpt_always = _get_scpt()
                 scpt_always.set_notifier(self._notify_scalp_phantom)
                 # Log initialization success
                 try:
@@ -8253,7 +8254,7 @@ class TradingBot:
                 except Exception:
                     logger.info("✅ Scalp Phantom Tracker initialized and notifier wired")
             else:
-                logger.warning(f"⚠️ Scalp Phantom Tracker NOT available: SCALP_AVAILABLE={SCALP_AVAILABLE}, tracker_func={get_scalp_phantom_tracker is not None}")
+                logger.warning(f"⚠️ Scalp Phantom Tracker NOT available: SCALP_AVAILABLE={SCALP_AVAILABLE}")
         except Exception as e:
             logger.error(f"❌ Failed to initialize Scalp Phantom Tracker: {e}")
 

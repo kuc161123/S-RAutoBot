@@ -8277,6 +8277,11 @@ class TradingBot:
 
             # Note: main timeframe backfill intentionally not applied (per user request)
             
+            # Prepare HTF S/R summary if available
+            try:
+                sr_results  # type: ignore[name-defined]
+            except Exception:
+                sr_results = {}
             # Send summary to Telegram if available
             if hasattr(self, 'tg') and self.tg and sr_results:
                 symbols_with_levels = [sym for sym, count in sr_results.items() if count > 0]
@@ -9884,7 +9889,7 @@ class TradingBot:
             pass
 
         # Start streaming
-        # Reset initial kline visibility counter after subscribe
+        # Reset initial kline visibility counter after subscribe (only used when trace enabled)
         try:
             self._ws_first_kline_logs = 0
         except Exception:
@@ -9900,9 +9905,9 @@ class TradingBot:
                 try:
                     # Parse kline
                     ts = int(k["start"])
-                    # One-time visibility: log first few raw klines after subscribe
+                    # Optional one-time visibility: first few klines (only when trace enabled)
                     try:
-                        if getattr(self, '_ws_first_kline_logs', 0) < 5:
+                        if getattr(self, '_ws_kline_trace', False) and getattr(self, '_ws_first_kline_logs', 0) < 5:
                             cfm = bool(k.get('confirm', False))
                             logger.info(f"WS first kline {self._ws_first_kline_logs+1}/5: {sym} confirm={cfm} ts={ts}")
                             self._ws_first_kline_logs = int(getattr(self, '_ws_first_kline_logs', 0)) + 1

@@ -66,6 +66,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("ml_risk_range", self.ml_risk_range))
         self.app.add_handler(CommandHandler("mlriskrange", self.ml_risk_range))  # Alternative command name
         self.app.add_handler(CommandHandler("mlriskrank", self.ml_risk_range))  # Alternative command name
+        self.app.add_handler(CommandHandler("ml90_risk", self.ml90_risk))
         self.app.add_handler(CommandHandler("status", self.status))
         # Simple responsiveness probe
         self.app.add_handler(CommandHandler("ping", self.ping))
@@ -1816,6 +1817,7 @@ class TGBot:
             "• /risk_percent <V> or /riskpercent <V> — Set percent risk (e.g., 2.5)",
             "• /risk_usd <V> or /riskusd <V> — Set fixed USD risk (e.g., 100)",
             "• /set_risk <amount> — Flexible (e.g., 3% or 50)",
+            "• /ml90_risk <percent> — Set ML≥90 bypass risk (e.g., 0.5)",
             "",
             "Settings (via dashboard → Settings)",
             "• Rule‑Mode thresholds (Exec≥Q, Phantom≥Q)",
@@ -2303,6 +2305,58 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in ml_risk_range: {e}")
             await update.message.reply_text("Error updating ML risk range")
+
+    async def ml90_risk(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
+        """Get or set ML≥90 bypass risk percentage"""
+        try:
+            # Get current value (default 0.5%)
+            current_risk = self.shared.get("ml90_bypass_risk", 0.5)
+
+            if not ctx.args:
+                # Show current setting
+                msg = "🌟 *ML≥90 Bypass Risk*\n"
+                msg += "━" * 20 + "\n\n"
+                msg += f"• Current Risk: *{current_risk}%*\n"
+                msg += f"• Applies to: ML scores ≥90\n"
+                msg += f"• Historical WR: ~79%\n"
+                msg += f"  (90-99: 80.0% N=5 | 100-109: 78.8% N=132)\n\n"
+                msg += "Usage:\n"
+                msg += "`/ml90_risk 0.5` - Set to 0.5%\n"
+                msg += "`/ml90_risk 1.0` - Set to 1.0%\n\n"
+                msg += "⚠️ *Note:* ML≥90 trades bypass ALL gates\n"
+                msg += "and execute immediately with this risk %"
+
+                await self.safe_reply(update, msg)
+                return
+
+            # Set new value
+            new_risk = float(ctx.args[0])
+
+            # Validate
+            if new_risk <= 0:
+                await update.message.reply_text("Risk must be greater than 0%")
+                return
+
+            if new_risk > 5:
+                await update.message.reply_text("Risk must not exceed 5% for ML≥90 bypass")
+                return
+
+            # Update
+            self.shared["ml90_bypass_risk"] = new_risk
+
+            msg = f"✅ ML≥90 Bypass Risk Updated\n\n"
+            msg += f"• New Risk: *{new_risk}%*\n"
+            msg += f"• Applies to: All ML scores ≥90\n\n"
+            msg += f"_All ML≥90 signals will now execute with {new_risk}% risk_"
+
+            await self.safe_reply(update, msg)
+            logger.info(f"ML≥90 bypass risk updated to {new_risk}%")
+
+        except ValueError:
+            await update.message.reply_text("Invalid value. Usage: /ml90_risk 0.5")
+        except Exception as e:
+            logger.error(f"Error in ml90_risk: {e}")
+            await update.message.reply_text("Error updating ML≥90 bypass risk")
 
     async def status(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show current positions"""

@@ -3779,17 +3779,18 @@ class TradingBot:
                             if sym in self.book.positions:
                                 logger.info(f"[{sym}] 🛑 ML≥90 bypass blocked: position_exists")
                             else:
-                                # Execute immediately with 0.5% risk
+                                # Get ML90 bypass risk from shared state (adjustable via /ml90_risk command)
+                                ml90_risk = self.shared.get("ml90_bypass_risk", 0.5)
                                 import uuid as _uuid
                                 exec_id_perfect = _uuid.uuid4().hex[:8]
-                                logger.info(f"[{sym}] 🌟 ML HIGH ({ml_s:.1f}): Bypassing ALL gates, executing with 0.5% risk | {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                                logger.info(f"[{sym}] 🌟 ML HIGH ({ml_s:.1f}): Bypassing ALL gates, executing with {ml90_risk}% risk | {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
 
                                 try:
                                     did_exec_perfect = await self._execute_scalp_trade(
                                         sym, sc_sig,
                                         ml_score=float(ml_s),
                                         exec_id=exec_id_perfect,
-                                        risk_percent_override=0.5  # Lower risk for ML≥90
+                                        risk_percent_override=ml90_risk  # Configurable risk for ML≥90
                                     )
                                 except TypeError:
                                     # Fallback for older signature
@@ -3815,7 +3816,7 @@ class TradingBot:
                                             await self.tg.send_message(
                                                 f"🌟 HIGH ML SCORE EXECUTE\n"
                                                 f"{sym} {sc_sig.side.upper()} @ {sc_sig.entry:.4f}\n"
-                                                f"ML: {ml_s:.1f} | Risk: 0.5%\n"
+                                                f"ML: {ml_s:.1f} | Risk: {ml90_risk}%\n"
                                                 f"SL: {sc_sig.sl:.4f} | TP: {sc_sig.tp:.4f}\n"
                                                 f"ALL gates bypassed (ML≥90, ~79% WR)"
                                             )

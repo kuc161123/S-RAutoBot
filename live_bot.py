@@ -8325,16 +8325,9 @@ class TradingBot:
                             from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
                             scpt = _get_scpt()
                             scpt.set_notifier(self._notify_scalp_phantom)
-                            # Backfill open notifications for already-active scalp phantoms
-                            try:
-                                import asyncio as _asyncio
-                                for lst in (getattr(scpt, 'active', {}) or {}).values():
-                                    for ph in (lst or []):
-                                        res = self._notify_scalp_phantom(ph)
-                                        if _asyncio.iscoroutine(res):
-                                            _asyncio.create_task(res)
-                            except Exception:
-                                pass
+                            # Note: Backfill notifications removed to prevent Telegram pool exhaustion
+                            # With 8h timeout, there can be 2000+ active phantoms at startup
+                            # Sending all at once exhausts connection pool
                     except Exception:
                         pass
                     # Initialize MR components only if MR is enabled

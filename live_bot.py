@@ -3204,6 +3204,42 @@ class TradingBot:
                                 f"reg={reg_level}(allow { _allowed_regs }) "
                                 f"orb={_orb_ok})"
                             )
+                            # Pass/Fail ticks for signal-level and exec-level gates
+                            try:
+                                # Signal-level
+                                _wick_body_sig = False
+                                if _ema_up:
+                                    _wick_body_sig = (_lower_w >= max(float(sc_settings.wick_ratio_min), float(_upper_w) + float(sc_settings.wick_delta_min))) and (float(abs(_cl - _o) / max(1e-9, _rng)) >= float(sc_settings.body_ratio_min))
+                                elif _ema_dn:
+                                    _wick_body_sig = (_upper_w >= max(float(sc_settings.wick_ratio_min), float(_lower_w) + float(sc_settings.wick_delta_min))) and (float(abs(_cl - _o) / max(1e-9, _rng)) >= float(sc_settings.body_ratio_min))
+                                _mom_sig = bool(_ema_up or _ema_dn)
+                                _vol_sig = bool(_vol_ratio >= float(sc_settings.vol_ratio_min))
+                                _vwap_sig = bool(_dist_vwap_atr <= float(_cap))
+                                _bbw_sig = bool(_bbw_pct >= float(sc_settings.min_bb_width_pct))
+                                # Exec-level regime OK
+                                try:
+                                    _hg_local = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                    _reg_ok = (reg_level in list(_hg_local.get('allowed_regimes', ['normal']))) if bool(_hg_local.get('regime_enabled', True)) else True
+                                except Exception:
+                                    _reg_ok = True
+                                sig_ticks = (
+                                    f"EMA{'✅' if _mom_sig else '❌'} | "
+                                    f"Wick/Body{'✅' if _wick_body_sig else '❌'} | "
+                                    f"Vol{'✅' if _vol_sig else '❌'} | "
+                                    f"VWAP{'✅' if _vwap_sig else '❌'} | "
+                                    f"BBW{'✅' if _bbw_sig else '❌'}"
+                                )
+                                exec_ticks = (
+                                    f"Wick{'✅' if _wick_exec else '❌'} | "
+                                    f"Vol{'✅' if _vol_exec else '❌'} | "
+                                    f"Slope{'✅' if _slope_exec else '❌'} | "
+                                    f"BBW{'✅' if _bbw_exec else '❌'} | "
+                                    f"Reg{'✅' if _reg_ok else '❌'}"
+                                )
+                                logger.info(f"[{sym}] 🧮 Scalp heartbeat gates (signal): {sig_ticks}")
+                                logger.info(f"[{sym}] 🧮 Scalp heartbeat gates (exec):   {exec_ticks}")
+                            except Exception:
+                                pass
                             try:
                                 reasons = []
                                 if not (_ema_up or _ema_dn):
@@ -14018,7 +14054,7 @@ class TradingBot:
 
                 # Ensure we have a valid signal before proceeding (guard for missing local)
                 if ('sig' not in locals()) or (sig is None):
-                    logger.warning(f"[{sym}] No valid signal found after processing, skipping")
+                    logger.debug(f"[{sym}] No valid signal found after processing, skipping")
                     continue
 
                 # Stale-feed guard: skip execution if data is too old (phantom is still recorded above)

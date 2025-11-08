@@ -3394,6 +3394,44 @@ class TradingBot:
                                     _reg_ok = (reg_level in list(_hg_local.get('allowed_regimes', ['normal']))) if bool(_hg_local.get('regime_enabled', True)) else True
                                 except Exception:
                                     _reg_ok = True
+                                # Exec-level gate checks
+                                try:
+                                    # Wick exec
+                                    _wick_exec = False
+                                    if bool(_hg.get('wick_enabled', True)):
+                                        _wdelta_exec = float(_hg.get('wick_delta_min', 0.10))
+                                        if _ema_up:
+                                            _wick_exec = (_lower_w >= _upper_w + _wdelta_exec)
+                                        elif _ema_dn:
+                                            _wick_exec = (_upper_w >= _lower_w + _wdelta_exec)
+                                    else:
+                                        _wick_exec = True
+                                    # Vol exec
+                                    _vol_exec = True
+                                    if bool(_hg.get('vol_enabled', False)):
+                                        _vmin_exec = float(_hg.get('vol_ratio_min_3m', 1.20))
+                                        _vol_exec = (_vol_ratio >= _vmin_exec)
+                                    # Slope exec
+                                    _slope_exec = True
+                                    if bool(_hg.get('slope_enabled', False)):
+                                        _fast_only_exec = bool(_hg.get('slope_fast_only', False))
+                                        if _fast_only_exec:
+                                            _slope_exec = (((_slope_f > 0.0) if _ema_up else (_slope_f < 0.0)) and (abs(_slope_f) >= _sfast_min)) if (_ema_up or _ema_dn) else False
+                                        else:
+                                            if _ema_up:
+                                                _slope_exec = (_slope_f > 0.0 and _slope_s > 0.0 and abs(_slope_f) >= _sfast_min and abs(_slope_s) >= _sslow_min)
+                                            elif _ema_dn:
+                                                _slope_exec = (_slope_f < 0.0 and _slope_s < 0.0 and abs(_slope_f) >= _sfast_min and abs(_slope_s) >= _sslow_min)
+                                            else:
+                                                _slope_exec = False
+                                    # BBW exec
+                                    _bbw_exec = True
+                                    if bool(_hg.get('bbw_exec_enabled', False)):
+                                        _bbw_min_exec = float(_hg.get('bbw_min_pct', 0.60))
+                                        _bbw_max_exec = float(_hg.get('bbw_max_pct', 0.90))
+                                        _bbw_exec = (_bbw_pct >= _bbw_min_exec and _bbw_pct <= _bbw_max_exec)
+                                except Exception:
+                                    _wick_exec = _vol_exec = _slope_exec = _bbw_exec = True
                                 sig_ticks = (
                                     f"EMA{'✅' if _mom_sig else '❌'} | "
                                     f"Wick/Body{'✅' if _wick_body_sig else '❌'} | "

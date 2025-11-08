@@ -116,6 +116,9 @@ class TGBot:
         # Scalp gate risk adjustments
         self.app.add_handler(CommandHandler("scalpgaterisk", self.scalp_gate_risk))
         self.app.add_handler(CommandHandler("scalprisk", self.scalp_gate_risk))  # alias
+        # Stream/WS status debug helpers
+        self.app.add_handler(CommandHandler("stream", self.stream_status))
+        self.app.add_handler(CommandHandler("wsstatus", self.stream_status))  # alias
         self.app.add_handler(CommandHandler("scalpreset", self.scalp_reset))
         self.app.add_handler(CommandHandler("scalppatterns", self.scalp_patterns))
         self.app.add_handler(CommandHandler("scalpqwr", self.scalp_qscore_wr))
@@ -6046,6 +6049,81 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_gate_risk: {e}")
             await update.message.reply_text("Error updating scalp gate risk")
+
+    async def stream_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Report live stream health and last kline timestamps.
+
+        Shows:
+        - Main stream idle seconds (time since last kline observed)
+        - Per-symbol last 3m kline age and timestamp (oldest first, top 15)
+        """
+        try:
+            from datetime import datetime, timezone
+            import time as _t
+            bot = (self.shared or {}).get('bot_instance') if hasattr(self, 'shared') else None
+            symbols = list((self.shared or {}).get('symbols_config') or [])
+            if bot is None:
+                await self.safe_reply(update, "❌ Bot instance not available")
+                return
+            # Main idle seconds via watchdog timestamp (monotonic based)
+            try:
+                last_mono = float(getattr(bot, '_last_main_kline', 0.0) or 0.0)
+                idle_s = int(_t.monotonic() - last_mono) if last_mono else None
+            except Exception:
+                idle_s = None
+            # Collect per-symbol ages from 3m frames
+            rows = []
+            now = datetime.now(timezone.utc)
+            try:
+                frames_3m = getattr(bot, 'frames_3m', {}) or {}
+            except Exception:
+                frames_3m = {}
+            for s in symbols:
+                try:
+                    df = frames_3m.get(s)
+                    if df is None or len(df) == 0:
+                        rows.append((s, None, None))
+                        continue
+                    ts = df.index[-1]
+                    age = (now - ts).total_seconds() if ts.tzinfo else (now - ts.tz_localize('UTC')).total_seconds()
+                    rows.append((s, int(age), ts))
+                except Exception:
+                    rows.append((s, None, None))
+            # Order by age desc (oldest first)
+            rows.sort(key=lambda x: (x[1] is None, -(x[1] or 0)))
+            # Build message
+            lines = ["🔌 Stream Status", ""]
+            if idle_s is not None:
+                lines.append(f"Main idle: {idle_s}s")
+            else:
+                lines.append("Main idle: n/a")
+            # Show top 15 oldest symbols for brevity
+            lines.append("")
+            lines.append("Oldest symbols (3m):")
+            show = rows[:15]
+            for sym, age, ts in show:
+                if age is None or ts is None:
+                    lines.append(f"• {sym}: n/a")
+                else:
+                    try:
+                        ts_str = ts.strftime('%H:%M:%SZ') if ts.tzinfo else ts.tz_localize('UTC').strftime('%H:%M:%SZ')
+                    except Exception:
+                        ts_str = str(ts)
+                    lines.append(f"• {sym}: {age}s ago (ts {ts_str})")
+            # Tail summary
+            known = [r for r in rows if r[1] is not None]
+            if known:
+                max_age = max(r[1] for r in known)
+                min_age = min(r[1] for r in known)
+                lines.append("")
+                lines.append(f"Symbols: {len(rows)} | min age: {min_age}s | max age: {max_age}s")
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"Error in stream_status: {e}")
+            try:
+                await update.message.reply_text(f"❌ Error: {e}")
+            except Exception:
+                pass
 
     async def scalp_reset(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Force reset Scalp state counters and summary snapshot.

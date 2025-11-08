@@ -8215,7 +8215,7 @@ class TradingBot:
                 pass
             # Also quick-seed in-memory 15m frames from REST to enable signals before DB load finishes
             try:
-                self._create_task(self.quick_seed_frames(str(tf), symbols, limit=200, target='frames', min_bars=50))
+                self._create_task(self.quick_seed_frames(str(tf), symbols, limit=500, target='frames', min_bars=50))
             except Exception:
                 pass
 
@@ -8236,14 +8236,15 @@ class TradingBot:
                 scalp_cfg = cfg.get('scalp', {})
                 use_scalp = bool(scalp_cfg.get('enabled', False) and SCALP_AVAILABLE)
                 if use_scalp:
-                    self._create_task(self.backfill_frames_3m(symbols, use_api_fallback=True, limit=200))
+                    # Load deeper history so indicators stabilize (DB preferred; REST fallback still capped per-call)
+                    self._create_task(self.backfill_frames_3m(symbols, use_api_fallback=True, limit=1000))
                     try:
                         logger.info("⏳ Stream-first: 3m backfill scheduled in background for Scalp")
                     except Exception:
                         pass
                     # Also quick-seed in-memory 3m frames from REST so Scalp can begin immediately
                     try:
-                        self._create_task(self.quick_seed_frames('3', symbols, limit=200, target='frames_3m', min_bars=50))
+                        self._create_task(self.quick_seed_frames('3', symbols, limit=500, target='frames_3m', min_bars=50))
                     except Exception:
                         pass
                 else:
@@ -8416,9 +8417,16 @@ class TradingBot:
                 else:
                     risk_display = f"${risk.risk_usd}"
                 
+                # Compose timeframe label: avoid redundant "+ 3m" when main tf is already 3m (stream_3m_only)
+                try:
+                    tf_lbl = f"{tf}m"
+                    if not (str(tf) == '3' and bool(((cfg.get('scalp', {}) or {}).get('stream_3m_only', False)))):
+                        tf_lbl = f"{tf_lbl} + 3m"
+                except Exception:
+                    tf_lbl = f"{tf}m"
                 await self.tg.send_message(
                     "🚀 *Trend Pullback Bot Started*\n\n"
-                    f"📊 Monitoring: {len(symbols)} symbols | TF: {tf}m + 3m\n"
+                    f"📊 Monitoring: {len(symbols)} symbols | TF: {tf_lbl}\n"
                     f"💰 Risk per trade: {risk_display} | R:R 1:{settings.rr}\n\n"
                     "15m break → 3m HL/LH → 3m 2/2 confirms → stream entry\n"
                     "Scale‑out: 50% at ~1.6R, SL→BE, runner to ~3.0R\n\n"
@@ -9831,13 +9839,17 @@ class TradingBot:
         except Exception as e:
             logger.debug(f"Range scanner start failed: {e}")
         
-        # Use multi-websocket handler if >190 topics
-        if len(topics) > 190:
-            logger.info(f"Using multi-websocket handler for {len(topics)} topics")
+        # Always use the MultiWebSocketHandler for main stream as well (unified path with secondary 3m)
+        try:
             ws_handler = MultiWebSocketHandler(cfg["bybit"]["ws_public"], self)
+            if stream_3m_only:
+                logger.info(f"Using MultiWS main stream for {len(topics)} topics (3m only)")
+            else:
+                logger.info(f"Using MultiWS main stream for {len(topics)} topics (tf={tf}m)")
             stream = ws_handler.multi_kline_stream(topics)
-        else:
-            logger.info(f"Using single websocket for {len(topics)} topics")
+        except Exception:
+            # Fallback to legacy single-WS if handler creation fails
+            logger.info(f"Using legacy single websocket for {len(topics)} topics")
             stream = self.kline_stream(cfg["bybit"]["ws_public"], topics)
         # Start secondary stream for scalps if configured
         scalp_cfg = cfg.get('scalp', {})
@@ -9903,6 +9915,12 @@ class TradingBot:
                     continue
                 
                 try:
+                    # Update main-stream watchdog timestamp on any received kline (MultiWS + legacy)
+                    try:
+                        import time as _t
+                        self._last_main_kline = _t.monotonic()
+                    except Exception:
+                        pass
                     # Parse kline
                     ts = int(k["start"])
                     # Optional one-time visibility: first few klines (only when trace enabled)
@@ -9964,6 +9982,46 @@ class TradingBot:
                         df3 = self.frames_3m.get(sym)
                         if df3 is None:
                             df3 = new_frame()
+                        # Fill gaps like the secondary stream did (robust on reconnects)
+                        try:
+                            if len(df3) > 0:
+                                last_ts3 = df3.index[-1]
+                                import pandas as _pd
+                                try:
+                                    exp_delta = _pd.Timedelta(minutes=int(str(tf)))
+                                except Exception:
+                                    exp_delta = _pd.Timedelta(minutes=3)
+                                if (row.index[0] - last_ts3) > (exp_delta + _pd.Timedelta(seconds=5)) and self.bybit is not None:
+                                    try:
+                                        start_ms = int(((last_ts3 + _pd.Timedelta(seconds=1)).tz_convert('UTC').timestamp() if last_ts3.tzinfo else (last_ts3 + _pd.Timedelta(seconds=1)).timestamp()) * 1000)
+                                    except Exception:
+                                        start_ms = None
+                                    end_ms = int((row.index[0].tz_convert('UTC').timestamp() if row.index[0].tzinfo else row.index[0].timestamp()) * 1000)
+                                    if start_ms is not None and end_ms:
+                                        try:
+                                            kl = self.bybit.get_klines(sym, str(tf), limit=200, start=start_ms, end=end_ms) or []
+                                            fill_rows = []
+                                            for kr in kl:
+                                                try:
+                                                    ts2 = int(kr[0]) if isinstance(kr, (list, tuple)) else int(kr.get('start'))
+                                                    idx2 = _pd.to_datetime(ts2, unit='ms', utc=True)
+                                                    o2 = float(kr[1] if isinstance(kr, (list, tuple)) else kr.get('open'))
+                                                    h2 = float(kr[2] if isinstance(kr, (list, tuple)) else kr.get('high'))
+                                                    l2 = float(kr[3] if isinstance(kr, (list, tuple)) else kr.get('low'))
+                                                    c2 = float(kr[4] if isinstance(kr, (list, tuple)) else kr.get('close'))
+                                                    v2 = float(kr[5] if isinstance(kr, (list, tuple)) else kr.get('volume'))
+                                                    fill_rows.append((idx2, o2, h2, l2, c2, v2))
+                                                except Exception:
+                                                    continue
+                                            if fill_rows:
+                                                fdf = _pd.DataFrame([(o, h, l, c, v) for (_, o, h, l, c, v) in fill_rows],
+                                                                    index=[ix for (ix, *_r) in fill_rows],
+                                                                    columns=["open","high","low","close","volume"]).sort_index()
+                                                df3 = pd.concat([df3, fdf])
+                                        except Exception:
+                                            pass
+                        except Exception:
+                            pass
                         # TZ consistency for 3m frame
                         if df3.index.tz is None and row.index.tz is not None:
                             df3.index = df3.index.tz_localize('UTC')

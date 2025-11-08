@@ -499,9 +499,9 @@ class ScalpPhantomTracker:
         if symbol not in self.active:
             return
         act_list = list(self.active.get(symbol, []))
-        # Log phantom update activity (INFO to ensure visibility)
+        # Log phantom update activity (DEBUG - too noisy for INFO)
         try:
-            logger.info(f"[{symbol}] 🩳 Phantom update: {len(act_list)} active phantom(s), current_price={current_price:.4f}")
+            logger.debug(f"[{symbol}] 🩳 Phantom update: {len(act_list)} active phantom(s), current_price={current_price:.4f}")
         except Exception:
             pass
         remaining: List[ScalpPhantomTrade] = []
@@ -515,8 +515,15 @@ class ScalpPhantomTracker:
             else:
                 cur_high = current_price
                 cur_low = current_price
-                # Warn if df is None - intrabar TP/SL hits may be missed
-                logger.warning(f"[{symbol}] ⚠️ Phantom update: No dataframe provided, using current_price={current_price:.4f} for high/low (may miss intrabar TP/SL hits!)")
+                # Warn if df is None - intrabar TP/SL hits may be missed (rate limited per symbol)
+                if not hasattr(self, '_df_warning_logged'):
+                    self._df_warning_logged = {}
+                from time import time as _time
+                now = _time()
+                last_warn = self._df_warning_logged.get(symbol, 0)
+                if (now - last_warn) > 300:  # Warn once per 5 minutes per symbol
+                    logger.warning(f"[{symbol}] ⚠️ Phantom update: No dataframe provided, using current_price for high/low (may miss intrabar TP/SL hits!)")
+                    self._df_warning_logged[symbol] = now
         except Exception as e:
             logger.warning(f"[{symbol}] Phantom update: Error getting high/low from df: {e}, using current_price")
             cur_high = current_price
@@ -589,22 +596,31 @@ class ScalpPhantomTracker:
             except Exception:
                 pass
 
-        # Log summary of update
+        # Log summary only when phantoms close (avoid flooding)
         try:
             if closed_count > 0:
-                logger.info(f"[{symbol}] 🩳 Phantom update summary: {closed_count} closed, {len(remaining)} still active")
-            else:
-                logger.debug(f"[{symbol}] 🩳 Phantom update summary: 0 closed, {len(remaining)} still active")
+                logger.info(f"[{symbol}] 🩳 Phantom update: {closed_count} closed, {len(remaining)} still active")
         except Exception:
             pass
 
-        # Health monitoring: Alert if too many active phantoms
+        # Health monitoring: Alert if too many active phantoms (rate limited to avoid spam)
         try:
             total_active = sum(len(v) for v in self.active.values())
-            if total_active > 100:
-                logger.warning(f"⚠️ PHANTOM HEALTH: {total_active} active phantoms (threshold: 100) - possible outcome detection issues")
-            elif total_active > 50:
-                logger.info(f"Phantom count elevated: {total_active} active (threshold: 50)")
+            # Only log if count changed significantly or first time
+            if not hasattr(self, '_last_health_check'):
+                self._last_health_check = {'count': 0, 'time': 0}
+
+            from time import time as _time
+            now = _time()
+            count_changed = abs(total_active - self._last_health_check['count']) > 50
+            time_elapsed = (now - self._last_health_check['time']) > 300  # 5 minutes
+
+            if count_changed or time_elapsed:
+                if total_active > 100:
+                    logger.warning(f"⚠️ PHANTOM HEALTH: {total_active} active phantoms (threshold: 100) - check timeout/outcome detection")
+                elif total_active > 50:
+                    logger.info(f"Phantom count elevated: {total_active} active (threshold: 50)")
+                self._last_health_check = {'count': total_active, 'time': now}
         except Exception as e:
             logger.debug(f"Phantom health check error: {e}")
 

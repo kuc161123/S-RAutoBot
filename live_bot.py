@@ -2985,11 +2985,22 @@ class TradingBot:
                     confirm = bool(k.get("confirm", False))
                 except Exception:
                     confirm = False
+                # Log every 10th unconfirmed bar to show activity
+                try:
+                    if not hasattr(self, '_scalp_unconfirmed_count'):
+                        self._scalp_unconfirmed_count = {}
+                    self._scalp_unconfirmed_count[sym] = self._scalp_unconfirmed_count.get(sym, 0) + 1
+                    if not confirm and self._scalp_unconfirmed_count[sym] % 10 == 0:
+                        logger.info(f"[{sym}] 🩳 Scalp: {self._scalp_unconfirmed_count[sym]} unconfirmed 3m bars (waiting for close...)")
+                except Exception:
+                    pass
                 if not confirm:
                     continue
                 # Count confirmed 3m bar for diagnostics
                 try:
                     self._scalp_stats['confirms'] = self._scalp_stats.get('confirms', 0) + 1
+                    total_confirms = self._scalp_stats.get('confirms', 0)
+                    logger.info(f"[{sym}] 🩳 Scalp: 3m BAR CLOSED (total confirms: {total_confirms})")
                 except Exception:
                     pass
                 # Mark last confirm per-symbol for health/fallback
@@ -3268,6 +3279,11 @@ class TradingBot:
                     logger.debug(f"[{sym}] Scalp(3m) detection error: {e}")
                     sc_sig = None
                 if not sc_sig:
+                    # Log that we reached heartbeat section
+                    try:
+                        logger.debug(f"[{sym}] 🩳 Scalp: No signal detected, checking heartbeat config...")
+                    except Exception:
+                        pass
                     # Heartbeat: emit compact no-signal line at INFO (configurable)
                     try:
                         log_cfg = (self.config.get('scalp', {}) or {}).get('logging', {}) or {}
@@ -10184,11 +10200,19 @@ class TradingBot:
                                       (cfg.get('mr', {}).get('context', {}) or {}).get('use_3m_context', False))
         except Exception:
             use_3m_for_context = False
-        if (not stream_3m_only) and ((use_scalp and SCALP_AVAILABLE and scalp_stream_tf) or (use_3m_for_context and scalp_stream_tf)):
+        # Start secondary 3m stream when:
+        # 1. NOT stream_3m_only (main is 15m, secondary is 3m for scalp/context)
+        # 2. OR stream_3m_only AND scalp enabled (main disabled, secondary handles all 3m)
+        should_start_secondary = (
+            (not stream_3m_only and ((use_scalp and SCALP_AVAILABLE and scalp_stream_tf) or (use_3m_for_context and scalp_stream_tf))) or
+            (stream_3m_only and use_scalp and SCALP_AVAILABLE and scalp_stream_tf)
+        )
+        if should_start_secondary:
             try:
                 self._create_task(self._collect_secondary_stream(cfg['bybit']['ws_public'], scalp_stream_tf, symbols))
                 self._scalp_secondary_started = True
-                logger.info(f"🧪 Secondary 3m stream started (tf={scalp_stream_tf}m) — sources: {'Scalp' if use_scalp else ''}{' + ' if use_scalp and use_3m_for_context else ''}{'Context' if use_3m_for_context else ''}")
+                mode_label = "MAIN (3m only)" if stream_3m_only else "SECONDARY (3m)"
+                logger.info(f"🧪 {mode_label} stream started (tf={scalp_stream_tf}m) — sources: {'Scalp' if use_scalp else ''}{' + ' if use_scalp and use_3m_for_context else ''}{'Context' if use_3m_for_context else ''}")
             except Exception as e:
                 logger.warning(f"Failed to start scalp secondary stream: {e}")
 

@@ -3536,6 +3536,142 @@ class TradingBot:
                 except Exception:
                     pass
 
+                # ══════════════════════════════════════════════════════════════════════
+                # PRIORITY PATH 1: ML≥90 Bypass (check FIRST before all other paths)
+                # ══════════════════════════════════════════════════════════════════════
+                # High-confidence ML scores (90-109) bypass ALL gates and execute immediately
+                # Historical data: 90-99 WR 80.0% (N=5) | 100-109 WR 78.8% (N=132)
+                try:
+                    # Build minimal features for ML scoring
+                    _df_ml_check = None
+                    try:
+                        _df_ml_check = self.frames_3m.get(sym)
+                        if _df_ml_check is None or getattr(_df_ml_check, 'empty', True):
+                            _df_ml_check = self.frames.get(sym)
+                        if _df_ml_check is None or getattr(_df_ml_check, 'empty', True):
+                            _df_ml_check = df
+                    except Exception:
+                        _df_ml_check = df
+
+                    sc_feats_ml = self._build_scalp_features(_df_ml_check, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+
+                    # Attach HTF metrics for ML scoring
+                    try:
+                        comp = self._get_htf_metrics(sym, self.frames.get(sym))
+                        sc_feats_ml['ts15'] = float(comp.get('ts15', 0.0))
+                        sc_feats_ml['ts60'] = float(comp.get('ts60', 0.0))
+                        sc_feats_ml['rc15'] = float(comp.get('rc15', 0.0))
+                        sc_feats_ml['rc60'] = float(comp.get('rc60', 0.0))
+                    except Exception:
+                        pass
+
+                    # Compute Qscore for features
+                    try:
+                        _qs = self._compute_qscore_scalp(sym, sc_sig.side, float(sc_sig.entry), float(sc_sig.sl), float(sc_sig.tp), df3=_df_ml_check, df15=self.frames.get(sym), sc_feats=sc_feats_ml)
+                        sc_feats_ml['qscore'] = float(_qs[0])
+                        sc_feats_ml['qscore_components'] = dict(_qs[1])
+                        sc_feats_ml['qscore_reasons'] = list(_qs[2])
+                    except Exception:
+                        pass
+
+                    # Score with ML
+                    ml_score_priority = 0.0
+                    try:
+                        from ml_scorer_scalp import get_scalp_scorer
+                        _scorer = get_scalp_scorer()
+                        ml_score_priority, _ = _scorer.score_signal(
+                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                            sc_feats_ml
+                        )
+                    except Exception:
+                        ml_score_priority = 0.0
+
+                    sc_feats_ml['ml'] = float(ml_score_priority or 0.0)
+
+                    # Check if ML≥90 → immediate execution bypass
+                    if float(ml_score_priority or 0.0) >= 90.0:
+                        logger.info(f"[{sym}] 🌟 PRIORITY PATH: ML={ml_score_priority:.1f} ≥ 90 → Bypassing ALL gates and executing immediately")
+
+                        # Position check
+                        if sym in self.book.positions:
+                            logger.info(f"[{sym}] 🛑 ML≥90 bypass blocked: position_exists")
+                            continue
+
+                        # Execute with configurable ML90 risk
+                        ml90_risk = self.shared.get("ml90_bypass_risk", 0.5)
+                        import uuid as _uuid
+                        exec_id_priority = _uuid.uuid4().hex[:8]
+
+                        logger.info(f"[{sym}] 🌟 ML HIGH ({ml_score_priority:.1f}): Executing with {ml90_risk}% risk | {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+
+                        try:
+                            did_exec_priority = await self._execute_scalp_trade(
+                                sym, sc_sig,
+                                ml_score=float(ml_score_priority),
+                                exec_id=exec_id_priority,
+                                risk_percent_override=ml90_risk
+                            )
+                        except TypeError:
+                            # Fallback for older signature
+                            did_exec_priority = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_score_priority))
+
+                        if did_exec_priority:
+                            # Record as executed phantom
+                            try:
+                                from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                                scpt_priority = _get_scpt()
+                                scpt_priority.record_scalp_signal(
+                                    sym,
+                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                    float(ml_score_priority),
+                                    True,  # executed=True
+                                    sc_feats_ml
+                                )
+                            except Exception as e:
+                                logger.error(f"[{sym}] Failed to record ML≥90 phantom: {e}")
+
+                            if self.tg:
+                                try:
+                                    await self.tg.send_message(
+                                        f"🌟 HIGH ML SCORE EXECUTE\n"
+                                        f"{sym} {sc_sig.side.upper()} @ {sc_sig.entry:.4f}\n"
+                                        f"ML: {ml_score_priority:.1f} | Risk: {ml90_risk}%\n"
+                                        f"SL: {sc_sig.sl:.4f} | TP: {sc_sig.tp:.4f}\n"
+                                        f"ALL gates bypassed (ML≥90, ~79% WR)"
+                                    )
+                                except Exception:
+                                    pass
+
+                            self._scalp_cooldown[sym] = bar_ts
+                            continue  # Skip all other execution paths
+                        else:
+                            # Execution failed - record as non-executed phantom
+                            try:
+                                from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                                scpt_fail = _get_scpt()
+                                scpt_fail.record_scalp_signal(
+                                    sym,
+                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                    float(ml_score_priority),
+                                    False,  # executed=False
+                                    sc_feats_ml
+                                )
+                            except Exception as e:
+                                logger.error(f"[{sym}] Failed to record ML≥90 failed phantom: {e}")
+
+                            logger.warning(f"[{sym}] 🛑 ML≥90 bypass execution FAILED: ML={ml_score_priority:.1f} but trade did not execute")
+                            continue  # Skip other paths even if execution failed
+                    else:
+                        # ML < 90: proceed with normal execution paths
+                        logger.debug(f"[{sym}] ML score {ml_score_priority:.1f} < 90, proceeding with normal execution paths")
+                except Exception as e:
+                    logger.error(f"[{sym}] ML≥90 priority check error: {e}")
+                    # Continue to other paths if priority check fails
+
+                # ══════════════════════════════════════════════════════════════════════
+                # PRIORITY PATH 2+: Other execution paths (only if ML<90 or ML check failed)
+                # ══════════════════════════════════════════════════════════════════════
+
                 # Immediate execution for ALL Scalp detections (disabled by default; use high-ML path instead)
                 try:
                     exec_all = False
@@ -3772,87 +3908,8 @@ class TradingBot:
                     except Exception:
                         pass
 
-                    # ML Score 90+ bypass: High-confidence scores (90-109) bypass ALL gates with reduced risk
-                    # Historical data: 90-99 WR 80.0% (N=5) | 100-109 WR 78.8% (N=132)
-                    ml_score_for_check = float(ml_s or 0.0)
-                    if ml_score_for_check >= 90.0:
-                        logger.info(f"[{sym}] 🎯 ML≥90 BYPASS TRIGGERED: ML={ml_s:.1f}, checking position status...")
-                        try:
-                            if sym in self.book.positions:
-                                logger.info(f"[{sym}] 🛑 ML≥90 bypass blocked: position_exists")
-                                continue  # CRITICAL FIX: must skip remaining logic
-                            else:
-                                # Get ML90 bypass risk from shared state (adjustable via /ml90_risk command)
-                                ml90_risk = self.shared.get("ml90_bypass_risk", 0.5)
-                                import uuid as _uuid
-                                exec_id_perfect = _uuid.uuid4().hex[:8]
-                                logger.info(f"[{sym}] 🌟 ML HIGH ({ml_s:.1f}): Bypassing ALL gates, executing with {ml90_risk}% risk | {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
-
-                                try:
-                                    did_exec_perfect = await self._execute_scalp_trade(
-                                        sym, sc_sig,
-                                        ml_score=float(ml_s),
-                                        exec_id=exec_id_perfect,
-                                        risk_percent_override=ml90_risk  # Configurable risk for ML≥90
-                                    )
-                                except TypeError:
-                                    # Fallback for older signature
-                                    did_exec_perfect = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s))
-
-                                if did_exec_perfect:
-                                    # Record as executed phantom
-                                    try:
-                                        from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
-                                        scpt_perfect = _get_scpt()
-                                        scpt_perfect.record_scalp_signal(
-                                            sym,
-                                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                            float(ml_s),
-                                            True,  # executed=True
-                                            sc_feats
-                                        )
-                                    except Exception as e:
-                                        logger.error(f"[{sym}] Failed to record ML≥90 phantom: {e}")
-
-                                    if self.tg:
-                                        try:
-                                            await self.tg.send_message(
-                                                f"🌟 HIGH ML SCORE EXECUTE\n"
-                                                f"{sym} {sc_sig.side.upper()} @ {sc_sig.entry:.4f}\n"
-                                                f"ML: {ml_s:.1f} | Risk: {ml90_risk}%\n"
-                                                f"SL: {sc_sig.sl:.4f} | TP: {sc_sig.tp:.4f}\n"
-                                                f"ALL gates bypassed (ML≥90, ~79% WR)"
-                                            )
-                                        except Exception:
-                                            pass
-
-                                    self._scalp_cooldown[sym] = bar_ts
-                                else:
-                                    # Execution failed - record as non-executed phantom for learning
-                                    try:
-                                        from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
-                                        scpt_fail = _get_scpt()
-                                        scpt_fail.record_scalp_signal(
-                                            sym,
-                                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                            float(ml_s),
-                                            False,  # executed=False (execution failed)
-                                            sc_feats
-                                        )
-                                    except Exception as e:
-                                        logger.error(f"[{sym}] Failed to record ML≥90 failed phantom: {e}")
-
-                                    logger.warning(f"[{sym}] 🛑 ML≥90 bypass execution FAILED: ML={ml_s:.1f} but trade did not execute")
-
-                                # Always skip remaining logic for ML≥90 signals (executed or not)
-                                continue
-                        except Exception as e:
-                            logger.error(f"[{sym}] ML≥90 bypass execution error: {e}")
-                            # Still skip remaining logic even if bypass hits an exception
-                            continue
-                    else:
-                        # ML < 90: normal flow
-                        logger.debug(f"[{sym}] ML score {ml_score_for_check:.1f} < 90, proceeding with normal gate checks")
+                    # Note: ML≥90 bypass now handled at top as PRIORITY PATH 1
+                    # This ML score is still used for normal gate-based execution decisions below
 
                     # Off-hours execution block (phantoms continue learning)
                     try:

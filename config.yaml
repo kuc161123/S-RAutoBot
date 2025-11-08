@@ -3,7 +3,7 @@ bybit:
   # Optional fallback HTTP base URL (disabled by default)
   alt_base_url: https://api.bytick.com
   # Reuse ALT endpoints on failure for HTTP and WS (if *_alt provided)
-  use_alt_on_fail: false
+  use_alt_on_fail: true
   ws_public: wss://stream.bybit.com/v5/public/linear
   # Optional fallback WS endpoint
   ws_public_alt: wss://stream.bytick.com/v5/public/linear
@@ -624,7 +624,7 @@ scalp:
     min_bb_width_pct: 0.55   # was 0.60 — accept slightly narrower bands
     vol_ratio_min: 1.05      # was 1.10 — accept lighter volume expansion
     wick_ratio_min: 0.20     # reduced from 0.25 to capture smaller reversal wicks for phantom learning
-    timeout_hours: 0.0167    # auto-close scalp phantoms after 1 minute (temporary cleanup)
+    timeout_hours: 1         # auto-close scalp phantoms after 1 hour (aggressive cleanup, was 8h)
   backfill:
     active_labeling: false   # if true, uses recent 3m bars to label open phantoms during downtime
     ml_enabled: false        # if true, seeds Scalp ML with historical phantom outcomes on startup

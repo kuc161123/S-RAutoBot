@@ -13954,7 +13954,7 @@ class TradingBot:
                     strategy_name = selected_strategy
 
                     # Store ML data in signal for later use
-                    if hasattr(sig, '__dict__'):
+                    if ('sig' in locals()) and (sig is not None) and hasattr(sig, '__dict__'):
                         sig.__dict__['ml_score'] = ml_score
                         sig.__dict__['features'] = basic_features if 'basic_features' in locals() else {}
                         sig.__dict__['enhanced_features'] = enhanced_features if 'enhanced_features' in locals() else {}
@@ -13983,8 +13983,8 @@ class TradingBot:
                         logger.warning(f"   🛡️ FAIL-CLOSED: Skipping execution and recording phantom")
                         should_take_trade = False
 
-                # Ensure we have a valid signal before proceeding
-                if sig is None:
+                # Ensure we have a valid signal before proceeding (guard for missing local)
+                if ('sig' not in locals()) or (sig is None):
                     logger.warning(f"[{sym}] No valid signal found after processing, skipping")
                     continue
 

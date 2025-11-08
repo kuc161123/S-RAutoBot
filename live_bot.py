@@ -3166,10 +3166,43 @@ class TradingBot:
                                     _orb_ok = False
                                 if _ema_dn and _cl >= _first_low:
                                     _orb_ok = False
+                            # Compute EMA slopes (% per bar) and exec thresholds for extra clarity
+                            try:
+                                if len(_ema_f) >= 2:
+                                    _slope_f = float((_ema_f.iloc[-1] / max(1e-9, _ema_f.iloc[-2]) - 1.0) * 100.0)
+                                else:
+                                    _slope_f = 0.0
+                                if len(_ema_s) >= 2:
+                                    _slope_s = float((_ema_s.iloc[-1] / max(1e-9, _ema_s.iloc[-2]) - 1.0) * 100.0)
+                                else:
+                                    _slope_s = 0.0
+                            except Exception:
+                                _slope_f = _slope_s = 0.0
+                            try:
+                                _hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                _sfast_min = float(_hg.get('slope_fast_min_pb', 0.03))
+                                _sslow_min = float(_hg.get('slope_slow_min_pb', 0.015))
+                                _wick_delta_exec = float(_hg.get('wick_delta_min', 0.10))
+                                _allowed_regs = ','.join(list(_hg.get('allowed_regimes', ['normal']))) if bool(_hg.get('regime_enabled', True)) else '—'
+                            except Exception:
+                                _sfast_min = 0.03; _sslow_min = 0.015; _wick_delta_exec = float(sc_settings.wick_delta_min); _allowed_regs = '—'
+                            # Current regime label (best-effort)
+                            try:
+                                reg_level = 'unknown'
+                                if 'frames' in dir(self) and sym in self.frames and not self.frames[sym].empty:
+                                    ra = get_enhanced_market_regime(self.frames[sym].tail(200), sym)
+                                    reg_level = getattr(ra, 'volatility_level', 'normal')
+                            except Exception:
+                                reg_level = 'unknown'
                             logger.info(
-                                f"[{sym}] 🩳 Scalp: no signal (up={_ema_up} dn={_ema_dn} bbw={_bbw_pct:.2f}/{sc_settings.min_bb_width_pct:.2f} "
-                                f"vol={_vol_ratio:.2f}/{sc_settings.vol_ratio_min:.2f} wickL={_lower_w:.2f} wickU={_upper_w:.2f}/{sc_settings.wick_ratio_min:.2f} "
-                                f"vwap={_dist_vwap_atr:.2f}/{_cap:.2f} orb={_orb_ok})"
+                                f"[{sym}] 🩳 Scalp: no signal (up={_ema_up} dn={_ema_dn} "
+                                f"bbw={_bbw_pct:.2f}/{sc_settings.min_bb_width_pct:.2f} "
+                                f"vol={_vol_ratio:.2f}/{sc_settings.vol_ratio_min:.2f} "
+                                f"wickL={_lower_w:.2f} wickU={_upper_w:.2f} Δsig={float(sc_settings.wick_delta_min):.2f} Δexec={_wick_delta_exec:.2f} minWick={float(sc_settings.wick_ratio_min):.2f} "
+                                f"vwap={_dist_vwap_atr:.2f}/{_cap:.2f} "
+                                f"slopeF/S={_slope_f:+.3f}/{_slope_s:+.3f}% mins={_sfast_min:.3f}/{_sslow_min:.3f} "
+                                f"reg={reg_level}(allow { _allowed_regs }) "
+                                f"orb={_orb_ok})"
                             )
                             try:
                                 reasons = []

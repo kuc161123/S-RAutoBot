@@ -603,6 +603,7 @@ scalp:
     heartbeat: true      # Per 3m-bar heartbeat when no Scalp signal
     decision_only: false # If true, suppress analysis/heartbeat and show only decisions
     kline_trace: false   # Disable per-message WS kline logs (keep first 5 per-connection)
+    warm_start_heartbeat: true  # Emit one immediate heartbeat per symbol after startup
   debug:
     force_accept: false  # Off: return to normal acceptance with decision reasons
   promote_enabled: false

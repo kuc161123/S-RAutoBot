@@ -1553,6 +1553,98 @@ class TradingBot:
                 # Keep watchdog alive on errors
                 continue
 
+    async def _emit_scalp_warm_heartbeats(self, symbols: list[str]):
+        """Emit a one-time Scalp heartbeat for each symbol using current 3m frames.
+
+        This is a startup aid so you immediately see per-symbol diagnostics without
+        waiting for the first 3m close. Uses a simplified metric set consistent
+        with the normal heartbeat (EMA direction, BBW pct, Vol ratio, VWAP dist ATR,
+        slope fast/slow) and the configured execution thresholds.
+        """
+        import numpy as _np
+        import pandas as _pd
+        try:
+            log_cfg = (self.config.get('scalp', {}) or {}).get('logging', {}) or {}
+            if not bool(log_cfg.get('heartbeat', False)):
+                return
+        except Exception:
+            return
+        try:
+            hg = ((self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {})
+            sig = ((self.config.get('scalp', {}) or {}).get('signal', {}) or {})
+            slope_fast_min = float(hg.get('slope_fast_min_pb', 0.03))
+            slope_slow_min = float(hg.get('slope_slow_min_pb', 0.015))
+            vol_min = float(hg.get('vol_ratio_min_3m', 1.20))
+            bbw_min = float(hg.get('bbw_min_pct', 0.60))
+            bbw_max = float(hg.get('bbw_max_pct', 0.90))
+            vwap_cap = float(sig.get('vwap_dist_atr_max', 1.50))
+        except Exception:
+            slope_fast_min = 0.03; slope_slow_min = 0.015; vol_min = 1.2; bbw_min = 0.60; bbw_max = 0.90; vwap_cap = 1.50
+        for sym in symbols:
+            try:
+                df3 = self.frames_3m.get(sym)
+                if df3 is None or len(df3) < 120:
+                    continue
+                c = df3['close']; h = df3['high']; l = df3['low']; v = df3['volume']
+                atr = (h - l).rolling(14).mean()
+                ema_f = c.ewm(span=8, adjust=False).mean()
+                ema_s = c.ewm(span=21, adjust=False).mean()
+                up = bool(c.iloc[-1] > ema_f.iloc[-1] > ema_s.iloc[-1])
+                dn = bool(c.iloc[-1] < ema_f.iloc[-1] < ema_s.iloc[-1])
+                # EVWAP
+                tp = (h + l + c) / 3.0
+                pv = tp * v.clip(lower=0.0)
+                evwap = pv.ewm(span=100, adjust=False).mean() / v.clip(lower=0.0).ewm(span=100, adjust=False).mean().replace(0, _np.nan)
+                vdist_atr = float(abs(c.iloc[-1] - evwap.iloc[-1]) / max(1e-9, atr.iloc[-1])) if atr.notna().iloc[-1] else _np.nan
+                # Volume ratio (20)
+                vma = v.rolling(20).mean()
+                vratio = float(v.iloc[-1] / max(1e-9, vma.iloc[-1])) if vma.iloc[-1] else _np.nan
+                # BB width percentile (20, k=2)
+                mid = c.rolling(20).mean(); std = c.rolling(20).std(ddof=0)
+                upper = mid + 2.0 * std; lower = mid - 2.0 * std
+                bbw = float((upper.iloc[-1] - lower.iloc[-1]) / max(1e-9, c.iloc[-1])) if std.notna().iloc[-1] else _np.nan
+                bbw_hist = ((upper - lower) / c.replace(0, _np.nan)).dropna().tail(200)
+                if len(bbw_hist) >= 10 and _np.isfinite(bbw):
+                    rank = float((bbw_hist <= bbw).sum()) / float(len(bbw_hist))
+                else:
+                    rank = _np.nan
+                # Slopes per bar (%)
+                try:
+                    sf = 100.0 * (ema_f.iloc[-1] - ema_f.iloc[-2]) / max(1e-9, c.iloc[-1])
+                    ss = 100.0 * (ema_s.iloc[-1] - ema_s.iloc[-2]) / max(1e-9, c.iloc[-1])
+                except Exception:
+                    sf = 0.0; ss = 0.0
+                # Pass/fail
+                g_vol = (vratio >= vol_min) if _np.isfinite(vratio) else False
+                g_slope = (abs(sf) >= slope_fast_min) and (abs(ss) >= slope_slow_min)
+                g_bbw = (rank >= bbw_min) and (rank <= bbw_max) if _np.isfinite(rank) else False
+                reasons = []
+                if not (up or dn):
+                    reasons.append('ema_misaligned')
+                if not g_bbw:
+                    reasons.append('bbwband')
+                if not g_vol:
+                    reasons.append('vol_low')
+                if vdist_atr > vwap_cap:
+                    reasons.append('vwap_far')
+                # Compact gate tick lines
+                sig_ticks = f"Vol{'✅' if g_vol else '❌'} BBW{'✅' if g_bbw else '❌'}"
+                exec_ticks = f"Slope{'✅' if g_slope else '❌'}"
+                logger.info(f"[{sym}] 🧮 Scalp heartbeat gates (signal): {sig_ticks}")
+                logger.info(f"[{sym}] 🧮 Scalp heartbeat gates (exec):   {exec_ticks}")
+                # Summary line
+                try:
+                    bbw_pct = f"{rank:.2f}p" if _np.isfinite(rank) else "n/a"
+                except Exception:
+                    bbw_pct = "n/a"
+                logger.info(
+                    f"[{sym}] 🧮 Scalp heartbeat: decision=no_signal "
+                    f"reasons={','.join(reasons) if reasons else 'none'} "
+                    f"(up={up} dn={dn} bbw={bbw_pct} vol={vratio:.2f if _np.isfinite(vratio) else 'n/a'}/>{vol_min:.2f} vdistATR={vdist_atr:.2f if _np.isfinite(vdist_atr) else 'n/a'} "
+                    f"slopeF/S={sf:.3f}/{ss:.3f}% mins={slope_fast_min:.3f}/{slope_slow_min:.3f})"
+                )
+            except Exception:
+                continue
     async def _flip_scalp_position(self, sym: str, sc_sig, sc_feats: dict, htf_pass: bool, body_pass: bool, exec_id: str = None) -> bool:
         """Safely flip an existing one-way Scalp position to the opposite direction.
 
@@ -10083,6 +10175,15 @@ class TradingBot:
             if bool(mon_cfg.get('enabled', True)):
                 self._create_task(self._network_health_monitor(cfg))
                 logger.info("Network health monitor started")
+        except Exception:
+            pass
+
+        # Warm-start Scalp heartbeats (optional)
+        try:
+            s_log = ((cfg.get('scalp', {}) or {}).get('logging', {}) or {})
+            if bool(s_log.get('warm_start_heartbeat', False)):
+                self._create_task(self._emit_scalp_warm_heartbeats(symbols))
+                logger.info("Warm-start Scalp heartbeats scheduled")
         except Exception:
             pass
 

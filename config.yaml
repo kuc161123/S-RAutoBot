@@ -518,7 +518,7 @@ strategy_independence:
 scalp:
   enabled: true
   # If true, run a single 3m stream only (disables main 15m stream)
-  stream_3m_only: false
+  stream_3m_only: true
   timeframe: 3           # Future: stream 3m for scalps; current uses main tf
   use_ml: true
   threshold: 70

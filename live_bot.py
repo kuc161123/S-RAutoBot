@@ -2697,7 +2697,8 @@ class TradingBot:
 
     async def _collect_secondary_stream(self, ws_url: str, timeframe: str, symbols: list[str]):
         """Collect a secondary timeframe (e.g., 3m) for scalp detection."""
-        handler = MultiWebSocketHandler(ws_url, self.running)
+        # Pass self so the handler can access run-state and optional trace flag
+        handler = MultiWebSocketHandler(ws_url, self)
         # Track the configured TF for diagnostics
         try:
             self._scalp_stream_tf = str(timeframe)

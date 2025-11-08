@@ -21,6 +21,14 @@ class MultiWebSocketHandler:
         # Accept either a boolean or an object with a 'running' attribute
         self._running_flag = running_flag
         self.connections = []
+        # Optional per-message kline trace: read from owner if available
+        try:
+            if hasattr(running_flag, '_ws_kline_trace'):
+                self._kline_trace = bool(getattr(running_flag, '_ws_kline_trace'))
+            else:
+                self._kline_trace = False
+        except Exception:
+            self._kline_trace = False
 
     def _is_running(self) -> bool:
         try:
@@ -157,6 +165,19 @@ class MultiWebSocketHandler:
                             if topic.startswith("kline."):
                                 sym = topic.split(".")[-1]
                                 for k in msg.get("data", []):
+                                    # Optional trace: log first few messages per connection; if tracing enabled, log all
+                                    try:
+                                        if not hasattr(self, '_first_logs'):
+                                            self._first_logs = {}
+                                        cnt = int(self._first_logs.get(conn_id, 0))
+                                        if self._kline_trace or cnt < 5:
+                                            cfm = bool(k.get('confirm', False))
+                                            o = k.get('open'); h = k.get('high'); l = k.get('low'); c = k.get('close'); v = k.get('volume')
+                                            ts0 = k.get('start')
+                                            logger.info(f"[WS-{conn_id} KLINE] {sym} confirm={cfm} o={o} h={h} l={l} c={c} v={v} ts={ts0}")
+                                            self._first_logs[conn_id] = cnt + 1
+                                    except Exception:
+                                        pass
                                     await queue.put((sym, k))
                                     
                         except asyncio.TimeoutError:

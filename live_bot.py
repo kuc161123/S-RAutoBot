@@ -3824,9 +3824,29 @@ class TradingBot:
                                             pass
 
                                     self._scalp_cooldown[sym] = bar_ts
-                                    continue  # Skip all other logic
+                                else:
+                                    # Execution failed - record as non-executed phantom for learning
+                                    try:
+                                        from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                                        scpt_fail = _get_scpt()
+                                        scpt_fail.record_scalp_signal(
+                                            sym,
+                                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                            float(ml_s),
+                                            False,  # executed=False (execution failed)
+                                            sc_feats
+                                        )
+                                    except Exception as e:
+                                        logger.error(f"[{sym}] Failed to record ML≥90 failed phantom: {e}")
+
+                                    logger.warning(f"[{sym}] 🛑 ML≥90 bypass execution FAILED: ML={ml_s:.1f} but trade did not execute")
+
+                                # Always skip remaining logic for ML≥90 signals (executed or not)
+                                continue
                         except Exception as e:
                             logger.error(f"[{sym}] ML≥90 bypass execution error: {e}")
+                            # Still skip remaining logic even if bypass hits an exception
+                            continue
 
                     # Off-hours execution block (phantoms continue learning)
                     try:

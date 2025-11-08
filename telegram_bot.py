@@ -41,7 +41,9 @@ class TGBot:
         self.running = False
         # Downgrade noisy PTB warning about CancelledError during graceful shutdown
         try:
-            logging.getLogger("telegram.ext.Application").setLevel(logging.ERROR)
+            # Surface warnings from PTB while we debug polling
+            logging.getLogger("telegram.ext.Application").setLevel(logging.WARNING)
+            logging.getLogger("telegram.ext.Updater").setLevel(logging.INFO)
         except Exception:
             pass
         # Simple per-command cooldown
@@ -151,6 +153,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalp_highml", self.set_scalp_highml))
         self.app.add_handler(CommandHandler("mr_highml", self.set_mr_highml))
         self.app.add_handler(CommandHandler("trend_highml", self.set_trend_highml))
+        # Global error handler
+        self.app.add_error_handler(self._on_error)
 
     def _session_label(self) -> str:
         try:
@@ -1522,7 +1526,15 @@ class TGBot:
             logger.info(f"Telegram bot started polling (chat_id={self.chat_id})")
             # Start polling in background, drop any pending updates to avoid conflicts
             # Let PTB decide allowed updates (defaults cover commands, callbacks, messages)
-            await self.app.updater.start_polling(drop_pending_updates=True)
+            await self.app.updater.start_polling(drop_pending_updates=True, allowed_updates=["message","callback_query","channel_post"]) 
+
+    async def _on_error(self, update: object, context):
+        try:
+            import traceback
+            tb = "".join(traceback.format_exception(None, context.error, context.error.__traceback__))
+            logger.error(f"[TG ERROR] {type(context.error).__name__}: {context.error}\n{tb}")
+        except Exception:
+            pass
 
     async def ping(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:

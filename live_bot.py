@@ -1434,6 +1434,68 @@ class TradingBot:
             pass
         return task
 
+    async def _network_health_monitor(self, cfg: dict):
+        """Periodically probe Telegram and Bybit to classify network health.
+
+        States: OK (both pass), DEGRADED (one fails), OFFLINE (both fail).
+        Logs only on state change to avoid spam; updates shared['network_status'].
+        """
+        import asyncio as _asyncio
+        last_state = None
+        try:
+            mon_cfg = ((cfg.get('network', {}) or {}).get('monitor', {}) or {})
+            interval = int(mon_cfg.get('interval_sec', 60))
+        except Exception:
+            interval = 60
+        while self.running:
+            tg_ok = None
+            by_ok = None
+            # Telegram probe (async)
+            try:
+                if getattr(self, 'tg', None) and getattr(self.tg, 'app', None):
+                    me = await self.tg.app.bot.get_me(timeout=10)
+                    tg_ok = bool(getattr(me, 'id', None))
+                else:
+                    tg_ok = False
+            except Exception as _e:
+                tg_ok = False
+                logger.debug(f"Network monitor: Telegram probe failed: {_e}")
+            # Bybit probe (sync → thread)
+            try:
+                if getattr(self, 'bybit', None):
+                    loop = _asyncio.get_running_loop()
+                    info = await loop.run_in_executor(None, self.bybit.get_api_key_info)
+                    by_ok = bool(info)
+                else:
+                    by_ok = False
+            except Exception as _e:
+                by_ok = False
+                logger.debug(f"Network monitor: Bybit probe failed: {_e}")
+            # Classify
+            state = 'offline'
+            if tg_ok and by_ok:
+                state = 'ok'
+            elif tg_ok or by_ok:
+                state = 'degraded'
+            # Update shared and log on transition
+            try:
+                if getattr(self, 'tg', None) and getattr(self.tg, 'shared', None):
+                    self.tg.shared['network_status'] = state
+            except Exception:
+                pass
+            if state != last_state:
+                if state == 'ok':
+                    logger.info("🌐 Network status: OK — Telegram and Bybit reachable")
+                elif state == 'degraded':
+                    logger.warning("🌐 Network status: DEGRADED — one provider unreachable (see debug logs)")
+                else:
+                    logger.error("🌐 Network status: OFFLINE — Telegram and Bybit unreachable")
+                last_state = state
+            try:
+                await _asyncio.sleep(max(15, interval))
+            except Exception:
+                break
+
     async def _refresh_balance_background(self, bybit, reason: str = 'startup'):
         """Fetch Bybit balance in a thread and update shared state without blocking startup."""
         try:
@@ -8223,10 +8285,19 @@ class TradingBot:
             symbol_clusters = {}
         
         # Initialize Bybit client
+        # Build Bybit config with optional ALT base for failover
+        try:
+            _bybit_alt = (cfg.get('bybit', {}) or {}).get('alt_base_url')
+            _bybit_use_alt = bool((cfg.get('bybit', {}) or {}).get('use_alt_on_fail', False))
+        except Exception:
+            _bybit_alt = None
+            _bybit_use_alt = False
         self.bybit = bybit = Bybit(BybitConfig(
             cfg["bybit"]["base_url"], 
             cfg["bybit"]["api_key"], 
-            cfg["bybit"]["api_secret"]
+            cfg["bybit"]["api_secret"],
+            alt_base_url=_bybit_alt,
+            use_alt_on_fail=_bybit_use_alt
         ))
 
         # Initialize adaptive phantom flow controller (phantom-only)
@@ -9938,7 +10009,16 @@ class TradingBot:
         
         # Always use the MultiWebSocketHandler for main stream as well (unified path with secondary 3m)
         try:
-            ws_handler = MultiWebSocketHandler(cfg["bybit"]["ws_public"], self)
+            # Optional WS ALT endpoint for failover
+            ws_alt = None
+            use_alt_ws = False
+            try:
+                ws_alt = (cfg.get('bybit', {}) or {}).get('ws_public_alt')
+                use_alt_ws = bool((cfg.get('bybit', {}) or {}).get('use_alt_on_fail', False) and ws_alt)
+            except Exception:
+                ws_alt = None
+                use_alt_ws = False
+            ws_handler = MultiWebSocketHandler(cfg["bybit"]["ws_public"], self, alt_ws_url=ws_alt, use_alt_on_fail=use_alt_ws)
             if stream_3m_only:
                 logger.info(f"Using MultiWS main stream for {len(topics)} topics (3m only)")
             else:
@@ -9994,6 +10074,15 @@ class TradingBot:
         try:
             self._create_task(self._watch_main_stream(idle_seconds))
             logger.info(f"Main stream watchdog started (idle>{idle_seconds}s)")
+        except Exception:
+            pass
+
+        # Start network health monitor
+        try:
+            mon_cfg = ((cfg.get('network', {}) or {}).get('monitor', {}) or {})
+            if bool(mon_cfg.get('enabled', True)):
+                self._create_task(self._network_health_monitor(cfg))
+                logger.info("Network health monitor started")
         except Exception:
             pass
 

@@ -16,8 +16,11 @@ class MultiWebSocketHandler:
     
     MAX_SUBS_PER_CONNECTION = 190  # Keep under 200 limit with buffer
     
-    def __init__(self, ws_url: str, running_flag):
+    def __init__(self, ws_url: str, running_flag, alt_ws_url: str | None = None, use_alt_on_fail: bool = False):
         self.ws_url = ws_url
+        self._ws_alt_url = alt_ws_url
+        self._use_alt_on_fail = bool(use_alt_on_fail and bool(alt_ws_url))
+        self._ws_idx = 0  # 0=primary, 1=alt
         # Accept either a boolean or an object with a 'running' attribute
         self._running_flag = running_flag
         self.connections = []
@@ -129,10 +132,13 @@ class MultiWebSocketHandler:
 
         while self._is_running():
             try:
-                logger.info(f"[WS-{conn_id}] Connecting with {len(topics)} topics...")
+                # Select URL (toggle after failures when enabled)
+                url = self.ws_url if (self._ws_idx == 0 or not self._use_alt_on_fail) else self._ws_alt_url
+                which = 'PRIMARY' if (self._ws_idx == 0 or not self._use_alt_on_fail) else 'ALT'
+                logger.info(f"[WS-{conn_id}] Connecting with {len(topics)} topics ({which})…")
                 
                 async with websockets.connect(
-                    self.ws_url,
+                    url,
                     ping_interval=30,
                     ping_timeout=40
                 ) as ws:
@@ -209,7 +215,16 @@ class MultiWebSocketHandler:
                 logger.debug(f"[WS-{conn_id}] Handler cancelled")
                 break
             except Exception as e:
-                logger.error(f"[WS-{conn_id}] Connection error: {e}")
+                import traceback
+                logger.error(f"[WS-{conn_id}] Connection error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+                # Flip URL on failure when alt is configured
+                if self._use_alt_on_fail:
+                    self._ws_idx = 1 - self._ws_idx
+                    try:
+                        which = 'ALT' if self._ws_idx == 1 else 'PRIMARY'
+                        logger.info(f"[WS-{conn_id}] Switching WS endpoint to {which} and backing off")
+                    except Exception:
+                        pass
                 # Exponential backoff with jitter
                 import random
                 sleep_s = min(max_backoff, backoff * (1.0 + random.uniform(-0.2, 0.2)))

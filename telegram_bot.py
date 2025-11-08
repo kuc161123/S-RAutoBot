@@ -26,8 +26,8 @@ class TGBot:
             try:
                 request = HTTPXRequest(
                     connect_timeout=10.0,
-                    read_timeout=35.0,
-                    write_timeout=35.0,
+                    read_timeout=90.0,
+                    write_timeout=45.0,
                     pool_timeout=10.0
                 )
                 self.app = Application.builder().token(token).request(request).build()
@@ -1623,8 +1623,8 @@ class TGBot:
 
     async def send_message(self, text:str):
         """Send message to configured chat with retry on network errors"""
-        max_retries = 3
-        retry_delay = 2
+        max_retries = 5
+        base_delay = 1.5
         
         for attempt in range(max_retries):
             try:
@@ -1648,8 +1648,10 @@ class TGBot:
                             return  # Success, exit
                         except Exception as plain_e:
                             if attempt < max_retries - 1:
-                                logger.warning(f"Plain text send failed (attempt {attempt + 1}/{max_retries}): {plain_e}")
-                                await asyncio.sleep(retry_delay)
+                                import random
+                                delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
+                                logger.warning(f"Plain text send failed (attempt {attempt + 1}/{max_retries}): {plain_e} — retrying in {delay:.1f}s")
+                                await asyncio.sleep(delay)
                                 continue
                             else:
                                 logger.error(f"Failed to send message after {max_retries} attempts: {plain_e}")
@@ -1659,8 +1661,10 @@ class TGBot:
             except (telegram.error.NetworkError, telegram.error.TimedOut) as e:
                 # Network-related errors, retry
                 if attempt < max_retries - 1:
-                    logger.warning(f"Network error (attempt {attempt + 1}/{max_retries}): {e}")
-                    await asyncio.sleep(retry_delay)
+                    import random
+                    delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
+                    logger.warning(f"Network error (attempt {attempt + 1}/{max_retries}): {e} — retrying in {delay:.1f}s")
+                    await asyncio.sleep(delay)
                     continue
                 else:
                     logger.error(f"Failed to send message after {max_retries} attempts: {e}")
@@ -1669,8 +1673,10 @@ class TGBot:
                 error_str = str(e).lower()
                 if any(x in error_str for x in ['httpx.readerror', 'network', 'timeout', 'connection']):
                     if attempt < max_retries - 1:
-                        logger.warning(f"Network error (attempt {attempt + 1}/{max_retries}): {e}")
-                        await asyncio.sleep(retry_delay)
+                        import random
+                        delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
+                        logger.warning(f"Network error (attempt {attempt + 1}/{max_retries}): {e} — retrying in {delay:.1f}s")
+                        await asyncio.sleep(delay)
                         continue
                     else:
                         logger.error(f"Failed to send message after {max_retries} attempts: {e}")
@@ -1680,8 +1686,8 @@ class TGBot:
     
     async def safe_reply(self, update: Update, text: str, parse_mode: str = 'Markdown'):
         """Safely reply to a message with automatic fallback and retry"""
-        max_retries = 3
-        retry_delay = 2
+        max_retries = 5
+        base_delay = 1.5
         
         for attempt in range(max_retries):
             try:
@@ -1715,8 +1721,10 @@ class TGBot:
                             return  # Success, exit
                         except Exception as plain_e:
                             if attempt < max_retries - 1:
-                                logger.warning(f"Plain text reply failed (attempt {attempt + 1}/{max_retries}): {plain_e}")
-                                await asyncio.sleep(retry_delay)
+                                import random
+                                delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
+                                logger.warning(f"Plain text reply failed (attempt {attempt + 1}/{max_retries}): {plain_e} — retrying in {delay:.1f}s")
+                                await asyncio.sleep(delay)
                                 continue
                             else:
                                 logger.error(f"Failed to reply after {max_retries} attempts: {plain_e}")
@@ -1727,8 +1735,10 @@ class TGBot:
             except (telegram.error.NetworkError, telegram.error.TimedOut) as e:
                 # Network-related errors, retry
                 if attempt < max_retries - 1:
-                    logger.warning(f"Network error in reply (attempt {attempt + 1}/{max_retries}): {e}")
-                    await asyncio.sleep(retry_delay)
+                    import random
+                    delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
+                    logger.warning(f"Network error in reply (attempt {attempt + 1}/{max_retries}): {e} — retrying in {delay:.1f}s")
+                    await asyncio.sleep(delay)
                     continue
                 else:
                     logger.error(f"Failed to reply after {max_retries} attempts: {e}")
@@ -1737,8 +1747,10 @@ class TGBot:
                 error_str = str(e).lower()
                 if any(x in error_str for x in ['httpx.readerror', 'network', 'timeout', 'connection']):
                     if attempt < max_retries - 1:
-                        logger.warning(f"Network error in reply (attempt {attempt + 1}/{max_retries}): {e}")
-                        await asyncio.sleep(retry_delay)
+                        import random
+                        delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
+                        logger.warning(f"Network error in reply (attempt {attempt + 1}/{max_retries}): {e} — retrying in {delay:.1f}s")
+                        await asyncio.sleep(delay)
                         continue
                     else:
                         logger.error(f"Failed to reply after {max_retries} attempts: {e}")

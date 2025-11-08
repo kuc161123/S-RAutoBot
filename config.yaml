@@ -1,6 +1,12 @@
 bybit:
   base_url: https://api.bybit.com
+  # Optional fallback HTTP base URL (disabled by default)
+  alt_base_url: https://api.bytick.com
+  # Reuse ALT endpoints on failure for HTTP and WS (if *_alt provided)
+  use_alt_on_fail: false
   ws_public: wss://stream.bybit.com/v5/public/linear
+  # Optional fallback WS endpoint
+  ws_public_alt: wss://stream.bytick.com/v5/public/linear
   api_key: ${BYBIT_API_KEY}
   api_secret: ${BYBIT_API_SECRET}
 trade:
@@ -413,6 +419,12 @@ telegram:
     get_updates_once: true   # one-time getUpdates probe on startup (set false to disable)
     limit: 3
   poll_mode: legacy          # run | legacy (force legacy to avoid event loop close errors)
+
+# Network diagnostics and monitoring
+network:
+  monitor:
+    enabled: true
+    interval_sec: 60
 phantom:
   # Daily caps for phantom sampling to keep training balanced
   ungated_trend: true      # Record Trend phantoms without regime gates (learn-first)

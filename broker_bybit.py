@@ -8,9 +8,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BybitConfig:
-    base_url:str
-    api_key:str
-    api_secret:str
+    base_url: str
+    api_key: str
+    api_secret: str
+    alt_base_url: str | None = None
+    use_alt_on_fail: bool = False
 
 class Bybit:
     def __init__(self, cfg:BybitConfig):
@@ -52,59 +54,75 @@ class Bybit:
             "Content-Type": "application/json",
         }
         
-        url = self.cfg.base_url + path
-        if method == "GET" and query_string:
-            url += "?" + query_string
-        
-        # Simple retry with exponential backoff for transient failures
-        import random
-        max_retries = 3
-        backoff = 0.5
-        last_err = None
-        for attempt in range(max_retries):
+        # Build ordered list of base URLs: primary first, then optional alternate
+        bases = [self.cfg.base_url]
+        if self.cfg.use_alt_on_fail and self.cfg.alt_base_url:
             try:
-                if method == "POST":
-                    r = self.session.post(url, headers=headers, data=body, timeout=15)
-                else:
-                    r = self.session.get(url, headers=headers, timeout=15)
+                # Avoid duplicates
+                if self.cfg.alt_base_url not in bases:
+                    bases.append(self.cfg.alt_base_url)
+            except Exception:
+                pass
 
-                r.raise_for_status()
-                j = r.json()
+        import random
+        last_err = None
+        for base_idx, base in enumerate(bases):
+            # Compose URL for this base
+            url = base + path
+            if method == "GET" and query_string:
+                url += "?" + query_string
 
-                if str(j.get("retCode")) != "0":
-                    # Treat specific non-critical cases as success
-                    try:
-                        if path == "/v5/position/set-leverage" and str(j.get("retCode")) == "110043":
-                            logger.debug("Leverage not modified — already set; treating as success")
-                            return j
-                    except Exception:
-                        pass
-                    # Retry only for likely transient messages
-                    msg = str(j.get('retMsg', '')).lower()
-                    if any(k in msg for k in ["timeout", "limit", "too many", "system busy", "server error"]):
-                        raise RuntimeError(msg)
-                    logger.error(f"Bybit API error: {j}")
-                    raise RuntimeError(f"Bybit error: {j.get('retMsg', 'Unknown error')}")
+            # Simple retry with exponential backoff for transient failures
+            max_retries = 3
+            backoff = 0.5
+            for attempt in range(max_retries):
+                try:
+                    if method == "POST":
+                        r = self.session.post(url, headers=headers, data=body, timeout=15)
+                    else:
+                        r = self.session.get(url, headers=headers, timeout=15)
 
-                return j
+                    r.raise_for_status()
+                    j = r.json()
 
-            except requests.exceptions.RequestException as e:
-                last_err = e
-                logger.warning(f"Bybit request attempt {attempt+1}/{max_retries} failed: {e}")
-            except RuntimeError as e:
-                last_err = e
-                logger.warning(f"Bybit API attempt {attempt+1}/{max_retries} transient error: {e}")
-            except Exception as e:
-                last_err = e
-                logger.warning(f"Unexpected Bybit error attempt {attempt+1}/{max_retries}: {e}")
+                    if str(j.get("retCode")) != "0":
+                        # Treat specific non-critical cases as success
+                        try:
+                            if path == "/v5/position/set-leverage" and str(j.get("retCode")) == "110043":
+                                logger.debug("Leverage not modified — already set; treating as success")
+                                return j
+                        except Exception:
+                            pass
+                        # Retry only for likely transient messages
+                        msg = str(j.get('retMsg', '')).lower()
+                        if any(k in msg for k in ["timeout", "limit", "too many", "system busy", "server error"]):
+                            raise RuntimeError(msg)
+                        logger.error(f"Bybit API error: {j}")
+                        raise RuntimeError(f"Bybit error: {j.get('retMsg', 'Unknown error')}")
 
-            # Backoff with jitter before next try
-            if attempt < max_retries - 1:
-                sleep_s = backoff * (2 ** attempt) * (1.0 + random.uniform(-0.2, 0.2))
-                time.sleep(max(0.2, min(5.0, sleep_s)))
+                    return j
 
-        # All retries failed
-        logger.error(f"Bybit request failed after {max_retries} attempts: {last_err}")
+                except requests.exceptions.RequestException as e:
+                    last_err = e
+                    logger.warning(f"Bybit request attempt {attempt+1}/{max_retries} failed ({'ALT' if base_idx==1 else 'PRIMARY'}): {e}")
+                except RuntimeError as e:
+                    last_err = e
+                    logger.warning(f"Bybit API attempt {attempt+1}/{max_retries} transient error ({'ALT' if base_idx==1 else 'PRIMARY'}): {e}")
+                except Exception as e:
+                    last_err = e
+                    logger.warning(f"Unexpected Bybit error attempt {attempt+1}/{max_retries} ({'ALT' if base_idx==1 else 'PRIMARY'}): {e}")
+
+                # Backoff with jitter before next try
+                if attempt < max_retries - 1:
+                    sleep_s = backoff * (2 ** attempt) * (1.0 + random.uniform(-0.2, 0.2))
+                    time.sleep(max(0.2, min(5.0, sleep_s)))
+
+            # If we exhausted retries on primary and have an alt, fall through to alt
+            if base_idx == 0 and len(bases) > 1:
+                logger.warning("Bybit primary base_url unreachable — attempting ALT base_url")
+
+        # All bases failed
+        logger.error(f"Bybit request failed across all endpoints: {last_err}")
         if isinstance(last_err, Exception):
             raise last_err
         raise RuntimeError("Bybit request failed")

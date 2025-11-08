@@ -3883,8 +3883,9 @@ class TradingBot:
                                         sc_feats
                                     )
                                     _scalp_decision_logged = True
-                                except Exception:
-                                    pass
+                                    logger.debug(f"[{sym}] 🩳 Phantom recording successful (blocked by gates)")
+                                except Exception as e:
+                                    logger.error(f"[{sym}] ❌ Failed to record scalp phantom: {e}")
                                 continue
                     # Qscore-gated execution (primary) OR High-ML override (optional)
                     try:
@@ -4156,8 +4157,9 @@ class TradingBot:
                                         sc_feats
                                     )
                                     _scalp_decision_logged = True
-                                except Exception:
-                                    pass
+                                    logger.debug(f"[{sym}] 🩳 Phantom recording successful (blocked by gates)")
+                                except Exception as e:
+                                    logger.error(f"[{sym}] ❌ Failed to record scalp phantom: {e}")
                                 # Skip further execution paths for this signal
                                 continue
                             # else: wick_pass and (vol not enabled or vol_pass) → proceed
@@ -4790,8 +4792,9 @@ class TradingBot:
                                         sc_feats
                                     )
                                     _scalp_decision_logged = True
-                                except Exception:
-                                    pass
+                                    logger.debug(f"[{sym}] 🩳 Phantom recording successful (blocked by gates)")
+                                except Exception as e:
+                                    logger.error(f"[{sym}] ❌ Failed to record scalp phantom: {e}")
                                 continue
                             # Fear & Greed Index gate check
                             try:
@@ -8242,8 +8245,17 @@ class TradingBot:
             if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
                 scpt_always = get_scalp_phantom_tracker()
                 scpt_always.set_notifier(self._notify_scalp_phantom)
-        except Exception:
-            pass
+                # Log initialization success
+                try:
+                    total_active = sum(len(v) for v in scpt_always.active.values())
+                    total_completed = sum(len(v) for v in scpt_always.completed.values())
+                    logger.info(f"✅ Scalp Phantom Tracker initialized: {total_active} active, {total_completed} completed, notifier wired")
+                except Exception:
+                    logger.info("✅ Scalp Phantom Tracker initialized and notifier wired")
+            else:
+                logger.warning(f"⚠️ Scalp Phantom Tracker NOT available: SCALP_AVAILABLE={SCALP_AVAILABLE}, tracker_func={get_scalp_phantom_tracker is not None}")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Scalp Phantom Tracker: {e}")
 
         if ML_AVAILABLE and use_ml:
             try:

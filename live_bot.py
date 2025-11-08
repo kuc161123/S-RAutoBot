@@ -3771,6 +3771,61 @@ class TradingBot:
                         sc_feats['ml'] = float(ml_s or 0.0)
                     except Exception:
                         pass
+
+                    # ML Score 100 bypass: Perfect score bypasses ALL gates with reduced risk
+                    if float(ml_s or 0.0) >= 100.0:
+                        try:
+                            if sym in self.book.positions:
+                                logger.info(f"[{sym}] 🛑 ML=100 bypass blocked: position_exists")
+                            else:
+                                # Execute immediately with 0.5% risk
+                                import uuid as _uuid
+                                exec_id_perfect = _uuid.uuid4().hex[:8]
+                                logger.info(f"[{sym}] 🌟 ML PERFECT (100): Bypassing ALL gates, executing with 0.5% risk | {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+
+                                try:
+                                    did_exec_perfect = await self._execute_scalp_trade(
+                                        sym, sc_sig,
+                                        ml_score=float(ml_s),
+                                        exec_id=exec_id_perfect,
+                                        risk_percent_override=0.5  # Lower risk for ML=100
+                                    )
+                                except TypeError:
+                                    # Fallback for older signature
+                                    did_exec_perfect = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s))
+
+                                if did_exec_perfect:
+                                    # Record as executed phantom
+                                    try:
+                                        from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                                        scpt_perfect = _get_scpt()
+                                        scpt_perfect.record_scalp_signal(
+                                            sym,
+                                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                            float(ml_s),
+                                            True,  # executed=True
+                                            sc_feats
+                                        )
+                                    except Exception as e:
+                                        logger.error(f"[{sym}] Failed to record ML=100 phantom: {e}")
+
+                                    if self.tg:
+                                        try:
+                                            await self.tg.send_message(
+                                                f"🌟 PERFECT ML SCORE EXECUTE\n"
+                                                f"{sym} {sc_sig.side.upper()} @ {sc_sig.entry:.4f}\n"
+                                                f"ML: 100.0 | Risk: 0.5%\n"
+                                                f"SL: {sc_sig.sl:.4f} | TP: {sc_sig.tp:.4f}\n"
+                                                f"ALL gates bypassed (perfect score)"
+                                            )
+                                        except Exception:
+                                            pass
+
+                                    self._scalp_cooldown[sym] = bar_ts
+                                    continue  # Skip all other logic
+                        except Exception as e:
+                            logger.error(f"[{sym}] ML=100 bypass execution error: {e}")
+
                     # Off-hours execution block (phantoms continue learning)
                     try:
                         oh_cfg = (((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('off_hours', {})) if hasattr(self, 'config') else {}

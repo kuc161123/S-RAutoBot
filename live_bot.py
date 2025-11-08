@@ -10041,6 +10041,14 @@ class TradingBot:
                         df3.loc[row.index[0]] = row.iloc[0]
                         df3.sort_index(inplace=True)
                         self.frames_3m[sym] = df3.tail(2000)
+                        # Persist latest 3m candle row to DB (same as secondary 3m stream)
+                        try:
+                            if getattr(self, '_db_queue', None) is not None:
+                                await self._db_queue.put(('3m', sym, row))
+                            else:
+                                self.storage.save_candles_3m(sym, row)
+                        except Exception as _e3:
+                            logger.debug(f"3m candle persist error for {sym}: {_e3}")
                 except Exception:
                     pass
                     

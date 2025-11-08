@@ -1434,6 +1434,24 @@ class TradingBot:
             pass
         return task
 
+    async def _refresh_balance_background(self, bybit, reason: str = 'startup'):
+        """Fetch Bybit balance in a thread and update shared state without blocking startup."""
+        try:
+            import asyncio as _asyncio
+            loop = _asyncio.get_running_loop()
+            bal = await loop.run_in_executor(None, bybit.get_balance)
+            if bal is not None:
+                try:
+                    if getattr(self, 'tg', None) and getattr(self.tg, 'shared', None):
+                        self.tg.shared["last_balance"] = bal
+                except Exception:
+                    pass
+                logger.info(f"Bybit balance refreshed in background ({reason}): ${bal:.2f} USDT")
+            else:
+                logger.warning(f"Bybit balance refresh returned None ({reason})")
+        except Exception as _e:
+            logger.warning(f"Background balance refresh failed ({reason}): {_e}")
+
     async def _watch_main_stream(self, idle_seconds: float = 600.0):
         """Watchdog: if no main-stream klines for idle_seconds, force a reconnect.
 
@@ -8218,12 +8236,11 @@ class TradingBot:
             flow_ctrl = FlowController(cfg, None)
         self.flow_controller = flow_ctrl
         
-        # Test connection
-        balance = bybit.get_balance()
-        if balance:
-            logger.info(f"Connected to Bybit. Balance: ${balance:.2f} USDT")
-        else:
-            logger.warning("Could not fetch balance, continuing anyway...")
+        # Test connection (non-blocking): refresh balance in background
+        try:
+            self._create_task(self._refresh_balance_background(bybit, reason='startup'))
+        except Exception:
+            pass
         
         # Early Telegram startup notification to reduce perceived restart latency
         try:

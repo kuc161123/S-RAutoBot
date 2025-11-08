@@ -119,6 +119,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalprecommend", self.scalp_recommendations))
         self.app.add_handler(CommandHandler("scalptrends", self.scalp_monthly_trends))
         self.app.add_handler(CommandHandler("scalppromote", self.scalp_promotion_status))
+        # Utility to verify chat/user IDs
+        self.app.add_handler(CommandHandler("whoami", self.whoami))
         # Scalp gate risk adjustments
         self.app.add_handler(CommandHandler("scalpgaterisk", self.scalp_gate_risk))
         self.app.add_handler(CommandHandler("scalprisk", self.scalp_gate_risk))  # alias
@@ -1509,62 +1511,13 @@ class TGBot:
         return "\n".join(lines), kb
 
     async def start_polling(self):
-        """Start the bot polling"""
-        # Defensive: ensure running flag exists
+        """Start the bot polling (force legacy path to avoid event-loop conflicts)."""
         if not hasattr(self, 'running'):
             self.running = False
-        if not self.running:
-            # Choose polling mode: run_polling (encapsulated lifecycle) or legacy start + updater.start_polling
-            poll_mode = 'run'
-            try:
-                cfg = (self.shared or {}).get('config', {}) if hasattr(self, 'shared') else {}
-                poll_mode = str((((cfg.get('telegram', {}) or {}).get('poll_mode', 'run')))).strip().lower()
-            except Exception:
-                poll_mode = 'run'
-            if poll_mode == 'run':
-                # Ensure webhook is cleared before run_polling
-                try:
-                    await self.app.bot.delete_webhook(drop_pending_updates=True)
-                    logger.info("Telegram webhook cleared (drop_pending_updates=true)")
-                except Exception as _wh:
-                    logger.debug(f"Webhook delete skipped: {_wh}")
-                # One-time probe before starting run_polling (optional)
-                try:
-                    cfg = (self.shared or {}).get('config', {}) if hasattr(self, 'shared') else {}
-                    probe_cfg = ((cfg.get('telegram', {}) or {}).get('probe', {}) or {})
-                    if bool(probe_cfg.get('get_updates_once', False)):
-                        limit = int(probe_cfg.get('limit', 3))
-                        ups = await self.app.bot.get_updates(limit=limit, timeout=10)
-                        logger.info(f"TG get_updates probe: ok count={len(ups)} (limit={limit})")
-                        for u in ups[:5]:
-                            try:
-                                t = type(u).__name__
-                                chat = getattr(getattr(u, 'message', None) or getattr(u, 'channel_post', None) or getattr(u, 'edited_message', None), 'chat', None)
-                                chat_id = getattr(chat, 'id', None)
-                                txt = getattr(getattr(u, 'message', None), 'text', None)
-                                logger.info(f"[TG PROBE UPDATE] type={t} chat={chat_id} text={txt}")
-                            except Exception:
-                                pass
-                except Exception as _pe:
-                    logger.error(f"TG get_updates probe failed: {_pe}")
-                # Run polling in background task to avoid blocking the trading loop
-                import asyncio as _asyncio
-                async def _runner():
-                    try:
-                        await self.app.run_polling(drop_pending_updates=True, allowed_updates=["message","callback_query","channel_post"])  
-                    except Exception as _re:
-                        logger.error(f"run_polling error: {_re}")
-                        # Fallback to legacy polling on failure
-                        try:
-                            await self._legacy_start_polling()
-                        except Exception as _lf:
-                            logger.error(f"legacy fallback polling failed: {_lf}")
-                _asyncio.create_task(_runner())
-                self.running = True
-                logger.info(f"Telegram run_polling started (chat_id={self.chat_id})")
-            else:
-                # Legacy start + updater.start_polling path
-                await self._legacy_start_polling()
+        if self.running:
+            return
+        # Always use legacy polling to avoid "Cannot close a running event loop" issues
+        await self._legacy_start_polling()
 
     async def _legacy_start_polling(self):
         """Initialize/start Application and start the Updater polling loop."""
@@ -1582,6 +1535,25 @@ class TGBot:
             logger.info("Telegram webhook cleared (drop_pending_updates=true)")
         except Exception as _wh:
             logger.debug(f"Webhook delete skipped: {_wh}")
+        # One-time getUpdates probe (optional) before starting legacy polling
+        try:
+            cfg = (self.shared or {}).get('config', {}) if hasattr(self, 'shared') else {}
+            probe_cfg = ((cfg.get('telegram', {}) or {}).get('probe', {}) or {})
+            if bool(probe_cfg.get('get_updates_once', False)):
+                limit = int(probe_cfg.get('limit', 3))
+                ups = await self.app.bot.get_updates(limit=limit, timeout=10)
+                logger.info(f"TG get_updates probe: ok count={len(ups)} (limit={limit})")
+                for u in ups[:5]:
+                    try:
+                        t = type(u).__name__
+                        chat = getattr(getattr(u, 'message', None) or getattr(u, 'channel_post', None) or getattr(u, 'edited_message', None), 'chat', None)
+                        chat_id = getattr(chat, 'id', None)
+                        txt = getattr(getattr(u, 'message', None), 'text', None)
+                        logger.info(f"[TG PROBE UPDATE] type={t} chat={chat_id} text={txt}")
+                    except Exception:
+                        pass
+        except Exception as _pe:
+            logger.error(f"TG get_updates probe failed: {_pe}")
         logger.info(f"Telegram bot started polling (chat_id={self.chat_id})")
         await self.app.updater.start_polling(drop_pending_updates=True, allowed_updates=["message","callback_query","channel_post"]) 
 
@@ -1605,6 +1577,17 @@ class TGBot:
                 await update.message.reply_text("❌ ping error")
             except Exception:
                 pass
+
+    async def whoami(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Echo chat and user identifiers to help verify configuration."""
+        try:
+            uid = getattr(update.effective_user, 'id', None)
+            cid = getattr(update.effective_chat, 'id', None)
+            uname = getattr(getattr(update, 'effective_user', None), 'username', None)
+            await self.safe_reply(update, f"👤 user_id: `{uid}`\n💬 chat_id: `{cid}`\n🔤 username: `{uname}`", parse_mode='Markdown')
+            logger.info(f"/whoami -> user_id={uid} chat_id={cid} username={uname}")
+        except Exception as e:
+            logger.error(f"Error in whoami: {e}")
 
     async def _debug_update(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:

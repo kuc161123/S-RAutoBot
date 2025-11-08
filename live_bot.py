@@ -3774,10 +3774,13 @@ class TradingBot:
 
                     # ML Score 90+ bypass: High-confidence scores (90-109) bypass ALL gates with reduced risk
                     # Historical data: 90-99 WR 80.0% (N=5) | 100-109 WR 78.8% (N=132)
-                    if float(ml_s or 0.0) >= 90.0:
+                    ml_score_for_check = float(ml_s or 0.0)
+                    if ml_score_for_check >= 90.0:
+                        logger.info(f"[{sym}] 🎯 ML≥90 BYPASS TRIGGERED: ML={ml_s:.1f}, checking position status...")
                         try:
                             if sym in self.book.positions:
                                 logger.info(f"[{sym}] 🛑 ML≥90 bypass blocked: position_exists")
+                                continue  # CRITICAL FIX: must skip remaining logic
                             else:
                                 # Get ML90 bypass risk from shared state (adjustable via /ml90_risk command)
                                 ml90_risk = self.shared.get("ml90_bypass_risk", 0.5)
@@ -3847,6 +3850,9 @@ class TradingBot:
                             logger.error(f"[{sym}] ML≥90 bypass execution error: {e}")
                             # Still skip remaining logic even if bypass hits an exception
                             continue
+                    else:
+                        # ML < 90: normal flow
+                        logger.debug(f"[{sym}] ML score {ml_score_for_check:.1f} < 90, proceeding with normal gate checks")
 
                     # Off-hours execution block (phantoms continue learning)
                     try:

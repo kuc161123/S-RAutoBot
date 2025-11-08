@@ -2512,14 +2512,24 @@ class TGBot:
             else:
                 # Default to Trend-centric dashboard when any other strategy is active
                 text, kb = self._build_trend_dashboard()
+
+            # Send message with keyboard buttons
             try:
-                await self.safe_reply(update, text, parse_mode='Markdown')
-            except Exception:
-                # Fallback without parse mode or keyboard if needed
-                try:
-                    await update.message.reply_text(text)
-                except Exception as e:
-                    logger.error(f"Dashboard reply failed: {e}")
+                await update.message.reply_text(text, reply_markup=kb, parse_mode='Markdown')
+            except telegram.error.BadRequest as e:
+                if "can't parse entities" in str(e).lower():
+                    # Markdown parsing failed, try without parse mode but keep keyboard
+                    try:
+                        await update.message.reply_text(text, reply_markup=kb)
+                    except Exception:
+                        # Last resort: plain text without keyboard
+                        await update.message.reply_text(text)
+                else:
+                    raise
+            except Exception as e:
+                logger.error(f"Dashboard reply failed: {e}")
+                # Fallback without keyboard
+                await update.message.reply_text(text)
 
         except Exception as e:
             logger.exception("Error in dashboard: %s", e)

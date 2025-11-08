@@ -67,6 +67,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("status", self.status))
         # Simple responsiveness probe
         self.app.add_handler(CommandHandler("ping", self.ping))
+        # Simple responsiveness probe
+        self.app.add_handler(CommandHandler("ping", self.ping))
         self.app.add_handler(CommandHandler("panic_close", self.panic_close))
         self.app.add_handler(CommandHandler("balance", self.balance))
         self.app.add_handler(CommandHandler("health", self.health))
@@ -137,6 +139,8 @@ class TGBot:
         self.app.add_handler(CallbackQueryHandler(self.ui_callback, pattern=r"^ui:"))
         # Capture numeric input replies when a settings prompt is active
         self.app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), self._on_text))
+        # Last-resort debug handler to observe any incoming updates (kept lightweight)
+        self.app.add_handler(MessageHandler(filters.ALL, self._debug_update), group=99)
         self.app.add_handler(CommandHandler("mlstatus", self.ml_stats))
         self.app.add_handler(CommandHandler("panicclose", self.panic_close))
         self.app.add_handler(CommandHandler("forceretrain", self.force_retrain_ml))
@@ -1509,10 +1513,39 @@ class TGBot:
             await self.app.initialize()
             await self.app.start()
             self.running = True
+            # Ensure webhook is cleared before polling
+            try:
+                await self.app.bot.delete_webhook(drop_pending_updates=True)
+                logger.info("Telegram webhook cleared (drop_pending_updates=true)")
+            except Exception as _wh:
+                logger.debug(f"Webhook delete skipped: {_wh}")
             logger.info(f"Telegram bot started polling (chat_id={self.chat_id})")
             # Start polling in background, drop any pending updates to avoid conflicts
             # Let PTB decide allowed updates (defaults cover commands, callbacks, messages)
             await self.app.updater.start_polling(drop_pending_updates=True)
+
+    async def ping(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        try:
+            uid = getattr(update.effective_user, 'id', 'n/a')
+            cid = getattr(update.effective_chat, 'id', 'n/a')
+            logger.info(f"/ping from user={uid} chat={cid}")
+            await self.safe_reply(update, "🏓 pong — bot alive")
+        except Exception as e:
+            logger.error(f"Error in ping: {e}")
+            try:
+                await update.message.reply_text("❌ ping error")
+            except Exception:
+                pass
+
+    async def _debug_update(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        try:
+            t = type(update).__name__
+            chat = getattr(update.effective_chat, 'id', None)
+            user = getattr(update.effective_user, 'id', None)
+            txt = getattr(getattr(update, 'message', None), 'text', None)
+            logger.info(f"[TG UPDATE] type={t} chat={chat} user={user} text={txt}")
+        except Exception:
+            pass
 
     async def ping(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:

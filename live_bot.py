@@ -1627,11 +1627,20 @@ class TradingBot:
                     reasons.append('vol_low')
                 if vdist_atr > vwap_cap:
                     reasons.append('vwap_far')
-                # Compact gate tick lines
-                sig_ticks = f"Vol{'✅' if g_vol else '❌'} BBW{'✅' if g_bbw else '❌'}"
-                exec_ticks = f"Slope{'✅' if g_slope else '❌'}"
-                logger.info(f"[{sym}] 🧮 Scalp heartbeat gates (signal): {sig_ticks}")
-                logger.info(f"[{sym}] 🧮 Scalp heartbeat gates (exec):   {exec_ticks}")
+                # Comprehensive gate tick lines (matching regular heartbeat format)
+                sig_ticks = (
+                    f"EMA{'✅' if (up or dn) else '❌'} | "
+                    f"Vol{'✅' if g_vol else '❌'} | "
+                    f"VWAP{'✅' if (vdist_atr <= vwap_cap) else '❌'} | "
+                    f"BBW{'✅' if g_bbw else '❌'}"
+                )
+                exec_ticks = (
+                    f"Vol{'✅' if g_vol else '❌'} | "
+                    f"Slope{'✅' if g_slope else '❌'} | "
+                    f"BBW{'✅' if g_bbw else '❌'}"
+                )
+                logger.info(f"[{sym}] 🧮 Scalp WARM-START heartbeat gates (signal): {sig_ticks}")
+                logger.info(f"[{sym}] 🧮 Scalp WARM-START heartbeat gates (exec):   {exec_ticks}")
                 # Summary line
                 try:
                     bbw_pct = f"{rank:.2f}p" if _np.isfinite(rank) else "n/a"
@@ -3266,6 +3275,11 @@ class TradingBot:
                         decision_only = bool(log_cfg.get('decision_only', False))
                     except Exception:
                         hb_enabled = False; decision_only = False
+                    # Debug: log heartbeat trigger check
+                    try:
+                        logger.debug(f"[{sym}] 🧮 Scalp heartbeat check: enabled={hb_enabled} decision_only={decision_only} df_exists={df3_for_sig is not None} df_len={len(df3_for_sig) if df3_for_sig is not None else 0}")
+                    except Exception:
+                        pass
                     # Optional: compact gate probe to explain no-signal
                     try:
                         if hb_enabled and not decision_only and df3_for_sig is not None and len(df3_for_sig) >= max(sc_settings.vwap_window, 50):

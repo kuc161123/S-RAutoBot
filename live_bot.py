@@ -133,7 +133,18 @@ VERSION = "2025.10.10.1"
 load_dotenv()
 
 def new_frame():
-    return pd.DataFrame(columns=["open","high","low","close","volume"])
+    """Create an empty OHLCV frame with a UTC DatetimeIndex.
+
+    Using a tz-aware DatetimeIndex avoids AttributeError when code accesses
+    df.index.tz on newly created frames (RangeIndex has no tz attribute).
+    """
+    try:
+        import pandas as _pd
+        idx = _pd.DatetimeIndex([], tz='UTC')
+        return _pd.DataFrame(columns=["open","high","low","close","volume"], index=idx)
+    except Exception:
+        # Fallback: plain frame; downstream code guards for tz where possible
+        return pd.DataFrame(columns=["open","high","low","close","volume"]) 
 
 def meta_for(symbol:str, cfg_meta:dict):
     if symbol in cfg_meta: 

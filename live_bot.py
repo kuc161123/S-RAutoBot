@@ -3772,23 +3772,24 @@ class TradingBot:
                     except Exception:
                         pass
 
-                    # ML Score 100 bypass: Perfect score bypasses ALL gates with reduced risk
-                    if float(ml_s or 0.0) >= 100.0:
+                    # ML Score 90+ bypass: High-confidence scores (90-109) bypass ALL gates with reduced risk
+                    # Historical data: 90-99 WR 80.0% (N=5) | 100-109 WR 78.8% (N=132)
+                    if float(ml_s or 0.0) >= 90.0:
                         try:
                             if sym in self.book.positions:
-                                logger.info(f"[{sym}] 🛑 ML=100 bypass blocked: position_exists")
+                                logger.info(f"[{sym}] 🛑 ML≥90 bypass blocked: position_exists")
                             else:
                                 # Execute immediately with 0.5% risk
                                 import uuid as _uuid
                                 exec_id_perfect = _uuid.uuid4().hex[:8]
-                                logger.info(f"[{sym}] 🌟 ML PERFECT (100): Bypassing ALL gates, executing with 0.5% risk | {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
+                                logger.info(f"[{sym}] 🌟 ML HIGH ({ml_s:.1f}): Bypassing ALL gates, executing with 0.5% risk | {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
 
                                 try:
                                     did_exec_perfect = await self._execute_scalp_trade(
                                         sym, sc_sig,
                                         ml_score=float(ml_s),
                                         exec_id=exec_id_perfect,
-                                        risk_percent_override=0.5  # Lower risk for ML=100
+                                        risk_percent_override=0.5  # Lower risk for ML≥90
                                     )
                                 except TypeError:
                                     # Fallback for older signature
@@ -3807,16 +3808,16 @@ class TradingBot:
                                             sc_feats
                                         )
                                     except Exception as e:
-                                        logger.error(f"[{sym}] Failed to record ML=100 phantom: {e}")
+                                        logger.error(f"[{sym}] Failed to record ML≥90 phantom: {e}")
 
                                     if self.tg:
                                         try:
                                             await self.tg.send_message(
-                                                f"🌟 PERFECT ML SCORE EXECUTE\n"
+                                                f"🌟 HIGH ML SCORE EXECUTE\n"
                                                 f"{sym} {sc_sig.side.upper()} @ {sc_sig.entry:.4f}\n"
-                                                f"ML: 100.0 | Risk: 0.5%\n"
+                                                f"ML: {ml_s:.1f} | Risk: 0.5%\n"
                                                 f"SL: {sc_sig.sl:.4f} | TP: {sc_sig.tp:.4f}\n"
-                                                f"ALL gates bypassed (perfect score)"
+                                                f"ALL gates bypassed (ML≥90, ~79% WR)"
                                             )
                                         except Exception:
                                             pass
@@ -3824,7 +3825,7 @@ class TradingBot:
                                     self._scalp_cooldown[sym] = bar_ts
                                     continue  # Skip all other logic
                         except Exception as e:
-                            logger.error(f"[{sym}] ML=100 bypass execution error: {e}")
+                            logger.error(f"[{sym}] ML≥90 bypass execution error: {e}")
 
                     # Off-hours execution block (phantoms continue learning)
                     try:

@@ -1514,22 +1514,26 @@ class TGBot:
         if not hasattr(self, 'running'):
             self.running = False
         if not self.running:
-            await self.app.initialize()
-            await self.app.start()
-            self.running = True
-            # Ensure webhook is cleared before polling
-            try:
-                await self.app.bot.delete_webhook(drop_pending_updates=True)
-                logger.info("Telegram webhook cleared (drop_pending_updates=true)")
-            except Exception as _wh:
-                logger.debug(f"Webhook delete skipped: {_wh}")
-            # Optional one-time getUpdates probe (behind config toggle)
+            # Choose polling mode: run_polling (encapsulated lifecycle) or legacy start + updater.start_polling
+            poll_mode = 'run'
             try:
                 cfg = (self.shared or {}).get('config', {}) if hasattr(self, 'shared') else {}
-                probe_cfg = ((cfg.get('telegram', {}) or {}).get('probe', {}) or {})
-                if bool(probe_cfg.get('get_updates_once', False)):
-                    limit = int(probe_cfg.get('limit', 3))
-                    try:
+                poll_mode = str((((cfg.get('telegram', {}) or {}).get('poll_mode', 'run')))).strip().lower()
+            except Exception:
+                poll_mode = 'run'
+            if poll_mode == 'run':
+                # Ensure webhook is cleared before run_polling
+                try:
+                    await self.app.bot.delete_webhook(drop_pending_updates=True)
+                    logger.info("Telegram webhook cleared (drop_pending_updates=true)")
+                except Exception as _wh:
+                    logger.debug(f"Webhook delete skipped: {_wh}")
+                # One-time probe before starting run_polling (optional)
+                try:
+                    cfg = (self.shared or {}).get('config', {}) if hasattr(self, 'shared') else {}
+                    probe_cfg = ((cfg.get('telegram', {}) or {}).get('probe', {}) or {})
+                    if bool(probe_cfg.get('get_updates_once', False)):
+                        limit = int(probe_cfg.get('limit', 3))
                         ups = await self.app.bot.get_updates(limit=limit, timeout=10)
                         logger.info(f"TG get_updates probe: ok count={len(ups)} (limit={limit})")
                         for u in ups[:5]:
@@ -1541,13 +1545,30 @@ class TGBot:
                                 logger.info(f"[TG PROBE UPDATE] type={t} chat={chat_id} text={txt}")
                             except Exception:
                                 pass
-                    except Exception as _pe:
-                        logger.error(f"TG get_updates probe failed: {_pe}")
-            except Exception:
-                pass
-            logger.info(f"Telegram bot started polling (chat_id={self.chat_id})")
-            # Start polling in background, drop any pending updates to avoid conflicts
-            await self.app.updater.start_polling(drop_pending_updates=True, allowed_updates=["message","callback_query","channel_post"]) 
+                except Exception as _pe:
+                    logger.error(f"TG get_updates probe failed: {_pe}")
+                # Run polling in background task to avoid blocking the trading loop
+                import asyncio as _asyncio
+                async def _runner():
+                    try:
+                        await self.app.run_polling(drop_pending_updates=True, allowed_updates=["message","callback_query","channel_post"])  
+                    except Exception as _re:
+                        logger.error(f"run_polling error: {_re}")
+                _asyncio.create_task(_runner())
+                self.running = True
+                logger.info(f"Telegram run_polling started (chat_id={self.chat_id})")
+            else:
+                # Legacy start + updater.start_polling path
+                await self.app.initialize()
+                await self.app.start()
+                self.running = True
+                try:
+                    await self.app.bot.delete_webhook(drop_pending_updates=True)
+                    logger.info("Telegram webhook cleared (drop_pending_updates=true)")
+                except Exception as _wh:
+                    logger.debug(f"Webhook delete skipped: {_wh}")
+                logger.info(f"Telegram bot started polling (chat_id={self.chat_id})")
+                await self.app.updater.start_polling(drop_pending_updates=True, allowed_updates=["message","callback_query","channel_post"]) 
 
     async def _on_error(self, update: object, context):
         try:

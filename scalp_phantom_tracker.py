@@ -499,25 +499,24 @@ class ScalpPhantomTracker:
         if symbol not in self.active:
             return
         act_list = list(self.active.get(symbol, []))
-        # Log phantom update activity
+        # Log phantom update activity (INFO to ensure visibility)
         try:
-            logger.debug(f"[{symbol}] 🩳 Phantom update: {len(act_list)} active phantom(s), current_price={current_price:.4f}")
+            logger.info(f"[{symbol}] 🩳 Phantom update: {len(act_list)} active phantom(s), current_price={current_price:.4f}")
         except Exception:
             pass
         remaining: List[ScalpPhantomTrade] = []
         from datetime import datetime as _dt, timedelta as _td
         # Intrabar extremes (if df provided)
         try:
-            cur_high = float(df['high'].iloc[-1]) if df is not None else current_price
-            cur_low = float(df['low'].iloc[-1]) if df is not None else current_price
-            # Log high/low values for debugging
-            try:
-                logger.debug(f"[{symbol}] 🩳 Phantom update: cur_high={cur_high:.4f}, cur_low={cur_low:.4f}")
-            except Exception:
-                pass
-            # Warn if df is None - intrabar TP/SL hits may be missed
-            if df is None:
-                logger.debug(f"[{symbol}] Phantom update: No df provided, using current_price for high/low (may miss intrabar hits)")
+            if df is not None and not df.empty:
+                cur_high = float(df['high'].iloc[-1])
+                cur_low = float(df['low'].iloc[-1])
+                logger.debug(f"[{symbol}] 🩳 Phantom update: Using df high/low: {cur_high:.4f}/{cur_low:.4f}")
+            else:
+                cur_high = current_price
+                cur_low = current_price
+                # Warn if df is None - intrabar TP/SL hits may be missed
+                logger.warning(f"[{symbol}] ⚠️ Phantom update: No dataframe provided, using current_price={current_price:.4f} for high/low (may miss intrabar TP/SL hits!)")
         except Exception as e:
             logger.warning(f"[{symbol}] Phantom update: Error getting high/low from df: {e}, using current_price")
             cur_high = current_price
@@ -529,39 +528,32 @@ class ScalpPhantomTracker:
                 if ph.side == 'long':
                     ph.max_favorable = max(ph.max_favorable or current_price, current_price)
                     ph.max_adverse = min(ph.max_adverse or current_price, current_price)
-                    # TP/SL checks
-                    try:
-                        logger.debug(f"[{symbol}] 🩳 Phantom LONG check: cur_high={cur_high:.4f} vs TP={ph.take_profit:.4f}, cur_low={cur_low:.4f} vs SL={ph.stop_loss:.4f}")
-                    except Exception:
-                        pass
+                    # TP/SL checks (log all checks to verify they're happening)
                     if cur_high >= ph.take_profit:
                         ph.exit_reason = 'tp'
-                        logger.info(f"[{symbol}] 🩳 Phantom LONG TP HIT: cur_high={cur_high:.4f} >= TP={ph.take_profit:.4f}")
+                        logger.info(f"[{symbol}] 🩳 Phantom LONG TP HIT: cur_high={cur_high:.4f} >= TP={ph.take_profit:.4f} (id={ph.phantom_id})")
                         self._close(symbol, ph, current_price, 'win')
                         closed_count += 1
                         continue
                     if cur_low <= ph.stop_loss:
                         ph.exit_reason = 'sl'
-                        logger.info(f"[{symbol}] 🩳 Phantom LONG SL HIT: cur_low={cur_low:.4f} <= SL={ph.stop_loss:.4f}")
+                        logger.info(f"[{symbol}] 🩳 Phantom LONG SL HIT: cur_low={cur_low:.4f} <= SL={ph.stop_loss:.4f} (id={ph.phantom_id})")
                         self._close(symbol, ph, current_price, 'loss')
                         closed_count += 1
                         continue
                 else:
                     ph.max_favorable = min(ph.max_favorable or current_price, current_price)
                     ph.max_adverse = max(ph.max_adverse or current_price, current_price)
-                    try:
-                        logger.debug(f"[{symbol}] 🩳 Phantom SHORT check: cur_low={cur_low:.4f} vs TP={ph.take_profit:.4f}, cur_high={cur_high:.4f} vs SL={ph.stop_loss:.4f}")
-                    except Exception:
-                        pass
+                    # TP/SL checks (log all checks to verify they're happening)
                     if cur_low <= ph.take_profit:
                         ph.exit_reason = 'tp'
-                        logger.info(f"[{symbol}] 🩳 Phantom SHORT TP HIT: cur_low={cur_low:.4f} <= TP={ph.take_profit:.4f}")
+                        logger.info(f"[{symbol}] 🩳 Phantom SHORT TP HIT: cur_low={cur_low:.4f} <= TP={ph.take_profit:.4f} (id={ph.phantom_id})")
                         self._close(symbol, ph, current_price, 'win')
                         closed_count += 1
                         continue
                     if cur_high >= ph.stop_loss:
                         ph.exit_reason = 'sl'
-                        logger.info(f"[{symbol}] 🩳 Phantom SHORT SL HIT: cur_high={cur_high:.4f} >= SL={ph.stop_loss:.4f}")
+                        logger.info(f"[{symbol}] 🩳 Phantom SHORT SL HIT: cur_high={cur_high:.4f} >= SL={ph.stop_loss:.4f} (id={ph.phantom_id})")
                         self._close(symbol, ph, current_price, 'loss')
                         closed_count += 1
                         continue
@@ -569,10 +561,13 @@ class ScalpPhantomTracker:
                 # Timeout handling (per-phantom)
                 try:
                     if self.timeout_hours and ph.signal_time:
+                        age_hours = (_dt.utcnow() - ph.signal_time).total_seconds() / 3600
                         if _dt.utcnow() - ph.signal_time > _td(hours=int(self.timeout_hours)):
                             # Cancel phantoms exceeding timeout; do not feed ML
                             ph.exit_reason = 'timeout'
+                            logger.info(f"[{symbol}] 🩳 Phantom TIMEOUT: age={age_hours:.1f}h > limit={int(self.timeout_hours)}h (id={ph.phantom_id})")
                             self._close(symbol, ph, current_price, 'timeout')
+                            closed_count += 1
                             continue
                 except Exception as e:
                     logger.warning(f"[{symbol}] Phantom timeout check error for {getattr(ph, 'phantom_id', 'unknown')}: {e}")

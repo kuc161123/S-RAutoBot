@@ -2977,8 +2977,8 @@ class TradingBot:
                     if SCALP_AVAILABLE and get_scalp_phantom_tracker is not None:
                         scpt = get_scalp_phantom_tracker()
                         scpt.update_scalp_phantom_prices(sym, float(row['close'].iloc[0]), df=self.frames_3m.get(sym))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(f"[{sym}] Failed to update scalp phantoms on 3m bar close: {e}")
 
                 # On 3m bar close, attempt phantom-only scalp detection for NONE regime
                 try:
@@ -9539,8 +9539,8 @@ class TradingBot:
                                                 cur_price = float(src_df['close'].iloc[-1])
                                                 if hasattr(scpt, 'update_scalp_phantom_prices'):
                                                     scpt.update_scalp_phantom_prices(s, cur_price, df=src_df)
-                                            except Exception:
-                                                pass
+                                            except Exception as e:
+                                                logger.error(f"[{s}] Background phantom updater error: {e}")
                                     except Exception:
                                         pass
                                     await asyncio.sleep(10)
@@ -10444,8 +10444,8 @@ class TradingBot:
                                 scpt = get_scalp_phantom_tracker()
                                 df3u = self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None
                                 scpt.update_scalp_phantom_prices(sym, current_price, df=df3u if df3u is not None and not df3u.empty else df)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.error(f"[{sym}] Failed to update scalp phantoms (enhanced parallel path): {e}")
                         else:
                             # Original system
                             phantom_tracker.update_phantom_prices(
@@ -10458,8 +10458,8 @@ class TradingBot:
                                     df3u = self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None
                                     src_df = df3u if (df3u is not None and not getattr(df3u, 'empty', True)) else df
                                     scpt.update_scalp_phantom_prices(sym, current_price, df=src_df)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.error(f"[{sym}] Failed to update scalp phantoms (original system path): {e}")
                     # Update shadow simulations with current price
                     try:
                         get_shadow_tracker().update_prices(sym, float(df['close'].iloc[-1]))

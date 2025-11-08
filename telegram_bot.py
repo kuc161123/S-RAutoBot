@@ -1523,9 +1523,30 @@ class TGBot:
                 logger.info("Telegram webhook cleared (drop_pending_updates=true)")
             except Exception as _wh:
                 logger.debug(f"Webhook delete skipped: {_wh}")
+            # Optional one-time getUpdates probe (behind config toggle)
+            try:
+                cfg = (self.shared or {}).get('config', {}) if hasattr(self, 'shared') else {}
+                probe_cfg = ((cfg.get('telegram', {}) or {}).get('probe', {}) or {})
+                if bool(probe_cfg.get('get_updates_once', False)):
+                    limit = int(probe_cfg.get('limit', 3))
+                    try:
+                        ups = await self.app.bot.get_updates(limit=limit, timeout=10)
+                        logger.info(f"TG get_updates probe: ok count={len(ups)} (limit={limit})")
+                        for u in ups[:5]:
+                            try:
+                                t = type(u).__name__
+                                chat = getattr(getattr(u, 'message', None) or getattr(u, 'channel_post', None) or getattr(u, 'edited_message', None), 'chat', None)
+                                chat_id = getattr(chat, 'id', None)
+                                txt = getattr(getattr(u, 'message', None), 'text', None)
+                                logger.info(f"[TG PROBE UPDATE] type={t} chat={chat_id} text={txt}")
+                            except Exception:
+                                pass
+                    except Exception as _pe:
+                        logger.error(f"TG get_updates probe failed: {_pe}")
+            except Exception:
+                pass
             logger.info(f"Telegram bot started polling (chat_id={self.chat_id})")
             # Start polling in background, drop any pending updates to avoid conflicts
-            # Let PTB decide allowed updates (defaults cover commands, callbacks, messages)
             await self.app.updater.start_polling(drop_pending_updates=True, allowed_updates=["message","callback_query","channel_post"]) 
 
     async def _on_error(self, update: object, context):

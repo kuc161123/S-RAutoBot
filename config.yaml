@@ -409,6 +409,9 @@ mr:
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat_id: ${TELEGRAM_CHAT_ID}
+  probe:
+    get_updates_once: true   # one-time getUpdates probe on startup (set false to disable)
+    limit: 3
 phantom:
   # Daily caps for phantom sampling to keep training balanced
   ungated_trend: true      # Record Trend phantoms without regime gates (learn-first)

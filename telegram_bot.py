@@ -65,6 +65,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("mlriskrange", self.ml_risk_range))  # Alternative command name
         self.app.add_handler(CommandHandler("mlriskrank", self.ml_risk_range))  # Alternative command name
         self.app.add_handler(CommandHandler("status", self.status))
+        # Simple responsiveness probe
+        self.app.add_handler(CommandHandler("ping", self.ping))
         self.app.add_handler(CommandHandler("panic_close", self.panic_close))
         self.app.add_handler(CommandHandler("balance", self.balance))
         self.app.add_handler(CommandHandler("health", self.health))
@@ -1507,12 +1509,23 @@ class TGBot:
             await self.app.initialize()
             await self.app.start()
             self.running = True
-            logger.info("Telegram bot started polling")
+            logger.info(f"Telegram bot started polling (chat_id={self.chat_id})")
             # Start polling in background, drop any pending updates to avoid conflicts
-            await self.app.updater.start_polling(
-                drop_pending_updates=True,
-                allowed_updates=list(UpdateType)
-            )
+            # Let PTB decide allowed updates (defaults cover commands, callbacks, messages)
+            await self.app.updater.start_polling(drop_pending_updates=True)
+
+    async def ping(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        try:
+            uid = getattr(update.effective_user, 'id', 'n/a')
+            cid = getattr(update.effective_chat, 'id', 'n/a')
+            logger.info(f"/ping from user={uid} chat={cid}")
+            await self.safe_reply(update, "🏓 pong — bot alive")
+        except Exception as e:
+            logger.error(f"Error in ping: {e}")
+            try:
+                await update.message.reply_text("❌ ping error")
+            except Exception:
+                pass
 
     async def stop(self):
         """Stop the bot"""
@@ -2402,7 +2415,14 @@ class TGBot:
             else:
                 # Default to Trend-centric dashboard when any other strategy is active
                 text, kb = self._build_trend_dashboard()
-            await update.message.reply_text(text, reply_markup=kb)
+            try:
+                await self.safe_reply(update, text, parse_mode='Markdown')
+            except Exception:
+                # Fallback without parse mode or keyboard if needed
+                try:
+                    await update.message.reply_text(text)
+                except Exception as e:
+                    logger.error(f"Dashboard reply failed: {e}")
 
         except Exception as e:
             logger.exception("Error in dashboard: %s", e)

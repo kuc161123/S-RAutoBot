@@ -4342,16 +4342,16 @@ class TradingBot:
                                                 # Compact summary line with BBW
                                                 try:
                                                     v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
-                                                    # slope ok by this point; recompute
+                                                    # slope ok by this point; recompute (INVERTED: buy dips, sell rips)
                                                     sl_ok = True
                                                     if bool(hg.get('slope_enabled', False)):
                                                         if fast_only:
-                                                            sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                                            sl_ok = ((fast < 0.0) if sc_sig.side == 'long' else (fast > 0.0)) and (abs(fast) >= min_fast)
                                                         else:
                                                             if sc_sig.side == 'long':
-                                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
-                                                            else:
                                                                 sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                                            else:
+                                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                                     s_show = ('✅' if sl_ok else ('❌' if bool(hg.get('slope_enabled', False)) else '—'))
                                                     bbw_show = '✅' if bbw_ok else '❌'
                                                     # Wick summary indicator
@@ -4983,7 +4983,7 @@ class TradingBot:
                                             vol_enabled2 = bool(hg.get('vol_enabled', False))
                                             vmin2 = float(hg.get('vol_ratio_min_3m', 1.30))
                                             vol_line = f"Vol: {'✅' if (vol_enabled2 and vol_ratio >= vmin2) else ('❌' if vol_enabled2 else '—')} {vol_ratio:.2f} (≥ {vmin2:.2f})" if vol_enabled2 else "Vol: —"
-                                            # Slope
+                                            # Slope (INVERTED: buy dips, sell rips)
                                             s_en = bool(hg.get('slope_enabled', False))
                                             fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
                                             slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
@@ -4992,12 +4992,12 @@ class TradingBot:
                                             fast_only = bool(hg.get('slope_fast_only', False))
                                             if s_en:
                                                 if fast_only:
-                                                    sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                                    sl_ok = ((fast < 0.0) if sc_sig.side == 'long' else (fast > 0.0)) and (abs(fast) >= min_fast)
                                                 else:
                                                     if sc_sig.side == 'long':
-                                                        sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
-                                                    else:
                                                         sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                                    else:
+                                                        sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                                 slope_line = f"Slope: {'✅' if sl_ok else '❌'} F={fast:.3f}% S={slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}{' fast-only' if fast_only else ''})"
                                             else:
                                                 slope_line = "Slope: —"

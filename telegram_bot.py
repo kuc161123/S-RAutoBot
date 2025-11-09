@@ -5942,7 +5942,7 @@ class TGBot:
             gate_pass_count = 0
             gate_pass_pct = 0.0
             try:
-                phantoms = [p for arr in scpt.completed.values() for p in arr if p.outcome in ('win', 'loss')]
+                phantoms = [p for arr in scpt.completed.values() for p in arr if p.outcome in ('win', 'loss') and not getattr(p, 'was_executed', False)]
                 if phantoms:
                     gate_pass_count = sum(1 for p in phantoms if scpt.compute_gate_status(p)['all'])
                     gate_pass_pct = (gate_pass_count / len(phantoms) * 100) if len(phantoms) > 0 else 0.0

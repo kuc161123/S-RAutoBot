@@ -732,9 +732,9 @@ class ScalpPhantomTracker:
         for arr in self.completed.values():
             for t in arr:
                 try:
-                    if t.outcome in ('win', 'loss'):
+                    if t.outcome in ('win', 'loss') and not getattr(t, 'was_executed', False):
                         decisive.append(t)
-                    elif t.outcome == 'timeout':
+                    elif t.outcome == 'timeout' and not getattr(t, 'was_executed', False):
                         timeouts += 1
                 except Exception:
                     continue
@@ -927,6 +927,7 @@ class ScalpPhantomTracker:
         phantoms = [
             p for arr in self.completed.values() for p in arr
             if p.exit_time and p.exit_time >= cutoff and p.outcome in ('win', 'loss')
+            and not getattr(p, 'was_executed', False)
         ]
 
         if not phantoms:
@@ -1066,7 +1067,7 @@ class ScalpPhantomTracker:
             filtered = []
             for arr in self.completed.values():
                 for p in arr:
-                    if p.exit_time and p.outcome in ('win', 'loss'):
+                    if p.exit_time and p.outcome in ('win', 'loss') and not getattr(p, 'was_executed', False):
                         if p.exit_time.year == year and p.exit_time.month == month:
                             filtered.append(p)
 
@@ -1134,6 +1135,7 @@ class ScalpPhantomTracker:
             phantoms = [
                 p for arr in self.completed.values() for p in arr
                 if p.exit_time and p.exit_time >= cutoff and p.outcome in ('win', 'loss')
+                and not getattr(p, 'was_executed', False)
             ]
             period_desc = "last 30 days"
 

@@ -28,7 +28,8 @@ class TGBot:
                     connect_timeout=10.0,
                     read_timeout=90.0,
                     write_timeout=45.0,
-                    pool_timeout=10.0
+                    pool_timeout=30.0,  # Increased from 10s to 30s
+                    connection_pool_size=50  # Increased from default 10 to 50 for high-throughput bot
                 )
                 self.app = Application.builder().token(token).request(request).build()
             except Exception:
@@ -39,6 +40,9 @@ class TGBot:
         self.shared = shared
         # Running flag early to avoid attribute errors if start_polling is called immediately
         self.running = False
+        # Concurrent message tracking for flood detection
+        self._concurrent_sends = 0
+        self._max_concurrent_seen = 0
         # Downgrade noisy PTB warning about CancelledError during graceful shutdown
         try:
             # Surface warnings from PTB while we debug polling
@@ -1624,14 +1628,22 @@ class TGBot:
 
     async def send_message(self, text:str):
         """Send message to configured chat with retry on network errors"""
-        max_retries = 5
-        base_delay = 1.5
-        
-        for attempt in range(max_retries):
-            try:
-                # Try with Markdown first
-                await self.app.bot.send_message(chat_id=self.chat_id, text=text, parse_mode='Markdown')
-                return  # Success, exit
+        # Track concurrent sends for flood detection
+        self._concurrent_sends += 1
+        if self._concurrent_sends > self._max_concurrent_seen:
+            self._max_concurrent_seen = self._concurrent_sends
+            if self._concurrent_sends >= 20:
+                logger.warning(f"⚠️ High Telegram concurrency: {self._concurrent_sends} simultaneous sends (peak: {self._max_concurrent_seen})")
+
+        try:
+            max_retries = 5
+            base_delay = 1.5
+
+            for attempt in range(max_retries):
+                try:
+                    # Try with Markdown first
+                    await self.app.bot.send_message(chat_id=self.chat_id, text=text, parse_mode='Markdown')
+                    return  # Success, exit
             except telegram.error.BadRequest as e:
                 if "can't parse entities" in str(e).lower():
                     # Markdown parsing failed, try with better escaping
@@ -1684,7 +1696,10 @@ class TGBot:
                 else:
                     logger.error(f"Failed to send message: {e}")
                     return  # Don't retry on non-network errors
-    
+        finally:
+            # Decrement concurrent send counter
+            self._concurrent_sends = max(0, self._concurrent_sends - 1)
+
     async def safe_reply(self, update: Update, text: str, parse_mode: str = 'Markdown'):
         """Safely reply to a message with automatic fallback and retry"""
         max_retries = 5

@@ -3569,24 +3569,41 @@ class TradingBot:
                     bb_width_pct = float(sc_feats_hi.get('bb_width_pct', 0.0) or 0.0)
                     vwap_dist_atr = float(sc_feats_hi.get('vwap_dist_atr', 0.0) or 0.0)
 
-                    # Define 2 high-WR multi-feature combinations (56-63% WR, N=160 total)
-                    # From Advanced Combos analysis: Fast slope × Slow slope × ATR% × BBW% × VWAP distance
+                    # Define 4 high-WR multi-feature combinations (60-92% WR, N=264 total)
+                    # From latest Advanced Combos analysis: Fast slope × Slow slope × ATR% × BBW% × VWAP distance
+                    # Tiered risk: Combo 1 (92.2% WR) uses 4% risk, others use 2% base risk
                     high_wr_combos = [
+                        {
+                            'fast_min': 0.01, 'fast_max': 0.03,
+                            'slow_min': 0.015, 'slow_max': 999.0,    # S:0.015+ means >= 0.015
+                            'atr_max': 0.5,                          # ATR < 0.5%
+                            'bbw_max': 0.012,                        # BBW < 1.2% (stored as decimal)
+                            'vwap_min': -999.0, 'vwap_max': 0.6,    # VWAP:<0.6 means < 0.6
+                            'wr': 92.2, 'n': 64, 'combo_id': 1      # Highest WR → 4% risk (2× multiplier)
+                        },
                         {
                             'fast_min': -0.01, 'fast_max': 0.01,
                             'slow_min': -0.03, 'slow_max': 0.00,
-                            'atr_max': 0.5,        # ATR < 0.5%
-                            'bbw_max': 0.012,      # BBW < 1.2% (stored as decimal)
-                            'vwap_min': 1.0,       # VWAP distance >= 1.0 ATR
-                            'wr': 63.2, 'n': 76
+                            'atr_max': 0.5,
+                            'bbw_max': 0.012,
+                            'vwap_min': 1.0, 'vwap_max': 999.0,     # VWAP:1.0+ means >= 1.0
+                            'wr': 71.8, 'n': 71, 'combo_id': 2
                         },
                         {
                             'fast_min': 0.01, 'fast_max': 0.03,
                             'slow_min': -0.03, 'slow_max': 0.00,
-                            'atr_max': 0.5,        # ATR < 0.5%
-                            'bbw_max': 0.012,      # BBW < 1.2% (stored as decimal)
-                            'vwap_min': 1.0,       # VWAP distance >= 1.0 ATR
-                            'wr': 56.0, 'n': 84
+                            'atr_max': 0.5,
+                            'bbw_max': 0.012,
+                            'vwap_min': 1.0, 'vwap_max': 999.0,     # VWAP:1.0+ means >= 1.0
+                            'wr': 62.0, 'n': 79, 'combo_id': 3
+                        },
+                        {
+                            'fast_min': 0.03, 'fast_max': 999.0,    # F:0.03+ means >= 0.03
+                            'slow_min': 0.015, 'slow_max': 999.0,   # S:0.015+ means >= 0.015
+                            'atr_max': 0.5,
+                            'bbw_max': 0.012,
+                            'vwap_min': -999.0, 'vwap_max': 0.6,    # VWAP:<0.6 means < 0.6
+                            'wr': 60.0, 'n': 50, 'combo_id': 4
                         },
                     ]
 
@@ -3597,7 +3614,7 @@ class TradingBot:
                             combo['slow_min'] <= slow < combo['slow_max'] and
                             atr_pct < combo['atr_max'] and
                             bb_width_pct < combo['bbw_max'] and
-                            vwap_dist_atr >= combo['vwap_min']):
+                            combo['vwap_min'] <= vwap_dist_atr < combo['vwap_max']):
                             matched_combo = combo
                             break
 
@@ -3620,9 +3637,20 @@ class TradingBot:
                         except Exception:
                             ml_s_slope = 0.0
 
+                        # Calculate tiered risk: combo 1 (92.2% WR) gets 4%, others get 2%
+                        try:
+                            base_risk = float(self.config.get('scalp', {}).get('exec', {}).get('high_wr_risk_percent', 2.0))
+                            if matched_combo.get('combo_id') == 1:
+                                multiplier = float(self.config.get('scalp', {}).get('exec', {}).get('high_wr_combo1_multiplier', 2.0))
+                                risk_pct = base_risk * multiplier  # 2% × 2.0 = 4%
+                            else:
+                                risk_pct = base_risk  # 2% for combos 2-4
+                        except Exception:
+                            risk_pct = 2.0  # Fallback
+
                         # Check position conflict
                         if sym in self.book.positions:
-                            logger.info(f"[{sym}] 🛑 High-WR Multi-Feature blocked: position_exists | F={fast:.3f}% S={slow:.3f}% ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}% VWAP={vwap_dist_atr:.2f}σ (WR {matched_combo['wr']:.1f}%)")
+                            logger.info(f"[{sym}] 🛑 High-WR Multi-Feature blocked: position_exists | Combo {matched_combo.get('combo_id')} Risk {risk_pct:.1f}% | F={fast:.3f}% S={slow:.3f}% ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}% VWAP={vwap_dist_atr:.2f}σ (WR {matched_combo['wr']:.1f}%)")
                         else:
                             # Notify pre-execution
                             try:
@@ -3631,10 +3659,10 @@ class TradingBot:
                                     exec_id = _uuid.uuid4().hex[:8]
                                     sc_feats_hi['exec_id'] = exec_id
                                     await self.tg.send_message(
-                                        f"🟢 HIGH-WR MULTI-FEATURE EXECUTE: {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                        f"🟢 HIGH-WR MULTI-FEATURE EXECUTE (Risk {risk_pct:.1f}%): {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                        f"Combo {matched_combo.get('combo_id')}: WR {matched_combo['wr']:.1f}% (N={matched_combo['n']})\n"
                                         f"Slopes: F={fast:.3f}% S={slow:.3f}% | ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}% VWAP={vwap_dist_atr:.2f}σ\n"
-                                        f"Historical WR: {matched_combo['wr']:.1f}% (N={matched_combo['n']}) | ML={ml_s_slope:.1f}\n"
-                                        f"TP {float(sc_sig.tp):.4f} | SL {float(sc_sig.sl):.4f} | ID={exec_id}"
+                                        f"ML={ml_s_slope:.1f} | TP {float(sc_sig.tp):.4f} | SL {float(sc_sig.sl):.4f} | ID={exec_id}"
                                     )
                             except Exception:
                                 pass
@@ -3642,7 +3670,7 @@ class TradingBot:
                             # Execute immediately
                             executed = False
                             try:
-                                executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s_slope or 0.0))
+                                executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s_slope or 0.0), risk_percent_override=risk_pct)
                             except Exception as _ee:
                                 logger.error(f"[{sym}] High-WR Slope execute error: {_ee}")
                                 executed = False
@@ -3676,7 +3704,7 @@ class TradingBot:
                                 logger.error(f"[{sym}] Failed to record high-WR multi-feature phantom: {_e}")
 
                             if executed:
-                                logger.info(f"[{sym}] ✅ High-WR Multi-Feature executed: F={fast:.3f}% S={slow:.3f}% ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}% VWAP={vwap_dist_atr:.2f}σ (WR {matched_combo['wr']:.1f}%)")
+                                logger.info(f"[{sym}] ✅ High-WR Multi-Feature executed: Combo {matched_combo.get('combo_id')} Risk {risk_pct:.1f}% | F={fast:.3f}% S={slow:.3f}% ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}% VWAP={vwap_dist_atr:.2f}σ (WR {matched_combo['wr']:.1f}%)")
                                 continue  # Skip normal gate processing
                             else:
                                 logger.warning(f"[{sym}] ⚠️ High-WR Multi-Feature execute failed (guard block)")

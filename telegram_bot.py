@@ -73,6 +73,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("ml90_risk", self.ml90_risk))
         self.app.add_handler(CommandHandler("scalp_set_risk_percent", self.scalp_set_risk_percent))
         self.app.add_handler(CommandHandler("scalp_get_risk", self.scalp_get_risk))
+        self.app.add_handler(CommandHandler("scalp_highwr_set_risk", self.scalp_highwr_set_risk))
+        self.app.add_handler(CommandHandler("scalp_highwr_get_risk", self.scalp_highwr_get_risk))
         self.app.add_handler(CommandHandler("status", self.status))
         # Simple responsiveness probe
         self.app.add_handler(CommandHandler("ping", self.ping))
@@ -2436,22 +2438,207 @@ class TGBot:
 
             # Calculate USD amount if balance available
             usd_info = ""
+            balance = None
             if "broker" in self.shared and hasattr(self.shared["broker"], "get_balance"):
                 balance = self.shared["broker"].get_balance()
                 if balance:
                     usd_amount = balance * (risk_percent / 100)
                     usd_info = f"\n• USD per trade: ≈${usd_amount:.2f}"
 
+            # Get high-WR risk settings
+            base_risk = None
+            combo1_multiplier = None
+            try:
+                bot = self.shared.get('bot_instance')
+                if bot and hasattr(bot, 'config') and isinstance(bot.config, dict):
+                    base_risk = bot.config.get('scalp', {}).get('exec', {}).get('high_wr_risk_percent')
+                    combo1_multiplier = bot.config.get('scalp', {}).get('exec', {}).get('high_wr_combo1_multiplier')
+            except Exception:
+                pass
+
+            # Fallback to config.yaml for high-WR
+            if base_risk is None or combo1_multiplier is None:
+                try:
+                    import yaml
+                    with open('config.yaml', 'r') as f:
+                        config = yaml.safe_load(f) or {}
+                    if base_risk is None:
+                        base_risk = config.get('scalp', {}).get('exec', {}).get('high_wr_risk_percent', 2.0)
+                    if combo1_multiplier is None:
+                        combo1_multiplier = config.get('scalp', {}).get('exec', {}).get('high_wr_combo1_multiplier', 2.0)
+                except Exception:
+                    base_risk = 2.0
+                    combo1_multiplier = 2.0
+
             msg = "🩳 *Scalp Execution Risk*\n"
             msg += "━" * 20 + "\n\n"
             msg += f"• Risk: {risk_percent}%{usd_info}\n\n"
-            msg += f"_Use `/scalp_set_risk_percent` to change_"
+
+            # Add high-WR section
+            if base_risk is not None and combo1_multiplier is not None:
+                combo1_risk = base_risk * combo1_multiplier
+                msg += "🎯 *High-WR Multi-Feature Risk*\n"
+                msg += f"• Base (Combos 2-4): {base_risk}%"
+                if balance:
+                    base_usd = balance * (base_risk / 100)
+                    msg += f" (≈${base_usd:.2f})"
+                msg += f"\n• Combo 1: {combo1_risk:.1f}%"
+                if balance:
+                    combo1_usd = balance * (combo1_risk / 100)
+                    msg += f" (≈${combo1_usd:.2f})"
+                msg += f"\n\n_Use `/scalp_highwr_set_risk` to change high-WR settings_\n"
+
+            msg += f"\n_Use `/scalp_set_risk_percent` to change base risk_"
 
             await self.safe_reply(update, msg)
 
         except Exception as e:
             logger.error(f"Error in scalp_get_risk: {e}")
             await update.message.reply_text("Error retrieving scalp risk settings")
+
+    async def scalp_highwr_set_risk(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Set high-WR multi-feature risk: base_risk [combo1_multiplier]
+        Example: /scalp_highwr_set_risk 2.0 2.0 (sets 2% base, 4% for combo 1)"""
+        try:
+            if not ctx.args:
+                await update.message.reply_text(
+                    "Usage: `/scalp_highwr_set_risk <base_risk> [combo1_multiplier]`\n"
+                    "Example: `/scalp_highwr_set_risk 2.0 2.0`\n"
+                    "• base_risk: Risk % for combos 2-4\n"
+                    "• combo1_multiplier: Multiplier for combo 1 (default 2.0)\n"
+                    "• Combo 1 risk = base_risk × multiplier"
+                )
+                return
+
+            base_risk = float(ctx.args[0])
+            combo1_multiplier = float(ctx.args[1]) if len(ctx.args) > 1 else 2.0
+
+            # Validate
+            if base_risk <= 0:
+                await update.message.reply_text("❌ Base risk must be greater than 0%")
+                return
+            if combo1_multiplier <= 0:
+                await update.message.reply_text("❌ Combo 1 multiplier must be greater than 0")
+                return
+
+            # Warning for high risk
+            warning_msg = ""
+            combo1_risk = base_risk * combo1_multiplier
+            if combo1_risk > 5:
+                warning_msg = f"\n⚠️ Combo 1 risk {combo1_risk:.1f}% is aggressive. Use with caution."
+
+            # Update in-memory config
+            try:
+                bot = self.shared.get('bot_instance')
+                if bot and hasattr(bot, 'config') and isinstance(bot.config, dict):
+                    bot.config.setdefault('scalp', {}).setdefault('exec', {})['high_wr_risk_percent'] = base_risk
+                    bot.config['scalp']['exec']['high_wr_combo1_multiplier'] = combo1_multiplier
+                    logger.info(f"Updated bot.config high-WR risk: base={base_risk}% multiplier={combo1_multiplier}x")
+            except Exception as e:
+                logger.error(f"Error updating in-memory config: {e}")
+
+            # Write to config.yaml for persistence
+            try:
+                import yaml
+                config_path = 'config.yaml'
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f) or {}
+
+                config.setdefault('scalp', {}).setdefault('exec', {})['high_wr_risk_percent'] = base_risk
+                config['scalp']['exec']['high_wr_combo1_multiplier'] = combo1_multiplier
+
+                with open(config_path, 'w') as f:
+                    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+                logger.info(f"Wrote high-WR risk to config.yaml: base={base_risk}% multiplier={combo1_multiplier}x")
+            except Exception as e:
+                logger.error(f"Error writing to config.yaml: {e}")
+                await update.message.reply_text(
+                    f"✅ High-WR risk updated (in-memory only)\n"
+                    f"⚠️ Could not save to config.yaml: {e}{warning_msg}"
+                )
+                return
+
+            # Calculate USD amounts if balance available
+            usd_info = ""
+            if "broker" in self.shared and hasattr(self.shared["broker"], "get_balance"):
+                balance = self.shared["broker"].get_balance()
+                if balance:
+                    base_usd = balance * (base_risk / 100)
+                    combo1_usd = balance * (combo1_risk / 100)
+                    usd_info = f"\n• Combos 2-4: ≈${base_usd:.2f} per trade\n• Combo 1: ≈${combo1_usd:.2f} per trade"
+
+            await update.message.reply_text(
+                f"✅ High-WR risk updated:\n"
+                f"• Base risk (combos 2-4): {base_risk}%\n"
+                f"• Combo 1 multiplier: {combo1_multiplier}x\n"
+                f"• Combo 1 risk: {combo1_risk:.1f}%{usd_info}{warning_msg}\n\n"
+                f"Use `/scalp_highwr_get_risk` to view settings"
+            )
+            logger.info(f"High-WR risk updated: base={base_risk}% multiplier={combo1_multiplier}x via Telegram")
+
+        except ValueError:
+            await update.message.reply_text("❌ Invalid number. Example: /scalp_highwr_set_risk 2.0 2.0")
+        except Exception as e:
+            logger.error(f"Error in scalp_highwr_set_risk: {e}")
+            await update.message.reply_text("Error updating high-WR risk settings")
+
+    async def scalp_highwr_get_risk(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show current high-WR multi-feature risk settings."""
+        try:
+            # Get from bot config
+            base_risk = None
+            combo1_multiplier = None
+            try:
+                bot = self.shared.get('bot_instance')
+                if bot and hasattr(bot, 'config') and isinstance(bot.config, dict):
+                    base_risk = bot.config.get('scalp', {}).get('exec', {}).get('high_wr_risk_percent')
+                    combo1_multiplier = bot.config.get('scalp', {}).get('exec', {}).get('high_wr_combo1_multiplier')
+            except Exception:
+                pass
+
+            # Fallback to config.yaml
+            if base_risk is None or combo1_multiplier is None:
+                try:
+                    import yaml
+                    with open('config.yaml', 'r') as f:
+                        config = yaml.safe_load(f) or {}
+                    if base_risk is None:
+                        base_risk = config.get('scalp', {}).get('exec', {}).get('high_wr_risk_percent', 2.0)
+                    if combo1_multiplier is None:
+                        combo1_multiplier = config.get('scalp', {}).get('exec', {}).get('high_wr_combo1_multiplier', 2.0)
+                except Exception:
+                    base_risk = 2.0
+                    combo1_multiplier = 2.0
+
+            combo1_risk = base_risk * combo1_multiplier
+
+            # Calculate USD amounts if balance available
+            usd_info = ""
+            if "broker" in self.shared and hasattr(self.shared["broker"], "get_balance"):
+                balance = self.shared["broker"].get_balance()
+                if balance:
+                    base_usd = balance * (base_risk / 100)
+                    combo1_usd = balance * (combo1_risk / 100)
+                    usd_info = f"\n• Combos 2-4: ≈${base_usd:.2f} per trade\n• Combo 1: ≈${combo1_usd:.2f} per trade"
+
+            msg = "🎯 *High-WR Multi-Feature Risk*\n"
+            msg += "━" * 20 + "\n\n"
+            msg += f"• Base Risk (Combos 2-4): {base_risk}%\n"
+            msg += f"• Combo 1 Multiplier: {combo1_multiplier}x\n"
+            msg += f"• Combo 1 Risk: {combo1_risk:.1f}%{usd_info}\n\n"
+            msg += "📊 *Historical Performance (30d)*\n"
+            msg += "• Combo 1: 92.2% WR (N=64)\n"
+            msg += "• Combo 2: 71.8% WR (N=71)\n"
+            msg += "• Combo 3: 62.0% WR (N=79)\n"
+            msg += "• Combo 4: 60.0% WR (N=50)\n\n"
+            msg += f"_Use `/scalp_highwr_set_risk` to change_"
+
+            await self.safe_reply(update, msg)
+
+        except Exception as e:
+            logger.error(f"Error in scalp_highwr_get_risk: {e}")
+            await update.message.reply_text("Error retrieving high-WR risk settings")
 
     async def ml90_risk(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Get or set ML≥90 bypass risk percentage"""

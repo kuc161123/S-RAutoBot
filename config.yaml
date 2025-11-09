@@ -635,12 +635,16 @@ scalp:
     risk_percent: 1.0             # Per-trade risk for Scalp executes (1% of equity per trade)
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
     # HIGH-WR MULTI-FEATURE BYPASS: Immediate execution for proven high-WR patterns
-    # Data-driven from 30d Advanced Combos analysis: 2 combinations with 56-63% WR (N=160 total)
+    # Data-driven from latest 30d Advanced Combos analysis: 4 combinations with 60-92% WR (N=264 total)
     # Features: Fast slope × Slow slope × ATR% × BBW% × VWAP distance
-    # Combo 1: F:-0.01-0.01 S:-0.03-0.00 ATR:<0.5% BBW:<1.2% VWAP:1.0+ (63.2% WR, N=76)
-    # Combo 2: F:0.01-0.03 S:-0.03-0.00 ATR:<0.5% BBW:<1.2% VWAP:1.0+ (56.0% WR, N=84)
+    # Combo 1: F:0.01-0.03 S:0.015+ ATR:<0.5% BBW:<1.2% VWAP:<0.6 (92.2% WR, N=64) → 4% risk (2× multiplier)
+    # Combo 2: F:-0.01-0.01 S:-0.03-0.00 ATR:<0.5% BBW:<1.2% VWAP:1.0+ (71.8% WR, N=71) → 2% risk
+    # Combo 3: F:0.01-0.03 S:-0.03-0.00 ATR:<0.5% BBW:<1.2% VWAP:1.0+ (62.0% WR, N=79) → 2% risk
+    # Combo 4: F:0.03+ S:0.015+ ATR:<0.5% BBW:<1.2% VWAP:<0.6 (60.0% WR, N=50) → 2% risk
     # This bypasses ALL gates when features match proven winners
-    high_wr_slope_bypass: true    # ENABLED - Execute immediately on high-WR multi-feature combos
+    high_wr_slope_bypass: true          # ENABLED - Execute immediately on high-WR multi-feature combos
+    high_wr_risk_percent: 2.0           # Base risk for high-WR bypass (combos 2-4)
+    high_wr_combo1_multiplier: 2.0      # Risk multiplier for combo 1 (92.2% WR): 2% × 2.0 = 4%
     # Legacy ML-based bypass (DISABLED - replaced by multi-feature bypass)
     allow_stream_high_ml: false   # Keep ML-override off; use multi-feature bypass instead
     high_ml_force: 70

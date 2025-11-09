@@ -634,13 +634,15 @@ scalp:
     enabled: true                 # Enable Scalp executes behind Qscore threshold
     risk_percent: 1.0             # Per-trade risk for Scalp executes (1% of equity per trade)
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
-    # HIGH-WR SLOPE BYPASS: Immediate execution for proven high-WR slope combinations
-    # Data-driven from 30d analysis: 7 combinations with 54-87% WR (N=422 total)
-    # Ranges: F:-0.10 to -0.01 (negative = dips) × S:-0.05 to +0.015 (mostly negative)
-    # This bypasses ALL gates when slopes match proven winners
-    high_wr_slope_bypass: true    # ENABLED - Execute immediately on high-WR slopes
-    # Legacy ML-based bypass (DISABLED - replaced by slope bypass)
-    allow_stream_high_ml: false   # Keep ML-override off; use slope bypass instead
+    # HIGH-WR MULTI-FEATURE BYPASS: Immediate execution for proven high-WR patterns
+    # Data-driven from 30d Advanced Combos analysis: 2 combinations with 56-63% WR (N=160 total)
+    # Features: Fast slope × Slow slope × ATR% × BBW% × VWAP distance
+    # Combo 1: F:-0.01-0.01 S:-0.03-0.00 ATR:<0.5% BBW:<1.2% VWAP:1.0+ (63.2% WR, N=76)
+    # Combo 2: F:0.01-0.03 S:-0.03-0.00 ATR:<0.5% BBW:<1.2% VWAP:1.0+ (56.0% WR, N=84)
+    # This bypasses ALL gates when features match proven winners
+    high_wr_slope_bypass: true    # ENABLED - Execute immediately on high-WR multi-feature combos
+    # Legacy ML-based bypass (DISABLED - replaced by multi-feature bypass)
+    allow_stream_high_ml: false   # Keep ML-override off; use multi-feature bypass instead
     high_ml_force: 70
     # Optionally cancel any active scalp phantom on high-WR execution to avoid duplicate tracking
     cancel_active_on_high_ml: true

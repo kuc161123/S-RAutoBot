@@ -3538,10 +3538,11 @@ class TradingBot:
                     pass
 
                 # ══════════════════════════════════════════════════════════════════════
-                # PRIORITY PATH 1: High-WR Slope Combinations (ENABLED)
+                # PRIORITY PATH 1: High-WR Multi-Feature Combinations (ENABLED)
                 # ══════════════════════════════════════════════════════════════════════
-                # Execute immediately if slopes fall within proven high-WR ranges (54-87% WR)
-                # Data-driven from 30d analysis (422 samples total across 7 combinations)
+                # Execute immediately if features match proven high-WR patterns (56-63% WR)
+                # Data-driven from 30d Advanced Combos analysis (160 samples total across 2 combinations)
+                # Features: Fast slope × Slow slope × ATR% × BBW% × VWAP distance
                 try:
                     slope_bypass_enabled = bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('high_wr_slope_bypass', True)))
                 except Exception:
@@ -3561,31 +3562,47 @@ class TradingBot:
 
                     sc_feats_hi = self._build_scalp_features(_df_src_hi, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
 
-                    # Get slope values
+                    # Get all 5 feature values for multi-feature bypass
                     fast = float(sc_feats_hi.get('ema_slope_fast', 0.0) or 0.0)
                     slow = float(sc_feats_hi.get('ema_slope_slow', 0.0) or 0.0)
+                    atr_pct = float(sc_feats_hi.get('atr_pct', 0.0) or 0.0)
+                    bb_width_pct = float(sc_feats_hi.get('bb_width_pct', 0.0) or 0.0)
+                    vwap_dist_atr = float(sc_feats_hi.get('vwap_dist_atr', 0.0) or 0.0)
 
-                    # Define 7 high-WR slope combinations (54-87% WR, N=422 total)
+                    # Define 2 high-WR multi-feature combinations (56-63% WR, N=160 total)
+                    # From Advanced Combos analysis: Fast slope × Slow slope × ATR% × BBW% × VWAP distance
                     high_wr_combos = [
-                        {'fast_min': -0.10, 'fast_max': -0.05, 'slow_min': -0.03, 'slow_max': -0.015, 'wr': 86.7, 'n': 15},
-                        {'fast_min': -0.03, 'fast_max': -0.01, 'slow_min': -0.015, 'slow_max': 0.00, 'wr': 66.9, 'n': 124},
-                        {'fast_min': -0.03, 'fast_max': -0.01, 'slow_min': 0.00, 'slow_max': 0.015, 'wr': 59.3, 'n': 27},
-                        {'fast_min': -0.05, 'fast_max': -0.03, 'slow_min': -0.03, 'slow_max': -0.015, 'wr': 58.0, 'n': 100},
-                        {'fast_min': -0.03, 'fast_max': -0.01, 'slow_min': -0.03, 'slow_max': -0.015, 'wr': 57.5, 'n': 73},
-                        {'fast_min': -0.05, 'fast_max': -0.03, 'slow_min': -0.015, 'slow_max': 0.00, 'wr': 57.1, 'n': 28},
-                        {'fast_min': -0.10, 'fast_max': -0.05, 'slow_min': -0.05, 'slow_max': -0.03, 'wr': 54.5, 'n': 55},
+                        {
+                            'fast_min': -0.01, 'fast_max': 0.01,
+                            'slow_min': -0.03, 'slow_max': 0.00,
+                            'atr_max': 0.5,        # ATR < 0.5%
+                            'bbw_max': 0.012,      # BBW < 1.2% (stored as decimal)
+                            'vwap_min': 1.0,       # VWAP distance >= 1.0 ATR
+                            'wr': 63.2, 'n': 76
+                        },
+                        {
+                            'fast_min': 0.01, 'fast_max': 0.03,
+                            'slow_min': -0.03, 'slow_max': 0.00,
+                            'atr_max': 0.5,        # ATR < 0.5%
+                            'bbw_max': 0.012,      # BBW < 1.2% (stored as decimal)
+                            'vwap_min': 1.0,       # VWAP distance >= 1.0 ATR
+                            'wr': 56.0, 'n': 84
+                        },
                     ]
 
-                    # Check if current slopes match any high-WR combination
+                    # Check if current features match any high-WR combination
                     matched_combo = None
                     for combo in high_wr_combos:
                         if (combo['fast_min'] <= fast < combo['fast_max'] and
-                            combo['slow_min'] <= slow < combo['slow_max']):
+                            combo['slow_min'] <= slow < combo['slow_max'] and
+                            atr_pct < combo['atr_max'] and
+                            bb_width_pct < combo['bbw_max'] and
+                            vwap_dist_atr >= combo['vwap_min']):
                             matched_combo = combo
                             break
 
                     if matched_combo:
-                        # Slopes match a high-WR combination - execute immediately!
+                        # Features match a high-WR combination - execute immediately!
                         # Attach HTF composite metrics for learning
                         try:
                             comp = self._get_htf_metrics(sym, self.frames.get(sym))
@@ -3605,7 +3622,7 @@ class TradingBot:
 
                         # Check position conflict
                         if sym in self.book.positions:
-                            logger.info(f"[{sym}] 🛑 High-WR Slope blocked: position_exists | F={fast:.3f}% S={slow:.3f}% (WR {matched_combo['wr']:.1f}%)")
+                            logger.info(f"[{sym}] 🛑 High-WR Multi-Feature blocked: position_exists | F={fast:.3f}% S={slow:.3f}% ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}% VWAP={vwap_dist_atr:.2f}σ (WR {matched_combo['wr']:.1f}%)")
                         else:
                             # Notify pre-execution
                             try:
@@ -3614,9 +3631,10 @@ class TradingBot:
                                     exec_id = _uuid.uuid4().hex[:8]
                                     sc_feats_hi['exec_id'] = exec_id
                                     await self.tg.send_message(
-                                        f"🟢 HIGH-WR SLOPE EXECUTE: {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
-                                        f"Slopes: F={fast:.3f}% S={slow:.3f}% | Historical WR: {matched_combo['wr']:.1f}% (N={matched_combo['n']})\n"
-                                        f"TP {float(sc_sig.tp):.4f} | SL {float(sc_sig.sl):.4f} | ML={ml_s_slope:.1f} | ID={exec_id}"
+                                        f"🟢 HIGH-WR MULTI-FEATURE EXECUTE: {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                        f"Slopes: F={fast:.3f}% S={slow:.3f}% | ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}% VWAP={vwap_dist_atr:.2f}σ\n"
+                                        f"Historical WR: {matched_combo['wr']:.1f}% (N={matched_combo['n']}) | ML={ml_s_slope:.1f}\n"
+                                        f"TP {float(sc_sig.tp):.4f} | SL {float(sc_sig.sl):.4f} | ID={exec_id}"
                                     )
                             except Exception:
                                 pass
@@ -3655,13 +3673,13 @@ class TradingBot:
                                     sc_feats_hi
                                 )
                             except Exception as _e:
-                                logger.error(f"[{sym}] Failed to record high-WR slope phantom: {_e}")
+                                logger.error(f"[{sym}] Failed to record high-WR multi-feature phantom: {_e}")
 
                             if executed:
-                                logger.info(f"[{sym}] ✅ High-WR Slope executed: F={fast:.3f}% S={slow:.3f}% (WR {matched_combo['wr']:.1f}%)")
+                                logger.info(f"[{sym}] ✅ High-WR Multi-Feature executed: F={fast:.3f}% S={slow:.3f}% ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}% VWAP={vwap_dist_atr:.2f}σ (WR {matched_combo['wr']:.1f}%)")
                                 continue  # Skip normal gate processing
                             else:
-                                logger.warning(f"[{sym}] ⚠️ High-WR Slope execute failed (guard block)")
+                                logger.warning(f"[{sym}] ⚠️ High-WR Multi-Feature execute failed (guard block)")
 
                 # ══════════════════════════════════════════════════════════════════════
                 # Execution paths: Gate-based execution (if not executed via slope bypass)

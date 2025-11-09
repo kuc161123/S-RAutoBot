@@ -6666,24 +6666,26 @@ class TGBot:
                 return
 
             # Define value ranges for binning (percentage values)
-            # Using narrower bins for more detailed analysis
+            # INVERTED STRATEGY: More granularity on NEGATIVE slopes (winners)
+            # Negative slopes = buying dips (mean reversion) = 50%+ WR
+            # Positive slopes = trend continuation = 0-20% WR
             fast_bins = [
-                ("<0.00", lambda x: x < 0.00),
-                ("0.00-0.01", lambda x: 0.00 <= x < 0.01),
-                ("0.01-0.02", lambda x: 0.01 <= x < 0.02),
-                ("0.02-0.03", lambda x: 0.02 <= x < 0.03),
-                ("0.03-0.05", lambda x: 0.03 <= x < 0.05),
-                ("0.05-0.10", lambda x: 0.05 <= x < 0.10),
-                ("0.10+", lambda x: x >= 0.10),
+                ("<-0.10", lambda x: x < -0.10),
+                ("-0.10--0.05", lambda x: -0.10 <= x < -0.05),
+                ("-0.05--0.03", lambda x: -0.05 <= x < -0.03),
+                ("-0.03--0.01", lambda x: -0.03 <= x < -0.01),
+                ("-0.01-0.00", lambda x: -0.01 <= x < 0.00),
+                ("0.00-0.03", lambda x: 0.00 <= x < 0.03),
+                ("0.03+", lambda x: x >= 0.03),
             ]
 
             slow_bins = [
-                ("<0.00", lambda x: x < 0.00),
-                ("0.00-0.01", lambda x: 0.00 <= x < 0.01),
-                ("0.01-0.02", lambda x: 0.01 <= x < 0.02),
-                ("0.02-0.03", lambda x: 0.02 <= x < 0.03),
-                ("0.03-0.05", lambda x: 0.03 <= x < 0.05),
-                ("0.05+", lambda x: x >= 0.05),
+                ("<-0.05", lambda x: x < -0.05),
+                ("-0.05--0.03", lambda x: -0.05 <= x < -0.03),
+                ("-0.03--0.015", lambda x: -0.03 <= x < -0.015),
+                ("-0.015-0.00", lambda x: -0.015 <= x < 0.00),
+                ("0.00-0.015", lambda x: 0.00 <= x < 0.015),
+                ("0.015+", lambda x: x >= 0.015),
             ]
 
             # Aggregate individual feature win rates
@@ -6737,6 +6739,10 @@ class TGBot:
                 "📉 *EMA Slopes Analysis (30d)*",
                 "━━━━━━━━━━━━━━━━━━━━━━━━",
                 "",
+                "🎯 *INVERTED STRATEGY: Buy Dips, Sell Rips*",
+                "✅ NEGATIVE slopes = Mean Reversion = High WR",
+                "❌ POSITIVE slopes = Trend Following = Low WR",
+                "",
                 "🔢 *Feature Importance:*",
                 "• emaslopefast: 19.8%",
                 "• emaslopeslow: 15.2%",
@@ -6754,7 +6760,14 @@ class TGBot:
 
             for label, stats in fast_sorted:
                 wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
-                msg.append(f"• {label:>12}: WR {wr:5.1f}% (N={stats['n']:>3})")
+                # Add visual indicator: ✅ for high WR (>40%), ⚠️ for medium (20-40%), ❌ for low (<20%)
+                if wr >= 40.0:
+                    indicator = "✅"
+                elif wr >= 20.0:
+                    indicator = "⚠️"
+                else:
+                    indicator = "❌"
+                msg.append(f"• {label:>15}: {indicator} WR {wr:5.1f}% (N={stats['n']:>3})")
 
             msg.extend(["", "🐌 *Slow EMA Slope % (Individual)*", ""])
 
@@ -6767,7 +6780,14 @@ class TGBot:
 
             for label, stats in slow_sorted:
                 wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
-                msg.append(f"• {label:>12}: WR {wr:5.1f}% (N={stats['n']:>3})")
+                # Add visual indicator: ✅ for high WR (>40%), ⚠️ for medium (20-40%), ❌ for low (<20%)
+                if wr >= 40.0:
+                    indicator = "✅"
+                elif wr >= 20.0:
+                    indicator = "⚠️"
+                else:
+                    indicator = "❌"
+                msg.append(f"• {label:>15}: {indicator} WR {wr:5.1f}% (N={stats['n']:>3})")
 
             msg.extend(["", "🔁 *Top 15 Combinations (by WR)*", ""])
 
@@ -6780,7 +6800,16 @@ class TGBot:
 
             for combo_key, stats in combo_sorted:
                 wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
-                msg.append(f"• WR {wr:5.1f}% (N={stats['n']:>2}) | {combo_key}")
+                # Visual indicator for combination quality
+                if wr >= 50.0:
+                    indicator = "🟢"  # Excellent
+                elif wr >= 40.0:
+                    indicator = "✅"  # Good
+                elif wr >= 30.0:
+                    indicator = "⚠️"  # Medium
+                else:
+                    indicator = "❌"  # Poor
+                msg.append(f"• {indicator} WR {wr:5.1f}% (N={stats['n']:>3}) | {combo_key}")
 
             if not combo_sorted:
                 msg.append("(No combinations with N≥5)")

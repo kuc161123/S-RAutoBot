@@ -1644,47 +1644,35 @@ class TGBot:
                     # Try with Markdown first
                     await self.app.bot.send_message(chat_id=self.chat_id, text=text, parse_mode='Markdown')
                     return  # Success, exit
-            except telegram.error.BadRequest as e:
-                if "can't parse entities" in str(e).lower():
-                    # Markdown parsing failed, try with better escaping
-                    logger.warning("Markdown parsing failed, trying with escaped text")
-                    try:
-                        # Escape common problematic characters
-                        escaped_text = text.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('`', '\\`')
-                        await self.app.bot.send_message(chat_id=self.chat_id, text=escaped_text, parse_mode='Markdown')
-                        return  # Success, exit
-                    except:
-                        # If still fails, send as plain text
-                        logger.warning("Escaped markdown also failed, sending as plain text")
+                except telegram.error.BadRequest as e:
+                    if "can't parse entities" in str(e).lower():
+                        # Markdown parsing failed, try with better escaping
+                        logger.warning("Markdown parsing failed, trying with escaped text")
                         try:
-                            await self.app.bot.send_message(chat_id=self.chat_id, text=text)
+                            # Escape common problematic characters
+                            escaped_text = text.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('`', '\\`')
+                            await self.app.bot.send_message(chat_id=self.chat_id, text=escaped_text, parse_mode='Markdown')
                             return  # Success, exit
-                        except Exception as plain_e:
-                            if attempt < max_retries - 1:
-                                import random
-                                delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
-                                logger.warning(f"Plain text send failed (attempt {attempt + 1}/{max_retries}): {plain_e} — retrying in {delay:.1f}s")
-                                await asyncio.sleep(delay)
-                                continue
-                            else:
-                                logger.error(f"Failed to send message after {max_retries} attempts: {plain_e}")
-                else:
-                    logger.error(f"Failed to send message: {e}")
-                    return  # Don't retry on non-network errors
-            except (telegram.error.NetworkError, telegram.error.TimedOut) as e:
-                # Network-related errors, retry
-                if attempt < max_retries - 1:
-                    import random
-                    delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
-                    logger.warning(f"Network error (attempt {attempt + 1}/{max_retries}): {e} — retrying in {delay:.1f}s")
-                    await asyncio.sleep(delay)
-                    continue
-                else:
-                    logger.error(f"Failed to send message after {max_retries} attempts: {e}")
-            except Exception as e:
-                # Check if it's a network-related error
-                error_str = str(e).lower()
-                if any(x in error_str for x in ['httpx.readerror', 'network', 'timeout', 'connection']):
+                        except:
+                            # If still fails, send as plain text
+                            logger.warning("Escaped markdown also failed, sending as plain text")
+                            try:
+                                await self.app.bot.send_message(chat_id=self.chat_id, text=text)
+                                return  # Success, exit
+                            except Exception as plain_e:
+                                if attempt < max_retries - 1:
+                                    import random
+                                    delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
+                                    logger.warning(f"Plain text send failed (attempt {attempt + 1}/{max_retries}): {plain_e} — retrying in {delay:.1f}s")
+                                    await asyncio.sleep(delay)
+                                    continue
+                                else:
+                                    logger.error(f"Failed to send message after {max_retries} attempts: {plain_e}")
+                    else:
+                        logger.error(f"Failed to send message: {e}")
+                        return  # Don't retry on non-network errors
+                except (telegram.error.NetworkError, telegram.error.TimedOut) as e:
+                    # Network-related errors, retry
                     if attempt < max_retries - 1:
                         import random
                         delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
@@ -1693,9 +1681,21 @@ class TGBot:
                         continue
                     else:
                         logger.error(f"Failed to send message after {max_retries} attempts: {e}")
-                else:
-                    logger.error(f"Failed to send message: {e}")
-                    return  # Don't retry on non-network errors
+                except Exception as e:
+                    # Check if it's a network-related error
+                    error_str = str(e).lower()
+                    if any(x in error_str for x in ['httpx.readerror', 'network', 'timeout', 'connection']):
+                        if attempt < max_retries - 1:
+                            import random
+                            delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
+                            logger.warning(f"Network error (attempt {attempt + 1}/{max_retries}): {e} — retrying in {delay:.1f}s")
+                            await asyncio.sleep(delay)
+                            continue
+                        else:
+                            logger.error(f"Failed to send message after {max_retries} attempts: {e}")
+                    else:
+                        logger.error(f"Failed to send message: {e}")
+                        return  # Don't retry on non-network errors
         finally:
             # Decrement concurrent send counter
             self._concurrent_sends = max(0, self._concurrent_sends - 1)

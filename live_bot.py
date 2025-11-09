@@ -752,10 +752,11 @@ class TradingBot:
             min_slow = float(hg.get('slope_slow_min_pb', 0.015))
             fast_only = bool(hg.get('slope_fast_only', False))
             if slope_enabled:
+                # INVERTED for mean reversion: Buy dips (negative slopes), Sell rips (positive slopes)
                 if side == 'long':
-                    slope_ok = (fast > 0.0 and abs(fast) >= min_fast) and ((slow > 0.0 and abs(slow) >= min_slow) if not fast_only else True)
-                else:
                     slope_ok = (fast < 0.0 and abs(fast) >= min_fast) and ((slow < 0.0 and abs(slow) >= min_slow) if not fast_only else True)
+                else:
+                    slope_ok = (fast > 0.0 and abs(fast) >= min_fast) and ((slow > 0.0 and abs(slow) >= min_slow) if not fast_only else True)
             else:
                 slope_ok = True
 
@@ -4075,12 +4076,12 @@ class TradingBot:
                                             sl_ok = True
                                             if bool(hg.get('slope_enabled', False)):
                                                 if fast_only:
-                                                    sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                                    sl_ok = ((fast < 0.0) if sc_sig.side == 'long' else (fast > 0.0)) and (abs(fast) >= min_fast)
                                                 else:
                                                     if sc_sig.side == 'long':
-                                                        sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
-                                                    else:
                                                         sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                                    else:
+                                                        sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                             s_show = ('✅' if sl_ok else ('❌' if bool(hg.get('slope_enabled', False)) else '—'))
                                             # BBW
                                             try:
@@ -4114,12 +4115,12 @@ class TradingBot:
                                             sl_ok = True
                                             if bool(hg.get('slope_enabled', False)):
                                                 if fast_only:
-                                                    sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                                    sl_ok = ((fast < 0.0) if sc_sig.side == 'long' else (fast > 0.0)) and (abs(fast) >= min_fast)
                                                 else:
                                                     if sc_sig.side == 'long':
-                                                        sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
-                                                    else:
                                                         sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                                    else:
+                                                        sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                             slope_line = f"Slope: {'✅' if sl_ok else '❌'} F={fast:.3f}% S={slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}{' fast-only' if fast_only else ''})" if bool(hg.get('slope_enabled', False)) else "Slope: —"
                                             # Vol
                                             vol_line = f"Vol: {'✅' if (vol_enabled and vol_pass) else '❌'} {vol_ratio:.2f} (≥ {vmin:.2f})" if vol_enabled else "Vol: —"
@@ -4188,17 +4189,17 @@ class TradingBot:
                                 if slope_enabled:
                                     side = str(sc_sig.side)
                                     if fast_only:
-                                        # Fast-only mode: require only fast slope sign and magnitude
+                                        # Fast-only mode: INVERTED for mean reversion (buy dips, sell rips)
                                         if side == 'long':
-                                            slope_ok = (fast > 0.0) and (abs(fast) >= min_fast)
+                                            slope_ok = (fast < 0.0) and (abs(fast) >= min_fast)  # Buy when negative slope (dip)
                                         else:
-                                            slope_ok = (fast < 0.0) and (abs(fast) >= min_fast)
+                                            slope_ok = (fast > 0.0) and (abs(fast) >= min_fast)  # Sell when positive slope (rip)
                                     else:
-                                        # Full mode: require both fast and slow alignment and magnitudes
+                                        # Full mode: INVERTED for mean reversion (buy dips, sell rips)
                                         if side == 'long':
-                                            slope_ok = (fast > 0.0) and (slow > 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
+                                            slope_ok = (fast < 0.0) and (slow < 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)  # Buy when negative slopes (dip)
                                         else:
-                                            slope_ok = (fast < 0.0) and (slow < 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
+                                            slope_ok = (fast > 0.0) and (slow > 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)  # Sell when positive slopes (rip)
                                     if not slope_ok:
                                         # Notify and record phantom; skip exec
                                         try:
@@ -4566,12 +4567,12 @@ class TradingBot:
                                     if slope_enabled:
                                         sl_ok = False
                                         if fast_only:
-                                            sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                            sl_ok = ((fast < 0.0) if sc_sig.side == 'long' else (fast > 0.0)) and (abs(fast) >= min_fast)
                                         else:
                                             if sc_sig.side == 'long':
-                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
-                                            else:
                                                 sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                            else:
+                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                         gate_lines.append(f"Slope: {'✅' if sl_ok else '❌'} F={fast:.3f}% S={slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}{' fast-only' if fast_only else ''})")
                                 except Exception:
                                     pass
@@ -4592,12 +4593,12 @@ class TradingBot:
                                     sl_ok = False
                                     if slope_enabled:
                                         if fast_only:
-                                            sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                            sl_ok = ((fast < 0.0) if sc_sig.side == 'long' else (fast > 0.0)) and (abs(fast) >= min_fast)
                                         else:
                                             if sc_sig.side == 'long':
-                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
-                                            else:
                                                 sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                            else:
+                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                     s_show = ('✅' if sl_ok else ('❌' if slope_enabled else '—'))
                                     # VWAP mid-band in summary
                                     try:
@@ -4913,12 +4914,12 @@ class TradingBot:
                                                 fast_only = bool(hg.get('slope_fast_only', False))
                                                 side = str(sc_sig.side)
                                                 if fast_only:
-                                                    slope_ok = ((fast > 0.0) if side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                                    slope_ok = ((fast < 0.0) if side == 'long' else (fast > 0.0)) and (abs(fast) >= min_fast)
                                                 else:
                                                     if side == 'long':
-                                                        slope_ok = (fast > 0.0) and (slow > 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
-                                                    else:
                                                         slope_ok = (fast < 0.0) and (slow < 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
+                                                    else:
+                                                        slope_ok = (fast > 0.0) and (slow > 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
                                                 sl_emoji = '✅' if slope_ok else '❌'
                                                 mode = '(fast-only)' if fast_only else '(full)'
                                                 gate_str += f" Slope:{sl_emoji}{fast:.3f}/{slow:.3f}%{(' '+mode) if mode else ''}"
@@ -4958,12 +4959,12 @@ class TradingBot:
                                                 fast_only = bool(hg.get('slope_fast_only', False))
                                                 side = str(sc_sig.side)
                                                 if fast_only:
-                                                    slope_ok = ((fast > 0.0) if side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                                    slope_ok = ((fast < 0.0) if side == 'long' else (fast > 0.0)) and (abs(fast) >= min_fast)
                                                 else:
                                                     if side == 'long':
-                                                        slope_ok = (fast > 0.0) and (slow > 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
-                                                    else:
                                                         slope_ok = (fast < 0.0) and (slow < 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
+                                                    else:
+                                                        slope_ok = (fast > 0.0) and (slow > 0.0) and (abs(fast) >= min_fast) and (abs(slow) >= min_slow)
                                                 sl_emoji = '✅' if slope_ok else '❌'
                                                 mode = '(fast-only)' if fast_only else ''
                                                 gate_str += f" Slope:{sl_emoji}{fast:.3f}/{slow:.3f}%{(' '+mode) if mode else ''}"
@@ -5129,12 +5130,12 @@ class TradingBot:
                                     sl_ok = False
                                     if slope_enabled:
                                         if fast_only:
-                                            sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                            sl_ok = ((fast < 0.0) if sc_sig.side == 'long' else (fast > 0.0)) and (abs(fast) >= min_fast)
                                         else:
                                             if sc_sig.side == 'long':
-                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
-                                            else:
                                                 sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                            else:
+                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                     v_show = ('✅' if (vol_enabled and vol_pass) else ('❌' if vol_enabled else '—'))
                                     s_show = ('✅' if sl_ok else ('❌' if slope_enabled else '—'))
                                     # BBW summary indicator (if enabled)
@@ -5181,12 +5182,12 @@ class TradingBot:
                                     fast_only = bool(hg.get('slope_fast_only', False))
                                     if s_en:
                                         if fast_only:
-                                            sl_ok = ((fast > 0.0) if sc_sig.side == 'long' else (fast < 0.0)) and (abs(fast) >= min_fast)
+                                            sl_ok = ((fast < 0.0) if sc_sig.side == 'long' else (fast > 0.0)) and (abs(fast) >= min_fast)
                                         else:
                                             if sc_sig.side == 'long':
-                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
-                                            else:
                                                 sl_ok = (fast < 0.0 and slow < 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
+                                            else:
+                                                sl_ok = (fast > 0.0 and slow > 0.0 and abs(fast) >= min_fast and abs(slow) >= min_slow)
                                         slope_line = f"Slope: {'✅' if sl_ok else '❌'} F={fast:.3f}% S={slow:.3f}% (mins {min_fast:.3f}/{min_slow:.3f}{' fast-only' if fast_only else ''})"
                                     else:
                                         slope_line = "Slope: —"
@@ -5225,11 +5226,12 @@ class TradingBot:
                                 logger.info(f"[{sym}] 🛑 Scalp High-ML blocked: reason=position_exists")
                             else:
                                 # Regime gate for scalp execution (volatility + micro-trend alignment)
+                                # INVERTED LOGIC: Mean reversion (buy dips, sell rips)
                                 vol_ok = str(sc_feats.get('volatility_regime','normal')) in ('normal','high')
                                 fast = float(sc_feats.get('ema_slope_fast', 0.0) or 0.0)
                                 slow = float(sc_feats.get('ema_slope_slow', 0.0) or 0.0)
                                 side = str(sc_sig.side)
-                                micro_ok = (side == 'long' and fast >= 0.0 and slow >= 0.0) or (side == 'short' and fast <= 0.0 and slow <= 0.0)
+                                micro_ok = (side == 'long' and fast <= 0.0 and slow <= 0.0) or (side == 'short' and fast >= 0.0 and slow >= 0.0)
                                 if not (vol_ok and micro_ok):
                                     logger.info(f"[{sym}] 🛑 Scalp execution blocked by regime gate (vol={sc_feats.get('volatility_regime')} fast={fast:.2f} slow={slow:.2f} side={side})")
                                     executed = False

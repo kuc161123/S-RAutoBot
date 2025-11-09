@@ -586,11 +586,13 @@ scalp:
     allowed_regimes: ['normal','high']
     align_15m_enabled: false    # DISABLED
     leader_align_btc_enabled: false  # DISABLED
-    # EMA slope gate (execution only)
+    # EMA slope gate (execution only) — INVERTED FOR MEAN REVERSION
+    # LOGIC: Buy dips (negative slopes), Sell rips (positive slopes)
+    # Data shows F<0 × S<0 = 52.2% WR vs F>0.05 = 0-6% WR
     slope_enabled: true
     slope_fast_only: false        # REQUIRE fast + slow alignment (full slope)
-    slope_fast_min_pb: 0.03       # 0.03% per bar minimum for fast slope
-    slope_slow_min_pb: 0.015      # 0.015% per bar minimum for slow slope
+    slope_fast_min_pb: 0.03       # 0.03% per bar minimum (absolute) for fast slope
+    slope_slow_min_pb: 0.015      # 0.015% per bar minimum (absolute) for slow slope
     # Bollinger width percentile band (execution-only)
     bbw_exec_enabled: true
     bbw_min_pct: 0.60

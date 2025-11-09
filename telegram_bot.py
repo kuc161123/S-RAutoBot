@@ -902,8 +902,9 @@ class TGBot:
             [InlineKeyboardButton("🧪 QA", callback_data="ui:scalp:qa"), InlineKeyboardButton("🧰 Gates", callback_data="ui:scalp:gates")],
             [InlineKeyboardButton("🤖 Patterns", callback_data="ui:scalp:patterns"), InlineKeyboardButton("⚖️ Risk", callback_data="ui:scalp:risk")],
             [InlineKeyboardButton("📈 Q WR", callback_data="ui:scalp:qwr"), InlineKeyboardButton("📈 ML WR", callback_data="ui:scalp:mlwr")],
-            [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr"), InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr")],
-            [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
+            [InlineKeyboardButton("📉 EMA Slopes", callback_data="ui:scalp:emaslopes"), InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr")],
+            [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr"), InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp")],
+            [InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
         ])
 
         return "\n".join(lines), kb
@@ -2657,6 +2658,10 @@ class TGBot:
             if data == "ui:scalp:timewr":
                 await query.answer()
                 await self.scalp_time_wr(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:emaslopes":
+                await query.answer()
+                await self.scalp_ema_slopes(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data.startswith("ui:scalp:timewr_vars:session:"):
                 await query.answer()
@@ -6624,6 +6629,169 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_time_wr: {e}")
             await update.message.reply_text("Error computing Sessions/Days WR")
+
+    async def scalp_ema_slopes(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Detailed EMA slope analysis showing win rates by value ranges and combinations.
+
+        Shows individual and combined win rates for emaslopefast and emaslopeslow features.
+        User specified these are the two most important features (19.8% and 15.2% importance).
+        """
+        try:
+            from datetime import datetime, timedelta
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            cutoff = datetime.utcnow() - timedelta(days=30)
+
+            # Collect decisive phantoms with EMA slope data
+            items = []
+            for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                for p in arr:
+                    try:
+                        et = getattr(p, 'exit_time', None)
+                        if not et or et < cutoff:
+                            continue
+                        oc = getattr(p, 'outcome', None)
+                        if oc not in ('win','loss'):
+                            continue
+                        feats = getattr(p, 'features', {}) or {}
+                        fast = feats.get('emaslopefast_pct', None)
+                        slow = feats.get('emaslopeslow_pct', None)
+                        if isinstance(fast, (int, float)) and isinstance(slow, (int, float)):
+                            items.append((float(fast), float(slow), oc))
+                    except Exception:
+                        continue
+
+            if not items:
+                await self.safe_reply(update, "📉 *EMA Slopes Analysis (30d)*\nNo data yet.")
+                return
+
+            # Define value ranges for binning (percentage values)
+            # Using narrower bins for more detailed analysis
+            fast_bins = [
+                ("<0.00", lambda x: x < 0.00),
+                ("0.00-0.01", lambda x: 0.00 <= x < 0.01),
+                ("0.01-0.02", lambda x: 0.01 <= x < 0.02),
+                ("0.02-0.03", lambda x: 0.02 <= x < 0.03),
+                ("0.03-0.05", lambda x: 0.03 <= x < 0.05),
+                ("0.05-0.10", lambda x: 0.05 <= x < 0.10),
+                ("0.10+", lambda x: x >= 0.10),
+            ]
+
+            slow_bins = [
+                ("<0.00", lambda x: x < 0.00),
+                ("0.00-0.01", lambda x: 0.00 <= x < 0.01),
+                ("0.01-0.02", lambda x: 0.01 <= x < 0.02),
+                ("0.02-0.03", lambda x: 0.02 <= x < 0.03),
+                ("0.03-0.05", lambda x: 0.03 <= x < 0.05),
+                ("0.05+", lambda x: x >= 0.05),
+            ]
+
+            # Aggregate individual feature win rates
+            fast_agg = {}
+            slow_agg = {}
+
+            for fast, slow, oc in items:
+                # Fast EMA slope
+                for label, test in fast_bins:
+                    if test(fast):
+                        s = fast_agg.setdefault(label, {'w': 0, 'n': 0})
+                        s['n'] += 1
+                        if oc == 'win':
+                            s['w'] += 1
+                        break
+
+                # Slow EMA slope
+                for label, test in slow_bins:
+                    if test(slow):
+                        s = slow_agg.setdefault(label, {'w': 0, 'n': 0})
+                        s['n'] += 1
+                        if oc == 'win':
+                            s['w'] += 1
+                        break
+
+            # Aggregate combination win rates
+            combo_agg = {}
+            for fast, slow, oc in items:
+                fast_label = None
+                slow_label = None
+
+                for label, test in fast_bins:
+                    if test(fast):
+                        fast_label = label
+                        break
+
+                for label, test in slow_bins:
+                    if test(slow):
+                        slow_label = label
+                        break
+
+                if fast_label and slow_label:
+                    combo_key = f"F:{fast_label} × S:{slow_label}"
+                    s = combo_agg.setdefault(combo_key, {'w': 0, 'n': 0})
+                    s['n'] += 1
+                    if oc == 'win':
+                        s['w'] += 1
+
+            # Build message
+            msg = [
+                "📉 *EMA Slopes Analysis (30d)*",
+                "━━━━━━━━━━━━━━━━━━━━━━━━",
+                "",
+                "🔢 *Feature Importance:*",
+                "• emaslopefast: 19.8%",
+                "• emaslopeslow: 15.2%",
+                "",
+                "⚡ *Fast EMA Slope % (Individual)*",
+                ""
+            ]
+
+            # Sort fast by win rate descending
+            fast_sorted = sorted(
+                [(k, v) for k, v in fast_agg.items()],
+                key=lambda x: (x[1]['w'] / x[1]['n']) if x[1]['n'] else 0,
+                reverse=True
+            )
+
+            for label, stats in fast_sorted:
+                wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
+                msg.append(f"• {label:>12}: WR {wr:5.1f}% (N={stats['n']:>3})")
+
+            msg.extend(["", "🐌 *Slow EMA Slope % (Individual)*", ""])
+
+            # Sort slow by win rate descending
+            slow_sorted = sorted(
+                [(k, v) for k, v in slow_agg.items()],
+                key=lambda x: (x[1]['w'] / x[1]['n']) if x[1]['n'] else 0,
+                reverse=True
+            )
+
+            for label, stats in slow_sorted:
+                wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
+                msg.append(f"• {label:>12}: WR {wr:5.1f}% (N={stats['n']:>3})")
+
+            msg.extend(["", "🔁 *Top 15 Combinations (by WR)*", ""])
+
+            # Sort combinations by win rate descending, then by sample size
+            combo_sorted = sorted(
+                [(k, v) for k, v in combo_agg.items() if v['n'] >= 5],  # Min 5 samples
+                key=lambda x: ((x[1]['w'] / x[1]['n']), x[1]['n']) if x[1]['n'] else (0, 0),
+                reverse=True
+            )[:15]  # Top 15
+
+            for combo_key, stats in combo_sorted:
+                wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
+                msg.append(f"• WR {wr:5.1f}% (N={stats['n']:>2}) | {combo_key}")
+
+            if not combo_sorted:
+                msg.append("(No combinations with N≥5)")
+
+            msg.extend(["", f"📊 *Total Samples: {len(items)}*"])
+
+            await self.safe_reply(update, "\n".join(msg))
+
+        except Exception as e:
+            logger.error(f"Error in scalp_ema_slopes: {e}")
+            await update.message.reply_text("Error computing EMA slope analysis")
 
     async def exec_winrates(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, days_sessions: int = 30):
         """Show execution-only win rates: Today, Yesterday, 7-day daily, and 30d sessions (asian/european/us).

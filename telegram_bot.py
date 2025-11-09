@@ -71,6 +71,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("mlriskrange", self.ml_risk_range))  # Alternative command name
         self.app.add_handler(CommandHandler("mlriskrank", self.ml_risk_range))  # Alternative command name
         self.app.add_handler(CommandHandler("ml90_risk", self.ml90_risk))
+        self.app.add_handler(CommandHandler("scalp_set_risk_percent", self.scalp_set_risk_percent))
+        self.app.add_handler(CommandHandler("scalp_get_risk", self.scalp_get_risk))
         self.app.add_handler(CommandHandler("status", self.status))
         # Simple responsiveness probe
         self.app.add_handler(CommandHandler("ping", self.ping))
@@ -2036,16 +2038,30 @@ class TGBot:
                     risk_amount += f" (≈{percent:.2f}%)"
                 mode = "Fixed USD"
             
+            # Get scalp-specific risk
+            scalp_risk_text = ""
+            try:
+                bot = self.shared.get('bot_instance')
+                if bot and hasattr(bot, 'config') and isinstance(bot.config, dict):
+                    scalp_risk = bot.config.get('scalp', {}).get('exec', {}).get('risk_percent')
+                    if scalp_risk:
+                        scalp_usd = ""
+                        if balance:
+                            scalp_usd = f" (≈${balance * (scalp_risk / 100):.2f})"
+                        scalp_risk_text = f"\n🩳 *Scalp Risk:* {scalp_risk}%{scalp_usd}\n"
+            except Exception:
+                pass
+
             msg = f"""📊 *Risk Management Settings*
-            
+
 {balance_text}⚙️ *Mode:* {mode}
 💸 *Risk per trade:* {risk_amount}
-📈 *Risk/Reward Ratio:* 1:{risk.rr if hasattr(risk, 'rr') else 2.5}
-
+📈 *Risk/Reward Ratio:* 1:{risk.rr if hasattr(risk, 'rr') else 2.5}{scalp_risk_text}
 *Commands:*
 `/risk_percent 2.5` - Set to 2.5%
 `/risk_usd 100` - Set to $100
-`/set_risk 3%` or `/set_risk 50` - Flexible"""
+`/set_risk 3%` or `/set_risk 50` - Flexible
+`/scalp_set_risk_percent 1.5` - Set scalp risk"""
             
             await self.safe_reply(update, msg)
             
@@ -2322,6 +2338,120 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in ml_risk_range: {e}")
             await update.message.reply_text("Error updating ML risk range")
+
+    async def scalp_set_risk_percent(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Set risk percentage specifically for scalp executions."""
+        try:
+            if not ctx.args:
+                await update.message.reply_text("Usage: /scalp_set_risk_percent 1.5")
+                return
+
+            value = float(ctx.args[0])
+
+            # Validate
+            if value <= 0:
+                await update.message.reply_text("❌ Risk must be greater than 0%")
+                return
+
+            # Warning for high risk (but allow it)
+            warning_msg = ""
+            if value > 5:
+                warning_msg = f"\n⚠️ Risk >{5}% is aggressive. Use with caution."
+
+            # Update in-memory config
+            try:
+                bot = self.shared.get('bot_instance')
+                if bot and hasattr(bot, 'config') and isinstance(bot.config, dict):
+                    bot.config.setdefault('scalp', {}).setdefault('exec', {})['risk_percent'] = value
+                    logger.info(f"Updated bot.config scalp risk to {value}%")
+            except Exception as e:
+                logger.error(f"Error updating in-memory config: {e}")
+
+            # Write to config.yaml for persistence
+            try:
+                import yaml
+                config_path = 'config.yaml'
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f) or {}
+
+                config.setdefault('scalp', {}).setdefault('exec', {})['risk_percent'] = value
+
+                with open(config_path, 'w') as f:
+                    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+                logger.info(f"Wrote scalp risk {value}% to config.yaml")
+            except Exception as e:
+                logger.error(f"Error writing to config.yaml: {e}")
+                await update.message.reply_text(
+                    f"✅ Scalp risk updated to {value}% (in-memory only)\n"
+                    f"⚠️ Could not save to config.yaml: {e}{warning_msg}"
+                )
+                return
+
+            # Calculate USD amount if balance available
+            usd_info = ""
+            if "broker" in self.shared and hasattr(self.shared["broker"], "get_balance"):
+                balance = self.shared["broker"].get_balance()
+                if balance:
+                    usd_amount = balance * (value / 100)
+                    usd_info = f" (≈${usd_amount:.2f} per trade)"
+
+            await update.message.reply_text(
+                f"✅ Scalp execution risk updated to {value}%{usd_info}{warning_msg}\n"
+                f"Use `/scalp_get_risk` to view scalp settings"
+            )
+            logger.info(f"Scalp risk updated to {value}% via Telegram")
+
+        except ValueError:
+            await update.message.reply_text("❌ Invalid number. Example: /scalp_set_risk_percent 1.5")
+        except Exception as e:
+            logger.error(f"Error in scalp_set_risk_percent: {e}")
+            await update.message.reply_text("Error updating scalp risk percentage")
+
+    async def scalp_get_risk(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show current scalp execution risk settings."""
+        try:
+            # Get from bot config
+            risk_percent = None
+            try:
+                bot = self.shared.get('bot_instance')
+                if bot and hasattr(bot, 'config') and isinstance(bot.config, dict):
+                    risk_percent = bot.config.get('scalp', {}).get('exec', {}).get('risk_percent')
+            except Exception:
+                pass
+
+            # Fallback to config.yaml
+            if risk_percent is None:
+                try:
+                    import yaml
+                    with open('config.yaml', 'r') as f:
+                        config = yaml.safe_load(f) or {}
+                    risk_percent = config.get('scalp', {}).get('exec', {}).get('risk_percent')
+                except Exception:
+                    pass
+
+            if risk_percent is None:
+                await update.message.reply_text("⚠️ Scalp risk not configured")
+                return
+
+            # Calculate USD amount if balance available
+            usd_info = ""
+            if "broker" in self.shared and hasattr(self.shared["broker"], "get_balance"):
+                balance = self.shared["broker"].get_balance()
+                if balance:
+                    usd_amount = balance * (risk_percent / 100)
+                    usd_info = f"\n• USD per trade: ≈${usd_amount:.2f}"
+
+            msg = "🩳 *Scalp Execution Risk*\n"
+            msg += "━" * 20 + "\n\n"
+            msg += f"• Risk: {risk_percent}%{usd_info}\n\n"
+            msg += f"_Use `/scalp_set_risk_percent` to change_"
+
+            await self.safe_reply(update, msg)
+
+        except Exception as e:
+            logger.error(f"Error in scalp_get_risk: {e}")
+            await update.message.reply_text("Error retrieving scalp risk settings")
 
     async def ml90_risk(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Get or set ML≥90 bypass risk percentage"""
@@ -7003,12 +7133,13 @@ class TGBot:
             await update.message.reply_text("Error computing advanced combinations analysis")
 
     async def scalp_gate_feature_combos(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Multi-dimensional Gate+Feature combination analysis.
+        """Individual Gate + Feature combination analysis.
 
-        Combines gate variables (htf, vol, body, align, impulse, etc.) with
+        Analyzes each gate variable individually (not combinations) with
         top 5 features (slopes, ATR%, BBW%, VWAP) to find proven high-WR patterns.
 
-        Only shows combinations with N≥100 for maximum statistical reliability.
+        Shows which individual gates + feature combinations produce highest WR.
+        Only shows combinations with N≥50 for reliable statistical significance.
         """
         try:
             from datetime import datetime, timedelta
@@ -7052,9 +7183,8 @@ class TGBot:
                         except Exception:
                             continue
 
-                        # Create gate signature: list of gates that PASS
-                        # Focus on key gates: body variations, impulse, vwap variations, htf, vol, align
-                        passed_gates = []
+                        # OPTION 3: Analyze each gate individually (not combinations)
+                        # For each passing gate, create separate entry
                         key_gates = [
                             'body', 'body040', 'body045', 'body050', 'body060',
                             'impulse040', 'impulse050', 'impulse060', 'impulse080',
@@ -7065,18 +7195,24 @@ class TGBot:
                             'q040', 'q050', 'q060', 'q070'
                         ]
 
+                        # Create one item per passing gate
+                        passed_any = False
                         for gate_var in key_gates:
                             if gate_status.get(gate_var, False):
-                                passed_gates.append(gate_var)
+                                items.append((
+                                    gate_var,
+                                    float(fast), float(slow), float(atr),
+                                    float(bbw), float(vwap), oc
+                                ))
+                                passed_any = True
 
-                        # Create gate combo string (sorted for consistent keys)
-                        gate_combo = '+'.join(sorted(passed_gates)) if passed_gates else 'none'
-
-                        items.append((
-                            gate_combo,
-                            float(fast), float(slow), float(atr),
-                            float(bbw), float(vwap), oc
-                        ))
+                        # Also track phantoms with NO gates passing
+                        if not passed_any:
+                            items.append((
+                                'none',
+                                float(fast), float(slow), float(atr),
+                                float(bbw), float(vwap), oc
+                            ))
                     except Exception as e:
                         continue
 
@@ -7154,28 +7290,28 @@ class TGBot:
                         break
 
                 if all([fast_label, slow_label, atr_label, bbw_label, vwap_label]):
-                    combo_key = f"G:{gate_combo} | F:{fast_label} S:{slow_label} ATR:{atr_label} BBW:{bbw_label} VWAP:{vwap_label}"
+                    combo_key = f"{gate_combo} | F:{fast_label} S:{slow_label} ATR:{atr_label} BBW:{bbw_label} VWAP:{vwap_label}"
                     s = combo_agg.setdefault(combo_key, {'w': 0, 'n': 0})
                     s['n'] += 1
                     if oc == 'win':
                         s['w'] += 1
 
-            # Filter for N≥100 (very strict) and sort by WR
+            # Filter for N≥50 (balanced) and sort by WR
             combo_sorted = sorted(
-                [(k, v) for k, v in combo_agg.items() if v['n'] >= 100],
+                [(k, v) for k, v in combo_agg.items() if v['n'] >= 50],
                 key=lambda x: (x[1]['w'] / x[1]['n']) if x[1]['n'] else 0,
                 reverse=True
             )[:20]  # Top 20
 
             # Build message
             msg = [
-                "🚪 *Gate+Feature Analysis (30d, N≥100)*",
+                "🚪 *Gate+Feature Analysis (30d, N≥50)*",
                 "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
                 "",
-                "🎯 *Multi-dimensional: Gates × Slopes × ATR% × BBW% × VWAP*",
-                "✅ Only ultra-proven patterns (N≥100)",
+                "🎯 *Individual Gates × Slopes × ATR% × BBW% × VWAP*",
+                "✅ Only proven patterns (N≥50)",
                 "",
-                "🔝 *Top 20 Combinations*",
+                "🔝 *Top 20 High-WR Combinations*",
                 ""
             ]
 
@@ -7192,25 +7328,17 @@ class TGBot:
                     else:
                         indicator = "❌"
 
-                    # Format combo_key for display
-                    # Split "G:gates | F:... S:... ATR:... BBW:... VWAP:..."
-                    parts = combo_key.split(" | ")
-                    gate_part = parts[0].replace("G:", "Gates: ") if parts else "Gates: none"
-                    feat_part = " ".join(parts[1:]) if len(parts) > 1 else ""
-
-                    msg.append(f"• {indicator} WR {wr:5.1f}% (N={stats['n']:>3}) | {gate_part}")
-                    if feat_part:
-                        msg.append(f"  {feat_part}")
-                    msg.append("")
+                    # Format: "gate | F:... S:... ATR:... BBW:... VWAP:..."
+                    msg.append(f"• {indicator} WR {wr:5.1f}% (N={stats['n']:>3}) | {combo_key}")
             else:
-                msg.append("(No combinations with N≥100 found)")
+                msg.append("(No combinations with N≥50 found)")
                 msg.append("")
-                msg.append("_Try lowering threshold if no results. Current: very strict (N≥100)_")
+                msg.append("_Insufficient data. Need more phantom samples._")
                 msg.append(f"_Total samples: {len(items)}, unique combos: {len(combo_agg)}_")
 
             msg.extend([
                 "",
-                f"📊 *Total combos with N≥100:* {len(combo_sorted)}",
+                f"📊 *Total combos with N≥50:* {len(combo_sorted)}",
                 f"📊 *Total samples analyzed:* {len(items)}"
             ])
 

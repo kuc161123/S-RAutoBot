@@ -632,12 +632,17 @@ scalp:
     ml_enabled: false        # if true, seeds Scalp ML with historical phantom outcomes on startup
   exec:
     enabled: true                 # Enable Scalp executes behind Qscore threshold
-    risk_percent: 1.0             # Per-trade risk for Scalp executes (percent of equity)
+    risk_percent: 1.0             # Per-trade risk for Scalp executes (1% of equity per trade)
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
-    # Allow stream-side immediate execution for extremely high ML scores
-    allow_stream_high_ml: false   # Keep ML-override off; use Qscore gate
+    # HIGH-WR SLOPE BYPASS: Immediate execution for proven high-WR slope combinations
+    # Data-driven from 30d analysis: 7 combinations with 54-87% WR (N=422 total)
+    # Ranges: F:-0.10 to -0.01 (negative = dips) × S:-0.05 to +0.015 (mostly negative)
+    # This bypasses ALL gates when slopes match proven winners
+    high_wr_slope_bypass: true    # ENABLED - Execute immediately on high-WR slopes
+    # Legacy ML-based bypass (DISABLED - replaced by slope bypass)
+    allow_stream_high_ml: false   # Keep ML-override off; use slope bypass instead
     high_ml_force: 70
-    # Optionally cancel any active scalp phantom on high-ML execution to avoid duplicate tracking
+    # Optionally cancel any active scalp phantom on high-WR execution to avoid duplicate tracking
     cancel_active_on_high_ml: true
     # Estimated slippage fraction to achieve target R:R net of fees and slippage
     slippage_pct: 0.0005

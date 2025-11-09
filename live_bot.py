@@ -3538,13 +3538,133 @@ class TradingBot:
                     pass
 
                 # ══════════════════════════════════════════════════════════════════════
-                # PRIORITY PATH 1: ML≥90 Bypass (DISABLED by user request)
+                # PRIORITY PATH 1: High-WR Slope Combinations (ENABLED)
                 # ══════════════════════════════════════════════════════════════════════
-                # NOTE: High ML score bypass path disabled. All signals go through normal gates.
-                # To re-enable, uncomment the ML≥90 bypass block and remove this note.
+                # Execute immediately if slopes fall within proven high-WR ranges (54-87% WR)
+                # Data-driven from 30d analysis (422 samples total across 7 combinations)
+                try:
+                    slope_bypass_enabled = bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('high_wr_slope_bypass', True)))
+                except Exception:
+                    slope_bypass_enabled = True
+
+                if slope_bypass_enabled:
+                    # Build features to get slope values
+                    _df_src_hi = None
+                    try:
+                        _df_src_hi = self.frames_3m.get(sym)
+                        if _df_src_hi is None or getattr(_df_src_hi, 'empty', True):
+                            _df_src_hi = self.frames.get(sym)
+                        if _df_src_hi is None or getattr(_df_src_hi, 'empty', True):
+                            _df_src_hi = df
+                    except Exception:
+                        _df_src_hi = df
+
+                    sc_feats_hi = self._build_scalp_features(_df_src_hi, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+
+                    # Get slope values
+                    fast = float(sc_feats_hi.get('ema_slope_fast', 0.0) or 0.0)
+                    slow = float(sc_feats_hi.get('ema_slope_slow', 0.0) or 0.0)
+
+                    # Define 7 high-WR slope combinations (54-87% WR, N=422 total)
+                    high_wr_combos = [
+                        {'fast_min': -0.10, 'fast_max': -0.05, 'slow_min': -0.03, 'slow_max': -0.015, 'wr': 86.7, 'n': 15},
+                        {'fast_min': -0.03, 'fast_max': -0.01, 'slow_min': -0.015, 'slow_max': 0.00, 'wr': 66.9, 'n': 124},
+                        {'fast_min': -0.03, 'fast_max': -0.01, 'slow_min': 0.00, 'slow_max': 0.015, 'wr': 59.3, 'n': 27},
+                        {'fast_min': -0.05, 'fast_max': -0.03, 'slow_min': -0.03, 'slow_max': -0.015, 'wr': 58.0, 'n': 100},
+                        {'fast_min': -0.03, 'fast_max': -0.01, 'slow_min': -0.03, 'slow_max': -0.015, 'wr': 57.5, 'n': 73},
+                        {'fast_min': -0.05, 'fast_max': -0.03, 'slow_min': -0.015, 'slow_max': 0.00, 'wr': 57.1, 'n': 28},
+                        {'fast_min': -0.10, 'fast_max': -0.05, 'slow_min': -0.05, 'slow_max': -0.03, 'wr': 54.5, 'n': 55},
+                    ]
+
+                    # Check if current slopes match any high-WR combination
+                    matched_combo = None
+                    for combo in high_wr_combos:
+                        if (combo['fast_min'] <= fast < combo['fast_max'] and
+                            combo['slow_min'] <= slow < combo['slow_max']):
+                            matched_combo = combo
+                            break
+
+                    if matched_combo:
+                        # Slopes match a high-WR combination - execute immediately!
+                        # Attach HTF composite metrics for learning
+                        try:
+                            comp = self._get_htf_metrics(sym, self.frames.get(sym))
+                            sc_feats_hi['ts15'] = float(comp.get('ts15', 0.0)); sc_feats_hi['ts60'] = float(comp.get('ts60', 0.0))
+                            sc_feats_hi['rc15'] = float(comp.get('rc15', 0.0)); sc_feats_hi['rc60'] = float(comp.get('rc60', 0.0))
+                        except Exception:
+                            pass
+
+                        # Score ML for learning
+                        ml_s_slope = 0.0
+                        try:
+                            from ml_scorer_scalp import get_scalp_scorer
+                            _scorer = get_scalp_scorer()
+                            ml_s_slope, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats_hi)
+                        except Exception:
+                            ml_s_slope = 0.0
+
+                        # Check position conflict
+                        if sym in self.book.positions:
+                            logger.info(f"[{sym}] 🛑 High-WR Slope blocked: position_exists | F={fast:.3f}% S={slow:.3f}% (WR {matched_combo['wr']:.1f}%)")
+                        else:
+                            # Notify pre-execution
+                            try:
+                                if self.tg:
+                                    import uuid as _uuid
+                                    exec_id = _uuid.uuid4().hex[:8]
+                                    sc_feats_hi['exec_id'] = exec_id
+                                    await self.tg.send_message(
+                                        f"🟢 HIGH-WR SLOPE EXECUTE: {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                        f"Slopes: F={fast:.3f}% S={slow:.3f}% | Historical WR: {matched_combo['wr']:.1f}% (N={matched_combo['n']})\n"
+                                        f"TP {float(sc_sig.tp):.4f} | SL {float(sc_sig.sl):.4f} | ML={ml_s_slope:.1f} | ID={exec_id}"
+                                    )
+                            except Exception:
+                                pass
+
+                            # Execute immediately
+                            executed = False
+                            try:
+                                executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s_slope or 0.0))
+                            except Exception as _ee:
+                                logger.error(f"[{sym}] High-WR Slope execute error: {_ee}")
+                                executed = False
+
+                            # Record phantom
+                            try:
+                                from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                                scpt = _get_scpt()
+
+                                # Cancel any pre-existing active phantom
+                                try:
+                                    scpt.cancel_active(sym)
+                                except Exception:
+                                    pass
+
+                                # Attach Qscore
+                                try:
+                                    _qs = self._compute_qscore_scalp(sym, sc_sig.side, float(sc_sig.entry), float(sc_sig.sl), float(sc_sig.tp), df3=_df_src_hi, df15=self.frames.get(sym), sc_feats=sc_feats_hi)
+                                    sc_feats_hi['qscore'] = float(_qs[0]); sc_feats_hi['qscore_components'] = dict(_qs[1]); sc_feats_hi['qscore_reasons'] = list(_qs[2])
+                                except Exception:
+                                    pass
+
+                                scpt.record_scalp_signal(
+                                    sym,
+                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                    float(ml_s_slope or 0.0),
+                                    bool(executed),
+                                    sc_feats_hi
+                                )
+                            except Exception as _e:
+                                logger.error(f"[{sym}] Failed to record high-WR slope phantom: {_e}")
+
+                            if executed:
+                                logger.info(f"[{sym}] ✅ High-WR Slope executed: F={fast:.3f}% S={slow:.3f}% (WR {matched_combo['wr']:.1f}%)")
+                                continue  # Skip normal gate processing
+                            else:
+                                logger.warning(f"[{sym}] ⚠️ High-WR Slope execute failed (guard block)")
 
                 # ══════════════════════════════════════════════════════════════════════
-                # Execution paths: Gate-based execution only
+                # Execution paths: Gate-based execution (if not executed via slope bypass)
                 # ══════════════════════════════════════════════════════════════════════
 
                 # Immediate execution for ALL Scalp detections (disabled by default; use high-ML path instead)

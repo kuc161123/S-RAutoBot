@@ -3579,11 +3579,17 @@ class TradingBot:
                     try:
                         from ml_scorer_scalp import get_scalp_scorer
                         _scorer = get_scalp_scorer()
-                        ml_score_priority, _ = _scorer.score_signal(
-                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                            sc_feats_ml
-                        )
-                    except Exception:
+                        if _scorer is None:
+                            logger.debug(f"[{sym}] ML scorer not available (None)")
+                            ml_score_priority = 0.0
+                        else:
+                            ml_score_priority, _ = _scorer.score_signal(
+                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                sc_feats_ml
+                            )
+                            logger.debug(f"[{sym}] ML PRIORITY score: {ml_score_priority:.1f}")
+                    except Exception as e:
+                        logger.warning(f"[{sym}] ML PRIORITY scoring error: {e}")
                         ml_score_priority = 0.0
 
                     sc_feats_ml['ml'] = float(ml_score_priority or 0.0)
@@ -6099,9 +6105,16 @@ class TradingBot:
         """Generic phantom lifecycle notifier (Trend/Range) with reasons.
 
         Called by PhantomTradeTracker via set_notifier(). Labels derived from strategy_name.
+
+        NOTE: Only sends Telegram notifications for EXECUTED trades.
+        Non-executed phantoms are logged only (no Telegram spam).
         """
         if not self.tg:
             return
+
+        # Check if this was an executed trade
+        was_executed = bool(getattr(phantom, 'was_executed', False))
+
         try:
             symbol = getattr(phantom, 'symbol', '?')
             side = str(getattr(phantom, 'side', '?')).upper()
@@ -6170,16 +6183,22 @@ class TradingBot:
                         lines.append(f"Q={q_close:.1f}")
                 except Exception:
                     pass
-                if pid and pid in self._phantom_close_notified:
-                    return
-                await self.tg.send_message("\n".join(lines))
-                if pid:
-                    self._phantom_close_notified.add(pid)
+
+                # Only send close notification to Telegram if this was an executed trade
+                if was_executed:
+                    if pid and pid in self._phantom_close_notified:
+                        return
+                    await self.tg.send_message("\n".join(lines))
+                    if pid:
+                        self._phantom_close_notified.add(pid)
+                else:
+                    # Log non-executed phantom close (no Telegram)
+                    logger.info(f"👻 {label_title} {emoji}: {symbol} {side} | ML {ml:.1f} | P&L: {pnl:+.2f}% ({exit_reason}) [phantom only - no TG]")
                 return
 
-            # TP1 event (active)
+            # TP1 event (active) - only notify if executed
             if bool(getattr(phantom, 'tp1_hit', False)) and str(getattr(phantom, 'phantom_event','')) == 'tp1':
-                if not (pid and pid in self._phantom_tp1_notified):
+                if was_executed and not (pid and pid in self._phantom_tp1_notified):
                     # If Range midline is present, include it
                     try:
                         strat = str(getattr(phantom, 'strategy_name', '') or '').lower()
@@ -6192,6 +6211,9 @@ class TradingBot:
                         await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f}")
                     if pid:
                         self._phantom_tp1_notified.add(pid)
+                elif not was_executed:
+                    # Log non-executed TP1 hit (no Telegram)
+                    logger.info(f"🎯 Phantom TP1: {symbol} {side} — SL→BE at {entry:.4f} [phantom only - no TG]")
                 try:
                     setattr(phantom, 'phantom_event', '')
                 except Exception:
@@ -6279,12 +6301,18 @@ class TradingBot:
                         )
             except Exception:
                 pass
-            # De-dup open by phantom_id
-            if pid and pid in self._phantom_open_notified:
-                return
-            await self.tg.send_message("\n".join([l for l in lines if l]))
-            if pid:
-                self._phantom_open_notified.add(pid)
+
+            # Only send open notification to Telegram if this was an executed trade
+            if was_executed:
+                # De-dup open by phantom_id
+                if pid and pid in self._phantom_open_notified:
+                    return
+                await self.tg.send_message("\n".join([l for l in lines if l]))
+                if pid:
+                    self._phantom_open_notified.add(pid)
+            else:
+                # Log non-executed phantom open (no Telegram)
+                logger.info(f"👻 {label_title} Opened: {symbol} {side} @ {entry:.4f} | ML {ml:.1f} [phantom only - no TG]")
         except Exception as e:
             logger.debug(f"Trend phantom notify error: {e}")
 
@@ -6292,9 +6320,16 @@ class TradingBot:
         """Scalp phantom lifecycle notifier (open/TP/close) to Telegram.
 
         Called by ScalpPhantomTracker via set_notifier().
+
+        NOTE: Only sends Telegram notifications for EXECUTED trades.
+        Non-executed phantoms are logged only (no Telegram spam).
         """
         if not self.tg:
             return
+
+        # Check if this was an executed trade
+        was_executed = bool(getattr(phantom, 'was_executed', False))
+
         try:
             symbol = getattr(phantom, 'symbol', '?')
             side = str(getattr(phantom, 'side', '?')).upper()
@@ -6336,13 +6371,19 @@ class TradingBot:
                         lines.append(f"Q={qv:.1f}")
                 except Exception:
                     pass
-                if pid and pid in getattr(self, '_phantom_close_notified', set()):
-                    return
-                await self.tg.send_message("\n".join(lines))
-                try:
-                    self._phantom_close_notified.add(pid)
-                except Exception:
-                    pass
+
+                # Only send close notification to Telegram if this was an executed trade
+                if was_executed:
+                    if pid and pid in getattr(self, '_phantom_close_notified', set()):
+                        return
+                    await self.tg.send_message("\n".join(lines))
+                    try:
+                        self._phantom_close_notified.add(pid)
+                    except Exception:
+                        pass
+                else:
+                    # Log non-executed phantom close (no Telegram)
+                    logger.info(f"👻 Scalp Phantom {emoji}: {symbol} {side} | ML {ml:.1f} | P&L: {pnl:+.2f}% ({exit_reason}) [phantom only - no TG]")
                 # Telemetry counters for scalp phantom outcomes (non-executed only)
                 try:
                     if hasattr(self.tg, 'shared') and not getattr(phantom, 'was_executed', False):
@@ -6390,13 +6431,19 @@ class TradingBot:
                 lines.append(f"HTF: {'✅' if htf_pass else '❌'} {ts15:.0f} (≥ {thr_ts:.0f}) | Body: {'✅' if body_pass else '❌'} {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})")
             except Exception:
                 pass
-            if pid and pid in getattr(self, '_phantom_open_notified', set()):
-                return
-            await self.tg.send_message("\n".join([l for l in lines if l]))
-            try:
-                self._phantom_open_notified.add(pid)
-            except Exception:
-                pass
+
+            # Only send open notification to Telegram if this was an executed trade
+            if was_executed:
+                if pid and pid in getattr(self, '_phantom_open_notified', set()):
+                    return
+                await self.tg.send_message("\n".join([l for l in lines if l]))
+                try:
+                    self._phantom_open_notified.add(pid)
+                except Exception:
+                    pass
+            else:
+                # Log non-executed phantom open (no Telegram)
+                logger.info(f"👻 Scalp Phantom Opened: {symbol} {side} @ {entry:.4f} | ML {ml:.1f} | Q={q:.1f if isinstance(q,(int,float)) else 0.0} [phantom only - no TG]")
         except Exception as e:
             try:
                 logger.debug(f"Scalp phantom notify error: {e}")

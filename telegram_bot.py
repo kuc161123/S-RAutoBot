@@ -904,7 +904,7 @@ class TGBot:
             [InlineKeyboardButton("📈 Q WR", callback_data="ui:scalp:qwr"), InlineKeyboardButton("📈 ML WR", callback_data="ui:scalp:mlwr")],
             [InlineKeyboardButton("📉 EMA Slopes", callback_data="ui:scalp:emaslopes"), InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr")],
             [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr"), InlineKeyboardButton("📊 Advanced Combos", callback_data="ui:scalp:advancedcombos")],
-            [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp")],
+            [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚪 Gate+Feature", callback_data="ui:scalp:gatefeat")],
             [InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
         ])
 
@@ -2667,6 +2667,10 @@ class TGBot:
             if data == "ui:scalp:advancedcombos":
                 await query.answer()
                 await self.scalp_advanced_combos(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:gatefeat":
+                await query.answer()
+                await self.scalp_gate_feature_combos(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data.startswith("ui:scalp:timewr_vars:session:"):
                 await query.answer()
@@ -6997,6 +7001,227 @@ class TGBot:
             import traceback
             logger.error(traceback.format_exc())
             await update.message.reply_text("Error computing advanced combinations analysis")
+
+    async def scalp_gate_feature_combos(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Multi-dimensional Gate+Feature combination analysis.
+
+        Combines gate variables (htf, vol, body, align, impulse, etc.) with
+        top 5 features (slopes, ATR%, BBW%, VWAP) to find proven high-WR patterns.
+
+        Only shows combinations with N≥100 for maximum statistical reliability.
+        """
+        try:
+            from datetime import datetime, timedelta
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            cutoff = datetime.utcnow() - timedelta(days=30)
+
+            # Collect decisive phantoms (was_executed=False) with all features
+            items = []
+            for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                for p in arr:
+                    try:
+                        et = getattr(p, 'exit_time', None)
+                        if not et or et < cutoff:
+                            continue
+                        oc = getattr(p, 'outcome', None)
+                        if oc not in ('win','loss'):
+                            continue
+                        # Only true phantoms (not executed mirrors)
+                        if getattr(p, 'was_executed', False):
+                            continue
+
+                        feats = getattr(p, 'features', {}) or {}
+
+                        # Extract 5 features
+                        fast = feats.get('ema_slope_fast', None)
+                        slow = feats.get('ema_slope_slow', None)
+                        atr = feats.get('atr_pct', None)
+                        bbw = feats.get('bb_width_pct', None)
+                        vwap = feats.get('vwap_dist_atr', None)
+
+                        # Only include if all features present
+                        if not all(isinstance(x, (int, float)) for x in [fast, slow, atr, bbw, vwap]):
+                            continue
+
+                        # Compute gate status for this phantom
+                        try:
+                            gate_status = scpt.compute_gate_status(p)
+                            if not gate_status:
+                                continue
+                        except Exception:
+                            continue
+
+                        # Create gate signature: list of gates that PASS
+                        # Focus on key gates: body variations, impulse, vwap variations, htf, vol, align
+                        passed_gates = []
+                        key_gates = [
+                            'body', 'body040', 'body045', 'body050', 'body060',
+                            'impulse040', 'impulse050', 'impulse060', 'impulse080',
+                            'vwap045', 'vwap060', 'vwap080', 'vwap100',
+                            'htf', 'vol', 'align_15m',
+                            'bbwidth60p', 'bbwidth70p', 'bbwidth80p',
+                            'vol110', 'vol120', 'vol150',
+                            'q040', 'q050', 'q060', 'q070'
+                        ]
+
+                        for gate_var in key_gates:
+                            if gate_status.get(gate_var, False):
+                                passed_gates.append(gate_var)
+
+                        # Create gate combo string (sorted for consistent keys)
+                        gate_combo = '+'.join(sorted(passed_gates)) if passed_gates else 'none'
+
+                        items.append((
+                            gate_combo,
+                            float(fast), float(slow), float(atr),
+                            float(bbw), float(vwap), oc
+                        ))
+                    except Exception as e:
+                        continue
+
+            if not items:
+                await self.safe_reply(update, "🚪 *Gate+Feature Analysis (30d)*\nNo data yet.")
+                return
+
+            # Define bins for features (same as Advanced Combos)
+            fast_bins = [
+                ("<-0.05", lambda x: x < -0.05),
+                ("-0.05--0.01", lambda x: -0.05 <= x < -0.01),
+                ("-0.01-0.01", lambda x: -0.01 <= x < 0.01),
+                ("0.01-0.03", lambda x: 0.01 <= x < 0.03),
+                ("0.03+", lambda x: x >= 0.03),
+            ]
+
+            slow_bins = [
+                ("<-0.03", lambda x: x < -0.03),
+                ("-0.03-0.00", lambda x: -0.03 <= x < 0.00),
+                ("0.00-0.015", lambda x: 0.00 <= x < 0.015),
+                ("0.015+", lambda x: x >= 0.015),
+            ]
+
+            atr_bins = [
+                ("<0.5%", lambda x: x < 0.5),
+                ("0.5-1.5%", lambda x: 0.5 <= x < 1.5),
+                ("1.5%+", lambda x: x >= 1.5),
+            ]
+
+            bbw_bins = [
+                ("<1.2%", lambda x: x < 1.2),
+                ("1.2-2.0%", lambda x: 1.2 <= x < 2.0),
+                ("2.0%+", lambda x: x >= 2.0),
+            ]
+
+            vwap_bins = [
+                ("<0.6", lambda x: x < 0.6),
+                ("0.6-1.0", lambda x: 0.6 <= x < 1.0),
+                ("1.0+", lambda x: x >= 1.0),
+            ]
+
+            # Aggregate gate+feature combination win rates
+            combo_agg = {}
+            for gate_combo, fast, slow, atr, bbw, vwap, oc in items:
+                # Find labels for each feature
+                fast_label = None
+                slow_label = None
+                atr_label = None
+                bbw_label = None
+                vwap_label = None
+
+                for label, test in fast_bins:
+                    if test(fast):
+                        fast_label = label
+                        break
+
+                for label, test in slow_bins:
+                    if test(slow):
+                        slow_label = label
+                        break
+
+                for label, test in atr_bins:
+                    if test(atr):
+                        atr_label = label
+                        break
+
+                for label, test in bbw_bins:
+                    if test(bbw):
+                        bbw_label = label
+                        break
+
+                for label, test in vwap_bins:
+                    if test(vwap):
+                        vwap_label = label
+                        break
+
+                if all([fast_label, slow_label, atr_label, bbw_label, vwap_label]):
+                    combo_key = f"G:{gate_combo} | F:{fast_label} S:{slow_label} ATR:{atr_label} BBW:{bbw_label} VWAP:{vwap_label}"
+                    s = combo_agg.setdefault(combo_key, {'w': 0, 'n': 0})
+                    s['n'] += 1
+                    if oc == 'win':
+                        s['w'] += 1
+
+            # Filter for N≥100 (very strict) and sort by WR
+            combo_sorted = sorted(
+                [(k, v) for k, v in combo_agg.items() if v['n'] >= 100],
+                key=lambda x: (x[1]['w'] / x[1]['n']) if x[1]['n'] else 0,
+                reverse=True
+            )[:20]  # Top 20
+
+            # Build message
+            msg = [
+                "🚪 *Gate+Feature Analysis (30d, N≥100)*",
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                "",
+                "🎯 *Multi-dimensional: Gates × Slopes × ATR% × BBW% × VWAP*",
+                "✅ Only ultra-proven patterns (N≥100)",
+                "",
+                "🔝 *Top 20 Combinations*",
+                ""
+            ]
+
+            if combo_sorted:
+                for combo_key, stats in combo_sorted:
+                    wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
+                    # Visual indicator
+                    if wr >= 50.0:
+                        indicator = "🟢"
+                    elif wr >= 40.0:
+                        indicator = "✅"
+                    elif wr >= 30.0:
+                        indicator = "⚠️"
+                    else:
+                        indicator = "❌"
+
+                    # Format combo_key for display
+                    # Split "G:gates | F:... S:... ATR:... BBW:... VWAP:..."
+                    parts = combo_key.split(" | ")
+                    gate_part = parts[0].replace("G:", "Gates: ") if parts else "Gates: none"
+                    feat_part = " ".join(parts[1:]) if len(parts) > 1 else ""
+
+                    msg.append(f"• {indicator} WR {wr:5.1f}% (N={stats['n']:>3}) | {gate_part}")
+                    if feat_part:
+                        msg.append(f"  {feat_part}")
+                    msg.append("")
+            else:
+                msg.append("(No combinations with N≥100 found)")
+                msg.append("")
+                msg.append("_Try lowering threshold if no results. Current: very strict (N≥100)_")
+                msg.append(f"_Total samples: {len(items)}, unique combos: {len(combo_agg)}_")
+
+            msg.extend([
+                "",
+                f"📊 *Total combos with N≥100:* {len(combo_sorted)}",
+                f"📊 *Total samples analyzed:* {len(items)}"
+            ])
+
+            await self.safe_reply(update, "\n".join(msg))
+
+        except Exception as e:
+            logger.error(f"Error in scalp_gate_feature_combos: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            await update.message.reply_text("Error computing gate+feature combinations analysis")
+
     async def exec_winrates(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, days_sessions: int = 30):
         """Show execution-only win rates: Today, Yesterday, 7-day daily, and 30d sessions (asian/european/us).
 

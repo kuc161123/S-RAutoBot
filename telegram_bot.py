@@ -903,7 +903,8 @@ class TGBot:
             [InlineKeyboardButton("🤖 Patterns", callback_data="ui:scalp:patterns"), InlineKeyboardButton("⚖️ Risk", callback_data="ui:scalp:risk")],
             [InlineKeyboardButton("📈 Q WR", callback_data="ui:scalp:qwr"), InlineKeyboardButton("📈 ML WR", callback_data="ui:scalp:mlwr")],
             [InlineKeyboardButton("📉 EMA Slopes", callback_data="ui:scalp:emaslopes"), InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr")],
-            [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr"), InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp")],
+            [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr"), InlineKeyboardButton("📊 Advanced Combos", callback_data="ui:scalp:advancedcombos")],
+            [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp")],
             [InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
         ])
 
@@ -2662,6 +2663,10 @@ class TGBot:
             if data == "ui:scalp:emaslopes":
                 await query.answer()
                 await self.scalp_ema_slopes(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:advancedcombos":
+                await query.answer()
+                await self.scalp_advanced_combos(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data.startswith("ui:scalp:timewr_vars:session:"):
                 await query.answer()
@@ -6822,6 +6827,176 @@ class TGBot:
             logger.error(f"Error in scalp_ema_slopes: {e}")
             await update.message.reply_text("Error computing EMA slope analysis")
 
+    async def scalp_advanced_combos(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Multi-feature combination analysis showing proven high-WR patterns.
+
+        Analyzes top 5 features (66.5% total importance) across 30 days:
+        - ema_slope_fast (16.4%), ema_slope_slow (18.9%)
+        - atr_pct (12.5%), bb_width_pct (10.3%), vwap_dist_atr (8.4%)
+
+        Only shows combinations with N≥50 for statistical reliability.
+        """
+        try:
+            from datetime import datetime, timedelta
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            cutoff = datetime.utcnow() - timedelta(days=30)
+
+            # Collect decisive phantoms with all 5 features
+            items = []
+            for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                for p in arr:
+                    try:
+                        et = getattr(p, 'exit_time', None)
+                        if not et or et < cutoff:
+                            continue
+                        oc = getattr(p, 'outcome', None)
+                        if oc not in ('win','loss'):
+                            continue
+                        feats = getattr(p, 'features', {}) or {}
+
+                        # Extract all 5 features
+                        fast = feats.get('ema_slope_fast', None)
+                        slow = feats.get('ema_slope_slow', None)
+                        atr = feats.get('atr_pct', None)
+                        bbw = feats.get('bb_width_pct', None)
+                        vwap = feats.get('vwap_dist_atr', None)
+
+                        # Only include if all features present
+                        if all(isinstance(x, (int, float)) for x in [fast, slow, atr, bbw, vwap]):
+                            items.append((
+                                float(fast), float(slow), float(atr),
+                                float(bbw), float(vwap), oc
+                            ))
+                    except Exception:
+                        continue
+
+            if not items:
+                await self.safe_reply(update, "📊 *Advanced Combos Analysis (30d)*\nNo data yet.")
+                return
+
+            # Define bins for each feature
+            fast_bins = [
+                ("<-0.05", lambda x: x < -0.05),
+                ("-0.05--0.01", lambda x: -0.05 <= x < -0.01),
+                ("-0.01-0.01", lambda x: -0.01 <= x < 0.01),
+                ("0.01-0.03", lambda x: 0.01 <= x < 0.03),
+                ("0.03+", lambda x: x >= 0.03),
+            ]
+
+            slow_bins = [
+                ("<-0.03", lambda x: x < -0.03),
+                ("-0.03-0.00", lambda x: -0.03 <= x < 0.00),
+                ("0.00-0.015", lambda x: 0.00 <= x < 0.015),
+                ("0.015+", lambda x: x >= 0.015),
+            ]
+
+            atr_bins = [
+                ("<0.5%", lambda x: x < 0.5),
+                ("0.5-1.5%", lambda x: 0.5 <= x < 1.5),
+                ("1.5%+", lambda x: x >= 1.5),
+            ]
+
+            bbw_bins = [
+                ("<1.2%", lambda x: x < 1.2),
+                ("1.2-2.0%", lambda x: 1.2 <= x < 2.0),
+                ("2.0%+", lambda x: x >= 2.0),
+            ]
+
+            vwap_bins = [
+                ("<0.6", lambda x: x < 0.6),
+                ("0.6-1.0", lambda x: 0.6 <= x < 1.0),
+                ("1.0+", lambda x: x >= 1.0),
+            ]
+
+            # Aggregate combination win rates
+            combo_agg = {}
+            for fast, slow, atr, bbw, vwap, oc in items:
+                # Find labels for each feature
+                fast_label = None
+                slow_label = None
+                atr_label = None
+                bbw_label = None
+                vwap_label = None
+
+                for label, test in fast_bins:
+                    if test(fast):
+                        fast_label = label
+                        break
+
+                for label, test in slow_bins:
+                    if test(slow):
+                        slow_label = label
+                        break
+
+                for label, test in atr_bins:
+                    if test(atr):
+                        atr_label = label
+                        break
+
+                for label, test in bbw_bins:
+                    if test(bbw):
+                        bbw_label = label
+                        break
+
+                for label, test in vwap_bins:
+                    if test(vwap):
+                        vwap_label = label
+                        break
+
+                if all([fast_label, slow_label, atr_label, bbw_label, vwap_label]):
+                    combo_key = f"F:{fast_label} S:{slow_label} ATR:{atr_label} BBW:{bbw_label} VWAP:{vwap_label}"
+                    s = combo_agg.setdefault(combo_key, {'w': 0, 'n': 0})
+                    s['n'] += 1
+                    if oc == 'win':
+                        s['w'] += 1
+
+            # Filter for N≥50 and sort by WR
+            combo_sorted = sorted(
+                [(k, v) for k, v in combo_agg.items() if v['n'] >= 50],
+                key=lambda x: (x[1]['w'] / x[1]['n']) if x[1]['n'] else 0,
+                reverse=True
+            )[:20]  # Top 20
+
+            # Build message
+            msg = [
+                "📊 *Advanced Combos Analysis (30d)*",
+                "━━━━━━━━━━━━━━━━━━━━━━━━",
+                "",
+                "🎯 *Top 5 Features: 66.5% total importance*",
+                "✅ Only combinations with N≥50 (proven patterns)",
+                "",
+                "🔝 *Top 20 High-WR Combinations*",
+                ""
+            ]
+
+            if combo_sorted:
+                for combo_key, stats in combo_sorted:
+                    wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
+                    # Visual indicator for combination quality
+                    if wr >= 50.0:
+                        indicator = "🟢"  # Excellent
+                    elif wr >= 40.0:
+                        indicator = "✅"  # Good
+                    elif wr >= 30.0:
+                        indicator = "⚠️"  # Medium
+                    else:
+                        indicator = "❌"  # Poor
+                    msg.append(f"• {indicator} WR {wr:5.1f}% (N={stats['n']:>3}) | {combo_key}")
+            else:
+                msg.append("(No combinations with N≥50 found)")
+                msg.append("")
+                msg.append(f"_Try lowering threshold to N≥20 if no results_")
+
+            msg.extend(["", f"📊 *Total qualifying combos:* {len(combo_sorted)}", f"📊 *Total samples analyzed:* {len(items)}"])
+
+            await self.safe_reply(update, "\n".join(msg))
+
+        except Exception as e:
+            logger.error(f"Error in scalp_advanced_combos: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            await update.message.reply_text("Error computing advanced combinations analysis")
     async def exec_winrates(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, days_sessions: int = 30):
         """Show execution-only win rates: Today, Yesterday, 7-day daily, and 30d sessions (asian/european/us).
 

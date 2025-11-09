@@ -6654,8 +6654,8 @@ class TGBot:
                         if oc not in ('win','loss'):
                             continue
                         feats = getattr(p, 'features', {}) or {}
-                        fast = feats.get('emaslopefast_pct', None)
-                        slow = feats.get('emaslopeslow_pct', None)
+                        fast = feats.get('ema_slope_fast', None)
+                        slow = feats.get('ema_slope_slow', None)
                         if isinstance(fast, (int, float)) and isinstance(slow, (int, float)):
                             items.append((float(fast), float(slow), oc))
                     except Exception:

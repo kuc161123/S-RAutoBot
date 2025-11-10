@@ -7320,8 +7320,8 @@ class TGBot:
 
                             # Display averages
                             msg.append(f"  ↳ Avg: F={means[0]:.3f} S={means[1]:.3f} ATR={means[2]:.2f}% BBW={means[3]:.2f}% VWAP={means[4]:.2f}")
-                            # Display percentile ranges (compact format)
-                            msg.append(f"  ↳ P25-P75: F={p25[0]:.3f}-{p75[0]:.3f} S={p25[1]:.3f}-{p75[1]:.3f}")
+                            # Display percentile ranges (compact format) - DISABLED for cleaner output
+                            # msg.append(f"  ↳ P25-P75: F={p25[0]:.3f}-{p75[0]:.3f} S={p25[1]:.3f}-{p75[1]:.3f}")
                         except Exception:
                             pass  # Skip if numpy calc fails
             else:

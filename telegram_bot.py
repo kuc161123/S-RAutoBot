@@ -1547,6 +1547,11 @@ class TGBot:
             logger.info("Telegram webhook cleared (drop_pending_updates=true)")
         except Exception as _wh:
             logger.debug(f"Webhook delete skipped: {_wh}")
+        # Ensure core commands show up in Telegram clients (helps discoverability)
+        try:
+            await self._ensure_bot_commands()
+        except Exception as _cmd:
+            logger.debug(f"set_my_commands skipped: {_cmd}")
         # One-time getUpdates probe (optional) before starting legacy polling
         try:
             cfg = (self.shared or {}).get('config', {}) if hasattr(self, 'shared') else {}
@@ -1568,6 +1573,32 @@ class TGBot:
             logger.error(f"TG get_updates probe failed: {_pe}")
         logger.info(f"Telegram bot started polling (chat_id={self.chat_id})")
         await self.app.updater.start_polling(drop_pending_updates=True, allowed_updates=["message","callback_query","channel_post"]) 
+
+    async def _ensure_bot_commands(self):
+        """Ensure core commands exist without clobbering existing ones."""
+        try:
+            from telegram import BotCommand
+            # Fetch current commands (best-effort)
+            existing = []
+            try:
+                existing = await self.app.bot.get_my_commands()
+            except Exception:
+                existing = []
+            by_name = {c.command: c for c in existing or []}
+            # Ensure minimal set
+            need = {
+                "help": "Show help",
+                "dashboard": "Dashboard",
+                "status": "Bot status",
+                "scalpcomprehensive": "Scalp comprehensive analysis",
+                "scalpultimate": "Ultimate Scalp analysis",
+            }
+            for k, v in need.items():
+                if k not in by_name:
+                    by_name[k] = BotCommand(k, v)
+            await self.app.bot.set_my_commands(list(by_name.values()))
+        except Exception as e:
+            logger.debug(f"set_my_commands error: {e}")
 
     async def _on_error(self, update: object, context):
         try:
@@ -1708,7 +1739,17 @@ class TGBot:
             self._concurrent_sends = max(0, self._concurrent_sends - 1)
 
     async def safe_reply(self, update: Update, text: str, parse_mode: str = 'Markdown'):
-        """Safely reply to a message with automatic fallback and retry"""
+        """Safely reply to a message with automatic fallback and retry.
+
+        If update.message is unavailable (e.g., channel posts, callbacks),
+        fall back to sending directly to the configured chat.
+        """
+        # Fast path: when Update has no message (e.g., some callback/channel contexts)
+        if getattr(update, 'message', None) is None:
+            # Fallback to direct send
+            await self.send_message(text)
+            return
+
         max_retries = 5
         base_delay = 1.5
         
@@ -1822,6 +1863,7 @@ class TGBot:
             "• /scalpqa — Scalp quality report",
             "• /scalpgates — Gate analysis (26+ variables)",
             "• /scalpcomprehensive [month] — Full analysis with combinations",
+            "• /scalpultimate — Ultimate analysis (solo/pairs/triplets)",
             "• /scalprecommend — Config recommendations",
             "• /scalptrends — Month-over-month trends",
             "• /scalppatterns — ML feature/time/condition patterns",

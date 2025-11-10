@@ -7016,8 +7016,12 @@ class TradingBot:
             )
             
             # Add to tracker
-            self.trade_tracker.add_trade(trade)
-            logger.info(f"Trade recorded: {symbol} {exit_reason} PnL: ${pnl_usd:.2f}")
+            try:
+                self.trade_tracker.add_trade(trade)
+                logger.info(f"✅ Trade recorded: {symbol} {pos.strategy_name} {exit_reason} PnL: ${pnl_usd:.2f}")
+            except Exception as _at_err:
+                logger.error(f"[{symbol}] CRITICAL: add_trade() failed: {_at_err}", exc_info=True)
+                raise  # Re-raise to trigger outer exception handler
 
             if self.tg:
                 try:
@@ -7210,6 +7214,10 @@ class TradingBot:
                     # Don't process if we can't verify
             
             # Process only CONFIRMED closed positions
+            if confirmed_closed:
+                strategies = [pos.strategy_name for _, pos, _, _ in confirmed_closed]
+                logger.info(f"🔔 Processing {len(confirmed_closed)} confirmed closed positions: {strategies}")
+
             for symbol, pos, exit_price, exit_reason in confirmed_closed:
                 try:
                     # Get leverage
@@ -7253,7 +7261,10 @@ class TradingBot:
                         pass
 
                     # Record the trade
-                    self.record_closed_trade(symbol, pos, exit_price, exit_reason, leverage)
+                    try:
+                        self.record_closed_trade(symbol, pos, exit_price, exit_reason, leverage)
+                    except Exception as _rct_err:
+                        logger.error(f"[{symbol}] CRITICAL: Failed to record closed trade: {_rct_err}", exc_info=True)
                     # Telegram close notify (all strategies)
                     try:
                         if self.tg:
@@ -7279,8 +7290,9 @@ class TradingBot:
                                 from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
                                 scpt = _get_scpt()
                                 scpt.force_close_executed(symbol, exit_price, exit_reason)
+                                logger.info(f"[{symbol}] Scalp phantom mirror closed (exit={exit_price:.4f}, reason={exit_reason})")
                             except Exception as _sce:
-                                logger.debug(f"[{symbol}] scalp force_close_executed failed: {_sce}")
+                                logger.error(f"[{symbol}] CRITICAL: scalp force_close_executed failed: {_sce}", exc_info=True)
                     except Exception as _fce:
                         logger.debug(f"[{symbol}] phantom force_close_executed failed: {_fce}")
                     

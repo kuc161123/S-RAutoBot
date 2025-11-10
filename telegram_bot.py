@@ -125,6 +125,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalpqa", self.scalp_qa))
         self.app.add_handler(CommandHandler("scalpgates", self.scalp_gate_analysis))
         self.app.add_handler(CommandHandler("scalpcomprehensive", self.scalp_comprehensive_analysis))
+        self.app.add_handler(CommandHandler("scalpultimate", self.scalp_ultimate))
         self.app.add_handler(CommandHandler("scalprecommend", self.scalp_recommendations))
         self.app.add_handler(CommandHandler("scalptrends", self.scalp_monthly_trends))
         self.app.add_handler(CommandHandler("scalppromote", self.scalp_promotion_status))
@@ -7556,6 +7557,83 @@ class TGBot:
             import traceback
             logger.error(traceback.format_exc())
             await update.message.reply_text("Error computing gate+feature combinations analysis")
+
+    async def scalp_ultimate(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Ultimate analysis: All 50+ variables, phantoms + executed trades"""
+        try:
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+
+            await self.safe_reply(update, "🔍 Running ultimate analysis (50+ variables)...")
+
+            # Call comprehensive analysis (analyzes all variables, phantoms + executed)
+            result = scpt.get_comprehensive_analysis()
+
+            if 'error' in result:
+                await self.safe_reply(update, f"❌ {result['error']}")
+                return
+
+            # Format output
+            msg = [
+                "🎯 *ULTIMATE ANALYSIS* (30d)",
+                "━━━━━━━━━━━━━━━━━━━━━━━━",
+                "",
+                f"📊 Analyzed: {result.get('total', 0)} trades (phantoms + executed)",
+                f"✅ Overall WR: {result.get('overall_wr', 0):.1f}%",
+                "",
+                "🏆 *TOP 10 SOLO VARIABLES*",
+                ""
+            ]
+
+            # Top 10 solo variables by delta impact
+            solo_vars = result.get('solo_rankings', [])[:10]
+            if solo_vars:
+                for i, var in enumerate(solo_vars, 1):
+                    name = var.get('var', 'unknown')
+                    delta = var.get('delta', 0)
+                    wr = var.get('wr', 0)
+                    n = var.get('n', 0)
+                    msg.append(f"{i}. {name}: ΔWR +{delta:.1f}% | WR {wr:.1f}% (N={n})")
+            else:
+                msg.append("_No solo variables found_")
+
+            msg.extend(["", "🔗 *TOP 10 PAIRS*", ""])
+
+            # Top 10 pairs by WR
+            pairs = result.get('pair_rankings', [])[:10]
+            if pairs:
+                for i, pair in enumerate(pairs, 1):
+                    combo = pair.get('combo', 'unknown')
+                    wr = pair.get('wr', 0)
+                    n = pair.get('n', 0)
+                    msg.append(f"{i}. {combo}: WR {wr:.1f}% (N={n})")
+            else:
+                msg.append("_No pairs with N≥30 found_")
+
+            msg.extend(["", "🎲 *TOP 5 TRIPLETS*", ""])
+
+            # Top 5 triplets by WR
+            triplets = result.get('triplet_rankings', [])[:5]
+            if triplets:
+                for i, trip in enumerate(triplets, 1):
+                    combo = trip.get('combo', 'unknown')
+                    wr = trip.get('wr', 0)
+                    n = trip.get('n', 0)
+                    msg.append(f"{i}. {combo}: WR {wr:.1f}% (N={n})")
+            else:
+                msg.append("_No triplets with N≥20 found_")
+
+            msg.extend([
+                "",
+                "💡 *Use these combinations to improve signal filtering!*",
+                f"📈 Analyzed: {len(solo_vars)} solos, {len(pairs)} pairs, {len(triplets)} triplets"
+            ])
+
+            await self.safe_reply(update, "\n".join(msg))
+
+        except Exception as e:
+            logger.error(f"scalp_ultimate error: {e}", exc_info=True)
+            await self.safe_reply(update, f"❌ Error: {e}")
 
     async def exec_winrates(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, days_sessions: int = 30):
         """Show execution-only win rates: Today, Yesterday, 7-day daily, and 30d sessions (asian/european/us).

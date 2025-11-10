@@ -1135,7 +1135,7 @@ class ScalpPhantomTracker:
             phantoms = [
                 p for arr in self.completed.values() for p in arr
                 if p.exit_time and p.exit_time >= cutoff and p.outcome in ('win', 'loss')
-                and not getattr(p, 'was_executed', False)
+                # Include BOTH phantoms AND executed trades for comprehensive analysis
             ]
             period_desc = "last 30 days"
 

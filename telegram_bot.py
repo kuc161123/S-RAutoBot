@@ -910,6 +910,7 @@ class TGBot:
             [InlineKeyboardButton("📉 EMA Slopes", callback_data="ui:scalp:emaslopes"), InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr")],
             [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr"), InlineKeyboardButton("📊 Advanced Combos", callback_data="ui:scalp:advancedcombos")],
             [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚪 Gate+Feature", callback_data="ui:scalp:gatefeat")],
+            [InlineKeyboardButton("🧪 Ultimate (EV+CI)", callback_data="ui:scalp:ultimate")],
             [InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
         ])
 
@@ -3027,6 +3028,10 @@ class TGBot:
             if data == "ui:scalp:advancedcombos":
                 await query.answer()
                 await self.scalp_advanced_combos(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:ultimate":
+                await query.answer()
+                await self.scalp_ultimate(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data == "ui:scalp:gatefeat":
                 await query.answer()

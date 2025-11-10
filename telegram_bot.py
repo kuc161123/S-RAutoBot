@@ -7267,10 +7267,13 @@ class TGBot:
 
                 if all([fast_label, slow_label, atr_label, bbw_label, vwap_label]):
                     combo_key = f"F:{fast_label} S:{slow_label} ATR:{atr_label} BBW:{bbw_label} VWAP:{vwap_label}"
-                    s = combo_agg.setdefault(combo_key, {'w': 0, 'n': 0})
+                    s = combo_agg.setdefault(combo_key, {'w': 0, 'n': 0, 'winners': [], 'losers': []})
                     s['n'] += 1
                     if oc == 'win':
                         s['w'] += 1
+                        s['winners'].append((fast, slow, atr, bbw, vwap))  # Store raw values
+                    else:
+                        s['losers'].append((fast, slow, atr, bbw, vwap))
 
             # Filter for N≥50 and sort by WR
             combo_sorted = sorted(
@@ -7292,6 +7295,8 @@ class TGBot:
             ]
 
             if combo_sorted:
+                import numpy as np
+
                 for combo_key, stats in combo_sorted:
                     wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
                     # Visual indicator for combination quality
@@ -7304,6 +7309,21 @@ class TGBot:
                     else:
                         indicator = "❌"  # Poor
                     msg.append(f"• {indicator} WR {wr:5.1f}% (N={stats['n']:>3}) | {combo_key}")
+
+                    # Add winner statistics (averages and percentiles)
+                    if stats['winners']:
+                        try:
+                            winners = np.array(stats['winners'])
+                            means = winners.mean(axis=0)
+                            p25 = np.percentile(winners, 25, axis=0)
+                            p75 = np.percentile(winners, 75, axis=0)
+
+                            # Display averages
+                            msg.append(f"  ↳ Avg: F={means[0]:.3f} S={means[1]:.3f} ATR={means[2]:.2f}% BBW={means[3]:.2f}% VWAP={means[4]:.2f}")
+                            # Display percentile ranges (compact format)
+                            msg.append(f"  ↳ P25-P75: F={p25[0]:.3f}-{p75[0]:.3f} S={p25[1]:.3f}-{p75[1]:.3f}")
+                        except Exception:
+                            pass  # Skip if numpy calc fails
             else:
                 msg.append("(No combinations with N≥50 found)")
                 msg.append("")

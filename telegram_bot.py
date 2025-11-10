@@ -7619,7 +7619,7 @@ class TGBot:
                 result = await loop.run_in_executor(None, scpt.get_comprehensive_analysis)
 
             if 'error' in result:
-                await self.safe_reply(update, f"❌ {result['error']}")
+                await self.safe_reply(update, f"❌ {result['error']}", parse_mode=None)
                 return
 
             # Format output
@@ -7682,20 +7682,20 @@ class TGBot:
             full = "\n".join(msg)
             MAX = 3500
             if len(full) <= MAX:
-                await self.safe_reply(update, full)
+                await self.safe_reply(update, full, parse_mode=None)
             else:
                 # Split on line boundaries
                 buf = []
                 cur = 0
                 for line in msg:
                     if cur + len(line) + 1 > MAX and buf:
-                        await self.safe_reply(update, "\n".join(buf))
+                        await self.safe_reply(update, "\n".join(buf), parse_mode=None)
                         buf = []
                         cur = 0
                     buf.append(line)
                     cur += len(line) + 1
                 if buf:
-                    await self.safe_reply(update, "\n".join(buf))
+                    await self.safe_reply(update, "\n".join(buf), parse_mode=None)
 
         except Exception as e:
             logger.error(f"scalp_ultimate error: {e}", exc_info=True)

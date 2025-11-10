@@ -1241,16 +1241,50 @@ class ScalpPhantomTracker:
         # Sort triplets by WR
         sorted_triplets = sorted(triplet_stats.items(), key=lambda x: x[1]['wr'], reverse=True)
 
+        # Transform data into telegram-expected format (list of dicts)
+        solo_rankings = [
+            {
+                'var': var,
+                'delta': stats['delta'],
+                'wr': stats['pass_wr'],
+                'n': stats['pass_total']
+            }
+            for var, stats in ranked_vars
+        ]
+
+        pair_rankings = [
+            {
+                'combo': f"{v1}+{v2}",
+                'wr': stats['wr'],
+                'n': stats['total']
+            }
+            for (v1, v2), stats in sorted_pairs
+        ]
+
+        triplet_rankings = [
+            {
+                'combo': f"{v1}+{v2}+{v3}",
+                'wr': stats['wr'],
+                'n': stats['total']
+            }
+            for (v1, v2, v3), stats in sorted_triplets
+        ]
+
         return {
             'period': period_desc,
-            'total_phantoms': total,
+            'total': total,                          # Add for telegram compatibility
+            'total_phantoms': total,                 # Keep for backward compatibility
             'total_wins': wins,
-            'baseline_wr': baseline_wr,
-            'solo_analysis': variable_stats,
+            'overall_wr': baseline_wr,               # Add for telegram compatibility
+            'baseline_wr': baseline_wr,              # Keep for backward compatibility
+            'solo_analysis': variable_stats,         # Keep for other methods
+            'solo_rankings': solo_rankings,          # Add for telegram
             'ranked_variables': ranked_vars,
             'top_variables': top_variables,
-            'pair_analysis': dict(sorted_pairs[:20]),  # Top 20 pairs
-            'triplet_analysis': dict(sorted_triplets[:10]),  # Top 10 triplets
+            'pair_analysis': dict(sorted_pairs[:20]),    # Keep for other methods
+            'pair_rankings': pair_rankings,          # Add for telegram
+            'triplet_analysis': dict(sorted_triplets[:10]),  # Keep for other methods
+            'triplet_rankings': triplet_rankings,    # Add for telegram
             'min_samples': min_samples
         }
 

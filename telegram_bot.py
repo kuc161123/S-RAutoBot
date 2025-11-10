@@ -7671,7 +7671,24 @@ class TGBot:
                 f"📈 Analyzed: {len(solo_vars)} solos, {len(pairs)} pairs, {len(triplets)} triplets"
             ])
 
-            await self.safe_reply(update, "\n".join(msg))
+            # Join and send in chunks to avoid Telegram "message is too long" errors
+            full = "\n".join(msg)
+            MAX = 3500
+            if len(full) <= MAX:
+                await self.safe_reply(update, full)
+            else:
+                # Split on line boundaries
+                buf = []
+                cur = 0
+                for line in msg:
+                    if cur + len(line) + 1 > MAX and buf:
+                        await self.safe_reply(update, "\n".join(buf))
+                        buf = []
+                        cur = 0
+                    buf.append(line)
+                    cur += len(line) + 1
+                if buf:
+                    await self.safe_reply(update, "\n".join(buf))
 
         except Exception as e:
             logger.error(f"scalp_ultimate error: {e}", exc_info=True)

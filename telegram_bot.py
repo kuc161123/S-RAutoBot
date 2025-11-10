@@ -909,6 +909,7 @@ class TGBot:
             [InlineKeyboardButton("📈 Q WR", callback_data="ui:scalp:qwr"), InlineKeyboardButton("📈 ML WR", callback_data="ui:scalp:mlwr")],
             [InlineKeyboardButton("📉 EMA Slopes", callback_data="ui:scalp:emaslopes"), InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr")],
             [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr"), InlineKeyboardButton("📊 Advanced Combos", callback_data="ui:scalp:advancedcombos")],
+            [InlineKeyboardButton("📉 Slopes (EV+CI)", callback_data="ui:scalp:slopesevci"), InlineKeyboardButton("🧪 Ultimate (EV+CI)", callback_data="ui:scalp:ultimate")],
             [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚪 Gate+Feature", callback_data="ui:scalp:gatefeat")],
             [InlineKeyboardButton("🧪 Ultimate (EV+CI)", callback_data="ui:scalp:ultimate")],
             [InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
@@ -3024,6 +3025,10 @@ class TGBot:
             if data == "ui:scalp:emaslopes":
                 await query.answer()
                 await self.scalp_ema_slopes(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:slopesevci":
+                await query.answer()
+                await self.scalp_ema_slopes_evci(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data == "ui:scalp:advancedcombos":
                 await query.answer()
@@ -7195,6 +7200,196 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_ema_slopes: {e}")
             await update.message.reply_text("Error computing EMA slope analysis")
+
+    async def scalp_ema_slopes_evci(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """EMA slope analysis with EV (realized R), Wilson CI and Lift vs baseline.
+
+        - 30d decisive outcomes (win/loss), phantoms + executed
+        - Solo fast/slow bins ranked by EV lift
+        - Top fast×slow combos by EV_R (N≥50)
+        - ASCII heatmap of WR% for fast×slow (cells with N<20 shown as —)
+        """
+        try:
+            from datetime import datetime, timedelta
+            from math import sqrt
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+
+            def wilson_ci(w:int, n:int, z:float=1.96):
+                if n <= 0:
+                    return (0.0, 0.0)
+                p = w / n
+                denom = 1.0 + (z*z)/n
+                center = (p + (z*z)/(2*n)) / denom
+                margin = z * sqrt((p*(1-p)/n) + (z*z)/(4*n*n)) / denom
+                lo, hi = max(0.0, center - margin), min(1.0, center + margin)
+                return (lo*100.0, hi*100.0)
+
+            scpt = get_scalp_phantom_tracker()
+            cutoff = datetime.utcnow() - timedelta(days=30)
+
+            # Collect decisive scalps with required features
+            items = []  # (fast, slow, win, rr, pnl)
+            for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                for p in arr:
+                    try:
+                        et = getattr(p, 'exit_time', None)
+                        if not et or et < cutoff:
+                            continue
+                        if getattr(p, 'outcome', None) not in ('win','loss'):
+                            continue
+                        feats = getattr(p, 'features', {}) or {}
+                        fast = feats.get('ema_slope_fast', None)
+                        slow = feats.get('ema_slope_slow', None)
+                        if not (isinstance(fast, (int,float)) and isinstance(slow, (int,float))):
+                            continue
+                        rr = getattr(p, 'realized_rr', None)
+                        pnl = getattr(p, 'pnl_percent', None)
+                        rr = float(rr) if isinstance(rr, (int,float)) else 0.0
+                        pnl = float(pnl) if isinstance(pnl, (int,float)) else 0.0
+                        win = 1 if getattr(p, 'outcome', None) == 'win' else 0
+                        items.append((float(fast), float(slow), win, rr, pnl))
+                    except Exception:
+                        continue
+
+            if not items:
+                await self.safe_reply(update, "EMA Slopes (EV+CI) 30d\nNo data yet.", parse_mode=None)
+                return
+
+            # Baseline metrics
+            n_total = len(items)
+            w_total = sum(1 for _,_,w,_,_ in items if w==1)
+            wr_base = (w_total/n_total*100.0) if n_total else 0.0
+            evr_base = sum(rr for *_, rr, _ in items) / n_total
+
+            # Fixed bins (percent units like existing view)
+            fast_bins = [
+                ("<-0.10", lambda x: x < -0.10),
+                ("-0.10--0.05", lambda x: -0.10 <= x < -0.05),
+                ("-0.05--0.03", lambda x: -0.05 <= x < -0.03),
+                ("-0.03--0.01", lambda x: -0.03 <= x < -0.01),
+                ("-0.01-0.00", lambda x: -0.01 <= x < 0.00),
+                ("0.00-0.03", lambda x: 0.00 <= x < 0.03),
+                ("0.03+", lambda x: x >= 0.03),
+            ]
+            slow_bins = [
+                ("<-0.05", lambda x: x < -0.05),
+                ("-0.05--0.03", lambda x: -0.05 <= x < -0.03),
+                ("-0.03--0.015", lambda x: -0.03 <= x < -0.015),
+                ("-0.015-0.00", lambda x: -0.015 <= x < 0.00),
+                ("0.00-0.015", lambda x: 0.00 <= x < 0.015),
+                ("0.015+", lambda x: x >= 0.015),
+            ]
+
+            def bin_label(val: float, bins):
+                for label, test in bins:
+                    if test(val):
+                        return label
+                return None
+
+            # Aggregations
+            fast_agg = {}
+            slow_agg = {}
+            combo_agg = {}
+            for f, s, w, rr, pnl in items:
+                fl = bin_label(f, fast_bins)
+                sl = bin_label(s, slow_bins)
+                if fl:
+                    a = fast_agg.setdefault(fl, {'w':0,'n':0,'rr':0.0,'pnl':0.0})
+                    a['n'] += 1; a['w'] += w; a['rr'] += rr; a['pnl'] += pnl
+                if sl:
+                    a = slow_agg.setdefault(sl, {'w':0,'n':0,'rr':0.0,'pnl':0.0})
+                    a['n'] += 1; a['w'] += w; a['rr'] += rr; a['pnl'] += pnl
+                if fl and sl:
+                    key = f"F:{fl} × S:{sl}"
+                    a = combo_agg.setdefault(key, {'w':0,'n':0,'rr':0.0,'pnl':0.0})
+                    a['n'] += 1; a['w'] += w; a['rr'] += rr; a['pnl'] += pnl
+
+            def fmt_bin(name: str, agg: dict):
+                n = agg['n']; w = agg['w']
+                wr = (w/n*100.0) if n else 0.0
+                lo, hi = wilson_ci(w, n)
+                evr = (agg['rr']/n) if n else 0.0
+                lift_wr = wr - wr_base
+                lift_evr = evr - evr_base
+                return f"• {name:>12}: WR {wr:5.1f}% [{lo:4.0f}-{hi:4.0f}] N={n:>3} | EV_R {evr:+.2f} | Lift_WR {lift_wr:+.1f} | Lift_EV {lift_evr:+.2f}"
+
+            # Build message with chunking
+            lines = []
+            lines.append("📉 EMA Slopes (EV+CI) — 30d")
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append("")
+            lines.append(f"Baseline: WR {wr_base:.1f}% | EV_R {evr_base:+.2f} (N={n_total})")
+            lines.append("")
+            lines.append("⚡ Fast EMA Slope bins (ranked by Lift_EV)")
+            fast_sorted = sorted(fast_agg.items(), key=lambda kv: ((kv[1]['rr']/kv[1]['n']) if kv[1]['n'] else -1e9), reverse=True)
+            for name, agg in fast_sorted:
+                if agg['n'] >= 30:
+                    lines.append(fmt_bin(name, agg))
+
+            lines.append("")
+            lines.append("🐌 Slow EMA Slope bins (ranked by Lift_EV)")
+            slow_sorted = sorted(slow_agg.items(), key=lambda kv: ((kv[1]['rr']/kv[1]['n']) if kv[1]['n'] else -1e9), reverse=True)
+            for name, agg in slow_sorted:
+                if agg['n'] >= 30:
+                    lines.append(fmt_bin(name, agg))
+
+            # Top combos by EV_R
+            lines.append("")
+            lines.append("🔁 Top Fast×Slow combinations by EV_R (N≥50)")
+            combo_sorted = sorted(combo_agg.items(), key=lambda kv: ((kv[1]['rr']/kv[1]['n']) if kv[1]['n'] else -1e9), reverse=True)
+            shown = 0
+            for key, agg in combo_sorted:
+                if agg['n'] < 50:
+                    continue
+                n = agg['n']; w = agg['w']
+                wr = (w/n*100.0) if n else 0.0
+                lo, hi = wilson_ci(w, n)
+                evr = (agg['rr']/n) if n else 0.0
+                lift_wr = wr - wr_base
+                lift_evr = evr - evr_base
+                lines.append(f"• WR {wr:5.1f}% [{lo:4.0f}-{hi:4.0f}] N={n:>3} | EV_R {evr:+.2f} | Lift_WR {lift_wr:+.1f} | Lift_EV {lift_evr:+.2f} | {key}")
+                shown += 1
+                if shown >= 10:
+                    break
+
+            # Heatmap (WR%)
+            lines.append("")
+            lines.append("🗺 Heatmap WR% (rows=Slow, cols=Fast; '—' if N<20)")
+            fast_labels = [fb[0] for fb in fast_bins]
+            header = "          " + "  ".join([f"{lbl:>11}" for lbl in fast_labels])
+            lines.append(header)
+            for sl, _ in slow_bins:
+                row_vals = []
+                for fl, _ in fast_bins:
+                    key = f"F:{fl} × S:{sl}"
+                    agg = combo_agg.get(key)
+                    if not agg or agg['n'] < 20:
+                        row_vals.append(f"{'-':>11}")
+                        continue
+                    wr = (agg['w']/agg['n']*100.0) if agg['n'] else 0.0
+                    row_vals.append(f"{wr:5.1f}%{(' (N)') if False else '':>5}")
+                lines.append(f"{sl:>10}  " + "  ".join(row_vals))
+
+            # Send in chunks
+            MAX = 3500
+            buf = []
+            cur = 0
+            for ln in lines:
+                if cur + len(ln) + 1 > MAX and buf:
+                    await self.safe_reply(update, "\n".join(buf), parse_mode=None)
+                    buf = []
+                    cur = 0
+                buf.append(ln)
+                cur += len(ln) + 1
+            if buf:
+                await self.safe_reply(update, "\n".join(buf), parse_mode=None)
+
+        except Exception as e:
+            logger.error(f"Error in scalp_ema_slopes_evci: {e}")
+            try:
+                await self.safe_reply(update, "Error computing Slopes (EV+CI)", parse_mode=None)
+            except Exception:
+                pass
 
     async def scalp_advanced_combos(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Multi-feature combination analysis showing proven high-WR patterns.

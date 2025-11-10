@@ -2489,7 +2489,8 @@ class TradingBot:
                     entry=actual_entry,
                     sl=float(sig_obj.sl),
                     tp=float(sig_obj.tp),
-                    entry_time=datetime.now(),
+                    # Use UTC to keep execution WR bucketing consistent with Telegram (UTC-based)
+                    entry_time=datetime.utcnow(),
                     strategy_name='scalp',
                     ml_score=float(ml_score or 0.0),
                     qscore=float(((getattr(self, '_last_signal_features', {}) or {}).get(sym, {}) or {}).get('qscore', 0.0) or 0.0)
@@ -7007,7 +7008,8 @@ class TradingBot:
                 exit_price=exit_price,
                 quantity=pos.qty,
                 entry_time=pos.entry_time,  # Use entry time from position
-                exit_time=datetime.now(),
+                # Record exit in UTC so daily WR uses the correct UTC day bucket
+                exit_time=datetime.utcnow(),
                 pnl_usd=pnl_usd,
                 pnl_percent=pnl_percent,
                 exit_reason=exit_reason,
@@ -7309,7 +7311,8 @@ class TradingBot:
                                 pnl = (pos.entry - exit_price) * pos.qty
                             
                             # Determine session
-                            session = symbol_collector.get_trading_session(datetime.now().hour)
+                            # Use UTC hour to align with UTC-based session labels elsewhere
+                            session = symbol_collector.get_trading_session(datetime.utcnow().hour)
                             
                             # Update session performance
                             symbol_collector.update_session_performance(

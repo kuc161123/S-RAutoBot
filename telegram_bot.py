@@ -7609,7 +7609,14 @@ class TGBot:
             await self.safe_reply(update, "🔍 Running ultimate analysis (50+ variables)...")
 
             # Call comprehensive analysis (analyzes all variables, phantoms + executed)
-            result = scpt.get_comprehensive_analysis()
+            # Offload to thread to avoid blocking the event loop for large datasets
+            try:
+                import asyncio as _asyncio
+                result = await _asyncio.to_thread(scpt.get_comprehensive_analysis)
+            except Exception:
+                # Fallback for older Python versions
+                loop = _asyncio.get_running_loop()
+                result = await loop.run_in_executor(None, scpt.get_comprehensive_analysis)
 
             if 'error' in result:
                 await self.safe_reply(update, f"❌ {result['error']}")

@@ -3569,41 +3569,58 @@ class TradingBot:
                     bb_width_pct = float(sc_feats_hi.get('bb_width_pct', 0.0) or 0.0)
                     vwap_dist_atr = float(sc_feats_hi.get('vwap_dist_atr', 0.0) or 0.0)
 
-                    # Define 4 high-WR multi-feature combinations (60-92% WR, N=264 total)
-                    # From latest Advanced Combos analysis: Fast slope × Slow slope × ATR% × BBW% × VWAP distance
-                    # Tiered risk: Combo 1 (92.2% WR) uses 4% risk, others use 2% base risk
+                    # Define 6 high-WR multi-feature combinations (48.5-56.8% WR, N=599 total)
+                    # From latest 30d Advanced Combos analysis: Fast slope × Slow slope × ATR% × BBW% × VWAP distance
+                    # Strategy: POSITIVE slopes (trend-following) show highest WR
+                    # Flat 1% risk for all combos
                     high_wr_combos = [
-                        {
+                        {   # Combo 1: Best performer with middle VWAP range
                             'fast_min': 0.01, 'fast_max': 0.03,
                             'slow_min': 0.015, 'slow_max': 999.0,    # S:0.015+ means >= 0.015
                             'atr_max': 0.5,                          # ATR < 0.5%
                             'bbw_max': 0.012,                        # BBW < 1.2% (stored as decimal)
-                            'vwap_min': -999.0, 'vwap_max': 0.6,    # VWAP:<0.6 means < 0.6
-                            'wr': 92.2, 'n': 64, 'combo_id': 1      # Highest WR → 4% risk (2× multiplier)
+                            'vwap_min': 0.6, 'vwap_max': 1.0,       # VWAP:0.6-1.0 (middle zone)
+                            'wr': 56.8, 'n': 74, 'combo_id': 1
                         },
-                        {
-                            'fast_min': -0.01, 'fast_max': 0.01,
-                            'slow_min': -0.03, 'slow_max': 0.00,
+                        {   # Combo 2: Strong fast slope, neutral/weak slow
+                            'fast_min': 0.03, 'fast_max': 999.0,     # F:0.03+ means >= 0.03
+                            'slow_min': 0.00, 'slow_max': 0.015,     # S:0.00-0.015
                             'atr_max': 0.5,
                             'bbw_max': 0.012,
-                            'vwap_min': 1.0, 'vwap_max': 999.0,     # VWAP:1.0+ means >= 1.0
-                            'wr': 71.8, 'n': 71, 'combo_id': 2
+                            'vwap_min': 1.0, 'vwap_max': 999.0,      # VWAP:1.0+ means >= 1.0
+                            'wr': 54.4, 'n': 79, 'combo_id': 2
                         },
-                        {
+                        {   # Combo 3: Positive fast, negative slow (mixed trend)
                             'fast_min': 0.01, 'fast_max': 0.03,
-                            'slow_min': -0.03, 'slow_max': 0.00,
+                            'slow_min': -0.03, 'slow_max': 0.00,     # S:-0.03-0.00 (negative)
                             'atr_max': 0.5,
                             'bbw_max': 0.012,
-                            'vwap_min': 1.0, 'vwap_max': 999.0,     # VWAP:1.0+ means >= 1.0
-                            'wr': 62.0, 'n': 79, 'combo_id': 3
+                            'vwap_min': 1.0, 'vwap_max': 999.0,      # VWAP:1.0+ means >= 1.0
+                            'wr': 52.2, 'n': 90, 'combo_id': 3
                         },
-                        {
-                            'fast_min': 0.03, 'fast_max': 999.0,    # F:0.03+ means >= 0.03
-                            'slow_min': 0.015, 'slow_max': 999.0,   # S:0.015+ means >= 0.015
+                        {   # Combo 4: Largest sample size, near price
+                            'fast_min': 0.01, 'fast_max': 0.03,
+                            'slow_min': 0.015, 'slow_max': 999.0,    # S:0.015+ means >= 0.015
                             'atr_max': 0.5,
                             'bbw_max': 0.012,
-                            'vwap_min': -999.0, 'vwap_max': 0.6,    # VWAP:<0.6 means < 0.6
-                            'wr': 60.0, 'n': 50, 'combo_id': 4
+                            'vwap_min': -999.0, 'vwap_max': 0.6,     # VWAP:<0.6 (close to VWAP)
+                            'wr': 50.7, 'n': 146, 'combo_id': 4
+                        },
+                        {   # Combo 5: Strong both slopes, middle VWAP
+                            'fast_min': 0.03, 'fast_max': 999.0,     # F:0.03+ means >= 0.03
+                            'slow_min': 0.015, 'slow_max': 999.0,    # S:0.015+ means >= 0.015
+                            'atr_max': 0.5,
+                            'bbw_max': 0.012,
+                            'vwap_min': 0.6, 'vwap_max': 1.0,        # VWAP:0.6-1.0 (middle zone)
+                            'wr': 50.5, 'n': 107, 'combo_id': 5
+                        },
+                        {   # Combo 6: Strong both slopes, near price
+                            'fast_min': 0.03, 'fast_max': 999.0,     # F:0.03+ means >= 0.03
+                            'slow_min': 0.015, 'slow_max': 999.0,    # S:0.015+ means >= 0.015
+                            'atr_max': 0.5,
+                            'bbw_max': 0.012,
+                            'vwap_min': -999.0, 'vwap_max': 0.6,     # VWAP:<0.6 (close to VWAP)
+                            'wr': 48.5, 'n': 103, 'combo_id': 6
                         },
                     ]
 
@@ -3637,16 +3654,11 @@ class TradingBot:
                         except Exception:
                             ml_s_slope = 0.0
 
-                        # Calculate tiered risk: combo 1 (92.2% WR) gets 4%, others get 2%
+                        # Calculate flat 1% risk for all combos
                         try:
-                            base_risk = float(self.config.get('scalp', {}).get('exec', {}).get('high_wr_risk_percent', 2.0))
-                            if matched_combo.get('combo_id') == 1:
-                                multiplier = float(self.config.get('scalp', {}).get('exec', {}).get('high_wr_combo1_multiplier', 2.0))
-                                risk_pct = base_risk * multiplier  # 2% × 2.0 = 4%
-                            else:
-                                risk_pct = base_risk  # 2% for combos 2-4
+                            risk_pct = float(self.config.get('scalp', {}).get('exec', {}).get('high_wr_risk_percent', 1.0))
                         except Exception:
-                            risk_pct = 2.0  # Fallback
+                            risk_pct = 1.0  # Fallback
 
                         # Check position conflict
                         if sym in self.book.positions:

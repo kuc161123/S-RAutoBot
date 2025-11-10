@@ -394,14 +394,14 @@ class ScalpPhantomTracker:
         try:
             act = {sym: [t.to_dict() for t in lst] for sym, lst in self.active.items()}
             self.redis_client.set('scalp_phantom:active', json.dumps(act))
+            # Save ALL completed phantoms (no age/count limits for ML retraining)
             comp_all = []
-            cutoff = datetime.utcnow() - timedelta(days=30)
             for trades in self.completed.values():
                 for t in trades:
-                    if t.exit_time and t.exit_time >= cutoff:
+                    if t.outcome in ['win', 'loss']:  # Only save decisive outcomes
                         comp_all.append(t.to_dict())
-            comp_all = comp_all[-1500:]
             self.redis_client.set('scalp_phantom:completed', json.dumps(comp_all))
+            logger.info(f"💾 Saved {len(comp_all)} completed scalp phantoms to Redis (no truncation)")
         except Exception as e:
             logger.error(f"Scalp Phantom save error: {e}")
 

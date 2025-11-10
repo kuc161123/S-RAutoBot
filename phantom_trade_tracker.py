@@ -201,7 +201,7 @@ class PhantomTradeTracker:
                         cnt += len(items)
                 logger.info(f"Loaded {cnt} active phantom trades across {len(self.active_phantoms)} symbols")
             
-            # Load completed phantoms (last 1000)
+            # Load ALL completed phantoms (no limit)
             completed_data = self.redis_client.get('phantom:completed')
             if completed_data:
                 completed_list = json.loads(completed_data)
@@ -228,25 +228,16 @@ class PhantomTradeTracker:
                 active_dict[symbol] = [t.to_dict() for t in trades]
             self.redis_client.set('phantom:active', json.dumps(active_dict, cls=NumpyJSONEncoder))
             
-            # Save completed phantoms (keep last 1000, and drop >30d old)
-            from datetime import datetime, timedelta
-            cutoff = datetime.now() - timedelta(days=30)
+            # Save ALL completed phantoms (no age/count limits for ML retraining)
             all_completed = []
             for trades in self.phantom_trades.values():
                 for trade in trades:
                     if trade.outcome in ['win', 'loss']:
-                        try:
-                            if trade.exit_time and trade.exit_time < cutoff:
-                                continue
-                        except Exception:
-                            pass
                         all_completed.append(trade.to_dict())
-            
-            # Keep only last 1000 for storage efficiency
-            all_completed = all_completed[-1000:]
+
             self.redis_client.set('phantom:completed', json.dumps(all_completed, cls=NumpyJSONEncoder))
-            
-            logger.debug(f"Saved {len(self.active_phantoms)} active and {len(all_completed)} completed phantoms")
+
+            logger.info(f"💾 Saved {len(self.active_phantoms)} active and {len(all_completed)} completed trend phantoms to Redis (no truncation)")
             
         except Exception as e:
             logger.error(f"Error saving phantom trades to Redis: {e}")

@@ -3933,19 +3933,68 @@ class TradingBot:
                 try:
                     _excfg = ((self.config.get('scalp', {}) or {}).get('exec', {}) or {})
                     if bool(_excfg.get('combos_only', False)) and bool(_excfg.get('block_noncombo', False)):
-                        # Record phantom and skip
+                        # Record phantom with full feature set for learning, then skip
                         try:
                             from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
                             scpt2 = _get_scpt()
+
+                            # Build features from the best available frame source
+                            _df_src_nc = None
+                            try:
+                                _df_src_nc = self.frames_3m.get(sym)
+                                if _df_src_nc is None or getattr(_df_src_nc, 'empty', True):
+                                    _df_src_nc = self.frames.get(sym)
+                                if _df_src_nc is None or getattr(_df_src_nc, 'empty', True):
+                                    _df_src_nc = df
+                            except Exception:
+                                _df_src_nc = df
+
+                            nc_feats = self._build_scalp_features(
+                                _df_src_nc,
+                                getattr(sc_sig, 'meta', {}) or {},
+                                (vol_level if 'vol_level' in locals() else None),
+                                None
+                            )
+                            # Attach HTF composites if available
+                            try:
+                                comp = self._get_htf_metrics(sym, self.frames.get(sym))
+                                nc_feats['ts15'] = float(comp.get('ts15', 0.0)); nc_feats['ts60'] = float(comp.get('ts60', 0.0))
+                                nc_feats['rc15'] = float(comp.get('rc15', 0.0)); nc_feats['rc60'] = float(comp.get('rc60', 0.0))
+                            except Exception:
+                                pass
+                            # Compute Qscore snapshot for analysis continuity
+                            try:
+                                _qs = self._compute_qscore_scalp(
+                                    sym, sc_sig.side, float(sc_sig.entry), float(sc_sig.sl), float(sc_sig.tp),
+                                    df3=_df_src_nc, df15=self.frames.get(sym), sc_feats=nc_feats
+                                )
+                                nc_feats['qscore'] = float(_qs[0]); nc_feats['qscore_components'] = dict(_qs[1]); nc_feats['qscore_reasons'] = list(_qs[2])
+                            except Exception:
+                                pass
+                            # Mark routing for attribution
+                            try:
+                                nc_feats['routing'] = 'noncombo_block'
+                            except Exception:
+                                pass
+
+                            # Compute ML score for learning record (fallback to existing ml_s)
+                            ml_s_nc = None
+                            try:
+                                from ml_scorer_scalp import get_scalp_scorer
+                                _scorer = get_scalp_scorer()
+                                ml_s_nc, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, nc_feats)
+                            except Exception:
+                                ml_s_nc = None
+
                             scpt2.record_scalp_signal(
                                 sym,
                                 {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                float(ml_s or 0.0),
+                                float(ml_s_nc if ml_s_nc is not None else (ml_s if 'ml_s' in locals() and ml_s is not None else 0.0)),
                                 False,
-                                sc_feats if 'sc_feats' in locals() else {}
+                                nc_feats
                             )
-                        except Exception:
-                            pass
+                        except Exception as _nce:
+                            logger.debug(f"[{sym}] noncombo phantom record failed: {_nce}")
                         self._scalp_last_exec_reason[sym] = 'noncombo_block'
                         logger.info(f"[{sym}] ⛔ Scalp NON‑COMBO blocked (combos_only); skipping gate-based execution")
                         continue

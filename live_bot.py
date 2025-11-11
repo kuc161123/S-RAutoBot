@@ -3397,6 +3397,12 @@ class TradingBot:
                                 sc_settings.vwap_cap_warmup = float(sig_cfg.get('vwap_cap_warmup'))
                             if 'vwap_session_windows' in sig_cfg:
                                 sc_settings.vwap_session_windows = dict(sig_cfg.get('vwap_session_windows') or {})
+                            if 'vwap_window' in sig_cfg:
+                                sc_settings.vwap_window = int(sig_cfg.get('vwap_window'))
+                            if 'vwap_only' in sig_cfg:
+                                sc_settings.vwap_only = bool(sig_cfg.get('vwap_only'))
+                            if 'vwap_require_alignment' in sig_cfg:
+                                sc_settings.vwap_require_alignment = bool(sig_cfg.get('vwap_require_alignment'))
                         except Exception:
                             pass
                         # Optional soft ORB relax (signal-only): if price has broken the recent 20-bar range in trend direction

@@ -35,6 +35,9 @@ class ScalpSettings:
     vwap_session_warmup_bars: int = 30
     vwap_cap_warmup: float = 2.0
     vwap_session_windows: Optional[Dict[str, str]] = None  # e.g., {'asian': '00:00-08:00', ...}
+    # VWAP-only detection mode
+    vwap_only: bool = False                   # If true, use only VWAP proximity for acceptance (drop vol/bbw/wick gates)
+    vwap_require_alignment: bool = False      # If true, still require EMA alignment with VWAP-only mode
     # Multi-anchor means OR (EVWAP OR EMA-band OR BB-mid) for signals
     means_enabled: bool = True
     ema_band_cap_atr: float = 1.5
@@ -200,18 +203,29 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
     means_evwap_ok = dist_vwap_atr <= eff_vwap_cap
     means_ema_ok = dist_ema_band <= float(s.ema_band_cap_atr)
     means_bb_ok = dist_bb_mid <= float(s.bb_mid_cap_atr)
-    means_ok = means_evwap_ok or (bool(s.means_enabled) and (means_ema_ok or means_bb_ok))
-    vol_ok = (float(vol_ratio) >= float(s.vol_ratio_min))
-    bbw_ok = (float(bbw_pct) >= float(s.min_bb_width_pct))
-    wick_body_long = (lower_w >= max(float(s.wick_ratio_min), float(upper_w) + float(s.wick_delta_min))) and body_up and (body_ratio >= float(s.body_ratio_min))
-    wick_body_short = (upper_w >= max(float(s.wick_ratio_min), float(lower_w) + float(s.wick_delta_min))) and body_dn and (body_ratio >= float(s.body_ratio_min))
+    if bool(s.vwap_only):
+        means_ok = means_evwap_ok
+        vol_ok = True
+        bbw_ok = True
+        wick_body_long = True
+        wick_body_short = True
+        # Optionally relax EMA alignment when in VWAP-only
+        if not bool(s.vwap_require_alignment):
+            ema_aligned_up = True
+            ema_aligned_dn = True
+    else:
+        means_ok = means_evwap_ok or (bool(s.means_enabled) and (means_ema_ok or means_bb_ok))
+        vol_ok = (float(vol_ratio) >= float(s.vol_ratio_min))
+        bbw_ok = (float(bbw_pct) >= float(s.min_bb_width_pct))
+        wick_body_long = (lower_w >= max(float(s.wick_ratio_min), float(upper_w) + float(s.wick_delta_min))) and body_up and (body_ratio >= float(s.body_ratio_min))
+        wick_body_short = (upper_w >= max(float(s.wick_ratio_min), float(lower_w) + float(s.wick_delta_min))) and body_dn and (body_ratio >= float(s.body_ratio_min))
 
     # Long scalp candidate (means OR)
     if (
         ema_aligned_up
-        and bbw_ok
-        and vol_ok
-        and wick_body_long
+        and (bbw_ok)
+        and (vol_ok)
+        and (wick_body_long)
         and means_ok
         and orb_ok
     ):
@@ -251,9 +265,9 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
     # Short scalp candidate
     if (
         ema_aligned_dn
-        and bbw_ok
-        and vol_ok
-        and wick_body_short
+        and (bbw_ok)
+        and (vol_ok)
+        and (wick_body_short)
         and means_ok
         and orb_ok
     ):
@@ -289,7 +303,7 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
             }
         )
     # K-of-N (phantom) path — slope mandatory
-    if bool(s.kofn_enabled):
+    if (not bool(s.vwap_only)) and bool(s.kofn_enabled):
         if ema_aligned_up:
             gates = [bool(means_ok), bool(vol_ok), bool(wick_body_long), bool(bbw_ok)]
             if sum(1 for g in gates if g) >= int(s.kofn_k):
@@ -331,7 +345,7 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
                         meta={'acceptance_path': 'kofn'}
                     )
     # ATR fallback (phantom)
-    if bool(s.atr_fallback_enabled):
+    if (not bool(s.vwap_only)) and bool(s.atr_fallback_enabled):
         lb = int(max(2, s.atr_fb_lookback_bars))
         if ema_aligned_up and wick_body_long:
             try:
@@ -374,7 +388,7 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
                         meta={'acceptance_path': 'atr_fallback', 'atr_fallback_size': float(size_atr)}
                     )
     # Near-miss phantom acceptance
-    if bool(s.near_miss_enabled):
+    if (not bool(s.vwap_only)) and bool(s.near_miss_enabled):
         if ema_aligned_up:
             fails = [not means_ok, not vol_ok, not wick_body_long, not bbw_ok]
             if sum(1 for f in fails if f) == 1:

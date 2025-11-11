@@ -137,10 +137,15 @@ class MultiWebSocketHandler:
                 which = 'PRIMARY' if (self._ws_idx == 0 or not self._use_alt_on_fail) else 'ALT'
                 logger.info(f"[WS-{conn_id}] Connecting with {len(topics)} topics ({which})…")
                 
+                # Tune timeouts: give DNS/connect a bit more room than default.
+                # Derive open_timeout relative to expected recv cadence to avoid false timeouts on slow networks.
+                _ot = max(15.0, min(30.0, _compute_timeout() / 3.0))
                 async with websockets.connect(
                     url,
                     ping_interval=30,
-                    ping_timeout=40
+                    ping_timeout=40,
+                    open_timeout=_ot,
+                    close_timeout=10
                 ) as ws:
                     # Reset backoff on successful connection
                     backoff = 2.0

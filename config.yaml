@@ -639,7 +639,7 @@ scalp:
     block_noncombo: true         # If combos_only and no combo matched, block gate-based execs (phantom only)
     mute_disabled_paths: true    # Mute Telegram notifications for disabled gate/blocked paths when combos_only=true
     combos:
-      # Combo A: WR 52.8% (N=345) | F:-0.01-0.01 S:-0.03-0.00 ATR<0.5% BBW<1.2% VWAP 1.0+
+      # Top combo (WR ~48.6%) | F:-0.01-0.01 S:-0.03-0.00 ATR<0.5% BBW<1.2% VWAP:1.0+
       - id: 1
         fast_min: -0.01
         fast_max: 0.01
@@ -651,28 +651,16 @@ scalp:
         vwap_max: 999.0
         risk_percent: 1.0
         enabled: true
-      # Combo B: WR 45.8% (N=179) | F:0.01-0.03 S:-0.03-0.00 ATR<0.5% BBW<1.2% VWAP 1.0+
-      - id: 2
-        fast_min: 0.01
-        fast_max: 0.03
-        slow_min: -0.03
-        slow_max: 0.00
-        atr_max: 0.5
-        bbw_max: 0.012
-        vwap_min: 1.0
-        vwap_max: 999.0
-        risk_percent: 1.0
-        enabled: true
-      # Combo C: WR 42.5% (N=146) | F:-0.05--0.01 S:-0.03-0.00 ATR<0.5% BBW<1.2% VWAP <0.6
-      - id: 3
+      # Second combo (WR ~47.1%) | F:-0.05--0.01 S:0.00-0.015 ATR<0.5% BBW<1.2% VWAP:0.6-1.0
+      - id: 4
         fast_min: -0.05
         fast_max: -0.01
-        slow_min: -0.03
-        slow_max: 0.00
+        slow_min: 0.00
+        slow_max: 0.015
         atr_max: 0.5
         bbw_max: 0.012
-        vwap_min: -999.0
-        vwap_max: 0.6
+        vwap_min: 0.6
+        vwap_max: 1.0
         risk_percent: 1.0
         enabled: true
     # HIGH-WR MULTI-FEATURE BYPASS: Immediate execution for proven high-WR patterns

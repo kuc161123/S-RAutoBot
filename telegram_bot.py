@@ -912,9 +912,9 @@ class TGBot:
             [InlineKeyboardButton("📈 Q WR", callback_data="ui:scalp:qwr"), InlineKeyboardButton("📈 ML WR", callback_data="ui:scalp:mlwr")],
             [InlineKeyboardButton("📉 EMA Slopes", callback_data="ui:scalp:emaslopes"), InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr")],
             [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr"), InlineKeyboardButton("📊 Advanced Combos", callback_data="ui:scalp:advancedcombos")],
-            [InlineKeyboardButton("📉 Slopes (EV+CI)", callback_data="ui:scalp:slopesevci"), InlineKeyboardButton("🧪 Ultimate (EV+CI)", callback_data="ui:scalp:ultimate")],
-            [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚪 Gate+Feature", callback_data="ui:scalp:gatefeat")],
+            [InlineKeyboardButton("📉 Slopes (EV+CI)", callback_data="ui:scalp:slopesevci"), InlineKeyboardButton("📊 Combos (EV+CI)", callback_data="ui:scalp:combosevci")],
             [InlineKeyboardButton("🧪 Ultimate (EV+CI)", callback_data="ui:scalp:ultimate")],
+            [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚪 Gate+Feature", callback_data="ui:scalp:gatefeat")],
             [InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
         ])
 
@@ -3043,6 +3043,10 @@ class TGBot:
             if data == "ui:scalp:advancedcombos":
                 await query.answer()
                 await self.scalp_advanced_combos(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:combosevci":
+                await query.answer()
+                await self.scalp_advanced_combos_evci(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data == "ui:scalp:ultimate":
                 await query.answer()
@@ -7592,6 +7596,127 @@ class TGBot:
             logger.error(traceback.format_exc())
             await update.message.reply_text("Error computing advanced combinations analysis")
 
+    async def scalp_advanced_combos_evci(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Advanced Combos analysis with EV (realized R), Wilson CI and Lift vs baseline.
+
+        - 30d decisive (win/loss) outcomes from Scalp phantoms + executed
+        - Binning across 5 features: fast/slow slopes, atr_pct, bb_width_pct, vwap_dist_atr
+        - Top combos by EV_R (N≥50), with WR [95% CI], Lift_WR, Lift_EV
+        """
+        try:
+            from datetime import datetime, timedelta
+            from math import sqrt
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+
+            def wilson_ci(w:int, n:int, z:float=1.96):
+                if n <= 0:
+                    return (0.0, 0.0)
+                p = w / n
+                denom = 1.0 + (z*z)/n
+                center = (p + (z*z)/(2*n)) / denom
+                margin = z * sqrt((p*(1-p)/n) + (z*z)/(4*n*n)) / denom
+                lo, hi = max(0.0, center - margin), min(1.0, center + margin)
+                return (lo*100.0, hi*100.0)
+
+            scpt = get_scalp_phantom_tracker()
+            cutoff = datetime.utcnow() - timedelta(days=30)
+
+            # Collect decisive phantoms with all 5 features and realized_rr
+            items = []  # (fast, slow, atr, bbw, vwap, win, rr)
+            for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                for p in arr:
+                    try:
+                        et = getattr(p, 'exit_time', None)
+                        if not et or et < cutoff:
+                            continue
+                        if getattr(p, 'outcome', None) not in ('win','loss'):
+                            continue
+                        feats = getattr(p, 'features', {}) or {}
+                        fast = feats.get('ema_slope_fast'); slow = feats.get('ema_slope_slow')
+                        atr = feats.get('atr_pct'); bbw = feats.get('bb_width_pct'); vwap = feats.get('vwap_dist_atr')
+                        if not all(isinstance(x, (int, float)) for x in [fast, slow, atr, bbw, vwap]):
+                            continue
+                        rr = getattr(p, 'realized_rr', None)
+                        rr = float(rr) if isinstance(rr, (int,float)) else 0.0
+                        win = 1 if getattr(p, 'outcome', None) == 'win' else 0
+                        items.append((float(fast), float(slow), float(atr), float(bbw), float(vwap), win, rr))
+                    except Exception:
+                        continue
+
+            if not items:
+                await self.safe_reply(update, "📊 Combos (EV+CI) — 30d\nNo data yet.", parse_mode=None)
+                return
+
+            # Baseline metrics
+            n_total = len(items); w_total = sum(1 for *_, win, _ in items if win == 1)
+            wr_base = (w_total/n_total*100.0) if n_total else 0.0
+            evr_base = sum(rr for *_, rr in items) / n_total
+
+            # Define bins
+            fast_bins = [("<-0.05", lambda x: x < -0.05), ("-0.05--0.01", lambda x: -0.05 <= x < -0.01), ("-0.01-0.01", lambda x: -0.01 <= x < 0.01), ("0.01-0.03", lambda x: 0.01 <= x < 0.03), ("0.03+", lambda x: x >= 0.03)]
+            slow_bins = [("<-0.03", lambda x: x < -0.03), ("-0.03-0.00", lambda x: -0.03 <= x < 0.00), ("0.00-0.015", lambda x: 0.00 <= x < 0.015), ("0.015+", lambda x: x >= 0.015)]
+            atr_bins  = [("<0.5%", lambda x: x < 0.5), ("0.5-1.5%", lambda x: 0.5 <= x < 1.5), ("1.5%+", lambda x: x >= 1.5)]
+            bbw_bins  = [("<1.2%", lambda x: x < 1.2), ("1.2-2.0%", lambda x: 1.2 <= x < 2.0), ("2.0%+", lambda x: x >= 2.0)]
+            vwap_bins = [("<0.6", lambda x: x < 0.6), ("0.6-1.0", lambda x: 0.6 <= x < 1.0), ("1.0+", lambda x: x >= 1.0)]
+
+            def label(val: float, bins):
+                for lb, test in bins:
+                    if test(val):
+                        return lb
+                return None
+
+            # Aggregate combos
+            combos = {}
+            for f, s, a, b, v, win, rr in items:
+                lf = label(f, fast_bins); ls = label(s, slow_bins); la = label(a, atr_bins); lb = label(b, bbw_bins); lv = label(v, vwap_bins)
+                if not all([lf, ls, la, lb, lv]):
+                    continue
+                key = f"F:{lf} S:{ls} ATR:{la} BBW:{lb} VWAP:{lv}"
+                c = combos.setdefault(key, {'n':0,'w':0,'rr':0.0})
+                c['n'] += 1; c['w'] += int(win); c['rr'] += rr
+
+            # Rank by EV_R
+            ranked = sorted([(k,v) for k,v in combos.items() if v['n'] >= 50], key=lambda kv: (kv[1]['rr']/kv[1]['n']), reverse=True)
+
+            lines = []
+            lines.append("📊 Combos (EV+CI) — 30d")
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append("")
+            lines.append(f"Baseline: WR {wr_base:.1f}% | EV_R {evr_base:+.2f} (N={n_total})")
+            lines.append("")
+            lines.append("🔝 Top combos by EV_R (N≥50)")
+            shown = 0
+            for combo_key, agg in ranked:
+                n = agg['n']; w = agg['w']
+                wr = (w/n*100.0) if n else 0.0
+                lo, hi = wilson_ci(w, n)
+                evr = (agg['rr']/n) if n else 0.0
+                lift_wr = wr - wr_base; lift_evr = evr - evr_base
+                lines.append(f"• WR {wr:5.1f}% [{lo:4.0f}-{hi:4.0f}] N={n:>3} | EV_R {evr:+.2f} | Lift_WR {lift_wr:+.1f} | Lift_EV {lift_evr:+.2f} | {combo_key}")
+                shown += 1
+                if shown >= 12:
+                    break
+
+            # Send in chunks
+            MAX = 3500
+            buf = []
+            cur = 0
+            for ln in lines:
+                if cur + len(ln) + 1 > MAX and buf:
+                    await self.safe_reply(update, "\n".join(buf), parse_mode=None)
+                    buf = []
+                    cur = 0
+                buf.append(ln)
+                cur += len(ln) + 1
+            if buf:
+                await self.safe_reply(update, "\n".join(buf), parse_mode=None)
+
+        except Exception as e:
+            logger.error(f"Error in scalp_advanced_combos_evci: {e}")
+            try:
+                await self.safe_reply(update, "Error computing Combos (EV+CI)", parse_mode=None)
+            except Exception:
+                pass
     async def scalp_gate_feature_combos(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Individual Gate + Feature combination analysis.
 
@@ -7816,7 +7941,8 @@ class TGBot:
             from scalp_phantom_tracker import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
 
-            await self.safe_reply(update, "🔍 Running ultimate analysis (50+ variables)...")
+            # Kickoff without Markdown to avoid parse noise in logs
+            await self.safe_reply(update, "🔍 Running ultimate analysis (50+ variables)...", parse_mode=None)
 
             # Call comprehensive analysis (analyzes all variables, phantoms + executed)
             # Offload to thread to avoid blocking the event loop for large datasets
@@ -7910,6 +8036,147 @@ class TGBot:
         except Exception as e:
             logger.error(f"scalp_ultimate error: {e}", exc_info=True)
             await self.safe_reply(update, f"❌ Error: {e}")
+
+    async def scalp_combos_toggle(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Toggle combos-only execution mode for Scalp.
+
+        Usage:
+        /scalpcombos on  -> combos_only=true, block_noncombo=true
+        /scalpcombos off -> combos_only=false, block_noncombo=false
+        /scalpcombos     -> show current status
+        """
+        try:
+            state: str | None = None
+            if ctx.args:
+                state = str(ctx.args[0]).strip().lower()
+
+            # Resolve in-memory config
+            bot = self.shared.get('bot_instance')
+            mem_cfg = bot.config if bot and hasattr(bot, 'config') else None
+
+            def _get_exec(cfg: dict | None) -> dict:
+                try:
+                    return ((cfg.get('scalp', {}) or {}).get('exec', {}) or {}) if isinstance(cfg, dict) else {}
+                except Exception:
+                    return {}
+
+            cur = _get_exec(mem_cfg)
+            cur_file = {}
+            try:
+                import yaml
+                with open('config.yaml', 'r') as f:
+                    y = yaml.safe_load(f) or {}
+                cur_file = _get_exec(y)
+            except Exception:
+                cur_file = {}
+
+            if not state:
+                combos_only = bool(cur.get('combos_only', cur_file.get('combos_only', False)))
+                block_noncombo = bool(cur.get('block_noncombo', cur_file.get('block_noncombo', False)))
+                await self.safe_reply(update, f"🎯 Scalp combos-only status\n• combos_only: {combos_only}\n• block_noncombo: {block_noncombo}")
+                return
+
+            if state not in ('on', 'off'):
+                await self.safe_reply(update, "Usage: /scalpcombos on|off")
+                return
+
+            enable = (state == 'on')
+
+            # Update in-memory
+            try:
+                if isinstance(mem_cfg, dict):
+                    mem_cfg.setdefault('scalp', {}).setdefault('exec', {})['combos_only'] = enable
+                    mem_cfg['scalp']['exec']['block_noncombo'] = enable
+            except Exception:
+                pass
+
+            # Persist to config.yaml
+            try:
+                import yaml
+                with open('config.yaml', 'r') as f:
+                    y = yaml.safe_load(f) or {}
+                y.setdefault('scalp', {}).setdefault('exec', {})['combos_only'] = enable
+                y['scalp']['exec']['block_noncombo'] = enable
+                with open('config.yaml', 'w') as f:
+                    yaml.dump(y, f, default_flow_style=False, sort_keys=False)
+            except Exception as e:
+                logger.error(f"combos_only persist failed: {e}")
+
+            await self.safe_reply(update, f"✅ Scalp combos-only set to {enable} (block_noncombo={enable})")
+        except Exception as e:
+            logger.error(f"Error in scalp_combos_toggle: {e}")
+            try:
+                await self.safe_reply(update, f"❌ Error: {e}")
+            except Exception:
+                pass
+
+    async def scalp_combos_mute(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Toggle muting for disabled paths when combos_only is active.
+
+        Usage:
+        /scalpcombosmute on|off  (no args -> show status)
+        """
+        try:
+            state: str | None = None
+            if ctx.args:
+                state = str(ctx.args[0]).strip().lower()
+
+            # Resolve in-memory config
+            bot = self.shared.get('bot_instance')
+            mem_cfg = bot.config if bot and hasattr(bot, 'config') else None
+
+            def _get_exec(cfg: dict | None) -> dict:
+                try:
+                    return ((cfg.get('scalp', {}) or {}).get('exec', {}) or {}) if isinstance(cfg, dict) else {}
+                except Exception:
+                    return {}
+
+            cur = _get_exec(mem_cfg)
+            cur_file = {}
+            try:
+                import yaml
+                with open('config.yaml', 'r') as f:
+                    y = yaml.safe_load(f) or {}
+                cur_file = _get_exec(y)
+            except Exception:
+                cur_file = {}
+
+            if not state:
+                mute = bool(cur.get('mute_disabled_paths', cur_file.get('mute_disabled_paths', False)))
+                await self.safe_reply(update, f"🔕 combos_only mute_disabled_paths: {mute}\nUsage: /scalpcombosmute on|off")
+                return
+
+            if state not in ('on', 'off'):
+                await self.safe_reply(update, "Usage: /scalpcombosmute on|off")
+                return
+
+            enable = (state == 'on')
+
+            # Update in-memory
+            try:
+                if isinstance(mem_cfg, dict):
+                    mem_cfg.setdefault('scalp', {}).setdefault('exec', {})['mute_disabled_paths'] = enable
+            except Exception:
+                pass
+
+            # Persist to config.yaml
+            try:
+                import yaml
+                with open('config.yaml', 'r') as f:
+                    y = yaml.safe_load(f) or {}
+                y.setdefault('scalp', {}).setdefault('exec', {})['mute_disabled_paths'] = enable
+                with open('config.yaml', 'w') as f:
+                    yaml.dump(y, f, default_flow_style=False, sort_keys=False)
+            except Exception as e:
+                logger.error(f"mute_disabled_paths persist failed: {e}")
+
+            await self.safe_reply(update, f"✅ combos_only mute_disabled_paths set to {enable}")
+        except Exception as e:
+            logger.error(f"Error in scalp_combos_mute: {e}")
+            try:
+                await self.safe_reply(update, f"❌ Error: {e}")
+            except Exception:
+                pass
 
     async def exec_winrates(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, days_sessions: int = 30):
         """Show execution-only win rates: Today, Yesterday, 7-day daily, and 30d sessions (asian/european/us).

@@ -2594,6 +2594,22 @@ class TradingBot:
                 bb_pctile = 0.0
             out['bb_width_pct'] = max(0.0, bb_width_pct)
             out['bb_width_pctile'] = max(0.0, min(1.0, bb_pctile))
+            try:
+                # Bollinger band position 0..1 (0=lower band, 1=upper band)
+                if len(close) >= 20:
+                    ma = close.rolling(20).mean()
+                    sd = close.rolling(20).std()
+                    upper = ma + 2 * sd
+                    lower = ma - 2 * sd
+                    denom = float((upper.iloc[-1] - lower.iloc[-1]) or 0.0)
+                    if denom > 0:
+                        out['bb_pos'] = float((price - float(lower.iloc[-1])) / denom)
+                    else:
+                        out['bb_pos'] = 0.5
+                else:
+                    out['bb_pos'] = 0.5
+            except Exception:
+                out['bb_pos'] = out.get('bb_pos', 0.5)
 
             # Impulse ratio: |close change| / ATR
             if len(close) >= 2 and atr > 0:
@@ -2694,8 +2710,13 @@ class TradingBot:
                     out['session'] = 'us'
                 else:
                     out['session'] = 'off_hours'
+                out['hour_utc'] = int(hour)
             except Exception:
                 out['session'] = 'off_hours'
+                try:
+                    out['hour_utc'] = int(pd.Timestamp.utcnow().hour)
+                except Exception:
+                    out['hour_utc'] = 0
 
             # Volatility regime & cluster
             out['volatility_regime'] = vol_level if isinstance(vol_level, str) else 'normal'
@@ -2750,6 +2771,17 @@ class TradingBot:
                 out['round_tick_dist'] = float(abs(frac - nearest) * 100.0)
             except Exception:
                 out['round_tick_dist'] = out.get('round_tick_dist', 0.0)
+
+            # OBV slope proxy (last 10 bars)
+            try:
+                if len(close) >= 11 and len(tail['volume']) >= 11:
+                    chg = close.diff().fillna(0)
+                    obv = (np.sign(chg) * tail['volume']).cumsum()
+                    out['obv_slope'] = float(obv.iloc[-1] - obv.iloc[-11]) / max(1e-9, float(tail['volume'].rolling(10).mean().iloc[-1]))
+                else:
+                    out['obv_slope'] = 0.0
+            except Exception:
+                out['obv_slope'] = out.get('obv_slope', 0.0)
 
             # --- Pro indicators (RSI, MACD, MAs, Fib, structure, divergence, RR) ---
             try:

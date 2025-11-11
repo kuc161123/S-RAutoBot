@@ -938,6 +938,7 @@ class TGBot:
             [InlineKeyboardButton("🧪 Ultimate (EV+CI)", callback_data="ui:scalp:ultimate")],
             [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚪 Gate+Feature", callback_data="ui:scalp:gatefeat")],
             [InlineKeyboardButton("📈 Pro Analytics (EV+CI)", callback_data="ui:scalp:proanalytics")],
+            [InlineKeyboardButton("🧠 Build Strategy (30d)", callback_data="ui:scalp:buildstrategy")],
             [InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
         ])
 
@@ -3082,6 +3083,10 @@ class TGBot:
             if data == "ui:scalp:proanalytics":
                 await query.answer()
                 await self.scalp_pro_analytics(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:buildstrategy":
+                await query.answer()
+                await self.scalp_build_strategy(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data == "ui:scalp:gatefeat":
                 await query.answer()
@@ -8082,6 +8087,116 @@ class TGBot:
             logger.error(f"Error in scalp_pro_analytics: {e}")
             try:
                 await self.safe_reply(update, "Error computing Pro Analytics", parse_mode=None)
+            except Exception:
+                pass
+
+    async def scalp_build_strategy(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Build a candidate Scalp strategy (combos) from last 30d data.
+
+        Uses enriched features (RSI/MACD/VWAP/Fib/MTF/Volume/BBW) to propose
+        top N combinations by WR (N≥50). Outputs a YAML snippet you can paste
+        into config under `scalp.exec.pro_exec` (execution path to be wired after approval).
+        """
+        try:
+            from datetime import datetime, timedelta
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+
+            scpt = get_scalp_phantom_tracker()
+            cutoff = datetime.utcnow() - timedelta(days=30)
+
+            items = []  # (rsi, macd_hist, vwap, fib, mtf, vol, bbw, win)
+            for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                for p in arr:
+                    try:
+                        et = getattr(p, 'exit_time', None)
+                        if not et or et < cutoff:
+                            continue
+                        oc = getattr(p, 'outcome', None)
+                        if oc not in ('win','loss'):
+                            continue
+                        f = getattr(p, 'features', {}) or {}
+                        rsi = f.get('rsi_14'); mh = f.get('macd_hist')
+                        vwap = f.get('vwap_dist_atr'); fibz = f.get('fib_zone')
+                        mtf = f.get('mtf_agree_15'); vol = f.get('volume_ratio'); bbw = f.get('bb_width_pct')
+                        if not (isinstance(rsi,(int,float)) and isinstance(mh,(int,float)) and isinstance(vwap,(int,float)) and isinstance(fibz,str) and isinstance(mtf,(bool,int)) and isinstance(vol,(int,float)) and isinstance(bbw,(int,float))):
+                            continue
+                        win = 1 if oc=='win' else 0
+                        items.append((float(rsi), float(mh), float(vwap), fibz, bool(mtf), float(vol), float(bbw), win))
+                    except Exception:
+                        continue
+
+            if not items:
+                await self.safe_reply(update, "🧠 Build Strategy (30d)\n\nNo data yet.", parse_mode=None)
+                return
+
+            # Bins
+            rsi_bins = [("<30", lambda x: x < 30, 0, 30), ("30-40", lambda x: 30 <= x < 40, 30, 40), ("40-60", lambda x: 40 <= x < 60, 40, 60), ("60-70", lambda x: 60 <= x < 70, 60, 70), ("70+", lambda x: x >= 70, 70, 101)]
+            macd_bins = [("bull", lambda h: h > 0, "bull"), ("bear", lambda h: h <= 0, "bear")]
+            vwap_bins = [("<0.6", lambda x: x < 0.6, -999.0, 0.6), ("0.6-1.2", lambda x: 0.6 <= x < 1.2, 0.6, 1.2), ("1.2+", lambda x: x >= 1.2, 1.2, 999.0)]
+            vol_bins = [("≥1.2x", lambda x: x >= 1.2, 1.2), ("1.0-1.2x", lambda x: 1.0 <= x < 1.2, 1.0)]
+            bbw_bins = [("<1.2%", lambda x: x < 0.012, 0.012), ("1.2-2.0%", lambda x: 0.012 <= x < 0.02, 0.02)]
+            fib_bins = ["0-23","23-38","38-50","50-61","61-78","78-100"]
+
+            def lab(val, bins):
+                for b in bins:
+                    if b[1](val):
+                        return b
+                return None
+
+            combos = {}
+            for rsi, mh, vwap, fibz, mtf, vol, bbw, win in items:
+                br = lab(rsi, rsi_bins); bm = lab(mh, macd_bins); bv = lab(vwap, vwap_bins); bf = fibz if fibz in fib_bins else None; bvol = lab(vol, vol_bins); bbwk = lab(bbw, bbw_bins)
+                if not all([br, bm, bv, bf, bvol, bbwk]):
+                    continue
+                key = (br[0], bm[0], bv[0], bf, bool(mtf), bvol[0], bbwk[0])
+                agg = combos.setdefault(key, {'n':0,'w':0})
+                agg['n'] += 1; agg['w'] += int(win)
+
+            # Rank by WR (N≥50)
+            ranked = sorted([(k,v) for k,v in combos.items() if v['n'] >= 50], key=lambda kv: (kv[1]['w']/kv[1]['n']), reverse=True)[:12]
+
+            if not ranked:
+                await self.safe_reply(update, "🧠 Build Strategy (30d)\n\nNo combinations with N≥50 yet.", parse_mode=None)
+                return
+
+            # Emit YAML snippet for pro_exec.combos
+            lines = ["🧠 Build Strategy (30d)", "━━━━━━━━━━━━━━━━━━━━━━━━", "", "Paste into config.yaml under scalp.exec.pro_exec:", "", "scalp:", "  exec:", "    pro_exec:", "      combos:"]
+            cid = 200
+            for (rsi_name, macd_name, vwap_name, fib_name, mtf_ok, vol_name, bbw_name), agg in ranked:
+                cid += 1
+                rsi_bin = next(b for b in rsi_bins if b[0]==rsi_name)
+                macd_val = next(b for b in macd_bins if b[0]==macd_name)[2]
+                vwap_bin = next(b for b in vwap_bins if b[0]==vwap_name)
+                vol_min = next(b for b in vol_bins if b[0]==vol_name)[2]
+                bbw_max = next(b for b in bbw_bins if b[0]==bbw_name)[2]
+                wr = (agg['w']/agg['n']*100.0)
+                lines.append(f"        - id: {cid}")
+                lines.append(f"          rsi_min: {rsi_bin[2]}")
+                lines.append(f"          rsi_max: {rsi_bin[3]}")
+                lines.append(f"          macd_hist: {macd_val}")
+                lines.append(f"          vwap_min: {vwap_bin[2]}")
+                lines.append(f"          vwap_max: {vwap_bin[3]}")
+                lines.append(f"          fib_zone: \"{fib_name}\"")
+                lines.append(f"          mtf_agree_15: {str(bool(mtf_ok)).lower()}")
+                lines.append(f"          volume_ratio_min: {vol_min}")
+                lines.append(f"          bbw_max: {bbw_max}")
+                lines.append(f"          risk_percent: 1.0")
+                lines.append(f"          enabled: true  # WR {wr:.1f}% (N={agg['n']})")
+
+            MAX = 3500
+            buf=[]; cur=0
+            for ln in lines:
+                if cur + len(ln) + 1 > MAX and buf:
+                    await self.safe_reply(update, "\n".join(buf), parse_mode=None)
+                    buf=[]; cur=0
+                buf.append(ln); cur += len(ln) + 1
+            if buf:
+                await self.safe_reply(update, "\n".join(buf), parse_mode=None)
+
+        except Exception as e:
+            logger.error(f"Error in scalp_build_strategy: {e}")
+            try:
+                await self.safe_reply(update, "Error building strategy from data", parse_mode=None)
             except Exception:
                 pass
     async def scalp_open_phantoms(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):

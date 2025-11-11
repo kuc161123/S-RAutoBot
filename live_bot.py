@@ -2532,6 +2532,48 @@ class TradingBot:
                             qv = float(((getattr(self, '_last_signal_features', {}) or {}).get(sym, {}) or {}).get('qscore', 0.0) or 0.0)
                         except Exception:
                             qv = 0.0
+                        # Reason/context and features snapshot
+                        reason_line = None
+                        feat_lines = []
+                        try:
+                            # Execution path context
+                            ctx = ''
+                            try:
+                                ctx = str(self._scalp_last_exec_reason.get(sym, ''))
+                            except Exception:
+                                ctx = ''
+                            if ctx.startswith('high_wr_combo_'):
+                                reason_line = f"Reason: High‑WR Combo {ctx.split('_')[-1]}"
+                            elif ctx:
+                                reason_line = f"Reason: {ctx.replace('_',' ')}"
+                            # Build features snapshot
+                            df_src = self.frames_3m.get(sym) if (hasattr(self, 'frames_3m') and self.frames_3m.get(sym) is not None and not self.frames_3m.get(sym).empty) else self.frames.get(sym)
+                            sc_meta2 = {'symbol': sym, 'side': getattr(sig_obj,'side',None), 'entry': getattr(sig_obj,'entry',None), 'sl': getattr(sig_obj,'sl',None), 'tp': getattr(sig_obj,'tp',None)}
+                            feats = self._build_scalp_features(df_src if df_src is not None else self.frames.get(sym), sc_meta2, None, None)
+                            # Wick/Volume gate values
+                            try:
+                                hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                vmin = float(hg.get('vol_ratio_min_3m', 1.20))
+                                volr = float(feats.get('volume_ratio', 0.0) or 0.0)
+                                wdelta = float(hg.get('wick_delta_min', 0.10))
+                                uw = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
+                                lw = float(feats.get('lower_wick_ratio', 0.0) or 0.0)
+                                wick_ok = (lw >= uw + wdelta) if str(getattr(sig_obj,'side','short')).lower()=='long' else (uw >= lw + wdelta)
+                                feat_lines.append(f"Gates: Wick {'✅' if wick_ok else '❌'} Δ≥{wdelta:.2f} | Vol {'✅' if volr>=vmin else '❌'} {volr:.2f} (≥ {vmin:.2f})")
+                            except Exception:
+                                pass
+                            # Core features
+                            try:
+                                f = float(feats.get('ema_slope_fast', 0.0) or 0.0)
+                                s = float(feats.get('ema_slope_slow', 0.0) or 0.0)
+                                atrp = float(feats.get('atr_pct', 0.0) or 0.0)
+                                bbw = float(feats.get('bb_width_pct', 0.0) or 0.0) * 100.0
+                                vwapd = float(feats.get('vwap_dist_atr', 0.0) or 0.0)
+                                feat_lines.append(f"F={f:.3f}% S={s:.3f}% | ATR={atrp:.2f}% BBW={bbw:.2f}% VWAP={vwapd:.2f}σ")
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
                         msg = (
                             f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()} (id={exec_id})\n\n"
                             f"Entry: {fmt.format(actual_entry)}\n"
@@ -2541,6 +2583,10 @@ class TradingBot:
                             f"Target RR: {target_rr:.2f}\n"
                             f"Q: {qv:.1f}"
                         )
+                        if reason_line:
+                            msg += f"\n{reason_line}"
+                        if feat_lines:
+                            msg += "\n" + "\n".join(feat_lines)
                         await self.tg.send_message(msg)
                 except Exception:
                     pass
@@ -3945,12 +3991,21 @@ class TradingBot:
                         if sym in self.book.positions:
                             logger.info(f"[{sym}] 🛑 High-WR Multi-Feature blocked: position_exists | Combo {matched_combo.get('combo_id')} Risk {risk_pct:.1f}% | F={fast:.3f}% S={slow:.3f}% ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}% VWAP={vwap_dist_atr:.2f}σ (WR {matched_combo['wr']:.1f}%)")
                         else:
-                            # Notify pre-execution
+                        # Notify pre-execution
                             try:
                                 if self.tg:
                                     import uuid as _uuid
                                     exec_id = _uuid.uuid4().hex[:8]
                                     sc_feats_hi['exec_id'] = exec_id
+                                    try:
+                                        if not hasattr(self, '_scalp_last_exec_reason'):
+                                            self._scalp_last_exec_reason = {}
+                                        self._scalp_last_exec_reason[sym] = f"high_wr_combo_{matched_combo.get('combo_id')}"
+                                        if not hasattr(self, '_last_signal_features'):
+                                            self._last_signal_features = {}
+                                        self._last_signal_features[sym] = dict(sc_feats_hi)
+                                    except Exception:
+                                        pass
                                     await self.tg.send_message(
                                         f"🟢 HIGH-WR MULTI-FEATURE EXECUTE (Risk {risk_pct:.1f}%): {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
                                         f"Combo {matched_combo.get('combo_id')}: WR {matched_combo['wr']:.1f}% (N={matched_combo['n']})\n"

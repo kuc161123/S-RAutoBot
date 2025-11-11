@@ -937,6 +937,7 @@ class TGBot:
             [InlineKeyboardButton("📉 Slopes (EV+CI)", callback_data="ui:scalp:slopesevci"), InlineKeyboardButton("📊 Combos (EV+CI)", callback_data="ui:scalp:combosevci")],
             [InlineKeyboardButton("🧪 Ultimate (EV+CI)", callback_data="ui:scalp:ultimate")],
             [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚪 Gate+Feature", callback_data="ui:scalp:gatefeat")],
+            [InlineKeyboardButton("📈 Pro Analytics (EV+CI)", callback_data="ui:scalp:proanalytics")],
             [InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
         ])
 
@@ -3077,6 +3078,10 @@ class TGBot:
             if data == "ui:scalp:ultimate":
                 await query.answer()
                 await self.scalp_ultimate(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:proanalytics":
+                await query.answer()
+                await self.scalp_pro_analytics(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data == "ui:scalp:gatefeat":
                 await query.answer()
@@ -7961,6 +7966,124 @@ class TGBot:
             logger.error(traceback.format_exc())
             await update.message.reply_text("Error computing gate+feature combinations analysis")
 
+    async def scalp_pro_analytics(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Pro Analytics: RSI/MACD/MAs/VWAP/Fibonacci/Structure/MTF with EV and CI.
+
+        - 30d decisive outcomes (Scalp phantoms + executed mirrors)
+        - Top combos across: RSI bin × MACD state × VWAP bin × Fib zone × MTF agree
+        - Wilson 95% CI, EV_R, Lift vs baseline; N≥50
+        """
+        try:
+            from datetime import datetime, timedelta
+            from math import sqrt
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+
+            def wilson_ci(w:int, n:int, z:float=1.96):
+                if n <= 0:
+                    return (0.0, 0.0)
+                p = w / n
+                denom = 1.0 + (z*z)/n
+                center = (p + (z*z)/(2*n)) / denom
+                margin = z * sqrt((p*(1-p)/n) + (z*z)/(4*n*n)) / denom
+                lo, hi = max(0.0, center - margin), min(1.0, center + margin)
+                return (lo*100.0, hi*100.0)
+
+            scpt = get_scalp_phantom_tracker()
+            cutoff = datetime.utcnow() - timedelta(days=30)
+
+            # Collect decisive phantoms with required features
+            items = []  # (rsi, macd_hist, vwap, fib_zone, mtf15, win, rr)
+            for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                for p in arr:
+                    try:
+                        et = getattr(p, 'exit_time', None)
+                        if not et or et < cutoff:
+                            continue
+                        if getattr(p, 'outcome', None) not in ('win','loss'):
+                            continue
+                        f = getattr(p, 'features', {}) or {}
+                        rsi = f.get('rsi_14'); mh = f.get('macd_hist')
+                        vwap = f.get('vwap_dist_atr'); fibz = f.get('fib_zone'); mtf = f.get('mtf_agree_15')
+                        if not (isinstance(rsi,(int,float)) and isinstance(mh,(int,float)) and isinstance(vwap,(int,float)) and isinstance(fibz, str) and isinstance(mtf, (bool,int))):
+                            continue
+                        rr = getattr(p, 'realized_rr', None); rr = float(rr) if isinstance(rr,(int,float)) else 0.0
+                        win = 1 if getattr(p,'outcome',None)=='win' else 0
+                        items.append((float(rsi), float(mh), float(vwap), str(fibz), bool(mtf), win, rr))
+                    except Exception:
+                        continue
+
+            if not items:
+                await self.safe_reply(update, "📈 Pro Analytics (EV+CI) — 30d\nNo data yet.", parse_mode=None)
+                return
+
+            # Baseline
+            n_total = len(items); w_total = sum(1 for *_, win, _ in items if win==1)
+            wr_base = (w_total/n_total*100.0) if n_total else 0.0
+            evr_base = sum(rr for *_, rr in items) / n_total
+
+            # Bins
+            rsi_bins = [("<30", lambda x: x < 30), ("30-40", lambda x: 30 <= x < 40), ("40-60", lambda x: 40 <= x < 60), ("60-70", lambda x: 60 <= x < 70), ("70+", lambda x: x >= 70)]
+            macd_bins = [("bull", lambda h: h > 0), ("bear", lambda h: h <= 0)]
+            vwap_bins = [("<0.6", lambda x: x < 0.6), ("0.6-1.2", lambda x: 0.6 <= x < 1.2), ("1.2+", lambda x: x >= 1.2)]
+            fib_bins = ["0-23","23-38","38-50","50-61","61-78","78-100"]
+
+            def lab(val, bins):
+                for lb, fn in bins:
+                    if fn(val):
+                        return lb
+                return None
+
+            combos = {}
+            for rsi, mh, vwap, fibz, mtf, win, rr in items:
+                r = lab(rsi, rsi_bins); m = lab(mh, macd_bins); v = lab(vwap, vwap_bins); fz = fibz if fibz in fib_bins else None; ma = 'MTF' if bool(mtf) else 'noMTF'
+                if not all([r, m, v, fz, ma]):
+                    continue
+                key = f"RSI:{r} MACD:{m} VWAP:{v} Fib:{fz} {ma}"
+                agg = combos.setdefault(key, {'n':0,'w':0,'rr':0.0})
+                agg['n'] += 1; agg['w'] += int(win); agg['rr'] += rr
+
+            ranked = sorted([(k,v) for k,v in combos.items() if v['n'] >= 50], key=lambda kv: (kv[1]['rr']/kv[1]['n']), reverse=True)
+
+            lines = [
+                "📈 Pro Analytics (EV+CI) — 30d",
+                "━━━━━━━━━━━━━━━━━━━━━━━━",
+                "",
+                f"Baseline: WR {wr_base:.1f}% | EV_R {evr_base:+.2f} (N={n_total})",
+                "",
+                "🔝 Top Pro combos by EV_R (N≥50)"
+            ]
+            shown = 0
+            for key, agg in ranked:
+                n = agg['n']; w = agg['w']
+                wr = (w/n*100.0) if n else 0.0
+                lo, hi = wilson_ci(w, n)
+                evr = (agg['rr']/n) if n else 0.0
+                lift_wr = wr - wr_base; lift_evr = evr - evr_base
+                lines.append(f"• WR {wr:5.1f}% [{lo:4.0f}-{hi:4.0f}] N={n:>3} | EV_R {evr:+.2f} | Lift_WR {lift_wr:+.1f} | Lift_EV {lift_evr:+.2f} | {key}")
+                shown += 1
+                if shown >= 12:
+                    break
+
+            # Send
+            MAX = 3500
+            buf = []
+            cur = 0
+            for ln in lines:
+                if cur + len(ln) + 1 > MAX and buf:
+                    await self.safe_reply(update, "\n".join(buf), parse_mode=None)
+                    buf = []
+                    cur = 0
+                buf.append(ln)
+                cur += len(ln) + 1
+            if buf:
+                await self.safe_reply(update, "\n".join(buf), parse_mode=None)
+
+        except Exception as e:
+            logger.error(f"Error in scalp_pro_analytics: {e}")
+            try:
+                await self.safe_reply(update, "Error computing Pro Analytics", parse_mode=None)
+            except Exception:
+                pass
     async def scalp_open_phantoms(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """List all currently open Scalp phantoms (non-executed, no exit)."""
         try:

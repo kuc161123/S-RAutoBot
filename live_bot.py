@@ -2750,6 +2750,128 @@ class TradingBot:
                 out['round_tick_dist'] = float(abs(frac - nearest) * 100.0)
             except Exception:
                 out['round_tick_dist'] = out.get('round_tick_dist', 0.0)
+
+            # --- Pro indicators (RSI, MACD, MAs, Fib, structure, divergence, RR) ---
+            try:
+                # RSI(14)
+                if len(close) >= 15:
+                    delta = close.diff()
+                    up = delta.clip(lower=0).rolling(14).mean()
+                    down = -delta.clip(upper=0).rolling(14).mean()
+                    rs = up / (down + 1e-9)
+                    rsi = 100.0 - (100.0 / (1.0 + rs))
+                    out['rsi_14'] = float(max(0.0, min(100.0, rsi.iloc[-1])))
+                else:
+                    out['rsi_14'] = 50.0
+            except Exception:
+                out['rsi_14'] = out.get('rsi_14', 50.0)
+
+            try:
+                # MACD (12,26,9)
+                if len(close) >= 35:
+                    ema12 = close.ewm(span=12, adjust=False).mean()
+                    ema26 = close.ewm(span=26, adjust=False).mean()
+                    macd = ema12 - ema26
+                    signal = macd.ewm(span=9, adjust=False).mean()
+                    hist = macd - signal
+                    out['macd'] = float(macd.iloc[-1]); out['macd_sig'] = float(signal.iloc[-1]); out['macd_hist'] = float(hist.iloc[-1])
+                else:
+                    out['macd'] = 0.0; out['macd_sig'] = 0.0; out['macd_hist'] = 0.0
+            except Exception:
+                out['macd'] = out.get('macd', 0.0); out['macd_sig'] = out.get('macd_sig', 0.0); out['macd_hist'] = out.get('macd_hist', 0.0)
+
+            try:
+                # MA distances (percent of price)
+                ma20 = close.rolling(20).mean() if len(close) >= 20 else None
+                ma50 = close.rolling(50).mean() if len(close) >= 50 else None
+                out['ma20_dist_pct'] = float(((price - float(ma20.iloc[-1])) / max(1e-9, price)) * 100.0) if ma20 is not None else 0.0
+                out['ma50_dist_pct'] = float(((price - float(ma50.iloc[-1])) / max(1e-9, price)) * 100.0) if ma50 is not None else 0.0
+            except Exception:
+                out['ma20_dist_pct'] = out.get('ma20_dist_pct', 0.0)
+                out['ma50_dist_pct'] = out.get('ma50_dist_pct', 0.0)
+
+            try:
+                # Fibonacci retracement zone based on last 50 bars swing
+                hh = float(high.tail(50).max()) if len(high) else price
+                ll = float(low.tail(50).min()) if len(low) else price
+                span = max(1e-9, hh - ll)
+                fib_ret = float((hh - price) / span)  # 0 at HH, 1 at LL
+                out['fib_ret'] = max(0.0, min(1.0, fib_ret))
+                fr = fib_ret * 100.0
+                zone = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
+                out['fib_zone'] = zone
+            except Exception:
+                out['fib_ret'] = out.get('fib_ret', 0.5)
+                out['fib_zone'] = out.get('fib_zone', '38-50')
+
+            try:
+                # Market structure (simple): compare last two pivot highs/lows within 5-bar windows
+                def _pivot(series, window=5, mode='high'):
+                    if len(series) < window*2+1:
+                        return None
+                    seg = series.tail(window*2+1)
+                    if mode == 'high':
+                        idx = seg.idxmax(); val = float(seg.max())
+                    else:
+                        idx = seg.idxmin(); val = float(seg.min())
+                    return (idx, val)
+                ph = _pivot(high, 5, 'high'); pl = _pivot(low, 5, 'low')
+                state = 'none'
+                if ph and pl:
+                    # Very rough classification: direction by last swing
+                    state = 'HH' if float(high.iloc[-1]) >= ph[1] else ('LL' if float(low.iloc[-1]) <= pl[1] else 'HL' if price > float(close.iloc[-6]) else 'LH')
+                out['struct_state'] = state
+            except Exception:
+                out['struct_state'] = out.get('struct_state', 'none')
+
+            try:
+                # Divergences (simple): compare 8-bar momentum of price vs RSI/MACD hist
+                if len(close) >= 9:
+                    dp = float(close.iloc[-1] - close.iloc[-8])
+                    dr = float(out.get('rsi_14', 50.0) - (50.0 if len(close) < 22 else (100.0 - (100.0/(1.0 + (close.diff().clip(lower=0).rolling(14).mean()/(-close.diff().clip(upper=0).rolling(14).mean()+1e-9))).iloc[-9]))))
+                    dm = float(out.get('macd_hist', 0.0) - 0.0)
+                    out['div_rsi_bull'] = bool(dp < 0 and dr > 0)
+                    out['div_rsi_bear'] = bool(dp > 0 and dr < 0)
+                    out['div_macd_bull'] = bool(dp < 0 and dm > 0)
+                    out['div_macd_bear'] = bool(dp > 0 and dm < 0)
+                else:
+                    out['div_rsi_bull'] = False; out['div_rsi_bear'] = False; out['div_macd_bull'] = False; out['div_macd_bear'] = False
+            except Exception:
+                out['div_rsi_bull'] = out.get('div_rsi_bull', False)
+                out['div_rsi_bear'] = out.get('div_rsi_bear', False)
+                out['div_macd_bull'] = out.get('div_macd_bull', False)
+                out['div_macd_bear'] = out.get('div_macd_bear', False)
+
+            try:
+                # RR setup from sc_meta (if available)
+                entry = float(sc_meta.get('entry')) if sc_meta.get('entry') is not None else price
+                tp = float(sc_meta.get('tp')) if sc_meta.get('tp') is not None else price
+                sl = float(sc_meta.get('sl')) if sc_meta.get('sl') is not None else price
+                side = str(sc_meta.get('side') or '').lower()
+                if side == 'long':
+                    R = max(1e-9, entry - sl)
+                    rr = (tp - entry) / R if R else 0.0
+                elif side == 'short':
+                    R = max(1e-9, sl - entry)
+                    rr = (entry - tp) / R if R else 0.0
+                else:
+                    rr = 0.0
+                out['rr_setup'] = float(rr)
+                out['rr_good'] = bool(rr >= 2.0)
+            except Exception:
+                out['rr_setup'] = out.get('rr_setup', 0.0)
+                out['rr_good'] = out.get('rr_good', False)
+
+            try:
+                # MTF agreement vs 15m EMA dir and provided 'side'
+                side = str(sc_meta.get('side') or '').lower()
+                ema15 = out.get('ema_dir_15m', 'none')
+                if side in ('long','short'):
+                    out['mtf_agree_15'] = bool((side=='long' and ema15=='up') or (side=='short' and ema15=='down'))
+                else:
+                    out['mtf_agree_15'] = False
+            except Exception:
+                out['mtf_agree_15'] = out.get('mtf_agree_15', False)
             return out
         except Exception:
             return {}
@@ -3571,7 +3693,13 @@ class TradingBot:
                     except Exception:
                         _df_src_hi = df
 
-                    sc_feats_hi = self._build_scalp_features(_df_src_hi, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                    # Merge signal context to enrich feature computation (entry/sl/tp/side/symbol)
+                    _meta_hi = dict(getattr(sc_sig, 'meta', {}) or {})
+                    try:
+                        _meta_hi.update({'symbol': sym, 'side': getattr(sc_sig, 'side', None), 'entry': getattr(sc_sig, 'entry', None), 'sl': getattr(sc_sig, 'sl', None), 'tp': getattr(sc_sig, 'tp', None)})
+                    except Exception:
+                        pass
+                    sc_feats_hi = self._build_scalp_features(_df_src_hi, _meta_hi, vol_level, None)
 
                     # Get all 5 feature values for multi-feature bypass
                     fast = float(sc_feats_hi.get('ema_slope_fast', 0.0) or 0.0)
@@ -3867,7 +3995,12 @@ class TradingBot:
                                 _df_src_hi = df
                         except Exception:
                             _df_src_hi = df
-                        sc_feats_hi = self._build_scalp_features(_df_src_hi, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                        _meta_hi2 = dict(getattr(sc_sig, 'meta', {}) or {})
+                        try:
+                            _meta_hi2.update({'symbol': sym, 'side': getattr(sc_sig, 'side', None), 'entry': getattr(sc_sig, 'entry', None), 'sl': getattr(sc_sig, 'sl', None), 'tp': getattr(sc_sig, 'tp', None)})
+                        except Exception:
+                            pass
+                        sc_feats_hi = self._build_scalp_features(_df_src_hi, _meta_hi2, vol_level, None)
                         # Attach HTF composite metrics to features for ML training
                         try:
                             comp = self._get_htf_metrics(sym, self.frames.get(sym))
@@ -3949,9 +4082,14 @@ class TradingBot:
                             except Exception:
                                 _df_src_nc = df
 
+                            _meta_nc = dict(getattr(sc_sig, 'meta', {}) or {})
+                            try:
+                                _meta_nc.update({'symbol': sym, 'side': getattr(sc_sig, 'side', None), 'entry': getattr(sc_sig, 'entry', None), 'sl': getattr(sc_sig, 'sl', None), 'tp': getattr(sc_sig, 'tp', None)})
+                            except Exception:
+                                pass
                             nc_feats = self._build_scalp_features(
                                 _df_src_nc,
-                                getattr(sc_sig, 'meta', {}) or {},
+                                _meta_nc,
                                 (vol_level if 'vol_level' in locals() else None),
                                 None
                             )
@@ -4019,7 +4157,12 @@ class TradingBot:
                                     _df_src = df
                             except Exception:
                                 _df_src = df
-                            sc_feats_early = self._build_scalp_features(_df_src, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                            _meta_early = dict(getattr(sc_sig, 'meta', {}) or {})
+                            try:
+                                _meta_early.update({'symbol': sym, 'side': getattr(sc_sig, 'side', None), 'entry': getattr(sc_sig, 'entry', None), 'sl': getattr(sc_sig, 'sl', None), 'tp': getattr(sc_sig, 'tp', None)})
+                            except Exception:
+                                pass
+                            sc_feats_early = self._build_scalp_features(_df_src, _meta_early, vol_level, None)
                             try:
                                 comp = self._get_htf_metrics(sym, self.frames.get(sym))
                                 sc_feats_early['ts15'] = float(comp.get('ts15', 0.0)); sc_feats_early['ts60'] = float(comp.get('ts60', 0.0))
@@ -4118,7 +4261,12 @@ class TradingBot:
                         _df_src2 = df
                 except Exception:
                     _df_src2 = df
-                sc_feats = self._build_scalp_features(_df_src2, getattr(sc_sig, 'meta', {}) or {}, vol_level, None)
+                _meta_norm = dict(getattr(sc_sig, 'meta', {}) or {})
+                try:
+                    _meta_norm.update({'symbol': sym, 'side': getattr(sc_sig, 'side', None), 'entry': getattr(sc_sig, 'entry', None), 'sl': getattr(sc_sig, 'sl', None), 'tp': getattr(sc_sig, 'tp', None)})
+                except Exception:
+                    pass
+                sc_feats = self._build_scalp_features(_df_src2, _meta_norm, vol_level, None)
                 try:
                     comp = self._get_htf_metrics(sym, self.frames.get(sym))
                     sc_feats['ts15'] = float(comp.get('ts15', 0.0)); sc_feats['ts60'] = float(comp.get('ts60', 0.0))

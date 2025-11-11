@@ -3732,7 +3732,7 @@ class TradingBot:
                                 matched_combo = None
 
                     if matched_combo:
-                        # Enforce Volume, Wick, BBW, Regime gates (ignore slope magnitude)
+                        # Enforce ONLY Volume and Wick gates (ignore slope magnitude, BBW, Regime)
                         try:
                             hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
                             vol_enabled = bool(hg.get('vol_enabled', True)); vmin = float(hg.get('vol_ratio_min_3m', 1.20))
@@ -3741,20 +3741,17 @@ class TradingBot:
                             wick_enabled = bool(hg.get('wick_enabled', True)); wdelta = float(hg.get('wick_delta_min', 0.10))
                             uw = float(sc_feats_hi.get('upper_wick_ratio', 0.0) or 0.0); lw = float(sc_feats_hi.get('lower_wick_ratio', 0.0) or 0.0)
                             wick_ok = (not wick_enabled) or ((lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta))
-                            bbw_exec_enabled = bool(hg.get('bbw_exec_enabled', True)); bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
-                            bbw_pctile = float(sc_feats_hi.get('bb_width_pctile', 0.0) or 0.0)
-                            bbw_ok = (not bbw_exec_enabled) or (bbw_pctile >= bbw_min and bbw_pctile <= bbw_max)
-                            regime_enabled = bool(hg.get('regime_enabled', True)); allowed = list(hg.get('allowed_regimes', ['normal']))
-                            cur_reg = str(sc_feats_hi.get('volatility_regime', 'normal'))
-                            regime_ok = (not regime_enabled) or (cur_reg in allowed)
+                            # Ignore BBW/regime gates in combos path
+                            bbw_ok = True
+                            regime_ok = True
                         except Exception:
                             vol_ok = wick_ok = bbw_ok = regime_ok = True
-                        if not (vol_ok and wick_ok and bbw_ok and regime_ok):
+                        if not (vol_ok and wick_ok):
                             try:
                                 if scpt:
                                     scpt.record_scalp_signal(sym, {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, float(ml_s or 0.0), False, sc_feats_hi)
                                 self._scalp_last_exec_reason[sym] = 'combo_gates'
-                                logger.info(f"[{sym}] 🛑 Scalp COMBO blocked: gates | Combo {matched_combo.get('combo_id')} VolOK={vol_ok} WickOK={wick_ok} BBWOK={bbw_ok} RegOK={regime_ok}")
+                                logger.info(f"[{sym}] 🛑 Scalp COMBO blocked: gates | Combo {matched_combo.get('combo_id')} VolOK={vol_ok} WickOK={wick_ok}")
                             except Exception:
                                 pass
                             matched_combo = None
@@ -3927,8 +3924,31 @@ class TradingBot:
                             if executed:
                                 logger.info(f"[{sym}] 🧮 Scalp decision final: exec_scalp (reason=immediate)")
                                 continue
-                            else:
-                                logger.info(f"[{sym}] 🛑 Scalp immediate execute blocked: reason=exec_guard")
+                    else:
+                        logger.info(f"[{sym}] 🛑 Scalp immediate execute blocked: reason=exec_guard")
+                except Exception:
+                    pass
+
+                # If combos-only mode is enabled, block further gate-based execution (phantom-only)
+                try:
+                    _excfg = ((self.config.get('scalp', {}) or {}).get('exec', {}) or {})
+                    if bool(_excfg.get('combos_only', False)) and bool(_excfg.get('block_noncombo', False)):
+                        # Record phantom and skip
+                        try:
+                            from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                            scpt2 = _get_scpt()
+                            scpt2.record_scalp_signal(
+                                sym,
+                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                float(ml_s or 0.0),
+                                False,
+                                sc_feats if 'sc_feats' in locals() else {}
+                            )
+                        except Exception:
+                            pass
+                        self._scalp_last_exec_reason[sym] = 'noncombo_block'
+                        logger.info(f"[{sym}] ⛔ Scalp NON‑COMBO blocked (combos_only); skipping gate-based execution")
+                        continue
                 except Exception:
                     pass
 

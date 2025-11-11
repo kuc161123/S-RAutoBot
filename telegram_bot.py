@@ -75,6 +75,9 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalp_get_risk", self.scalp_get_risk))
         self.app.add_handler(CommandHandler("scalp_highwr_set_risk", self.scalp_highwr_set_risk))
         self.app.add_handler(CommandHandler("scalp_highwr_get_risk", self.scalp_highwr_get_risk))
+        # Combos-only controls
+        self.app.add_handler(CommandHandler("scalpcombos", self.scalp_combos_toggle))
+        self.app.add_handler(CommandHandler("scalpcombosmute", self.scalp_combos_mute))
         self.app.add_handler(CommandHandler("status", self.status))
         # Simple responsiveness probe
         self.app.add_handler(CommandHandler("ping", self.ping))
@@ -2423,6 +2426,18 @@ class TGBot:
 
                 config.setdefault('scalp', {}).setdefault('exec', {})['risk_percent'] = value
 
+                # Map to combos[].risk_percent if defined
+                try:
+                    combos = config.get('scalp', {}).get('exec', {}).get('combos')
+                    if isinstance(combos, list) and combos:
+                        for c in combos:
+                            if int(c.get('id', 0)) == 1:
+                                c['risk_percent'] = float(base_risk * combo1_multiplier)
+                            else:
+                                c['risk_percent'] = float(base_risk)
+                except Exception:
+                    pass
+
                 with open(config_path, 'w') as f:
                     yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
@@ -2615,7 +2630,7 @@ class TGBot:
 
             await update.message.reply_text(
                 f"✅ High-WR risk updated:\n"
-                f"• Base risk (combos 2-4): {base_risk}%\n"
+                f"• Base risk (combos 2 & 3): {base_risk}%\n"
                 f"• Combo 1 multiplier: {combo1_multiplier}x\n"
                 f"• Combo 1 risk: {combo1_risk:.1f}%{usd_info}{warning_msg}\n\n"
                 f"Use `/scalp_highwr_get_risk` to view settings"
@@ -2667,17 +2682,12 @@ class TGBot:
                     combo1_usd = balance * (combo1_risk / 100)
                     usd_info = f"\n• Combos 2-4: ≈${base_usd:.2f} per trade\n• Combo 1: ≈${combo1_usd:.2f} per trade"
 
-            msg = "🎯 *High-WR Multi-Feature Risk*\n"
-            msg += "━" * 20 + "\n\n"
-            msg += f"• Base Risk (Combos 2-4): {base_risk}%\n"
-            msg += f"• Combo 1 Multiplier: {combo1_multiplier}x\n"
-            msg += f"• Combo 1 Risk: {combo1_risk:.1f}%{usd_info}\n\n"
-            msg += "📊 *Historical Performance (30d)*\n"
-            msg += "• Combo 1: 92.2% WR (N=64)\n"
-            msg += "• Combo 2: 71.8% WR (N=71)\n"
-            msg += "• Combo 3: 62.0% WR (N=79)\n"
-            msg += "• Combo 4: 60.0% WR (N=50)\n\n"
-            msg += f"_Use `/scalp_highwr_set_risk` to change_"
+            msg = "🎯 High‑WR Multi‑Feature Risk\n"
+            msg += "--------------------------\n\n"
+            msg += f"• Base risk (Combos 2 & 3): {base_risk}%\n"
+            msg += f"• Combo 1 multiplier: {combo1_multiplier}x\n"
+            msg += f"• Combo 1 risk: {combo1_risk:.1f}%{usd_info}\n\n"
+            msg += f"Use `/scalp_highwr_set_risk <base> [mult]` to change"
 
             await self.safe_reply(update, msg)
 

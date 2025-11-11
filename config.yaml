@@ -637,6 +637,7 @@ scalp:
     # Execute only when features match proven high‑WR combinations (fast/slow slopes × ATR × BBW × VWAP)
     combos_only: true            # When true, only the combos below can execute; all others are phantom-only
     block_noncombo: true         # If combos_only and no combo matched, block gate-based execs (phantom only)
+    mute_disabled_paths: true    # Mute Telegram notifications for disabled gate/blocked paths when combos_only=true
     combos:
       # Combo A: WR 52.8% (N=345) | F:-0.01-0.01 S:-0.03-0.00 ATR<0.5% BBW<1.2% VWAP 1.0+
       - id: 1

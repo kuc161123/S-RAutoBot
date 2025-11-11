@@ -4175,7 +4175,14 @@ class TradingBot:
                             exception_ok = (allow_both and htf_pass and body_pass) or (allow_htf and htf_pass)
                             if not exception_ok:
                                 try:
-                                    if self.tg:
+                                    # Mute disabled-path TG messages when combos_only + mute flag
+                                    mute = False
+                                    try:
+                                        _ex = ((self.config.get('scalp', {}) or {}).get('exec', {}) or {})
+                                        mute = bool(_ex.get('combos_only', False) and _ex.get('mute_disabled_paths', False))
+                                    except Exception:
+                                        mute = False
+                                    if self.tg and not mute:
                                         if mode == 'auto':
                                             await self.tg.send_message(
                                                 f"🛑 Scalp EXEC blocked: auto off-hours (low activity) {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
@@ -4457,12 +4464,20 @@ class TradingBot:
                                             gate_vals_line = " | ".join([wick_line, vol_line, slope_line, bbw_line, reg_line])
                                         except Exception:
                                             gate_vals_line = ""
-                                        await self.tg.send_message(
-                                            f"🛑 Scalp EXEC blocked: Wick without Volume {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
-                                            f"{summary_line}\n"
-                                            f"{gate_vals_line}\n"
-                                            f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
-                                        )
+                                        # Mute disabled-path TG messages when combos_only + mute flag
+                                        _mute = False
+                                        try:
+                                            _ex = ((self.config.get('scalp', {}) or {}).get('exec', {}) or {})
+                                            _mute = bool(_ex.get('combos_only', False) and _ex.get('mute_disabled_paths', False))
+                                        except Exception:
+                                            _mute = False
+                                        if not _mute:
+                                            await self.tg.send_message(
+                                                f"🛑 Scalp EXEC blocked: Wick without Volume {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                                f"{summary_line}\n"
+                                                f"{gate_vals_line}\n"
+                                                f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
+                                            )
                                 except Exception:
                                     pass
                                 try:
@@ -4577,13 +4592,20 @@ class TradingBot:
                                                 except Exception:
                                                     reg_line = "Regime: —"
                                                 vals_line = " | ".join([wick_line, vol_line, bbw_line, reg_line])
-                                                await self.tg.send_message(
-                                                    f"🛑 Scalp EXEC blocked: EMA slope misaligned {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
-                                                    f"{summary_line}\n"
-                                                    f"{vals_line}\n"
-                                                    f"Fast={fast:.3f}% (≥ {min_fast:.3f}%) | Slow={slow:.3f}% (≥ {min_slow:.3f}%) | mode={'fast-only' if fast_only else 'full'}\n"
-                                                    f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
-                                                )
+                                                _mute2 = False
+                                                try:
+                                                    _ex = ((self.config.get('scalp', {}) or {}).get('exec', {}) or {})
+                                                    _mute2 = bool(_ex.get('combos_only', False) and _ex.get('mute_disabled_paths', False))
+                                                except Exception:
+                                                    _mute2 = False
+                                                if not _mute2:
+                                                    await self.tg.send_message(
+                                                        f"🛑 Scalp EXEC blocked: EMA slope misaligned {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                                        f"{summary_line}\n"
+                                                        f"{vals_line}\n"
+                                                        f"Fast={fast:.3f}% (≥ {min_fast:.3f}%) | Slow={slow:.3f}% (≥ {min_slow:.3f}%) | mode={'fast-only' if fast_only else 'full'}\n"
+                                                        f"ML={float(ml_s or 0.0):.1f} | Q={float(sc_feats.get('qscore',0.0)):.1f}"
+                                                    )
                                         except Exception:
                                             pass
                                         try:

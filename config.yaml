@@ -634,17 +634,49 @@ scalp:
     enabled: true                 # Enable Scalp executes behind Qscore threshold
     risk_percent: 1.0             # Per-trade risk for Scalp executes (1% of equity per trade)
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
+    # Execute only when features match proven high‑WR combinations (fast/slow slopes × ATR × BBW × VWAP)
+    combos_only: true            # When true, only the combos below can execute; all others are phantom-only
+    block_noncombo: true         # If combos_only and no combo matched, block gate-based execs (phantom only)
+    combos:
+      # Combo A: WR 52.8% (N=345) | F:-0.01-0.01 S:-0.03-0.00 ATR<0.5% BBW<1.2% VWAP 1.0+
+      - id: 1
+        fast_min: -0.01
+        fast_max: 0.01
+        slow_min: -0.03
+        slow_max: 0.00
+        atr_max: 0.5
+        bbw_max: 0.012
+        vwap_min: 1.0
+        vwap_max: 999.0
+        risk_percent: 1.0
+        enabled: true
+      # Combo B: WR 45.8% (N=179) | F:0.01-0.03 S:-0.03-0.00 ATR<0.5% BBW<1.2% VWAP 1.0+
+      - id: 2
+        fast_min: 0.01
+        fast_max: 0.03
+        slow_min: -0.03
+        slow_max: 0.00
+        atr_max: 0.5
+        bbw_max: 0.012
+        vwap_min: 1.0
+        vwap_max: 999.0
+        risk_percent: 1.0
+        enabled: true
+      # Combo C: WR 42.5% (N=146) | F:-0.05--0.01 S:-0.03-0.00 ATR<0.5% BBW<1.2% VWAP <0.6
+      - id: 3
+        fast_min: -0.05
+        fast_max: -0.01
+        slow_min: -0.03
+        slow_max: 0.00
+        atr_max: 0.5
+        bbw_max: 0.012
+        vwap_min: -999.0
+        vwap_max: 0.6
+        risk_percent: 1.0
+        enabled: true
     # HIGH-WR MULTI-FEATURE BYPASS: Immediate execution for proven high-WR patterns
-    # Data-driven from latest 30d Advanced Combos analysis: 6 combinations with 48.5-56.8% WR (N=599 total)
-    # Features: Fast slope × Slow slope × ATR% × BBW% × VWAP distance
-    # Strategy: POSITIVE slopes (trend-following) show highest WR
-    # Combo 1: F:0.01-0.03 S:0.015+ ATR:<0.5% BBW:<1.2% VWAP:0.6-1.0 (56.8% WR, N=74) → 1% risk
-    # Combo 2: F:0.03+ S:0.00-0.015 ATR:<0.5% BBW:<1.2% VWAP:1.0+ (54.4% WR, N=79) → 1% risk
-    # Combo 3: F:0.01-0.03 S:-0.03-0.00 ATR:<0.5% BBW:<1.2% VWAP:1.0+ (52.2% WR, N=90) → 1% risk
-    # Combo 4: F:0.01-0.03 S:0.015+ ATR:<0.5% BBW:<1.2% VWAP:<0.6 (50.7% WR, N=146) → 1% risk
-    # Combo 5: F:0.03+ S:0.015+ ATR:<0.5% BBW:<1.2% VWAP:0.6-1.0 (50.5% WR, N=107) → 1% risk
-    # Combo 6: F:0.03+ S:0.015+ ATR:<0.5% BBW:<1.2% VWAP:<0.6 (48.5% WR, N=103) → 1% risk
-    # This bypasses ALL gates when features match proven winners
+    # Data-driven: use only the 3 high-WR combos above (trend-following is fenced off);
+    # This bypass ignores slope magnitude gates but keeps Volume, Wick, BBW, Regime, Off-hours guards.
     high_wr_slope_bypass: true          # ENABLED - Execute immediately on high-WR multi-feature combos
     high_wr_risk_percent: 1.0           # Flat 1% risk for all high-WR combos
     # Legacy ML-based bypass (DISABLED - replaced by multi-feature bypass)

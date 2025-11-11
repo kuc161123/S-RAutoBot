@@ -3548,6 +3548,16 @@ class TradingBot:
                     slope_bypass_enabled = bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('high_wr_slope_bypass', True)))
                 except Exception:
                     slope_bypass_enabled = True
+                # Combos-only execution policy
+                try:
+                    _exec_cfg = ((self.config.get('scalp', {}) or {}).get('exec', {}) or {})
+                    combos_only = bool(_exec_cfg.get('combos_only', False))
+                    block_noncombo = bool(_exec_cfg.get('block_noncombo', False))
+                    cfg_combos = _exec_cfg.get('combos') if isinstance(_exec_cfg.get('combos'), list) else None
+                except Exception:
+                    combos_only = False
+                    block_noncombo = False
+                    cfg_combos = None
 
                 if slope_bypass_enabled:
                     # Build features to get slope values
@@ -3625,6 +3635,36 @@ class TradingBot:
                         },
                     ]
 
+                    # Override combos by config (if provided) or reduce to the 3 proven combos
+                    try:
+                        if cfg_combos:
+                            _new = []
+                            for c in cfg_combos:
+                                if not c.get('enabled', True):
+                                    continue
+                                _new.append({
+                                    'fast_min': float(c.get('fast_min')),
+                                    'fast_max': float(c.get('fast_max')),
+                                    'slow_min': float(c.get('slow_min')),
+                                    'slow_max': float(c.get('slow_max')),
+                                    'atr_max': float(c.get('atr_max')),
+                                    'bbw_max': float(c.get('bbw_max')),
+                                    'vwap_min': float(c.get('vwap_min')),
+                                    'vwap_max': float(c.get('vwap_max')),
+                                    'combo_id': int(c.get('id', 0)),
+                                    'risk_percent': float(c.get('risk_percent', ((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('high_wr_risk_percent', 1.0)))
+                                })
+                            if _new:
+                                high_wr_combos = _new
+                        else:
+                            high_wr_combos = [
+                                { 'fast_min': -0.01, 'fast_max': 0.01, 'slow_min': -0.03, 'slow_max': 0.00, 'atr_max': 0.5, 'bbw_max': 0.012, 'vwap_min': 1.0, 'vwap_max': 999.0, 'combo_id': 1, 'risk_percent': 1.0 },
+                                { 'fast_min': 0.01, 'fast_max': 0.03,  'slow_min': -0.03, 'slow_max': 0.00, 'atr_max': 0.5, 'bbw_max': 0.012, 'vwap_min': 1.0, 'vwap_max': 999.0, 'combo_id': 2, 'risk_percent': 1.0 },
+                                { 'fast_min': -0.05, 'fast_max': -0.01,'slow_min': -0.03, 'slow_max': 0.00, 'atr_max': 0.5, 'bbw_max': 0.012, 'vwap_min': -999.0,'vwap_max': 0.6,   'combo_id': 3, 'risk_percent': 1.0 },
+                            ]
+                    except Exception:
+                        pass
+
                     # Check if current features match any high-WR combination
                     matched_combo = None
                     for combo in high_wr_combos:
@@ -3635,6 +3675,89 @@ class TradingBot:
                             combo['vwap_min'] <= vwap_dist_atr < combo['vwap_max']):
                             matched_combo = combo
                             break
+
+                    if matched_combo:
+                        # Off-hours block (fixed windows + auto low-activity)
+                        try:
+                            oh_cfg = (((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('off_hours', {})) if hasattr(self, 'config') else {}
+                            if hasattr(self, 'shared') and isinstance(self.shared, dict) and self.shared.get('scalp_offhours'):
+                                oh_cfg = self.shared.get('scalp_offhours') or {}
+                            oh_enabled = bool((oh_cfg or {}).get('enabled', False))
+                        except Exception:
+                            oh_enabled = False
+                        if oh_enabled:
+                            import datetime as _dt
+                            # Fixed windows
+                            blocked = False
+                            try:
+                                now = _dt.datetime.utcnow(); mins = now.hour * 60 + now.minute
+                                wins = (oh_cfg.get('windows') or []) if isinstance(oh_cfg, dict) else []
+                                def _mins(s):
+                                    try:
+                                        hh, mm = s.split(':'); return int(hh)*60+int(mm)
+                                    except Exception:
+                                        return None
+                                for w in wins:
+                                    if isinstance(w, str) and '-' in w:
+                                        a,b = w.split('-',1); sa=_mins(a.strip()); sb=_mins(b.strip())
+                                        if sa is None or sb is None:
+                                            continue
+                                        if sa <= sb:
+                                            if sa <= mins <= sb:
+                                                blocked = True; break
+                                        else:
+                                            if mins >= sa or mins <= sb:
+                                                blocked = True; break
+                            except Exception:
+                                blocked = False
+                            # Auto low-activity
+                            try:
+                                if not blocked and str((oh_cfg.get('mode','auto') or 'auto')).lower() == 'auto':
+                                    auto = (oh_cfg.get('auto') or {}) if isinstance(oh_cfg, dict) else {}
+                                    atr_max = float(auto.get('atr_pct_max', 0.35))
+                                    bb_max = float(auto.get('bb_width_pct_max', 0.012))
+                                    vol_max = float(auto.get('vol_ratio_max', 1.05))
+                                    low_vol = (atr_pct <= atr_max) and (bb_width_pct <= bb_max) and (float(sc_feats_hi.get('volume_ratio',0.0)) <= vol_max)
+                                    blocked = blocked or low_vol
+                            except Exception:
+                                pass
+                            if blocked:
+                                try:
+                                    if scpt:
+                                        scpt.record_scalp_signal(sym, {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, float(ml_s or 0.0), False, sc_feats_hi)
+                                    self._scalp_last_exec_reason[sym] = 'off_hours'
+                                    logger.info(f"[{sym}] 🛑 Scalp COMBO blocked: off_hours | Combo {matched_combo.get('combo_id')} F={fast:.3f}% S={slow:.3f}% ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}% VWAP={vwap_dist_atr:.2f}σ")
+                                except Exception:
+                                    pass
+                                matched_combo = None
+
+                    if matched_combo:
+                        # Enforce Volume, Wick, BBW, Regime gates (ignore slope magnitude)
+                        try:
+                            hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                            vol_enabled = bool(hg.get('vol_enabled', True)); vmin = float(hg.get('vol_ratio_min_3m', 1.20))
+                            vol_ratio = float(sc_feats_hi.get('volume_ratio', 0.0) or 0.0)
+                            vol_ok = (not vol_enabled) or (vol_ratio >= vmin)
+                            wick_enabled = bool(hg.get('wick_enabled', True)); wdelta = float(hg.get('wick_delta_min', 0.10))
+                            uw = float(sc_feats_hi.get('upper_wick_ratio', 0.0) or 0.0); lw = float(sc_feats_hi.get('lower_wick_ratio', 0.0) or 0.0)
+                            wick_ok = (not wick_enabled) or ((lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta))
+                            bbw_exec_enabled = bool(hg.get('bbw_exec_enabled', True)); bbw_min = float(hg.get('bbw_min_pct', 0.60)); bbw_max = float(hg.get('bbw_max_pct', 0.90))
+                            bbw_pctile = float(sc_feats_hi.get('bb_width_pctile', 0.0) or 0.0)
+                            bbw_ok = (not bbw_exec_enabled) or (bbw_pctile >= bbw_min and bbw_pctile <= bbw_max)
+                            regime_enabled = bool(hg.get('regime_enabled', True)); allowed = list(hg.get('allowed_regimes', ['normal']))
+                            cur_reg = str(sc_feats_hi.get('volatility_regime', 'normal'))
+                            regime_ok = (not regime_enabled) or (cur_reg in allowed)
+                        except Exception:
+                            vol_ok = wick_ok = bbw_ok = regime_ok = True
+                        if not (vol_ok and wick_ok and bbw_ok and regime_ok):
+                            try:
+                                if scpt:
+                                    scpt.record_scalp_signal(sym, {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, float(ml_s or 0.0), False, sc_feats_hi)
+                                self._scalp_last_exec_reason[sym] = 'combo_gates'
+                                logger.info(f"[{sym}] 🛑 Scalp COMBO blocked: gates | Combo {matched_combo.get('combo_id')} VolOK={vol_ok} WickOK={wick_ok} BBWOK={bbw_ok} RegOK={regime_ok}")
+                            except Exception:
+                                pass
+                            matched_combo = None
 
                     if matched_combo:
                         # Features match a high-WR combination - execute immediately!
@@ -3655,11 +3778,11 @@ class TradingBot:
                         except Exception:
                             ml_s_slope = 0.0
 
-                        # Calculate flat 1% risk for all combos
+                        # Calculate per-combo risk (fallback to exec.high_wr_risk_percent)
                         try:
-                            risk_pct = float(self.config.get('scalp', {}).get('exec', {}).get('high_wr_risk_percent', 1.0))
+                            risk_pct = float(matched_combo.get('risk_percent', self.config.get('scalp', {}).get('exec', {}).get('high_wr_risk_percent', 1.0)))
                         except Exception:
-                            risk_pct = 1.0  # Fallback
+                            risk_pct = 1.0
 
                         # Check position conflict
                         if sym in self.book.positions:
@@ -3721,6 +3844,9 @@ class TradingBot:
                                 continue  # Skip normal gate processing
                             else:
                                 logger.warning(f"[{sym}] ⚠️ High-WR Multi-Feature execute failed (guard block)")
+                                if combos_only and block_noncombo:
+                                    # Already recorded as phantom above; skip further gate-based processing
+                                    continue
 
                 # ══════════════════════════════════════════════════════════════════════
                 # Execution paths: Gate-based execution (if not executed via slope bypass)

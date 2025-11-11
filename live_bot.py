@@ -749,23 +749,44 @@ class TradingBot:
             slope_enabled = bool(hg.get('slope_enabled', False))
             fast = float(feats.get('ema_slope_fast', 0.0) or 0.0)
             slow = float(feats.get('ema_slope_slow', 0.0) or 0.0)
-            min_fast = float(hg.get('slope_fast_min_pb', 0.03))
-            min_slow = float(hg.get('slope_slow_min_pb', 0.015))
-            fast_only = bool(hg.get('slope_fast_only', False))
+
+            # Check if using range-based slope gates (high WR path)
+            use_slope_ranges = bool(hg.get('slope_use_ranges', False))
+
             if slope_enabled:
-                mode = str(hg.get('slope_mode', 'trend')).lower()
-                if mode == 'mr':
-                    # Mean reversion: buy dips (slopes < 0), sell rips (slopes > 0)
+                if use_slope_ranges:
+                    # High WR path: use specific slope ranges per direction
+                    # Based on analytics showing 63.6% WR for F:0.00-0.03 × S:0.015+ (longs)
                     if side == 'long':
-                        slope_ok = (fast < 0.0 and abs(fast) >= min_fast) and ((slow < 0.0 and abs(slow) >= min_slow) if not fast_only else True)
-                    else:
-                        slope_ok = (fast > 0.0 and abs(fast) >= min_fast) and ((slow > 0.0 and abs(slow) >= min_slow) if not fast_only else True)
+                        fast_min = float(hg.get('slope_long_fast_min', 0.00))
+                        fast_max = float(hg.get('slope_long_fast_max', 0.03))
+                        slow_min = float(hg.get('slope_long_slow_min', 0.015))
+                        slow_max = float(hg.get('slope_long_slow_max', 999.0))
+                        slope_ok = (fast_min <= fast <= fast_max) and (slow_min <= slow <= slow_max)
+                    else:  # short
+                        fast_min = float(hg.get('slope_short_fast_min', -0.03))
+                        fast_max = float(hg.get('slope_short_fast_max', 0.00))
+                        slow_min = float(hg.get('slope_short_slow_min', -999.0))
+                        slow_max = float(hg.get('slope_short_slow_max', -0.015))
+                        slope_ok = (fast_min <= fast <= fast_max) and (slow_min <= slow <= slow_max)
                 else:
-                    # Trend continuation (bounce): longs require positive slopes; shorts require negative slopes
-                    if side == 'long':
-                        slope_ok = (fast > 0.0 and abs(fast) >= min_fast) and ((slow > 0.0 and abs(slow) >= min_slow) if not fast_only else True)
+                    # Legacy minimum-based gates (old logic)
+                    min_fast = float(hg.get('slope_fast_min_pb', 0.03))
+                    min_slow = float(hg.get('slope_slow_min_pb', 0.015))
+                    fast_only = bool(hg.get('slope_fast_only', False))
+                    mode = str(hg.get('slope_mode', 'trend')).lower()
+                    if mode == 'mr':
+                        # Mean reversion: buy dips (slopes < 0), sell rips (slopes > 0)
+                        if side == 'long':
+                            slope_ok = (fast < 0.0 and abs(fast) >= min_fast) and ((slow < 0.0 and abs(slow) >= min_slow) if not fast_only else True)
+                        else:
+                            slope_ok = (fast > 0.0 and abs(fast) >= min_fast) and ((slow > 0.0 and abs(slow) >= min_slow) if not fast_only else True)
                     else:
-                        slope_ok = (fast < 0.0 and abs(fast) >= min_fast) and ((slow < 0.0 and abs(slow) >= min_slow) if not fast_only else True)
+                        # Trend continuation (bounce): longs require positive slopes; shorts require negative slopes
+                        if side == 'long':
+                            slope_ok = (fast > 0.0 and abs(fast) >= min_fast) and ((slow > 0.0 and abs(slow) >= min_slow) if not fast_only else True)
+                        else:
+                            slope_ok = (fast < 0.0 and abs(fast) >= min_fast) and ((slow < 0.0 and abs(slow) >= min_slow) if not fast_only else True)
             else:
                 slope_ok = True
 

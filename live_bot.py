@@ -2506,7 +2506,7 @@ class TradingBot:
                     except Exception:
                         gate_decision = None
                     risk_used = float(risk_percent_override) if risk_percent_override is not None else float(getattr(self.sizer.risk, 'risk_percent', 0.0) or 0.0)
-                    mrec.update({'strategy': 'scalp', 'scalp_gate': gate_decision or 'qscore', 'risk_pct': risk_used, 'exec_id': exec_id or ''})
+                    mrec.update({'strategy': 'scalp', 'scalp_gate': gate_decision or 'qscore', 'risk_pct': risk_used, 'exec_id': exec_id or '', 'qty': float(qty), 'entry': float(actual_entry), 'entry_time': datetime.utcnow()})
                     self._position_meta[sym] = mrec
                 except Exception:
                     pass
@@ -6599,6 +6599,72 @@ class TradingBot:
             # Log close event
             try:
                 logger.info(f"[{symbol}] 👻 Phantom closed ({label}): {side} {outcome.upper()} PnL {pnl_percent:+.2f}% exit {exit_price:.4f} ({exit_label})")
+            except Exception:
+                pass
+
+            # Ensure executed trades are recorded to TradeTracker for Exec WR
+            try:
+                if was_exec:
+                    # Idempotency guard by exec_id or phantom_id
+                    if not hasattr(self, '_phantom_close_recorded'):
+                        self._phantom_close_recorded = set()
+                    pid = getattr(phantom, 'phantom_id', '') or ''
+                    feats_local = getattr(phantom, 'features', {}) or {}
+                    ex_id = str(feats_local.get('exec_id') or '')
+                    uniq = ex_id or pid or f"{symbol}:{exit_price}:{getattr(phantom,'signal_time',None)}"
+                    if uniq not in self._phantom_close_recorded:
+                        # Prefer using TradeTracker standard path when available
+                        tt = getattr(self, 'trade_tracker', None)
+                        if tt is not None and hasattr(self, 'book'):
+                            # Pull saved meta for qty/entry
+                            qty = None; entry = None; etime = None
+                            try:
+                                meta = getattr(self, '_position_meta', {}).get(symbol, {}) if hasattr(self, '_position_meta') else {}
+                                qty = float(meta.get('qty')) if meta.get('qty') is not None else None
+                                entry = float(meta.get('entry')) if meta.get('entry') is not None else None
+                                etime = meta.get('entry_time')
+                            except Exception:
+                                pass
+                            # Fallbacks
+                            try:
+                                if qty is None:
+                                    # Last known position qty if still present
+                                    pos0 = getattr(self.book, 'positions', {}).get(symbol)
+                                    if pos0 is not None:
+                                        qty = float(getattr(pos0, 'qty', 0.0) or 0.0)
+                            except Exception:
+                                pass
+                            try:
+                                if entry is None:
+                                    pos0 = getattr(self.book, 'positions', {}).get(symbol)
+                                    if pos0 is not None:
+                                        entry = float(getattr(pos0, 'entry', 0.0) or 0.0)
+                            except Exception:
+                                pass
+                            if qty and entry:
+                                try:
+                                    # Compute PnL using tracker util
+                                    pnl_usd, pnl_pct = tt.calculate_pnl(symbol, side, entry, exit_price, qty, 1.0)
+                                    from trade_tracker_postgres import Trade
+                                    trade = Trade(
+                                        symbol=symbol,
+                                        side=str(side).lower(),
+                                        entry_price=entry,
+                                        exit_price=exit_price,
+                                        quantity=qty,
+                                        entry_time=etime or datetime.utcnow(),
+                                        exit_time=datetime.utcnow(),
+                                        pnl_usd=pnl_usd,
+                                        pnl_percent=pnl_pct,
+                                        exit_reason=str(exit_reason),
+                                        leverage=1.0,
+                                        strategy_name='scalp'
+                                    )
+                                    tt.add_trade(trade)
+                                    self._phantom_close_recorded.add(uniq)
+                                    logger.info(f"[{symbol}] ✅ Recorded executed trade from phantom close for Exec WR")
+                                except Exception as rec_e:
+                                    logger.debug(f"[{symbol}] Exec WR record fallback failed: {rec_e}")
             except Exception:
                 pass
 

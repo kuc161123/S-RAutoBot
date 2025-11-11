@@ -3968,29 +3968,36 @@ class TradingBot:
                                 matched_combo = None
 
                     if matched_combo:
-                        # Enforce ONLY Volume and Wick gates (ignore slope magnitude, BBW, Regime)
+                        # Optionally bypass gates for combos (execute immediately on match)
+                        skip_gates = False
                         try:
-                            hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
-                            vol_enabled = bool(hg.get('vol_enabled', True)); vmin = float(hg.get('vol_ratio_min_3m', 1.20))
-                            vol_ratio = float(sc_feats_hi.get('volume_ratio', 0.0) or 0.0)
-                            vol_ok = (not vol_enabled) or (vol_ratio >= vmin)
-                            wick_enabled = bool(hg.get('wick_enabled', True)); wdelta = float(hg.get('wick_delta_min', 0.10))
-                            uw = float(sc_feats_hi.get('upper_wick_ratio', 0.0) or 0.0); lw = float(sc_feats_hi.get('lower_wick_ratio', 0.0) or 0.0)
-                            wick_ok = (not wick_enabled) or ((lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta))
-                            # Ignore BBW/regime gates in combos path
-                            bbw_ok = True
-                            regime_ok = True
+                            _excfg2 = ((self.config.get('scalp', {}) or {}).get('exec', {}) or {})
+                            skip_gates = bool(_excfg2.get('skip_gates_for_combos', False) or matched_combo.get('skip_gates', False))
                         except Exception:
-                            vol_ok = wick_ok = bbw_ok = regime_ok = True
-                        if not (vol_ok and wick_ok):
+                            skip_gates = False
+                        if not skip_gates:
+                            # Enforce ONLY Volume and Wick gates (ignore BBW, Regime)
                             try:
-                                if scpt:
-                                    scpt.record_scalp_signal(sym, {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, float(ml_s or 0.0), False, sc_feats_hi)
-                                self._scalp_last_exec_reason[sym] = 'combo_gates'
-                                logger.info(f"[{sym}] 🛑 Scalp COMBO blocked: gates | Combo {matched_combo.get('combo_id')} VolOK={vol_ok} WickOK={wick_ok}")
+                                hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                vol_enabled = bool(hg.get('vol_enabled', True)); vmin = float(hg.get('vol_ratio_min_3m', 1.20))
+                                vol_ratio = float(sc_feats_hi.get('volume_ratio', 0.0) or 0.0)
+                                vol_ok = (not vol_enabled) or (vol_ratio >= vmin)
+                                wick_enabled = bool(hg.get('wick_enabled', True)); wdelta = float(hg.get('wick_delta_min', 0.10))
+                                uw = float(sc_feats_hi.get('upper_wick_ratio', 0.0) or 0.0); lw = float(sc_feats_hi.get('lower_wick_ratio', 0.0) or 0.0)
+                                wick_ok = (not wick_enabled) or ((lw >= uw + wdelta) if sc_sig.side == 'long' else (uw >= lw + wdelta))
                             except Exception:
-                                pass
-                            matched_combo = None
+                                vol_ok = wick_ok = True
+                            if not (vol_ok and wick_ok):
+                                try:
+                                    if scpt:
+                                        scpt.record_scalp_signal(sym, {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, float(ml_s or 0.0), False, sc_feats_hi)
+                                    self._scalp_last_exec_reason[sym] = 'combo_gates'
+                                    logger.info(f"[{sym}] 🛑 Scalp COMBO blocked: gates | Combo {matched_combo.get('combo_id')} VolOK={vol_ok} WickOK={wick_ok}")
+                                except Exception:
+                                    pass
+                                matched_combo = None
+                        else:
+                            logger.info(f"[{sym}] 🚀 Scalp COMBO gates bypassed for execution (skip_gates_for_combos=true)")
 
                     if matched_combo:
                         # Features match a high-WR combination - execute immediately!

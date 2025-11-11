@@ -663,6 +663,7 @@ scalp:
     # Data-driven: use only the 3 high-WR combos above (trend-following is fenced off);
     # This bypass ignores slope magnitude gates but keeps Volume, Wick, BBW, Regime, Off-hours guards.
     high_wr_slope_bypass: true          # ENABLED - Execute immediately on high-WR multi-feature combos
+    skip_gates_for_combos: true         # Bypass exec gates (Vol/Wick) when a combo matches
     high_wr_risk_percent: 1.0           # Flat 1% risk for all high-WR combos
     # Legacy ML-based bypass (DISABLED - replaced by multi-feature bypass)
     allow_stream_high_ml: false   # Keep ML-override off; use multi-feature bypass instead

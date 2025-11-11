@@ -764,34 +764,55 @@ class TGBot:
             st = scpt.get_scalp_phantom_stats()
             lines.append("")
             lines.append("👻 *Scalp Phantom*")
-            lines.append(f"• Tracked: {st.get('total',0)} | WR: {st.get('wr',0.0):.1f}% (W/L {st.get('wins',0)}/{st.get('losses',0)})")
-            # Show active count if available
+            # Decisive totals (wins/losses only)
+            decisive = int(st.get('total', 0)); wins = int(st.get('wins', 0)); losses = int(st.get('losses', 0))
+            wrp = float(st.get('wr', 0.0) or 0.0)
+            # Open phantoms (active, no exit)
             try:
-                active = sum(len(v) for v in (getattr(scpt, 'active', {}) or {}).values())
-                lines[-1] += f" | Open: {active}"
+                active = sum(1 for lst in (getattr(scpt, 'active', {}) or {}).values() for p in (lst or []) if not getattr(p, 'exit_time', None))
             except Exception:
-                pass
-            # 30d phantom view (decisive only; exclude timeouts)
+                active = 0
+            lines.append(f"• Decisive: {decisive} | WR: {wrp:.1f}% (W/L {wins}/{losses}) | Open: {active}")
+            # 30d recorded (wins+losses+timeouts) and new counts (1h/24h)
             try:
                 from datetime import datetime, timedelta
-                cutoff = datetime.utcnow() - timedelta(days=30)
-                decis = []
-                tout = 0
+                now = datetime.utcnow()
+                cutoff30 = now - timedelta(days=30)
+                cutoff1h = now - timedelta(hours=1)
+                cutoff24 = now - timedelta(hours=24)
+                dec30 = 0; w30 = 0; l30 = 0; t30 = 0
+                new1h = 0; new24 = 0
+                # Completed
                 for arr in (getattr(scpt, 'completed', {}) or {}).values():
                     for p in arr:
+                        stime = getattr(p, 'signal_time', None)
+                        if stime and stime >= cutoff1h:
+                            new1h += 1
+                        if stime and stime >= cutoff24:
+                            new24 += 1
                         et = getattr(p, 'exit_time', None)
-                        if not et or et < cutoff:
+                        if not et or et < cutoff30:
                             continue
                         oc = getattr(p, 'outcome', None)
-                        if oc in ('win','loss'):
-                            decis.append(p)
-                        elif oc == 'timeout':
-                            tout += 1
-                dtot = len(decis)
-                dw = sum(1 for p in decis if getattr(p, 'outcome', None) == 'win')
-                dl = sum(1 for p in decis if getattr(p, 'outcome', None) == 'loss')
-                dwr = (dw/dtot*100.0) if dtot else 0.0
-                lines.append(f"• 30d: Decisive {dtot} | WR: {dwr:.1f}% (W/L {dw}/{dl}) | Timeouts: {tout}")
+                        if oc in ('win','loss', 'timeout'):
+                            if oc == 'timeout':
+                                t30 += 1
+                            else:
+                                dec30 += 1
+                                if oc == 'win':
+                                    w30 += 1
+                                else:
+                                    l30 += 1
+                # Active (no exit): count towards new1h/new24 and recorded totals window by signal_time
+                for arr in (getattr(scpt, 'active', {}) or {}).values():
+                    for p in arr:
+                        stime = getattr(p, 'signal_time', None)
+                        if stime and stime >= cutoff1h:
+                            new1h += 1
+                        if stime and stime >= cutoff24:
+                            new24 += 1
+                lines.append(f"• 30d Recorded: {dec30 + t30} (W/L/TO {w30}/{l30}/{t30})")
+                lines.append(f"• New: 1h {new1h} | 24h {new24}")
             except Exception:
                 pass
         except Exception:
@@ -911,6 +932,7 @@ class TGBot:
             [InlineKeyboardButton("🤖 Patterns", callback_data="ui:scalp:patterns"), InlineKeyboardButton("⚖️ Risk", callback_data="ui:scalp:risk")],
             [InlineKeyboardButton("📈 Q WR", callback_data="ui:scalp:qwr"), InlineKeyboardButton("📈 ML WR", callback_data="ui:scalp:mlwr")],
             [InlineKeyboardButton("📉 EMA Slopes", callback_data="ui:scalp:emaslopes"), InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr")],
+            [InlineKeyboardButton("📂 Open Phantoms", callback_data="ui:scalp:open_phantoms")],
             [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr"), InlineKeyboardButton("📊 Advanced Combos", callback_data="ui:scalp:advancedcombos")],
             [InlineKeyboardButton("📉 Slopes (EV+CI)", callback_data="ui:scalp:slopesevci"), InlineKeyboardButton("📊 Combos (EV+CI)", callback_data="ui:scalp:combosevci")],
             [InlineKeyboardButton("🧪 Ultimate (EV+CI)", callback_data="ui:scalp:ultimate")],
@@ -3035,6 +3057,10 @@ class TGBot:
             if data == "ui:scalp:emaslopes":
                 await query.answer()
                 await self.scalp_ema_slopes(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:open_phantoms":
+                await query.answer()
+                await self.scalp_open_phantoms(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data == "ui:scalp:slopesevci":
                 await query.answer()
@@ -7934,6 +7960,91 @@ class TGBot:
             import traceback
             logger.error(traceback.format_exc())
             await update.message.reply_text("Error computing gate+feature combinations analysis")
+
+    async def scalp_open_phantoms(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """List all currently open Scalp phantoms (non-executed, no exit)."""
+        try:
+            from datetime import datetime
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            open_list = []
+            for sym, lst in (getattr(scpt, 'active', {}) or {}).items():
+                for p in (lst or []):
+                    try:
+                        if getattr(p, 'exit_time', None):
+                            continue
+                        if bool(getattr(p, 'was_executed', False)):
+                            # Only show pure phantoms here
+                            continue
+                        st = getattr(p, 'signal_time', None)
+                        age_min = 0
+                        if st:
+                            try:
+                                age_min = int((datetime.utcnow() - st).total_seconds() // 60)
+                            except Exception:
+                                age_min = 0
+                        feats = getattr(p, 'features', {}) or {}
+                        ml = float(getattr(p, 'ml_score', 0.0) or 0.0)
+                        open_list.append({
+                            'symbol': p.symbol,
+                            'side': p.side,
+                            'entry': p.entry_price,
+                            'tp': p.take_profit,
+                            'sl': p.stop_loss,
+                            'age_min': age_min,
+                            'ml': ml,
+                            'f_fast': feats.get('ema_slope_fast', None),
+                            'f_slow': feats.get('ema_slope_slow', None),
+                            'atr': feats.get('atr_pct', None),
+                            'bbw': feats.get('bb_width_pct', None),
+                            'vwap': feats.get('vwap_dist_atr', None)
+                        })
+                    except Exception:
+                        continue
+
+            if not open_list:
+                await self.safe_reply(update, "👻 Scalp Open Phantoms\n\n(none)", parse_mode=None)
+                return
+
+            # Sort by age desc, then symbol
+            open_list.sort(key=lambda x: (-x['age_min'], x['symbol']))
+
+            MAX = 3500
+            header = [f"👻 Scalp Open Phantoms ({len(open_list)})", "━━━━━━━━━━━━━━━━━━━━━━━━", ""]
+            buf = header[:]
+            cur = sum(len(s)+1 for s in buf)
+            for o in open_list:
+                try:
+                    line = (
+                        f"• {o['symbol']} {str(o['side']).upper()} @ {float(o['entry']):.4f} | TP {float(o['tp']):.4f} | SL {float(o['sl']):.4f} | age {o['age_min']}m"
+                    )
+                    # Append short feature snapshot if available
+                    def _fmt(x,prec=3):
+                        try:
+                            return f"{float(x):.{prec}f}"
+                        except Exception:
+                            return "—"
+                    line2 = (
+                        f"    fast { _fmt(o['f_fast']) }% | slow { _fmt(o['f_slow']) }% | ATR { _fmt(o['atr']) }% | BBW { _fmt((o['bbw'] or 0.0)*100,2) }% | VWAP { _fmt(o['vwap']) }σ | ML {o['ml']:.1f}"
+                    )
+                    for ln in (line, line2):
+                        if cur + len(ln) + 1 > MAX and buf:
+                            await self.safe_reply(update, "\n".join(buf), parse_mode=None)
+                            buf = []
+                            cur = 0
+                        buf.append(ln)
+                        cur += len(ln) + 1
+                except Exception:
+                    continue
+            if buf:
+                await self.safe_reply(update, "\n".join(buf), parse_mode=None)
+
+        except Exception as e:
+            logger.error(f"Error in scalp_open_phantoms: {e}")
+            try:
+                await self.safe_reply(update, "Error listing open Scalp phantoms", parse_mode=None)
+            except Exception:
+                pass
 
     async def scalp_ultimate(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Ultimate analysis: All 50+ variables, phantoms + executed trades"""

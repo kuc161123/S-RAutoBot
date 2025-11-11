@@ -35,9 +35,14 @@ class ScalpSettings:
     vwap_session_warmup_bars: int = 30
     vwap_cap_warmup: float = 2.0
     vwap_session_windows: Optional[Dict[str, str]] = None  # e.g., {'asian': '00:00-08:00', ...}
+    # VWAP pattern and options
+    vwap_pattern: str = 'revert'              # 'bounce' | 'reject' | 'revert'
+    vwap_bounce_band_atr_min: float = 0.10
+    vwap_bounce_band_atr_max: float = 0.60
+    vwap_bounce_lookback_bars: int = 3
     # VWAP-only detection mode
     vwap_only: bool = False                   # If true, use only VWAP proximity for acceptance (drop vol/bbw/wick gates)
-    vwap_require_alignment: bool = False      # If true, still require EMA alignment with VWAP-only mode
+    vwap_require_alignment: bool = True       # If true, require EMA alignment in vwap-only / patterns
     # Multi-anchor means OR (EVWAP OR EMA-band OR BB-mid) for signals
     means_enabled: bool = True
     ema_band_cap_atr: float = 1.5
@@ -203,29 +208,55 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
     means_evwap_ok = dist_vwap_atr <= eff_vwap_cap
     means_ema_ok = dist_ema_band <= float(s.ema_band_cap_atr)
     means_bb_ok = dist_bb_mid <= float(s.bb_mid_cap_atr)
+    # Default gates
+    vol_ok = (float(vol_ratio) >= float(s.vol_ratio_min))
+    bbw_ok = (float(bbw_pct) >= float(s.min_bb_width_pct))
+    wick_body_long = (lower_w >= max(float(s.wick_ratio_min), float(upper_w) + float(s.wick_delta_min))) and body_up and (body_ratio >= float(s.body_ratio_min))
+    wick_body_short = (upper_w >= max(float(s.wick_ratio_min), float(lower_w) + float(s.wick_delta_min))) and body_dn and (body_ratio >= float(s.body_ratio_min))
+
+    # Pattern selection
+    pattern = (s.vwap_pattern or 'revert').lower()
+    means_ok = False
     if bool(s.vwap_only):
         means_ok = means_evwap_ok
-        vol_ok = True
-        bbw_ok = True
-        wick_body_long = True
-        wick_body_short = True
-        # Optionally relax EMA alignment when in VWAP-only
+        vol_ok = True; bbw_ok = True; wick_body_long = True; wick_body_short = True
         if not bool(s.vwap_require_alignment):
-            ema_aligned_up = True
-            ema_aligned_dn = True
+            ema_aligned_up = True; ema_aligned_dn = True
+    elif pattern == 'bounce':
+        vwap_now = float(vwap.iloc[-1]) if not np.isnan(vwap.iloc[-1]) else c
+        band_min = float(s.vwap_bounce_band_atr_min)
+        band_max = float(s.vwap_bounce_band_atr_max)
+        look = int(max(1, s.vwap_bounce_lookback_bars))
+        recent_lows = low.iloc[-look:]
+        recent_highs = high.iloc[-look:]
+        touch_long = abs(float(recent_lows.min()) - vwap_now) / max(1e-9, cur_atr)
+        touch_short = abs(float(recent_highs.max()) - vwap_now) / max(1e-9, cur_atr)
+        open_now = float(o)
+        bounce_long = (
+            (ema_aligned_up or not s.vwap_require_alignment) and
+            (c >= vwap_now) and (open_now >= vwap_now) and
+            (band_min <= touch_long <= band_max)
+        )
+        bounce_short = (
+            (ema_aligned_dn or not s.vwap_require_alignment) and
+            (c <= vwap_now) and (open_now <= vwap_now) and
+            (band_min <= touch_short <= band_max)
+        )
+        means_ok = bounce_long or bounce_short
+    elif pattern == 'reject':
+        vwap_now = float(vwap.iloc[-1]) if not np.isnan(vwap.iloc[-1]) else c
+        reject_long = (l < vwap_now and c > vwap_now) and (ema_aligned_up or not s.vwap_require_alignment)
+        reject_short = (h > vwap_now and c < vwap_now) and (ema_aligned_dn or not s.vwap_require_alignment)
+        means_ok = reject_long or reject_short
     else:
         means_ok = means_evwap_ok or (bool(s.means_enabled) and (means_ema_ok or means_bb_ok))
-        vol_ok = (float(vol_ratio) >= float(s.vol_ratio_min))
-        bbw_ok = (float(bbw_pct) >= float(s.min_bb_width_pct))
-        wick_body_long = (lower_w >= max(float(s.wick_ratio_min), float(upper_w) + float(s.wick_delta_min))) and body_up and (body_ratio >= float(s.body_ratio_min))
-        wick_body_short = (upper_w >= max(float(s.wick_ratio_min), float(lower_w) + float(s.wick_delta_min))) and body_dn and (body_ratio >= float(s.body_ratio_min))
 
     # Long scalp candidate (means OR)
     if (
         ema_aligned_up
-        and (bbw_ok)
-        and (vol_ok)
-        and (wick_body_long)
+        and bbw_ok
+        and vol_ok
+        and wick_body_long
         and means_ok
         and orb_ok
     ):
@@ -246,7 +277,7 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
         tp = entry + s.rr * (entry - sl)
         return ScalpSignal(
             side='long', entry=entry, sl=sl, tp=tp,
-            reason=f"SCALP: accept=means_or",
+            reason=f"SCALP: accept={'vwap_bounce' if pattern=='bounce' else ('vwap_reject' if pattern=='reject' else 'means_or')}",
             meta={
                 'vwap': cur_vwap,
                 'atr': cur_atr,
@@ -258,16 +289,16 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
                     'dist_evwap': float(dist_vwap_atr), 'dist_ema': float(dist_ema_band), 'dist_bb': float(dist_bb_mid),
                     'cap': float(eff_vwap_cap)
                 },
-                'acceptance_path': 'means_or'
+                'acceptance_path': 'vwap_bounce' if pattern=='bounce' else ('vwap_reject' if pattern=='reject' else 'means_or')
             }
         )
 
     # Short scalp candidate
     if (
         ema_aligned_dn
-        and (bbw_ok)
-        and (vol_ok)
-        and (wick_body_short)
+        and bbw_ok
+        and vol_ok
+        and wick_body_short
         and means_ok
         and orb_ok
     ):
@@ -287,7 +318,7 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
         tp = entry - s.rr * (sl - entry)
         return ScalpSignal(
             side='short', entry=entry, sl=sl, tp=tp,
-            reason=f"SCALP: accept=means_or",
+            reason=f"SCALP: accept={'vwap_bounce' if pattern=='bounce' else ('vwap_reject' if pattern=='reject' else 'means_or')}",
             meta={
                 'vwap': cur_vwap,
                 'atr': cur_atr,
@@ -299,7 +330,7 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
                     'dist_evwap': float(dist_vwap_atr), 'dist_ema': float(dist_ema_band), 'dist_bb': float(dist_bb_mid),
                     'cap': float(eff_vwap_cap)
                 },
-                'acceptance_path': 'means_or'
+                'acceptance_path': 'vwap_bounce' if pattern=='bounce' else ('vwap_reject' if pattern=='reject' else 'means_or')
             }
         )
     # K-of-N (phantom) path — slope mandatory

@@ -549,8 +549,12 @@ scalp:
   # Signal-generation thresholds (phantoms also benefit)
   signal:
     # Signal-only thresholds (do not affect execution hard gates)
-    vwap_only: true            # Use only VWAP proximity for signal detection (drop vol/bbw/wick gates)
-    vwap_require_alignment: false  # If true, require EMA alignment even in VWAP-only mode
+    vwap_only: false           # Use full detection (keep wick/body/EMA/vol/BBW)
+    vwap_require_alignment: true  # Require EMA alignment with VWAP pattern
+    vwap_pattern: bounce       # VWAP strategy pattern: bounce | reject | revert
+    vwap_bounce_band_atr_min: 0.10
+    vwap_bounce_band_atr_max: 0.60
+    vwap_bounce_lookback_bars: 3
     body_ratio_min: 0.25       # was 0.30
     wick_delta_min: 0.05       # was 0.10
     vwap_dist_atr_max: 1.50    # allow deeper pulls for detection (cap applies to EVWAP distance)

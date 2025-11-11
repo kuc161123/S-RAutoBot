@@ -3403,6 +3403,14 @@ class TradingBot:
                                 sc_settings.vwap_only = bool(sig_cfg.get('vwap_only'))
                             if 'vwap_require_alignment' in sig_cfg:
                                 sc_settings.vwap_require_alignment = bool(sig_cfg.get('vwap_require_alignment'))
+                            if 'vwap_pattern' in sig_cfg:
+                                sc_settings.vwap_pattern = str(sig_cfg.get('vwap_pattern'))
+                            if 'vwap_bounce_band_atr_min' in sig_cfg:
+                                sc_settings.vwap_bounce_band_atr_min = float(sig_cfg.get('vwap_bounce_band_atr_min'))
+                            if 'vwap_bounce_band_atr_max' in sig_cfg:
+                                sc_settings.vwap_bounce_band_atr_max = float(sig_cfg.get('vwap_bounce_band_atr_max'))
+                            if 'vwap_bounce_lookback_bars' in sig_cfg:
+                                sc_settings.vwap_bounce_lookback_bars = int(sig_cfg.get('vwap_bounce_lookback_bars'))
                         except Exception:
                             pass
                         # Optional soft ORB relax (signal-only): if price has broken the recent 20-bar range in trend direction

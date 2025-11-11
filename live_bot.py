@@ -712,10 +712,11 @@ class TradingBot:
         return 'none'
 
     def _scalp_hard_gates_pass(self, symbol: str, side: str, feats: dict) -> tuple[bool, list[str]]:
-        """Execution-only hard gates for Scalp (Body + Volume + full Slope + optional VWAP mid-band).
+        """Execution-only hard gates for Scalp (Volume + Wick + Slope [+optional others]).
 
-        Enforces a single allowed path by default: Body + Volume + (fast+slow) Slope.
-        HTF is disabled in config for execution paths.
+        Slope semantics are strategy-aware via config hard_gates.slope_mode:
+        - 'trend'  → longs need positive fast/slow ≥ mins; shorts need negative fast/slow ≤ −mins
+        - 'mr'     → inverted (buy dips: fast/slow < 0; sell rips: fast/slow > 0)
         Returns (ok, reasons). Reasons populated only on failure.
         """
         try:
@@ -752,11 +753,19 @@ class TradingBot:
             min_slow = float(hg.get('slope_slow_min_pb', 0.015))
             fast_only = bool(hg.get('slope_fast_only', False))
             if slope_enabled:
-                # INVERTED for mean reversion: Buy dips (negative slopes), Sell rips (positive slopes)
-                if side == 'long':
-                    slope_ok = (fast < 0.0 and abs(fast) >= min_fast) and ((slow < 0.0 and abs(slow) >= min_slow) if not fast_only else True)
+                mode = str(hg.get('slope_mode', 'trend')).lower()
+                if mode == 'mr':
+                    # Mean reversion: buy dips (slopes < 0), sell rips (slopes > 0)
+                    if side == 'long':
+                        slope_ok = (fast < 0.0 and abs(fast) >= min_fast) and ((slow < 0.0 and abs(slow) >= min_slow) if not fast_only else True)
+                    else:
+                        slope_ok = (fast > 0.0 and abs(fast) >= min_fast) and ((slow > 0.0 and abs(slow) >= min_slow) if not fast_only else True)
                 else:
-                    slope_ok = (fast > 0.0 and abs(fast) >= min_fast) and ((slow > 0.0 and abs(slow) >= min_slow) if not fast_only else True)
+                    # Trend continuation (bounce): longs require positive slopes; shorts require negative slopes
+                    if side == 'long':
+                        slope_ok = (fast > 0.0 and abs(fast) >= min_fast) and ((slow > 0.0 and abs(slow) >= min_slow) if not fast_only else True)
+                    else:
+                        slope_ok = (fast < 0.0 and abs(fast) >= min_fast) and ((slow < 0.0 and abs(slow) >= min_slow) if not fast_only else True)
             else:
                 slope_ok = True
 
@@ -788,7 +797,7 @@ class TradingBot:
             cur_reg = str(feats.get('volatility_regime', 'normal'))
             regime_ok = (cur_reg in allowed_regs) if regime_enabled else True
 
-            # Allowed path: Wick + Volume + Slope (+BBW) [+Regime]
+            # Allowed path: Wick + Volume + Slope (+optional BBW/Regime)
             allowed = slope_ok and wick_pass and (not vol_enabled or vol_pass) and (not bbw_exec_enabled or bbw_pass) and regime_ok
             if allowed:
                 return True, []

@@ -75,6 +75,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalp_get_risk", self.scalp_get_risk))
         self.app.add_handler(CommandHandler("scalp_highwr_set_risk", self.scalp_highwr_set_risk))
         self.app.add_handler(CommandHandler("scalp_highwr_get_risk", self.scalp_highwr_get_risk))
+        self.app.add_handler(CommandHandler("scalp_ml_recommend", self.scalp_ml_recommend))
         # Combos-only controls
         self.app.add_handler(CommandHandler("scalpcombos", self.scalp_combos_toggle))
         self.app.add_handler(CommandHandler("scalpcombosmute", self.scalp_combos_mute))
@@ -8281,6 +8282,43 @@ class TGBot:
             logger.error(f"Error in scalp_open_phantoms: {e}")
             try:
                 await self.safe_reply(update, "Error listing open Scalp phantoms", parse_mode=None)
+            except Exception:
+                pass
+
+    async def scalp_ml_recommend(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """ML‑driven strategy recommendations from last 30d training data.
+
+        Outputs top combos and a YAML snippet for pro_exec.combos.
+        """
+        try:
+            from ml_scorer_scalp import get_scalp_scorer
+            scorer = get_scalp_scorer()
+            res = scorer.recommend_strategies(days=30, min_n=50, top_n=12)
+            if res.get('error'):
+                await self.safe_reply(update, f"🧠 ML Strategy Recommend\n\nNo data yet ({res['error']})", parse_mode=None)
+                return
+            ranked = res.get('ranked', [])
+            yaml_lines = res.get('yaml', [])
+            lines = ["🧠 ML Strategy Recommendations (30d)", "━━━━━━━━━━━━━━━━━━━━━━━━", ""]
+            for key, agg in ranked:
+                wr = (agg['w']/agg['n']*100.0) if agg['n'] else 0.0
+                lines.append(f"• WR {wr:5.1f}% (N={agg['n']:>3}) | {key}")
+            lines.append("")
+            lines.append("Paste into config.yaml:")
+            lines.extend(yaml_lines)
+            # Chunked send
+            MAX=3500; buf=[]; cur=0
+            for ln in lines:
+                if cur + len(ln) + 1 > MAX and buf:
+                    await self.safe_reply(update, "\n".join(buf), parse_mode=None)
+                    buf=[]; cur=0
+                buf.append(ln); cur += len(ln) + 1
+            if buf:
+                await self.safe_reply(update, "\n".join(buf), parse_mode=None)
+        except Exception as e:
+            logger.error(f"Error in scalp_ml_recommend: {e}")
+            try:
+                await self.safe_reply(update, "Error computing ML recommendations", parse_mode=None)
             except Exception:
                 pass
 

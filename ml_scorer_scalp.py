@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Dict, Tuple, List
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.isotonic import IsotonicRegression
@@ -25,7 +26,7 @@ class ScalpMLScorer:
     MIN_TRADES_FOR_ML = 50
     RETRAIN_INTERVAL = 50
     INITIAL_THRESHOLD = 75
-    FEAT_VERSION = 1
+    FEAT_VERSION = 2
     # Allow phantom-only bootstrap when there are no executed scalp trades yet
     # Unlimited phantom usage policy for training (no cap)
     PHANTOM_BOOTSTRAP_MIN = 0
@@ -157,19 +158,35 @@ class ScalpMLScorer:
         except Exception as e:
             logger.error(f"Scalp save state error: {e}")
 
-    def _prepare_features(self, f: Dict, version: int = 1) -> List[float]:
-        order = [
-            'atr_pct', 'bb_width_pct', 'impulse_ratio', 'ema_slope_fast', 'ema_slope_slow',
-            'volume_ratio', 'upper_wick_ratio', 'lower_wick_ratio', 'vwap_dist_atr',
-            'session', 'symbol_cluster', 'volatility_regime'
-        ]
+    def _prepare_features(self, f: Dict, version: int = 2) -> List[float]:
+        # v2: richer features and encodings; v1 fallback kept for compatibility
+        if version <= 1:
+            order = [
+                'atr_pct', 'bb_width_pct', 'impulse_ratio', 'ema_slope_fast', 'ema_slope_slow',
+                'volume_ratio', 'upper_wick_ratio', 'lower_wick_ratio', 'vwap_dist_atr',
+                'session', 'symbol_cluster', 'volatility_regime'
+            ]
+        else:
+            order = [
+                'atr_pct','bb_width_pct','bb_width_pctile','bb_pos','impulse_ratio',
+                'ema_slope_fast','ema_slope_slow','vwap_dist_atr','volume_ratio',
+                'rsi_14','macd_hist','ma20_dist_pct','ma50_dist_pct','fib_ret',
+                'ret_1','ret_3','ret_5','atr_slope','vol_of_vol','obv_slope',
+                'rr_setup','mtf_agree_15','session','hour_utc','symbol_cluster','volatility_regime','ema_dir_15m','struct_state'
+            ]
         vec = []
         for k in order:
             v = f.get(k, 0)
             if k == 'session':
                 v = {'asian':0,'european':1,'us':2,'off_hours':3}.get(v,3)
-            if k == 'volatility_regime':
+            elif k == 'volatility_regime':
                 v = {'low':0,'normal':1,'high':2,'extreme':3}.get(v,1)
+            elif k == 'ema_dir_15m':
+                v = {'down':0,'none':1,'up':2}.get(str(v),1)
+            elif k == 'struct_state':
+                v = {'LL':0,'LH':1,'HL':2,'HH':3,'none':1}.get(str(v),1)
+            elif isinstance(v, bool):
+                v = 1.0 if v else 0.0
             vec.append(float(v) if v is not None else 0.0)
         return vec
 
@@ -203,7 +220,16 @@ class ScalpMLScorer:
                 except Exception:
                     pass
             if preds:
-                p = float(np.mean(preds))
+                # Meta-ensemble via logistic regression if available
+                try:
+                    meta = self.models.get('meta')
+                    if meta is not None and len(preds) >= 2:
+                        m_in = np.array([[float(p_) for p_ in preds]]).reshape(1, -1)
+                        p = float(meta.predict_proba(m_in)[:,1][0])
+                    else:
+                        p = float(np.mean(preds))
+                except Exception:
+                    p = float(np.mean(preds))
                 # Apply probability calibration if available
                 try:
                     if self.calibrator is not None:
@@ -211,7 +237,7 @@ class ScalpMLScorer:
                         p = max(0.0, min(1.0, p))
                 except Exception:
                     pass
-                return p*100.0, 'Scalp ML Ensemble (cal)'
+                return p*100.0, 'Scalp ML Stacked (cal)'
         except Exception as e:
             logger.error(f"Scalp scoring error: {e}")
         return 60.0, 'Fallback'
@@ -334,6 +360,22 @@ class ScalpMLScorer:
                 self.models['nn'].fit(XS, y)
             except Exception:
                 pass
+        # Simple stacking meta-learner (logistic regression) on holdout split
+        try:
+            from sklearn.model_selection import train_test_split
+            X_tr, X_te, y_tr, y_te = train_test_split(XS, y, test_size=0.2, random_state=42)
+            preds_tr = []
+            for key in ('rf','gb','nn'):
+                m = self.models.get(key)
+                if m is not None:
+                    preds_tr.append(m.predict_proba(X_tr)[:,1])
+            if len(preds_tr) >= 2:
+                M = np.vstack(preds_tr).T
+                meta = LogisticRegression(max_iter=200)
+                meta.fit(M, y_tr)
+                self.models['meta'] = meta
+        except Exception:
+            pass
         # Calibrate probabilities (isotonic) on mean-of-heads raw scores
         try:
             raw_preds = []
@@ -469,6 +511,84 @@ class ScalpMLScorer:
                 'next_retrain_at': 0,
                 'can_train': False
             }
+
+    def recommend_strategies(self, days: int = 30, min_n: int = 50, top_n: int = 12) -> Dict:
+        """Recommend high‑WR combos from ML training data (last N days).
+
+        Uses RSI/MACD/VWAP/Fib/MTF/Volume/BBW to propose combos with WR and N.
+        Returns dict with 'ranked' and 'yaml' fields.
+        """
+        try:
+            data = self._load_training_data()
+            if not data:
+                return {'error': 'no_data'}
+            from datetime import datetime, timedelta
+            cutoff = datetime.utcnow() - timedelta(days=days)
+            items = []
+            for d in data:
+                try:
+                    ts = d.get('timestamp'); ts = datetime.fromisoformat(str(ts).replace('Z','')) if ts else None
+                    if ts and ts < cutoff:
+                        continue
+                    f = d.get('features', {}) or {}
+                    rsi = f.get('rsi_14'); mh = f.get('macd_hist'); vwap = f.get('vwap_dist_atr'); fibz = f.get('fib_zone'); mtf = f.get('mtf_agree_15'); vol = f.get('volume_ratio'); bbw = f.get('bb_width_pct')
+                    if not (isinstance(rsi,(int,float)) and isinstance(mh,(int,float)) and isinstance(vwap,(int,float)) and isinstance(fibz,str) and isinstance(mtf,(bool,int)) and isinstance(vol,(int,float)) and isinstance(bbw,(int,float))):
+                        continue
+                    win = int(d.get('outcome', 0))
+                    items.append((float(rsi), float(mh), float(vwap), fibz, bool(mtf), float(vol), float(bbw), win))
+                except Exception:
+                    continue
+            if not items:
+                return {'error': 'no_items'}
+            # Bins
+            rsi_bins = [("<30", lambda x: x < 30, 0, 30), ("30-40", lambda x: 30 <= x < 40, 30, 40), ("40-60", lambda x: 40 <= x < 60, 40, 60), ("60-70", lambda x: 60 <= x < 70, 60, 70), ("70+", lambda x: x >= 70, 70, 101)]
+            macd_bins = [("bull", lambda h: h > 0, "bull"), ("bear", lambda h: h <= 0, "bear")]
+            vwap_bins = [("<0.6", lambda x: x < 0.6, -999.0, 0.6), ("0.6-1.2", lambda x: 0.6 <= x < 1.2, 0.6, 1.2), ("1.2+", lambda x: x >= 1.2, 1.2, 999.0)]
+            vol_bins = [("≥1.2x", lambda x: x >= 1.2, 1.2), ("1.0-1.2x", lambda x: 1.0 <= x < 1.2, 1.0)]
+            bbw_bins = [("<1.2%", lambda x: x < 0.012, 0.012), ("1.2-2.0%", lambda x: 0.012 <= x < 0.02, 0.02)]
+            fib_bins = ["0-23","23-38","38-50","50-61","61-78","78-100"]
+            def lab(val, bins):
+                for b in bins:
+                    if b[1](val):
+                        return b
+                return None
+            combos = {}
+            for rsi, mh, vwap, fibz, mtf, vol, bbw, win in items:
+                br = lab(rsi, rsi_bins); bm = lab(mh, macd_bins); bv = lab(vwap, vwap_bins); bf = fibz if fibz in fib_bins else None; bvol = lab(vol, vol_bins); bbwk = lab(bbw, bbw_bins)
+                if not all([br, bm, bv, bf, bvol, bbwk]):
+                    continue
+                key = (br[0], bm[0], bv[0], bf, bool(mtf), bvol[0], bbwk[0])
+                agg = combos.setdefault(key, {'n':0,'w':0})
+                agg['n'] += 1; agg['w'] += int(win)
+            ranked = sorted([(k,v) for k,v in combos.items() if v['n'] >= min_n], key=lambda kv: (kv[1]['w']/kv[1]['n']), reverse=True)[:top_n]
+            lines = ["scalp:", "  exec:", "    pro_exec:", "      combos:"]
+            cid = 300
+            for (rsi_name, macd_name, vwap_name, fib_name, mtf_ok, vol_name, bbw_name), agg in ranked:
+                cid += 1
+                rsi_bin = next(b for b in rsi_bins if b[0]==rsi_name)
+                macd_val = next(b for b in macd_bins if b[0]==macd_name)[2]
+                vwap_bin = next(b for b in vwap_bins if b[0]==vwap_name)
+                vol_min = next(b for b in vol_bins if b[0]==vol_name)[2]
+                bbw_max = next(b for b in bbw_bins if b[0]==bbw_name)[2]
+                wr = (agg['w']/agg['n']*100.0)
+                lines.extend([
+                    f"        - id: {cid}",
+                    f"          rsi_min: {rsi_bin[2]}",
+                    f"          rsi_max: {rsi_bin[3]}",
+                    f"          macd_hist: {macd_val}",
+                    f"          vwap_min: {vwap_bin[2]}",
+                    f"          vwap_max: {vwap_bin[3]}",
+                    f"          fib_zone: \"{fib_name}\"",
+                    f"          mtf_agree_15: {str(bool(mtf_ok)).lower()}",
+                    f"          volume_ratio_min: {vol_min}",
+                    f"          bbw_max: {bbw_max}",
+                    f"          risk_percent: 1.0",
+                    f"          enabled: true  # WR {wr:.1f}% (N={agg['n']})"
+                ])
+            return {'ranked': ranked, 'yaml': lines}
+        except Exception as e:
+            logger.error(f"ML recommend_strategies error: {e}")
+            return {'error': 'internal'}
 
     def get_patterns(self) -> Dict:
         """Basic scalp ML pattern mining: feature importances + simple time/condition patterns.

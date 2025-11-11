@@ -658,6 +658,18 @@ scalp:
         vwap_max: 999.0
         risk_percent: 1.0
         enabled: true
+      # Slope-only high‑WR combo (SHORT bias): F:-0.03-0.00 × S:<= -0.015
+      - id: 11
+        fast_min: -0.03
+        fast_max: 0.00
+        slow_min: -999.0
+        slow_max: -0.015
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: -999.0
+        vwap_max: 999.0
+        risk_percent: 1.0
+        enabled: true
     # HIGH-WR MULTI-FEATURE BYPASS: Immediate execution for proven high-WR patterns
     # Data-driven: use only the 3 high-WR combos above (trend-following is fenced off);
     # This bypass ignores slope magnitude gates but keeps Volume, Wick, BBW, Regime, Off-hours guards.

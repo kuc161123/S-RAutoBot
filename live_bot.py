@@ -6621,8 +6621,10 @@ class TradingBot:
                     qv = float(feats.get('qscore')) if 'qscore' in feats else None
                 except Exception:
                     qv = None
+                hdr_label = 'Scalp Executed' if was_executed else 'Scalp Phantom'
+                hdr_prefix = '📈' if was_executed else '👻'
                 lines = [
-                    f"👻 *Scalp Phantom {emoji}*{pid_suffix}",
+                    f"{hdr_prefix} *{hdr_label} {emoji}*{pid_suffix}",
                     f"{symbol} {side} | ML {ml:.1f}",
                     f"Entry → Exit: {entry:.4f} → {exit_px:.4f}",
                     f"P&L: {pnl:+.2f}% ({exit_reason})"
@@ -6667,8 +6669,10 @@ class TradingBot:
             q = feats.get('qscore', None)
             comps = feats.get('qscore_components', {}) or {}
             reason_line = f"Q={float(q):.1f}" if isinstance(q, (int,float)) else None
+            open_label = 'Scalp Executed Opened' if was_executed else 'Scalp Phantom Opened'
+            open_prefix = '🟢' if was_executed else '👻'
             lines = [
-                f"👻 *Scalp Phantom Opened*{pid_suffix}",
+                f"{open_prefix} *{open_label}*{pid_suffix}",
                 f"{symbol} {side} | ML {ml:.1f}",
                 f"Entry: {entry:.4f}",
                 f"TP / SL: {tp:.4f} / {sl:.4f}"

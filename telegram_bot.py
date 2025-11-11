@@ -7919,6 +7919,29 @@ class TGBot:
         try:
             tracker = self.shared.get("trade_tracker")
             trades = getattr(tracker, 'trades', []) if tracker else []
+            # Fallback: read recent trades from DB when memory list is empty
+            if (not trades) and tracker and getattr(tracker, 'use_db', False) and getattr(tracker, 'conn', None):
+                try:
+                    from datetime import timedelta
+                    cutoff = datetime.utcnow() - timedelta(days=60)
+                    rows = []
+                    with tracker.conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT symbol, exit_time, pnl_usd
+                            FROM trades
+                            WHERE exit_time >= %s
+                            ORDER BY exit_time DESC
+                            """,
+                            (cutoff,)
+                        )
+                        rows = cur.fetchall()
+                    class _Row:
+                        def __init__(self, sym, et, pnl):
+                            self.symbol = sym; self.exit_time = et; self.pnl_usd = float(pnl)
+                    trades = [_Row(r[0], r[1], r[2]) for r in rows]
+                except Exception as _db_e:
+                    logger.debug(f"Exec WR DB fallback failed: {_db_e}")
             if not trades:
                 await self.safe_reply(update, "📈 *Execution WR*\n\n_No executed trades yet_")
                 return

@@ -646,28 +646,17 @@ scalp:
     block_noncombo: false        # Do not block gate-based executes
     mute_disabled_paths: false   # Allow notifications for gate-path decisions
     combos:
-      # Top combo (WR ~48.6%) | F:-0.01-0.01 S:-0.03-0.00 ATR<0.5% BBW<1.2% VWAP:1.0+
-      - id: 1
-        fast_min: -0.01
-        fast_max: 0.01
-        slow_min: -0.03
-        slow_max: 0.00
-        atr_max: 0.5
-        bbw_max: 0.012
-        vwap_min: 1.0
+      # Slope-only high‑WR combo: F:0.00-0.03 × S:0.015+
+      - id: 10
+        fast_min: 0.00
+        fast_max: 0.03
+        slow_min: 0.015
+        slow_max: 999.0
+        # Disable ATR/BBW/VWAP constraints by widening bounds
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: -999.0
         vwap_max: 999.0
-        risk_percent: 1.0
-        enabled: true
-      # Second combo (WR ~47.1%) | F:-0.05--0.01 S:0.00-0.015 ATR<0.5% BBW<1.2% VWAP:0.6-1.0
-      - id: 4
-        fast_min: -0.05
-        fast_max: -0.01
-        slow_min: 0.00
-        slow_max: 0.015
-        atr_max: 0.5
-        bbw_max: 0.012
-        vwap_min: 0.6
-        vwap_max: 1.0
         risk_percent: 1.0
         enabled: true
     # HIGH-WR MULTI-FEATURE BYPASS: Immediate execution for proven high-WR patterns

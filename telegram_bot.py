@@ -7255,7 +7255,9 @@ class TGBot:
     async def scalp_ema_slopes_evci(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """EMA slope analysis with EV (realized R), Wilson CI and Lift vs baseline.
 
-        - 30d decisive outcomes (win/loss), phantoms + executed
+        Strategy-aware view:
+        - Filters by acceptance_path based on scalp.signal.vwap_pattern (bounce|reject|revert)
+        - 30d decisive outcomes (win/loss), phantoms + executed mirrors
         - Solo fast/slow bins ranked by EV lift
         - Top fast×slow combos by EV_R (N≥50)
         - ASCII heatmap of WR% for fast×slow (cells with N<20 shown as —)
@@ -7276,6 +7278,12 @@ class TGBot:
                 return (lo*100.0, hi*100.0)
 
             scpt = get_scalp_phantom_tracker()
+            # Read current strategy pattern for filtering and title
+            try:
+                cfg = self.shared.get('config', {}) or {}
+                pat = str(((cfg.get('scalp', {}) or {}).get('signal', {}) or {}).get('vwap_pattern', 'revert')).lower()
+            except Exception:
+                pat = 'revert'
             cutoff = datetime.utcnow() - timedelta(days=30)
 
             # Collect decisive scalps with required features
@@ -7289,6 +7297,12 @@ class TGBot:
                         if getattr(p, 'outcome', None) not in ('win','loss'):
                             continue
                         feats = getattr(p, 'features', {}) or {}
+                        # Filter by acceptance_path if set (strategy-aware)
+                        ap = str(feats.get('acceptance_path', '') or '')
+                        if pat == 'bounce' and ap and ap != 'vwap_bounce':
+                            continue
+                        if pat == 'reject' and ap and ap != 'vwap_reject':
+                            continue
                         fast = feats.get('ema_slope_fast', None)
                         slow = feats.get('ema_slope_slow', None)
                         if not (isinstance(fast, (int,float)) and isinstance(slow, (int,float))):
@@ -7366,9 +7380,15 @@ class TGBot:
 
             # Build message with chunking
             lines = []
-            lines.append("📉 EMA Slopes (EV+CI) — 30d")
+            title_suffix = " (Bounce)" if pat=='bounce' else (" (Reject)" if pat=='reject' else "")
+            lines.append(f"📉 EMA Slopes (EV+CI) — 30d{title_suffix}")
             lines.append("━━━━━━━━━━━━━━━━━━━━━━━━")
             lines.append("")
+            # Strategy hint text
+            if pat=='bounce':
+                lines.append("Trend-continuation (VWAP bounce): expect slow>0 with fast ~0–0.03 near VWAP; view is filtered to bounce signals.")
+            elif pat=='reject':
+                lines.append("Mean-reversion (VWAP rejection): expect negative slopes to lead; view filtered to rejection signals.")
             lines.append(f"Baseline: WR {wr_base:.1f}% | EV_R {evr_base:+.2f} (N={n_total})")
             lines.append("")
             lines.append("⚡ Fast EMA Slope bins (ranked by Lift_EV)")
@@ -7469,6 +7489,11 @@ class TGBot:
                         if oc not in ('win','loss'):
                             continue
                         feats = getattr(p, 'features', {}) or {}
+                        ap = str(feats.get('acceptance_path', '') or '')
+                        if pat == 'bounce' and ap and ap != 'vwap_bounce':
+                            continue
+                        if pat == 'reject' and ap and ap != 'vwap_reject':
+                            continue
 
                         # Extract all 5 features
                         fast = feats.get('ema_slope_fast', None)
@@ -7577,8 +7602,9 @@ class TGBot:
             )[:20]  # Top 20
 
             # Build message
+            suffix = " (Bounce)" if pat=='bounce' else (" (Reject)" if pat=='reject' else "")
             msg = [
-                "📊 *Advanced Combos Analysis (30d)*",
+                f"📊 *Advanced Combos Analysis (30d){suffix}*",
                 "━━━━━━━━━━━━━━━━━━━━━━━━",
                 "",
                 "🎯 *Top 5 Features: 66.5% total importance*",
@@ -7637,6 +7663,7 @@ class TGBot:
         """Advanced Combos analysis with EV (realized R), Wilson CI and Lift vs baseline.
 
         - 30d decisive (win/loss) outcomes from Scalp phantoms + executed
+        - Strategy-aware: filters by acceptance_path based on vwap_pattern when present
         - Binning across 5 features: fast/slow slopes, atr_pct, bb_width_pct, vwap_dist_atr
         - Top combos by EV_R (N≥50), with WR [95% CI], Lift_WR, Lift_EV
         """
@@ -7656,6 +7683,11 @@ class TGBot:
                 return (lo*100.0, hi*100.0)
 
             scpt = get_scalp_phantom_tracker()
+            try:
+                cfg = self.shared.get('config', {}) or {}
+                pat = str(((cfg.get('scalp', {}) or {}).get('signal', {}) or {}).get('vwap_pattern', 'revert')).lower()
+            except Exception:
+                pat = 'revert'
             cutoff = datetime.utcnow() - timedelta(days=30)
 
             # Collect decisive phantoms with all 5 features and realized_rr
@@ -7669,6 +7701,12 @@ class TGBot:
                         if getattr(p, 'outcome', None) not in ('win','loss'):
                             continue
                         feats = getattr(p, 'features', {}) or {}
+                        # Strategy-aware acceptance filter when available
+                        ap = str(feats.get('acceptance_path', '') or '')
+                        if pat == 'bounce' and ap and ap != 'vwap_bounce':
+                            continue
+                        if pat == 'reject' and ap and ap != 'vwap_reject':
+                            continue
                         fast = feats.get('ema_slope_fast'); slow = feats.get('ema_slope_slow')
                         atr = feats.get('atr_pct'); bbw = feats.get('bb_width_pct'); vwap = feats.get('vwap_dist_atr')
                         if not all(isinstance(x, (int, float)) for x in [fast, slow, atr, bbw, vwap]):
@@ -7716,7 +7754,8 @@ class TGBot:
             ranked = sorted([(k,v) for k,v in combos.items() if v['n'] >= 50], key=lambda kv: (kv[1]['rr']/kv[1]['n']), reverse=True)
 
             lines = []
-            lines.append("📊 Combos (EV+CI) — 30d")
+            suffix = " (Bounce)" if pat=='bounce' else (" (Reject)" if pat=='reject' else "")
+            lines.append(f"📊 Combos (EV+CI) — 30d{suffix}")
             lines.append("━━━━━━━━━━━━━━━━━━━━━━━━")
             lines.append("")
             lines.append(f"Baseline: WR {wr_base:.1f}% | EV_R {evr_base:+.2f} (N={n_total})")

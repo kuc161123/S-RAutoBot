@@ -2950,6 +2950,22 @@ class TradingBot:
                     out['mtf_agree_15'] = False
             except Exception:
                 out['mtf_agree_15'] = out.get('mtf_agree_15', False)
+            # Attach selected detection meta for downstream analytics
+            try:
+                ap = sc_meta.get('acceptance_path') if isinstance(sc_meta, dict) else None
+                if ap:
+                    out['acceptance_path'] = str(ap)
+                m = sc_meta.get('means') if isinstance(sc_meta, dict) else None
+                if isinstance(m, dict):
+                    out['means_evwap_ok'] = bool(m.get('evwap_ok'))
+                    out['means_ema_ok'] = bool(m.get('ema_ok'))
+                    out['means_bb_ok'] = bool(m.get('bb_ok'))
+                    out['means_cap'] = float(m.get('cap', 0.0) or 0.0)
+                    out['means_dist_evwap'] = float(m.get('dist_evwap', 0.0) or 0.0)
+                    out['means_dist_ema'] = float(m.get('dist_ema', 0.0) or 0.0)
+                    out['means_dist_bb'] = float(m.get('dist_bb', 0.0) or 0.0)
+            except Exception:
+                pass
             return out
         except Exception:
             return {}

@@ -554,13 +554,12 @@ scalp:
     body_ratio_min: 0.25       # was 0.30
     wick_delta_min: 0.05       # was 0.10
     vwap_dist_atr_max: 1.50    # allow deeper pulls for detection (cap applies to EVWAP distance)
-    # VWAP mode and anchoring
-    vwap_mode: evwap           # evwap | session_evwap (use bars instead of sessions)
-    vwap_window: 50            # bars for EVWAP (use 50 as requested)
-    # Session anchoring disabled when evwap is used
-    # vwap_session_scheme: sessions
-    # vwap_session_windows: {asian: "00:00-08:00", european: "08:00-16:00", us: "16:00-24:00"}
-    vwap_session_warmup_bars: 0
+    # VWAP mode and anchoring — switch to session-anchored VWAP
+    vwap_mode: session_evwap   # evwap | session_evwap
+    vwap_window: 50            # EVWAP smoothing window (bars) within the session
+    vwap_session_scheme: sessions   # utc_day | sessions
+    vwap_session_windows: {asian: "00:00-08:00", european: "08:00-16:00", us: "16:00-24:00"}
+    vwap_session_warmup_bars: 30
     vwap_cap_warmup: 2.0
     min_bb_width_pct: 0.45     # accept narrower bands in signal
     vol_ratio_min: 0.80        # accept lighter volume expansion

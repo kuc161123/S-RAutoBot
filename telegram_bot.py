@@ -7072,7 +7072,7 @@ class TGBot:
             scpt = get_scalp_phantom_tracker()
             cutoff = datetime.utcnow() - timedelta(days=30)
 
-            # Collect decisive phantoms with EMA slope data
+            # Collect decisive phantoms with EMA slope data AND side
             items = []
             for arr in (getattr(scpt, 'completed', {}) or {}).values():
                 for p in arr:
@@ -7083,11 +7083,14 @@ class TGBot:
                         oc = getattr(p, 'outcome', None)
                         if oc not in ('win','loss'):
                             continue
+                        side = getattr(p, 'side', None)
+                        if not side:
+                            continue
                         feats = getattr(p, 'features', {}) or {}
                         fast = feats.get('ema_slope_fast', None)
                         slow = feats.get('ema_slope_slow', None)
                         if isinstance(fast, (int, float)) and isinstance(slow, (int, float)):
-                            items.append((float(fast), float(slow), oc))
+                            items.append((float(fast), float(slow), oc, str(side).lower()))
                     except Exception:
                         continue
 
@@ -7095,10 +7098,11 @@ class TGBot:
                 await self.safe_reply(update, "📉 *EMA Slopes Analysis (30d)*\nNo data yet.")
                 return
 
+            # Separate longs and shorts
+            longs = [(f, s, oc) for f, s, oc, side in items if side == 'long']
+            shorts = [(f, s, oc) for f, s, oc, side in items if side == 'short']
+
             # Define value ranges for binning (percentage values)
-            # INVERTED STRATEGY: More granularity on NEGATIVE slopes (winners)
-            # Negative slopes = buying dips (mean reversion) = 50%+ WR
-            # Positive slopes = trend continuation = 0-20% WR
             fast_bins = [
                 ("<-0.10", lambda x: x < -0.10),
                 ("-0.10--0.05", lambda x: -0.10 <= x < -0.05),
@@ -7118,133 +7122,232 @@ class TGBot:
                 ("0.015+", lambda x: x >= 0.015),
             ]
 
-            # Aggregate individual feature win rates
-            fast_agg = {}
-            slow_agg = {}
+            # Helper function to analyze slopes for a dataset
+            def analyze_slopes(dataset, direction_name):
+                if not dataset:
+                    return None
 
-            for fast, slow, oc in items:
-                # Fast EMA slope
-                for label, test in fast_bins:
-                    if test(fast):
-                        s = fast_agg.setdefault(label, {'w': 0, 'n': 0})
+                # Aggregate individual feature win rates
+                fast_agg = {}
+                slow_agg = {}
+
+                for fast, slow, oc in dataset:
+                    # Fast EMA slope
+                    for label, test in fast_bins:
+                        if test(fast):
+                            s = fast_agg.setdefault(label, {'w': 0, 'n': 0})
+                            s['n'] += 1
+                            if oc == 'win':
+                                s['w'] += 1
+                            break
+
+                    # Slow EMA slope
+                    for label, test in slow_bins:
+                        if test(slow):
+                            s = slow_agg.setdefault(label, {'w': 0, 'n': 0})
+                            s['n'] += 1
+                            if oc == 'win':
+                                s['w'] += 1
+                            break
+
+                # Aggregate combination win rates
+                combo_agg = {}
+                for fast, slow, oc in dataset:
+                    fast_label = None
+                    slow_label = None
+
+                    for label, test in fast_bins:
+                        if test(fast):
+                            fast_label = label
+                            break
+
+                    for label, test in slow_bins:
+                        if test(slow):
+                            slow_label = label
+                            break
+
+                    if fast_label and slow_label:
+                        combo_key = f"F:{fast_label} × S:{slow_label}"
+                        s = combo_agg.setdefault(combo_key, {'w': 0, 'n': 0})
                         s['n'] += 1
                         if oc == 'win':
                             s['w'] += 1
-                        break
 
-                # Slow EMA slope
-                for label, test in slow_bins:
-                    if test(slow):
-                        s = slow_agg.setdefault(label, {'w': 0, 'n': 0})
-                        s['n'] += 1
-                        if oc == 'win':
-                            s['w'] += 1
-                        break
-
-            # Aggregate combination win rates
-            combo_agg = {}
-            for fast, slow, oc in items:
-                fast_label = None
-                slow_label = None
-
-                for label, test in fast_bins:
-                    if test(fast):
-                        fast_label = label
-                        break
-
-                for label, test in slow_bins:
-                    if test(slow):
-                        slow_label = label
-                        break
-
-                if fast_label and slow_label:
-                    combo_key = f"F:{fast_label} × S:{slow_label}"
-                    s = combo_agg.setdefault(combo_key, {'w': 0, 'n': 0})
-                    s['n'] += 1
-                    if oc == 'win':
-                        s['w'] += 1
+                return {
+                    'fast_agg': fast_agg,
+                    'slow_agg': slow_agg,
+                    'combo_agg': combo_agg,
+                    'count': len(dataset)
+                }
 
             # Build message
             msg = [
                 "📉 *EMA Slopes Analysis (30d)*",
                 "━━━━━━━━━━━━━━━━━━━━━━━━",
                 "",
-                "🎯 *INVERTED STRATEGY: Buy Dips, Sell Rips*",
-                "✅ NEGATIVE slopes = Mean Reversion = High WR",
-                "❌ POSITIVE slopes = Trend Following = Low WR",
-                "",
                 "🔢 *Feature Importance:*",
                 "• emaslopefast: 19.8%",
                 "• emaslopeslow: 15.2%",
-                "",
-                "⚡ *Fast EMA Slope % (Individual)*",
                 ""
             ]
 
-            # Sort fast by win rate descending
-            fast_sorted = sorted(
-                [(k, v) for k, v in fast_agg.items()],
-                key=lambda x: (x[1]['w'] / x[1]['n']) if x[1]['n'] else 0,
-                reverse=True
-            )
+            # Analyze LONGS
+            if longs:
+                long_analysis = analyze_slopes(longs, "LONG")
+                msg.extend([
+                    "═══════════════════════════",
+                    "🟢 *LONG TRADES*",
+                    "═══════════════════════════",
+                    "",
+                    "📊 *Strategy Semantics:*",
+                    "• ✅ POSITIVE slopes = Trend Following (breakouts)",
+                    "• ⚠️ NEGATIVE slopes = Mean Reversion (buy dips)",
+                    "",
+                    "⚡ *Fast EMA Slope % (Individual)*",
+                    ""
+                ])
 
-            for label, stats in fast_sorted:
-                wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
-                # Add visual indicator: ✅ for high WR (>40%), ⚠️ for medium (20-40%), ❌ for low (<20%)
-                if wr >= 40.0:
-                    indicator = "✅"
-                elif wr >= 20.0:
-                    indicator = "⚠️"
-                else:
-                    indicator = "❌"
-                msg.append(f"• {label:>15}: {indicator} WR {wr:5.1f}% (N={stats['n']:>3})")
+                # Sort fast by win rate descending
+                fast_sorted = sorted(
+                    [(k, v) for k, v in long_analysis['fast_agg'].items()],
+                    key=lambda x: (x[1]['w'] / x[1]['n']) if x[1]['n'] else 0,
+                    reverse=True
+                )
 
-            msg.extend(["", "🐌 *Slow EMA Slope % (Individual)*", ""])
+                for label, stats in fast_sorted:
+                    wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
+                    if wr >= 40.0:
+                        indicator = "✅"
+                    elif wr >= 20.0:
+                        indicator = "⚠️"
+                    else:
+                        indicator = "❌"
+                    msg.append(f"• {label:>15}: {indicator} WR {wr:5.1f}% (N={stats['n']:>3})")
 
-            # Sort slow by win rate descending
-            slow_sorted = sorted(
-                [(k, v) for k, v in slow_agg.items()],
-                key=lambda x: (x[1]['w'] / x[1]['n']) if x[1]['n'] else 0,
-                reverse=True
-            )
+                msg.extend(["", "🐌 *Slow EMA Slope % (Individual)*", ""])
 
-            for label, stats in slow_sorted:
-                wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
-                # Add visual indicator: ✅ for high WR (>40%), ⚠️ for medium (20-40%), ❌ for low (<20%)
-                if wr >= 40.0:
-                    indicator = "✅"
-                elif wr >= 20.0:
-                    indicator = "⚠️"
-                else:
-                    indicator = "❌"
-                msg.append(f"• {label:>15}: {indicator} WR {wr:5.1f}% (N={stats['n']:>3})")
+                # Sort slow by win rate descending
+                slow_sorted = sorted(
+                    [(k, v) for k, v in long_analysis['slow_agg'].items()],
+                    key=lambda x: (x[1]['w'] / x[1]['n']) if x[1]['n'] else 0,
+                    reverse=True
+                )
 
-            msg.extend(["", "🔁 *Top 15 Combinations (by WR)*", ""])
+                for label, stats in slow_sorted:
+                    wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
+                    if wr >= 40.0:
+                        indicator = "✅"
+                    elif wr >= 20.0:
+                        indicator = "⚠️"
+                    else:
+                        indicator = "❌"
+                    msg.append(f"• {label:>15}: {indicator} WR {wr:5.1f}% (N={stats['n']:>3})")
 
-            # Sort combinations by win rate descending, then by sample size
-            combo_sorted = sorted(
-                [(k, v) for k, v in combo_agg.items() if v['n'] >= 5],  # Min 5 samples
-                key=lambda x: ((x[1]['w'] / x[1]['n']), x[1]['n']) if x[1]['n'] else (0, 0),
-                reverse=True
-            )[:15]  # Top 15
+                msg.extend(["", "🔁 *Top 10 Long Combinations*", ""])
 
-            for combo_key, stats in combo_sorted:
-                wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
-                # Visual indicator for combination quality
-                if wr >= 50.0:
-                    indicator = "🟢"  # Excellent
-                elif wr >= 40.0:
-                    indicator = "✅"  # Good
-                elif wr >= 30.0:
-                    indicator = "⚠️"  # Medium
-                else:
-                    indicator = "❌"  # Poor
-                msg.append(f"• {indicator} WR {wr:5.1f}% (N={stats['n']:>3}) | {combo_key}")
+                # Sort combinations by win rate descending
+                combo_sorted = sorted(
+                    [(k, v) for k, v in long_analysis['combo_agg'].items() if v['n'] >= 3],
+                    key=lambda x: ((x[1]['w'] / x[1]['n']), x[1]['n']) if x[1]['n'] else (0, 0),
+                    reverse=True
+                )[:10]
 
-            if not combo_sorted:
-                msg.append("(No combinations with N≥5)")
+                for combo_key, stats in combo_sorted:
+                    wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
+                    if wr >= 50.0:
+                        indicator = "🟢"
+                    elif wr >= 40.0:
+                        indicator = "✅"
+                    elif wr >= 30.0:
+                        indicator = "⚠️"
+                    else:
+                        indicator = "❌"
+                    msg.append(f"• {indicator} WR {wr:5.1f}% (N={stats['n']:>3}) | {combo_key}")
 
-            msg.extend(["", f"📊 *Total Samples: {len(items)}*"])
+                if not combo_sorted:
+                    msg.append("(No combinations with N≥3)")
+
+                msg.extend(["", f"📊 *Long Samples: {long_analysis['count']}*", ""])
+
+            # Analyze SHORTS
+            if shorts:
+                short_analysis = analyze_slopes(shorts, "SHORT")
+                msg.extend([
+                    "═══════════════════════════",
+                    "🔴 *SHORT TRADES*",
+                    "═══════════════════════════",
+                    "",
+                    "📊 *Strategy Semantics:*",
+                    "• ✅ NEGATIVE slopes = Trend Following (breakdowns)",
+                    "• ⚠️ POSITIVE slopes = Mean Reversion (sell rips)",
+                    "",
+                    "⚡ *Fast EMA Slope % (Individual)*",
+                    ""
+                ])
+
+                # Sort fast by win rate descending
+                fast_sorted = sorted(
+                    [(k, v) for k, v in short_analysis['fast_agg'].items()],
+                    key=lambda x: (x[1]['w'] / x[1]['n']) if x[1]['n'] else 0,
+                    reverse=True
+                )
+
+                for label, stats in fast_sorted:
+                    wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
+                    if wr >= 40.0:
+                        indicator = "✅"
+                    elif wr >= 20.0:
+                        indicator = "⚠️"
+                    else:
+                        indicator = "❌"
+                    msg.append(f"• {label:>15}: {indicator} WR {wr:5.1f}% (N={stats['n']:>3})")
+
+                msg.extend(["", "🐌 *Slow EMA Slope % (Individual)*", ""])
+
+                # Sort slow by win rate descending
+                slow_sorted = sorted(
+                    [(k, v) for k, v in short_analysis['slow_agg'].items()],
+                    key=lambda x: (x[1]['w'] / x[1]['n']) if x[1]['n'] else 0,
+                    reverse=True
+                )
+
+                for label, stats in slow_sorted:
+                    wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
+                    if wr >= 40.0:
+                        indicator = "✅"
+                    elif wr >= 20.0:
+                        indicator = "⚠️"
+                    else:
+                        indicator = "❌"
+                    msg.append(f"• {label:>15}: {indicator} WR {wr:5.1f}% (N={stats['n']:>3})")
+
+                msg.extend(["", "🔁 *Top 10 Short Combinations*", ""])
+
+                # Sort combinations by win rate descending
+                combo_sorted = sorted(
+                    [(k, v) for k, v in short_analysis['combo_agg'].items() if v['n'] >= 3],
+                    key=lambda x: ((x[1]['w'] / x[1]['n']), x[1]['n']) if x[1]['n'] else (0, 0),
+                    reverse=True
+                )[:10]
+
+                for combo_key, stats in combo_sorted:
+                    wr = (stats['w'] / stats['n'] * 100.0) if stats['n'] else 0.0
+                    if wr >= 50.0:
+                        indicator = "🟢"
+                    elif wr >= 40.0:
+                        indicator = "✅"
+                    elif wr >= 30.0:
+                        indicator = "⚠️"
+                    else:
+                        indicator = "❌"
+                    msg.append(f"• {indicator} WR {wr:5.1f}% (N={stats['n']:>3}) | {combo_key}")
+
+                if not combo_sorted:
+                    msg.append("(No combinations with N≥3)")
+
+                msg.extend(["", f"📊 *Short Samples: {short_analysis['count']}*", ""])
+
+            msg.extend(["", f"📊 *Total Samples: {len(items)} (L:{len(longs)} | S:{len(shorts)})*"])
 
             await self.safe_reply(update, "\n".join(msg))
 
@@ -7312,7 +7415,8 @@ class TGBot:
                         rr = float(rr) if isinstance(rr, (int,float)) else 0.0
                         pnl = float(pnl) if isinstance(pnl, (int,float)) else 0.0
                         win = 1 if getattr(p, 'outcome', None) == 'win' else 0
-                        items.append((float(fast), float(slow), win, rr, pnl))
+                        side = str(getattr(p, 'side', ''))
+                        items.append((float(fast), float(slow), win, rr, pnl, side))
                     except Exception:
                         continue
 
@@ -7322,9 +7426,9 @@ class TGBot:
 
             # Baseline metrics
             n_total = len(items)
-            w_total = sum(1 for _,_,w,_,_ in items if w==1)
+            w_total = sum(1 for t in items if t[2]==1)
             wr_base = (w_total/n_total*100.0) if n_total else 0.0
-            evr_base = sum(rr for *_, rr, _ in items) / n_total
+            evr_base = (sum(t[3] for t in items) / n_total) if n_total else 0.0
 
             # Fixed bins (percent units like existing view)
             fast_bins = [
@@ -7355,7 +7459,7 @@ class TGBot:
             fast_agg = {}
             slow_agg = {}
             combo_agg = {}
-            for f, s, w, rr, pnl in items:
+            for f, s, w, rr, pnl, side in items:
                 fl = bin_label(f, fast_bins)
                 sl = bin_label(s, slow_bins)
                 if fl:
@@ -7422,6 +7526,66 @@ class TGBot:
                 shown += 1
                 if shown >= 10:
                     break
+
+            # Per-side slope bins (to guide thresholds)
+            try:
+                lines.append("")
+                def side_bins(side_key: str):
+                    arr = [t for t in items if str(t[-1]).lower()==side_key]
+                    if not arr:
+                        return []
+                    n_side = len(arr)
+                    w_side = sum(1 for t in arr if t[2]==1)
+                    wr_side = (w_side/n_side*100.0) if n_side else 0.0
+
+                    # Add semantic context based on direction
+                    if side_key == 'long':
+                        out = [
+                            "═══════════════════════════",
+                            f"🟢 LONG TRADES (N={n_side}, WR={wr_side:.1f}%)",
+                            "═══════════════════════════",
+                            "• ✅ POSITIVE slopes = Trend (breakouts)",
+                            "• ⚠️ NEGATIVE slopes = Mean Reversion (buy dips)"
+                        ]
+                    else:
+                        out = [
+                            "═══════════════════════════",
+                            f"🔴 SHORT TRADES (N={n_side}, WR={wr_side:.1f}%)",
+                            "═══════════════════════════",
+                            "• ✅ NEGATIVE slopes = Trend (breakdowns)",
+                            "• ⚠️ POSITIVE slopes = Mean Reversion (sell rips)"
+                        ]
+
+                    # Fast
+                    out.append("")
+                    out.append("⚡ Fast EMA Slope")
+                    for label, test in fast_bins:
+                        n = w = 0
+                        for t in arr:
+                            if test(t[0]):
+                                n += 1; w += int(t[2])
+                        if n:
+                            wr = w/n*100.0
+                            mark = "🟢" if wr >= 50 else ("✅" if wr >= 40 else ("⚠️" if wr >= 30 else "❌"))
+                            out.append(f"• {label:>12}: {mark} WR {wr:5.1f}% (N={n:>3})")
+                    # Slow
+                    out.append("")
+                    out.append("🐌 Slow EMA Slope")
+                    for label, test in slow_bins:
+                        n = w = 0
+                        for t in arr:
+                            if test(t[1]):
+                                n += 1; w += int(t[2])
+                        if n:
+                            wr = w/n*100.0
+                            mark = "🟢" if wr >= 50 else ("✅" if wr >= 40 else ("⚠️" if wr >= 30 else "❌"))
+                            out.append(f"• {label:>12}: {mark} WR {wr:5.1f}% (N={n:>3})")
+                    return out
+                lines.extend(side_bins('long'))
+                lines.append("")
+                lines.extend(side_bins('short'))
+            except Exception:
+                pass
 
             # Heatmap (WR%)
             lines.append("")

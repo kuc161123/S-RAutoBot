@@ -644,6 +644,9 @@ class TradingBot:
         except Exception:
             self._redis = None
 
+        # Adaptive combo manager for dynamic filtering
+        self.adaptive_combo_mgr = None  # Initialize later in run() after config is loaded
+
         # Scalp diagnostics counters (reset periodically in summaries)
         self._scalp_stats: Dict[str, int] = {
             'confirms': 0,
@@ -3854,6 +3857,20 @@ class TradingBot:
                     fib_zone = str(sc_feats_hi.get('fib_zone', '38-50'))
                     mtf_agree = bool(sc_feats_hi.get('mtf_agree_15', False))
 
+                    # Bin RSI and VWAP for combo key generation (for adaptive filtering)
+                    def bin_rsi(val):
+                        if val < 30: return "<30"
+                        if 30 <= val < 40: return "30-40"
+                        if 40 <= val < 60: return "40-60"
+                        if 60 <= val < 70: return "60-70"
+                        return "70+"
+                    def bin_vwap(val):
+                        if val < 0.6: return "<0.6"
+                        if 0.6 <= val < 1.2: return "0.6-1.2"
+                        return "1.2+"
+                    rsi_bin = bin_rsi(rsi)
+                    vwap_bin = bin_vwap(vwap_dist_atr)
+
                     # Define 6 high-WR multi-feature combinations (48.5-56.8% WR, N=599 total)
                     # From latest 30d Advanced Combos analysis: Fast slope × Slow slope × ATR% × BBW% × VWAP distance
                     # Strategy: POSITIVE slopes (trend-following) show highest WR
@@ -3984,6 +4001,20 @@ class TradingBot:
                         if combo.get('mtf_agree') is not None and mtf_agree != combo['mtf_agree']:
                             continue
 
+                        # Adaptive filtering: check if combo is currently enabled based on rolling performance
+                        if self.adaptive_combo_mgr and self.adaptive_combo_mgr.enabled:
+                            # Build combo key for lookup
+                            combo_key = f"RSI:{rsi_bin} MACD:{macd_state} VWAP:{vwap_bin} Fib:{fib_zone} {'MTF' if mtf_agree else 'noMTF'}"
+                            # Check if combo is enabled in adaptive filter
+                            state = self.adaptive_combo_mgr._load_combo_state()
+                            combo_data = state.get(combo_key, {})
+                            if not combo_data.get('enabled', True):  # Default to enabled if not found
+                                # Combo is disabled by adaptive filter
+                                combo_wr = combo_data.get('wr', 0.0)
+                                combo_n = combo_data.get('n', 0)
+                                logger.info(f"[{sym}] 🚫 Combo BLOCKED by adaptive filter: {combo_key} (WR {combo_wr:.1f}%, N={combo_n}) | Threshold={self.adaptive_combo_mgr.min_wr_threshold:.1f}%")
+                                continue  # Skip this combo, try next one
+
                         # All conditions passed - combo matched
                         matched_combo = combo
                         break
@@ -4110,10 +4141,24 @@ class TradingBot:
                                     import uuid as _uuid
                                     exec_id = _uuid.uuid4().hex[:8]
                                     sc_feats_hi['exec_id'] = exec_id
+
+                                    # Get real-time combo WR/N from adaptive filter (if available)
+                                    combo_key = f"RSI:{rsi_bin} MACD:{macd_state} VWAP:{vwap_bin} Fib:{fib_zone} {'MTF' if mtf_agree else 'noMTF'}"
+                                    combo_wr_realtime = matched_combo.get('wr', 0)
+                                    combo_n_realtime = matched_combo.get('n', 0)
+                                    combo_ev_realtime = None
+                                    if self.adaptive_combo_mgr and self.adaptive_combo_mgr.enabled:
+                                        state = self.adaptive_combo_mgr._load_combo_state()
+                                        combo_data = state.get(combo_key, {})
+                                        if combo_data:
+                                            combo_wr_realtime = combo_data.get('wr', combo_wr_realtime)
+                                            combo_n_realtime = combo_data.get('n', combo_n_realtime)
+                                            combo_ev_realtime = combo_data.get('ev_r')
+
                                     # Store combo metadata for close notification
-                                    sc_feats_hi['combo_id'] = matched_combo.get('combo_id')
-                                    sc_feats_hi['combo_wr'] = matched_combo.get('wr')
-                                    sc_feats_hi['combo_n'] = matched_combo.get('n')
+                                    sc_feats_hi['combo_id'] = combo_key
+                                    sc_feats_hi['combo_wr'] = combo_wr_realtime
+                                    sc_feats_hi['combo_n'] = combo_n_realtime
                                     try:
                                         if not hasattr(self, '_scalp_last_exec_reason'):
                                             self._scalp_last_exec_reason = {}
@@ -4123,9 +4168,12 @@ class TradingBot:
                                         self._last_signal_features[sym] = dict(sc_feats_hi)
                                     except Exception:
                                         pass
+
+                                    # Build combo performance line
+                                    ev_line = f" | EV_R {combo_ev_realtime:+.2f}" if combo_ev_realtime is not None else ""
                                     await self.tg.send_message(
                                         f"🟢 HIGH-WR INDICATOR EXECUTE (Risk {risk_pct:.1f}%): {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
-                                        f"Combo {matched_combo.get('combo_id')}: WR {matched_combo.get('wr', 0):.1f}% (N={matched_combo.get('n', 0)})\n"
+                                        f"📊 Combo: WR {combo_wr_realtime:.1f}% (N={combo_n_realtime}){ev_line} [30d rolling]\n"
                                         f"Indicators: RSI={rsi:.1f} | MACD={macd_state} | Fib={fib_zone} | VWAP={vwap_dist_atr:.2f}σ | MTF={'✓' if mtf_agree else '✗'}\n"
                                         f"Slopes: F={fast:.3f}% S={slow:.3f}% | ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}%\n"
                                         f"ML={ml_s_slope:.1f} | TP {float(sc_sig.tp):.4f} | SL {float(sc_sig.sl):.4f} | ID={exec_id}"
@@ -9547,7 +9595,17 @@ class TradingBot:
         
         # Track analysis times
         last_analysis = {}
-        
+
+        # Initialize adaptive combo manager for dynamic filtering
+        try:
+            from adaptive_combo_manager import AdaptiveComboManager
+            scpt = get_scalp_phantom_tracker() if get_scalp_phantom_tracker else None
+            self.adaptive_combo_mgr = AdaptiveComboManager(cfg, self._redis, scpt)
+            logger.info(f"Adaptive Combo Manager initialized: enabled={self.adaptive_combo_mgr.enabled}")
+        except Exception as acm_err:
+            logger.warning(f"Failed to initialize adaptive combo manager: {acm_err}")
+            self.adaptive_combo_mgr = None
+
         # Setup shared data for Telegram - all ML components are now in scope
         # If Telegram was started early, reuse and update the existing shared dict
         shared_updates = {
@@ -9591,6 +9649,8 @@ class TradingBot:
             },
             # Routing stickiness state per symbol
             "routing_state": {},
+            # Adaptive combo manager for dynamic filtering
+            "adaptive_combo_mgr": self.adaptive_combo_mgr,
             # Ensure Scalp gate risk tiers are present (preserve existing values if already set)
             "scalp_gate_risk": (lambda prev, c: prev if isinstance(prev, dict) and {'wick','htf','both'} <= set(prev.keys()) else {
                 'wick': float((((c.get('scalp',{}) or {}).get('exec',{}) or {}).get('gate_risk',{}) or {}).get('wick', 2.0)),
@@ -9649,6 +9709,9 @@ class TradingBot:
                         pass
                 # Keep shared available to stream
                 self.shared = shared
+                # Link telegram bot to adaptive combo manager for notifications
+                if self.adaptive_combo_mgr:
+                    self.adaptive_combo_mgr.telegram_bot = self.tg
                 # Send shorter startup message for 20 symbols
                 # Format risk display
                 if risk.use_percent_risk:

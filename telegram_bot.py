@@ -79,6 +79,13 @@ class TGBot:
         # Combos-only controls
         self.app.add_handler(CommandHandler("scalpcombos", self.scalp_combos_toggle))
         self.app.add_handler(CommandHandler("scalpcombosmute", self.scalp_combos_mute))
+        # Adaptive combo management commands
+        self.app.add_handler(CommandHandler("combo_status", self.combo_status_cmd))
+        self.app.add_handler(CommandHandler("combostatus", self.combo_status_cmd))
+        self.app.add_handler(CommandHandler("combo_refresh", self.combo_refresh_cmd))
+        self.app.add_handler(CommandHandler("comborefresh", self.combo_refresh_cmd))
+        self.app.add_handler(CommandHandler("combo_threshold", self.combo_threshold_cmd))
+        self.app.add_handler(CommandHandler("combothreshold", self.combo_threshold_cmd))
         self.app.add_handler(CommandHandler("status", self.status))
         # Simple responsiveness probe
         self.app.add_handler(CommandHandler("ping", self.ping))
@@ -8832,6 +8839,159 @@ class TGBot:
                 await self.safe_reply(update, f"❌ Error: {e}")
             except Exception:
                 pass
+
+    async def combo_status_cmd(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show current adaptive combo filter status.
+
+        Displays:
+        - Enabled/disabled combo counts
+        - Threshold settings
+        - Last update time
+        - Recent combo changes (promotions/demotions)
+        - Top 10 enabled combos by WR
+        """
+        try:
+            mgr = self.shared.get('adaptive_combo_mgr')
+            if not mgr:
+                await self.safe_reply(update, "❌ Adaptive combo manager not available")
+                return
+
+            stats = mgr.get_stats_summary()
+
+            lines = [
+                "📊 *Adaptive Combo Filter Status*",
+                "",
+                f"Status: {'🟢 ENABLED' if stats['enabled'] else '🔴 DISABLED'}",
+                f"Threshold: WR ≥{stats['min_wr_threshold']:.1f}%, N ≥{stats['min_sample_size']}",
+                f"Lookback: {stats['lookback_days']} days",
+                "",
+                "*Current State*",
+                f"🟢 Longs: {stats['long_enabled']} enabled | {stats['long_disabled']} disabled",
+                f"🔴 Shorts: {stats['short_enabled']} enabled | {stats['short_disabled']} disabled",
+                f"Total: {stats['total_combos']} combos tracked",
+                "",
+                f"Last Update: {stats.get('last_update', 'Never')}",
+                f"Total Updates: {stats['update_count']}",
+            ]
+
+            if stats.get('recent_changes'):
+                lines.append("")
+                lines.append("*Recent Changes (last 10)*")
+                for change in stats['recent_changes']:
+                    lines.append(f"• {change}")
+
+            # Show top enabled combos
+            active_combos = mgr.get_active_combos()
+            if active_combos:
+                # Sort by WR descending
+                active_combos_sorted = sorted(active_combos, key=lambda x: x['wr'], reverse=True)[:10]
+                lines.append("")
+                lines.append("*Top 10 Enabled Combos*")
+                for combo in active_combos_sorted:
+                    side_emoji = "🟢" if combo['side'] == 'long' else "🔴"
+                    ev_line = f" | EV {combo.get('ev_r', 0):+.2f}R" if combo.get('ev_r') is not None else ""
+                    lines.append(f"{side_emoji} WR {combo['wr']:.1f}% (N={combo['n']}){ev_line}")
+                    lines.append(f"   {combo['combo_id']}")
+
+            await self.safe_reply(update, "\n".join(lines))
+
+        except Exception as e:
+            logger.error(f"Error in combo_status_cmd: {e}", exc_info=True)
+            await self.safe_reply(update, f"❌ Error: {e}")
+
+    async def combo_refresh_cmd(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Force immediate recalculation of adaptive combo filters.
+
+        Triggers update and reports changes.
+        """
+        try:
+            mgr = self.shared.get('adaptive_combo_mgr')
+            if not mgr:
+                await self.safe_reply(update, "❌ Adaptive combo manager not available")
+                return
+
+            if not mgr.enabled:
+                await self.safe_reply(update, "⚠️ Adaptive combo filtering is disabled in config")
+                return
+
+            await self.safe_reply(update, "🔄 Refreshing combo filters...")
+
+            enabled_count, disabled_count, changes = mgr.update_combo_filters(force=True)
+
+            lines = [
+                "✅ *Combo Filter Refresh Complete*",
+                "",
+                f"🟢 Enabled: {enabled_count}",
+                f"🔴 Disabled: {disabled_count}",
+                f"Changes: {len(changes)}",
+            ]
+
+            if changes:
+                lines.append("")
+                lines.append("*Changes*")
+                for change in changes:
+                    lines.append(f"• {change}")
+            else:
+                lines.append("")
+                lines.append("_No changes from previous state_")
+
+            await self.safe_reply(update, "\n".join(lines))
+
+        except Exception as e:
+            logger.error(f"Error in combo_refresh_cmd: {e}", exc_info=True)
+            await self.safe_reply(update, f"❌ Error: {e}")
+
+    async def combo_threshold_cmd(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Adjust the WR threshold for combo filtering.
+
+        Usage:
+        /combo_threshold <wr>  - Set new threshold (e.g., 45)
+        /combo_threshold       - Show current threshold
+        """
+        try:
+            mgr = self.shared.get('adaptive_combo_mgr')
+            if not mgr:
+                await self.safe_reply(update, "❌ Adaptive combo manager not available")
+                return
+
+            if not ctx.args:
+                await self.safe_reply(update,
+                    f"📊 Current Threshold\n"
+                    f"WR ≥{mgr.min_wr_threshold:.1f}%\n"
+                    f"N ≥{mgr.min_sample_size}\n\n"
+                    f"Usage: /combo_threshold <wr>"
+                )
+                return
+
+            try:
+                new_threshold = float(ctx.args[0])
+            except ValueError:
+                await self.safe_reply(update, "❌ Invalid threshold. Must be a number (e.g., 45)")
+                return
+
+            if not (0 <= new_threshold <= 100):
+                await self.safe_reply(update, "❌ Threshold must be between 0 and 100")
+                return
+
+            old_threshold = mgr.min_wr_threshold
+            mgr.min_wr_threshold = new_threshold
+
+            # Trigger refresh with new threshold
+            enabled_count, disabled_count, changes = mgr.update_combo_filters(force=True)
+
+            await self.safe_reply(update,
+                f"✅ *Threshold Updated*\n\n"
+                f"Old: {old_threshold:.1f}%\n"
+                f"New: {new_threshold:.1f}%\n\n"
+                f"🟢 Enabled: {enabled_count}\n"
+                f"🔴 Disabled: {disabled_count}\n"
+                f"Changes: {len(changes)}\n\n"
+                f"_Note: This is a runtime change only. Update config.yaml to persist._"
+            )
+
+        except Exception as e:
+            logger.error(f"Error in combo_threshold_cmd: {e}", exc_info=True)
+            await self.safe_reply(update, f"❌ Error: {e}")
 
     async def exec_winrates(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, days_sessions: int = 30):
         """Show execution-only win rates: Today, Yesterday, 7-day daily, and 30d sessions (asian/european/us).

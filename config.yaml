@@ -656,6 +656,17 @@ scalp:
     combos_only: true            # Execute ONLY high-WR indicator combos (3 longs + 4 shorts, WR ≥ 45%)
     block_noncombo: true         # Block gate-based executes (combos only)
     mute_disabled_paths: false   # Allow notifications for gate-path decisions
+    # Adaptive combo filtering: dynamically enable/disable combos based on rolling performance
+    adaptive_combos:
+      enabled: true              # Enable adaptive combo filtering
+      min_wr_threshold: 45.0     # Minimum WR% to enable combo (default 45%)
+      min_sample_size: 20        # Minimum N for statistical validity
+      update_frequency_trades: 50  # Recalculate every N completed trades
+      update_frequency_hours: 4  # Or every N hours (whichever comes first)
+      lookback_days: 30          # Rolling window for WR calculation (days)
+      long_short_separate: true  # Track long/short combos separately
+      hysteresis_pct: 2.0        # WR buffer to avoid flip-flopping (%)
+      notify_changes: true       # Send Telegram notification on combo enable/disable
     combos:
       # SLOPE-BASED COMBOS (DISABLED - using indicator combos only)
       # Combo 1: F:-0.01-0.00 × S:-0.03--0.015 (75.0% WR, N=12) - DISABLED

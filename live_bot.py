@@ -3928,6 +3928,9 @@ class TradingBot:
                                     'risk_percent': float(c.get('risk_percent', ((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('high_wr_risk_percent', 1.0))),
                                     # Direction constraint (long, short, or both)
                                     'side': str(c.get('side', 'both')).lower(),
+                                    # Historical performance metadata
+                                    'wr': float(c.get('wr', 0.0)),
+                                    'n': int(c.get('n', 0)),
                                     # RSI/MACD/Fib/MTF constraints (optional, for indicator-based combos)
                                     'rsi_min': float(c.get('rsi_min')) if c.get('rsi_min') is not None else None,
                                     'rsi_max': float(c.get('rsi_max')) if c.get('rsi_max') is not None else None,

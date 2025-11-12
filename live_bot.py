@@ -29,6 +29,7 @@ from position_mgr import RiskConfig, Book, Position
 from sizer import Sizer
 from strategy_pullback import Settings  # Settings are the same for both strategies
 from telegram_bot import TGBot
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 # from fear_greed_fetcher import FearGreedFetcher  # Disabled - not using sentiment filtering
 
 # Optional scalping modules (import granularly; ML scorer optional)
@@ -7727,7 +7728,11 @@ class TradingBot:
                         f"Strategy: {strategy_label}\n"
                         f"{ml_details}"
                     )
-                    asyncio.create_task(self.tg.send_message(message.strip()))
+                    # Add Execution WR button to notification
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📈 Execution WR", callback_data="ui:exec:wr")]
+                    ])
+                    asyncio.create_task(self.tg.send_message(message.strip(), reply_markup=keyboard))
                 except Exception as notify_err:
                     logger.warning(f"Failed to send Telegram close notification: {notify_err}")
 

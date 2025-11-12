@@ -1694,7 +1694,7 @@ class TGBot:
             self.running = False
             logger.info("Telegram bot stopped")
 
-    async def send_message(self, text:str):
+    async def send_message(self, text:str, reply_markup=None):
         """Send message to configured chat with retry on network errors"""
         # Track concurrent sends for flood detection
         self._concurrent_sends += 1
@@ -1710,7 +1710,7 @@ class TGBot:
             for attempt in range(max_retries):
                 try:
                     # Try with Markdown first
-                    await self.app.bot.send_message(chat_id=self.chat_id, text=text, parse_mode='Markdown')
+                    await self.app.bot.send_message(chat_id=self.chat_id, text=text, parse_mode='Markdown', reply_markup=reply_markup)
                     return  # Success, exit
                 except telegram.error.BadRequest as e:
                     if "can't parse entities" in str(e).lower():
@@ -1719,13 +1719,13 @@ class TGBot:
                         try:
                             # Escape common problematic characters
                             escaped_text = text.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('`', '\\`')
-                            await self.app.bot.send_message(chat_id=self.chat_id, text=escaped_text, parse_mode='Markdown')
+                            await self.app.bot.send_message(chat_id=self.chat_id, text=escaped_text, parse_mode='Markdown', reply_markup=reply_markup)
                             return  # Success, exit
                         except:
                             # If still fails, send as plain text
                             logger.warning("Escaped markdown also failed, sending as plain text")
                             try:
-                                await self.app.bot.send_message(chat_id=self.chat_id, text=text)
+                                await self.app.bot.send_message(chat_id=self.chat_id, text=text, reply_markup=reply_markup)
                                 return  # Success, exit
                             except Exception as plain_e:
                                 if attempt < max_retries - 1:
@@ -8841,6 +8841,7 @@ class TGBot:
         try:
             tracker = self.shared.get("trade_tracker")
             trades = getattr(tracker, 'trades', []) if tracker else []
+
             # Fallback: read recent trades from DB when memory list is empty
             if (not trades) and tracker and getattr(tracker, 'use_db', False) and getattr(tracker, 'conn', None):
                 try:
@@ -8860,18 +8861,23 @@ class TGBot:
                         rows = cur.fetchall()
                     class _Row:
                         def __init__(self, sym, et, pnl):
-                            self.symbol = sym; self.exit_time = et; self.pnl_usd = float(pnl)
+                            self.symbol = sym
+                            # Ensure exit_time is timezone-naive UTC
+                            if et and hasattr(et, 'tzinfo') and et.tzinfo is not None:
+                                self.exit_time = et.replace(tzinfo=None)
+                            else:
+                                self.exit_time = et
+                            self.pnl_usd = float(pnl)
                     trades = [_Row(r[0], r[1], r[2]) for r in rows]
                 except Exception as _db_e:
                     logger.debug(f"Exec WR DB fallback failed: {_db_e}")
+
             if not trades:
                 await self.safe_reply(update, "📈 *Execution WR*\n\n_No executed trades yet_")
                 return
 
             from datetime import datetime, timedelta
             now = datetime.utcnow()
-            today = now.date()
-            yday = (now - timedelta(days=1)).date()
 
             def _is_win(t):
                 try:
@@ -8879,32 +8885,66 @@ class TGBot:
                 except Exception:
                     return False
 
-            # Filter executed (with exit_time)
-            execd = [t for t in trades if getattr(t, 'exit_time', None)]
+            def _normalize_exit_time(t):
+                """Normalize exit_time to timezone-naive UTC datetime"""
+                et = getattr(t, 'exit_time', None)
+                if not et:
+                    return None
+                if hasattr(et, 'tzinfo') and et.tzinfo is not None:
+                    # Convert timezone-aware to UTC and remove timezone
+                    return et.replace(tzinfo=None) if et.tzinfo.utcoffset(et) == timedelta(0) else et.astimezone(None).replace(tzinfo=None)
+                return et
 
-            # Diagnostic logging for debugging N=0 issue
-            logger.info(f"[exec_winrates] Total trades loaded: {len(trades)}, With exit_time: {len(execd)}")
+            # Filter executed trades with valid exit_time and normalize timezone
+            execd = []
+            for t in trades:
+                et = _normalize_exit_time(t)
+                if et:
+                    # Store normalized exit_time back on the object for consistent access
+                    t.exit_time = et
+                    execd.append(t)
+
+            # Diagnostic logging
+            logger.info(f"[exec_winrates] Total trades: {len(trades)}, With valid exit_time: {len(execd)}")
             if len(trades) > 0 and len(execd) == 0:
-                logger.warning(f"[exec_winrates] All {len(trades)} trades missing exit_time! Sample: {getattr(trades[0], 'symbol', 'N/A')}")
+                logger.warning(f"[exec_winrates] All {len(trades)} trades missing or invalid exit_time!")
 
-            # Today / Yesterday
-            def _day_wr(d):
-                # Use datetime range comparison (consistent with aggregate filter)
-                day_start = datetime.combine(d, datetime.min.time())
-                day_end = datetime.combine(d, datetime.max.time())
-                arr = [t for t in execd if day_start <= getattr(t, 'exit_time') <= day_end]
+            if len(execd) > 0:
+                # Log sample exit times for debugging
+                sample_times = [t.exit_time.isoformat() for t in execd[:3]]
+                logger.info(f"[exec_winrates] Sample exit_times (UTC): {sample_times}")
+                logger.info(f"[exec_winrates] Current UTC time: {now.isoformat()}")
+
+            # Daily WR calculator with robust date filtering
+            def _day_wr(target_date):
+                """Calculate WR for a specific date (timezone-naive UTC)"""
+                # Create UTC datetime range for the entire day
+                day_start = datetime.combine(target_date, datetime.min.time())
+                # Use timedelta to get the start of next day, then subtract 1 microsecond
+                day_end = day_start + timedelta(days=1) - timedelta(microseconds=1)
+
+                # Filter trades within this day
+                arr = []
+                for t in execd:
+                    et = t.exit_time
+                    if day_start <= et <= day_end:
+                        arr.append(t)
+
                 n = len(arr)
                 w = sum(1 for t in arr if _is_win(t))
                 wr = (w / n * 100.0) if n else 0.0
                 return wr, n, w
 
+            # Today / Yesterday
+            today = now.date()
+            yday = (now - timedelta(days=1)).date()
             t_wr, t_n, t_w = _day_wr(today)
             y_wr, y_n, y_w = _day_wr(yday)
 
             # Diagnostic logging for today's trades
             if t_n == 0 and len(execd) > 0:
-                recent_dates = [getattr(t, 'exit_time').date().isoformat() for t in execd[:5]]
-                logger.warning(f"[exec_winrates] Today {today.isoformat()} has N=0 but {len(execd)} execd trades exist. Recent dates: {recent_dates}")
+                recent_dates = sorted(set([t.exit_time.date().isoformat() for t in execd]), reverse=True)[:7]
+                logger.warning(f"[exec_winrates] Today {today.isoformat()} has N=0 but {len(execd)} executed trades exist. Recent dates: {recent_dates}")
 
             # Last 7 days breakdown
             daily_lines = []
@@ -8912,15 +8952,15 @@ class TGBot:
             for i in range(7):
                 d = (now - timedelta(days=i)).date()
                 wr, n, w = _day_wr(d)
-                name = day_names[(d.weekday())]
-                low = " (low N)" if n and n < 5 else ""
+                name = day_names[d.weekday()]
+                low = " (low N)" if 0 < n < 5 else ""
                 daily_lines.append(f"• {name} {d.isoformat()}: WR {wr:.1f}% (N={n}){low}")
             daily_lines = list(reversed(daily_lines))
 
-            # Aggregate WR windows (7d already detailed above; add 30d and 60d aggregates)
-            def _agg_wr(days: int) -> tuple[float,int,int]:
+            # Aggregate WR windows
+            def _agg_wr(days: int) -> tuple:
                 cutoff = now - timedelta(days=days)
-                arr = [t for t in execd if getattr(t, 'exit_time', None) and getattr(t, 'exit_time') >= cutoff]
+                arr = [t for t in execd if t.exit_time >= cutoff]
                 n = len(arr)
                 w = sum(1 for t in arr if _is_win(t))
                 wr = (w / n * 100.0) if n else 0.0
@@ -8929,28 +8969,33 @@ class TGBot:
             wr30, n30, w30 = _agg_wr(30)
             wr60, n60, w60 = _agg_wr(60)
 
-            # Sessions (30d)
+            # Sessions (30d) - Asian: 0-8, European: 8-16, US: 16-24 UTC
             cutoff = now - timedelta(days=days_sessions)
             sess_map = {'asian': {'w':0,'n':0}, 'european': {'w':0,'n':0}, 'us': {'w':0,'n':0}}
+
             def _session(dt: datetime) -> str:
                 h = dt.hour
                 if 0 <= h < 8:
                     return 'asian'
-                if 8 <= h < 16:
+                elif 8 <= h < 16:
                     return 'european'
-                return 'us'
+                else:
+                    return 'us'
+
             for t in execd:
                 try:
-                    et = getattr(t, 'exit_time', None)
-                    if not et or et < cutoff:
+                    et = t.exit_time
+                    if et < cutoff:
                         continue
                     s = _session(et)
                     sess_map[s]['n'] += 1
                     if _is_win(t):
                         sess_map[s]['w'] += 1
-                except Exception:
+                except Exception as sess_err:
+                    logger.debug(f"Session calculation error: {sess_err}")
                     continue
 
+            # Build output message
             lines = [
                 "📈 *Execution WR*",
                 "",
@@ -8965,15 +9010,18 @@ class TGBot:
                 "",
                 f"🕘 *Sessions ({days_sessions}d)*",
             ]
+
             for k in ['asian','european','us']:
-                s = sess_map[k]; wr = (s['w']/s['n']*100.0) if s['n'] else 0.0
-                low = " (low N)" if s['n'] and s['n'] < 10 else ""
+                s = sess_map[k]
+                wr = (s['w']/s['n']*100.0) if s['n'] else 0.0
+                low = " (low N)" if 0 < s['n'] < 10 else ""
                 lines.append(f"• {k}: WR {wr:.1f}% (N={s['n']}){low}")
 
             await self.safe_reply(update, "\n".join(lines))
+
         except Exception as e:
-            logger.error(f"Error in exec_winrates: {e}")
-            await update.message.reply_text("Error computing execution win rates")
+            logger.error(f"Error in exec_winrates: {e}", exc_info=True)
+            await self.safe_reply(update, "❌ Error computing execution win rates")
 
     async def scalp_time_vars_cmd(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Command wrapper: /scalptimewrvars <sessions|session|days|day> <key>

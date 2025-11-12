@@ -8889,7 +8889,10 @@ class TGBot:
 
             # Today / Yesterday
             def _day_wr(d):
-                arr = [t for t in execd if getattr(t, 'exit_time').date() == d]
+                # Use datetime range comparison (consistent with aggregate filter)
+                day_start = datetime.combine(d, datetime.min.time())
+                day_end = datetime.combine(d, datetime.max.time())
+                arr = [t for t in execd if day_start <= getattr(t, 'exit_time') <= day_end]
                 n = len(arr)
                 w = sum(1 for t in arr if _is_win(t))
                 wr = (w / n * 100.0) if n else 0.0

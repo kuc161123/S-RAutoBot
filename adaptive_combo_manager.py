@@ -84,14 +84,17 @@ class AdaptiveComboManager:
         Returns:
             Dictionary mapping combo_key → ComboPerformance
         """
-        if not self.phantom_tracker:
-            logger.warning("No phantom tracker available for combo analysis")
-            return {}
-
-        from scalp_phantom_tracker import get_scalp_phantom_tracker
-        scpt = get_scalp_phantom_tracker()
+        # Get phantom tracker - try stored instance first, then try importing
+        scpt = self.phantom_tracker
         if not scpt:
-            logger.warning("Scalp phantom tracker not available")
+            try:
+                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                scpt = get_scalp_phantom_tracker()
+            except Exception as e:
+                logger.debug(f"Could not get scalp phantom tracker: {e}")
+
+        if not scpt:
+            logger.warning("No phantom tracker available for combo analysis")
             return {}
 
         cutoff = datetime.utcnow() - timedelta(days=self.lookback_days)

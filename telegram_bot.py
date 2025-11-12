@@ -8882,6 +8882,11 @@ class TGBot:
             # Filter executed (with exit_time)
             execd = [t for t in trades if getattr(t, 'exit_time', None)]
 
+            # Diagnostic logging for debugging N=0 issue
+            logger.info(f"[exec_winrates] Total trades loaded: {len(trades)}, With exit_time: {len(execd)}")
+            if len(trades) > 0 and len(execd) == 0:
+                logger.warning(f"[exec_winrates] All {len(trades)} trades missing exit_time! Sample: {getattr(trades[0], 'symbol', 'N/A')}")
+
             # Today / Yesterday
             def _day_wr(d):
                 arr = [t for t in execd if getattr(t, 'exit_time').date() == d]
@@ -8892,6 +8897,11 @@ class TGBot:
 
             t_wr, t_n, t_w = _day_wr(today)
             y_wr, y_n, y_w = _day_wr(yday)
+
+            # Diagnostic logging for today's trades
+            if t_n == 0 and len(execd) > 0:
+                recent_dates = [getattr(t, 'exit_time').date().isoformat() for t in execd[:5]]
+                logger.warning(f"[exec_winrates] Today {today.isoformat()} has N=0 but {len(execd)} execd trades exist. Recent dates: {recent_dates}")
 
             # Last 7 days breakdown
             daily_lines = []

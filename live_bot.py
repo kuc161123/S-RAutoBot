@@ -4106,6 +4106,10 @@ class TradingBot:
                                     import uuid as _uuid
                                     exec_id = _uuid.uuid4().hex[:8]
                                     sc_feats_hi['exec_id'] = exec_id
+                                    # Store combo metadata for close notification
+                                    sc_feats_hi['combo_id'] = matched_combo.get('combo_id')
+                                    sc_feats_hi['combo_wr'] = matched_combo.get('wr')
+                                    sc_feats_hi['combo_n'] = matched_combo.get('n')
                                     try:
                                         if not hasattr(self, '_scalp_last_exec_reason'):
                                             self._scalp_last_exec_reason = {}
@@ -7698,12 +7702,23 @@ class TradingBot:
                         except Exception:
                             qv = 0.0
                     q_line = f"Q: {qv:.1f}\n" if qv else ""
+                    # Include Combo metadata if known
+                    combo_id = None
+                    combo_wr = None
+                    try:
+                        feats = ((getattr(self, '_last_signal_features', {}) or {}).get(symbol, {}) or {})
+                        combo_id = feats.get('combo_id')
+                        combo_wr = feats.get('combo_wr')
+                    except Exception:
+                        pass
+                    combo_line = f"Combo {combo_id} (WR {combo_wr:.1f}%)\n" if combo_id and combo_wr else ""
                     message = (
                         f"{outcome_emoji} *Trade Closed* {symbol} {pos.side.upper()}\n\n"
                         f"Exit Price: {exit_price:.4f}\n"
                         f"PnL: ${pnl_usd:.2f} ({pnl_percent:.2f}%)\n"
                         f"{rr_line}"
                         f"{q_line}"
+                        f"{combo_line}"
                         f"Hold: {hold_minutes}m\n"
                         f"Exit: {exit_label}\n"
                         f"Strategy: {strategy_label}\n"

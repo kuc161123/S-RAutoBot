@@ -653,40 +653,89 @@ scalp:
     risk_percent: 1.0             # Per-trade risk for Scalp executes (1% of equity per trade)
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
     # Execute only when features match proven high‑WR combinations (fast/slow slopes × ATR × BBW × VWAP)
-    combos_only: false           # Allow both High‑WR combos and gate-based executes
-    block_noncombo: false        # Do not block gate-based executes
+    combos_only: true            # SHORTS ONLY - Execute only high-WR short combos
+    block_noncombo: true         # Block gate-based executes (combos only)
     mute_disabled_paths: false   # Allow notifications for gate-path decisions
     combos:
-      # Slope-only high‑WR combo: F:0.00-0.03 × S:0.015+
-      - id: 10
-        fast_min: 0.00
-        fast_max: 0.03
-        slow_min: 0.015
-        slow_max: 999.0
-        # Disable ATR/BBW/VWAP constraints by widening bounds
-        atr_max: 999.0
-        bbw_max: 999.0
-        vwap_min: -999.0
-        vwap_max: 999.0
-        risk_percent: 1.0
-        enabled: false  # DISABLED - Using slope range gates instead
-      # Slope-only high‑WR combo (SHORT bias): F:-0.03-0.00 × S:<= -0.015
-      - id: 11
-        fast_min: -0.03
+      # SHORT COMBOS - All with WR ≥ 48% from analytics (shorts only)
+      # Combo 1: F:-0.01-0.00 × S:-0.03--0.015 (75.0% WR, N=12)
+      - id: 1
+        fast_min: -0.01
         fast_max: 0.00
-        slow_min: -999.0
+        slow_min: -0.03
         slow_max: -0.015
         atr_max: 999.0
         bbw_max: 999.0
         vwap_min: -999.0
         vwap_max: 999.0
         risk_percent: 1.0
-        enabled: false  # DISABLED - Using slope range gates instead
+        enabled: true
+      # Combo 2: F:0.00-0.03 × S:-0.03--0.015 (75.0% WR, N=4)
+      - id: 2
+        fast_min: 0.00
+        fast_max: 0.03
+        slow_min: -0.03
+        slow_max: -0.015
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: -999.0
+        vwap_max: 999.0
+        risk_percent: 1.0
+        enabled: true
+      # Combo 3: F:-0.03--0.01 × S:-0.05--0.03 (66.7% WR, N=3)
+      - id: 3
+        fast_min: -0.03
+        fast_max: -0.01
+        slow_min: -0.05
+        slow_max: -0.03
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: -999.0
+        vwap_max: 999.0
+        risk_percent: 1.0
+        enabled: true
+      # Combo 4: F:0.00-0.03 × S:0.015+ (55.6% WR, N=9) - Mean reversion shorts
+      # DISABLED: Positive slopes could match long signals (combo system doesn't validate direction)
+      - id: 4
+        fast_min: 0.00
+        fast_max: 0.03
+        slow_min: 0.015
+        slow_max: 999.0
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: -999.0
+        vwap_max: 999.0
+        risk_percent: 1.0
+        enabled: false
+      # Combo 5: F:-0.05--0.03 × S:-0.03--0.015 (49.4% WR, N=164) - Best large sample
+      - id: 5
+        fast_min: -0.05
+        fast_max: -0.03
+        slow_min: -0.03
+        slow_max: -0.015
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: -999.0
+        vwap_max: 999.0
+        risk_percent: 1.0
+        enabled: true
+      # Combo 6: F:-0.10--0.05 × S:-0.05--0.03 (48.8% WR, N=43)
+      - id: 6
+        fast_min: -0.10
+        fast_max: -0.05
+        slow_min: -0.05
+        slow_max: -0.03
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: -999.0
+        vwap_max: 999.0
+        risk_percent: 1.0
+        enabled: true
     # HIGH-WR MULTI-FEATURE BYPASS: Immediate execution for proven high-WR patterns
-    # Data-driven: use only the 3 high-WR combos above (trend-following is fenced off);
+    # Data-driven: SHORT combos only (longs disabled)
     # This bypass ignores slope magnitude gates but keeps Volume, Wick, BBW, Regime, Off-hours guards.
     high_wr_slope_bypass: true          # ENABLED - Execute immediately on high-WR multi-feature combos
-    skip_gates_for_combos: false        # DISABLED - Combos disabled, using slope range gates
+    skip_gates_for_combos: true         # ENABLED - Bypass Vol/Wick gates for combo matches
     high_wr_risk_percent: 1.0           # Flat 1% risk for all high-WR combos
     # Legacy ML-based bypass (DISABLED - replaced by multi-feature bypass)
     allow_stream_high_ml: false   # Keep ML-override off; use multi-feature bypass instead

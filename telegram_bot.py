@@ -8200,8 +8200,8 @@ class TGBot:
             scpt = get_scalp_phantom_tracker()
             cutoff = datetime.utcnow() - timedelta(days=30)
 
-            # Collect decisive phantoms with required features
-            items = []  # (rsi, macd_hist, vwap, fib_zone, mtf15, win, rr)
+            # Collect decisive phantoms with required features AND side
+            items = []  # (rsi, macd_hist, vwap, fib_zone, mtf15, win, rr, side)
             for arr in (getattr(scpt, 'completed', {}) or {}).values():
                 for p in arr:
                     try:
@@ -8210,6 +8210,9 @@ class TGBot:
                             continue
                         if getattr(p, 'outcome', None) not in ('win','loss'):
                             continue
+                        side = getattr(p, 'side', None)
+                        if not side:
+                            continue
                         f = getattr(p, 'features', {}) or {}
                         rsi = f.get('rsi_14'); mh = f.get('macd_hist')
                         vwap = f.get('vwap_dist_atr'); fibz = f.get('fib_zone'); mtf = f.get('mtf_agree_15')
@@ -8217,7 +8220,7 @@ class TGBot:
                             continue
                         rr = getattr(p, 'realized_rr', None); rr = float(rr) if isinstance(rr,(int,float)) else 0.0
                         win = 1 if getattr(p,'outcome',None)=='win' else 0
-                        items.append((float(rsi), float(mh), float(vwap), str(fibz), bool(mtf), win, rr))
+                        items.append((float(rsi), float(mh), float(vwap), str(fibz), bool(mtf), win, rr, str(side).lower()))
                     except Exception:
                         continue
 
@@ -8225,10 +8228,9 @@ class TGBot:
                 await self.safe_reply(update, "📈 Pro Analytics (EV+CI) — 30d\nNo data yet.", parse_mode=None)
                 return
 
-            # Baseline
-            n_total = len(items); w_total = sum(1 for *_, win, _ in items if win==1)
-            wr_base = (w_total/n_total*100.0) if n_total else 0.0
-            evr_base = sum(rr for *_, rr in items) / n_total
+            # Separate longs and shorts
+            longs = [(rsi, mh, vwap, fz, mtf, win, rr) for rsi, mh, vwap, fz, mtf, win, rr, side in items if side == 'long']
+            shorts = [(rsi, mh, vwap, fz, mtf, win, rr) for rsi, mh, vwap, fz, mtf, win, rr, side in items if side == 'short']
 
             # Bins
             rsi_bins = [("<30", lambda x: x < 30), ("30-40", lambda x: 30 <= x < 40), ("40-60", lambda x: 40 <= x < 60), ("60-70", lambda x: 60 <= x < 70), ("70+", lambda x: x >= 70)]
@@ -8242,36 +8244,99 @@ class TGBot:
                         return lb
                 return None
 
-            combos = {}
-            for rsi, mh, vwap, fibz, mtf, win, rr in items:
-                r = lab(rsi, rsi_bins); m = lab(mh, macd_bins); v = lab(vwap, vwap_bins); fz = fibz if fibz in fib_bins else None; ma = 'MTF' if bool(mtf) else 'noMTF'
-                if not all([r, m, v, fz, ma]):
-                    continue
-                key = f"RSI:{r} MACD:{m} VWAP:{v} Fib:{fz} {ma}"
-                agg = combos.setdefault(key, {'n':0,'w':0,'rr':0.0})
-                agg['n'] += 1; agg['w'] += int(win); agg['rr'] += rr
+            # Helper function to analyze combos for a dataset
+            def analyze_combos(dataset, direction_name):
+                if not dataset:
+                    return None
 
-            ranked = sorted([(k,v) for k,v in combos.items() if v['n'] >= 50], key=lambda kv: (kv[1]['rr']/kv[1]['n']), reverse=True)
+                combos = {}
+                for rsi, mh, vwap, fibz, mtf, win, rr in dataset:
+                    r = lab(rsi, rsi_bins); m = lab(mh, macd_bins); v = lab(vwap, vwap_bins)
+                    fz = fibz if fibz in fib_bins else None; ma = 'MTF' if bool(mtf) else 'noMTF'
+                    if not all([r, m, v, fz, ma]):
+                        continue
+                    key = f"RSI:{r} MACD:{m} VWAP:{v} Fib:{fz} {ma}"
+                    agg = combos.setdefault(key, {'n':0,'w':0,'rr':0.0})
+                    agg['n'] += 1; agg['w'] += int(win); agg['rr'] += rr
 
+                return {'combos': combos, 'count': len(dataset)}
+
+            # Build message
             lines = [
                 "📈 Pro Analytics (EV+CI) — 30d",
                 "━━━━━━━━━━━━━━━━━━━━━━━━",
-                "",
-                f"Baseline: WR {wr_base:.1f}% | EV_R {evr_base:+.2f} (N={n_total})",
-                "",
-                "🔝 Top Pro combos by EV_R (N≥50)"
+                ""
             ]
-            shown = 0
-            for key, agg in ranked:
-                n = agg['n']; w = agg['w']
-                wr = (w/n*100.0) if n else 0.0
-                lo, hi = wilson_ci(w, n)
-                evr = (agg['rr']/n) if n else 0.0
-                lift_wr = wr - wr_base; lift_evr = evr - evr_base
-                lines.append(f"• WR {wr:5.1f}% [{lo:4.0f}-{hi:4.0f}] N={n:>3} | EV_R {evr:+.2f} | Lift_WR {lift_wr:+.1f} | Lift_EV {lift_evr:+.2f} | {key}")
-                shown += 1
-                if shown >= 12:
-                    break
+
+            # Analyze LONGS
+            if longs:
+                long_analysis = analyze_combos(longs, "LONG")
+                n_long = len(longs)
+                w_long = sum(1 for *_, win, _ in longs if win==1)
+                wr_long = (w_long/n_long*100.0) if n_long else 0.0
+                evr_long = sum(rr for *_, rr in longs) / n_long if n_long else 0.0
+
+                lines.extend([
+                    "═══════════════════════════",
+                    f"🟢 LONG TRADES (N={n_long})",
+                    "═══════════════════════════",
+                    "",
+                    f"Baseline: WR {wr_long:.1f}% | EV_R {evr_long:+.2f}",
+                    "",
+                    "🔝 Top 10 Long Combos by EV_R (N≥20)"
+                ])
+
+                ranked_long = sorted([(k,v) for k,v in long_analysis['combos'].items() if v['n'] >= 20],
+                                    key=lambda kv: (kv[1]['rr']/kv[1]['n']), reverse=True)[:10]
+
+                for key, agg in ranked_long:
+                    n = agg['n']; w = agg['w']
+                    wr = (w/n*100.0) if n else 0.0
+                    lo, hi = wilson_ci(w, n)
+                    evr = (agg['rr']/n) if n else 0.0
+                    lift_wr = wr - wr_long; lift_evr = evr - evr_long
+                    lines.append(f"• WR {wr:5.1f}% [{lo:4.0f}-{hi:4.0f}] N={n:>3} | EV_R {evr:+.2f} | Lift_WR {lift_wr:+.1f} | Lift_EV {lift_evr:+.2f} | {key}")
+
+                if not ranked_long:
+                    lines.append("(No combos with N≥20)")
+
+                lines.append("")
+
+            # Analyze SHORTS
+            if shorts:
+                short_analysis = analyze_combos(shorts, "SHORT")
+                n_short = len(shorts)
+                w_short = sum(1 for *_, win, _ in shorts if win==1)
+                wr_short = (w_short/n_short*100.0) if n_short else 0.0
+                evr_short = sum(rr for *_, rr in shorts) / n_short if n_short else 0.0
+
+                lines.extend([
+                    "═══════════════════════════",
+                    f"🔴 SHORT TRADES (N={n_short})",
+                    "═══════════════════════════",
+                    "",
+                    f"Baseline: WR {wr_short:.1f}% | EV_R {evr_short:+.2f}",
+                    "",
+                    "🔝 Top 10 Short Combos by EV_R (N≥20)"
+                ])
+
+                ranked_short = sorted([(k,v) for k,v in short_analysis['combos'].items() if v['n'] >= 20],
+                                     key=lambda kv: (kv[1]['rr']/kv[1]['n']), reverse=True)[:10]
+
+                for key, agg in ranked_short:
+                    n = agg['n']; w = agg['w']
+                    wr = (w/n*100.0) if n else 0.0
+                    lo, hi = wilson_ci(w, n)
+                    evr = (agg['rr']/n) if n else 0.0
+                    lift_wr = wr - wr_short; lift_evr = evr - evr_short
+                    lines.append(f"• WR {wr:5.1f}% [{lo:4.0f}-{hi:4.0f}] N={n:>3} | EV_R {evr:+.2f} | Lift_WR {lift_wr:+.1f} | Lift_EV {lift_evr:+.2f} | {key}")
+
+                if not ranked_short:
+                    lines.append("(No combos with N≥20)")
+
+                lines.append("")
+
+            lines.append(f"📊 Total: {len(items)} (L:{len(longs)} | S:{len(shorts)})")
 
             # Send
             MAX = 3500

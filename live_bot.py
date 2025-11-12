@@ -646,6 +646,7 @@ class TradingBot:
 
         # Adaptive combo manager for dynamic filtering
         self.adaptive_combo_mgr = None  # Initialize later in run() after config is loaded
+        self._adaptive_combo_trade_count = 0  # Counter for triggering periodic updates
 
         # Scalp diagnostics counters (reset periodically in summaries)
         self._scalp_stats: Dict[str, int] = {
@@ -714,6 +715,25 @@ class TradingBot:
         except Exception:
             pass
         return 'none'
+
+    async def _trigger_combo_update(self, reason: str):
+        """Centralized adaptive combo filter update (triggered by trade count or timer)"""
+        try:
+            if not self.adaptive_combo_mgr or not self.adaptive_combo_mgr.enabled:
+                return
+
+            enabled_count, disabled_count, changes = self.adaptive_combo_mgr.update_combo_filters()
+            logger.info(f"🔄 Combo filter update ({reason}): {enabled_count} enabled, {disabled_count} disabled, {len(changes)} changes")
+
+            # Log changes (if any)
+            if changes:
+                for change in changes[:3]:  # Log first 3 changes
+                    logger.info(f"  • {change}")
+                if len(changes) > 3:
+                    logger.info(f"  ... and {len(changes) - 3} more")
+
+        except Exception as e:
+            logger.error(f"Combo update ({reason}) failed: {e}", exc_info=True)
 
     def _scalp_hard_gates_pass(self, symbol: str, side: str, feats: dict) -> tuple[bool, list[str]]:
         """Execution-only hard gates for Scalp (Volume + Wick + Slope [+optional others]).
@@ -7709,6 +7729,14 @@ class TradingBot:
             try:
                 self.trade_tracker.add_trade(trade)
                 logger.info(f"✅ Trade recorded: {symbol} {pos.strategy_name} {exit_reason} PnL: ${pnl_usd:.2f}")
+
+                # Trigger adaptive combo update if threshold reached
+                if self.adaptive_combo_mgr and self.adaptive_combo_mgr.enabled:
+                    self._adaptive_combo_trade_count += 1
+                    update_freq = int(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('adaptive_combos', {}).get('update_frequency_trades', 50))
+                    if self._adaptive_combo_trade_count >= update_freq:
+                        self._adaptive_combo_trade_count = 0  # Reset counter
+                        asyncio.create_task(self._trigger_combo_update("trade_count"))
             except Exception as _at_err:
                 logger.error(f"[{symbol}] CRITICAL: add_trade() failed: {_at_err}", exc_info=True)
                 raise  # Re-raise to trigger outer exception handler
@@ -9609,6 +9637,19 @@ class TradingBot:
 
             self.adaptive_combo_mgr = AdaptiveComboManager(cfg, self._redis, scpt)
             logger.info(f"✅ Adaptive Combo Manager initialized: enabled={self.adaptive_combo_mgr.enabled}, phantom_tracker={'available' if scpt else 'unavailable'}")
+
+            # Run initial combo filter analysis (populate Redis state)
+            if self.adaptive_combo_mgr.enabled and scpt:
+                try:
+                    enabled_count, disabled_count, changes = self.adaptive_combo_mgr.update_combo_filters(force=True)
+                    logger.info(f"📊 Initial combo filter analysis: {enabled_count} enabled, {disabled_count} disabled")
+                    if changes:
+                        for change in changes[:5]:  # Log first 5 changes
+                            logger.info(f"  • {change}")
+                        if len(changes) > 5:
+                            logger.info(f"  ... and {len(changes) - 5} more")
+                except Exception as filter_err:
+                    logger.warning(f"Initial combo filter analysis failed: {filter_err}")
         except Exception as acm_err:
             logger.warning(f"Failed to initialize adaptive combo manager: {acm_err}")
             self.adaptive_combo_mgr = None
@@ -10639,6 +10680,34 @@ class TradingBot:
         # Start the weekly updater task
         self._create_task(weekly_cluster_updater())
         logger.info("📅 Started weekly cluster update scheduler")
+
+        # Create background task for adaptive combo updates (time-based trigger)
+        if self.adaptive_combo_mgr and self.adaptive_combo_mgr.enabled:
+            async def adaptive_combo_timer():
+                """Background task to update combos based on time frequency"""
+                update_freq_hours = int(((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('adaptive_combos', {}).get('update_frequency_hours', 4))
+                check_interval = 3600  # Check every hour
+
+                while self.running:
+                    try:
+                        await asyncio.sleep(check_interval)
+
+                        if not self.running or not self.adaptive_combo_mgr or not self.adaptive_combo_mgr.enabled:
+                            continue
+
+                        # Check if enough time has elapsed since last update
+                        if self.adaptive_combo_mgr.last_update:
+                            elapsed_hours = (datetime.utcnow() - self.adaptive_combo_mgr.last_update).total_seconds() / 3600
+                            if elapsed_hours >= update_freq_hours:
+                                logger.info(f"⏰ Triggering scheduled combo update ({elapsed_hours:.1f}h elapsed, threshold: {update_freq_hours}h)")
+                                await self._trigger_combo_update("time_based")
+
+                    except Exception as e:
+                        logger.error(f"Error in adaptive combo timer: {e}")
+                        # Continue running even if update fails
+
+            self._create_task(adaptive_combo_timer())
+            logger.info(f"⏰ Started adaptive combo timer (updates every {((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('adaptive_combos', {}).get('update_frequency_hours', 4)}h)")
 
         # Start DB writer task if a queue is available (offloads blocking DB writes)
         try:

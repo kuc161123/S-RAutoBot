@@ -669,7 +669,7 @@ scalp:
         vwap_min: -999.0
         vwap_max: 999.0
         risk_percent: 1.0
-        enabled: true
+        enabled: false  # DISABLED - Using slope range gates instead
       # Slope-only high‑WR combo (SHORT bias): F:-0.03-0.00 × S:<= -0.015
       - id: 11
         fast_min: -0.03
@@ -681,12 +681,12 @@ scalp:
         vwap_min: -999.0
         vwap_max: 999.0
         risk_percent: 1.0
-        enabled: true
+        enabled: false  # DISABLED - Using slope range gates instead
     # HIGH-WR MULTI-FEATURE BYPASS: Immediate execution for proven high-WR patterns
     # Data-driven: use only the 3 high-WR combos above (trend-following is fenced off);
     # This bypass ignores slope magnitude gates but keeps Volume, Wick, BBW, Regime, Off-hours guards.
     high_wr_slope_bypass: true          # ENABLED - Execute immediately on high-WR multi-feature combos
-    skip_gates_for_combos: true         # Bypass exec gates (Vol/Wick) when a combo matches
+    skip_gates_for_combos: false        # DISABLED - Combos disabled, using slope range gates
     high_wr_risk_percent: 1.0           # Flat 1% risk for all high-WR combos
     # Legacy ML-based bypass (DISABLED - replaced by multi-feature bypass)
     allow_stream_high_ml: false   # Keep ML-override off; use multi-feature bypass instead

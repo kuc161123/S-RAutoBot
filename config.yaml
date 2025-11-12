@@ -731,6 +731,118 @@ scalp:
         vwap_max: 999.0
         risk_percent: 1.0
         enabled: true
+
+      # RSI/MACD/Fib/VWAP INDICATOR COMBOS (IDs 101-106) - SHORTS ONLY
+      # Based on Pro Analytics showing 48%+ WR patterns
+
+      # Combo 101: RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF (72.1% WR, N=43)
+      - id: 101
+        fast_min: -999.0
+        fast_max: 999.0
+        slow_min: -999.0
+        slow_max: 999.0
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: -999.0
+        vwap_max: 0.6
+        rsi_min: 40.0
+        rsi_max: 60.0
+        macd_state: bull
+        fib_zones: ['61-78']
+        mtf_agree: false
+        risk_percent: 1.0
+        enabled: true
+
+      # Combo 102: RSI:30-40 MACD:bear VWAP:<0.6 Fib:61-78 noMTF (68.8% WR, N=32)
+      - id: 102
+        fast_min: -999.0
+        fast_max: 999.0
+        slow_min: -999.0
+        slow_max: 999.0
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: -999.0
+        vwap_max: 0.6
+        rsi_min: 30.0
+        rsi_max: 40.0
+        macd_state: bear
+        fib_zones: ['61-78']
+        mtf_agree: false
+        risk_percent: 1.0
+        enabled: true
+
+      # Combo 103: RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF (66.7% WR, N=27)
+      - id: 103
+        fast_min: -999.0
+        fast_max: 999.0
+        slow_min: -999.0
+        slow_max: 999.0
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: 0.6
+        vwap_max: 1.2
+        rsi_min: 30.0
+        rsi_max: 40.0
+        macd_state: bear
+        fib_zones: ['78-100']
+        mtf_agree: false
+        risk_percent: 1.0
+        enabled: true
+
+      # Combo 104: RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF (56.7% WR, N=30)
+      - id: 104
+        fast_min: -999.0
+        fast_max: 999.0
+        slow_min: -999.0
+        slow_max: 999.0
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: -999.0
+        vwap_max: 0.6
+        rsi_min: 40.0
+        rsi_max: 60.0
+        macd_state: bear
+        fib_zones: ['61-78']
+        mtf_agree: false
+        risk_percent: 1.0
+        enabled: true
+
+      # Combo 105: RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF (54.8% WR, N=42)
+      - id: 105
+        fast_min: -999.0
+        fast_max: 999.0
+        slow_min: -999.0
+        slow_max: 999.0
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: 0.6
+        vwap_max: 1.2
+        rsi_min: 40.0
+        rsi_max: 60.0
+        macd_state: bear
+        fib_zones: ['78-100']
+        mtf_agree: false
+        risk_percent: 1.0
+        enabled: true
+
+      # Combo 106: RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF (50.0% WR, N=60)
+      - id: 106
+        fast_min: -999.0
+        fast_max: 999.0
+        slow_min: -999.0
+        slow_max: 999.0
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: 1.2
+        vwap_max: 999.0
+        rsi_min: 30.0
+        rsi_max: 40.0
+        macd_state: bear
+        fib_zones: ['78-100']
+        mtf_agree: false
+        risk_percent: 1.0
+        enabled: true
+
     # HIGH-WR MULTI-FEATURE BYPASS: Immediate execution for proven high-WR patterns
     # Data-driven: SHORT combos only (longs disabled)
     # This bypass ignores slope magnitude gates but keeps Volume, Wick, BBW, Regime, Off-hours guards.

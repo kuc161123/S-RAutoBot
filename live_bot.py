@@ -3839,12 +3839,19 @@ class TradingBot:
                         pass
                     sc_feats_hi = self._build_scalp_features(_df_src_hi, _meta_hi, vol_level, None)
 
-                    # Get all 5 feature values for multi-feature bypass
+                    # Get all feature values for multi-feature bypass (slope + indicator based)
                     fast = float(sc_feats_hi.get('ema_slope_fast', 0.0) or 0.0)
                     slow = float(sc_feats_hi.get('ema_slope_slow', 0.0) or 0.0)
                     atr_pct = float(sc_feats_hi.get('atr_pct', 0.0) or 0.0)
                     bb_width_pct = float(sc_feats_hi.get('bb_width_pct', 0.0) or 0.0)
                     vwap_dist_atr = float(sc_feats_hi.get('vwap_dist_atr', 0.0) or 0.0)
+
+                    # RSI/MACD/Fib/MTF features for indicator-based combos
+                    rsi = float(sc_feats_hi.get('rsi_14', 50.0))
+                    macd_hist = float(sc_feats_hi.get('macd_hist', 0.0))
+                    macd_state = 'bull' if macd_hist > 0 else 'bear'
+                    fib_zone = str(sc_feats_hi.get('fib_zone', '38-50'))
+                    mtf_agree = bool(sc_feats_hi.get('mtf_agree_15', False))
 
                     # Define 6 high-WR multi-feature combinations (48.5-56.8% WR, N=599 total)
                     # From latest 30d Advanced Combos analysis: Fast slope × Slow slope × ATR% × BBW% × VWAP distance
@@ -3918,7 +3925,13 @@ class TradingBot:
                                     'vwap_min': float(c.get('vwap_min')),
                                     'vwap_max': float(c.get('vwap_max')),
                                     'combo_id': int(c.get('id', 0)),
-                                    'risk_percent': float(c.get('risk_percent', ((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('high_wr_risk_percent', 1.0)))
+                                    'risk_percent': float(c.get('risk_percent', ((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('high_wr_risk_percent', 1.0))),
+                                    # RSI/MACD/Fib/MTF constraints (optional, for indicator-based combos)
+                                    'rsi_min': float(c.get('rsi_min')) if c.get('rsi_min') is not None else None,
+                                    'rsi_max': float(c.get('rsi_max')) if c.get('rsi_max') is not None else None,
+                                    'macd_state': str(c.get('macd_state')).lower() if c.get('macd_state') else None,
+                                    'fib_zones': c.get('fib_zones') if c.get('fib_zones') else None,
+                                    'mtf_agree': c.get('mtf_agree') if c.get('mtf_agree') is not None else None,
                                 })
                             if _new:
                                 high_wr_combos = _new
@@ -3931,16 +3944,38 @@ class TradingBot:
                     except Exception:
                         pass
 
-                    # Check if current features match any high-WR combination
+                    # Check if current features match any high-WR combination (slope or indicator based)
                     matched_combo = None
                     for combo in high_wr_combos:
-                        if (combo['fast_min'] <= fast < combo['fast_max'] and
-                            combo['slow_min'] <= slow < combo['slow_max'] and
-                            atr_pct < combo['atr_max'] and
-                            bb_width_pct < combo['bbw_max'] and
-                            combo['vwap_min'] <= vwap_dist_atr < combo['vwap_max']):
-                            matched_combo = combo
-                            break
+                        # Original numeric range checks (slopes, ATR, BBW, VWAP)
+                        if not (combo['fast_min'] <= fast < combo['fast_max'] and
+                                combo['slow_min'] <= slow < combo['slow_max'] and
+                                atr_pct < combo['atr_max'] and
+                                bb_width_pct < combo['bbw_max'] and
+                                combo['vwap_min'] <= vwap_dist_atr < combo['vwap_max']):
+                            continue
+
+                        # Optional RSI range check (for indicator-based combos)
+                        if combo.get('rsi_min') is not None and rsi < combo['rsi_min']:
+                            continue
+                        if combo.get('rsi_max') is not None and rsi >= combo['rsi_max']:
+                            continue
+
+                        # Optional MACD state check (for indicator-based combos)
+                        if combo.get('macd_state') and macd_state != combo['macd_state']:
+                            continue
+
+                        # Optional Fibonacci zone check (for indicator-based combos)
+                        if combo.get('fib_zones') and fib_zone not in combo['fib_zones']:
+                            continue
+
+                        # Optional MTF agreement check (for indicator-based combos)
+                        if combo.get('mtf_agree') is not None and mtf_agree != combo['mtf_agree']:
+                            continue
+
+                        # All conditions passed - combo matched
+                        matched_combo = combo
+                        break
 
                     if matched_combo:
                         # Off-hours block (fixed windows + auto low-activity)

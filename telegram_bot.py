@@ -920,6 +920,48 @@ class TGBot:
         except Exception:
             pass
 
+        # Active Combos (from adaptive filter)
+        try:
+            mgr = self.shared.get('adaptive_combo_mgr')
+            if mgr and mgr.enabled:
+                lines.append("")
+                lines.append("🎯 *Active Combos*")
+
+                # Get active combos for each side
+                long_combos = mgr.get_active_combos(side='long')
+                short_combos = mgr.get_active_combos(side='short')
+
+                # Sort by WR descending
+                long_combos_sorted = sorted(long_combos, key=lambda x: x['wr'], reverse=True)[:5]
+                short_combos_sorted = sorted(short_combos, key=lambda x: x['wr'], reverse=True)[:5]
+
+                if long_combos_sorted:
+                    lines.append(f"🟢 *Longs ({len(long_combos)} enabled)*")
+                    for combo in long_combos_sorted:
+                        lines.append(f"• WR {combo['wr']:.1f}% (N={combo['n']})")
+                else:
+                    lines.append("🟢 Longs: None enabled")
+
+                if short_combos_sorted:
+                    lines.append(f"🔴 *Shorts ({len(short_combos)} enabled)*")
+                    for combo in short_combos_sorted:
+                        lines.append(f"• WR {combo['wr']:.1f}% (N={combo['n']})")
+                else:
+                    lines.append("🔴 Shorts: None enabled")
+
+                # Show when last updated
+                if mgr.last_update:
+                    from datetime import datetime
+                    mins_ago = int((datetime.utcnow() - mgr.last_update).total_seconds() / 60)
+                    if mins_ago < 60:
+                        lines.append(f"_Updated {mins_ago}m ago_")
+                    else:
+                        hours_ago = mins_ago // 60
+                        lines.append(f"_Updated {hours_ago}h ago_")
+        except Exception as combo_err:
+            logger.debug(f"Active combos display error: {combo_err}")
+            pass
+
         # Positions snapshot (global)
         try:
             book = self.shared.get("book")

@@ -9599,16 +9599,16 @@ class TradingBot:
         # Initialize adaptive combo manager for dynamic filtering
         try:
             from adaptive_combo_manager import AdaptiveComboManager
-            # Get scalp phantom tracker if available
+            # Use the safe accessor to get phantom tracker (avoids scoping issues)
             scpt = None
-            try:
-                if get_scalp_phantom_tracker is not None and callable(get_scalp_phantom_tracker):
-                    scpt = get_scalp_phantom_tracker()
-            except Exception as scpt_err:
-                logger.debug(f"Could not get scalp phantom tracker for adaptive combos: {scpt_err}")
+            if SCALP_AVAILABLE:
+                try:
+                    scpt = _safe_get_scalp_phantom_tracker()
+                except Exception as scpt_err:
+                    logger.debug(f"Could not get scalp phantom tracker for adaptive combos: {scpt_err}")
 
             self.adaptive_combo_mgr = AdaptiveComboManager(cfg, self._redis, scpt)
-            logger.info(f"Adaptive Combo Manager initialized: enabled={self.adaptive_combo_mgr.enabled}")
+            logger.info(f"✅ Adaptive Combo Manager initialized: enabled={self.adaptive_combo_mgr.enabled}, phantom_tracker={'available' if scpt else 'unavailable'}")
         except Exception as acm_err:
             logger.warning(f"Failed to initialize adaptive combo manager: {acm_err}")
             self.adaptive_combo_mgr = None

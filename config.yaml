@@ -652,13 +652,13 @@ scalp:
     enabled: true                 # Enable Scalp executes (gate path + High‑WR combos)
     risk_percent: 1.0             # Per-trade risk for Scalp executes (1% of equity per trade)
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
-    # Execute only when features match proven high‑WR combinations (fast/slow slopes × ATR × BBW × VWAP)
-    combos_only: true            # SHORTS ONLY - Execute only high-WR short combos
+    # Execute only when features match proven high‑WR combinations (RSI/MACD/Fib/VWAP/MTF indicators)
+    combos_only: true            # Execute ONLY high-WR indicator combos (3 longs + 4 shorts, WR ≥ 45%)
     block_noncombo: true         # Block gate-based executes (combos only)
     mute_disabled_paths: false   # Allow notifications for gate-path decisions
     combos:
-      # SHORT COMBOS - All with WR ≥ 48% from analytics (shorts only)
-      # Combo 1: F:-0.01-0.00 × S:-0.03--0.015 (75.0% WR, N=12)
+      # SLOPE-BASED COMBOS (DISABLED - using indicator combos only)
+      # Combo 1: F:-0.01-0.00 × S:-0.03--0.015 (75.0% WR, N=12) - DISABLED
       - id: 1
         fast_min: -0.01
         fast_max: 0.00
@@ -669,8 +669,8 @@ scalp:
         vwap_min: -999.0
         vwap_max: 999.0
         risk_percent: 1.0
-        enabled: true
-      # Combo 2: F:0.00-0.03 × S:-0.03--0.015 (75.0% WR, N=4)
+        enabled: false
+      # Combo 2: F:0.00-0.03 × S:-0.03--0.015 (75.0% WR, N=4) - DISABLED
       - id: 2
         fast_min: 0.00
         fast_max: 0.03
@@ -681,8 +681,8 @@ scalp:
         vwap_min: -999.0
         vwap_max: 999.0
         risk_percent: 1.0
-        enabled: true
-      # Combo 3: F:-0.03--0.01 × S:-0.05--0.03 (66.7% WR, N=3)
+        enabled: false
+      # Combo 3: F:-0.03--0.01 × S:-0.05--0.03 (66.7% WR, N=3) - DISABLED
       - id: 3
         fast_min: -0.03
         fast_max: -0.01
@@ -693,9 +693,8 @@ scalp:
         vwap_min: -999.0
         vwap_max: 999.0
         risk_percent: 1.0
-        enabled: true
-      # Combo 4: F:0.00-0.03 × S:0.015+ (55.6% WR, N=9) - Mean reversion shorts
-      # DISABLED: Positive slopes could match long signals (combo system doesn't validate direction)
+        enabled: false
+      # Combo 4: F:0.00-0.03 × S:0.015+ (55.6% WR, N=9) - DISABLED
       - id: 4
         fast_min: 0.00
         fast_max: 0.03
@@ -707,7 +706,7 @@ scalp:
         vwap_max: 999.0
         risk_percent: 1.0
         enabled: false
-      # Combo 5: F:-0.05--0.03 × S:-0.03--0.015 (49.4% WR, N=164) - Best large sample
+      # Combo 5: F:-0.05--0.03 × S:-0.03--0.015 (49.4% WR, N=164) - DISABLED
       - id: 5
         fast_min: -0.05
         fast_max: -0.03
@@ -718,8 +717,8 @@ scalp:
         vwap_min: -999.0
         vwap_max: 999.0
         risk_percent: 1.0
-        enabled: true
-      # Combo 6: F:-0.10--0.05 × S:-0.05--0.03 (48.8% WR, N=43)
+        enabled: false
+      # Combo 6: F:-0.10--0.05 × S:-0.05--0.03 (48.8% WR, N=43) - DISABLED
       - id: 6
         fast_min: -0.10
         fast_max: -0.05
@@ -730,13 +729,129 @@ scalp:
         vwap_min: -999.0
         vwap_max: 999.0
         risk_percent: 1.0
+        enabled: false
+
+      # ═════════════════════════════════════════════════════════════
+      # INDICATOR-ONLY COMBOS (RSI/MACD/Fib/VWAP/MTF)
+      # Based on Pro Analytics with WR ≥ 45%
+      # ═════════════════════════════════════════════════════════════
+
+      # ─────────────────────────────────────────────────────────────
+      # LONG COMBOS (IDs 201-203) - Top 3 patterns with WR ≥ 45%
+      # ─────────────────────────────────────────────────────────────
+
+      # Combo 201: RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF (60.0% WR, N=105)
+      - id: 201
+        side: long
+        fast_min: -999.0
+        fast_max: 999.0
+        slow_min: -999.0
+        slow_max: 999.0
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: 1.2
+        vwap_max: 999.0
+        rsi_min: 70.0
+        rsi_max: 999.0
+        macd_state: bull
+        fib_zones: ['0-23']
+        mtf_agree: true
+        risk_percent: 1.0
+        wr: 60.0
+        n: 105
         enabled: true
 
-      # RSI/MACD/Fib/VWAP INDICATOR COMBOS (IDs 101-106) - SHORTS ONLY
-      # Based on Pro Analytics showing 48%+ WR patterns
+      # Combo 202: RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 noMTF (50.0% WR, N=58)
+      - id: 202
+        side: long
+        fast_min: -999.0
+        fast_max: 999.0
+        slow_min: -999.0
+        slow_max: 999.0
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: 1.2
+        vwap_max: 999.0
+        rsi_min: 40.0
+        rsi_max: 60.0
+        macd_state: bull
+        fib_zones: ['0-23']
+        mtf_agree: false
+        risk_percent: 1.0
+        wr: 50.0
+        n: 58
+        enabled: true
 
-      # Combo 101: RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF (72.1% WR, N=43)
-      - id: 101
+      # Combo 203: RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 noMTF (45.0% WR, N=40)
+      - id: 203
+        side: long
+        fast_min: -999.0
+        fast_max: 999.0
+        slow_min: -999.0
+        slow_max: 999.0
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: -999.0
+        vwap_max: 0.6
+        rsi_min: 40.0
+        rsi_max: 60.0
+        macd_state: bull
+        fib_zones: ['23-38']
+        mtf_agree: false
+        risk_percent: 1.0
+        wr: 45.0
+        n: 40
+        enabled: true
+
+      # ─────────────────────────────────────────────────────────────
+      # SHORT COMBOS (IDs 301-304) - Top 4 patterns with WR ≥ 54.8%
+      # ─────────────────────────────────────────────────────────────
+
+      # Combo 301: RSI:30-40 MACD:bear VWAP:<0.6 Fib:61-78 noMTF (68.8% WR, N=32)
+      - id: 301
+        side: short
+        fast_min: -999.0
+        fast_max: 999.0
+        slow_min: -999.0
+        slow_max: 999.0
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: -999.0
+        vwap_max: 0.6
+        rsi_min: 30.0
+        rsi_max: 40.0
+        macd_state: bear
+        fib_zones: ['61-78']
+        mtf_agree: false
+        risk_percent: 1.0
+        wr: 68.8
+        n: 32
+        enabled: true
+
+      # Combo 302: RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF (66.7% WR, N=27)
+      - id: 302
+        side: short
+        fast_min: -999.0
+        fast_max: 999.0
+        slow_min: -999.0
+        slow_max: 999.0
+        atr_max: 999.0
+        bbw_max: 999.0
+        vwap_min: 0.6
+        vwap_max: 1.2
+        rsi_min: 30.0
+        rsi_max: 40.0
+        macd_state: bear
+        fib_zones: ['78-100']
+        mtf_agree: false
+        risk_percent: 1.0
+        wr: 66.7
+        n: 27
+        enabled: true
+
+      # Combo 303: RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF (63.3% WR, N=49)
+      - id: 303
+        side: short
         fast_min: -999.0
         fast_max: 999.0
         slow_min: -999.0
@@ -751,46 +866,13 @@ scalp:
         fib_zones: ['61-78']
         mtf_agree: false
         risk_percent: 1.0
+        wr: 63.3
+        n: 49
         enabled: true
 
-      # Combo 102: RSI:30-40 MACD:bear VWAP:<0.6 Fib:61-78 noMTF (68.8% WR, N=32)
-      - id: 102
-        fast_min: -999.0
-        fast_max: 999.0
-        slow_min: -999.0
-        slow_max: 999.0
-        atr_max: 999.0
-        bbw_max: 999.0
-        vwap_min: -999.0
-        vwap_max: 0.6
-        rsi_min: 30.0
-        rsi_max: 40.0
-        macd_state: bear
-        fib_zones: ['61-78']
-        mtf_agree: false
-        risk_percent: 1.0
-        enabled: true
-
-      # Combo 103: RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF (66.7% WR, N=27)
-      - id: 103
-        fast_min: -999.0
-        fast_max: 999.0
-        slow_min: -999.0
-        slow_max: 999.0
-        atr_max: 999.0
-        bbw_max: 999.0
-        vwap_min: 0.6
-        vwap_max: 1.2
-        rsi_min: 30.0
-        rsi_max: 40.0
-        macd_state: bear
-        fib_zones: ['78-100']
-        mtf_agree: false
-        risk_percent: 1.0
-        enabled: true
-
-      # Combo 104: RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF (56.7% WR, N=30)
-      - id: 104
+      # Combo 304: RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF (54.8% WR, N=31)
+      - id: 304
+        side: short
         fast_min: -999.0
         fast_max: 999.0
         slow_min: -999.0
@@ -805,47 +887,13 @@ scalp:
         fib_zones: ['61-78']
         mtf_agree: false
         risk_percent: 1.0
+        wr: 54.8
+        n: 31
         enabled: true
 
-      # Combo 105: RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF (54.8% WR, N=42)
-      - id: 105
-        fast_min: -999.0
-        fast_max: 999.0
-        slow_min: -999.0
-        slow_max: 999.0
-        atr_max: 999.0
-        bbw_max: 999.0
-        vwap_min: 0.6
-        vwap_max: 1.2
-        rsi_min: 40.0
-        rsi_max: 60.0
-        macd_state: bear
-        fib_zones: ['78-100']
-        mtf_agree: false
-        risk_percent: 1.0
-        enabled: true
-
-      # Combo 106: RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF (50.0% WR, N=60)
-      - id: 106
-        fast_min: -999.0
-        fast_max: 999.0
-        slow_min: -999.0
-        slow_max: 999.0
-        atr_max: 999.0
-        bbw_max: 999.0
-        vwap_min: 1.2
-        vwap_max: 999.0
-        rsi_min: 30.0
-        rsi_max: 40.0
-        macd_state: bear
-        fib_zones: ['78-100']
-        mtf_agree: false
-        risk_percent: 1.0
-        enabled: true
-
-    # HIGH-WR MULTI-FEATURE BYPASS: Immediate execution for proven high-WR patterns
-    # Data-driven: SHORT combos only (longs disabled)
-    # This bypass ignores slope magnitude gates but keeps Volume, Wick, BBW, Regime, Off-hours guards.
+    # HIGH-WR INDICATOR BYPASS: Immediate execution for proven high-WR patterns
+    # Data-driven: 3 LONG combos (WR 60%, 50%, 45%) + 4 SHORT combos (WR 68.8%, 66.7%, 63.3%, 54.8%)
+    # This bypass uses RSI/MACD/Fib/VWAP/MTF indicators only (slope constraints disabled)
     high_wr_slope_bypass: true          # ENABLED - Execute immediately on high-WR multi-feature combos
     skip_gates_for_combos: true         # ENABLED - Bypass Vol/Wick gates for combo matches
     high_wr_risk_percent: 1.0           # Flat 1% risk for all high-WR combos

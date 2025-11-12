@@ -3926,6 +3926,8 @@ class TradingBot:
                                     'vwap_max': float(c.get('vwap_max')),
                                     'combo_id': int(c.get('id', 0)),
                                     'risk_percent': float(c.get('risk_percent', ((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('high_wr_risk_percent', 1.0))),
+                                    # Direction constraint (long, short, or both)
+                                    'side': str(c.get('side', 'both')).lower(),
                                     # RSI/MACD/Fib/MTF constraints (optional, for indicator-based combos)
                                     'rsi_min': float(c.get('rsi_min')) if c.get('rsi_min') is not None else None,
                                     'rsi_max': float(c.get('rsi_max')) if c.get('rsi_max') is not None else None,
@@ -3947,6 +3949,11 @@ class TradingBot:
                     # Check if current features match any high-WR combination (slope or indicator based)
                     matched_combo = None
                     for combo in high_wr_combos:
+                        # Direction validation: combo must match signal direction
+                        combo_side = combo.get('side', 'both')
+                        if combo_side not in ('both', sc_sig.side):
+                            continue
+
                         # Original numeric range checks (slopes, ATR, BBW, VWAP)
                         if not (combo['fast_min'] <= fast < combo['fast_max'] and
                                 combo['slow_min'] <= slow < combo['slow_max'] and
@@ -4109,9 +4116,10 @@ class TradingBot:
                                     except Exception:
                                         pass
                                     await self.tg.send_message(
-                                        f"🟢 HIGH-WR MULTI-FEATURE EXECUTE (Risk {risk_pct:.1f}%): {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
-                                        f"Combo {matched_combo.get('combo_id')}: WR {matched_combo['wr']:.1f}% (N={matched_combo['n']})\n"
-                                        f"Slopes: F={fast:.3f}% S={slow:.3f}% | ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}% VWAP={vwap_dist_atr:.2f}σ\n"
+                                        f"🟢 HIGH-WR INDICATOR EXECUTE (Risk {risk_pct:.1f}%): {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
+                                        f"Combo {matched_combo.get('combo_id')}: WR {matched_combo.get('wr', 0):.1f}% (N={matched_combo.get('n', 0)})\n"
+                                        f"Indicators: RSI={rsi:.1f} | MACD={macd_state} | Fib={fib_zone} | VWAP={vwap_dist_atr:.2f}σ | MTF={'✓' if mtf_agree else '✗'}\n"
+                                        f"Slopes: F={fast:.3f}% S={slow:.3f}% | ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}%\n"
                                         f"ML={ml_s_slope:.1f} | TP {float(sc_sig.tp):.4f} | SL {float(sc_sig.sl):.4f} | ID={exec_id}"
                                     )
                             except Exception:

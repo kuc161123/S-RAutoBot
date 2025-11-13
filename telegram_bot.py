@@ -1923,7 +1923,7 @@ class TGBot:
             # Decrement concurrent send counter
             self._concurrent_sends = max(0, self._concurrent_sends - 1)
 
-    async def safe_reply(self, update: Update, text: str, parse_mode: str = 'Markdown'):
+    async def safe_reply(self, update: Update, text: str, parse_mode: str = 'Markdown', reply_markup=None):
         """Safely reply to a message with automatic fallback and retry.
 
         If update.message is unavailable (e.g., channel posts, callbacks),
@@ -1932,7 +1932,7 @@ class TGBot:
         # Fast path: when Update has no message (e.g., some callback/channel contexts)
         if getattr(update, 'message', None) is None:
             # Fallback to direct send
-            await self.send_message(text)
+            await self.send_message(text, reply_markup=reply_markup)
             return
 
         max_retries = 5
@@ -1940,7 +1940,7 @@ class TGBot:
         
         for attempt in range(max_retries):
             try:
-                await update.message.reply_text(text, parse_mode=parse_mode)
+                await update.message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
                 return  # Success, exit
             except telegram.error.BadRequest as e:
                 if "can't parse entities" in str(e).lower():
@@ -1956,7 +1956,7 @@ class TGBot:
                             # Markdown backslash escaping
                             for char in ['_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
                                 escaped_text = escaped_text.replace(char, f'\\{char}')
-                        await update.message.reply_text(escaped_text, parse_mode=parse_mode)
+                        await update.message.reply_text(escaped_text, parse_mode=parse_mode, reply_markup=reply_markup)
                         return  # Success, exit
                     except Exception as e2:
                         # Final fallback to plain text
@@ -1966,7 +1966,7 @@ class TGBot:
                         for char in ['*', '_', '`', '~']:
                             plain_text = plain_text.replace(char, '')
                         try:
-                            await update.message.reply_text(plain_text, parse_mode=None)
+                            await update.message.reply_text(plain_text, parse_mode=None, reply_markup=reply_markup)
                             return  # Success, exit
                         except Exception as plain_e:
                             if attempt < max_retries - 1:
@@ -3136,27 +3136,12 @@ class TGBot:
                 # Default to Trend-centric dashboard when any other strategy is active
                 text, kb = self._build_trend_dashboard()
 
-            # Send message with keyboard buttons
-            try:
-                await update.message.reply_text(text, reply_markup=kb, parse_mode='Markdown')
-            except telegram.error.BadRequest as e:
-                if "can't parse entities" in str(e).lower():
-                    # Markdown parsing failed, try without parse mode but keep keyboard
-                    try:
-                        await update.message.reply_text(text, reply_markup=kb)
-                    except Exception:
-                        # Last resort: plain text without keyboard
-                        await update.message.reply_text(text)
-                else:
-                    raise
-            except Exception as e:
-                logger.error(f"Dashboard reply failed: {e}")
-                # Fallback without keyboard
-                await update.message.reply_text(text)
+            # Send message with keyboard buttons via robust safe_reply
+            await self.safe_reply(update, text, parse_mode='Markdown', reply_markup=kb)
 
         except Exception as e:
             logger.exception("Error in dashboard: %s", e)
-            await update.message.reply_text("Error getting dashboard")
+            await self.safe_reply(update, "Error getting dashboard")
 
     async def ui_callback(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Handle inline UI callbacks"""

@@ -228,6 +228,33 @@ class Bybit:
             "positionIdx": 0  # One-way mode
         }
         return self._request("POST", "/v5/order/create", data)
+
+    def get_executions(self, symbol: str, limit: int = 50, start_time: Optional[int] = None) -> list:
+        """Fetch recent execution fills for a symbol (used to confirm position closes).
+
+        Args:
+            symbol: e.g., 'BTCUSDT'
+            limit: number of rows (Bybit caps to 50)
+            start_time: optional start timestamp (ms) for pagination
+
+        Returns:
+            List of execution records; empty list on error.
+        """
+        try:
+            params = {
+                "category": "linear",
+                "symbol": symbol,
+                "limit": str(min(max(1, limit), 50)),
+            }
+            if start_time is not None:
+                params["startTime"] = str(int(start_time))
+            resp = self._request("GET", "/v5/execution/list", params)
+            if resp and resp.get("result"):
+                return resp["result"].get("list", []) or []
+            return []
+        except Exception as e:
+            logger.debug(f"Failed to get executions for {symbol}: {e}")
+            return []
     
     def get_position(self, symbol:str) -> Optional[Dict[str, Any]]:
         """Get current position for a symbol"""

@@ -669,6 +669,9 @@ class TradingBot:
         self._scalp_last_exec_reason: Dict[str, str] = {}
         # Cache of latest scalp detections per symbol (for promotion timing)
         self._scalp_last_signal: Dict[str, Dict[str, object]] = {}
+        # Close confirmation miss counters and daily warn flag
+        self._close_confirm_misses: Dict[str, int] = {}
+        self._close_warned: Dict[str, str] = {}
         # HTF gating persistence (per-strategy per-symbol)
         self._htf_hold: Dict[str, Dict[str, Dict[str, object]]] = {
             'mr': {},
@@ -1767,6 +1770,57 @@ class TradingBot:
                         if str(p.get('symbol')) == sym and float(p.get('size') or 0) > 0:
                             still = True
                             break
+
+                    # Fallback 1: If order history did not reveal a close, try recent executions
+                    if (not found_close) or (exit_price <= 0):
+                        try:
+                            execs = self.bybit.get_executions(symbol, limit=50)
+                        except Exception:
+                            execs = []
+                        if execs:
+                            try:
+                                # Most recent opposite-side execution is a strong close candidate
+                                want_side = 'Sell' if pos.side == 'long' else 'Buy'
+                                for e in execs:
+                                    eside = str(e.get('side', '')).capitalize()
+                                    eprice = e.get('execPrice')
+                                    if eside == want_side and eprice not in (None, '', '0'):
+                                        exit_price = float(eprice)
+                                        found_close = True
+                                        logger.debug(f"[{symbol}] Executions fallback: exitPrice={exit_price:.4f} side={eside} type={e.get('execType')}")
+                                        break
+                            except Exception:
+                                pass
+
+                    # Fallback 2: If size already zero but no explicit execution/avgPrice found, use last price
+                    if not found_close:
+                        try:
+                            pos_live0 = self.bybit.get_position(symbol)
+                            size0 = 0.0
+                            if isinstance(pos_live0, dict):
+                                size0 = float(pos_live0.get('size', 0) or 0)
+                            if size0 == 0:
+                                px = 0.0
+                                try:
+                                    if symbol in self.frames_3m and not self.frames_3m[symbol].empty:
+                                        px = float(self.frames_3m[symbol]['close'].iloc[-1])
+                                    elif symbol in self.frames and not self.frames[symbol].empty:
+                                        px = float(self.frames[symbol]['close'].iloc[-1])
+                                except Exception:
+                                    px = 0.0
+                                if px > 0.0:
+                                    exit_price = px
+                                    found_close = True
+                                    logger.debug(f"[{symbol}] Fallback to last known price: {exit_price:.4f}")
+                        except Exception:
+                            pass
+
+                    # If we have an exit price but no derived exit_reason yet, mark as manual for later normalization
+                    try:
+                        if found_close and exit_price > 0 and exit_reason == "unknown":
+                            exit_reason = "manual"
+                    except Exception:
+                        pass
                     except Exception:
                         continue
                 # Cancel any leftover reduce-only orders; even if still not flat, proceed to avoid stale TP/SL
@@ -7937,10 +7991,32 @@ class TradingBot:
                     # Only add to confirmed closed if we found evidence and have exit price
                     if found_close and exit_price > 0:
                         logger.info(f"[{symbol}] Position CONFIRMED closed at {exit_price:.4f} ({exit_reason})")
+                        try:
+                            # Reset miss counter on success
+                            if symbol in self._close_confirm_misses:
+                                del self._close_confirm_misses[symbol]
+                        except Exception:
+                            pass
                         confirmed_closed.append((symbol, pos, exit_price, exit_reason))
                     else:
-                        # Can't confirm it's closed - might be API lag
+                        # Can't confirm it's closed - might be API lag — track misses and optionally warn
                         logger.debug(f"[{symbol}] Not in positions but can't confirm close - keeping in book")
+                        try:
+                            misses = int(self._close_confirm_misses.get(symbol, 0)) + 1
+                            self._close_confirm_misses[symbol] = misses
+                            if misses >= 3:
+                                from datetime import datetime as _dt
+                                day = _dt.utcnow().strftime('%Y%m%d')
+                                if self._close_warned.get(symbol) != day:
+                                    logger.warning(f"[{symbol}] Close confirm failed {misses} cycles — will keep checking")
+                                    try:
+                                        if self.tg:
+                                            await self.tg.send_message(f"⚠️ Close confirmation delayed: {symbol} — {misses} checks without evidence. Monitoring…")
+                                    except Exception:
+                                        pass
+                                    self._close_warned[symbol] = day
+                        except Exception:
+                            pass
                         
                 except Exception as e:
                     logger.warning(f"Could not verify {symbol} close status: {e}")

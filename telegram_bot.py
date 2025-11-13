@@ -602,11 +602,45 @@ class TGBot:
         # Executed trade aggregates by strategy (Trend / Range / Scalp)
         try:
             tt = self.shared.get('trade_tracker')
-            recs = getattr(tt, 'trades', []) if tt else []
+            recs = []
+            # Prefer DB (last 365d) for up-to-date executed stats
+            if tt and getattr(tt, 'use_db', False) and getattr(tt, 'conn', None):
+                try:
+                    from datetime import datetime, timedelta
+                    cutoff = datetime.utcnow() - timedelta(days=365)
+                    rows = []
+                    with tt.conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT symbol, exit_time, pnl_usd, strategy_name
+                            FROM trades
+                            WHERE exit_time >= %s
+                            ORDER BY exit_time DESC
+                            LIMIT 50000
+                            """,
+                            (cutoff,)
+                        )
+                        rows = cur.fetchall()
+                    class _Row:
+                        def __init__(self, sym, et, pnl, strat):
+                            self.symbol = sym
+                            self.strategy_name = strat
+                            if et and hasattr(et, 'tzinfo') and et.tzinfo is not None:
+                                self.exit_time = et.replace(tzinfo=None)
+                            else:
+                                self.exit_time = et
+                            self.pnl_usd = float(pnl)
+                    recs = [_Row(r[0], r[1], r[2], r[3]) for r in rows]
+                except Exception as _eagg:
+                    logger.debug(f"Exec aggregates DB query failed: {_eagg}")
+                    recs = getattr(tt, 'trades', []) if tt else []
+            else:
+                recs = getattr(tt, 'trades', []) if tt else []
+
             def _agg(group):
                 arr = [t for t in recs if isinstance(getattr(t, 'strategy_name', None), str) and group(getattr(t,'strategy_name').lower()) and getattr(t, 'exit_time', None)]
                 total = len(arr)
-                wins = sum(1 for t in arr if getattr(t, 'pnl_usd', 0.0) > 0)
+                wins = sum(1 for t in arr if float(getattr(t, 'pnl_usd', 0.0) or 0.0) > 0.0)
                 losses = total - wins
                 wr = (wins/total*100.0) if total else 0.0
                 pnl = sum(float(getattr(t, 'pnl_usd', 0.0) or 0.0) for t in arr)
@@ -829,7 +863,41 @@ class TGBot:
         # Scalp executed stats
         try:
             tt = self.shared.get('trade_tracker')
-            recs = getattr(tt, 'trades', []) if tt else []
+            recs = []
+            # Prefer DB for freshness when available (last 365d)
+            if tt and getattr(tt, 'use_db', False) and getattr(tt, 'conn', None):
+                try:
+                    from datetime import datetime, timedelta
+                    cutoff = datetime.utcnow() - timedelta(days=365)
+                    rows = []
+                    with tt.conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT symbol, exit_time, pnl_usd, strategy_name
+                            FROM trades
+                            WHERE exit_time >= %s
+                            ORDER BY exit_time DESC
+                            LIMIT 50000
+                            """,
+                            (cutoff,)
+                        )
+                        rows = cur.fetchall()
+                    class _Row:
+                        def __init__(self, sym, et, pnl, strat):
+                            self.symbol = sym
+                            self.strategy_name = strat
+                            if et and hasattr(et, 'tzinfo') and et.tzinfo is not None:
+                                self.exit_time = et.replace(tzinfo=None)
+                            else:
+                                self.exit_time = et
+                            self.pnl_usd = float(pnl)
+                    recs = [_Row(r[0], r[1], r[2], r[3]) for r in rows]
+                except Exception as _se_db:
+                    logger.debug(f"Scalp exec DB query failed: {_se_db}")
+                    recs = getattr(tt, 'trades', []) if tt else []
+            else:
+                recs = getattr(tt, 'trades', []) if tt else []
+
             arr = [t for t in recs if isinstance(getattr(t, 'strategy_name', None), str)
                    and getattr(t, 'strategy_name').lower().startswith('scalp')
                    and getattr(t, 'exit_time', None)]
@@ -846,23 +914,43 @@ class TGBot:
                 from datetime import datetime, timedelta
                 cutoff = datetime.utcnow() - timedelta(days=30)
 
-                # Filter with timezone normalization (handle timezone-aware exit_time from PostgreSQL)
-                arr30 = []
-                for t in arr:
-                    et = getattr(t, 'exit_time', None)
-                    if not et:
-                        continue
-
-                    # Normalize timezone-aware to naive UTC for comparison
-                    if hasattr(et, 'tzinfo') and et.tzinfo is not None:
-                        # Convert to UTC and remove timezone
-                        try:
-                            et = et.replace(tzinfo=None) if et.tzinfo.utcoffset(et) == timedelta(0) else et.astimezone(None).replace(tzinfo=None)
-                        except Exception:
-                            et = et.replace(tzinfo=None)  # Fallback: just strip timezone
-
-                    if et >= cutoff:
-                        arr30.append(t)
+                # For 30d view, if DB is available re-query for exactly 30d to avoid filtering large arrays
+                if tt and getattr(tt, 'use_db', False) and getattr(tt, 'conn', None):
+                    arr30 = []
+                    try:
+                        rows30 = []
+                        with tt.conn.cursor() as cur:
+                            cur.execute(
+                                """
+                                SELECT symbol, exit_time, pnl_usd, strategy_name
+                                FROM trades
+                                WHERE exit_time >= %s
+                                ORDER BY exit_time DESC
+                                LIMIT 20000
+                                """,
+                                (cutoff,)
+                            )
+                            rows30 = cur.fetchall()
+                        class _Row30:
+                            def __init__(self, sym, et, pnl, strat):
+                                self.symbol = sym
+                                self.strategy_name = strat
+                                if et and hasattr(et, 'tzinfo') and et.tzinfo is not None:
+                                    self.exit_time = et.replace(tzinfo=None)
+                                else:
+                                    self.exit_time = et
+                                self.pnl_usd = float(pnl)
+                        recs30 = [_Row30(r[0], r[1], r[2], r[3]) for r in rows30]
+                        arr30 = [t for t in recs30 if isinstance(getattr(t, 'strategy_name', None), str)
+                                 and str(getattr(t, 'strategy_name')).lower().startswith('scalp')
+                                 and getattr(t, 'exit_time', None)]
+                    except Exception as _se30:
+                        logger.debug(f"Scalp exec 30d DB query failed: {_se30}")
+                        # Fallback: filter arr in memory
+                        arr30 = [t for t in arr if getattr(t, 'exit_time', None) and getattr(t, 'exit_time') >= cutoff]
+                else:
+                    # Memory fallback
+                    arr30 = [t for t in arr if getattr(t, 'exit_time', None) and getattr(t, 'exit_time') >= cutoff]
 
                 tot30 = len(arr30)
                 w30 = sum(1 for t in arr30 if float(getattr(t, 'pnl_usd', 0.0) or 0.0) > 0.0)
@@ -3085,7 +3173,11 @@ class TGBot:
                     await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
                 return
             if data == "ui:exec:wr":
-                await query.answer()
+                # Provide quick tactile feedback and post a fresh Exec WR panel
+                try:
+                    await query.answer("Computing…")
+                except Exception:
+                    await query.answer()
                 await self.exec_winrates(type('obj', (object,), {'message': query.message}), ctx)
                 return
             if data == "ui:dash:refresh:scalp":
@@ -9060,10 +9152,10 @@ class TGBot:
         """
         try:
             tracker = self.shared.get("trade_tracker")
-            trades = getattr(tracker, 'trades', []) if tracker else []
+            trades = []
 
-            # Fallback: read recent trades from DB when memory list is empty
-            if (not trades) and tracker and getattr(tracker, 'use_db', False) and getattr(tracker, 'conn', None):
+            # Prefer DB for freshness when available, else fallback to memory list
+            if tracker and getattr(tracker, 'use_db', False) and getattr(tracker, 'conn', None):
                 try:
                     from datetime import timedelta
                     cutoff = datetime.utcnow() - timedelta(days=60)
@@ -9090,7 +9182,10 @@ class TGBot:
                             self.pnl_usd = float(pnl)
                     trades = [_Row(r[0], r[1], r[2]) for r in rows]
                 except Exception as _db_e:
-                    logger.debug(f"Exec WR DB fallback failed: {_db_e}")
+                    logger.debug(f"Exec WR DB query failed, falling back to memory: {_db_e}")
+                    trades = getattr(tracker, 'trades', []) if tracker else []
+            else:
+                trades = getattr(tracker, 'trades', []) if tracker else []
 
             if not trades:
                 await self.safe_reply(update, "📈 *Execution WR*\n\n_No executed trades yet_")

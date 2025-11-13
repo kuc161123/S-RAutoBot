@@ -1,0 +1,434 @@
+================================================================================
+TRADING BOT PERSISTENCE ARCHITECTURE - VISUAL DIAGRAMS
+================================================================================
+
+SECTION 1: COMPLETE DATA FLOW DIAGRAM
+================================================================================
+
+                    BYBIT EXCHANGE
+                          |
+                          | WebSocket Klines (15m + 3m)
+                          v
+                  ┌─────────────────┐
+                  │ MultiWebSocket  │ Manages 190+ symbols across
+                  │    Handler      │ multiple connections
+                  └────────┬────────┘
+                           |
+                           v
+         ┌─────────────────────────────────────┐
+         │  live_bot.py Main Event Loop        │
+         │  (Async with concurrent updates)    │
+         └────┬───────────────────────┬────────┘
+              |                       |
+         ┌────v────┐            ┌────v─────────┐
+         │ Frames  │            │ Strategy     │
+         │ Dict    │            │ Detection    │
+         │(Memory) │            │(Trend/MR/    │
+         └────┬────┘            │Scalp)        │
+              |                 └────┬────────┘
+         ┌────v────────────────────────v──────┐
+         │ Candle Storage Layer                │
+         │ ┌──────────────────────────────┐   │
+         │ │ save_candles() / save_all_  │   │
+         │ │ frames() every 15 minutes    │   │
+         │ │ save_candles_3m() per event  │   │
+         │ └──────────────┬───────────────┘   │
+         └────────────────┼──────────────────┘
+              ┌───────────┴───────────┐
+              v                       v
+       ┌──────────────┐      ┌──────────────┐
+       │ PostgreSQL   │      │   SQLite     │
+       │ (Primary)    │      │  (Fallback)  │
+       │              │      │              │
+       │ candles (15m)│      │ candles (15m)│
+       │ candles_3m   │      │ candles_3m   │
+       │ UNIQUE idx   │      │              │
+       │              │      │ candles.db   │
+       │ Retention:   │      │              │
+       │ 30 days      │      │ check_thread │
+       │              │      │ = False      │
+       └──────────────┘      └──────────────┘
+
+
+SECTION 2: SIGNAL TRACKING & PHANTOM LIFECYCLE
+================================================================================
+
+         ┌─────────────────────────┐
+         │  Strategy Detects       │
+         │  Trading Signal         │
+         │  (Entry, SL, TP)        │
+         └────────────┬────────────┘
+                      |
+                      v
+         ┌────────────────────────────────┐
+         │ phantom_tracker.record_signal() │
+         │ - Create PhantomTrade object    │
+         │ - Check regime gate             │
+         │ - Validate micro-trend          │
+         │ - Round TP/SL to tick_size      │
+         └────────────┬───────────────────┘
+                      |
+         ┌────────────┴─────────────────────────┐
+         |                                       |
+    YES |                                       | NO
+    (Execute)                                  (Reject)
+         |                                       |
+         v                                       v
+    ┌─────────┐                          ┌──────────────┐
+    │ Executed│                          │Add to Active │
+    │ (Real   │                          │Phantoms      │
+    │ Trade)  │                          │(ML Learning) │
+    └────┬────┘                          └──────┬───────┘
+         |                                      |
+         v                                      v
+    ┌──────────────────┐            ┌───────────────────────────┐
+    │ Order → Bybit    │            │ Redis Save: phantom:active│
+    │                  │            │ Local Memory Store        │
+    └────────┬─────────┘            │ (Multiple per symbol OK)  │
+             |                       └───────────────┬───────────┘
+             v                                       |
+    ┌──────────────────┐                            v
+    │ Position Mgr     │                  ┌─────────────────────┐
+    │ Track Open Pos   │                  │update_phantom_prices│
+    │ Set TP/SL        │                  │ On every candle:    │
+    └────────┬─────────┘                  │ • Track max_fav/adv │
+             |                             │ • Check TP/SL hit   │
+             |                             │ • Check timeout     │
+             |                             │ • Record TP1 event  │
+             |                             └────────────┬────────┘
+             |                                          |
+             v                                          v
+    ┌──────────────────┐                  ┌─────────────────────┐
+    │ Trade Execution  │                  │ When TP/SL/Timeout  │
+    │ Exit at TP/SL    │                  │ _close_phantom()    │
+    └────────┬─────────┘                  │ • Set outcome       │
+             |                             │ • Calculate P&L%    │
+             |                             │ • Calculate 1R/2R   │
+             v                             │ • Feed to ML        │
+    ┌──────────────────────────────────┐  │ • Save to DB audit  │
+    │ trade_tracker.add_trade()        │  │ • Update WR list    │
+    │ • Append to memory               │  │ • Retrain check     │
+    │ • PostgreSQL transaction         │  └─────────────┬───────┘
+    │ • trade_stats_cache (UPSERT)     │               |
+    │ • JSON backup                    │               v
+    │ • Redis backup                   │  ┌─────────────────────┐
+    └────────┬─────────────────────────┘  │ PostgreSQL Audit    │
+             |                             │ phantom_trades_live │
+             v                             │ • Symbol, side      │
+    ┌──────────────────────────────────┐  │ • Entry, SL, TP     │
+    │ Statistics Available:            │  │ • Signal/exit time  │
+    │ • Win rate, profit factor        │  │ • Outcome, pnl%     │
+    │ • Best/worst trades              │  │ • Exit reason       │
+    │ • Per-symbol breakdown           │  │ • ML score, features│
+    │ • Daily average                  │  │ (JSON)              │
+    └──────────────────────────────────┘  └─────────────────────┘
+
+
+SECTION 3: TRADE RECORDING (MULTI-TIER RELIABILITY)
+================================================================================
+
+    ┌──────────────────────┐
+    │ Position Close Event │
+    │ (TP/SL/Manual Exit)  │
+    └──────────┬───────────┘
+               |
+               v
+    ┌──────────────────────┐
+    │ Calculate Final PnL: │
+    │ pnl_usd, pnl_percent │
+    │ (leverage-adjusted)  │
+    └──────────┬───────────┘
+               |
+               v
+    ┌──────────────────────────────────┐
+    │ create_trade() Dataclass         │
+    │ (symbol, side, prices, times...) │
+    └──────────┬──────────────────────┘
+               |
+               v
+    ┌──────────────────────────────────┐
+    │ add_trade(trade)                 │
+    │ 1. Append to self.trades (memory)│
+    │ 2. IF PostgreSQL available:      │
+    │    • INSERT into trades table    │
+    │    • UPDATE trade_stats_cache    │
+    │    (all_time, 7d, 30d)           │
+    │    • Commit transaction          │
+    │ 3. ELSE fallback to JSON file    │
+    │ 4. Best-effort Redis backup      │
+    └──────────┬──────────────────────┘
+               |
+        ┌──────┴──────┬──────────┬───────────┐
+        |             |          |           |
+        v             v          v           v
+    PostgreSQL    JSON File   Redis       Memory
+    trades table  (fallback)  (backup)   (always)
+    • Atomic      • Full file • Last      • Loaded
+      transaction   rewrite    10000      on startup
+    • Indexes     • No        • Rolling   • Fast
+      on symbol,   concurrency window     access
+      exit_time,   control
+      pnl_usd
+    • Stats cache
+      (UPSERT)
+
+RECOVERY PRIORITY ON STARTUP:
+1. PostgreSQL load_trades_from_db() - Last 10000
+2. IF DB empty: load_trades_from_redis() - Backup copy
+3. IF no Redis: load_trades_from_file() - JSON fallback
+4. Start empty
+
+
+SECTION 4: ML MODEL PERSISTENCE (Redis State)
+================================================================================
+
+                    ML Training Event
+                    (Every 50 trades)
+                           |
+                           v
+         ┌─────────────────────────────┐
+         │ Train Ensemble Models:       │
+         │ • RandomForest              │
+         │ • GradientBoosting          │
+         │ • Optional NeuralNetwork    │
+         │ Fit Scaler & Calibrator     │
+         └─────────────────────────────┘
+                    |
+                    v
+         ┌─────────────────────────────┐
+         │ _save_state()               │
+         │ Pickle each component:      │
+         │ 1. Model dict (RF, GB, NN)  │
+         │ 2. StandardScaler           │
+         │ 3. IsotonicRegression       │
+         │ 4. EV buckets               │
+         │ Base64-encode each          │
+         │ to JSON string              │
+         └──────────────┬──────────────┘
+                        |
+    ┌───────────────────┼───────────────────┐
+    |                   |                   |
+    v                   v                   v
+ ┌──────────┐    ┌────────────┐    ┌──────────────┐
+ │ Namespaced│   │ Legacy Keys│   │ Trade Count  │
+ │ Keys:     │   │ (Fallback):│   │ & Threshold  │
+ │           │   │            │   │              │
+ │ml:trend:* │   │tml:model   │   │ml:trend:     │
+ │           │   │tml:scaler  │   │completed_trd │
+ │model      │   │tml:threshld│   │ml:trend:     │
+ │scaler     │   │tml:calibrat│   │threshold     │
+ │calibrator │   └────────────┘   │ml:trend:     │
+ │ev_buckets │                    │last_train_cnt│
+ │nn_enabled │                    └──────────────┘
+ │           │
+ │phantom_   │
+ │weight     │
+ └──────────┘
+
+LOAD ON STARTUP (_load_state):
+1. Try ml:trend:* keys (new namespace)
+2. Fallback to tml:* keys (legacy)
+3. Deserialize pickles from base64
+4. Reconstruct models in memory
+5. Set is_ml_ready = True
+
+
+SECTION 5: PHANTOM TRADING STATE (Redis + PostgreSQL)
+================================================================================
+
+    REDIS (Fast, Volatile):
+    ┌────────────────────────────────────┐
+    │ phantom:active                     │
+    │ └─ symbol → List[PhantomTrade]     │
+    │    • Multiple per symbol OK        │
+    │    • In-flight phantoms only       │
+    │    • Cleared on timeout/TP/SL      │
+    │                                    │
+    │ phantom:completed                  │
+    │ └─ [PhantomTrade] (last 1000)      │
+    │    • Closed phantoms with outcome  │
+    │    • Keep 30+ days old filtered    │
+    │    • Used for learning data export │
+    │                                    │
+    │ phantom:wr:trend/mr/scalp          │
+    │ └─ [1, 0, 1, 1, 0, ...] (200)     │
+    │    • Win/loss rolling window       │
+    │    • LPUSH on phantom close        │
+    │    • LTRIM to 200                  │
+    │    • Used by WR guard circuit break│
+    │                                    │
+    │ phantom:blocked:YYYYMMDD           │
+    │ phantom:blocked:YYYYMMDD:strategy  │
+    │ └─ Counter (incremented on reject) │
+    │    • Daily key (UTC)               │
+    │    • Visibility into signal flow   │
+    └────────────────────────────────────┘
+
+    POSTGRESQL (Persistent Audit):
+    ┌────────────────────────────────────┐
+    │ phantom_trades_live Table           │
+    │ id (PK)                             │
+    │ symbol, side                        │
+    │ entry, sl, tp (prices)              │
+    │ signal_time, exit_time (datetime)   │
+    │ outcome (win/loss/timeout)          │
+    │ realized_rr, pnl_percent            │
+    │ exit_reason (tp/sl/timeout)         │
+    │ strategy_name (trend/range/scalp)   │
+    │ was_executed (bool)                 │
+    │ ml_score (0-100)                    │
+    │ features (JSON text)                │
+    │                                    │
+    │ All-time immutable log of signals  │
+    │ Used for replay, audit, learning   │
+    └────────────────────────────────────┘
+
+    LOCAL MEMORY (Always Active):
+    ┌────────────────────────────────────┐
+    │ phantom_trades[symbol] = []         │
+    │ • All completed phantoms           │
+    │ • Survives Redis restart           │
+    │ • Used for stats/learning export   │
+    │                                    │
+    │ active_phantoms[symbol] = []       │
+    │ • In-flight phantoms               │
+    │ • Synced to Redis on update        │
+    │ • Lost on crash (minor ML impact)  │
+    └────────────────────────────────────┘
+
+    PERSISTENCE FLOW:
+    record_signal() → Redis + Memory
+    update_phantom_prices() → Update in-flight state
+    _close_phantom() → Move to completed
+                    → Save to PostgreSQL audit
+                    → Feed outcome to ML
+                    → Update win-rate list
+                    → Trigger retrain check
+
+
+SECTION 6: FALLBACK CHAIN (Graceful Degradation)
+================================================================================
+
+    PRIMARY LAYER: PostgreSQL
+    ├─ Connection test on startup
+    ├─ ACID transactions
+    ├─ Atomic candle upsert
+    └─ Atomic trade insert + stats cache update
+
+            ↓ ON FAILURE
+
+    FALLBACK LAYER 1: SQLite (Candles)
+    ├─ Auto-detect if DATABASE_URL missing
+    ├─ File: candles.db
+    ├─ Same schema as PostgreSQL
+    └─ Sync to PostgreSQL when available
+
+            ↓ ON FAILURE
+
+    FALLBACK LAYER 2: JSON File (Trades)
+    ├─ File: trade_history.json
+    ├─ Full trade history serialized
+    └─ Entire file rewritten per trade
+
+            ↓ ON FAILURE
+
+    FALLBACK LAYER 3: Redis (Backup)
+    ├─ trade_history:executed (last 10000)
+    ├─ All phantom data
+    └─ ML models
+
+            ↓ ON FAILURE
+
+    FALLBACK LAYER 4: Memory Only
+    ├─ Bot continues with in-memory structures
+    ├─ Statistics available (from loaded trades)
+    ├─ No persistence on crash
+    └─ All data recovered from DB on restart
+
+    RECOVERY ON RESTART:
+    1. Test PostgreSQL connection
+    2. Load from DB (primary)
+    3. If DB empty: Recover from Redis
+    4. If no Redis: Load from JSON
+    5. Fill remaining gaps from memory
+
+
+SECTION 7: CONCURRENCY & WRITE SAFETY
+================================================================================
+
+    CANDLE SAVES:
+    ┌────────────┐
+    │ WebSocket  │──┐
+    │ Events     │  │
+    │ (per       │  ├──────→ frames dict (memory)
+    │  symbol)   │  │              │
+    └────────────┘  │              v
+                    │        UPSERT Loop:
+    ┌────────────┐  │        (per row)
+    │ Timer:15m  │──┘        Check exists?
+    │ Batch Save │           Yes: UPDATE
+    └────────────┘           No: INSERT
+                             Commit once
+                             Rollback on error
+
+    TRADE INSERTS:
+    ┌──────────────┐
+    │ Position     │
+    │ Close Event  │
+    │ (Atomically) │
+    └──────┬───────┘
+           │
+           v
+    Session.begin()
+      INSERT into trades
+      UPDATE trade_stats_cache
+    Session.commit()
+           │
+    ┌──────┴───────────┐
+    v                  v
+ JSON File          Redis Backup
+ (parallel)         (best-effort)
+
+    PHANTOM UPDATES:
+    Redis: Non-blocking (LPUSH, SET)
+    Memory: Direct dict access
+    PostgreSQL: Async audit trail
+    No contention (each phantom has unique ID)
+
+
+SECTION 8: PERFORMANCE CHARACTERISTICS
+================================================================================
+
+    Save Latencies:
+    ┌─────────────────────────────┬──────────┬───────────┐
+    │ Operation                   │ Latency  │ Blocking  │
+    ├─────────────────────────────┼──────────┼───────────┤
+    │ save_all_frames (50 symbols)│ 50-200ms │ Async     │
+    │ save_candles_3m (1 symbol)  │ 5-20ms   │ Async     │
+    │ add_trade                   │ 5-20ms   │ Blocking* │
+    │ record_phantom              │ <1ms     │ No        │
+    │ update_phantom_prices       │ 10-50ms  │ No        │
+    │ _close_phantom              │ 20-100ms │ No        │
+    └─────────────────────────────┴──────────┴───────────┘
+    * Trade add is blocking to ensure atomicity
+
+    Storage Growth (Monthly):
+    ┌──────────────────┬──────────┬────────────┐
+    │ Data Type        │ Growth   │ Retention  │
+    ├──────────────────┼──────────┼────────────┤
+    │ Candles 15m/sym  │ 5 KB     │ 30 days    │
+    │ Candles 3m/sym   │ 15 KB    │ 30 days    │
+    │ Trades           │ 500 B    │ Unlimited  │
+    │ Phantoms (Redis) │ 2 KB     │ Last 1000  │
+    │ ML Models        │ 50 KB    │ Current    │
+    └──────────────────┴──────────┴────────────┘
+
+    Total for 50 symbols:
+    Candles: 5KB × 50 = 250 KB (15m)
+    Candles: 15KB × 50 = 750 KB (3m)
+    Total Monthly: ~25 MB
+
+
+================================================================================
+END OF ARCHITECTURE DIAGRAMS
+================================================================================

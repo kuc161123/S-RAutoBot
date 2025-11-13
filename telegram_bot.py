@@ -845,7 +845,25 @@ class TGBot:
             try:
                 from datetime import datetime, timedelta
                 cutoff = datetime.utcnow() - timedelta(days=30)
-                arr30 = [t for t in arr if getattr(t, 'exit_time', None) and getattr(t, 'exit_time') >= cutoff]
+
+                # Filter with timezone normalization (handle timezone-aware exit_time from PostgreSQL)
+                arr30 = []
+                for t in arr:
+                    et = getattr(t, 'exit_time', None)
+                    if not et:
+                        continue
+
+                    # Normalize timezone-aware to naive UTC for comparison
+                    if hasattr(et, 'tzinfo') and et.tzinfo is not None:
+                        # Convert to UTC and remove timezone
+                        try:
+                            et = et.replace(tzinfo=None) if et.tzinfo.utcoffset(et) == timedelta(0) else et.astimezone(None).replace(tzinfo=None)
+                        except Exception:
+                            et = et.replace(tzinfo=None)  # Fallback: just strip timezone
+
+                    if et >= cutoff:
+                        arr30.append(t)
+
                 tot30 = len(arr30)
                 w30 = sum(1 for t in arr30 if float(getattr(t, 'pnl_usd', 0.0) or 0.0) > 0.0)
                 l30 = tot30 - w30

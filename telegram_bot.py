@@ -1068,6 +1068,87 @@ class TGBot:
             logger.debug(f"Active combos display error: {combo_err}")
             pass
 
+        # Empirical break-even WR (30d window)
+        try:
+            tt = self.shared.get('trade_tracker')
+            recs = []
+            from datetime import datetime, timedelta
+            cutoff = datetime.utcnow() - timedelta(days=30)
+            # Prefer DB for freshness
+            if tt and getattr(tt, 'use_db', False) and getattr(tt, 'conn', None):
+                try:
+                    rows = []
+                    with tt.conn.cursor() as cur:
+                        cur.execute(
+                            """
+                            SELECT exit_time, pnl_usd, pnl_percent, strategy_name, exit_reason
+                            FROM trades
+                            WHERE exit_time >= %s
+                            ORDER BY exit_time DESC
+                            LIMIT 50000
+                            """,
+                            (cutoff,)
+                        )
+                        rows = cur.fetchall()
+                    class _T:
+                        def __init__(self, et, pnl_usd, pnl_pct, strat, reason):
+                            # Normalize tz to naive UTC
+                            self.exit_time = et.replace(tzinfo=None) if (et and getattr(et, 'tzinfo', None)) else et
+                            self.pnl_usd = float(pnl_usd)
+                            self.pnl_percent = float(pnl_pct) if pnl_pct is not None else None
+                            self.strategy_name = strat
+                            self.exit_reason = reason
+                    recs = [_T(*r) for r in rows]
+                except Exception:
+                    recs = getattr(tt, 'trades', []) if tt else []
+            else:
+                recs = getattr(tt, 'trades', []) if tt else []
+
+            # Filter Scalp executed trades within window
+            ex = []
+            for t in recs:
+                try:
+                    if not getattr(t, 'exit_time', None) or t.exit_time < cutoff:
+                        continue
+                    strat = str(getattr(t, 'strategy_name', '') or '').lower()
+                    if not strat.startswith('scalp'):
+                        continue
+                    ex.append(t)
+                except Exception:
+                    continue
+
+            if ex:
+                try:
+                    import statistics as _stats
+                    wins = [abs(float(getattr(t, 'pnl_percent', 0.0) or 0.0)) for t in ex if float(getattr(t, 'pnl_usd', 0.0) or 0.0) > 0.0]
+                    losses = [abs(float(getattr(t, 'pnl_percent', 0.0) or 0.0)) for t in ex if float(getattr(t, 'pnl_usd', 0.0) or 0.0) <= 0.0]
+                    med_win = _stats.median(wins) if wins else 0.0
+                    med_loss = _stats.median(losses) if losses else 0.0
+                    emp_be = (med_loss / (med_loss + med_win) * 100.0) if (med_loss > 0.0 and med_win > 0.0) else None
+                    # Planned BE from RR and fees
+                    cfg = self.shared.get('config', {}) or {}
+                    rr = float(((cfg.get('scalp', {}) or {}).get('rr', 2.1)))
+                    planned_be = 100.0 / (1.0 + rr)
+                    fee_total = float(((cfg.get('trade', {}) or {}).get('fee_total_pct', 0.00110)))*100.0  # to percent
+                    be_with_fees = None
+                    if med_loss > 0.0:
+                        c_R = fee_total / med_loss
+                        be_with_fees = (1.0 + c_R) / (1.0 + rr) * 100.0
+                    lines.append("")
+                    lines.append("⚖️ Break-even (Scalp)")
+                    if emp_be is not None:
+                        lines.append(f"• Empirical 30d: {emp_be:.1f}%  (med win {med_win:.2f}%, med loss {med_loss:.2f}%)")
+                    else:
+                        lines.append("• Empirical 30d: n/a (insufficient executed data)")
+                    if be_with_fees is not None:
+                        lines.append(f"• Planned (RR={rr:.1f}): no-fee {planned_be:.1f}% | with fees ~ {be_with_fees:.1f}%")
+                    else:
+                        lines.append(f"• Planned (RR={rr:.1f}): no-fee {planned_be:.1f}%")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # Positions snapshot (global)
         try:
             book = self.shared.get("book")

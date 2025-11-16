@@ -664,6 +664,51 @@ class ScalpPhantomTracker:
         self._save()
         logger.info(f"[{symbol}] Scalp PHANTOM closed: {'✅ WIN' if outcome=='win' else '❌ LOSS'} ({ph.pnl_percent:+.2f}%)")
 
+        # Aggregation on write: update combo counters in Redis for EV+CI analytics
+        try:
+            r = self.redis_client
+            if r is not None:
+                # Build indicator-based combo key compatible with AdaptiveComboManager & Pro Analytics
+                f = ph.features or {}
+                # Required fields for labeling
+                rsi = f.get('rsi_14'); mh = f.get('macd_hist'); vwap = f.get('vwap_dist_atr')
+                fibz = f.get('fib_zone'); mtf = f.get('mtf_agree_15')
+                if isinstance(rsi, (int, float)) and isinstance(mh, (int, float)) and isinstance(vwap, (int, float)) and isinstance(fibz, str) and isinstance(mtf, (bool, int)):
+                    # Bins
+                    def _rsi_bin(x: float) -> str | None:
+                        return '<30' if x < 30 else '30-40' if x < 40 else '40-60' if x < 60 else '60-70' if x < 70 else '70+'
+                    def _macd_bin(h: float) -> str:
+                        return 'bull' if h > 0 else 'bear'
+                    def _vwap_bin(x: float) -> str:
+                        return '<0.6' if x < 0.6 else '0.6-1.2' if x < 1.2 else '1.2+'
+                    def _fib_ok(z: str) -> bool:
+                        return z in ["0-23","23-38","38-50","50-61","61-78","78-100"]
+                    rb = _rsi_bin(float(rsi)); mb = _macd_bin(float(mh)); vb = _vwap_bin(float(vwap))
+                    if rb and _fib_ok(fibz):
+                        ma = 'MTF' if bool(mtf) else 'noMTF'
+                        combo_key = f"RSI:{rb} MACD:{mb} VWAP:{vb} Fib:{fibz} {ma}"
+                        side = str(getattr(ph, 'side', ''))
+                        day = datetime.utcnow().strftime('%Y%m%d')
+                        # Aggregates: counts and EV (R)
+                        n_key = f"combos:scalp:n:{day}:{side}"
+                        w_key = f"combos:scalp:w:{day}:{side}"
+                        rr_key = f"combos:scalp:rr:{day}:{side}"
+                        pipe = r.pipeline()
+                        pipe.hincrby(n_key, combo_key, 1)
+                        if outcome == 'win':
+                            pipe.hincrby(w_key, combo_key, 1)
+                        pipe.hincrbyfloat(rr_key, combo_key, float(getattr(ph, 'realized_rr', 0.0) or 0.0))
+                        # Keep about 120 days
+                        pipe.expire(n_key, 120 * 86400)
+                        pipe.expire(w_key, 120 * 86400)
+                        pipe.expire(rr_key, 120 * 86400)
+                        pipe.execute()
+        except Exception as _agg_err:
+            try:
+                logger.debug(f"Aggregation update skipped: {_agg_err}")
+            except Exception:
+                pass
+
         # Notify on close
         try:
             if self.notifier:

@@ -8425,29 +8425,81 @@ class TGBot:
             scpt = get_scalp_phantom_tracker()
             cutoff = datetime.utcnow() - timedelta(days=30)
 
-            # Collect decisive phantoms with required features AND side
+            # Prefer aggregated counters from Redis for speed; fall back to raw scan
             items = []  # (rsi, macd_hist, vwap, fib_zone, mtf15, win, rr, side)
-            for arr in (getattr(scpt, 'completed', {}) or {}).values():
-                for p in arr:
-                    try:
-                        et = getattr(p, 'exit_time', None)
-                        if not et or et < cutoff:
+            try:
+                r = getattr(scpt, 'redis_client', None)
+                if r is None:
+                    raise RuntimeError('no_redis')
+                from collections import defaultdict
+                agg = {'long': defaultdict(lambda: {'n':0,'w':0,'rr':0.0}), 'short': defaultdict(lambda: {'n':0,'w':0,'rr':0.0})}
+                for i in range(0, 30):
+                    day = (datetime.utcnow() - timedelta(days=i)).strftime('%Y%m%d')
+                    for side in ('long','short'):
+                        n_key = f"combos:scalp:n:{day}:{side}"
+                        w_key = f"combos:scalp:w:{day}:{side}"
+                        rr_key = f"combos:scalp:rr:{day}:{side}"
+                        n_map = r.hgetall(n_key) or {}
+                        if not n_map:
                             continue
-                        if getattr(p, 'outcome', None) not in ('win','loss'):
+                        w_map = r.hgetall(w_key) or {}
+                        rr_map = r.hgetall(rr_key) or {}
+                        for k, nv in n_map.items():
+                            try:
+                                agg[side][k]['n'] += int(nv)
+                                agg[side][k]['w'] += int(w_map.get(k, 0) or 0)
+                                agg[side][k]['rr'] += float(rr_map.get(k, 0.0) or 0.0)
+                            except Exception:
+                                continue
+                # Convert to items list (use bin midpoints; ranking unaffected)
+                def _mid_rsi(lbl:str)->float:
+                    return 25.0 if lbl=='<30' else 35.0 if lbl=='30-40' else 50.0 if lbl=='40-60' else 65.0 if lbl=='60-70' else 75.0
+                def _macd_val(lbl:str)->float:
+                    return 1.0 if lbl=='bull' else -1.0
+                def _vwap_mid(lbl:str)->float:
+                    return 0.5 if lbl=='<0.6' else 0.9 if lbl=='0.6-1.2' else 1.3
+                for side in ('long','short'):
+                    for key, a in agg[side].items():
+                        try:
+                            parts = key.split()
+                            rsi_lbl = parts[0].split(':',1)[1]
+                            macd_lbl = parts[1].split(':',1)[1]
+                            vwap_lbl = parts[2].split(':',1)[1]
+                            fibz = parts[3].split(':',1)[1]
+                            ma = parts[4]
+                            mtf = True if ma == 'MTF' else False
+                            rsi_mid = _mid_rsi(rsi_lbl); macd_val = _macd_val(macd_lbl); vwap_mid = _vwap_mid(vwap_lbl)
+                            n = a['n']; w = a['w']; rr_sum = a['rr']
+                            if n <= 0:
+                                continue
+                            # Represent as a single aggregate row (N captured later by combos map)
+                            # Put 'w' (wins) and 'rr_sum' in the win/rr slots to be aggregated downstream
+                            items.append((rsi_mid, macd_val, vwap_mid, fibz, mtf, w, rr_sum, side))
+                        except Exception:
                             continue
-                        side = getattr(p, 'side', None)
-                        if not side:
+            except Exception:
+                # Fallback: scan completed in memory
+                for arr in (getattr(scpt, 'completed', {}) or {}).values():
+                    for p in arr:
+                        try:
+                            et = getattr(p, 'exit_time', None)
+                            if not et or et < cutoff:
+                                continue
+                            if getattr(p, 'outcome', None) not in ('win','loss'):
+                                continue
+                            side = getattr(p, 'side', None)
+                            if not side:
+                                continue
+                            f = getattr(p, 'features', {}) or {}
+                            rsi = f.get('rsi_14'); mh = f.get('macd_hist')
+                            vwap = f.get('vwap_dist_atr'); fibz = f.get('fib_zone'); mtf = f.get('mtf_agree_15')
+                            if not (isinstance(rsi,(int,float)) and isinstance(mh,(int,float)) and isinstance(vwap,(int,float)) and isinstance(fibz, str) and isinstance(mtf, (bool,int))):
+                                continue
+                            rr = getattr(p, 'realized_rr', None); rr = float(rr) if isinstance(rr,(int,float)) else 0.0
+                            win = 1 if getattr(p,'outcome',None)=='win' else 0
+                            items.append((float(rsi), float(mh), float(vwap), str(fibz), bool(mtf), win, rr, str(side).lower()))
+                        except Exception:
                             continue
-                        f = getattr(p, 'features', {}) or {}
-                        rsi = f.get('rsi_14'); mh = f.get('macd_hist')
-                        vwap = f.get('vwap_dist_atr'); fibz = f.get('fib_zone'); mtf = f.get('mtf_agree_15')
-                        if not (isinstance(rsi,(int,float)) and isinstance(mh,(int,float)) and isinstance(vwap,(int,float)) and isinstance(fibz, str) and isinstance(mtf, (bool,int))):
-                            continue
-                        rr = getattr(p, 'realized_rr', None); rr = float(rr) if isinstance(rr,(int,float)) else 0.0
-                        win = 1 if getattr(p,'outcome',None)=='win' else 0
-                        items.append((float(rsi), float(mh), float(vwap), str(fibz), bool(mtf), win, rr, str(side).lower()))
-                    except Exception:
-                        continue
 
             if not items:
                 await self.safe_reply(update, "📈 Pro Analytics (EV+CI) — 30d\nNo data yet.", parse_mode=None)
@@ -8497,9 +8549,13 @@ class TGBot:
             if longs:
                 long_analysis = analyze_combos(longs, "LONG")
                 n_long = len(longs)
-                w_long = sum(1 for *_, win, _ in longs if win==1)
-                wr_long = (w_long/n_long*100.0) if n_long else 0.0
-                evr_long = sum(rr for *_, rr in longs) / n_long if n_long else 0.0
+                # Baseline from raw rows (fallback) — aggregated path approximates, but we prefer raw baseline when available
+                try:
+                    w_long = sum(1 for *_, win, _ in longs if isinstance(win, (int, float)) and win == 1)
+                    wr_long = (w_long/n_long*100.0) if n_long else 0.0
+                    evr_long = sum((rr if isinstance(rr,(int,float)) else 0.0) for *_, rr in longs) / n_long if n_long else 0.0
+                except Exception:
+                    wr_long = 0.0; evr_long = 0.0
 
                 lines.extend([
                     "═══════════════════════════",
@@ -8531,9 +8587,12 @@ class TGBot:
             if shorts:
                 short_analysis = analyze_combos(shorts, "SHORT")
                 n_short = len(shorts)
-                w_short = sum(1 for *_, win, _ in shorts if win==1)
-                wr_short = (w_short/n_short*100.0) if n_short else 0.0
-                evr_short = sum(rr for *_, rr in shorts) / n_short if n_short else 0.0
+                try:
+                    w_short = sum(1 for *_, win, _ in shorts if isinstance(win,(int,float)) and win == 1)
+                    wr_short = (w_short/n_short*100.0) if n_short else 0.0
+                    evr_short = sum((rr if isinstance(rr,(int,float)) else 0.0) for *_, rr in shorts) / n_short if n_short else 0.0
+                except Exception:
+                    wr_short = 0.0; evr_short = 0.0
 
                 lines.extend([
                     "═══════════════════════════",

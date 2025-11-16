@@ -3203,6 +3203,16 @@ class TGBot:
     async def dashboard(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Show complete bot dashboard"""
         try:
+            # Best-effort: refresh closed positions before computing snapshots so counts reflect latest state
+            try:
+                bot = self.shared.get('bot_instance')
+                book = self.shared.get('book')
+                meta = self.shared.get('meta')
+                ml_scorer = self.shared.get('ml_scorer')
+                if bot and book:
+                    await bot.check_closed_positions(book, meta, ml_scorer, None, None)
+            except Exception:
+                pass
             # simple rate-limit to avoid Telegram flood control on heavy dashboard
             if not self._cooldown_ok('dashboard'):
                 await self.safe_reply(update, "⏳ Please wait before using /dashboard again")

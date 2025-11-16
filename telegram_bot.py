@@ -782,6 +782,16 @@ class TGBot:
         if symbols_cfg:
             lines.append(f"• Universe: {len(symbols_cfg)} symbols")
         bal = self.shared.get('last_balance')
+        if not isinstance(bal, (int,float)):
+            try:
+                broker = self.shared.get('broker')
+                if broker:
+                    nb = broker.get_balance()
+                    if nb is not None:
+                        self.shared['last_balance'] = nb
+                        bal = nb
+            except Exception:
+                bal = None
         if isinstance(bal, (int,float)):
             lines.append(f"• Balance: ${float(bal):.2f} USDT")
 
@@ -1151,13 +1161,19 @@ class TGBot:
 
         # Positions snapshot (global)
         try:
-            book = self.shared.get("book")
-            positions = (book.positions if book else {})
             lines.append("")
             lines.append("📊 *Positions*")
-            if positions:
-                est = per_trade_risk * len(positions)
-                lines.append(f"• Open positions: {len(positions)} | Est. risk: ${est:.2f}")
+            # Fresh broker snapshot for accuracy
+            try:
+                count, syms = self._fresh_open_positions() if hasattr(self, '_fresh_open_positions') else (None, None)
+            except Exception:
+                count, syms = (None, None)
+            if count is None:
+                book = self.shared.get("book")
+                count = len(getattr(book, 'positions', {}) or {}) if book else 0
+            if count > 0:
+                est = per_trade_risk * count
+                lines.append(f"• Open positions: {count} | Est. risk: ${est:.2f}")
             else:
                 lines.append("• No open positions")
         except Exception:

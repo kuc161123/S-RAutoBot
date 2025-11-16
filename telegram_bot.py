@@ -1054,14 +1054,29 @@ class TGBot:
                 if long_combos_sorted:
                     lines.append(f"🟢 *Longs ({len(long_combos)} enabled)*")
                     for combo in long_combos_sorted:
-                        lines.append(f"• WR {combo['wr']:.1f}% (N={combo['n']})")
+                        try:
+                            cid = combo.get('combo_id', '')
+                            wr = float(combo.get('wr', 0.0) or 0.0)
+                            n = int(combo.get('n', 0) or 0)
+                            evr = float(combo.get('ev_r', 0.0) or 0.0)
+                            # Show concise line with EV and combo label
+                            lines.append(f"• WR {wr:.1f}% | EV_R {evr:+.2f} | N={n} | {cid}")
+                        except Exception:
+                            lines.append(f"• WR {combo['wr']:.1f}% (N={combo['n']})")
                 else:
                     lines.append("🟢 Longs: None enabled")
 
                 if short_combos_sorted:
                     lines.append(f"🔴 *Shorts ({len(short_combos)} enabled)*")
                     for combo in short_combos_sorted:
-                        lines.append(f"• WR {combo['wr']:.1f}% (N={combo['n']})")
+                        try:
+                            cid = combo.get('combo_id', '')
+                            wr = float(combo.get('wr', 0.0) or 0.0)
+                            n = int(combo.get('n', 0) or 0)
+                            evr = float(combo.get('ev_r', 0.0) or 0.0)
+                            lines.append(f"• WR {wr:.1f}% | EV_R {evr:+.2f} | N={n} | {cid}")
+                        except Exception:
+                            lines.append(f"• WR {combo['wr']:.1f}% (N={combo['n']})")
                 else:
                     lines.append("🔴 Shorts: None enabled")
 

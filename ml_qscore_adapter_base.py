@@ -81,6 +81,14 @@ class QScoreAdapterBase:
         return float(max(floor, min(ceiling, thr)))
 
     def retrain_if_ready(self) -> bool:
+        import os as _os
+        # Global off switch for ML/QCal retrains
+        try:
+            if str(_os.getenv('DISABLE_ML', '')).strip().lower() in ('1','true','yes','on') or \
+               str(_os.getenv('DISABLE_ML_RETRAIN', '')).strip().lower() in ('1','true','yes','on'):
+                return False
+        except Exception:
+            pass
         try:
             records = self._load_training_records()
             n = len(records)
@@ -160,4 +168,3 @@ class QScoreAdapterBase:
     # To be implemented by subclasses
     def _load_training_records(self) -> List[Tuple[float, int, float, Dict]]:
         raise NotImplementedError
-

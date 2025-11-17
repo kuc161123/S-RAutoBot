@@ -75,7 +75,7 @@ trade:
   rr: 2.5
   both_hit_rule: SL_FIRST
   confirmation_candles: 2
-  use_ml_scoring: true
+  use_ml_scoring: false
   ml_min_score: 70.0
   enable_ml_evolution: false
   use_symbol_clusters: true
@@ -240,7 +240,7 @@ trend:
     safety:
       extreme_vol_block: true    # Never execute in extreme volatility
     ml_influence:
-      enabled: true
+      enabled: false
       min_records: 2000     # Total (executed + phantom) before ML can tie-break
       min_executed: 400     # Minimum executed trades before ML influence
       margin_points: 3      # If Qscore within this many points of execute_q_min and ML ≥ thr, allow exec
@@ -536,7 +536,7 @@ scalp:
   # If true, run a single 3m stream only (disables main 15m stream)
   stream_3m_only: true
   timeframe: 3           # Future: stream 3m for scalps; current uses main tf
-  use_ml: true
+  use_ml: false
   threshold: 70
   block_regime: true     # Block trades during extreme volatility (ATR > 4%, BB > 90th percentile)
   dedup_enabled: false   # Disable Redis-based dedup for Scalp phantoms (learn-first)

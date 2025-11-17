@@ -36,7 +36,11 @@ class ImmediateMLScorer:
     INITIAL_THRESHOLD = 70  # Start at 70, minimum threshold for quality control
     
     def __init__(self, enabled: bool = True):
-        self.enabled = enabled
+        try:
+            env_off = str(os.getenv('DISABLE_ML', '')).strip().lower() in ('1','true','yes','on')
+        except Exception:
+            env_off = False
+        self.enabled = (False if env_off else enabled)
         self.min_score = self.INITIAL_THRESHOLD  # Start lenient
         self.completed_trades = 0
         self.last_train_count = 0  # Track total trades at last training
@@ -61,7 +65,7 @@ class ImmediateMLScorer:
         
         # Initialize Redis
         self.redis_client = None
-        if enabled:
+        if self.enabled:
             self._init_redis()
             self._load_state()
             
@@ -399,6 +403,8 @@ class ImmediateMLScorer:
             outcome: 'win' or 'loss'
             pnl_percent: Actual P&L percentage
         """
+        if not self.enabled:
+            return
         self.completed_trades += 1
         
         # Track recent performance for threshold adaptation
@@ -437,7 +443,7 @@ class ImmediateMLScorer:
         self._store_trade(trade_record)
         
         # Check if we should retrain based on combined trades
-        if self.completed_trades >= self.MIN_TRADES_FOR_ML:
+        if self.completed_trades >= self.MIN_TRADES_FOR_ML and self.enabled:
             # Get total combined trade count (executed + phantom)
             total_combined = self.completed_trades
             try:
@@ -458,7 +464,8 @@ class ImmediateMLScorer:
                     self.force_retrain = False
                 else:
                     logger.info(f"Retraining triggered: {total_combined - self.last_train_count} new trades since last training")
-                self._retrain_models()
+                if self.enabled:
+                    self._retrain_models()
                 self.last_train_count = total_combined
                 
     def _adapt_threshold(self):
@@ -507,6 +514,8 @@ class ImmediateMLScorer:
             logger.error(f"Error storing trade: {e}")
     
     def _retrain_models(self):
+        if not self.enabled:
+            return False
         """Retrain ML models with available data"""
         try:
             logger.info(f"Retraining ML models with {self.completed_trades} trades...")
@@ -857,6 +866,8 @@ class ImmediateMLScorer:
     
     def startup_retrain(self) -> bool:
         """Retrain models on startup with all available data"""
+        if not self.enabled:
+            return False
         logger.info("Checking if startup retrain is needed...")
         
         # Check for feature update marker
@@ -1241,5 +1252,9 @@ def get_immediate_scorer() -> ImmediateMLScorer:
     """Get or create the global immediate ML scorer"""
     global _immediate_scorer
     if _immediate_scorer is None:
-        _immediate_scorer = ImmediateMLScorer()
+        try:
+            env_off = str(os.getenv('DISABLE_ML', '')).strip().lower() in ('1','true','yes','on')
+        except Exception:
+            env_off = False
+        _immediate_scorer = ImmediateMLScorer(enabled=(not env_off))
     return _immediate_scorer

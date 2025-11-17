@@ -8987,9 +8987,17 @@ class TradingBot:
         
         # Replace environment variables
         cfg = replace_env_vars(cfg)
-        
+
         # Store config as instance variable
         self.config = cfg
+        # Global ML disable: if config requests no ML scoring, set env to disable
+        try:
+            use_ml_cfg = bool(((cfg.get('trade', {}) or {}).get('use_ml_scoring', True)))
+            if not use_ml_cfg:
+                import os as _os
+                _os.environ['DISABLE_ML'] = '1'
+        except Exception:
+            pass
         # Global gating disable (per user request to allow phantom and executed trades through)
         try:
             self._disable_gates = True

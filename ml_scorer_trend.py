@@ -37,7 +37,11 @@ class TrendMLScorer:
         NN_AUTO_ACTIVATE_MIN = 300
 
     def __init__(self, enabled: bool = True):
-        self.enabled = enabled
+        try:
+            env_off = str(os.getenv('DISABLE_ML', '')).strip().lower() in ('1','true','yes','on')
+        except Exception:
+            env_off = False
+        self.enabled = (False if env_off else enabled)
         self.min_score = float(self.INITIAL_THRESHOLD)
         self.completed_trades = 0
         self.last_train_count = 0
@@ -54,7 +58,7 @@ class TrendMLScorer:
             self.nn_enabled = bool(int(os.getenv('TREND_NN_ENABLED', '0')))
         except Exception:
             self.nn_enabled = False
-        if enabled and redis:
+        if self.enabled and redis:
             try:
                 url = os.getenv('REDIS_URL')
                 if url:
@@ -208,6 +212,8 @@ class TrendMLScorer:
         return vec
 
     def score_signal(self, signal: Dict, features: Dict) -> Tuple[float, str]:
+        if not self.enabled:
+            return 50.0, 'ML disabled'
         if self.is_ml_ready and self.models:
             try:
                 x = np.array([self._prepare_features(features)])
@@ -256,6 +262,8 @@ class TrendMLScorer:
         return max(0.0, min(100.0, score)), 'Trend heuristic'
 
     def record_outcome(self, signal: Dict, outcome: str, pnl_percent: float = 0.0):
+        if not self.enabled:
+            return
         # Skip timeout/cancel outcomes to keep EV/training clean
         try:
             if str(signal.get('exit_reason','')).lower() == 'timeout':
@@ -309,7 +317,8 @@ class TrendMLScorer:
         try:
             total = len(self._load_training_data())
             if total >= self.MIN_TRADES_FOR_ML and (total - self.last_train_count) >= self.RETRAIN_INTERVAL:
-                self._retrain()
+                if self.enabled:
+                    self._retrain()
         except Exception as e:
             logger.debug(f"Trend retrain check failed: {e}")
 
@@ -429,6 +438,8 @@ class TrendMLScorer:
 
         Attempts to retrain if enough data is present; returns True on success.
         """
+        if not self.enabled:
+            return False
         try:
             return bool(self._retrain())
         except Exception as e:
@@ -614,5 +625,10 @@ _trend_scorer = None
 def get_trend_scorer(enabled: bool = True) -> TrendMLScorer:
     global _trend_scorer
     if _trend_scorer is None:
-        _trend_scorer = TrendMLScorer(enabled=enabled)
+        # Respect global DISABLE_ML env regardless of caller's default
+        try:
+            env_off = str(os.getenv('DISABLE_ML', '')).strip().lower() in ('1','true','yes','on')
+        except Exception:
+            env_off = False
+        _trend_scorer = TrendMLScorer(enabled=(False if env_off else enabled))
     return _trend_scorer

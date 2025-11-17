@@ -33,7 +33,12 @@ class ScalpMLScorer:
     PHANTOM_BOOTSTRAP_MAX = 10_000_000
 
     def __init__(self, enabled: bool = True):
-        self.enabled = enabled
+        try:
+            # Global disable via env takes precedence
+            env_off = str(os.getenv('DISABLE_ML', '')).strip().lower() in ('1','true','yes','on')
+        except Exception:
+            env_off = False
+        self.enabled = (False if env_off else enabled)
         self.min_score = self.INITIAL_THRESHOLD
         self.models = {}
         self.scaler = StandardScaler()
@@ -43,7 +48,7 @@ class ScalpMLScorer:
         self.completed_trades = 0
         self.last_train_count = 0
         self.redis_client = None
-        if enabled and redis:
+        if self.enabled and redis:
             try:
                 url = os.getenv('REDIS_URL')
                 if url:
@@ -191,6 +196,9 @@ class ScalpMLScorer:
         return vec
 
     def score_signal(self, signal: Dict, features: Dict) -> Tuple[float, str]:
+        # When disabled, do not touch models/Redis; return lightweight heuristic
+        if not self.enabled:
+            return 50.0, 'ML disabled'
         if not self.is_ml_ready or not self.models:
             # Simple heuristic pre-ML
             score = 50.0
@@ -243,6 +251,9 @@ class ScalpMLScorer:
         return 60.0, 'Fallback'
 
     def record_outcome(self, signal: Dict, outcome: str, pnl_percent: float = 0.0):
+        # Short-circuit when ML disabled
+        if not self.enabled:
+            return
         try:
             if bool(signal.get('was_executed')):
                 self.completed_trades += 1
@@ -290,7 +301,9 @@ class ScalpMLScorer:
 
             if trainable >= self.MIN_TRADES_FOR_ML and (trainable - self.last_train_count) >= self.RETRAIN_INTERVAL:
                 logger.info(f"Scalp ML retrain trigger: {trainable - self.last_train_count} new trades (trainable={trainable})")
-                self._retrain()
+                # Respect global disable at retrain time as well
+                if self.enabled:
+                    self._retrain()
         except Exception as e:
             logger.debug(f"Scalp auto-retrain check failed: {e}")
 
@@ -704,5 +717,10 @@ _scalp_scorer = None
 def get_scalp_scorer(enabled: bool = True) -> ScalpMLScorer:
     global _scalp_scorer
     if _scalp_scorer is None:
-        _scalp_scorer = ScalpMLScorer(enabled=enabled)
+        try:
+            import os as _os
+            env_off = str(_os.getenv('DISABLE_ML', '')).strip().lower() in ('1','true','yes','on')
+        except Exception:
+            env_off = False
+        _scalp_scorer = ScalpMLScorer(enabled=(False if env_off else enabled))
     return _scalp_scorer

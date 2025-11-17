@@ -138,6 +138,10 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalpcomprehensive", self.scalp_comprehensive_analysis))
         self.app.add_handler(CommandHandler("scalpultimate", self.scalp_ultimate))
         self.app.add_handler(CommandHandler("scalprecommend", self.scalp_recommendations))
+        # Adaptive risk controls
+        self.app.add_handler(CommandHandler("scalpriskstate", self.scalp_risk_state))
+        self.app.add_handler(CommandHandler("scalprisklimits", self.scalp_risk_limits))
+        self.app.add_handler(CommandHandler("scalpriskladder", self.scalp_risk_ladder))
         self.app.add_handler(CommandHandler("scalptrends", self.scalp_monthly_trends))
         self.app.add_handler(CommandHandler("scalppromote", self.scalp_promotion_status))
         # Utility to verify chat/user IDs
@@ -2161,6 +2165,11 @@ class TGBot:
             "• /scalpgates — Gate analysis (26+ variables)",
             "• /scalpcomprehensive [month] — Full analysis with combinations",
             "• /scalpultimate — Ultimate analysis (solo/pairs/triplets)",
+            "",
+            "Adaptive Risk (Scalp)",
+            "• /scalpriskstate — Show current adaptive risk settings",
+            "• /scalprisklimits <base> <min> <max> — Set % limits (e.g., 1.0 0.5 3.0)",
+            "• /scalpriskladder <wr:mult,...> — Set ladder (e.g., 45:1.0,55:1.5,65:2.0,70:2.5)",
             "• /scalprecommend — Config recommendations",
             "• /scalptrends — Month-over-month trends",
             "• /scalppatterns — ML feature/time/condition patterns",
@@ -9309,6 +9318,75 @@ class TGBot:
 
         except Exception as e:
             logger.error(f"Error in combo_threshold_cmd: {e}", exc_info=True)
+            await self.safe_reply(update, f"❌ Error: {e}")
+
+    async def scalp_risk_state(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        try:
+            cfg = self.shared.get('config', {}) or {}
+            ar = (((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('adaptive_risk', {}) or {})
+            enabled = bool(ar.get('enabled', True))
+            base = float(ar.get('base_percent', 1.0))
+            rmin = float(ar.get('min_percent', 0.5))
+            rmax = float(ar.get('max_percent', 3.0))
+            min_n = int(ar.get('min_samples', 30))
+            ev_floor = float(ar.get('ev_floor_r', 0.0))
+            ladder = ar.get('wr_lb_ladder') or {'45':1.0,'55':1.5,'65':2.0,'70':2.5}
+            lines = [
+                "⚙️ Adaptive Risk (Scalp)",
+                f"• enabled: {enabled}",
+                f"• base/min/max: {base:.2f}% / {rmin:.2f}% / {rmax:.2f}%",
+                f"• min_samples: {min_n}",
+                f"• ev_floor_r: {ev_floor:+.2f}",
+                f"• ladder: {ladder}",
+            ]
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"Error in scalp_risk_state: {e}")
+            await self.safe_reply(update, f"❌ Error: {e}")
+
+    async def scalp_risk_limits(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        try:
+            args = ctx.args if hasattr(ctx, 'args') else []
+            if len(args) != 3:
+                await self.safe_reply(update, "Usage: /scalprisklimits <base> <min> <max>")
+                return
+            base, rmin, rmax = map(float, args)
+            cfg = self.shared.get('config', {}) or {}
+            mem = cfg.setdefault('scalp', {}).setdefault('exec', {}).setdefault('adaptive_risk', {})
+            mem['enabled'] = True
+            mem['base_percent'] = base
+            mem['min_percent'] = rmin
+            mem['max_percent'] = rmax
+            await self.safe_reply(update, f"✅ Adaptive risk limits set: base {base:.2f}%, min {rmin:.2f}%, max {rmax:.2f}% (runtime only)")
+        except Exception as e:
+            logger.error(f"Error in scalp_risk_limits: {e}")
+            await self.safe_reply(update, f"❌ Error: {e}")
+
+    async def scalp_risk_ladder(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        try:
+            args = ctx.args if hasattr(ctx, 'args') else []
+            if not args:
+                await self.safe_reply(update, "Usage: /scalpriskladder <wr:mult,wr:mult,...>  e.g., 45:1.0,55:1.5,65:2.0,70:2.5")
+                return
+            spec = args[0]
+            parts = [p.strip() for p in spec.split(',') if p.strip()]
+            ladder = {}
+            for p in parts:
+                try:
+                    k, v = p.split(':', 1)
+                    ladder[str(float(k))] = float(v)
+                except Exception:
+                    continue
+            if not ladder:
+                await self.safe_reply(update, "❌ Invalid ladder format")
+                return
+            cfg = self.shared.get('config', {}) or {}
+            mem = cfg.setdefault('scalp', {}).setdefault('exec', {}).setdefault('adaptive_risk', {})
+            mem['enabled'] = True
+            mem['wr_lb_ladder'] = ladder
+            await self.safe_reply(update, f"✅ Ladder set: {ladder} (runtime only)")
+        except Exception as e:
+            logger.error(f"Error in scalp_risk_ladder: {e}")
             await self.safe_reply(update, f"❌ Error: {e}")
 
     async def exec_winrates(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE, days_sessions: int = 30):

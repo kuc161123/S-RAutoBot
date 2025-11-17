@@ -738,6 +738,97 @@ class TradingBot:
         except Exception as e:
             logger.error(f"Combo update ({reason}) failed: {e}", exc_info=True)
 
+    # ===== Scalp Adaptive Risk helpers =====
+    def _scalp_combo_key_from_features(self, feats: dict) -> str | None:
+        try:
+            rsi = feats.get('rsi_14'); mh = feats.get('macd_hist'); vwap = feats.get('vwap_dist_atr')
+            fibz = feats.get('fib_zone'); mtf = feats.get('mtf_agree_15')
+            if not (isinstance(rsi,(int,float)) and isinstance(mh,(int,float)) and isinstance(vwap,(int,float)) and isinstance(fibz, str) and isinstance(mtf,(bool,int))):
+                return None
+            def _rsi_bin(x: float) -> str:
+                return '<30' if x < 30 else '30-40' if x < 40 else '40-60' if x < 60 else '60-70' if x < 70 else '70+'
+            def _macd_bin(h: float) -> str:
+                return 'bull' if h > 0 else 'bear'
+            def _vwap_bin(x: float) -> str:
+                return '<0.6' if x < 0.6 else '0.6-1.2' if x < 1.2 else '1.2+'
+            rb = _rsi_bin(float(rsi)); mb = _macd_bin(float(mh)); vb = _vwap_bin(float(vwap))
+            ma = 'MTF' if bool(mtf) else 'noMTF'
+            return f"RSI:{rb} MACD:{mb} VWAP:{vb} Fib:{fibz} {ma}"
+        except Exception:
+            return None
+
+    def _wilson_lb(self, wins: int, n: int, z: float = 1.96) -> float:
+        try:
+            if n <= 0:
+                return 0.0
+            p = wins / n
+            denom = 1.0 + (z*z)/n
+            center = (p + (z*z)/(2*n)) / denom
+            import math as _m
+            margin = z * _m.sqrt((p*(1-p)/n) + (z*z)/(4*n*n)) / denom
+            return max(0.0, min(1.0, center - margin)) * 100.0
+        except Exception:
+            return 0.0
+
+    def _scalp_get_adaptive_risk(self, sym: str, side: str, feats: dict) -> float | None:
+        try:
+            cfg = getattr(self, 'config', {}) or {}
+            ar = (((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('adaptive_risk', {}) or {})
+            enabled = bool(ar.get('enabled', True))
+            if not enabled:
+                return None
+            base = float(ar.get('base_percent', 1.0))
+            rmin = float(ar.get('min_percent', 0.5))
+            rmax = float(ar.get('max_percent', 3.0))
+            min_n = int(ar.get('min_samples', 30))
+            ev_floor = float(ar.get('ev_floor_r', 0.0))
+            ladder = ar.get('wr_lb_ladder')
+            if not ladder:
+                ladder = [
+                    {'wr_lb': 45.0, 'mult': 1.0},
+                    {'wr_lb': 55.0, 'mult': 1.5},
+                    {'wr_lb': 65.0, 'mult': 2.0},
+                    {'wr_lb': 70.0, 'mult': 2.5},
+                ]
+            key = self._scalp_combo_key_from_features(feats or {})
+            if not key:
+                return base
+            mgr = getattr(self, 'adaptive_combo_mgr', None)
+            if not mgr:
+                return base
+            state = mgr._load_combo_state()
+            perf = state.get(key)
+            # Prefer perf that matches side, if stored
+            if perf and isinstance(perf, dict) and perf.get('side') and str(perf['side']).lower() != str(side).lower():
+                perf = None
+            if not perf:
+                return base
+            n = int(perf.get('n', 0) or 0)
+            wr = float(perf.get('wr', 0.0) or 0.0)
+            evr = float(perf.get('ev_r', 0.0) or 0.0)
+            if n < min_n:
+                return base
+            wins = int(round(wr * n / 100.0))
+            wr_lb = self._wilson_lb(wins, n)
+            # Select multiplier
+            try:
+                if isinstance(ladder, dict):
+                    ladder_list = [{'wr_lb': float(k), 'mult': float(v)} for k, v in ladder.items()]
+                else:
+                    ladder_list = [{'wr_lb': float(d.get('wr_lb')), 'mult': float(d.get('mult'))} for d in ladder]
+                ladder_list = sorted([d for d in ladder_list if d.get('wr_lb') is not None], key=lambda d: d['wr_lb'])
+                mult = 1.0
+                for step in ladder_list:
+                    if wr_lb >= float(step['wr_lb']):
+                        mult = float(step['mult'])
+            except Exception:
+                mult = 1.0
+            if evr < ev_floor:
+                return base
+            return max(rmin, min(rmax, base * mult))
+        except Exception:
+            return None
+
     def _scalp_hard_gates_pass(self, symbol: str, side: str, feats: dict) -> tuple[bool, list[str]]:
         """Execution-only hard gates for Scalp (Volume + Wick + Slope [+optional others]).
 
@@ -1937,6 +2028,19 @@ class TradingBot:
                     pass
             # Sizing (with optional per-trade risk override)
                 try:
+                    # If no override provided, compute adaptive risk from combo performance
+                    if risk_percent_override is None:
+                        try:
+                            feats_for_risk = {}
+                            try:
+                                feats_for_risk = dict(self._last_signal_features.get(sym, {}) or {})
+                            except Exception:
+                                feats_for_risk = {}
+                            risk_adapt = self._scalp_get_adaptive_risk(sym, str(getattr(sig_obj, 'side','')), feats_for_risk)
+                            if isinstance(risk_adapt, (int,float)) and risk_adapt > 0:
+                                risk_percent_override = float(risk_adapt)
+                        except Exception:
+                            pass
                     if risk_percent_override is not None:
                         # Clone risk config for isolated per-trade sizing
                         from copy import deepcopy

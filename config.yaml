@@ -652,6 +652,8 @@ scalp:
     enabled: true                 # Enable Scalp executes (gate path + High‑WR combos)
     risk_percent: 1.0             # Per-trade risk for Scalp executes (1% of equity per trade)
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
+    adaptive_risk:
+      use_for_high_wr: true       # Apply adaptive risk sizing to High‑WR combo executes when available
     # Execute only when features match proven high‑WR combinations (RSI/MACD/Fib/VWAP/MTF indicators)
     combos_only: true            # Execute ONLY high-WR indicator combos (3 longs + 4 shorts, WR ≥ 45%)
     block_noncombo: true         # Block gate-based executes (combos only)

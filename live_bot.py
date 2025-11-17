@@ -2733,6 +2733,11 @@ class TradingBot:
                                 feat_lines.append(f"F={f:.3f}% S={s:.3f}% | ATR={atrp:.2f}% BBW={bbw:.2f}% VWAP={vwapd:.2f}σ")
                             except Exception:
                                 pass
+                            # Risk percent used
+                            try:
+                                feat_lines.append(f"Risk: {float(risk_used):.2f}%")
+                            except Exception:
+                                pass
                         except Exception:
                             pass
                         msg = (
@@ -4257,6 +4262,16 @@ class TradingBot:
                             risk_pct = float(matched_combo.get('risk_percent', self.config.get('scalp', {}).get('exec', {}).get('high_wr_risk_percent', 1.0)))
                         except Exception:
                             risk_pct = 1.0
+                        # Prefer adaptive risk for high‑WR executes when enabled
+                        try:
+                            cfg_local = getattr(self, 'config', {}) or {}
+                            ar = (((cfg_local.get('scalp', {}) or {}).get('exec', {}) or {}).get('adaptive_risk', {}) or {})
+                            if bool(ar.get('enabled', True)) and bool(ar.get('use_for_high_wr', True)):
+                                adapt_risk = self._scalp_get_adaptive_risk(sym, str(getattr(sc_sig, 'side','')), sc_feats_hi)
+                                if isinstance(adapt_risk, (int, float)) and adapt_risk > 0:
+                                    risk_pct = float(adapt_risk)
+                        except Exception:
+                            pass
 
                         # Check position conflict
                         if sym in self.book.positions:

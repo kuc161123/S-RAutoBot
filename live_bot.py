@@ -793,23 +793,67 @@ class TradingBot:
             key = self._scalp_combo_key_from_features(feats or {})
             if not key:
                 return base
-            mgr = getattr(self, 'adaptive_combo_mgr', None)
-            if not mgr:
-                return base
-            state = mgr._load_combo_state()
-            perf = state.get(key)
-            # Prefer perf that matches side, if stored
-            if perf and isinstance(perf, dict) and perf.get('side') and str(perf['side']).lower() != str(side).lower():
-                perf = None
-            if not perf:
-                return base
-            n = int(perf.get('n', 0) or 0)
-            wr = float(perf.get('wr', 0.0) or 0.0)
-            evr = float(perf.get('ev_r', 0.0) or 0.0)
-            if n < min_n:
-                return base
-            wins = int(round(wr * n / 100.0))
-            wr_lb = self._wilson_lb(wins, n)
+            # Recency-first: attempt to use recent combo stats from Redis aggregates
+            rec_cfg = (ar.get('recency', {}) or {})
+            rec_days = int(rec_cfg.get('days', 7))
+            rec_min = int(rec_cfg.get('min_samples', 15))
+            prefer_only = bool(rec_cfg.get('prefer_only', True))
+            rec_evf = float(rec_cfg.get('ev_floor_r', ev_floor))
+
+            rec_n = rec_w = 0
+            rec_rr_sum = 0.0
+            try:
+                # Use Redis day-partitioned aggregates written by scalp_phantom_tracker
+                r = getattr(self, '_redis', None)
+                if r is not None:
+                    from datetime import datetime as _dt, timedelta as _td
+                    today = _dt.utcnow().date()
+                    for i in range(max(0, rec_days)):
+                        dstr = (today - _td(days=i)).strftime('%Y%m%d')
+                        n_key = f"combos:scalp:n:{dstr}:{str(side).lower()}"
+                        w_key = f"combos:scalp:w:{dstr}:{str(side).lower()}"
+                        rr_key = f"combos:scalp:rr:{dstr}:{str(side).lower()}"
+                        try:
+                            n_i = int(r.hget(n_key, key) or 0)
+                            w_i = int(r.hget(w_key, key) or 0)
+                            rr_i = float(r.hget(rr_key, key) or 0.0)
+                            rec_n += n_i
+                            rec_w += w_i
+                            rec_rr_sum += rr_i
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+
+            # If recency available and meets min samples, use it exclusively
+            if rec_n >= rec_min and rec_n > 0:
+                wr_lb = self._wilson_lb(rec_w, rec_n)
+                evr = float(rec_rr_sum) / float(rec_n) if rec_n > 0 else 0.0
+                # Below EV floor? fall back to base
+                if evr < rec_evf:
+                    return base
+            else:
+                # If prefer_only is set, fall back to base 1% when recency missing
+                if prefer_only:
+                    return base
+                # Otherwise, fall back to overall combo performance from manager state
+                mgr = getattr(self, 'adaptive_combo_mgr', None)
+                if not mgr:
+                    return base
+                state = mgr._load_combo_state()
+                perf = state.get(key)
+                # Prefer perf that matches side, if stored
+                if perf and isinstance(perf, dict) and perf.get('side') and str(perf['side']).lower() != str(side).lower():
+                    perf = None
+                if not perf:
+                    return base
+                n = int(perf.get('n', 0) or 0)
+                wr = float(perf.get('wr', 0.0) or 0.0)
+                evr = float(perf.get('ev_r', 0.0) or 0.0)
+                if n < min_n:
+                    return base
+                wins = int(round(wr * n / 100.0))
+                wr_lb = self._wilson_lb(wins, n)
             # Select multiplier
             try:
                 if isinstance(ladder, dict):

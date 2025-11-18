@@ -653,7 +653,23 @@ scalp:
     risk_percent: 1.0             # Per-trade risk for Scalp executes (1% of equity per trade)
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
     adaptive_risk:
+      enabled: true               # Enable adaptive risk for scalp executes (non-High‑WR)
       use_for_high_wr: false      # Keep High‑WR executes at fixed risk (e.g., 1.0%)
+      base_percent: 1.0           # Base risk when no adjustment applies
+      min_percent: 0.5            # Floor for adjusted risk
+      max_percent: 3.0            # Ceiling for adjusted risk
+      min_samples: 30             # Overall samples required when using non-recency fallback
+      ev_floor_r: 0.0             # Minimum EV_R required (in R) to apply any increase
+      wr_lb_ladder:               # Wilson lower-bound WR thresholds → multipliers
+        45: 1.0
+        55: 1.5
+        65: 2.0
+        70: 2.5
+      recency:                    # Recency feature for sizing
+        days: 7                   # Lookback days for recent performance
+        min_samples: 15           # Require at least this many recent closes
+        prefer_only: true         # If recency is missing, fall back to base (1%)
+        ev_floor_r: 0.0           # Optional EV floor for recency; falls back to top ev_floor_r if absent
     # Execute only when features match proven high‑WR combinations (RSI/MACD/Fib/VWAP/MTF indicators)
     combos_only: true            # Execute ONLY high-WR indicator combos (3 longs + 4 shorts, WR ≥ 45%)
     block_noncombo: true         # Block gate-based executes (combos only)

@@ -654,7 +654,7 @@ scalp:
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
     adaptive_risk:
       enabled: true               # Enable adaptive risk for scalp executes (non-High‑WR)
-      use_for_high_wr: false      # Keep High‑WR executes at fixed risk (e.g., 1.0%)
+      use_for_high_wr: true       # Apply adaptive risk to High‑WR executes (recency-aware; falls back to 1%)
       base_percent: 1.0           # Base risk when no adjustment applies
       min_percent: 0.5            # Floor for adjusted risk
       max_percent: 3.0            # Ceiling for adjusted risk

@@ -231,6 +231,97 @@ class TGBot:
 
         return per_trade, label
 
+    # ===== Helpers: Adaptive Risk / Recency / Sparklines =====
+    def _wilson_lb(self, wins:int, n:int, z:float=1.96) -> float:
+        try:
+            if n <= 0:
+                return 0.0
+            p = wins / n
+            denom = 1.0 + (z*z)/n
+            center = (p + (z*z)/(2*n)) / denom
+            import math as _m
+            margin = z * _m.sqrt((p*(1-p)/n) + (z*z)/(4*n*n)) / denom
+            return max(0.0, min(1.0, center - margin)) * 100.0
+        except Exception:
+            return 0.0
+
+    def _sparkline(self, vals:list, *, zero_to_hundred:bool=False) -> str:
+        try:
+            chars = '▁▂▃▄▅▆▇█'
+            if not vals:
+                return ''
+            # Normalize range
+            if zero_to_hundred:
+                mn, mx = 0.0, 100.0
+            else:
+                mn, mx = float(min(vals)), float(max(vals))
+                if mx <= mn:
+                    mx = mn + 1.0
+            rng = mx - mn
+            out = []
+            for v in vals:
+                try:
+                    x = (float(v) - mn) / rng
+                    idx = max(0, min(7, int(round(x * 7))))
+                except Exception:
+                    idx = 0
+                out.append('▁▂▃▄▅▆▇█'[idx])
+            return ''.join(out)
+        except Exception:
+            return ''
+
+    def _scalp_combo_recency(self, combo_key:str, side:str, days:int=7):
+        """Return 7d recency stats for a combo: {n,w,rr_sum, days:[{n,w,wr_lb}]}
+        Uses Redis aggregates from scalp_phantom_tracker: combos:scalp:{n,w,rr}:{YYYYMMDD}:{side}
+        """
+        out = { 'n': 0, 'w': 0, 'rr_sum': 0.0, 'days': [] }
+        try:
+            # Prefer Redis from phantom tracker if available
+            r = None
+            try:
+                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                scpt = get_scalp_phantom_tracker()
+                r = getattr(scpt, 'redis_client', None)
+            except Exception:
+                r = None
+            if r is None:
+                try:
+                    import os, redis
+                    url = os.getenv('REDIS_URL')
+                    if url:
+                        r = redis.from_url(url, decode_responses=True)
+                except Exception:
+                    r = None
+            if r is None:
+                return out
+            from datetime import datetime as _dt, timedelta as _td
+            today = _dt.utcnow().date()
+            series = []
+            total_n = total_w = 0
+            rr_sum = 0.0
+            sside = str(side).lower()
+            # Oldest→Newest for nice sparkline ordering
+            for i in range(max(0, days)):
+                dstr = (today - _td(days=(days-1-i))).strftime('%Y%m%d')
+                n_key = f"combos:scalp:n:{dstr}:{sside}"
+                w_key = f"combos:scalp:w:{dstr}:{sside}"
+                rr_key = f"combos:scalp:rr:{dstr}:{sside}"
+                try:
+                    n_i = int(r.hget(n_key, combo_key) or 0)
+                    w_i = int(r.hget(w_key, combo_key) or 0)
+                    rr_i = float(r.hget(rr_key, combo_key) or 0.0)
+                except Exception:
+                    n_i = 0; w_i = 0; rr_i = 0.0
+                total_n += n_i
+                total_w += w_i
+                rr_sum += rr_i
+                wr_lb_i = self._wilson_lb(w_i, n_i) if n_i > 0 else 0.0
+                series.append({'n': n_i, 'w': w_i, 'wr_lb': wr_lb_i})
+            out['n'] = total_n; out['w'] = total_w; out['rr_sum'] = rr_sum; out['days'] = series
+            return out
+        except Exception:
+            return out
+
     def _build_trend_dashboard(self):
         """Build Trend‑only dashboard text and keyboard."""
         frames = self.shared.get("frames", {})
@@ -1000,6 +1091,84 @@ class TGBot:
                 logger.debug(f"Scalp executed stats unavailable: {_se}")
             except Exception:
                 pass
+
+        # Adaptive Risk block (status + top combos with 7d sparklines)
+        try:
+            cfg = self.shared.get('config', {}) or {}
+            ar = (((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('adaptive_risk', {}) or {})
+            lines.append("")
+            lines.append("🧮 *Adaptive Risk*")
+            if not bool(ar.get('enabled', False)):
+                lines.append("• Status: Off")
+            else:
+                use_hw = bool(ar.get('use_for_high_wr', False))
+                base = float(ar.get('base_percent', 1.0))
+                rmin = float(ar.get('min_percent', 0.5))
+                rmax = float(ar.get('max_percent', 3.0))
+                rec = (ar.get('recency', {}) or {})
+                r_days = int(rec.get('days', 7)); r_min = int(rec.get('min_samples', 15)); r_only = bool(rec.get('prefer_only', True))
+                lines.append(f"• Status: On | High‑WR: {'On' if use_hw else 'Off'} | Base {base:.2f}% | Range {rmin:.2f}–{rmax:.2f}%")
+                lines.append(f"• Recency: {r_days}d N≥{r_min} | Prefer‑only: {'yes' if r_only else 'no'}")
+
+                # Show top few active combos with 7d recency and risk estimate
+                mgr = self.shared.get('adaptive_combo_mgr')
+                shown = 0
+                if mgr and getattr(mgr, 'enabled', False):
+                    try:
+                        active = mgr.get_active_combos(None)  # both sides
+                        # Compute recency stats and select top by 7d N
+                        per = []
+                        for c in active:
+                            key = c.get('combo_id'); side = c.get('side') or 'short'
+                            recs = self._scalp_combo_recency(key, side, days=r_days)
+                            n7 = int(recs.get('n', 0)); w7 = int(recs.get('w', 0)); rr_sum = float(recs.get('rr_sum', 0.0))
+                            series = recs.get('days', []) or []
+                            wr_lb7 = self._wilson_lb(w7, n7) if n7 > 0 else 0.0
+                            evr7 = (rr_sum / n7) if n7 > 0 else 0.0
+                            per.append((n7, key, side, wr_lb7, evr7, series))
+                        per.sort(key=lambda t: t[0], reverse=True)
+                        # Ladder from config
+                        ladder = ar.get('wr_lb_ladder') or {45:1.0,55:1.5,65:2.0,70:2.5}
+                        # Normalize ladder to list of dicts sorted ascending by wr_lb
+                        if isinstance(ladder, dict):
+                            ladder_list = [{'wr_lb': float(k), 'mult': float(v)} for k, v in ladder.items()]
+                        else:
+                            ladder_list = [{'wr_lb': float(d.get('wr_lb')), 'mult': float(d.get('mult'))} for d in ladder]
+                        ladder_list = sorted([d for d in ladder_list if d.get('wr_lb') is not None], key=lambda d: d['wr_lb'])
+                        # Render top 4
+                        for n7, key, side, wr_lb7, evr7, series in per[:4]:
+                            # Determine risk estimate: recency‑only policy
+                            risk_est = base
+                            if n7 >= r_min:
+                                mult = 1.0
+                                for step in ladder_list:
+                                    if wr_lb7 >= float(step['wr_lb']):
+                                        mult = float(step['mult'])
+                                # Optional EV floor (use recency field or top‑level)
+                                ev_floor = float(rec.get('ev_floor_r', ar.get('ev_floor_r', 0.0)))
+                                if evr7 >= ev_floor:
+                                    risk_est = max(rmin, min(rmax, base * mult))
+                                else:
+                                    risk_est = base
+                            else:
+                                # prefer_only means fallback to base when sparse
+                                risk_est = base
+
+                            # Build sparklines for N and WR_LB
+                            n_series = [d.get('n', 0) for d in series]
+                            wr_series = [d.get('wr_lb', 0.0) for d in series]
+                            n_spark = self._sparkline(n_series)
+                            wr_spark = self._sparkline(wr_series, zero_to_hundred=True)
+                            lines.append(f"• {side.upper()} {key} — 7d N={n7} WR_LB={wr_lb7:.1f}% EV_R={evr7:+.2f} | Risk≈{risk_est:.2f}%")
+                            lines.append(f"  N:  {n_spark}")
+                            lines.append(f"  WR: {wr_spark}")
+                            shown += 1
+                    except Exception as _ar:
+                        logger.debug(f"Adaptive risk panel error: {_ar}")
+                if shown == 0:
+                    lines.append("• No recent combo recency data (yet)")
+        except Exception as _e_ar:
+            logger.debug(f"Adaptive risk block skipped: {_e_ar}")
 
         # Config snapshot for Scalp
         try:

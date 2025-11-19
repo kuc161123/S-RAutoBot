@@ -60,6 +60,8 @@ class AdaptiveComboManager:
         self.long_short_separate = bool(adaptive_cfg.get('long_short_separate', True))
         self.hysteresis_pct = float(adaptive_cfg.get('hysteresis_pct', 2.0))  # Avoid flip-flopping
         self.notify_changes = bool(adaptive_cfg.get('notify_changes', True))
+        # Strict side loads: when True, load per-side keys directly to avoid long/short overwrites
+        self.strict_side_keys = bool(adaptive_cfg.get('strict_side_keys', True))
 
         # Track update stats
         self.last_update = None
@@ -314,18 +316,28 @@ class AdaptiveComboManager:
             logger.error(f"Error updating combo filters: {e}", exc_info=True)
             return (0, 0, [])
 
-    def _load_combo_state(self) -> Dict[str, dict]:
-        """Load previous combo state from Redis"""
+    def _load_combo_state(self, side: Optional[str] = None) -> Dict[str, dict]:
+        """Load previous combo state from Redis.
+
+        When side is provided and strict_side_keys is True, loads only that side's
+        key. When side is None, returns a combined view (legacy behavior) where
+        identical combo_ids across sides may overwrite each other.
+        """
         if not self.redis_client:
             return {}
 
         try:
-            # Load both long and short if separate, otherwise load all
-            result = {}
+            # Strict per-side load
+            if self.long_short_separate and self.strict_side_keys and side in ('long', 'short'):
+                key = self._get_redis_key(side)
+                data = self.redis_client.get(key)
+                return json.loads(data) if data else {}
 
+            # Legacy combined behavior
+            result: Dict[str, dict] = {}
             if self.long_short_separate:
-                for side in ['long', 'short']:
-                    key = self._get_redis_key(side)
+                for s in ['long', 'short']:
+                    key = self._get_redis_key(s)
                     data = self.redis_client.get(key)
                     if data:
                         side_combos = json.loads(data)
@@ -335,7 +347,6 @@ class AdaptiveComboManager:
                 data = self.redis_client.get(key)
                 if data:
                     result = json.loads(data)
-
             return result
         except Exception as e:
             logger.warning(f"Failed to load combo state from Redis: {e}")
@@ -376,7 +387,8 @@ class AdaptiveComboManager:
         Returns:
             List of active combo dictionaries with performance metrics
         """
-        state = self._load_combo_state()
+        # Load side-specific state when requested to avoid any cross-side overwrites
+        state = self._load_combo_state(side)
 
         active = []
         for key, data in state.items():
@@ -427,12 +439,21 @@ class AdaptiveComboManager:
 
     def get_stats_summary(self) -> dict:
         """Get summary statistics for Telegram display"""
-        state = self._load_combo_state()
-
-        long_enabled = sum(1 for v in state.values() if v.get('enabled') and v.get('side') == 'long')
-        long_disabled = sum(1 for v in state.values() if not v.get('enabled') and v.get('side') == 'long')
-        short_enabled = sum(1 for v in state.values() if v.get('enabled') and v.get('side') == 'short')
-        short_disabled = sum(1 for v in state.values() if not v.get('enabled') and v.get('side') == 'short')
+        if self.long_short_separate and self.strict_side_keys:
+            long_state = self._load_combo_state('long')
+            short_state = self._load_combo_state('short')
+            long_enabled = sum(1 for v in long_state.values() if v.get('enabled'))
+            long_disabled = sum(1 for v in long_state.values() if not v.get('enabled'))
+            short_enabled = sum(1 for v in short_state.values() if v.get('enabled'))
+            short_disabled = sum(1 for v in short_state.values() if not v.get('enabled'))
+            total = len(long_state) + len(short_state)
+        else:
+            state = self._load_combo_state()
+            long_enabled = sum(1 for v in state.values() if v.get('enabled') and v.get('side') == 'long')
+            long_disabled = sum(1 for v in state.values() if not v.get('enabled') and v.get('side') == 'long')
+            short_enabled = sum(1 for v in state.values() if v.get('enabled') and v.get('side') == 'short')
+            short_disabled = sum(1 for v in state.values() if not v.get('enabled') and v.get('side') == 'short')
+            total = len(state)
 
         return {
             'enabled': self.enabled,
@@ -445,6 +466,6 @@ class AdaptiveComboManager:
             'long_disabled': long_disabled,
             'short_enabled': short_enabled,
             'short_disabled': short_disabled,
-            'total_combos': len(state),
+            'total_combos': total,
             'recent_changes': self.combo_changes[-10:]  # Last 10 changes
         }

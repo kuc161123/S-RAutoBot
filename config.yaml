@@ -685,6 +685,7 @@ scalp:
       long_short_separate: true  # Track long/short combos separately
       hysteresis_pct: 2.0        # WR buffer to avoid flip-flopping (%)
       notify_changes: true       # Send Telegram notification on combo enable/disable
+      strict_side_keys: true     # Load per-side state to avoid long/short overwrites in memory
     combos:
       # SLOPE-BASED COMBOS (DISABLED - using indicator combos only)
       # Combo 1: F:-0.01-0.00 × S:-0.03--0.015 (75.0% WR, N=12) - DISABLED

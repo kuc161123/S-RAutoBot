@@ -121,8 +121,37 @@ class AdaptiveComboManager:
 
         cutoff = datetime.utcnow() - timedelta(days=self.lookback_days)
 
-        # Collect decisive phantoms with required features
+        # Collect decisive phantoms with required features (robust to string types)
         items = []  # (rsi, macd_hist, vwap, fib_zone, mtf, win, rr, side)
+        def _to_float(x):
+            try:
+                if x is None:
+                    return None
+                # Allow numeric-like strings
+                v = float(x)
+                # Exclude NaN/inf
+                import math as _m
+                if _m.isnan(v) or _m.isinf(v):
+                    return None
+                return v
+            except Exception:
+                return None
+        def _to_bool(x):
+            try:
+                if isinstance(x, bool):
+                    return x
+                if isinstance(x, (int,)):
+                    return bool(x)
+                s = str(x).strip().lower()
+                if s in ('1','true','yes','y','on'):
+                    return True
+                if s in ('0','false','no','n','off'):
+                    return False
+                return None
+            except Exception:
+                return None
+        _skipped_missing = 0
+        _skipped_type = 0
         for arr in (getattr(scpt, 'completed', {}) or {}).values():
             for p in arr:
                 try:
@@ -139,21 +168,24 @@ class AdaptiveComboManager:
                         continue
 
                     f = getattr(p, 'features', {}) or {}
-                    rsi = f.get('rsi_14')
-                    mh = f.get('macd_hist')
-                    vwap = f.get('vwap_dist_atr')
-                    fibz = f.get('fib_zone')
-                    mtf = f.get('mtf_agree_15')
+                    rsi = _to_float(f.get('rsi_14'))
+                    mh = _to_float(f.get('macd_hist'))
+                    vwap = _to_float(f.get('vwap_dist_atr'))
+                    fibz_raw = f.get('fib_zone')
+                    mtf = _to_bool(f.get('mtf_agree_15'))
 
-                    if not (isinstance(rsi, (int, float)) and
-                            isinstance(mh, (int, float)) and
-                            isinstance(vwap, (int, float)) and
-                            isinstance(fibz, str) and
-                            isinstance(mtf, (bool, int))):
+                    if rsi is None or mh is None or vwap is None or fibz_raw is None or mtf is None:
+                        _skipped_missing += 1
+                        continue
+                    try:
+                        fibz = str(fibz_raw)
+                    except Exception:
+                        _skipped_type += 1
                         continue
 
                     rr = getattr(p, 'realized_rr', None)
-                    rr = float(rr) if isinstance(rr, (int, float)) else 0.0
+                    rr = _to_float(rr)
+                    rr = rr if rr is not None else 0.0
                     win = 1 if getattr(p, 'outcome', None) == 'win' else 0
 
                     items.append((float(rsi), float(mh), float(vwap), str(fibz), bool(mtf), win, rr, p_side))
@@ -232,6 +264,11 @@ class AdaptiveComboManager:
         )
 
         logger.info(f"Analyzed {len(items)} phantoms → {len(results)} combos (side={side}, {self.lookback_days}d)")
+        try:
+            if (_skipped_missing + _skipped_type) > 0:
+                logger.debug(f"Combo analysis skipped: missing={_skipped_missing} type_fail={_skipped_type} (side={side})")
+        except Exception:
+            pass
         return results
 
     def update_combo_filters(self, force: bool = False) -> Tuple[int, int, List[str]]:

@@ -679,8 +679,8 @@ scalp:
       enabled: true              # Enable adaptive combo filtering
       min_wr_threshold: 45.0     # Minimum WR% to enable combo (default 45%)
       min_sample_size: 20        # Minimum N for statistical validity
-      use_wilson_lb: true        # Use Wilson lower-bound WR for gating (more conservative)
-      ev_floor_r: 0.0            # Minimum EV_R required to enable (avoid high-WR/low-EV combos)
+      use_wilson_lb: false       # Gate on raw WR (Wilson LB still shown in UI)
+      ev_floor_r: -1000.0        # Disable EV floor (set very low); EV_R remains informational
       update_frequency_trades: 50  # Recalculate every N completed trades
       update_frequency_hours: 4  # Or every N hours (whichever comes first)
       lookback_days: 30          # Rolling window for WR calculation (days)

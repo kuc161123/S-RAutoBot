@@ -1382,8 +1382,14 @@ class TGBot:
                             wr = float(combo.get('wr', 0.0) or 0.0)
                             n = int(combo.get('n', 0) or 0)
                             evr = float(combo.get('ev_r', 0.0) or 0.0)
-                            # Show concise line with EV and combo label
-                            lines.append(f"• WR {wr:.1f}% | EV_R {evr:+.2f} | N={n} | {cid}")
+                            # Compute Wilson lower bound from wr and n (wins≈wr*n/100)
+                            try:
+                                wins = int(round((wr/100.0) * n))
+                                wr_lb = self._wilson_lb(wins, n)
+                            except Exception:
+                                wr_lb = wr
+                            # Show WR with LB, EV_R and N with combo label
+                            lines.append(f"• WR {wr:.1f}% (LB {wr_lb:.1f}%) | EV_R {evr:+.2f} | N={n} | {cid}")
                         except Exception:
                             lines.append(f"• WR {combo['wr']:.1f}% (N={combo['n']})")
                 else:
@@ -1397,7 +1403,12 @@ class TGBot:
                             wr = float(combo.get('wr', 0.0) or 0.0)
                             n = int(combo.get('n', 0) or 0)
                             evr = float(combo.get('ev_r', 0.0) or 0.0)
-                            lines.append(f"• WR {wr:.1f}% | EV_R {evr:+.2f} | N={n} | {cid}")
+                            try:
+                                wins = int(round((wr/100.0) * n))
+                                wr_lb = self._wilson_lb(wins, n)
+                            except Exception:
+                                wr_lb = wr
+                            lines.append(f"• WR {wr:.1f}% (LB {wr_lb:.1f}%) | EV_R {evr:+.2f} | N={n} | {cid}")
                         except Exception:
                             lines.append(f"• WR {combo['wr']:.1f}% (N={combo['n']})")
                 else:

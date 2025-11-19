@@ -60,6 +60,12 @@ class AdaptiveComboManager:
         self.long_short_separate = bool(adaptive_cfg.get('long_short_separate', True))
         self.hysteresis_pct = float(adaptive_cfg.get('hysteresis_pct', 2.0))  # Avoid flip-flopping
         self.notify_changes = bool(adaptive_cfg.get('notify_changes', True))
+        # Robust gating options
+        self.use_wilson_lb = bool(adaptive_cfg.get('use_wilson_lb', True))
+        try:
+            self.ev_floor_r = float(adaptive_cfg.get('ev_floor_r', 0.0))
+        except Exception:
+            self.ev_floor_r = 0.0
         # Strict side loads: when True, load per-side keys directly to avoid long/short overwrites
         self.strict_side_keys = bool(adaptive_cfg.get('strict_side_keys', True))
 
@@ -69,6 +75,20 @@ class AdaptiveComboManager:
         self.combo_changes = []  # List of recent enable/disable events
 
         logger.info(f"Adaptive Combo Manager initialized: enabled={self.enabled}, min_WR={self.min_wr_threshold}%, min_N={self.min_sample_size}")
+
+    def _wilson_lb(self, wins: int, n: int, z: float = 1.96) -> float:
+        """Wilson score lower bound (%). Returns 0..100."""
+        try:
+            if n <= 0:
+                return 0.0
+            p = wins / n
+            denom = 1.0 + (z*z)/n
+            center = (p + (z*z)/(2*n)) / denom
+            import math as _m
+            margin = z * _m.sqrt((p*(1-p)/n) + (z*z)/(4*n*n)) / denom
+            return max(0.0, min(1.0, center - margin)) * 100.0
+        except Exception:
+            return 0.0
 
     def _get_redis_key(self, side: Optional[str] = None) -> str:
         """Get Redis key for storing combo performance data"""
@@ -200,16 +220,16 @@ class AdaptiveComboManager:
             # Determine if combo should be enabled
             enabled = (wr >= self.min_wr_threshold and n >= self.min_sample_size)
 
-            results[key] = ComboPerformance(
-                combo_id=key,
-                side=combo_side,
-                wr=wr,
-                n=n,
-                wins=w,
-                ev_r=ev_r,
-                last_updated=now_iso,
-                enabled=enabled
-            )
+        results[key] = ComboPerformance(
+            combo_id=key,
+            side=combo_side,
+            wr=wr,
+            n=n,
+            wins=w,
+            ev_r=ev_r,
+            last_updated=now_iso,
+            enabled=enabled  # preliminary; final gating applied in update_combo_filters()
+        )
 
         logger.info(f"Analyzed {len(items)} phantoms → {len(results)} combos (side={side}, {self.lookback_days}d)")
         return results
@@ -254,31 +274,44 @@ class AdaptiveComboManager:
 
             for key, perf in all_combos.items():
                 prev_enabled = prev_state.get(key, {}).get('enabled', False)
-                curr_enabled = perf.enabled
+                # Compute WR metric (Wilson LB when enabled)
+                wr_metric = self._wilson_lb(perf.wins, perf.n) if self.use_wilson_lb else float(perf.wr)
+                n_ok = perf.n >= self.min_sample_size
+                ev_ok = float(perf.ev_r) >= float(self.ev_floor_r)
+                thr = float(self.min_wr_threshold)
 
-                # Apply hysteresis: require crossing threshold ± hysteresis_pct to change state
+                # Base gating (no hysteresis)
+                base_enabled = bool(n_ok and ev_ok and (wr_metric >= thr))
+                curr_enabled = base_enabled
+
+                # Apply hysteresis around WR metric only (EV and N are hard gates)
                 if prev_enabled and not curr_enabled:
-                    # Was enabled, check if fallen below threshold - hysteresis
-                    if perf.wr >= (self.min_wr_threshold - self.hysteresis_pct):
-                        curr_enabled = True  # Keep enabled (hysteresis)
-                        perf.enabled = True
-
-                elif not prev_enabled and curr_enabled:
-                    # Was disabled, check if risen above threshold + hysteresis
-                    if perf.wr < (self.min_wr_threshold + self.hysteresis_pct):
-                        curr_enabled = False  # Keep disabled (hysteresis)
-                        perf.enabled = False
+                    # Only WR margin may keep it enabled; EV/N failures should disable
+                    if ev_ok and n_ok and wr_metric >= (thr - self.hysteresis_pct):
+                        curr_enabled = True
+                elif (not prev_enabled) and curr_enabled:
+                    # Require WR exceed threshold + hysteresis to enable
+                    if wr_metric < (thr + self.hysteresis_pct):
+                        curr_enabled = False
 
                 # Track state changes
                 if curr_enabled != prev_enabled:
                     status = "ENABLED" if curr_enabled else "DISABLED"
-                    msg = f"{status}: {key} ({perf.side.upper()}) - WR {perf.wr:.1f}% (N={perf.n})"
+                    try:
+                        msg = (
+                            f"{status}: {key} ({perf.side.upper()}) - "
+                            f"WR {perf.wr:.1f}% (LB {wr_metric:.1f}%) EV_R {perf.ev_r:+.2f} N={perf.n}"
+                        )
+                    except Exception:
+                        msg = f"{status}: {key} ({perf.side.upper()}) - WR {perf.wr:.1f}% (N={perf.n})"
                     changes.append(msg)
                     logger.info(f"Combo state change: {msg}")
 
                 if curr_enabled:
+                    perf.enabled = True
                     enabled_count += 1
                 else:
+                    perf.enabled = False
                     disabled_count += 1
 
             # Save updated state to Redis

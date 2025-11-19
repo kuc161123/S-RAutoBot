@@ -857,8 +857,10 @@ class TGBot:
 
         return "\n".join(lines), kb
 
-    def _build_scalp_dashboard(self):
-        """Build Scalp‑only dashboard text and keyboard."""
+    def _build_scalp_dashboard(self, more: bool = False):
+        """Build Scalp‑only dashboard text and keyboard.
+        When more=True, show the expanded secondary actions keyboard.
+        """
         frames = self.shared.get("frames", {})
         per_trade_risk, _risk_label = self._compute_risk_snapshot()
         cfg = self.shared.get('config', {}) or {}
@@ -890,21 +892,169 @@ class TGBot:
         if isinstance(bal, (int,float)):
             lines.append(f"• Balance: ${float(bal):.2f} USDT")
 
-        # Scalp States summary (from shared redis snapshot if available)
-        ss = self.shared.get('scalp_states') or {}
-        lines.append("")
-        lines.append("🧭 *Scalp States*")
-        if ss:
-            try:
-                lines.append(
-                    f"MOM {int(ss.get('mom',0))} | PULL {int(ss.get('pull',0))} | VWAP {int(ss.get('vwap',0))} | Q≥thr {int(ss.get('q_ge_thr',0))} | EXEC {int(ss.get('exec_today',0))} | PHANTOM {int(ss.get('phantom_open',0))}"
-                )
-            except Exception:
-                lines.append("(summary unavailable)")
-        else:
-            lines.append("(unavailable)")
+        # Risk (compact)
+        try:
+            risk = self.shared.get("risk")
+            per_trade_dollars = 0.0
+            if getattr(risk, 'use_percent_risk', False) and isinstance(bal, (int,float)) and float(bal) > 0:
+                per_trade_dollars = float(bal) * (float(getattr(risk, 'risk_percent', 0.0)) / 100.0)
+                lines.append("")
+                lines.append("💼 *Risk*")
+                lines.append(f"• Per trade: {float(getattr(risk,'risk_percent',0.0)):.2f}% (~${per_trade_dollars:.2f}) | Max lev: {getattr(risk,'max_leverage', 20)}x")
+        except Exception:
+            pass
 
-        # Scalp phantom stats
+        # Executed trades (Scalp)
+        try:
+            tt = self.shared.get('trade_tracker')
+            recs = getattr(tt, 'trades', []) if tt else []
+            from datetime import datetime, timedelta
+            cutoff24 = datetime.utcnow() - timedelta(hours=24)
+            cutoff7 = datetime.utcnow() - timedelta(days=7)
+            arr = [t for t in recs if isinstance(getattr(t, 'strategy_name', None), str)
+                   and getattr(t, 'strategy_name').lower().startswith('scalp')
+                   and getattr(t, 'exit_time', None)]
+            total = len(arr)
+            wins = sum(1 for t in arr if float(getattr(t, 'pnl_usd', 0.0) or 0.0) > 0.0)
+            losses = total - wins
+            wr = (wins/total*100.0) if total else 0.0
+            pnl = sum(float(getattr(t, 'pnl_usd', 0.0) or 0.0) for t in arr)
+            lines.append("")
+            lines.append("✅ *Executed (Scalp)*")
+            lines.append(f"• Closed: {total} | WR {wr:.1f}% ({wins}/{losses}) | PnL ${pnl:.2f}")
+            # 24h/7d deltas
+            try:
+                n24 = sum(1 for t in arr if getattr(t,'exit_time', None) and t.exit_time >= cutoff24)
+                n7 = sum(1 for t in arr if getattr(t,'exit_time', None) and t.exit_time >= cutoff7)
+                lines.append(f"• 24h: +{n24} | 7d: +{n7}")
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        # Positions (global)
+        try:
+            lines.append("")
+            lines.append("📊 *Positions*")
+            book = self.shared.get('book')
+            pos_map = getattr(book, 'positions', {}) if book else {}
+            open_items = []
+            for sym, p in (pos_map.items() if isinstance(pos_map, dict) else []):
+                try:
+                    if not str(getattr(p, 'strategy_name', '')).lower().startswith('scalp'):
+                        continue
+                    open_items.append((sym, p))
+                except Exception:
+                    continue
+            count = len(open_items)
+            if count > 0:
+                est = per_trade_risk * count
+                lines.append(f"• {count} open | Est. risk: ${est:.2f}")
+                # Show first few lines with risk% and combo tag when available
+                try:
+                    bot = self.shared.get('bot_instance')
+                    pmeta = getattr(bot, '_position_meta', {}) if bot else {}
+                    lsf = getattr(bot, '_last_signal_features', {}) if bot else {}
+                except Exception:
+                    pmeta, lsf = {}, {}
+                shown = 0
+                for sym, p in open_items[:5]:
+                    try:
+                        side = str(getattr(p, 'side', '?')).upper()
+                        rpct = None
+                        if isinstance(pmeta, dict):
+                            rpct = (pmeta.get(sym, {}) or {}).get('risk_pct', None)
+                        combo = None
+                        try:
+                            combo = (lsf.get(sym, {}) or {}).get('combo_id')
+                        except Exception:
+                            combo = None
+                        rpct_str = f"{float(rpct):.2f}%" if isinstance(rpct,(int,float)) else "1.00%"
+                        combo_str = f" | Combo: {combo}" if combo else ""
+                        lines.append(f"• {sym} {side} — Risk {rpct_str}{combo_str}")
+                        shown += 1
+                    except Exception:
+                        continue
+                if count > shown:
+                    lines.append(f"• … ({count - shown} more)")
+            else:
+                lines.append("• No open positions")
+        except Exception:
+            pass
+
+        # Adaptive Risk block (status + top combos with 7d sparklines)
+        try:
+            cfg = self.shared.get('config', {}) or {}
+            ar = (((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('adaptive_risk', {}) or {})
+            lines.append("")
+            lines.append("🧮 *Adaptive Risk*")
+            if not bool(ar.get('enabled', False)):
+                lines.append("• Status: Off")
+            else:
+                use_hw = bool(ar.get('use_for_high_wr', False))
+                base = float(ar.get('base_percent', 1.0))
+                rmin = float(ar.get('min_percent', 0.5))
+                rmax = float(ar.get('max_percent', 3.0))
+                rec = (ar.get('recency', {}) or {})
+                r_days = int(rec.get('days', 7)); r_min = int(rec.get('min_samples', 15)); r_only = bool(rec.get('prefer_only', True))
+                lines.append(f"• Status: On | High‑WR: {'On' if use_hw else 'Off'} | Base {base:.2f}% | Range {rmin:.2f}–{rmax:.2f}%")
+                lines.append(f"• Recency: {r_days}d N≥{r_min} | Prefer‑only: {'yes' if r_only else 'no'}")
+
+                # Show top few active combos with 7d recency and risk estimate
+                mgr = self.shared.get('adaptive_combo_mgr')
+                shown = 0
+                if mgr and getattr(mgr, 'enabled', False):
+                    try:
+                        active = mgr.get_active_combos(None)  # both sides
+                        # Compute recency stats and select top by 7d N
+                        per = []
+                        for c in active:
+                            key = c.get('combo_id'); side = c.get('side') or 'short'
+                            recs = self._scalp_combo_recency(key, side, days=r_days)
+                            n7 = int(recs.get('n', 0)); w7 = int(recs.get('w', 0)); rr_sum = float(recs.get('rr_sum', 0.0))
+                            series = recs.get('days', []) or []
+                            wr_lb7 = self._wilson_lb(w7, n7) if n7 > 0 else 0.0
+                            evr7 = (rr_sum / n7) if n7 > 0 else 0.0
+                            per.append((n7, key, side, wr_lb7, evr7, series))
+                        per.sort(key=lambda t: t[0], reverse=True)
+                        # Ladder from config
+                        ladder = ar.get('wr_lb_ladder') or {45:1.0,55:1.5,65:2.0,70:2.5}
+                        # Normalize ladder
+                        if isinstance(ladder, dict):
+                            ladder_list = [{'wr_lb': float(k), 'mult': float(v)} for k, v in ladder.items()]
+                        else:
+                            ladder_list = [{'wr_lb': float(d.get('wr_lb')), 'mult': float(d.get('mult'))} for d in ladder]
+                        ladder_list = sorted([d for d in ladder_list if d.get('wr_lb') is not None], key=lambda d: d['wr_lb'])
+                        for n7, key, side, wr_lb7, evr7, series in per[:4]:
+                            risk_est = base
+                            reason = None
+                            if n7 >= r_min:
+                                mult = 1.0
+                                for step in ladder_list:
+                                    if wr_lb7 >= float(step['wr_lb']):
+                                        mult = float(step['mult'])
+                                ev_floor = float(rec.get('ev_floor_r', ar.get('ev_floor_r', 0.0)))
+                                if evr7 >= ev_floor:
+                                    risk_est = max(rmin, min(rmax, base * mult))
+                                else:
+                                    risk_est = base; reason = 'EV<floor'
+                            else:
+                                risk_est = base; reason = 'sparse'
+                            n_series = [d.get('n', 0) for d in series]
+                            wr_series = [d.get('wr_lb', 0.0) for d in series]
+                            n_spark = self._sparkline(n_series)
+                            wr_spark = self._sparkline(wr_series, zero_to_hundred=True)
+                            reason_tag = f" (reason: {reason})" if reason else ""
+                            lines.append(f"• {side.upper()} {key} — 7d N={n7} WR_LB={wr_lb7:.1f}% EV_R={evr7:+.2f} | Risk≈{risk_est:.2f}%{reason_tag}")
+                            lines.append(f"  N:  {n_spark}")
+                            lines.append(f"  WR: {wr_spark}")
+                            shown += 1
+                    except Exception as _ar:
+                        logger.debug(f"Adaptive risk panel error: {_ar}")
+                if shown == 0:
+                    lines.append("• No recent combo recency data (yet)")
+        except Exception as _e_ar:
+            logger.debug(f"Adaptive risk block skipped: {_e_ar}")
         try:
             from scalp_phantom_tracker import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
@@ -1347,41 +1497,38 @@ class TGBot:
         except Exception:
             pass
 
-        # Positions snapshot (global)
+        # Buttons
+        # Dynamic counts
+        pos_count = 0
         try:
-            lines.append("")
-            lines.append("📊 *Positions*")
-            # Fresh broker snapshot for accuracy
-            try:
-                count, syms = self._fresh_open_positions() if hasattr(self, '_fresh_open_positions') else (None, None)
-            except Exception:
-                count, syms = (None, None)
-            if count is None:
-                book = self.shared.get("book")
-                count = len(getattr(book, 'positions', {}) or {}) if book else 0
-            if count > 0:
-                est = per_trade_risk * count
-                lines.append(f"• Open positions: {count} | Est. risk: ${est:.2f}")
-            else:
-                lines.append("• No open positions")
+            book = self.shared.get('book')
+            pos_map = getattr(book, 'positions', {}) if book else {}
+            pos_count = sum(1 for p in (pos_map.values() if isinstance(pos_map, dict) else []) if str(getattr(p,'strategy_name','')).lower().startswith('scalp'))
         except Exception:
-            pass
+            pos_count = 0
+        phantom_open = 0
+        try:
+            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            scpt = get_scalp_phantom_tracker()
+            phantom_open = sum(1 for lst in (getattr(scpt, 'active', {}) or {}).values() for p in (lst or []) if not getattr(p, 'exit_time', None))
+        except Exception:
+            phantom_open = 0
 
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Refresh", callback_data="ui:dash:refresh:scalp")],
-            [InlineKeyboardButton("🧪 QA", callback_data="ui:scalp:qa"), InlineKeyboardButton("🧰 Gates", callback_data="ui:scalp:gates")],
-            [InlineKeyboardButton("🤖 Patterns", callback_data="ui:scalp:patterns"), InlineKeyboardButton("⚖️ Risk", callback_data="ui:scalp:risk")],
-            [InlineKeyboardButton("📈 Q WR", callback_data="ui:scalp:qwr"), InlineKeyboardButton("📈 ML WR", callback_data="ui:scalp:mlwr")],
-            [InlineKeyboardButton("📉 EMA Slopes", callback_data="ui:scalp:emaslopes"), InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr")],
-            [InlineKeyboardButton("📂 Open Phantoms", callback_data="ui:scalp:open_phantoms")],
-            [InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr"), InlineKeyboardButton("📊 Advanced Combos", callback_data="ui:scalp:advancedcombos")],
-            [InlineKeyboardButton("📉 Slopes (EV+CI)", callback_data="ui:scalp:slopesevci"), InlineKeyboardButton("📊 Combos (EV+CI)", callback_data="ui:scalp:combosevci")],
-            [InlineKeyboardButton("🧪 Ultimate (EV+CI)", callback_data="ui:scalp:ultimate")],
-            [InlineKeyboardButton("📊 Comprehensive", callback_data="ui:scalp:comp"), InlineKeyboardButton("🚪 Gate+Feature", callback_data="ui:scalp:gatefeat")],
-            [InlineKeyboardButton("📈 Pro Analytics (EV+CI)", callback_data="ui:scalp:proanalytics")],
-            [InlineKeyboardButton("🧠 Build Strategy (30d)", callback_data="ui:scalp:buildstrategy")],
-            [InlineKeyboardButton("🚀 Promotion", callback_data="ui:scalp:promote")],
-        ])
+        if not more:
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Refresh", callback_data="ui:dash:refresh:scalp"), InlineKeyboardButton(f"📊 Positions ({pos_count})", callback_data="ui:positions")],
+                [InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr"), InlineKeyboardButton("🧮 Risk", callback_data="ui:scalp:risk"), InlineKeyboardButton("🎯 Combos", callback_data="ui:scalp:combos")],
+                [InlineKeyboardButton("⋯ More ▾", callback_data="ui:dash:more")]
+            ])
+        else:
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🧪 QA", callback_data="ui:scalp:qa"), InlineKeyboardButton("🧰 Gates", callback_data="ui:scalp:gates")],
+                [InlineKeyboardButton("📊 Pro Analytics", callback_data="ui:scalp:proanalytics"), InlineKeyboardButton("⚖️ Break-even", callback_data="ui:scalp:risk")],
+                [InlineKeyboardButton(f"👻 Phantom ({phantom_open})", callback_data="ui:scalp:open_phantoms"), InlineKeyboardButton("🗓 Sessions/Days", callback_data="ui:scalp:timewr")],
+                [InlineKeyboardButton("📊 Advanced Combos", callback_data="ui:scalp:advancedcombos"), InlineKeyboardButton("🧠 Ultimate", callback_data="ui:scalp:ultimate")],
+                [InlineKeyboardButton("🧩 Build Strategy", callback_data="ui:scalp:buildstrategy"), InlineKeyboardButton("⚙️ Settings", callback_data="ui:settings")],
+                [InlineKeyboardButton("▲ Less", callback_data="ui:dash:less")]
+            ])
 
         return "\n".join(lines), kb
 
@@ -3467,7 +3614,29 @@ class TGBot:
                 return
             if data == "ui:dash:refresh:scalp":
                 await query.answer("Refreshing…")
-                text, kb = self._build_scalp_dashboard()
+                text, kb = self._build_scalp_dashboard(False)
+                try:
+                    await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
+                except Exception:
+                    await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
+                return
+            if data == "ui:dash:more":
+                try:
+                    await query.answer("More…")
+                except Exception:
+                    await query.answer()
+                text, kb = self._build_scalp_dashboard(True)
+                try:
+                    await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
+                except Exception:
+                    await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
+                return
+            if data == "ui:dash:less":
+                try:
+                    await query.answer("Back…")
+                except Exception:
+                    await query.answer()
+                text, kb = self._build_scalp_dashboard(False)
                 try:
                     await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
                 except Exception:
@@ -3480,6 +3649,28 @@ class TGBot:
             if data == "ui:scalp:gates":
                 await query.answer()
                 await self.scalp_gate_analysis(type('obj', (object,), {'message': query.message}), ctx)
+                return
+            if data == "ui:scalp:risk":
+                try:
+                    await query.answer("Loading risk…")
+                except Exception:
+                    await query.answer()
+                text, kb = self._build_scalp_dashboard(False)
+                try:
+                    await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
+                except Exception:
+                    await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
+                return
+            if data == "ui:scalp:combos":
+                try:
+                    await query.answer("Loading combos…")
+                except Exception:
+                    await query.answer()
+                text, kb = self._build_scalp_dashboard(False)
+                try:
+                    await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
+                except Exception:
+                    await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
                 return
             if data == "ui:scalp:comp":
                 await query.answer()

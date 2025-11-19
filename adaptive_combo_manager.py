@@ -174,12 +174,44 @@ class AdaptiveComboManager:
                     fibz_raw = f.get('fib_zone')
                     mtf = _to_bool(f.get('mtf_agree_15'))
 
-                    if rsi is None or mh is None or vwap is None or fibz_raw is None or mtf is None:
+                    # Mandatory numerics
+                    if rsi is None or mh is None or vwap is None:
                         _skipped_missing += 1
                         continue
+
+                    # Derive mtf flag if missing (default to False/noMTF)
+                    if mtf is None:
+                        mtf = False
+
+                    # Resolve Fib zone: use provided, else derive from fib_ret, else neutral fallback
+                    fibz: Optional[str]
                     try:
-                        fibz = str(fibz_raw)
+                        if fibz_raw is not None:
+                            fibz = str(fibz_raw)
+                        else:
+                            # Try derive from fib_ret (0..1 or 0..100)
+                            frel = _to_float(f.get('fib_ret'))
+                            if frel is not None:
+                                fr = float(frel * 100.0) if frel <= 1.0 else float(frel)
+                                if fr < 23.6:
+                                    fibz = '0-23'
+                                elif fr < 38.2:
+                                    fibz = '23-38'
+                                elif fr < 50.0:
+                                    fibz = '38-50'
+                                elif fr < 61.8:
+                                    fibz = '50-61'
+                                elif fr < 78.6:
+                                    fibz = '61-78'
+                                else:
+                                    fibz = '78-100'
+                            else:
+                                # Neutral fallback to avoid dropping older records entirely
+                                fibz = '38-50'
                     except Exception:
+                        fibz = None
+
+                    if fibz is None:
                         _skipped_type += 1
                         continue
 
@@ -266,7 +298,7 @@ class AdaptiveComboManager:
         logger.info(f"Analyzed {len(items)} phantoms → {len(results)} combos (side={side}, {self.lookback_days}d)")
         try:
             if (_skipped_missing + _skipped_type) > 0:
-                logger.debug(f"Combo analysis skipped: missing={_skipped_missing} type_fail={_skipped_type} (side={side})")
+                logger.info(f"Combo analysis skipped: missing={_skipped_missing} type_fail={_skipped_type} (side={side})")
         except Exception:
             pass
         return results

@@ -8214,23 +8214,29 @@ class TradingBot:
                     except Exception:
                         pass
                     combo_line = f"Combo {combo_id} (WR {combo_wr:.1f}%)\n" if combo_id and combo_wr else ""
-                    message = (
-                        f"{outcome_emoji} *Trade Closed* {symbol} {pos.side.upper()}\n\n"
-                        f"Exit Price: {exit_price:.4f}\n"
-                        f"PnL: ${pnl_usd:.2f} ({pnl_percent:.2f}%)\n"
-                        f"{rr_line}"
-                        f"{q_line}"
-                        f"{combo_line}"
-                        f"Hold: {hold_minutes}m\n"
-                        f"Exit: {exit_label}\n"
-                        f"Strategy: {strategy_label}\n"
-                        f"{ml_details}"
-                    )
-                    # Add Execution WR button to notification
-                    keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📈 Execution WR", callback_data="ui:exec:wr")]
-                    ])
-                    asyncio.create_task(self.tg.send_message(message.strip(), reply_markup=keyboard))
+                    # Only push close notifications for Scalp strategy per notification policy
+                    try:
+                        strat_name_l = str(getattr(pos, 'strategy_name', '') or '').lower()
+                    except Exception:
+                        strat_name_l = ''
+                    if strat_name_l.startswith('scalp'):
+                        message = (
+                            f"{outcome_emoji} *Trade Closed* {symbol} {pos.side.upper()}\n\n"
+                            f"Exit Price: {exit_price:.4f}\n"
+                            f"PnL: ${pnl_usd:.2f} ({pnl_percent:.2f}%)\n"
+                            f"{rr_line}"
+                            f"{q_line}"
+                            f"{combo_line}"
+                            f"Hold: {hold_minutes}m\n"
+                            f"Exit: {exit_label}\n"
+                            f"Strategy: {strategy_label}\n"
+                            f"{ml_details}"
+                        )
+                        # Add Execution WR button to notification
+                        keyboard = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("📈 Execution WR", callback_data="ui:exec:wr")]
+                        ])
+                        asyncio.create_task(self.tg.send_message(message.strip(), reply_markup=keyboard))
                 except Exception as notify_err:
                     logger.warning(f"Failed to send Telegram close notification: {notify_err}")
 
@@ -9981,6 +9987,8 @@ class TradingBot:
                     "config": cfg,
                     "broker": bybit,
                     "frames": self.frames,
+                    # Notification policy: only Scalp executed auto-push notifications
+                    "notify_policy": "scalp_execute_only",
                     "telemetry": {"ml_rejects": 0, "phantom_wins": 0, "phantom_losses": 0, "policy_rejects": 0},
                     # Default Scalp gate risk tiers (overridable at runtime via Telegram)
                     "scalp_gate_risk": (lambda c: {
@@ -10226,6 +10234,11 @@ class TradingBot:
                     shared[k] = v
         else:
             shared = dict(shared_updates)
+        # Enforce notification policy at shared root
+        try:
+            shared['notify_policy'] = 'scalp_execute_only'
+        except Exception:
+            pass
         # Initialize Range/Scalp states with Redis-backed continuity
         try:
             if not hasattr(self, '_range_symbol_state'):
@@ -10516,7 +10529,7 @@ class TradingBot:
                                     pass
                                 # Notify
                                 try:
-                                    if self.tg:
+                                    if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                         await self.tg.send_message(f"🛑 Trend: [{symbol}] HTF gate blocked (stream) — routed to phantom")
                                 except Exception:
                                     pass
@@ -10565,7 +10578,7 @@ class TradingBot:
                                     except Exception:
                                         pass
                                     try:
-                                        if self.tg:
+                                        if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                             comps = f"SR={qc.get('sr',0):.0f} HTF={qc.get('htf',0):.0f} BOS={qc.get('bos',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f} Div={qc.get('div',0):.0f}"
                                             await self.tg.send_message(f"🟡 Rule-mode PHANTOM (stream): [{symbol}] Q={q:.1f} < {exec_min:.1f}\n{comps}")
                                     except Exception:
@@ -13484,7 +13497,7 @@ class TradingBot:
                                         pass
                                     tr_should = False
                                     try:
-                                        if self.tg:
+                                        if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                             await self.tg.send_message(f"🛑 Trend: [{sym}] Extreme volatility — rule-mode blocked; phantom recorded")
                                     except Exception:
                                         pass
@@ -13666,7 +13679,7 @@ class TradingBot:
                                             pass
                                         # Notify
                                         try:
-                                            if self.tg:
+                                            if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                                 await self.tg.send_message(f"🛑 Trend: [{sym}] HTF gate blocked — routed to phantom")
                                         except Exception:
                                             pass
@@ -14721,7 +14734,7 @@ class TradingBot:
                                     elif q >= ph_min:
                                         logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (Q={q:.1f} < {exec_min:.1f}) comps: {comps}")
                                         try:
-                                            if self.tg:
+                                            if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                                 try:
                                                     t15 = float(trend_features.get('ts15',0.0)); t60 = float(trend_features.get('ts60',0.0)); rc15 = float(trend_features.get('rc15',0.0)); rc60 = float(trend_features.get('rc60',0.0))
                                                     reg = 'Trending' if (t15>=60 or t60>=60) else ('Ranging' if (rc15>=0.6 or rc60>=0.6) else 'Neutral')
@@ -14746,7 +14759,7 @@ class TradingBot:
                                     else:
                                         logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (low-quality Q={q:.1f} < {ph_min:.1f}) comps: {comps}")
                                         try:
-                                            if self.tg:
+                                            if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                                 try:
                                                     t15 = float(trend_features.get('ts15',0.0)); t60 = float(trend_features.get('ts60',0.0)); rc15 = float(trend_features.get('rc15',0.0)); rc60 = float(trend_features.get('rc60',0.0))
                                                     reg = 'Trending' if (t15>=60 or t60>=60) else ('Ranging' if (rc15>=0.6 or rc60>=0.6) else 'Neutral')
@@ -14823,7 +14836,7 @@ class TradingBot:
                                 if not should_take_trade:
                                     # Notify ML reject diverted to phantom
                                     try:
-                                        if self.tg:
+                                        if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                             await self.tg.send_message(f"🛑 Trend: [{sym}] ML reject — ML {ml_score:.1f} < thr {threshold:.1f} (phantom recorded)")
                                     except Exception:
                                         pass
@@ -15968,7 +15981,8 @@ class TradingBot:
                             # Notify stale diversion
                             try:
                                 if self.tg:
-                                    await self.tg.send_message(f"🛑 Trend: [{sym}] Stale feed (> {max_lag}s) — routed to phantom")
+                                    if bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
+                                        await self.tg.send_message(f"🛑 Trend: [{sym}] Stale feed (> {max_lag}s) — routed to phantom")
                             except Exception:
                                 pass
                             continue

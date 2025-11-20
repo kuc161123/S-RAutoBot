@@ -2345,6 +2345,32 @@ class TGBot:
 
     async def send_message(self, text:str, reply_markup=None):
         """Send message to configured chat with retry on network errors"""
+        # Notification policy: mute all auto-push notifications except Scalp executions
+        try:
+            policy = (self.shared or {}).get('notify_policy', 'scalp_execute_only')
+        except Exception:
+            policy = 'scalp_execute_only'
+
+        if str(policy).lower() == 'scalp_execute_only':
+            try:
+                t = str(text or '')
+                # Allow only Scalp execution/flip notifications; mute all others (Trend/MR/ML/phantom/warnings/startup)
+                allow = (
+                    ('Scalp EXECUTE' in t) or
+                    ('HIGH-WR INDICATOR EXECUTE' in t) or
+                    ('HIGH‑WR INDICATOR EXECUTE' in t) or  # unicode hyphen variant
+                    ('Scalp FLIP' in t)
+                )
+            except Exception:
+                allow = False
+            if not allow:
+                # Drop silently to keep chat noise-free
+                try:
+                    logger.debug("TGBot.send_message muted (policy=scalp_execute_only)")
+                except Exception:
+                    pass
+                return
+
         # Track concurrent sends for flood detection
         self._concurrent_sends += 1
         if self._concurrent_sends > self._max_concurrent_seen:

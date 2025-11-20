@@ -1097,14 +1097,35 @@ class TGBot:
                     if r is not None:
                         now = datetime.utcnow()
                         total_ad = 0; total_rules = 0
+                        # Sum totals and per-reason buckets for the last 24 hours
+                        reasons = {'mtf': 0, 'vwap': 0, 'rsi': 0, 'macd': 0, 'fib': 0, 'disabled': 0}
                         for i in range(24):
                             ts = (now - timedelta(hours=i)).strftime('%Y%m%d%H')
                             try:
                                 total_ad += int(r.get(f'scalp:block:adaptive:{ts}') or 0)
                                 total_rules += int(r.get(f'scalp:block:rules:{ts}') or 0)
+                                # Reason buckets
+                                reasons['disabled'] += int(r.get(f'scalp:block:adaptive:disabled:{ts}') or 0)
+                                for k in ('mtf','vwap','rsi','macd','fib'):
+                                    reasons[k] += int(r.get(f'scalp:block:rules:{k}:{ts}') or 0)
                             except Exception:
                                 continue
                         lines.append(f"• Blocked (24h): {total_ad} by Adaptive | {total_rules} by Rules")
+                        # Add breakdown lines when present
+                        try:
+                            rb = reasons
+                            parts = []
+                            if (rb['mtf'] + rb['vwap'] + rb['rsi'] + rb['macd'] + rb['fib']) > 0:
+                                parts.append(f"MTF {rb['mtf']}")
+                                parts.append(f"VWAP {rb['vwap']}")
+                                parts.append(f"RSI {rb['rsi']}")
+                                parts.append(f"MACD {rb['macd']}")
+                                parts.append(f"Fib {rb['fib']}")
+                                lines.append("  ↳ Rules breakdown: " + " | ".join(parts))
+                            if rb['disabled'] > 0:
+                                lines.append(f"  ↳ Adaptive breakdown: disabled {rb['disabled']}")
+                        except Exception:
+                            pass
                 except Exception as _bc:
                     logger.debug(f"Blocked counters unavailable: {_bc}")
         except Exception as _e_ar:

@@ -786,7 +786,7 @@ class TradingBot:
             return False
 
     def _scalp_incr_block_counter(self, kind: str):
-        # kind: 'adaptive' | 'mtf'
+        # kind: 'adaptive' | 'rules'
         try:
             r = getattr(self, '_redis', None)
             if r is None:
@@ -801,7 +801,7 @@ class TradingBot:
                 return
             from datetime import datetime
             ts = datetime.utcnow().strftime('%Y%m%d%H')
-            key = f"scalp:block:{'adaptive' if kind=='adaptive' else 'mtf'}:{ts}"
+            key = f"scalp:block:{'adaptive' if kind=='adaptive' else 'rules'}:{ts}"
             r.incr(key, 1)
             r.expire(key, 48 * 3600)
         except Exception:
@@ -840,11 +840,69 @@ class TradingBot:
                 return False, 'no_manager_state', ctx
 
         # Fallback path (manager not ready)
-        if fallback_mode == 'mtf':
+        if fallback_mode == 'pro':
+            # Build bins from features
+            f = feats or {}
             try:
-                mtf_ok = bool((feats or {}).get('mtf_agree_15', False))
+                rsi = float(f.get('rsi_14', 0.0) or 0.0)
             except Exception:
-                mtf_ok = False
+                rsi = 0.0
+            try:
+                mh = float(f.get('macd_hist', 0.0) or 0.0)
+            except Exception:
+                mh = 0.0
+            try:
+                vwap = float(f.get('vwap_dist_atr', 0.0) or 0.0)
+            except Exception:
+                vwap = 0.0
+            fibz = f.get('fib_zone')
+            if not isinstance(fibz, str) or not fibz:
+                # derive from fib_ret if possible
+                try:
+                    frel = float(f.get('fib_ret'))
+                    fr = frel*100.0 if frel <= 1.0 else frel
+                    fibz = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
+                except Exception:
+                    fibz = None
+            mtf = bool(f.get('mtf_agree_15', False))
+            if not mtf:
+                return False, 'fallback_pro_block', ctx
+            # Bins
+            rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
+            macd = 'bull' if mh > 0 else 'bear'
+            vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.2' if vwap < 1.2 else '1.2+'
+            # Side-specific rules
+            s = str(side).lower()
+            ok = False
+            if s == 'long':
+                # RSI ok: 40-60 or 60-70
+                rsi_ok = (rsi_bin in ('40-60','60-70'))
+                # VWAP and MACD tie-in: <0.6 accepts either MACD; 1.2+ requires bull
+                if vwap_bin == '<0.6':
+                    v_ok = True
+                    macd_ok = (macd in ('bull','bear'))
+                elif vwap_bin == '1.2+':
+                    v_ok = True
+                    macd_ok = (macd == 'bull')
+                else:
+                    # 0.6-1.2 not preferred for longs
+                    v_ok = False
+                    macd_ok = False
+                fib_ok = (fibz in ('0-23','38-50'))
+                ok = bool(rsi_ok and v_ok and macd_ok and fib_ok)
+            else:
+                # Shorts: RSI <30 or 30-40; MACD bear; VWAP <=1.2; Fib 61-78 or 78-100
+                rsi_ok = (rsi_bin in ('<30','30-40'))
+                macd_ok = (macd == 'bear')
+                v_ok = (vwap_bin in ('<0.6','0.6-1.2'))
+                fib_ok = (fibz in ('61-78','78-100'))
+                ok = bool(rsi_ok and v_ok and macd_ok and fib_ok)
+            if ok:
+                return True, 'fallback_pro_ok', ctx
+            else:
+                return False, 'fallback_pro_block', ctx
+        elif fallback_mode == 'mtf':
+            mtf_ok = bool((feats or {}).get('mtf_agree_15', False))
             if mtf_ok:
                 return True, 'fallback_mtf_ok', ctx
             else:
@@ -2089,11 +2147,11 @@ class TradingBot:
                         scpt0.record_scalp_signal(sym, {'side': sig_obj.side, 'entry': sig_obj.entry, 'sl': sig_obj.sl, 'tp': sig_obj.tp}, float(ml_score or 0.0), False, feats_for_gate)
                     except Exception:
                         pass
-                    try:
-                        kind0 = 'adaptive' if gate_reason0.startswith('adaptive') else 'mtf'
-                        self._scalp_incr_block_counter(kind0)
-                    except Exception:
-                        pass
+                try:
+                    kind0 = 'adaptive' if gate_reason0.startswith('adaptive') else 'rules'
+                    self._scalp_incr_block_counter(kind0)
+                except Exception:
+                    pass
                     try:
                         if self.tg:
                             await self.tg.send_message(f"🚫 Blocked → Phantom | Gating: {gate_reason0} ({gate_ctx0.get('combo_id','n/a')})")
@@ -4443,7 +4501,7 @@ class TradingBot:
                                 pass
                             # Increment counters
                             try:
-                                kind = 'adaptive' if gate_reason.startswith('adaptive') else 'mtf'
+                                kind = 'adaptive' if gate_reason.startswith('adaptive') else 'rules'
                                 self._scalp_incr_block_counter(kind)
                             except Exception:
                                 pass
@@ -4451,7 +4509,13 @@ class TradingBot:
                             try:
                                 if self.tg:
                                     combo_label = gate_ctx.get('combo_id', 'n/a')
-                                    reason_text = 'Adaptive combo disabled' if gate_reason.startswith('adaptive') else 'MTF fallback: not aligned' if gate_reason.endswith('block') else gate_reason
+                                    reason_text = (
+                                        'Adaptive combo disabled' if gate_reason.startswith('adaptive') else (
+                                            'Indicator Rules not satisfied' if gate_reason.startswith('fallback_pro_') and gate_reason.endswith('block') else (
+                                                'MTF fallback: not aligned' if gate_reason.startswith('fallback_mtf_') and gate_reason.endswith('block') else gate_reason
+                                            )
+                                        )
+                                    )
                                     await self.tg.send_message(
                                         f"🚫 High‑WR combo blocked → Phantom\n"
                                         f"Gating: {reason_text} ({combo_label})\n"
@@ -4527,7 +4591,7 @@ class TradingBot:
                                         pass
                                     gating_line = (
                                         f"✅ Adaptive Combo: Enabled ({gate_ctx2.get('combo_id','n/a')})" if gate_reason2.startswith('adaptive') and gate_allowed else
-                                        ("✅ MTF Fallback: Aligned" if gate_reason2.startswith('fallback_mtf_ok') else "")
+                                        ("✅ Indicator Rules (Pro): Matched" if gate_reason2.startswith('fallback_pro_ok') else ("✅ MTF Fallback: Aligned" if gate_reason2.startswith('fallback_mtf_ok') else ""))
                                     )
                                     msg = (
                                         f"🟢 HIGH-WR INDICATOR EXECUTE (Risk {risk_pct:.1f}%): {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"

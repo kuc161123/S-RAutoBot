@@ -674,6 +674,11 @@ scalp:
     combos_only: true            # Execute ONLY high-WR indicator combos (3 longs + 4 shorts, WR ≥ 45%)
     block_noncombo: true         # Block gate-based executes (combos only)
     mute_disabled_paths: false   # Allow notifications for gate-path decisions
+    # Temporary gating policy: before Adaptive Combos are ready, require MTF alignment; once ready, require combo enabled
+    require_combo_enabled: true
+    fallback_until_ready: pro    # pro | mtf | off
+    manager_fresh_hours: 6       # consider manager stale when older than this many hours
+    blocked_notify: true         # send blocked phantom notifications when gating prevents execution
     # Adaptive combo filtering: dynamically enable/disable combos based on rolling performance
     adaptive_combos:
       enabled: true              # Enable adaptive combo filtering

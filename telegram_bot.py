@@ -1018,7 +1018,7 @@ class TGBot:
                         except Exception:
                             any_enabled = False
                         mgr_ready = bool(fresh_ok and any_enabled)
-                    gate_mode = 'Adaptive Combos' if mgr_ready else 'MTF fallback (warming)'
+                    gate_mode = 'Adaptive Combos' if mgr_ready else 'Indicator Rules (Pro fallback)'
                     lines.append(f"• Gating mode: {gate_mode}")
                 except Exception:
                     pass
@@ -1093,15 +1093,15 @@ class TGBot:
                         r = redis.from_url(url, decode_responses=True)
                     if r is not None:
                         now = datetime.utcnow()
-                        total_ad = 0; total_mtf = 0
+                        total_ad = 0; total_rules = 0
                         for i in range(24):
                             ts = (now - timedelta(hours=i)).strftime('%Y%m%d%H')
                             try:
                                 total_ad += int(r.get(f'scalp:block:adaptive:{ts}') or 0)
-                                total_mtf += int(r.get(f'scalp:block:mtf:{ts}') or 0)
+                                total_rules += int(r.get(f'scalp:block:rules:{ts}') or 0)
                             except Exception:
                                 continue
-                        lines.append(f"• Blocked (24h): {total_ad} by Adaptive | {total_mtf} by MTF")
+                        lines.append(f"• Blocked (24h): {total_ad} by Adaptive | {total_rules} by Rules")
                 except Exception as _bc:
                     logger.debug(f"Blocked counters unavailable: {_bc}")
         except Exception as _e_ar:

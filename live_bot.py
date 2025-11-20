@@ -4924,8 +4924,8 @@ class TradingBot:
                         # Telegram: notify dedup skip for visibility (only when dedup is enabled)
                         try:
                             if self.tg and bool(s_cfg.get('dedup_enabled', False)):
-                        if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
-                            await self.tg.send_message(f"🛑 Scalp: [{sym}] dedup skip — phantom suppressed")
+                                if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                    await self.tg.send_message(f"🛑 Scalp: [{sym}] dedup skip — phantom suppressed")
                         except Exception:
                             pass
                     except Exception:

@@ -1914,6 +1914,30 @@ class TradingBot:
         except Exception as _e:
             logger.warning(f"Background balance refresh failed ({reason}): {_e}")
 
+    async def _announce_ready(self, wait_seconds: int = 120):
+        """Announce readiness once WebSocket heartbeat is seen or timeout elapses."""
+        try:
+            import time as _t
+            start = _t.time()
+            # Wait until we see a recent WS heartbeat or until timeout
+            while self.running and (_t.time() - start) < max(30, wait_seconds):
+                ts = float(getattr(self, '_ws_last_msg_ts', 0.0) or 0.0)
+                exp = float(getattr(self, '_ws_expected_interval', 0.0) or 0.0)
+                thr = 90.0 if not exp else max(60.0, min(900.0, exp * 1.2))
+                if ts and (_t.time() - ts) < thr:
+                    break
+                await asyncio.sleep(2.0)
+            # Send a compact ready banner with useful commands
+            if self.tg:
+                cmds = " /dashboard • /status • /balance"
+                await self.tg.send_system_message(
+                    "✅ *Bot Ready*\n\n"
+                    "Streams active and data flowing.\n\n"
+                    f"Use: {cmds}"
+                )
+        except Exception:
+            pass
+
     async def _watch_main_stream(self, idle_seconds: float = 600.0):
         """Watchdog: if no main-stream klines for idle_seconds, force a reconnect.
 
@@ -3039,7 +3063,7 @@ class TradingBot:
                             msg += f"\n{reason_line}"
                         if feat_lines:
                             msg += "\n" + "\n".join(feat_lines)
-                        await self.tg.send_message(msg)
+                        await self.tg.send_system_message(msg)
                 except Exception:
                     pass
                 # Successful execution
@@ -10106,11 +10130,11 @@ class TradingBot:
                     # Note: stream-first startup — streams begin immediately, backfills run in background
                     sym_ct = len(symbols)
                     if stream_3m_only:
-                        await self.tg.send_message(
+                        await self.tg.send_system_message(
                             f"🔄 Bot restart acknowledged — initializing stream-first ({sym_ct} symbols, main 3m only)."
                         )
                     else:
-                        await self.tg.send_message(
+                        await self.tg.send_system_message(
                             f"🔄 Bot restart acknowledged — initializing stream-first ({sym_ct} symbols, main {tf}m + scalp 3m)."
                         )
                 except Exception:
@@ -10379,7 +10403,7 @@ class TradingBot:
                         tf_lbl = f"{tf_lbl} + 3m"
                 except Exception:
                     tf_lbl = f"{tf}m"
-                await self.tg.send_message(
+                await self.tg.send_system_message(
                     "🚀 *Trend Pullback Bot Started*\n\n"
                     f"📊 Monitoring: {len(symbols)} symbols | TF: {tf_lbl}\n"
                     f"💰 Risk per trade: {risk_display} | R:R 1:{settings.rr}\n\n"
@@ -11841,6 +11865,11 @@ class TradingBot:
             else:
                 logger.info(f"Using MultiWS main stream for {len(topics)} topics (tf={tf}m)")
             stream = ws_handler.multi_kline_stream(topics)
+            # Fire 'ready' when first heartbeat arrives (non-blocking)
+            try:
+                self._create_task(self._announce_ready())
+            except Exception:
+                pass
         except Exception:
             # Fallback to legacy single-WS if handler creation fails
             logger.info(f"Using legacy single websocket for {len(topics)} topics")

@@ -2479,6 +2479,58 @@ class TGBot:
             # Decrement concurrent send counter
             self._concurrent_sends = max(0, self._concurrent_sends - 1)
 
+    async def send_system_message(self, text: str, reply_markup=None):
+        """Bypass notification policy and send a system message with retries.
+
+        Used for startup/ready banners and essential operator prompts.
+        """
+        # Reuse the same transport but skip the scalp_execute_only filter
+        self._concurrent_sends += 1
+        if self._concurrent_sends > self._max_concurrent_seen:
+            self._max_concurrent_seen = self._concurrent_sends
+        try:
+            max_retries = 5
+            base_delay = 1.5
+            for attempt in range(max_retries):
+                try:
+                    await self.app.bot.send_message(chat_id=self.chat_id, text=text, parse_mode='Markdown', reply_markup=reply_markup)
+                    try:
+                        import time as _t
+                        self._last_ok_ts = _t.time()
+                    except Exception:
+                        pass
+                    return
+                except telegram.error.BadRequest as e:
+                    if "can't parse entities" in str(e).lower():
+                        try:
+                            escaped_text = text.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('`', '\\`')
+                            await self.app.bot.send_message(chat_id=self.chat_id, text=escaped_text, parse_mode='Markdown', reply_markup=reply_markup)
+                            return
+                        except Exception as plain_e:
+                            if attempt < max_retries - 1:
+                                import random
+                                delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
+                                await asyncio.sleep(delay)
+                                continue
+                            else:
+                                logger.error(f"System send failed: {plain_e}")
+                    else:
+                        logger.error(f"System send failed: {e}")
+                        return
+                except (telegram.error.NetworkError, telegram.error.TimedOut) as e:
+                    if attempt < max_retries - 1:
+                        import random
+                        delay = min(12.0, base_delay * (2 ** attempt) * (1.0 + random.uniform(-0.25, 0.25)))
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        logger.error(f"System send failed after retries: {e}")
+                except Exception as e:
+                    logger.error(f"System send error: {e}")
+                    return
+        finally:
+            self._concurrent_sends = max(0, self._concurrent_sends - 1)
+
     async def safe_reply(self, update: Update, text: str, parse_mode: str = 'Markdown', reply_markup=None):
         """Safely reply to a message with automatic fallback and retry.
 

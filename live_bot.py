@@ -5330,8 +5330,6 @@ class TradingBot:
                             await self._notify_block(sym, kind='pre', side=str(getattr(sc_sig,'side','')), feats={'mtf_agree_15': False}, pre_reason='cooldown/dedup')
                     except Exception:
                         pass
-                    except Exception:
-                        pass
                     continue
 
                 # One active phantom per symbol guard

@@ -10579,13 +10579,24 @@ class TradingBot:
                         tf_lbl = f"{tf_lbl} + 3m"
                 except Exception:
                     tf_lbl = f"{tf}m"
+                # Build Scalp strategy startup banner
+                try:
+                    sc_cfg = (cfg.get('scalp', {}) or {})
+                    ex_cfg = (sc_cfg.get('exec', {}) or {})
+                    ar = (ex_cfg.get('adaptive_risk', {}) or {})
+                    rr_s = float(sc_cfg.get('rr', 2.1))
+                    base = float(ar.get('base_percent', 1.0)); rmin = float(ar.get('min_percent', 0.5)); rmax = float(ar.get('max_percent', 3.0))
+                    gating_txt = "Adaptive Combos (when ready) → Pro Rules (MTF)"
+                except Exception:
+                    rr_s = 2.1; base = 1.0; rmin = 0.5; rmax = 3.0; gating_txt = "Pro Rules (MTF)"
                 await self.tg.send_system_message(
-                    "🚀 *Trend Pullback Bot Started*\n\n"
-                    f"📊 Monitoring: {len(symbols)} symbols | TF: {tf_lbl}\n"
-                    f"💰 Risk per trade: {risk_display} | R:R 1:{settings.rr}\n\n"
-                    "15m break → 3m HL/LH → 3m 2/2 confirms → stream entry\n"
+                    "🩳 *Scalp Strategy Online*\n\n"
+                    f"📊 Monitoring: {len(symbols)} symbols | TF: 3m\n"
+                    f"💰 Risk per trade: {risk_display} | R:R ~1:{rr_s:.1f}\n\n"
+                    f"Gating: {gating_txt}\n"
+                    f"Adaptive Risk: base {base:.2f}% (range {rmin:.2f}–{rmax:.2f}%)\n\n"
                     "Scale‑out: 50% at ~1.6R, SL→BE, runner to ~3.0R\n\n"
-                    "Use /dashboard for buttons and status."
+                    "Use /dashboard for status and controls. Try /watchlist for pre‑eligible symbols."
                 )
 
                 # Wire Trend event notifications to Telegram

@@ -7,6 +7,8 @@ import json
 import logging
 import websockets
 import time
+import socket
+from urllib.parse import urlparse
 from typing import List, AsyncGenerator, Tuple
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,11 @@ class MultiWebSocketHandler:
         self._ws_alt_url = alt_ws_url
         self._use_alt_on_fail = bool(use_alt_on_fail and bool(alt_ws_url))
         self._ws_idx = 0  # 0=primary, 1=alt
+        # Failure tracking and ALT cool-off policy
+        self._primary_fail_count = 0
+        self._primary_hold_until = 0.0  # epoch seconds until which we stick to ALT
+        # 10–15 minutes cool-off; default to 12 minutes
+        self._alt_cooldown_sec = 12 * 60
         # Accept either a boolean or an object with a 'running' attribute
         self._running_flag = running_flag
         self.connections = []
@@ -32,6 +39,61 @@ class MultiWebSocketHandler:
                 self._kline_trace = False
         except Exception:
             self._kline_trace = False
+
+        # DNS pre-resolution cache and per-host IP rotors
+        self._dns_cache: dict[str, list[str]] = {}
+        self._ip_rotate_idx: dict[str, int] = {}
+        try:
+            self._resolve_ws_hosts()
+        except Exception:
+            pass
+
+    def _parse_ws_url(self, url: str) -> tuple[str, str, str]:
+        """Return (scheme, host, path_and_query) for a WS URL."""
+        try:
+            p = urlparse(url)
+            scheme = p.scheme or 'wss'
+            host = p.hostname or ''
+            path = p.path or '/'
+            if p.query:
+                path = path + '?' + p.query
+            return scheme, host, path
+        except Exception:
+            return 'wss', '', '/'
+
+    def _resolve_ws_hosts(self):
+        """Pre-resolve primary and ALT WS hosts and populate IP rotor state."""
+        hosts = []
+        try:
+            _, h0, _ = self._parse_ws_url(self.ws_url)
+            if h0:
+                hosts.append(h0)
+        except Exception:
+            pass
+        try:
+            if self._ws_alt_url:
+                _, h1, _ = self._parse_ws_url(self._ws_alt_url)
+                if h1 and h1 not in hosts:
+                    hosts.append(h1)
+        except Exception:
+            pass
+        for host in hosts:
+            try:
+                infos = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+                ips = []
+                for info in infos:
+                    try:
+                        ip = info[4][0]
+                        if ip and ip not in ips:
+                            ips.append(ip)
+                    except Exception:
+                        continue
+                if ips:
+                    self._dns_cache[host] = ips
+                    if host not in self._ip_rotate_idx:
+                        self._ip_rotate_idx[host] = 0
+            except Exception:
+                continue
 
     def _is_running(self) -> bool:
         try:
@@ -132,21 +194,166 @@ class MultiWebSocketHandler:
 
         while self._is_running():
             try:
-                # Select URL (toggle after failures when enabled)
-                url = self.ws_url if (self._ws_idx == 0 or not self._use_alt_on_fail) else self._ws_alt_url
-                which = 'PRIMARY' if (self._ws_idx == 0 or not self._use_alt_on_fail) else 'ALT'
+                # Select URL (toggle after failures when enabled) with ALT cool-off
+                now = time.time()
+                force_alt = self._use_alt_on_fail and (self._primary_hold_until > now)
+                use_alt = False
+                if self._use_alt_on_fail and self._ws_alt_url:
+                    if force_alt:
+                        use_alt = True
+                    else:
+                        use_alt = (self._ws_idx == 1)
+                url = self._ws_alt_url if use_alt else self.ws_url
+                which = 'ALT' if use_alt else 'PRIMARY'
                 logger.info(f"[WS-{conn_id}] Connecting with {len(topics)} topics ({which})…")
                 
-                # Tune timeouts: give DNS/connect a bit more room than default.
-                # Derive open_timeout relative to expected recv cadence to avoid false timeouts on slow networks.
-                _ot = max(15.0, min(30.0, _compute_timeout() / 3.0))
-                async with websockets.connect(
-                    url,
-                    ping_interval=30,
-                    ping_timeout=40,
-                    open_timeout=_ot,
-                    close_timeout=10
-                ) as ws:
+                # Tune timeouts: derive open_timeout relative to expected cadence; pin a minimum of 25s
+                _ot = max(25.0, min(40.0, _compute_timeout() / 3.0))
+
+                # Resolve candidate IPs for this host (if available)
+                scheme, host, path = self._parse_ws_url(url)
+                candidates = []
+                ips = list(self._dns_cache.get(host, []) or [])
+                if ips:
+                    start = int(self._ip_rotate_idx.get(host, 0)) % len(ips)
+                    for i in range(len(ips)):
+                        ip = ips[(start + i) % len(ips)]
+                        candidates.append((f"{scheme}://{ip}{path}", host, ip))
+                # Always include the original host as last fallback
+                candidates.append((url, host, None))
+
+                ws = None
+                last_error = None
+                for cand_url, sni_host, ip in candidates:
+                    try:
+                        # Attempt connection; provide server_hostname for SNI when using IP
+                        try:
+                            ws_cm = websockets.connect(
+                                cand_url,
+                                ping_interval=30,
+                                ping_timeout=40,
+                                open_timeout=_ot,
+                                close_timeout=10,
+                                server_hostname=sni_host
+                            )
+                        except TypeError:
+                            # Older websockets doesn't support server_hostname
+                            ws_cm = websockets.connect(
+                                cand_url,
+                                ping_interval=30,
+                                ping_timeout=40,
+                                open_timeout=_ot,
+                                close_timeout=10
+                            )
+                        async with ws_cm as ws:
+                            # Mark connected
+                            try:
+                                if hasattr(self._running_flag, '__dict__'):
+                                    import time as _t
+                                    setattr(self._running_flag, '_ws_connected', True)
+                                    setattr(self._running_flag, '_ws_last_msg_ts', _t.time())
+                            except Exception:
+                                pass
+                            # Reset backoff on successful connection
+                            backoff = 2.0
+                            # Reset primary failure counters on success of PRIMARY
+                            if not use_alt:
+                                self._primary_fail_count = 0
+                                self._primary_hold_until = 0.0
+                            # Advance rotor on success for IP-based connects
+                            try:
+                                if ip is not None:
+                                    self._ip_rotate_idx[host] = (start + 1) % max(1, len(ips))
+                            except Exception:
+                                pass
+                            
+                            await ws.send(json.dumps(sub))
+                            logger.info(f"[WS-{conn_id}] Subscribed to {len(topics)} topics")
+                            
+                            timeouts = 0
+                            last_msg_ts = time.monotonic()
+                            last_warn_ts = 0.0
+                            # Compute connection-specific timeout once per connect
+                            recv_timeout = _compute_timeout()
+                            # Publish expected interval to owner so health monitor can scale thresholds
+                            try:
+                                if hasattr(self._running_flag, '__dict__'):
+                                    setattr(self._running_flag, '_ws_expected_interval', float(recv_timeout))
+                            except Exception:
+                                pass
+                            while self._is_running():
+                                try:
+                                    msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=recv_timeout))
+                                    timeouts = 0  # reset timeout counter on message
+                                    last_msg_ts = time.monotonic()
+                                    # Publish heartbeat timestamp to owner for network health monitor
+                                    try:
+                                        if hasattr(self._running_flag, '__dict__'):
+                                            import time as _t
+                                            setattr(self._running_flag, '_ws_last_msg_ts', _t.time())
+                                    except Exception:
+                                        pass
+                                    
+                                    if msg.get("success") == False:
+                                        # Check if it's a duplicate subscription error
+                                        if "already subscribed" in msg.get("ret_msg", ""):
+                                            logger.debug(f"[WS-{conn_id}] Already subscribed to topic, continuing...")
+                                        else:
+                                            logger.error(f"[WS-{conn_id}] Subscription failed: {msg}")
+                                        continue
+                                    
+                                    topic = msg.get("topic", "")
+                                    if topic.startswith("kline."):
+                                        sym = topic.split(".")[-1]
+                                        for k in msg.get("data", []):
+                                            # Optional trace: log first few messages per connection; if tracing enabled, log all
+                                            try:
+                                                if not hasattr(self, '_first_logs'):
+                                                    self._first_logs = {}
+                                                cnt = int(self._first_logs.get(conn_id, 0))
+                                                if self._kline_trace or cnt < 5:
+                                                    cfm = bool(k.get('confirm', False))
+                                                    o = k.get('open'); h = k.get('high'); l = k.get('low'); c = k.get('close'); v = k.get('volume')
+                                                    ts0 = k.get('start')
+                                                    logger.info(f"[WS-{conn_id} KLINE] {sym} confirm={cfm} o={o} h={h} l={l} c={c} v={v} ts={ts0}")
+                                                    self._first_logs[conn_id] = cnt + 1
+                                            except Exception:
+                                                pass
+                                            await queue.put((sym, k))
+                                            
+                                except asyncio.TimeoutError:
+                                    # No message within recv_timeout. Send an explicit ping to keepalive.
+                                    timeouts += 1
+                                    try:
+                                        await ws.ping()
+                                    except Exception:
+                                        logger.warning(f"[WS-{conn_id}] Ping failed after timeout, reconnecting...")
+                                        break
+                                    # Stale feed warning if no data for > recv_timeout
+                                    now = time.monotonic()
+                                    if now - last_msg_ts > recv_timeout and (now - last_warn_ts > 60):
+                                        logger.warning(f"[WS-{conn_id}] No data received for {int(now - last_msg_ts)}s (timeout={int(recv_timeout)}s); monitoring…")
+                                        last_warn_ts = now
+                                    # If severely idle (3x timeout), reconnect to refresh subscription
+                                    if (now - last_msg_ts) > (3 * recv_timeout):
+                                        logger.warning(f"[WS-{conn_id}] Prolonged idle ({int(now - last_msg_ts)}s), reconnecting...")
+                                        break
+                                except websockets.exceptions.ConnectionClosed:
+                                    # Throttle warning frequency; log INFO if recent
+                                    logger.info(f"[WS-{conn_id}] Connection closed, reconnecting…")
+                                    break
+                                except asyncio.CancelledError:
+                                    logger.debug(f"[WS-{conn_id}] Task cancelled")
+                                    raise
+                            # Connected loop ended; break candidates loop to retry fresh
+                            break
+                    except Exception as _c_err:
+                        last_error = _c_err
+                        continue
+
+                # If we exhausted all candidates without establishing a running loop, raise to outer handler
+                if ws is None:
+                    raise last_error if last_error else RuntimeError('ws_connect_failed')
                     # Mark connected
                     try:
                         if hasattr(self._running_flag, '__dict__'):
@@ -244,12 +451,25 @@ class MultiWebSocketHandler:
                 import traceback
                 # Downgrade to WARNING to reduce noise during transient network issues; reconnect logic follows
                 logger.warning(f"[WS-{conn_id}] Connection error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
-                # Flip URL on failure when alt is configured
+                # Track primary failures and flip/hold ALT when threshold reached
                 if self._use_alt_on_fail:
-                    self._ws_idx = 1 - self._ws_idx
+                    # Detect which endpoint was attempted last (approximate via index)
+                    failed_primary = (which == 'PRIMARY')
+                    if failed_primary:
+                        self._primary_fail_count += 1
+                        if self._primary_fail_count >= 3:
+                            self._primary_hold_until = time.time() + max(600, self._alt_cooldown_sec)
+                            self._ws_idx = 1  # force ALT next
+                            logger.warning(f"[WS-{conn_id}] Primary failed {self._primary_fail_count}× — sticking to ALT for {int(self._primary_hold_until - time.time())}s")
+                        else:
+                            self._ws_idx = 1  # try ALT next
+                    else:
+                        # On ALT failure, try PRIMARY next when not in hold window
+                        if time.time() >= self._primary_hold_until:
+                            self._ws_idx = 0
                     try:
-                        which = 'ALT' if self._ws_idx == 1 else 'PRIMARY'
-                        logger.info(f"[WS-{conn_id}] Switching WS endpoint to {which} and backing off")
+                        which2 = 'ALT' if self._ws_idx == 1 else 'PRIMARY'
+                        logger.info(f"[WS-{conn_id}] Switching WS endpoint to {which2} and backing off")
                     except Exception:
                         pass
                 # Exponential backoff with jitter

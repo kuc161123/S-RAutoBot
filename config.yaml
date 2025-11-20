@@ -541,6 +541,11 @@ scalp:
   block_regime: true     # Block trades during extreme volatility (ATR > 4%, BB > 90th percentile)
   dedup_enabled: false   # Disable Redis-based dedup for Scalp phantoms (learn-first)
   session_only: []       # Trade all sessions 24/7 (only block extreme volatility)
+  notifications:
+    blocks:
+      enabled: true              # Enable block notifications (adaptive + rules)
+      pre_gate_enabled: false    # Disable pre-gate blocks for cleaner notifications
+      rate_limit_sec: 600        # Rate limit: max 1 per symbol per 10 minutes
   rr: 2.1                # Target R:R (1:2.1)
   # Enforce minimum 1R distance (0.5%) so fees don’t erode R
   min_r_pct: 0.005

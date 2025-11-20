@@ -2363,77 +2363,77 @@ class TradingBot:
                         scpt0.record_scalp_signal(sym, {'side': sig_obj.side, 'entry': sig_obj.entry, 'sl': sig_obj.sl, 'tp': sig_obj.tp}, float(ml_score or 0.0), False, feats_for_gate)
                     except Exception:
                         pass
-                try:
-                    kind0 = 'adaptive' if gate_reason0.startswith('adaptive') else 'rules'
-                    # Derive reason buckets for breakdown & notify
-                    sub_reasons: list[str] = []
-                    if kind0 == 'adaptive':
-                        sub_reasons.append('disabled')
-                    else:
-                        f = feats_for_gate or {}
-                        side0 = str(getattr(sig_obj, 'side', '')).lower()
-                        try:
-                            rsi0 = float(f.get('rsi_14', 50.0) or 50.0)
-                        except Exception:
-                            rsi0 = 50.0
-                        try:
-                            mh0 = float(f.get('macd_hist', 0.0) or 0.0)
-                        except Exception:
-                            mh0 = 0.0
-                        try:
-                            vwap0 = float(f.get('vwap_dist_atr', 999.0) or 999.0)
-                        except Exception:
-                            vwap0 = 999.0
-                        fibz0 = f.get('fib_zone')
-                        mtf0 = bool(f.get('mtf_agree_15', False))
-                        if not mtf0:
-                            sub_reasons.append('mtf')
+                    try:
+                        kind0 = 'adaptive' if gate_reason0.startswith('adaptive') else 'rules'
+                        # Derive reason buckets for breakdown & notify
+                        sub_reasons: list[str] = []
+                        if kind0 == 'adaptive':
+                            sub_reasons.append('disabled')
                         else:
-                            rsi_bin = '<30' if rsi0 < 30 else '30-40' if rsi0 < 40 else '40-60' if rsi0 < 60 else '60-70' if rsi0 < 70 else '70+'
-                            macd = 'bull' if mh0 > 0 else 'bear'
-                            vwap_bin = '<0.6' if vwap0 < 0.6 else '0.6-1.2' if vwap0 < 1.2 else '1.2+'
-                            fib_ok = str(fibz0) in ('0-23','23-38','38-50','50-61','61-78','78-100')
-                            if side0 == 'long':
-                                if rsi_bin not in ('40-60','60-70'):
-                                    sub_reasons.append('rsi')
-                                v_ok = (vwap_bin == '<0.6') or (vwap_bin == '1.2+' and macd == 'bull')
-                                if not v_ok:
-                                    # Attribute to VWAP unless the only failure is MACD requirement on 1.2+
-                                    if vwap_bin == '1.2+' and macd != 'bull':
-                                        sub_reasons.append('macd')
-                                    else:
-                                        sub_reasons.append('vwap')
-                                if not fib_ok:
-                                    sub_reasons.append('fib')
+                            f = feats_for_gate or {}
+                            side0 = str(getattr(sig_obj, 'side', '')).lower()
+                            try:
+                                rsi0 = float(f.get('rsi_14', 50.0) or 50.0)
+                            except Exception:
+                                rsi0 = 50.0
+                            try:
+                                mh0 = float(f.get('macd_hist', 0.0) or 0.0)
+                            except Exception:
+                                mh0 = 0.0
+                            try:
+                                vwap0 = float(f.get('vwap_dist_atr', 999.0) or 999.0)
+                            except Exception:
+                                vwap0 = 999.0
+                            fibz0 = f.get('fib_zone')
+                            mtf0 = bool(f.get('mtf_agree_15', False))
+                            if not mtf0:
+                                sub_reasons.append('mtf')
                             else:
-                                if rsi_bin not in ('<30','30-40'):
-                                    sub_reasons.append('rsi')
-                                if macd != 'bear':
-                                    sub_reasons.append('macd')
-                                if vwap_bin not in ('<0.6','0.6-1.2'):
-                                    sub_reasons.append('vwap')
-                                # For shorts, require fib in upper bands for Pro rules (61-100)
-                                if str(fibz0) not in ('61-78','78-100'):
-                                    sub_reasons.append('fib')
-                    # Increment counters
-                    self._scalp_incr_block_counter(kind0)
-                    for sr in set(sub_reasons):
-                        self._scalp_incr_block_counter(kind0, sr)
-                    # Notify
-                    try:
-                        await self._notify_block(sym, kind=kind0, side=str(getattr(sig_obj,'side','')), feats=feats_for_gate or {}, combo_id=gate_ctx0.get('combo_id'))
-                    except Exception:
-                        pass
-                except Exception as _bcx:
-                    try:
-                        logger.debug(f"Block counter reason update skipped: {_bcx}")
-                    except Exception:
-                        pass
-                    try:
-                        if self.tg and bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
-                            await self.tg.send_message(f"🚫 Blocked → Phantom | Gating: {gate_reason0} ({gate_ctx0.get('combo_id','n/a')})")
-                    except Exception:
-                        pass
+                                rsi_bin = '<30' if rsi0 < 30 else '30-40' if rsi0 < 40 else '40-60' if rsi0 < 60 else '60-70' if rsi0 < 70 else '70+'
+                                macd = 'bull' if mh0 > 0 else 'bear'
+                                vwap_bin = '<0.6' if vwap0 < 0.6 else '0.6-1.2' if vwap0 < 1.2 else '1.2+'
+                                fib_ok = str(fibz0) in ('0-23','23-38','38-50','50-61','61-78','78-100')
+                                if side0 == 'long':
+                                    if rsi_bin not in ('40-60','60-70'):
+                                        sub_reasons.append('rsi')
+                                    v_ok = (vwap_bin == '<0.6') or (vwap_bin == '1.2+' and macd == 'bull')
+                                    if not v_ok:
+                                        # Attribute to VWAP unless the only failure is MACD requirement on 1.2+
+                                        if vwap_bin == '1.2+' and macd != 'bull':
+                                            sub_reasons.append('macd')
+                                        else:
+                                            sub_reasons.append('vwap')
+                                    if not fib_ok:
+                                        sub_reasons.append('fib')
+                                else:
+                                    if rsi_bin not in ('<30','30-40'):
+                                        sub_reasons.append('rsi')
+                                    if macd != 'bear':
+                                        sub_reasons.append('macd')
+                                    if vwap_bin not in ('<0.6','0.6-1.2'):
+                                        sub_reasons.append('vwap')
+                                    # For shorts, require fib in upper bands for Pro rules (61-100)
+                                    if str(fibz0) not in ('61-78','78-100'):
+                                        sub_reasons.append('fib')
+                        # Increment counters
+                        self._scalp_incr_block_counter(kind0)
+                        for sr in set(sub_reasons):
+                            self._scalp_incr_block_counter(kind0, sr)
+                        # Notify
+                        try:
+                            await self._notify_block(sym, kind=kind0, side=str(getattr(sig_obj,'side','')), feats=feats_for_gate or {}, combo_id=gate_ctx0.get('combo_id'))
+                        except Exception:
+                            pass
+                    except Exception as _bcx:
+                        try:
+                            logger.debug(f"Block counter reason update skipped: {_bcx}")
+                        except Exception:
+                            pass
+                        try:
+                            if self.tg and bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                await self.tg.send_message(f"🚫 Blocked → Phantom | Gating: {gate_reason0} ({gate_ctx0.get('combo_id','n/a')})")
+                        except Exception:
+                            pass
                     return False
                 bybit = self.bybit
                 book = self.book

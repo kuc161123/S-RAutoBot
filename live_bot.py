@@ -1837,12 +1837,18 @@ class TradingBot:
                 by_http_ok = False
                 logger.debug(f"Network monitor: Bybit public probe error: {_e}")
 
-            # WS heartbeat: if we received any kline within the last 3 minutes, consider Bybit healthy
+            # WS heartbeat: consider Bybit healthy when we've seen a kline within a reasonable timeframe.
+            # Threshold scales with expected interval if known; otherwise 180s default.
             by_ws_ok = False
             try:
                 import time as _t
                 ts = float(getattr(self, '_ws_last_msg_ts', 0.0) or 0.0)
-                by_ws_ok = (ts > 0.0) and ((_t.time() - ts) < 180.0)
+                exp = float(getattr(self, '_ws_expected_interval', 0.0) or 0.0)
+                thr = 180.0
+                if exp and exp > 0.0:
+                    # Accept up to ~1.5x expected interval to avoid false negatives on quiet feeds
+                    thr = max(120.0, min(1200.0, exp * 1.5))
+                by_ws_ok = (ts > 0.0) and ((_t.time() - ts) < thr)
             except Exception:
                 by_ws_ok = False
 
@@ -1867,9 +1873,16 @@ class TradingBot:
                 if state == 'ok':
                     logger.info("🌐 Network status: OK — Telegram and Bybit reachable")
                 elif state == 'degraded':
-                    logger.warning("🌐 Network status: DEGRADED — one provider unreachable (see debug logs)")
+                    # Include quick hint booleans so you don't need DEBUG to know which probe failed
+                    try:
+                        logger.warning(f"🌐 Network status: DEGRADED — tg_ok={tg_ok} by_http_ok={by_http_ok} by_ws_ok={by_ws_ok}")
+                    except Exception:
+                        logger.warning("🌐 Network status: DEGRADED — one provider unreachable (see debug logs)")
                 else:
-                    logger.error("🌐 Network status: OFFLINE — Telegram and Bybit unreachable")
+                    try:
+                        logger.error(f"🌐 Network status: OFFLINE — tg_ok={tg_ok} by_http_ok={by_http_ok} by_ws_ok={by_ws_ok}")
+                    except Exception:
+                        logger.error("🌐 Network status: OFFLINE — Telegram and Bybit unreachable")
                 last_state = state
             try:
                 await _asyncio.sleep(max(15, interval))
@@ -9206,6 +9219,11 @@ class TradingBot:
                     backoff = 3.0  # reset after successful connect
                     last_msg = time.monotonic()
                     recv_timeout = _compute_timeout()
+                    # Publish expected interval for health monitor
+                    try:
+                        self._ws_expected_interval = float(recv_timeout)
+                    except Exception:
+                        pass
 
                     while self.running:
                         try:

@@ -166,6 +166,12 @@ class MultiWebSocketHandler:
                     last_warn_ts = 0.0
                     # Compute connection-specific timeout once per connect
                     recv_timeout = _compute_timeout()
+                    # Publish expected interval to owner so health monitor can scale thresholds
+                    try:
+                        if hasattr(self._running_flag, '__dict__'):
+                            setattr(self._running_flag, '_ws_expected_interval', float(recv_timeout))
+                    except Exception:
+                        pass
                     while self._is_running():
                         try:
                             msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=recv_timeout))

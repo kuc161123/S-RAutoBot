@@ -2224,11 +2224,21 @@ class TGBot:
         try:
             await self.app.bot.delete_webhook(drop_pending_updates=True)
             logger.info("Telegram webhook cleared (drop_pending_updates=true)")
+            try:
+                import time as _t
+                self._last_ok_ts = _t.time()
+            except Exception:
+                pass
         except Exception as _wh:
             logger.debug(f"Webhook delete skipped: {_wh}")
         # Ensure core commands show up in Telegram clients (helps discoverability)
         try:
             await self._ensure_bot_commands()
+            try:
+                import time as _t
+                self._last_ok_ts = _t.time()
+            except Exception:
+                pass
         except Exception as _cmd:
             logger.debug(f"set_my_commands skipped: {_cmd}")
         # One-time getUpdates probe (optional) before starting legacy polling
@@ -2239,6 +2249,11 @@ class TGBot:
                 limit = int(probe_cfg.get('limit', 3))
                 ups = await self.app.bot.get_updates(limit=limit, timeout=10)
                 logger.info(f"TG get_updates probe: ok count={len(ups)} (limit={limit})")
+                try:
+                    import time as _t
+                    self._last_ok_ts = _t.time()
+                except Exception:
+                    pass
                 for u in ups[:5]:
                     try:
                         t = type(u).__name__
@@ -2386,6 +2401,11 @@ class TGBot:
                 try:
                     # Try with Markdown first
                     await self.app.bot.send_message(chat_id=self.chat_id, text=text, parse_mode='Markdown', reply_markup=reply_markup)
+                    try:
+                        import time as _t
+                        self._last_ok_ts = _t.time()
+                    except Exception:
+                        pass
                     return  # Success, exit
                 except telegram.error.BadRequest as e:
                     if "can't parse entities" in str(e).lower():
@@ -2395,12 +2415,22 @@ class TGBot:
                             # Escape common problematic characters
                             escaped_text = text.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace(']', '\\]').replace('`', '\\`')
                             await self.app.bot.send_message(chat_id=self.chat_id, text=escaped_text, parse_mode='Markdown', reply_markup=reply_markup)
+                            try:
+                                import time as _t
+                                self._last_ok_ts = _t.time()
+                            except Exception:
+                                pass
                             return  # Success, exit
                         except:
                             # If still fails, send as plain text
                             logger.warning("Escaped markdown also failed, sending as plain text")
                             try:
                                 await self.app.bot.send_message(chat_id=self.chat_id, text=text, reply_markup=reply_markup)
+                                try:
+                                    import time as _t
+                                    self._last_ok_ts = _t.time()
+                                except Exception:
+                                    pass
                                 return  # Success, exit
                             except Exception as plain_e:
                                 if attempt < max_retries - 1:
@@ -2461,6 +2491,11 @@ class TGBot:
         for attempt in range(max_retries):
             try:
                 await update.message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
+                try:
+                    import time as _t
+                    self._last_ok_ts = _t.time()
+                except Exception:
+                    pass
                 return  # Success, exit
             except telegram.error.BadRequest as e:
                 if "can't parse entities" in str(e).lower():

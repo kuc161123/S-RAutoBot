@@ -1798,8 +1798,15 @@ class TradingBot:
                 else:
                     tg_ok = False
             except Exception as _e:
-                tg_ok = False
-                logger.debug(f"Network monitor: Telegram probe failed: {_e}")
+                # Fall back to last successful TG interaction within a grace window
+                try:
+                    import time as _t
+                    last_ok = float(getattr(self.tg, '_last_ok_ts', 0.0) or 0.0) if getattr(self, 'tg', None) else 0.0
+                    grace = 180.0
+                    tg_ok = (last_ok > 0.0) and ((_t.time() - last_ok) < grace)
+                except Exception:
+                    tg_ok = False
+                logger.debug(f"Network monitor: Telegram probe failed: {_e}; fallback recent_ok={tg_ok}")
             # Bybit probe — use PUBLIC endpoint; also accept "recent WS activity" as healthy
             try:
                 import requests as _req

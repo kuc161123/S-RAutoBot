@@ -678,7 +678,7 @@ scalp:
     require_combo_enabled: true
     fallback_until_ready: pro    # pro | mtf | off
     manager_fresh_hours: 6       # consider manager stale when older than this many hours
-    blocked_notify: true         # send blocked phantom notifications when gating prevents execution
+    blocked_notify: false        # mute blocked/phantom notifications; send only execution notifications
     # Adaptive combo filtering: dynamically enable/disable combos based on rolling performance
     adaptive_combos:
       enabled: true              # Enable adaptive combo filtering

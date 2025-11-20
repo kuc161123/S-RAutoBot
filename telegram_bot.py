@@ -26,9 +26,9 @@ class TGBot:
             try:
                 request = HTTPXRequest(
                     connect_timeout=10.0,
-                    read_timeout=90.0,
+                    read_timeout=120.0,
                     write_timeout=45.0,
-                    pool_timeout=30.0,  # Increased from 10s to 30s
+                    pool_timeout=60.0,  # Increased from 30s to 60s
                     connection_pool_size=50  # Increased from default 10 to 50 for high-throughput bot
                 )
                 self.app = Application.builder().token(token).request(request).build()
@@ -45,9 +45,11 @@ class TGBot:
         self._max_concurrent_seen = 0
         # Downgrade noisy PTB warning about CancelledError during graceful shutdown
         try:
-            # Surface warnings from PTB while we debug polling
+            # Reduce chatty PTB logs; Updater network loop errors will auto-retry
+            logging.getLogger("telegram").setLevel(logging.WARNING)
+            logging.getLogger("telegram.ext").setLevel(logging.WARNING)
             logging.getLogger("telegram.ext.Application").setLevel(logging.WARNING)
-            logging.getLogger("telegram.ext.Updater").setLevel(logging.INFO)
+            logging.getLogger("telegram.ext.Updater").setLevel(logging.WARNING)
         except Exception:
             pass
         # Simple per-command cooldown
@@ -2266,7 +2268,11 @@ class TGBot:
         except Exception as _pe:
             logger.error(f"TG get_updates probe failed: {_pe}")
         logger.info(f"Telegram bot started polling (chat_id={self.chat_id})")
-        await self.app.updater.start_polling(drop_pending_updates=True, allowed_updates=["message","callback_query","channel_post"]) 
+        await self.app.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=["message","callback_query","channel_post"],
+            timeout=30
+        )
 
     async def _ensure_bot_commands(self):
         """Ensure core commands exist without clobbering existing ones."""

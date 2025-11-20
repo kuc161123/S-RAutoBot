@@ -6634,8 +6634,8 @@ class TradingBot:
                                     if self.tg and reason in ('daily_cap','hourly_budget'):
                                         comps = sc_feats.get('qscore_components', {}) or {}
                                         comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
-                                if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
-                                    await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={reason}) — phantom recorded\nQ={float(sc_feats.get('qscore',0.0)):.1f}\n{comp_line}")
+                                        if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                            await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={reason}) — phantom recorded\nQ={float(sc_feats.get('qscore',0.0)):.1f}\n{comp_line}")
                                 except Exception:
                                     pass
                             except Exception:

@@ -1800,10 +1800,10 @@ class TradingBot:
             except Exception as _e:
                 tg_ok = False
                 logger.debug(f"Network monitor: Telegram probe failed: {_e}")
-            # Bybit probe — use PUBLIC endpoint to avoid false OFFLINE due to credential issues
+            # Bybit probe — use PUBLIC endpoint; also accept "recent WS activity" as healthy
             try:
                 import requests as _req
-                by_ok = False
+                by_http_ok = False
                 by = (cfg.get('bybit', {}) or {})
                 bases = []
                 try:
@@ -1827,15 +1827,30 @@ class TradingBot:
                         if r.ok:
                             j = r.json()
                             if str(j.get('retCode')) == '0':
-                                by_ok = True
+                                by_http_ok = True
                                 break
                     except Exception as _pe:
                         logger.debug(f"Network monitor: Public Bybit probe failed for {b}: {_pe}")
-                if not by_ok:
+                if not by_http_ok:
                     logger.debug("Network monitor: Bybit public probe did not succeed on any base URL")
             except Exception as _e:
-                by_ok = False
+                by_http_ok = False
                 logger.debug(f"Network monitor: Bybit public probe error: {_e}")
+
+            # WS heartbeat: if we received any kline within the last 3 minutes, consider Bybit healthy
+            by_ws_ok = False
+            try:
+                import time as _t
+                ts = float(getattr(self, '_ws_last_msg_ts', 0.0) or 0.0)
+                by_ws_ok = (ts > 0.0) and ((_t.time() - ts) < 180.0)
+            except Exception:
+                by_ws_ok = False
+
+            by_ok = bool(by_http_ok or by_ws_ok)
+            try:
+                logger.debug(f"Network monitor: by_http_ok={by_http_ok} by_ws_ok={by_ws_ok}")
+            except Exception:
+                pass
             # Classify
             state = 'offline'
             if tg_ok and by_ok:
@@ -9179,6 +9194,13 @@ class TradingBot:
                 # Steady ping cadence; dynamic recv timeout per timeframe
                 async with websockets.connect(ws_url, ping_interval=30, ping_timeout=40) as ws:
                     self.ws = ws
+                    # Mark WS connected and stamp last_msg ts for network health
+                    try:
+                        import time as _t
+                        self._ws_connected = True
+                        self._ws_last_msg_ts = _t.time()
+                    except Exception:
+                        pass
                     await ws.send(json.dumps(sub))
                     logger.info(f"Subscribed to topics: {topics}")
                     backoff = 3.0  # reset after successful connect
@@ -9189,6 +9211,12 @@ class TradingBot:
                         try:
                             msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=recv_timeout))
                             last_msg = time.monotonic()
+                            # Publish heartbeat ts for network health
+                            try:
+                                import time as _t
+                                self._ws_last_msg_ts = _t.time()
+                            except Exception:
+                                pass
                             if msg.get("success") == False:
                                 if "already subscribed" in msg.get("ret_msg", ""):
                                     logger.debug("Already subscribed; continuing")
@@ -9244,6 +9272,10 @@ class TradingBot:
             # Backoff between reconnects while running
             if self.running:
                 import random
+                try:
+                    self._ws_connected = False
+                except Exception:
+                    pass
                 sleep_s = min(max_backoff, backoff * (1.0 + random.uniform(-0.2, 0.2)))
                 await asyncio.sleep(sleep_s)
                 backoff = min(max_backoff, backoff * 1.6)

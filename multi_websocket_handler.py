@@ -147,6 +147,14 @@ class MultiWebSocketHandler:
                     open_timeout=_ot,
                     close_timeout=10
                 ) as ws:
+                    # Mark connected
+                    try:
+                        if hasattr(self._running_flag, '__dict__'):
+                            import time as _t
+                            setattr(self._running_flag, '_ws_connected', True)
+                            setattr(self._running_flag, '_ws_last_msg_ts', _t.time())
+                    except Exception:
+                        pass
                     # Reset backoff on successful connection
                     backoff = 2.0
                     
@@ -163,6 +171,13 @@ class MultiWebSocketHandler:
                             msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=recv_timeout))
                             timeouts = 0  # reset timeout counter on message
                             last_msg_ts = time.monotonic()
+                            # Publish heartbeat timestamp to owner for network health monitor
+                            try:
+                                if hasattr(self._running_flag, '__dict__'):
+                                    import time as _t
+                                    setattr(self._running_flag, '_ws_last_msg_ts', _t.time())
+                            except Exception:
+                                pass
                             
                             if msg.get("success") == False:
                                 # Check if it's a duplicate subscription error
@@ -233,6 +248,12 @@ class MultiWebSocketHandler:
                         pass
                 # Exponential backoff with jitter
                 import random
+                # Mark disconnected while backing off
+                try:
+                    if hasattr(self._running_flag, '__dict__'):
+                        setattr(self._running_flag, '_ws_connected', False)
+                except Exception:
+                    pass
                 sleep_s = min(max_backoff, backoff * (1.0 + random.uniform(-0.2, 0.2)))
                 await asyncio.sleep(sleep_s)
                 backoff = min(max_backoff, backoff * 1.6)

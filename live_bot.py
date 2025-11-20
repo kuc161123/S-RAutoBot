@@ -1864,11 +1864,11 @@ class TradingBot:
                 logger.debug(f"Network monitor: by_http_ok={by_http_ok} by_ws_ok={by_ws_ok}")
             except Exception:
                 pass
-            # Classify
+            # Classify: prioritize Bybit (trading). If Bybit is healthy, overall OK even if Telegram probe is flaky.
             state = 'offline'
-            if tg_ok and by_ok:
+            if by_ok:
                 state = 'ok'
-            elif tg_ok or by_ok:
+            elif tg_ok:
                 state = 'degraded'
             # Update shared and log on transition
             try:

@@ -7376,8 +7376,8 @@ class TradingBot:
                         strat = str(getattr(phantom, 'strategy_name', '') or '').lower()
                         feats_tp1 = getattr(phantom, 'features', {}) or {}
                         if strat.startswith('range') and isinstance(feats_tp1.get('range_mid', None), (int,float)):
-                        if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
-                            await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f} (mid {float(feats_tp1['range_mid']):.4f})")
+                            if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f} (mid {float(feats_tp1['range_mid']):.4f})")
                         else:
                             if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
                                 await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f}")

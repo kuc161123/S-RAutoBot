@@ -817,6 +817,24 @@ class TradingBot:
         except Exception:
             pass
 
+    async def _scalp_gate_or_execute(self, sym: str, sc_sig, sc_feats: dict, ml_score: float = 0.0) -> bool:
+        """Enforce central gate for a generated Scalp signal.
+
+        Stashes features for gating, then calls the central executor.
+        Returns True if an order was placed; otherwise executor records a phantom.
+        """
+        try:
+            # Stash features so _execute_scalp_trade can read them for gating and notifications
+            if not hasattr(self, '_last_signal_features'):
+                self._last_signal_features = {}
+            self._last_signal_features[sym] = dict(sc_feats or {})
+        except Exception:
+            pass
+        try:
+            return await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_score or 0.0))
+        except Exception:
+            return False
+
     def _scalp_combo_allowed(self, side: str, feats: dict) -> tuple[bool, str, dict]:
         """Return (allowed, reason, ctx) based on manager readiness and fallback policy.
         reasons: adaptive_enabled | adaptive_disabled | fallback_mtf_ok | fallback_mtf_block | insufficient_features | no_manager_state
@@ -4684,10 +4702,10 @@ class TradingBot:
                                 pass
                             if blocked:
                                 try:
-                                    if scpt:
-                                        scpt.record_scalp_signal(sym, {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, float(ml_s or 0.0), False, sc_feats_hi)
+                                    # Enforce central gate: if gate allows, execute; else phantom is recorded by executor
+                                    await self._scalp_gate_or_execute(sym, sc_sig, sc_feats_hi, ml_score=float(ml_s or 0.0))
                                     self._scalp_last_exec_reason[sym] = 'off_hours'
-                                    logger.info(f"[{sym}] 🛑 Scalp COMBO blocked: off_hours | Combo {matched_combo.get('combo_id')} F={fast:.3f}% S={slow:.3f}% ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}% VWAP={vwap_dist_atr:.2f}σ")
+                                    logger.info(f"[{sym}] 🛑 Scalp COMBO pre-block (off_hours) routed through central gate | Combo {matched_combo.get('combo_id')}")
                                 except Exception:
                                     pass
                                 matched_combo = None
@@ -4714,10 +4732,10 @@ class TradingBot:
                                 vol_ok = wick_ok = True
                             if not (vol_ok and wick_ok):
                                 try:
-                                    if scpt:
-                                        scpt.record_scalp_signal(sym, {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, float(ml_s or 0.0), False, sc_feats_hi)
+                                    # Enforce central gate even when combo-level gates fail
+                                    await self._scalp_gate_or_execute(sym, sc_sig, sc_feats_hi, ml_score=float(ml_s or 0.0))
                                     self._scalp_last_exec_reason[sym] = 'combo_gates'
-                                    logger.info(f"[{sym}] 🛑 Scalp COMBO blocked: gates | Combo {matched_combo.get('combo_id')} VolOK={vol_ok} WickOK={wick_ok}")
+                                    logger.info(f"[{sym}] 🛑 Scalp COMBO pre-block (gates) routed through central gate | Combo {matched_combo.get('combo_id')}")
                                 except Exception:
                                     pass
                                 matched_combo = None

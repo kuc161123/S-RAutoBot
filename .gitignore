@@ -29,6 +29,9 @@ logs/
 *.csv
 *.json
 !symbol_clusters.json
+*.db
+*.sqlite
+*.sqlite3
 ml_data/
 data/
 

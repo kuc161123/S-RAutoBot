@@ -2233,6 +2233,12 @@ class TGBot:
             return
         # Always use legacy polling to avoid "Cannot close a running event loop" issues
         await self._legacy_start_polling()
+        # Start outbox drain after polling starts
+        try:
+            import asyncio
+            asyncio.create_task(self._outbox_drain())
+        except Exception:
+            pass
 
     async def _legacy_start_polling(self):
         """Initialize/start Application and start the Updater polling loop."""
@@ -2295,6 +2301,51 @@ class TGBot:
             allowed_updates=["message","callback_query","channel_post"],
             timeout=30
         )
+
+    async def _outbox_drain(self):
+        """Drain outbox messages when Telegram is healthy."""
+        import asyncio, time
+        while True:
+            try:
+                if not self._outbox:
+                    await asyncio.sleep(2.0)
+                    continue
+                # Health: shared.network_status == ok OR last_ok within 180s
+                healthy = False
+                try:
+                    st = (self.shared or {}).get('network_status') if hasattr(self, 'shared') else None
+                    if st == 'ok':
+                        healthy = True
+                except Exception:
+                    healthy = False
+                if not healthy:
+                    try:
+                        last_ok = float(getattr(self, '_last_ok_ts', 0.0) or 0.0)
+                        healthy = (last_ok > 0.0) and ((time.time() - last_ok) < 180.0)
+                    except Exception:
+                        healthy = False
+                if not healthy:
+                    await asyncio.sleep(3.0)
+                    continue
+                item = self._outbox.pop(0)
+                text = item.get('text', '')
+                reply_markup = item.get('reply_markup')
+                try:
+                    await self.app.bot.send_message(chat_id=self.chat_id, text=text, parse_mode='Markdown', reply_markup=reply_markup)
+                    try:
+                        self._last_ok_ts = time.time()
+                    except Exception:
+                        pass
+                except Exception:
+                    # Push back and retry later
+                    self._outbox.append(item)
+                    await asyncio.sleep(5.0)
+                    continue
+            except Exception:
+                try:
+                    await asyncio.sleep(5.0)
+                except Exception:
+                    pass
 
     async def _ensure_bot_commands(self):
         """Ensure core commands exist without clobbering existing ones."""

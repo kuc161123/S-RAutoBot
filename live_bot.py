@@ -5313,17 +5313,19 @@ class TradingBot:
                         self._scalp_stats['dedup_skips'] = self._scalp_stats.get('dedup_skips', 0) + 1
                     except Exception:
                         pass
+                    # Decision log
                     try:
                         logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason=dedup)")
                         _scalp_decision_logged = True
-                        # Telegram: notify dedup skip for visibility (only when dedup is enabled)
-                        try:
-                            if self.tg and bool(s_cfg.get('dedup_enabled', False)):
-                                if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
-                                    await self.tg.send_message(f"🛑 Scalp: [{sym}] dedup skip — phantom suppressed")
-                        except Exception:
-                            pass
-                    # Optional pre-gate notify for cooldown/dedup
+                    except Exception:
+                        pass
+                    # Optional legacy TG notify (behind blocked_notify & dedup_enabled)
+                    try:
+                        if self.tg and bool(s_cfg.get('dedup_enabled', False)) and bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                            await self.tg.send_message(f"🛑 Scalp: [{sym}] dedup skip — phantom suppressed")
+                    except Exception:
+                        pass
+                    # Optional pre-gate block notification (cooldown/dedup)
                     try:
                         nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
                         if bool(nb.get('pre_gate_enabled', False)):

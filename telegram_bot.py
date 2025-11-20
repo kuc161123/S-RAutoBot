@@ -999,6 +999,29 @@ class TGBot:
                 r_days = int(rec.get('days', 7)); r_min = int(rec.get('min_samples', 15)); r_only = bool(rec.get('prefer_only', True))
                 lines.append(f"• Status: On | High‑WR: {'On' if use_hw else 'Off'} | Base {base:.2f}% | Range {rmin:.2f}–{rmax:.2f}%")
                 lines.append(f"• Recency: {r_days}d N≥{r_min} | Prefer‑only: {'yes' if r_only else 'no'}")
+                # Gating mode indicator (Adaptive vs MTF fallback)
+                try:
+                    mgr = self.shared.get('adaptive_combo_mgr')
+                    cfg = self.shared.get('config', {}) or {}
+                    hours = int((((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('manager_fresh_hours', 6)))
+                    from datetime import datetime, timedelta
+                    mgr_ready = False
+                    if mgr and getattr(mgr, 'enabled', False):
+                        fresh_ok = True
+                        try:
+                            if mgr.last_update is not None:
+                                fresh_ok = (datetime.utcnow() - mgr.last_update) <= timedelta(hours=max(1, hours))
+                        except Exception:
+                            fresh_ok = True
+                        try:
+                            any_enabled = bool(mgr.get_active_combos('long') or mgr.get_active_combos('short'))
+                        except Exception:
+                            any_enabled = False
+                        mgr_ready = bool(fresh_ok and any_enabled)
+                    gate_mode = 'Adaptive Combos' if mgr_ready else 'MTF fallback (warming)'
+                    lines.append(f"• Gating mode: {gate_mode}")
+                except Exception:
+                    pass
 
                 # Show top few active combos with 7d recency and risk estimate
                 mgr = self.shared.get('adaptive_combo_mgr')
@@ -1053,6 +1076,34 @@ class TGBot:
                         logger.debug(f"Adaptive risk panel error: {_ar}")
                 if shown == 0:
                     lines.append("• No recent combo recency data (yet)")
+                # Optional: Blocked counters (last 24h)
+                try:
+                    import os, redis
+                    from datetime import datetime, timedelta
+                    url = os.getenv('REDIS_URL')
+                    r = None
+                    # Prefer phantom tracker redis if available
+                    if r is None:
+                        try:
+                            from scalp_phantom_tracker import get_scalp_phantom_tracker
+                            r = getattr(get_scalp_phantom_tracker(), 'redis_client', None)
+                        except Exception:
+                            r = None
+                    if r is None and url:
+                        r = redis.from_url(url, decode_responses=True)
+                    if r is not None:
+                        now = datetime.utcnow()
+                        total_ad = 0; total_mtf = 0
+                        for i in range(24):
+                            ts = (now - timedelta(hours=i)).strftime('%Y%m%d%H')
+                            try:
+                                total_ad += int(r.get(f'scalp:block:adaptive:{ts}') or 0)
+                                total_mtf += int(r.get(f'scalp:block:mtf:{ts}') or 0)
+                            except Exception:
+                                continue
+                        lines.append(f"• Blocked (24h): {total_ad} by Adaptive | {total_mtf} by MTF")
+                except Exception as _bc:
+                    logger.debug(f"Blocked counters unavailable: {_bc}")
         except Exception as _e_ar:
             logger.debug(f"Adaptive risk block skipped: {_e_ar}")
         try:

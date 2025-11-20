@@ -757,6 +757,104 @@ class TradingBot:
         except Exception:
             return None
 
+    def _adaptive_combo_ready(self) -> bool:
+        try:
+            mgr = getattr(self, 'adaptive_combo_mgr', None)
+            if not mgr or not getattr(mgr, 'enabled', False):
+                return False
+            # Freshness
+            cfg = getattr(self, 'config', {}) or {}
+            hours = int((((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('manager_fresh_hours', 6)))
+            fresh_ok = True
+            try:
+                if mgr.last_update is not None:
+                    from datetime import datetime, timedelta
+                    fresh_ok = (datetime.utcnow() - mgr.last_update) <= timedelta(hours=max(1, hours))
+            except Exception:
+                fresh_ok = True
+            # Enabled lists per side
+            try:
+                any_enabled = False
+                if mgr.get_active_combos('long'):
+                    any_enabled = True
+                if mgr.get_active_combos('short'):
+                    any_enabled = True
+            except Exception:
+                any_enabled = False
+            return bool(fresh_ok and any_enabled)
+        except Exception:
+            return False
+
+    def _scalp_incr_block_counter(self, kind: str):
+        # kind: 'adaptive' | 'mtf'
+        try:
+            r = getattr(self, '_redis', None)
+            if r is None:
+                # Try phantom tracker redis
+                try:
+                    from scalp_phantom_tracker import get_scalp_phantom_tracker
+                    scpt = get_scalp_phantom_tracker()
+                    r = getattr(scpt, 'redis_client', None)
+                except Exception:
+                    r = None
+            if r is None:
+                return
+            from datetime import datetime
+            ts = datetime.utcnow().strftime('%Y%m%d%H')
+            key = f"scalp:block:{'adaptive' if kind=='adaptive' else 'mtf'}:{ts}"
+            r.incr(key, 1)
+            r.expire(key, 48 * 3600)
+        except Exception:
+            pass
+
+    def _scalp_combo_allowed(self, side: str, feats: dict) -> tuple[bool, str, dict]:
+        """Return (allowed, reason, ctx) based on manager readiness and fallback policy.
+        reasons: adaptive_enabled | adaptive_disabled | fallback_mtf_ok | fallback_mtf_block | insufficient_features | no_manager_state
+        ctx contains combo_id when available.
+        """
+        ctx = {}
+        try:
+            cfg = getattr(self, 'config', {}) or {}
+            exec_cfg = ((cfg.get('scalp', {}) or {}).get('exec', {}) or {})
+            require_combo = bool(exec_cfg.get('require_combo_enabled', True))
+            fallback_mode = str(exec_cfg.get('fallback_until_ready', 'mtf')).lower()
+        except Exception:
+            require_combo = True
+            fallback_mode = 'mtf'
+
+        # Build combo key if possible
+        combo_id = self._scalp_combo_key_from_features(feats or {})
+        if combo_id:
+            ctx['combo_id'] = combo_id
+        mgr_ready = self._adaptive_combo_ready()
+        mgr = getattr(self, 'adaptive_combo_mgr', None)
+
+        if mgr_ready and require_combo:
+            try:
+                active = [c.get('combo_id') for c in (mgr.get_active_combos(str(side).lower()) or [])]
+                if combo_id and combo_id in active:
+                    return True, 'adaptive_enabled', ctx
+                else:
+                    return False, 'adaptive_disabled', ctx
+            except Exception:
+                return False, 'no_manager_state', ctx
+
+        # Fallback path (manager not ready)
+        if fallback_mode == 'mtf':
+            try:
+                mtf_ok = bool((feats or {}).get('mtf_agree_15', False))
+            except Exception:
+                mtf_ok = False
+            if mtf_ok:
+                return True, 'fallback_mtf_ok', ctx
+            else:
+                return False, 'fallback_mtf_block', ctx
+        else:
+            # No fallback gating
+            return True, 'fallback_off', ctx
+        
+    
+
     def _wilson_lb(self, wins: int, n: int, z: float = 1.96) -> float:
         try:
             if n <= 0:
@@ -1973,6 +2071,35 @@ class TradingBot:
                 lock = _asyncio.Lock()
                 self._exec_locks[sym] = lock
             async with lock:
+                # Global adaptive/MTF gating for any scalp execute path
+                try:
+                    feats_for_gate = {}
+                    try:
+                        feats_for_gate = dict((getattr(self, '_last_signal_features', {}) or {}).get(sym, {}) or {})
+                    except Exception:
+                        feats_for_gate = {}
+                    allowed0, gate_reason0, gate_ctx0 = self._scalp_combo_allowed(str(getattr(sig_obj,'side','')), feats_for_gate)
+                except Exception:
+                    allowed0, gate_reason0, gate_ctx0 = (False, 'insufficient_features', {})
+                if not allowed0:
+                    # Record phantom and notify blocked (minimal path)
+                    try:
+                        from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                        scpt0 = _get_scpt()
+                        scpt0.record_scalp_signal(sym, {'side': sig_obj.side, 'entry': sig_obj.entry, 'sl': sig_obj.sl, 'tp': sig_obj.tp}, float(ml_score or 0.0), False, feats_for_gate)
+                    except Exception:
+                        pass
+                    try:
+                        kind0 = 'adaptive' if gate_reason0.startswith('adaptive') else 'mtf'
+                        self._scalp_incr_block_counter(kind0)
+                    except Exception:
+                        pass
+                    try:
+                        if self.tg:
+                            await self.tg.send_message(f"🚫 Blocked → Phantom | Gating: {gate_reason0} ({gate_ctx0.get('combo_id','n/a')})")
+                    except Exception:
+                        pass
+                    return False
                 bybit = self.bybit
                 book = self.book
                 base_sizer = getattr(self, 'sizer', None)
@@ -4301,6 +4428,41 @@ class TradingBot:
                         except Exception:
                             ml_s_slope = 0.0
 
+                        # Adaptive/MTF gating prior to any pre-execution notify
+                        try:
+                            allowed, gate_reason, gate_ctx = self._scalp_combo_allowed(sc_sig.side, sc_feats_hi)
+                        except Exception:
+                            allowed, gate_reason, gate_ctx = (False, 'insufficient_features', {})
+                        if not allowed:
+                            # Record phantom and notify blocked
+                            try:
+                                from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                                scpt_blk = _get_scpt()
+                                scpt_blk.record_scalp_signal(sym, {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, float(ml_s_slope or 0.0), False, sc_feats_hi)
+                            except Exception:
+                                pass
+                            # Increment counters
+                            try:
+                                kind = 'adaptive' if gate_reason.startswith('adaptive') else 'mtf'
+                                self._scalp_incr_block_counter(kind)
+                            except Exception:
+                                pass
+                            # Notify
+                            try:
+                                if self.tg:
+                                    combo_label = gate_ctx.get('combo_id', 'n/a')
+                                    reason_text = 'Adaptive combo disabled' if gate_reason.startswith('adaptive') else 'MTF fallback: not aligned' if gate_reason.endswith('block') else gate_reason
+                                    await self.tg.send_message(
+                                        f"🚫 High‑WR combo blocked → Phantom\n"
+                                        f"Gating: {reason_text} ({combo_label})\n"
+                                        f"📊 Indicators: RSI={rsi:.1f} | MACD={macd_state} | Fib={fib_zone} | VWAP={vwap_dist_atr:.2f}σ | MTF={'✓' if mtf_agree else '✗'}\n"
+                                        f"Slopes: F={fast:.3f}% S={slow:.3f}% | ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}%"
+                                    )
+                            except Exception:
+                                pass
+                            # Skip execution path
+                            continue
+
                         # Calculate per-combo risk (fallback to exec.high_wr_risk_percent)
                         try:
                             risk_pct = float(matched_combo.get('risk_percent', self.config.get('scalp', {}).get('exec', {}).get('high_wr_risk_percent', 1.0)))
@@ -4357,13 +4519,26 @@ class TradingBot:
 
                                     # Build combo performance line
                                     ev_line = f" | EV_R {combo_ev_realtime:+.2f}" if combo_ev_realtime is not None else ""
-                                    await self.tg.send_message(
+                                    # Add gating line for transparency
+                                    gate_allowed, gate_reason2, gate_ctx2 = True, 'adaptive_enabled', {}
+                                    try:
+                                        gate_allowed, gate_reason2, gate_ctx2 = self._scalp_combo_allowed(sc_sig.side, sc_feats_hi)
+                                    except Exception:
+                                        pass
+                                    gating_line = (
+                                        f"✅ Adaptive Combo: Enabled ({gate_ctx2.get('combo_id','n/a')})" if gate_reason2.startswith('adaptive') and gate_allowed else
+                                        ("✅ MTF Fallback: Aligned" if gate_reason2.startswith('fallback_mtf_ok') else "")
+                                    )
+                                    msg = (
                                         f"🟢 HIGH-WR INDICATOR EXECUTE (Risk {risk_pct:.1f}%): {sym} {sc_sig.side.upper()} @ {float(sc_sig.entry):.4f}\n"
                                         f"📊 Combo: WR {combo_wr_realtime:.1f}% (N={combo_n_realtime}){ev_line} [30d rolling]\n"
                                         f"Indicators: RSI={rsi:.1f} | MACD={macd_state} | Fib={fib_zone} | VWAP={vwap_dist_atr:.2f}σ | MTF={'✓' if mtf_agree else '✗'}\n"
                                         f"Slopes: F={fast:.3f}% S={slow:.3f}% | ATR={atr_pct:.2f}% BBW={bb_width_pct*100:.2f}%\n"
                                         f"ML={ml_s_slope:.1f} | TP {float(sc_sig.tp):.4f} | SL {float(sc_sig.sl):.4f} | ID={exec_id}"
                                     )
+                                    if gating_line:
+                                        msg = msg + "\n" + gating_line
+                                    await self.tg.send_message(msg)
                             except Exception:
                                 pass
 

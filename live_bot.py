@@ -8185,10 +8185,11 @@ class TradingBot:
             for symbol, pos in potentially_closed:
                 try:
                     # Try to get recent order history to confirm close
+                    # Use a larger window for order history to improve close evidence detection
                     resp = self.bybit._request("GET", "/v5/order/history", {
                         "category": "linear",
                         "symbol": symbol,
-                        "limit": 20
+                        "limit": 50
                     })
                     orders = resp.get("result", {}).get("list", [])
                     
@@ -8199,13 +8200,25 @@ class TradingBot:
                     
                     for order in orders:
                         # Check if this is a closing order
-                        if (order.get("reduceOnly") == True and 
-                            order.get("orderStatus") == "Filled"):
+                        if (order.get("orderStatus") == "Filled"):
+                            # Consider reduceOnly OR explicit TP/SL order types as closing evidence
+                            if not (order.get("reduceOnly") == True or (str(order.get("orderType","")) in ("TakeProfit","StopLoss") or "TakeProfit" in str(order.get("orderType","")) or "StopLoss" in str(order.get("orderType","")))):
+                                continue
                             
                             found_close = True
                             # Handle empty strings and None values
                             avg_price_str = order.get("avgPrice", 0)
-                            exit_price = float(avg_price_str) if avg_price_str and avg_price_str != "" else 0
+                            exit_price = float(avg_price_str) if avg_price_str and avg_price_str != "" else 0.0
+                            # Derive from cumulative exec value/qty if avgPrice is blank
+                            try:
+                                if exit_price <= 0.0:
+                                    cval = order.get('cumExecValue'); cqty = order.get('cumExecQty')
+                                    if cval is not None and cqty is not None:
+                                        cvalf = float(cval); cqtyf = float(cqty)
+                                        if cqtyf > 0.0:
+                                            exit_price = cvalf / cqtyf
+                            except Exception:
+                                pass
                             
                             # Log order details for debugging
                             logger.debug(f"[{symbol}] Found filled reduceOnly order: avgPrice={avg_price_str}, triggerPrice={order.get('triggerPrice')}, orderType={order.get('orderType')}")
@@ -8287,7 +8300,52 @@ class TradingBot:
                         confirmed_closed.append((symbol, pos, exit_price, exit_reason))
                     else:
                         # Can't confirm it's closed - might be API lag — track misses and optionally warn
-                        logger.debug(f"[{symbol}] Not in positions but can't confirm close - keeping in book")
+                        logger.debug(f"[{symbol}] Not in positions but can't confirm close via orders - attempting executions fallback")
+                        # Fallback: check recent executions to confirm close
+                        try:
+                            execs = self.bybit.get_executions(symbol, limit=50)
+                        except Exception:
+                            execs = []
+                        if execs:
+                            try:
+                                from datetime import datetime as _dt, timedelta as _td
+                                now_ms = int(_dt.utcnow().timestamp() * 1000)
+                                cutoff_ms = now_ms - (15 * 60 * 1000)  # 15 minutes
+                                tot_qty = 0.0; tot_val = 0.0
+                                reason_guess = "unknown"
+                                for ex in execs:
+                                    try:
+                                        tms = int(str(ex.get('execTime') or ex.get('tradeTime') or ex.get('updatedTime') or now_ms))
+                                    except Exception:
+                                        tms = now_ms
+                                    if tms < cutoff_ms:
+                                        continue
+                                    # Extract price/qty
+                                    try:
+                                        p = float(ex.get('execPrice') or ex.get('price') or 0.0)
+                                        q = float(ex.get('execQty') or ex.get('qty') or 0.0)
+                                    except Exception:
+                                        p = 0.0; q = 0.0
+                                    if p > 0.0 and q > 0.0:
+                                        tot_qty += q
+                                        tot_val += p * q
+                                    # Guess reason from category/type if available
+                                    ocat = str(ex.get('orderCategory','')).upper()
+                                    otype = str(ex.get('orderType','')).lower()
+                                    if 'TP' in ocat or 'TAKE' in otype:
+                                        reason_guess = 'tp'
+                                    if 'SL' in ocat or 'stop' in otype:
+                                        reason_guess = 'sl'
+                                if tot_qty > 0.0:
+                                    found_close = True
+                                    exit_price = tot_val / tot_qty
+                                    exit_reason = reason_guess
+                                    logger.info(f"[{symbol}] Executions fallback confirmed close: price={exit_price:.4f} reason={exit_reason}")
+                            except Exception as _exfb:
+                                logger.debug(f"[{symbol}] Executions fallback failed: {_exfb}")
+                        
+                        if not found_close:
+                            logger.debug(f"[{symbol}] Not in positions but can't confirm close - keeping in book")
                         try:
                             misses = int(self._close_confirm_misses.get(symbol, 0)) + 1
                             self._close_confirm_misses[symbol] = misses

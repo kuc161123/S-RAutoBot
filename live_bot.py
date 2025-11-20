@@ -4644,7 +4644,13 @@ class TradingBot:
                                 continue  # Skip normal gate processing
                             else:
                                 logger.warning(f"[{sym}] ⚠️ High-WR Multi-Feature execute failed (guard block)")
-                                if combos_only and block_noncombo:
+                                try:
+                                    _excfg2 = ((self.config.get('scalp', {}) or {}).get('exec', {}) or {})
+                                    fb2 = str(_excfg2.get('fallback_until_ready', 'pro')).lower()
+                                    mgr_ready_side2 = self._adaptive_combo_ready(sc_sig.side)
+                                except Exception:
+                                    fb2 = 'pro'; mgr_ready_side2 = False
+                                if combos_only and block_noncombo and (mgr_ready_side2 or fb2 != 'pro'):
                                     # Already recorded as phantom above; skip further gate-based processing
                                     continue
 
@@ -4737,10 +4743,17 @@ class TradingBot:
                 except Exception:
                     pass
 
-                # If combos-only mode is enabled, block further gate-based execution (phantom-only)
+                # If combos-only mode is enabled, block further gate-based execution (phantom-only),
+                # except when fallback_until_ready=pro and adaptive is not ready for this side
                 try:
                     _excfg = ((self.config.get('scalp', {}) or {}).get('exec', {}) or {})
-                    if bool(_excfg.get('combos_only', False)) and bool(_excfg.get('block_noncombo', False)):
+                    _fbm = str(_excfg.get('fallback_until_ready', 'pro')).lower()
+                    _mgr_ready_side = False
+                    try:
+                        _mgr_ready_side = self._adaptive_combo_ready(sc_sig.side)
+                    except Exception:
+                        _mgr_ready_side = False
+                    if bool(_excfg.get('combos_only', False)) and bool(_excfg.get('block_noncombo', False)) and not (_fbm == 'pro' and (not _mgr_ready_side)):
                         # Record phantom with full feature set for learning, then skip
                         try:
                             from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt

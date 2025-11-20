@@ -837,7 +837,7 @@ class TradingBot:
         except Exception:
             return False
 
-    def _notify_block(self, sym: str, *, kind: str, side: str, feats: dict, combo_id: str | None = None, pre_reason: str | None = None):
+    async def _notify_block(self, sym: str, *, kind: str, side: str, feats: dict, combo_id: str | None = None, pre_reason: str | None = None):
         """Notify a Scalp execution block with reason, obeying config + rate limit.
 
         kind: 'adaptive' | 'rules' | 'pre'
@@ -933,8 +933,7 @@ class TradingBot:
                 try:
                     text = f"{title}\n" + "\n".join(lines)
                     # System message bypasses mute policy
-                    import asyncio as _asyncio
-                    _asyncio.create_task(self.tg.send_system_message(text, reply_markup=kb))
+                    await self.tg.send_system_message(text, reply_markup=kb)
                 except Exception:
                     pass
         except Exception:

@@ -757,7 +757,7 @@ class TradingBot:
         except Exception:
             return None
 
-    def _adaptive_combo_ready(self) -> bool:
+    def _adaptive_combo_ready(self, side: str) -> bool:
         try:
             mgr = getattr(self, 'adaptive_combo_mgr', None)
             if not mgr or not getattr(mgr, 'enabled', False):
@@ -774,11 +774,8 @@ class TradingBot:
                 fresh_ok = True
             # Enabled lists per side
             try:
-                any_enabled = False
-                if mgr.get_active_combos('long'):
-                    any_enabled = True
-                if mgr.get_active_combos('short'):
-                    any_enabled = True
+                s = str(side).lower()
+                any_enabled = bool(mgr.get_active_combos('long')) if s == 'long' else bool(mgr.get_active_combos('short'))
             except Exception:
                 any_enabled = False
             return bool(fresh_ok and any_enabled)
@@ -826,7 +823,7 @@ class TradingBot:
         combo_id = self._scalp_combo_key_from_features(feats or {})
         if combo_id:
             ctx['combo_id'] = combo_id
-        mgr_ready = self._adaptive_combo_ready()
+        mgr_ready = self._adaptive_combo_ready(side)
         mgr = getattr(self, 'adaptive_combo_mgr', None)
 
         if mgr_ready and require_combo:

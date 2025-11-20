@@ -999,27 +999,27 @@ class TGBot:
                 r_days = int(rec.get('days', 7)); r_min = int(rec.get('min_samples', 15)); r_only = bool(rec.get('prefer_only', True))
                 lines.append(f"• Status: On | High‑WR: {'On' if use_hw else 'Off'} | Base {base:.2f}% | Range {rmin:.2f}–{rmax:.2f}%")
                 lines.append(f"• Recency: {r_days}d N≥{r_min} | Prefer‑only: {'yes' if r_only else 'no'}")
-                # Gating mode indicator (Adaptive vs MTF fallback)
+                # Gating mode indicator (Adaptive vs Pro Rules fallback), per side
                 try:
                     mgr = self.shared.get('adaptive_combo_mgr')
                     cfg = self.shared.get('config', {}) or {}
                     hours = int((((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('manager_fresh_hours', 6)))
                     from datetime import datetime, timedelta
-                    mgr_ready = False
-                    if mgr and getattr(mgr, 'enabled', False):
-                        fresh_ok = True
+                    def _side_ready(side:str) -> bool:
                         try:
-                            if mgr.last_update is not None:
-                                fresh_ok = (datetime.utcnow() - mgr.last_update) <= timedelta(hours=max(1, hours))
-                        except Exception:
+                            if not (mgr and getattr(mgr, 'enabled', False)):
+                                return False
                             fresh_ok = True
-                        try:
-                            any_enabled = bool(mgr.get_active_combos('long') or mgr.get_active_combos('short'))
+                            if getattr(mgr, 'last_update', None) is not None:
+                                fresh_ok = (datetime.utcnow() - mgr.last_update) <= timedelta(hours=max(1, hours))
+                            enabled = bool(mgr.get_active_combos(side))
+                            return bool(fresh_ok and enabled)
                         except Exception:
-                            any_enabled = False
-                        mgr_ready = bool(fresh_ok and any_enabled)
-                    gate_mode = 'Adaptive Combos' if mgr_ready else 'Indicator Rules (Pro fallback)'
-                    lines.append(f"• Gating mode: {gate_mode}")
+                            return False
+                    r_long = _side_ready('long')
+                    r_short = _side_ready('short')
+                    lines.append(f"• Gating mode (Longs): {'Adaptive Combos' if r_long else 'Indicator Rules (Pro fallback)'}")
+                    lines.append(f"• Gating mode (Shorts): {'Adaptive Combos' if r_short else 'Indicator Rules (Pro fallback)'}")
                 except Exception:
                     pass
 

@@ -669,6 +669,14 @@ class TradingBot:
         self._scalp_last_exec_reason: Dict[str, str] = {}
         # Cache of latest scalp detections per symbol (for promotion timing)
         self._scalp_last_signal: Dict[str, Dict[str, object]] = {}
+        # Scalp heartbeat: pre‑eligibility state and watchlist aggregation
+        self._scalp_pre_state: Dict[str, Dict[str, bool]] = {}
+        self._scalp_watch_agg: Dict[str, list] = {'pro': [], 'combo': [], 'near': []}
+        try:
+            import time as _t
+            self._scalp_watch_last_flush: float = _t.time()
+        except Exception:
+            self._scalp_watch_last_flush = 0.0
         # Close confirmation miss counters and daily warn flag
         self._close_confirm_misses: Dict[str, int] = {}
         self._close_warned: Dict[str, str] = {}
@@ -4099,7 +4107,13 @@ class TradingBot:
                                     reg_level = getattr(ra, 'volatility_level', 'normal')
                             except Exception:
                                 reg_level = 'unknown'
-                            logger.info(
+                            # Heartbeat mode: off|debug|transitions (default transitions)
+                            try:
+                                hb_mode = str((((self.config.get('scalp', {}) or {}).get('heartbeat', {}) or {}).get('mode', 'transitions'))).lower()
+                            except Exception:
+                                hb_mode = 'transitions'
+                            if hb_mode == 'debug':
+                                logger.debug(
                                 f"[{sym}] 🩳 Scalp: no signal (up={_ema_up} dn={_ema_dn} "
                                 f"bbw={_bbw_pct:.2f}/{sc_settings.min_bb_width_pct:.2f} "
                                 f"vol={_vol_ratio:.2f}/{sc_settings.vol_ratio_min:.2f} "
@@ -4108,7 +4122,7 @@ class TradingBot:
                                 f"slopeF/S={_slope_f:+.3f}/{_slope_s:+.3f}% mins={_sfast_min:.3f}/{_sslow_min:.3f} "
                                 f"reg={reg_level}(allow { _allowed_regs }) "
                                 f"orb={_orb_ok})"
-                            )
+                                )
                             # Pass/Fail ticks for signal-level and exec-level gates
                             try:
                                 # Signal-level
@@ -4179,8 +4193,9 @@ class TradingBot:
                                     f"BBW{'✅' if _bbw_exec else '❌'} | "
                                     f"Reg{'✅' if _reg_ok else '❌'}"
                                 )
-                                logger.info(f"[{sym}] 🧮 Scalp heartbeat gates (signal): {sig_ticks}")
-                                logger.info(f"[{sym}] 🧮 Scalp heartbeat gates (exec):   {exec_ticks}")
+                                if hb_mode == 'debug':
+                                    logger.debug(f"[{sym}] 🧮 Scalp heartbeat gates (signal): {sig_ticks}")
+                                    logger.debug(f"[{sym}] 🧮 Scalp heartbeat gates (exec):   {exec_ticks}")
                             except Exception:
                                 pass
                             try:
@@ -4217,7 +4232,107 @@ class TradingBot:
                                         self._scalp_reasons[r] = self._scalp_reasons.get(r, 0) + 1
                                 except Exception:
                                     pass
-                                logger.info(f"[{sym}] 🧮 Scalp heartbeat: decision=no_signal reasons={','.join(reasons)}")
+                                if hb_mode == 'debug':
+                                    logger.debug(f"[{sym}] 🧮 Scalp heartbeat: decision=no_signal reasons={','.join(reasons)}")
+                                # Transitions/watchlist: pre‑eligibility
+                                if hb_mode in ('transitions','debug'):
+                                    try:
+                                        # Candidate side from EMA alignment
+                                        cand_side = 'long' if _ema_up else ('short' if _ema_dn else None)
+                                        pre_pro = False; pre_combo = False; near = False
+                                        near_reasons = []
+                                        # Reuse features
+                                        rsi_val = float(rsi) if 'rsi' in locals() else 50.0
+                                        macd_h = float(macd_hist) if 'macd_hist' in locals() else 0.0
+                                        vwap_da = float(_dist_vwap_atr)
+                                        fib_z = fib_zone if 'fib_zone' in locals() else '38-50'
+                                        mtf_ok = bool(mtf_agree) if 'mtf_agree' in locals() else False
+                                        if cand_side and mtf_ok:
+                                            rsi_bin = '<30' if rsi_val < 30 else '30-40' if rsi_val < 40 else '40-60' if rsi_val < 60 else '60-70' if rsi_val < 70 else '70+'
+                                            macd = 'bull' if macd_h > 0 else 'bear'
+                                            vwap_bin = '<0.6' if vwap_da < 0.6 else '0.6-1.2' if vwap_da < 1.2 else '1.2+'
+                                            if cand_side == 'long':
+                                                rsi_ok = (rsi_bin in ('40-60','60-70'))
+                                                v_ok = (vwap_bin == '<0.6') or (vwap_bin == '1.2+' and macd == 'bull')
+                                                fib_ok = fib_z in ('0-23','23-38','38-50','50-61','61-78','78-100')
+                                                pre_pro = bool(rsi_ok and v_ok and fib_ok)
+                                            else:
+                                                rsi_ok = (rsi_bin in ('<30','30-40'))
+                                                fib_ok = fib_z in ('0-23','23-38','38-50','50-61','61-78','78-100')
+                                                pre_pro = bool(rsi_ok and (macd == 'bear') and (vwap_bin in ('<0.6','0.6-1.2')) and fib_ok)
+                                        # Adaptive combo match
+                                        combo_key = None
+                                        try:
+                                            combo_key = self._scalp_combo_key_from_features({'rsi_14': rsi_val, 'macd_hist': macd_h, 'vwap_dist_atr': vwap_da, 'fib_zone': fib_z, 'mtf_agree_15': mtf_ok})
+                                        except Exception:
+                                            combo_key = None
+                                        try:
+                                            mgr = getattr(self, 'adaptive_combo_mgr', None)
+                                            if mgr and cand_side and combo_key:
+                                                enabled_ids = [c.get('combo_id') for c in (mgr.get_active_combos(cand_side) or [])]
+                                                pre_combo = combo_key in enabled_ids
+                                        except Exception:
+                                            pre_combo = False
+                                        # Near actionable
+                                        try:
+                                            vmin = float(sc_settings.vol_ratio_min)
+                                            if _vol_ratio >= 0.75 * vmin and _vol_ratio < vmin:
+                                                near = True; near_reasons.append('vol_near')
+                                        except Exception:
+                                            pass
+                                        try:
+                                            wd = float(sc_settings.wick_delta_min)
+                                            diff = abs(_upper_w - _lower_w)
+                                            if diff >= 0.75 * wd and diff < wd:
+                                                near = True; near_reasons.append('wick_near')
+                                        except Exception:
+                                            pass
+                                        prev = self._scalp_pre_state.get(sym, {'pro': False, 'combo': False, 'near': False})
+                                        curr = {'pro': bool(pre_pro), 'combo': bool(pre_combo), 'near': bool(near)}
+                                        if curr != prev:
+                                            self._scalp_pre_state[sym] = curr
+                                            if hb_mode == 'transitions':
+                                                if curr['combo']:
+                                                    logger.info(f"[{sym}] 👀 Scalp pre‑eligible (Combo) — side={(cand_side or '?').upper()} {combo_key}")
+                                                elif curr['pro']:
+                                                    logger.info(f"[{sym}] 👀 Scalp pre‑eligible (Pro) — side={(cand_side or '?').upper()} MTF=✓")
+                                                elif curr['near']:
+                                                    logger.info(f"[{sym}] 👀 Scalp near‑eligible — {','.join(near_reasons) if near_reasons else 'close'}")
+                                        # Aggregate examples
+                                        if curr['combo'] and sym not in self._scalp_watch_agg['combo'] and len(self._scalp_watch_agg['combo']) < 10:
+                                            self._scalp_watch_agg['combo'].append(sym)
+                                        if curr['pro'] and sym not in self._scalp_watch_agg['pro'] and len(self._scalp_watch_agg['pro']) < 10:
+                                            self._scalp_watch_agg['pro'].append(sym)
+                                        if curr['near'] and sym not in self._scalp_watch_agg['near'] and len(self._scalp_watch_agg['near']) < 10:
+                                            self._scalp_watch_agg['near'].append(sym)
+                                        # Periodic summary flush
+                                        try:
+                                            import time as _t
+                                            interval = int((((self.config.get('scalp', {}) or {}).get('heartbeat', {}) or {}).get('summary_interval_sec', 60)))
+                                        except Exception:
+                                            interval = 60
+                                        try:
+                                            now_ts = _t.time()
+                                            if (now_ts - self._scalp_watch_last_flush) >= max(30, interval):
+                                                pr = len(self._scalp_watch_agg['pro']); co = len(self._scalp_watch_agg['combo']); ne = len(self._scalp_watch_agg['near'])
+                                                if (pr + co + ne) > 0:
+                                                    ex_pro = ','.join(self._scalp_watch_agg['pro'][:3])
+                                                    ex_combo = ','.join(self._scalp_watch_agg['combo'][:3])
+                                                    ex_near = ','.join(self._scalp_watch_agg['near'][:3])
+                                                    logger.info(f"Scalp watchlist: Pro {pr} | Combo {co} | Near {ne} — PRO[{ex_pro}] COMBO[{ex_combo}] NEAR[{ex_near}]")
+                                                    try:
+                                                        if getattr(self, 'tg', None) and getattr(self.tg, 'shared', None):
+                                                            self.tg.shared['scalp_watchlist'] = {
+                                                                'ts': int(now_ts), 'pro': list(self._scalp_watch_agg['pro']), 'combo': list(self._scalp_watch_agg['combo']), 'near': list(self._scalp_watch_agg['near'])
+                                                            }
+                                                    except Exception:
+                                                        pass
+                                                self._scalp_watch_agg = {'pro': [], 'combo': [], 'near': []}
+                                                self._scalp_watch_last_flush = now_ts
+                                        except Exception:
+                                            pass
+                                    except Exception:
+                                        pass
                             except Exception:
                                 pass
                     except Exception:

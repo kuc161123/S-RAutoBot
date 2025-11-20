@@ -98,6 +98,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("health", self.health))
         self.app.add_handler(CommandHandler("symbols", self.symbols))
         self.app.add_handler(CommandHandler("dashboard", self.dashboard))
+        self.app.add_handler(CommandHandler("watchlist", self.watchlist))
         self.app.add_handler(CommandHandler("analysis", self.analysis))
         self.app.add_handler(CommandHandler("stats", self.stats))
         self.app.add_handler(CommandHandler("recent", self.recent_trades))
@@ -2640,6 +2641,37 @@ class TGBot:
             "Tips: Use dashboard buttons for Positions, Phantom (Trend/Range), ML, Events, Settings."
         ]
         await self.safe_reply(update, "\n".join(msg))
+
+    async def watchlist(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Show current Scalp pre‑eligible and near‑eligible symbols."""
+        try:
+            wl = (self.shared or {}).get('scalp_watchlist') if hasattr(self, 'shared') else None
+            if not wl:
+                await self.safe_reply(update, "📋 Scalp watchlist\n\n_No current pre‑eligible symbols_")
+                return
+            from datetime import datetime
+            ts = wl.get('ts', 0)
+            when = datetime.utcfromtimestamp(ts).strftime('%H:%M:%S UTC') if ts else 'now'
+            pro = wl.get('pro') or []
+            combo = wl.get('combo') or []
+            near = wl.get('near') or []
+            lines = [
+                "📋 *Scalp Watchlist*",
+                f"_Updated {when}_",
+                "",
+                f"Pro‑rules pre‑eligible ({len(pro)}):",
+                (", ".join(pro[:10]) or "—"),
+                "",
+                f"Combo‑enabled ({len(combo)}):",
+                (", ".join(combo[:10]) or "—"),
+                "",
+                f"Near‑eligible ({len(near)}):",
+                (", ".join(near[:10]) or "—"),
+            ]
+            await self.safe_reply(update, "\n".join(lines))
+        except Exception as e:
+            logger.error(f"Error in watchlist: {e}")
+            await self.safe_reply(update, "❌ Error displaying watchlist")
 
     async def help(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Help command handler"""

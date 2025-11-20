@@ -221,7 +221,8 @@ class MultiWebSocketHandler:
                 break
             except Exception as e:
                 import traceback
-                logger.error(f"[WS-{conn_id}] Connection error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+                # Downgrade to WARNING to reduce noise during transient network issues; reconnect logic follows
+                logger.warning(f"[WS-{conn_id}] Connection error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
                 # Flip URL on failure when alt is configured
                 if self._use_alt_on_fail:
                     self._ws_idx = 1 - self._ws_idx

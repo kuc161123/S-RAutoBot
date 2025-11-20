@@ -1800,17 +1800,42 @@ class TradingBot:
             except Exception as _e:
                 tg_ok = False
                 logger.debug(f"Network monitor: Telegram probe failed: {_e}")
-            # Bybit probe (sync → thread)
+            # Bybit probe — use PUBLIC endpoint to avoid false OFFLINE due to credential issues
             try:
-                if getattr(self, 'bybit', None):
-                    loop = _asyncio.get_running_loop()
-                    info = await loop.run_in_executor(None, self.bybit.get_api_key_info)
-                    by_ok = bool(info)
-                else:
-                    by_ok = False
+                import requests as _req
+                by_ok = False
+                by = (cfg.get('bybit', {}) or {})
+                bases = []
+                try:
+                    b0 = str(by.get('base_url') or '').strip()
+                    if b0:
+                        bases.append(b0)
+                except Exception:
+                    pass
+                try:
+                    b1 = str(by.get('alt_base_url') or '').strip()
+                    if b1 and b1 not in bases:
+                        bases.append(b1)
+                except Exception:
+                    pass
+                if not bases:
+                    bases = ['https://api.bybit.com']
+                for b in bases:
+                    try:
+                        url = f"{b.rstrip('/')}/v5/market/time"
+                        r = _req.get(url, timeout=8)
+                        if r.ok:
+                            j = r.json()
+                            if str(j.get('retCode')) == '0':
+                                by_ok = True
+                                break
+                    except Exception as _pe:
+                        logger.debug(f"Network monitor: Public Bybit probe failed for {b}: {_pe}")
+                if not by_ok:
+                    logger.debug("Network monitor: Bybit public probe did not succeed on any base URL")
             except Exception as _e:
                 by_ok = False
-                logger.debug(f"Network monitor: Bybit probe failed: {_e}")
+                logger.debug(f"Network monitor: Bybit public probe error: {_e}")
             # Classify
             state = 'offline'
             if tg_ok and by_ok:

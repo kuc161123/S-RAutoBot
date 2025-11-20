@@ -677,6 +677,8 @@ class TradingBot:
             self._scalp_watch_last_flush: float = _t.time()
         except Exception:
             self._scalp_watch_last_flush = 0.0
+        # Block notification rate limit (per symbol)
+        self._block_notify_rl: Dict[str, float] = {}
         # Close confirmation miss counters and daily warn flag
         self._close_confirm_misses: Dict[str, int] = {}
         self._close_warned: Dict[str, str] = {}
@@ -834,6 +836,109 @@ class TradingBot:
             return await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_score or 0.0))
         except Exception:
             return False
+
+    def _notify_block(self, sym: str, *, kind: str, side: str, feats: dict, combo_id: str | None = None, pre_reason: str | None = None):
+        """Notify a Scalp execution block with reason, obeying config + rate limit.
+
+        kind: 'adaptive' | 'rules' | 'pre'
+        side: 'long' / 'short'
+        pre_reason: when kind=='pre' (e.g., 'off_hours','qscore','cap','cooldown')
+        """
+        try:
+            cfg = getattr(self, 'config', {}) or {}
+            nb = (((cfg.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
+            enabled = bool(nb.get('enabled', True))
+            pre_enabled = bool(nb.get('pre_gate_enabled', False))
+            if not enabled:
+                return
+            if kind == 'pre' and not pre_enabled:
+                return
+            # per-symbol rate limit
+            import time as _t
+            now = _t.time()
+            ttl = int(nb.get('rate_limit_sec', 600))
+            last = float(self._block_notify_rl.get(sym, 0.0) or 0.0)
+            if (now - last) < max(30, ttl):
+                return
+            self._block_notify_rl[sym] = now
+
+            # Build reason lines
+            title = "🚫 Blocked — Rules"
+            lines = []
+            if kind == 'adaptive':
+                title = "🚫 Blocked — Adaptive"
+                lines.append(f"{sym} {str(side).upper()} | Combo disabled")
+                if combo_id:
+                    lines.append(f"Combo: {combo_id}")
+            elif kind == 'rules':
+                # Compute bins and failures
+                try:
+                    rsi = float(feats.get('rsi_14', 50.0) or 50.0)
+                except Exception:
+                    rsi = 50.0
+                try:
+                    mh = float(feats.get('macd_hist', 0.0) or 0.0)
+                except Exception:
+                    mh = 0.0
+                try:
+                    vwap = float(feats.get('vwap_dist_atr', 999.0) or 999.0)
+                except Exception:
+                    vwap = 999.0
+                fibz = feats.get('fib_zone')
+                mtf = bool(feats.get('mtf_agree_15', False))
+                rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
+                macd = 'bull' if mh > 0 else 'bear'
+                vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.2' if vwap < 1.2 else '1.2+'
+                fib_ok = str(fibz) in ('0-23','23-38','38-50','50-61','61-78','78-100')
+                fails = []
+                if not mtf:
+                    fails.append('MTF')
+                else:
+                    if str(side).lower() == 'long':
+                        if rsi_bin not in ('40-60','60-70'):
+                            fails.append('RSI')
+                        if not ((vwap_bin == '<0.6') or (vwap_bin == '1.2+' and macd == 'bull')):
+                            fails.append('VWAP' if not (vwap_bin == '1.2+' and macd != 'bull') else 'MACD')
+                        if not fib_ok:
+                            fails.append('Fib')
+                    else:
+                        if rsi_bin not in ('<30','30-40'):
+                            fails.append('RSI')
+                        if macd != 'bear':
+                            fails.append('MACD')
+                        if vwap_bin not in ('<0.6','0.6-1.2'):
+                            fails.append('VWAP')
+                        if str(fibz) not in ('61-78','78-100'):
+                            fails.append('Fib')
+                lines.append(f"{sym} {str(side).upper()} | Reason: {', '.join(fails) if fails else 'rules'}")
+                lines.append(f"RSI:{rsi_bin} MACD:{macd} VWAP:{vwap_bin} Fib:{fibz or 'n/a'} MTF:{'✓' if mtf else '✗'}")
+            else:
+                title = "🚫 Blocked — Pre‑Gate"
+                lines.append(f"{sym} {str(side).upper()} | {pre_reason or 'pre‑gate'}")
+                lines.append("Routed via gate; recorded phantom.")
+
+            # Footer
+            lines.append("Recorded phantom. Use /watchlist for candidates.")
+
+            # Build keyboard
+            try:
+                kb = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr"), InlineKeyboardButton("🎯 Combos", callback_data="ui:scalp:combos")]
+                ])
+            except Exception:
+                kb = None
+
+            # Send
+            if getattr(self, 'tg', None):
+                try:
+                    text = f"{title}\n" + "\n".join(lines)
+                    # System message bypasses mute policy
+                    import asyncio as _asyncio
+                    _asyncio.create_task(self.tg.send_system_message(text, reply_markup=kb))
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def _scalp_combo_allowed(self, side: str, feats: dict) -> tuple[bool, str, dict]:
         """Return (allowed, reason, ctx) based on manager readiness and fallback policy.
@@ -2261,7 +2366,7 @@ class TradingBot:
                         pass
                 try:
                     kind0 = 'adaptive' if gate_reason0.startswith('adaptive') else 'rules'
-                    # Derive reason buckets for breakdown
+                    # Derive reason buckets for breakdown & notify
                     sub_reasons: list[str] = []
                     if kind0 == 'adaptive':
                         sub_reasons.append('disabled')
@@ -2315,6 +2420,11 @@ class TradingBot:
                     self._scalp_incr_block_counter(kind0)
                     for sr in set(sub_reasons):
                         self._scalp_incr_block_counter(kind0, sr)
+                    # Notify
+                    try:
+                        await self._notify_block(sym, kind=kind0, side=str(getattr(sig_obj,'side','')), feats=feats_for_gate or {}, combo_id=gate_ctx0.get('combo_id'))
+                    except Exception:
+                        pass
                 except Exception as _bcx:
                     try:
                         logger.debug(f"Block counter reason update skipped: {_bcx}")
@@ -4706,6 +4816,10 @@ class TradingBot:
                                     await self._scalp_gate_or_execute(sym, sc_sig, sc_feats_hi, ml_score=float(ml_s or 0.0))
                                     self._scalp_last_exec_reason[sym] = 'off_hours'
                                     logger.info(f"[{sym}] 🛑 Scalp COMBO pre-block (off_hours) routed through central gate | Combo {matched_combo.get('combo_id')}")
+                                    # Optional pre-gate notify
+                                    nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
+                                    if bool(nb.get('pre_gate_enabled', False)):
+                                        await self._notify_block(sym, kind='pre', side=str(getattr(sc_sig,'side','')), feats=sc_feats_hi, pre_reason='off_hours')
                                 except Exception:
                                     pass
                                 matched_combo = None
@@ -4736,6 +4850,9 @@ class TradingBot:
                                     await self._scalp_gate_or_execute(sym, sc_sig, sc_feats_hi, ml_score=float(ml_s or 0.0))
                                     self._scalp_last_exec_reason[sym] = 'combo_gates'
                                     logger.info(f"[{sym}] 🛑 Scalp COMBO pre-block (gates) routed through central gate | Combo {matched_combo.get('combo_id')}")
+                                    nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
+                                    if bool(nb.get('pre_gate_enabled', False)):
+                                        await self._notify_block(sym, kind='pre', side=str(getattr(sc_sig,'side','')), feats=sc_feats_hi, pre_reason='combo_gates')
                                 except Exception:
                                     pass
                                 matched_combo = None
@@ -5206,6 +5323,13 @@ class TradingBot:
                                     await self.tg.send_message(f"🛑 Scalp: [{sym}] dedup skip — phantom suppressed")
                         except Exception:
                             pass
+                    # Optional pre-gate notify for cooldown/dedup
+                    try:
+                        nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
+                        if bool(nb.get('pre_gate_enabled', False)):
+                            await self._notify_block(sym, kind='pre', side=str(getattr(sc_sig,'side','')), feats={'mtf_agree_15': False}, pre_reason='cooldown/dedup')
+                    except Exception:
+                        pass
                     except Exception:
                         pass
                     continue

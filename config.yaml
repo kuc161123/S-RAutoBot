@@ -686,7 +686,7 @@ scalp:
     blocked_notify: false        # mute blocked/phantom notifications; send only execution notifications
     # Adaptive combo filtering: dynamically enable/disable combos based on rolling performance
     adaptive_combos:
-      enabled: true              # Enable adaptive combo filtering
+      enabled: false             # Disable adaptive combo filtering (learn-only for now)
       min_wr_threshold: 45.0     # Minimum WR% to enable combo (default 45%)
       min_sample_size: 20        # Minimum N for statistical validity
       use_wilson_lb: false       # Gate on raw WR (Wilson LB still shown in UI)

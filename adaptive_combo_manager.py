@@ -284,16 +284,16 @@ class AdaptiveComboManager:
             # Determine if combo should be enabled
             enabled = (wr >= self.min_wr_threshold and n >= self.min_sample_size)
 
-        results[key] = ComboPerformance(
-            combo_id=key,
-            side=combo_side,
-            wr=wr,
-            n=n,
-            wins=w,
-            ev_r=ev_r,
-            last_updated=now_iso,
-            enabled=enabled  # preliminary; final gating applied in update_combo_filters()
-        )
+            results[key] = ComboPerformance(
+                combo_id=key,
+                side=combo_side,
+                wr=wr,
+                n=n,
+                wins=w,
+                ev_r=ev_r,
+                last_updated=now_iso,
+                enabled=enabled  # preliminary; final gating applied in update_combo_filters()
+            )
 
         logger.info(f"Analyzed {len(items)} phantoms → {len(results)} combos (side={side}, {self.lookback_days}d)")
         try:

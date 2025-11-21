@@ -680,7 +680,7 @@ scalp:
     block_noncombo: false        # Do not block non-combo signals
     mute_disabled_paths: false   # Allow notifications for gate-path decisions
     # Fallback policy: before Adaptive Combos are ready, use Pro Rules (MTF+RSI+MACD+VWAP+Fib)
-    require_combo_enabled: true
+    require_combo_enabled: false   # Learn combos but do not require them for execution
     fallback_until_ready: pro    # pro = Pro Rules fallback | mtf = MTF only | off = strict combo mode
     manager_fresh_hours: 6       # consider manager stale when older than this many hours
     blocked_notify: false        # mute blocked/phantom notifications; send only execution notifications

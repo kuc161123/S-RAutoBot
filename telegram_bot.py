@@ -3718,7 +3718,8 @@ class TGBot:
                 text, kb = self._build_scalp_dashboard(False)
                 try:
                     await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
-                except Exception:
+                except Exception as _e_edit:
+                    logger.debug(f"ui:dash:refresh:scalp edit failed ({_e_edit}), sending new message")
                     await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
                 return
             if data == "ui:dash:more":
@@ -3729,7 +3730,8 @@ class TGBot:
                 text, kb = self._build_scalp_dashboard(True)
                 try:
                     await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
-                except Exception:
+                except Exception as _e_edit:
+                    logger.debug(f"ui:dash:more edit failed ({_e_edit}), sending new message")
                     await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
                 return
             if data == "ui:dash:less":
@@ -3740,7 +3742,8 @@ class TGBot:
                 text, kb = self._build_scalp_dashboard(False)
                 try:
                     await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
-                except Exception:
+                except Exception as _e_edit:
+                    logger.debug(f"ui:dash:less edit failed ({_e_edit}), sending new message")
                     await self.safe_reply(type('obj', (object,), {'message': query.message}), text)
                 return
             if data == "ui:scalp:qa":

@@ -2404,6 +2404,15 @@ class TradingBot:
                                 vwap0 = float(f.get('vwap_dist_atr', 999.0) or 999.0)
                             except Exception:
                                 vwap0 = 999.0
+                            try:
+                                volr0 = float(f.get('volume_ratio', 0.0) or 0.0)
+                            except Exception:
+                                volr0 = 0.0
+                            try:
+                                uw0 = float(f.get('upper_wick_ratio', 0.0) or 0.0)
+                                lw0 = float(f.get('lower_wick_ratio', 0.0) or 0.0)
+                            except Exception:
+                                uw0 = lw0 = 0.0
                             fibz0 = f.get('fib_zone')
                             mtf0 = bool(f.get('mtf_agree_15', False))
                             if not mtf0:
@@ -2413,7 +2422,16 @@ class TradingBot:
                                 macd = 'bull' if mh0 > 0 else 'bear'
                                 vwap_bin = '<0.6' if vwap0 < 0.6 else '0.6-1.2' if vwap0 < 1.2 else '1.2+'
                                 fib_ok = str(fibz0) in ('0-23','23-38','38-50','50-61','61-78','78-100')
+                                # Wick/Vol gates for rules
+                                hg_local = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                                vmin_local = float(hg_local.get('vol_ratio_min_3m', 1.20))
+                                wdelta_local = float(hg_local.get('wick_delta_min', 0.12))
                                 if side0 == 'long':
+                                    wick_ok = (lw0 >= uw0 + wdelta_local)
+                                    if not wick_ok:
+                                        sub_reasons.append('wick')
+                                    if volr0 < vmin_local:
+                                        sub_reasons.append('vol')
                                     if rsi_bin not in ('40-60','60-70'):
                                         sub_reasons.append('rsi')
                                     v_ok = (vwap_bin == '<0.6') or (vwap_bin == '1.2+' and macd == 'bull')
@@ -2426,6 +2444,11 @@ class TradingBot:
                                     if not fib_ok:
                                         sub_reasons.append('fib')
                                 else:
+                                    wick_ok = (uw0 >= lw0 + wdelta_local)
+                                    if not wick_ok:
+                                        sub_reasons.append('wick')
+                                    if volr0 < vmin_local:
+                                        sub_reasons.append('vol')
                                     if rsi_bin not in ('<30','30-40'):
                                         sub_reasons.append('rsi')
                                     if macd != 'bear':

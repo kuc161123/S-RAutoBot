@@ -871,7 +871,7 @@ class TradingBot:
                 if combo_id:
                     lines.append(f"Combo: {combo_id}")
             elif kind == 'rules':
-                # Compute bins and failures
+                # Compute bins and failures (stricter high-quality rule set)
                 try:
                     rsi = float(feats.get('rsi_14', 50.0) or 50.0)
                 except Exception:
@@ -888,25 +888,26 @@ class TradingBot:
                 mtf = bool(feats.get('mtf_agree_15', False))
                 rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
                 macd = 'bull' if mh > 0 else 'bear'
-                vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.2' if vwap < 1.2 else '1.2+'
-                fib_ok = str(fibz) in ('0-23','23-38','38-50','50-61','61-78','78-100')
+                vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
                 fails = []
                 if not mtf:
                     fails.append('MTF')
                 else:
                     if str(side).lower() == 'long':
-                        if rsi_bin not in ('40-60','60-70'):
+                        if rsi_bin not in ('40-60',):
                             fails.append('RSI')
-                        if not ((vwap_bin == '<0.6') or (vwap_bin == '1.2+' and macd == 'bull')):
-                            fails.append('VWAP' if not (vwap_bin == '1.2+' and macd != 'bull') else 'MACD')
-                        if not fib_ok:
+                        if macd != 'bull':
+                            fails.append('MACD')
+                        if vwap_bin not in ('<0.6','1.2+'):
+                            fails.append('VWAP')
+                        if str(fibz) not in ('0-23','23-38'):
                             fails.append('Fib')
                     else:
                         if rsi_bin not in ('<30','30-40'):
                             fails.append('RSI')
                         if macd != 'bear':
                             fails.append('MACD')
-                        if vwap_bin not in ('<0.6','0.6-1.2'):
+                        if vwap_bin not in ('<0.6','0.6-1.0'):
                             fails.append('VWAP')
                         if str(fibz) not in ('61-78','78-100'):
                             fails.append('Fib')
@@ -999,36 +1000,24 @@ class TradingBot:
             mtf = bool(f.get('mtf_agree_15', False))
             if not mtf:
                 return False, 'fallback_pro_block', ctx
-            # Bins
+            # Bins (stricter high-quality rules)
             rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
             macd = 'bull' if mh > 0 else 'bear'
-            vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.2' if vwap < 1.2 else '1.2+'
-            # Side-specific rules
+            vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
             s = str(side).lower()
             ok = False
             if s == 'long':
-                # RSI ok: 40-60 or 60-70
-                rsi_ok = (rsi_bin in ('40-60','60-70'))
-                # VWAP and MACD tie-in: <0.6 accepts either MACD; 1.2+ requires bull
-                if vwap_bin == '<0.6':
-                    v_ok = True
-                    macd_ok = (macd in ('bull','bear'))
-                elif vwap_bin == '1.2+':
-                    v_ok = True
-                    macd_ok = (macd == 'bull')
-                else:
-                    # 0.6-1.2 not preferred for longs
-                    v_ok = False
-                    macd_ok = False
-                fib_ok = (fibz in ('0-23','38-50'))
+                rsi_ok = (rsi_bin in ('40-60',))
+                v_ok = vwap_bin in ('<0.6','1.2+')
+                macd_ok = (macd == 'bull')
+                fib_ok = (fibz in ('0-23','23-38'))
                 ok = bool(rsi_ok and v_ok and macd_ok and fib_ok)
             else:
-                # Shorts: RSI <30 or 30-40; MACD bear; VWAP <=1.2; Fib 61-78 or 78-100
                 rsi_ok = (rsi_bin in ('<30','30-40'))
                 macd_ok = (macd == 'bear')
-                v_ok = (vwap_bin in ('<0.6','0.6-1.2'))
+                v_ok = vwap_bin in ('<0.6','0.6-1.0')
                 fib_ok = (fibz in ('61-78','78-100'))
-                ok = bool(rsi_ok and v_ok and macd_ok and fib_ok)
+                ok = bool(rsi_ok and macd_ok and v_ok and fib_ok)
             if ok:
                 return True, 'fallback_pro_ok', ctx
             else:

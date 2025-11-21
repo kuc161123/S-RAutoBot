@@ -3509,18 +3509,12 @@ class TradingBot:
                     e50 = df15['close'].ewm(span=50, adjust=False).mean()
                     out['ema_dir_15m'] = 'up' if float(e20.iloc[-1]) > float(e50.iloc[-1]) else ('down' if float(e20.iloc[-1]) < float(e50.iloc[-1]) else 'none')
                 else:
-                    # Proxy MTF using 3m data when 15m stream is disabled.
-                    # Use higher spans to approximate 15m EMA20/50: 20*5=100, 50*5=250.
+                    # Proxy MTF using 3m data when 15m stream is disabled (simple 20/50 on 3m).
                     df3p = self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None
-                    if df3p is not None and not getattr(df3p, 'empty', True):
-                        fast_span = 100
-                        slow_span = 250
-                        if len(df3p['close']) >= slow_span:
-                            e_fast = df3p['close'].ewm(span=fast_span, adjust=False).mean()
-                            e_slow = df3p['close'].ewm(span=slow_span, adjust=False).mean()
-                            out['ema_dir_15m'] = 'up' if float(e_fast.iloc[-1]) > float(e_slow.iloc[-1]) else ('down' if float(e_fast.iloc[-1]) < float(e_slow.iloc[-1]) else 'none')
-                        else:
-                            out['ema_dir_15m'] = 'none'
+                    if df3p is not None and not getattr(df3p, 'empty', True) and len(df3p['close']) >= 50:
+                        e20 = df3p['close'].ewm(span=20, adjust=False).mean()
+                        e50 = df3p['close'].ewm(span=50, adjust=False).mean()
+                        out['ema_dir_15m'] = 'up' if float(e20.iloc[-1]) > float(e50.iloc[-1]) else ('down' if float(e20.iloc[-1]) < float(e50.iloc[-1]) else 'none')
                     else:
                         out['ema_dir_15m'] = 'none'
             except Exception:

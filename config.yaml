@@ -676,8 +676,8 @@ scalp:
         prefer_only: true         # If recency is missing, fall back to base (1%)
         ev_floor_r: 0.0           # Optional EV floor for recency; falls back to top ev_floor_r if absent
     # Execute based on Adaptive Combo Manager (dynamically enabled combos) or Pro Rules fallback
-    combos_only: true            # Prioritize adaptive combos when enabled
-    block_noncombo: true         # Block non-combo signals when combo is enabled
+    combos_only: false           # Allow Pro rules even when combos are enabled
+    block_noncombo: false        # Do not block non-combo signals
     mute_disabled_paths: false   # Allow notifications for gate-path decisions
     # Fallback policy: before Adaptive Combos are ready, use Pro Rules (MTF+RSI+MACD+VWAP+Fib)
     require_combo_enabled: true

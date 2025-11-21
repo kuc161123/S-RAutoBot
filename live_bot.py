@@ -2355,6 +2355,26 @@ class TradingBot:
                     allowed0, gate_reason0, gate_ctx0 = self._scalp_combo_allowed(str(getattr(sig_obj,'side','')), feats_for_gate)
                 except Exception:
                     allowed0, gate_reason0, gate_ctx0 = (False, 'insufficient_features', {})
+                # Capture routing context for notifications
+                route_info = {
+                    'reason': gate_reason0,
+                    'combo_id': gate_ctx0.get('combo_id') if isinstance(gate_ctx0, dict) else None,
+                    'path': 'combo' if gate_ctx0.get('combo_id') else 'rules',
+                    'wr': None,
+                    'n': None
+                }
+                # Enrich combo stats if available (adaptive manager state)
+                try:
+                    if route_info['combo_id'] and getattr(self, 'adaptive_combo_mgr', None):
+                        active_list = self.adaptive_combo_mgr.get_active_combos(str(getattr(sig_obj, 'side', '')).lower())
+                        for c in active_list:
+                            if c.get('combo_id') == route_info['combo_id']:
+                                route_info['wr'] = c.get('wr')
+                                route_info['n'] = c.get('n')
+                                break
+                except Exception:
+                    pass
+
                 if not allowed0:
                     # Record phantom and notify blocked (minimal path)
                     try:
@@ -3204,14 +3224,35 @@ class TradingBot:
                         reason_line = None
                         feat_lines = []
                         try:
-                            # Execution path context
-                            ctx = ''
+                            # Execution path context (combo vs rules + WR when available)
+                            path_parts = []
                             try:
-                                ctx = str(self._scalp_last_exec_reason.get(sym, ''))
+                                if isinstance(route_info, dict):
+                                    if route_info.get('path') == 'combo' and route_info.get('combo_id'):
+                                        part = f"Combo {route_info.get('combo_id')}"
+                                        if route_info.get('wr') is not None:
+                                            part += f" (WR {float(route_info.get('wr')):.1f}%"
+                                            if route_info.get('n') is not None:
+                                                part += f", N={int(route_info.get('n'))}"
+                                            part += ")"
+                                        path_parts.append(part)
+                                    else:
+                                        path_parts.append("Rules (Pro)")
+                                    if route_info.get('reason'):
+                                        path_parts.append(f"Gate {route_info.get('reason')}")
                             except Exception:
+                                pass
+                            if path_parts:
+                                reason_line = "Path: " + " | ".join(path_parts)
+                            else:
+                                # Fallback to legacy reason tracking
                                 ctx = ''
-                            if ctx:
-                                reason_line = f"Reason: {ctx.replace('_',' ')}"
+                                try:
+                                    ctx = str(self._scalp_last_exec_reason.get(sym, ''))
+                                except Exception:
+                                    ctx = ''
+                                if ctx:
+                                    reason_line = f"Reason: {ctx.replace('_',' ')}"
                             # Build features snapshot
                             df_src = self.frames_3m.get(sym) if (hasattr(self, 'frames_3m') and self.frames_3m.get(sym) is not None and not self.frames_3m.get(sym).empty) else self.frames.get(sym)
                             sc_meta2 = {'symbol': sym, 'side': getattr(sig_obj,'side',None), 'entry': getattr(sig_obj,'entry',None), 'sl': getattr(sig_obj,'sl',None), 'tp': getattr(sig_obj,'tp',None)}

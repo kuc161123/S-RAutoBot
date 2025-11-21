@@ -592,7 +592,7 @@ scalp:
     body_ratio_min_3m: 0.30
     # Wick alignment gate (execution): dominant wick in trade direction by delta
     wick_enabled: true
-    wick_delta_min: 0.10
+    wick_delta_min: 0.12
     # Volatility regime gate (execution): allow only configured regimes
     regime_enabled: false
     allowed_regimes: ['normal','high']

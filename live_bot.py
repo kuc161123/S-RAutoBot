@@ -1183,14 +1183,14 @@ class TradingBot:
 
             vol_enabled = bool(hg.get('vol_enabled', False))
             vr = float(feats.get('volume_ratio', 0.0) or 0.0)
-            vmin = float(hg.get('vol_ratio_min_3m', 1.3))
+            vmin = float(hg.get('vol_ratio_min_3m', 1.30))
             vol_pass = (vr >= vmin) if vol_enabled else False
 
             # Wick alignment gate (execution-only): require dominant wick in trade direction by delta
             wick_enabled = bool(hg.get('wick_enabled', True))
             uw = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
             lw = float(feats.get('lower_wick_ratio', 0.0) or 0.0)
-            wdelta = float(hg.get('wick_delta_min', 0.10))
+            wdelta = float(hg.get('wick_delta_min', 0.12))
             if wick_enabled:
                 wick_pass = (lw >= uw + wdelta) if side == 'long' else (uw >= lw + wdelta)
             else:

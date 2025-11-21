@@ -67,12 +67,11 @@ STRATEGY OVERVIEW
    Risk/Reward: Fixed 2.1:1 (tighter than Trend/MR)
    Win Rate: 50-60% (data-driven from feature analysis)
    Setup Frequency: Very High (3m timeframe, multiple setups per hour)
-   
-   High-WR Bypass System:
-   └─ 6 proven feature combinations (49-57% WR, N=538 total)
-      Each: Fast Slope × Slow Slope × ATR% × BBW% × VWAP Distance
-      Behavior: Instant execution, skips all gates, fixed 1% risk
-   
+
+   Execution Paths:
+   └─ Adaptive Combo Manager: Dynamically enables/disables combos based on 30-day performance
+   └─ Pro Rules Fallback: MTF + RSI + MACD + VWAP + Fib checks when combo not enabled
+
    ML Features: 12 (atr_pct, bbw_pct, impulse_ratio, slopes, volume, wicks, etc)
    Phantom Timeout: 8 hours
    Execution Gates: Volume, BBW, Wick alignment, Regime, EMA slope (inverted)

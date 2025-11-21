@@ -105,8 +105,8 @@ This directory contains comprehensive documentation of the AutoTrading Bot's thr
 #### Learn How Scalping Works
 1. Read "Scalping Strategy" in **STRATEGY_SUMMARY.txt**
 2. Review detailed phases in **STRATEGY_ANALYSIS.md** Section 3
-3. Check high-WR bypass in **STRATEGY_SUMMARY.txt** or **STRATEGY_ANALYSIS.md** Section 3
-4. Review execution gates in **STRATEGY_ANALYSIS.md** Section 3 "Execution Gates"
+3. Review execution gates in **STRATEGY_ANALYSIS.md** Section 3 "Execution Gates"
+4. Understand Adaptive Combo Manager and Pro Rules fallback system
 
 #### Understand Phantom Tracking
 1. Review "ML System Architecture" in **STRATEGY_SUMMARY.txt**

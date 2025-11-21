@@ -627,67 +627,6 @@ PHANTOM PATHS (Qscore 15-78):
 4. Near-Miss: EMA aligned + exactly 1 gate fails (informational)
 ```
 
-### High-WR Multi-Feature Bypass (Execution Fast-Track)
-
-```yaml
-# Data-driven from 30d Advanced Combos analysis
-# 6 winning combinations with 49-57% win rate (N=538 total)
-
-Combo 1 (57.5% WR, N=73):
-  Fast Slope: 0.01-0.03%/bar
-  Slow Slope: 0.015%+/bar
-  ATR%: <0.5%
-  BBW%: <1.2%
-  VWAP Distance: 0.6-1.0 ATR
-  → Risk: 1%
-
-Combo 2 (56.6% WR, N=76):
-  Fast Slope: 0.03%+/bar
-  Slow Slope: 0.00-0.015%/bar
-  ATR%: <0.5%
-  BBW%: <1.2%
-  VWAP Distance: 1.0+ ATR
-  → Risk: 1%
-
-Combo 3 (54.0% WR, N=87):
-  Fast Slope: 0.01-0.03%/bar
-  Slow Slope: -0.03-0.00%/bar
-  ATR%: <0.5%
-  BBW%: <1.2%
-  VWAP Distance: 1.0+ ATR
-  → Risk: 1%
-
-Combo 4 (51.9% WR, N=104):
-  Fast Slope: 0.03%+/bar
-  Slow Slope: 0.015%+/bar
-  ATR%: <0.5%
-  BBW%: <1.2%
-  VWAP Distance: 0.6-1.0 ATR
-  → Risk: 1%
-
-Combo 5 (50.7% WR, N=146):
-  Fast Slope: 0.01-0.03%/bar
-  Slow Slope: 0.015%+/bar
-  ATR%: <0.5%
-  BBW%: <1.2%
-  VWAP Distance: <0.6 ATR
-  → Risk: 1%
-
-Combo 6 (49.0% WR, N=102):
-  Fast Slope: 0.03%+/bar
-  Slow Slope: 0.015%+/bar
-  ATR%: <0.5%
-  BBW%: <1.2%
-  VWAP Distance: <0.6 ATR
-  → Risk: 1%
-
-# Bypass Behavior:
-- Matches ANY combo → immediate execution
-- Skips ALL gates (Qscore, ML, volume, etc)
-- Overrides phantoms (can cancel active phantom)
-- Fixed 1% risk for all combos
-```
-
 ### Execution Gates
 
 ```yaml
@@ -1095,12 +1034,7 @@ Order Placement
    - K-of-N phantoms for learning edge cases
    - Fallback paths for near-misses
 
-4. High-WR Bypass:
-   - Data-driven feature combinations
-   - Immediate execution (no gates)
-   - Fixed 1% risk
-
-5. Off-Hours Dampening:
+4. Off-Hours Dampening:
    - Auto-blocks in low volume periods
    - Protects against fake-outs
    - Phantoms unaffected

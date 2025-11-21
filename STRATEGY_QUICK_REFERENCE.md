@@ -40,10 +40,9 @@
 5. Wick/Body: dominant wick + meaningful body in trend direction
 6. Regime: not extreme volatility
 
-**Fast-Track Bypass** (High-WR Combos):
-- 6 proven feature combinations (49-57% WR)
-- Instant execution when matched
-- Skips all gates
+**Execution Paths**:
+- Adaptive Combo Manager → Enables/disables combos based on 30-day performance
+- Pro Rules Fallback → MTF + RSI + MACD + VWAP + Fib checks
 
 ---
 

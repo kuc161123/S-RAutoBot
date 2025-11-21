@@ -604,7 +604,7 @@ scalp:
     slope_fast_only: false        # REQUIRE fast + slow alignment (full slope)
     slope_fast_min_pb: 0.03       # 0.03% per bar minimum (absolute) for fast slope
     slope_slow_min_pb: 0.015      # 0.015% per bar minimum (absolute) for slow slope
-    # High WR path: use specific slope ranges instead of minimums
+    # Data-driven slope ranges: use specific ranges instead of minimums
     slope_use_ranges: true        # ENABLED - Use range-based slope gates from analytics
     # LONG ranges (63.6% WR: F:0.00-0.03 × S:0.015+)
     slope_long_fast_min: 0.00
@@ -654,12 +654,12 @@ scalp:
     active_labeling: false   # if true, uses recent 3m bars to label open phantoms during downtime
     ml_enabled: false        # if true, seeds Scalp ML with historical phantom outcomes on startup
   exec:
-    enabled: true                 # Enable Scalp executes (gate path + High‑WR combos)
+    enabled: true                 # Enable Scalp executes (Adaptive Combos + Pro Rules fallback)
     risk_percent: 1.0             # Per-trade risk for Scalp executes (1% of equity per trade)
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
     adaptive_risk:
-      enabled: true               # Enable adaptive risk for scalp executes (non-High‑WR)
-      use_for_high_wr: true       # Apply adaptive risk to High‑WR executes (recency-aware; falls back to 1%)
+      enabled: true               # Enable adaptive risk for scalp executes
+      use_for_high_wr: true       # Apply adaptive risk to adaptive combo executes (recency-aware; falls back to 1%)
       base_percent: 1.0           # Base risk when no adjustment applies
       min_percent: 0.5            # Floor for adjusted risk
       max_percent: 3.0            # Ceiling for adjusted risk
@@ -675,13 +675,13 @@ scalp:
         min_samples: 15           # Require at least this many recent closes
         prefer_only: true         # If recency is missing, fall back to base (1%)
         ev_floor_r: 0.0           # Optional EV floor for recency; falls back to top ev_floor_r if absent
-    # Execute only when features match proven high‑WR combinations (RSI/MACD/Fib/VWAP/MTF indicators)
-    combos_only: true            # Execute ONLY high-WR indicator combos (3 longs + 4 shorts, WR ≥ 45%)
-    block_noncombo: true         # Block gate-based executes (combos only)
+    # Execute based on Adaptive Combo Manager (dynamically enabled combos) or Pro Rules fallback
+    combos_only: true            # Prioritize adaptive combos when enabled
+    block_noncombo: true         # Block non-combo signals when combo is enabled
     mute_disabled_paths: false   # Allow notifications for gate-path decisions
-    # Temporary gating policy: before Adaptive Combos are ready, require MTF alignment; once ready, require combo enabled
+    # Fallback policy: before Adaptive Combos are ready, use Pro Rules (MTF+RSI+MACD+VWAP+Fib)
     require_combo_enabled: true
-    fallback_until_ready: pro    # pro | mtf | off
+    fallback_until_ready: pro    # pro = Pro Rules fallback | mtf = MTF only | off = strict combo mode
     manager_fresh_hours: 6       # consider manager stale when older than this many hours
     blocked_notify: false        # mute blocked/phantom notifications; send only execution notifications
     # Adaptive combo filtering: dynamically enable/disable combos based on rolling performance
@@ -699,82 +699,9 @@ scalp:
       notify_changes: true       # Send Telegram notification on combo enable/disable
       strict_side_keys: true     # Load per-side state to avoid long/short overwrites in memory
     combos:
-      # SLOPE-BASED COMBOS (DISABLED - using indicator combos only)
-      # Combo 1: F:-0.01-0.00 × S:-0.03--0.015 (75.0% WR, N=12) - DISABLED
-      - id: 1
-        fast_min: -0.01
-        fast_max: 0.00
-        slow_min: -0.03
-        slow_max: -0.015
-        atr_max: 999.0
-        bbw_max: 999.0
-        vwap_min: -999.0
-        vwap_max: 999.0
-        risk_percent: 1.0
-        enabled: false
-      # Combo 2: F:0.00-0.03 × S:-0.03--0.015 (75.0% WR, N=4) - DISABLED
-      - id: 2
-        fast_min: 0.00
-        fast_max: 0.03
-        slow_min: -0.03
-        slow_max: -0.015
-        atr_max: 999.0
-        bbw_max: 999.0
-        vwap_min: -999.0
-        vwap_max: 999.0
-        risk_percent: 1.0
-        enabled: false
-      # Combo 3: F:-0.03--0.01 × S:-0.05--0.03 (66.7% WR, N=3) - DISABLED
-      - id: 3
-        fast_min: -0.03
-        fast_max: -0.01
-        slow_min: -0.05
-        slow_max: -0.03
-        atr_max: 999.0
-        bbw_max: 999.0
-        vwap_min: -999.0
-        vwap_max: 999.0
-        risk_percent: 1.0
-        enabled: false
-      # Combo 4: F:0.00-0.03 × S:0.015+ (55.6% WR, N=9) - DISABLED
-      - id: 4
-        fast_min: 0.00
-        fast_max: 0.03
-        slow_min: 0.015
-        slow_max: 999.0
-        atr_max: 999.0
-        bbw_max: 999.0
-        vwap_min: -999.0
-        vwap_max: 999.0
-        risk_percent: 1.0
-        enabled: false
-      # Combo 5: F:-0.05--0.03 × S:-0.03--0.015 (49.4% WR, N=164) - DISABLED
-      - id: 5
-        fast_min: -0.05
-        fast_max: -0.03
-        slow_min: -0.03
-        slow_max: -0.015
-        atr_max: 999.0
-        bbw_max: 999.0
-        vwap_min: -999.0
-        vwap_max: 999.0
-        risk_percent: 1.0
-        enabled: false
-      # Combo 6: F:-0.10--0.05 × S:-0.05--0.03 (48.8% WR, N=43) - DISABLED
-      - id: 6
-        fast_min: -0.10
-        fast_max: -0.05
-        slow_min: -0.05
-        slow_max: -0.03
-        atr_max: 999.0
-        bbw_max: 999.0
-        vwap_min: -999.0
-        vwap_max: 999.0
-        risk_percent: 1.0
-        enabled: false
-
       # ═════════════════════════════════════════════════════════════
-      # INDICATOR-ONLY COMBOS (RSI/MACD/Fib/VWAP/MTF)
+      # INDICATOR COMBOS (RSI/MACD/Fib/VWAP/MTF)
+      # Used by Adaptive Combo Manager for dynamic filtering
       # Based on Pro Analytics with WR ≥ 45%
       # ═════════════════════════════════════════════════════════════
 
@@ -933,17 +860,6 @@ scalp:
         n: 31
         enabled: true
 
-    # HIGH-WR INDICATOR BYPASS: Immediate execution for proven high-WR patterns
-    # Data-driven: 3 LONG combos (WR 60%, 50%, 45%) + 4 SHORT combos (WR 68.8%, 66.7%, 63.3%, 54.8%)
-    # This bypass uses RSI/MACD/Fib/VWAP/MTF indicators only (slope constraints disabled)
-    high_wr_slope_bypass: true          # ENABLED - Execute immediately on high-WR multi-feature combos
-    skip_gates_for_combos: true         # ENABLED - Bypass Vol/Wick gates for combo matches
-    high_wr_risk_percent: 1.0           # Flat 1% risk for all high-WR combos
-    # Legacy ML-based bypass (DISABLED - replaced by multi-feature bypass)
-    allow_stream_high_ml: false   # Keep ML-override off; use multi-feature bypass instead
-    high_ml_force: 70
-    # Optionally cancel any active scalp phantom on high-WR execution to avoid duplicate tracking
-    cancel_active_on_high_ml: true
     # Estimated slippage fraction to achieve target R:R net of fees and slippage
     slippage_pct: 0.0005
     # Small bias to extend TP distance to better match net realized R after fees/slippage

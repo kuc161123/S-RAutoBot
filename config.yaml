@@ -658,8 +658,8 @@ scalp:
     risk_percent: 1.0             # Per-trade risk for Scalp executes (1% of equity per trade)
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
     adaptive_risk:
-      enabled: true               # Enable adaptive risk for scalp executes
-      use_for_high_wr: true       # Apply adaptive risk to adaptive combo executes (recency-aware; falls back to 1%)
+      enabled: false              # Disable adaptive risk; use fixed risk_percent
+      use_for_high_wr: false      # No adaptive sizing
       base_percent: 1.0           # Base risk when no adjustment applies
       min_percent: 0.5            # Floor for adjusted risk
       max_percent: 3.0            # Ceiling for adjusted risk

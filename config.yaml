@@ -402,7 +402,7 @@ mr:
     execute_only: true   # Apply regime gates only for execution; phantoms remain free
     promotion_bypass: true
   exec:
-    enabled: true
+    enabled: false          # Disable MR execution; Scalp-only operation
     slippage_recalc:
       enabled: true
       min_pct: 0.001          # 0.1% slippage threshold to trigger SL recalc
@@ -534,7 +534,7 @@ strategy_independence:
 scalp:
   enabled: true
   # If true, run a single 3m stream only (disables main 15m stream)
-  stream_3m_only: true
+  stream_3m_only: false
   timeframe: 3           # Future: stream 3m for scalps; current uses main tf
   use_ml: false
   threshold: 70

@@ -3226,24 +3226,68 @@ class TradingBot:
                         try:
                             # Execution path context (combo vs rules + WR when available)
                             path_parts = []
+                            pro_detail = ""
+                            rsi_bin = macd_lbl = vwap_bin = fibz = 'n/a'
+                            mtf = False
+                            try:
+                                # Build indicator bins for clarity
+                                rsi = float(feats.get('rsi_14', 50.0) or 50.0)
+                                mh = float(feats.get('macd_hist', 0.0) or 0.0)
+                                vwap = float(feats.get('vwap_dist_atr', 0.0) or 0.0)
+                                fibz = feats.get('fib_zone') or feats.get('fib_ret')
+                                if not isinstance(fibz, str):
+                                    try:
+                                        frel = float(feats.get('fib_ret'))
+                                        fr = frel*100.0 if frel <= 1.0 else frel
+                                        fibz = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
+                                    except Exception:
+                                        fibz = 'n/a'
+                                mtf = bool(feats.get('mtf_agree_15', False))
+                                rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
+                                macd_lbl = 'bull' if mh > 0 else 'bear'
+                                vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.2' if vwap < 1.2 else '1.2+'
+                                side_l = str(getattr(sig_obj, 'side', '')).lower()
+                                # Pro rules pass check for transparency
+                                def _pro_pass():
+                                    if side_l == 'long':
+                                        rsi_ok = (rsi_bin in ('40-60','60-70'))
+                                        if vwap_bin == '<0.6':
+                                            v_ok = True; macd_ok = True
+                                        elif vwap_bin == '1.2+':
+                                            v_ok = (macd_lbl == 'bull'); macd_ok = (macd_lbl == 'bull')
+                                        else:
+                                            v_ok = False; macd_ok = (macd_lbl == 'bull')
+                                        fib_ok = fibz in ('0-23','23-38','38-50','50-61','61-78','78-100')
+                                        return mtf and rsi_ok and v_ok and macd_ok and fib_ok
+                                    else:
+                                        rsi_ok = (rsi_bin in ('<30','30-40'))
+                                        macd_ok = (macd_lbl == 'bear')
+                                        v_ok = (vwap_bin in ('<0.6','0.6-1.2'))
+                                        fib_ok = fibz in ('61-78','78-100')
+                                        return mtf and rsi_ok and macd_ok and v_ok and fib_ok
+                                pro_pass = _pro_pass()
+                                pro_detail = f"Rules: MTF {'✓' if mtf else '✗'}, RSI {rsi_bin}, MACD {macd_lbl}, VWAP {vwap_bin}, Fib {fibz} ({'pass' if pro_pass else 'fail'})"
+                            except Exception:
+                                pro_detail = ""
                             try:
                                 if isinstance(route_info, dict):
                                     if route_info.get('path') == 'combo' and route_info.get('combo_id'):
                                         part = f"Combo {route_info.get('combo_id')}"
                                         if route_info.get('wr') is not None:
-                                            part += f" (WR {float(route_info.get('wr')):.1f}%"
+                                            part += f" (WR {float(route_info.get('wr')):.1f}%)"
                                             if route_info.get('n') is not None:
-                                                part += f", N={int(route_info.get('n'))}"
-                                            part += ")"
+                                                part += f" N={int(route_info.get('n'))}"
                                         path_parts.append(part)
+                                        if pro_detail:
+                                            path_parts.append(pro_detail)
                                     else:
-                                        path_parts.append("Rules (Pro)")
+                                        path_parts.append(pro_detail or "Rules (Pro)")
                                     if route_info.get('reason'):
                                         path_parts.append(f"Gate {route_info.get('reason')}")
                             except Exception:
                                 pass
                             if path_parts:
-                                reason_line = "Path: " + " | ".join(path_parts)
+                                reason_line = "Path: " + " | ".join([p for p in path_parts if p])
                             else:
                                 # Fallback to legacy reason tracking
                                 ctx = ''

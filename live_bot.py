@@ -2430,7 +2430,8 @@ class TradingBot:
                         except Exception:
                             pass
                         try:
-                            if self.tg and bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
+                            nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
+                            if self.tg and bool(nb.get('enabled', True)):
                                 await self.tg.send_message(f"🚫 Blocked → Phantom | Gating: {gate_reason0} ({gate_ctx0.get('combo_id','n/a')})")
                         except Exception:
                             pass
@@ -4907,7 +4908,8 @@ class TradingBot:
                                             )
                                         )
                                     )
-                                    if bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
+                                    nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
+                                    if bool(nb.get('enabled', True)):
                                         await self.tg.send_message(
                                             f"🚫 High‑WR combo blocked → Phantom\n"
                                             f"Gating: {reason_text} ({combo_label})\n"
@@ -5133,8 +5135,6 @@ class TradingBot:
                             if executed:
                                 logger.info(f"[{sym}] 🧮 Scalp decision final: exec_scalp (reason=immediate)")
                                 continue
-                    else:
-                        logger.info(f"[{sym}] 🛑 Scalp immediate execute blocked: reason=exec_guard")
                 except Exception:
                     pass
 
@@ -5320,7 +5320,8 @@ class TradingBot:
                         pass
                     # Optional legacy TG notify (behind blocked_notify & dedup_enabled)
                     try:
-                        if self.tg and bool(s_cfg.get('dedup_enabled', False)) and bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                        nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
+                        if self.tg and bool(s_cfg.get('dedup_enabled', False)) and bool(nb.get('enabled', True)):
                             await self.tg.send_message(f"🛑 Scalp: [{sym}] dedup skip — phantom suppressed")
                     except Exception:
                         pass
@@ -6851,7 +6852,8 @@ class TradingBot:
                                     gate_vals2 = " | ".join([wick_line, vol_line, slope_line, bbw_line, reg_line])
                                 except Exception:
                                     gate_vals2 = ""
-                                if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
+                                if bool(nb.get('enabled', True)):
                                     await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={r}{extra}) — phantom recorded (id={ex_id or 'n/a'})\nGates: {summary_line}\n{gate_vals2}\nQ={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})\n{comp_line}")
                     except Exception:
                         pass
@@ -7035,7 +7037,8 @@ class TradingBot:
                                     if self.tg and reason in ('daily_cap','hourly_budget'):
                                         comps = sc_feats.get('qscore_components', {}) or {}
                                         comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
-                                        if bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
+                                        nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
+                                        if bool(nb.get('enabled', True)):
                                             await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={reason}) — phantom recorded\nQ={float(sc_feats.get('qscore',0.0)):.1f}\n{comp_line}")
                                 except Exception:
                                     pass
@@ -7777,13 +7780,16 @@ class TradingBot:
                         strat = str(getattr(phantom, 'strategy_name', '') or '').lower()
                         feats_tp1 = getattr(phantom, 'features', {}) or {}
                         if strat.startswith('range') and isinstance(feats_tp1.get('range_mid', None), (int,float)):
-                            if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                            nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
+                            if bool(nb.get('enabled', True)):
                                 await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f} (mid {float(feats_tp1['range_mid']):.4f})")
                         else:
-                            if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                            nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
+                            if bool(nb.get('enabled', True)):
                                 await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f}")
                     except Exception:
-                        if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                        nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
+                        if bool(nb.get('enabled', True)):
                             await self.tg.send_message(f"🎯 Phantom TP1: {symbol} {side}{pid_suffix} — SL→BE at {entry:.4f}")
                     if pid:
                         self._phantom_tp1_notified.add(pid)

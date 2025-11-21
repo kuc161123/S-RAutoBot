@@ -683,7 +683,7 @@ scalp:
     require_combo_enabled: false   # Learn combos but do not require them for execution
     fallback_until_ready: pro    # pro = Pro Rules fallback | mtf = MTF only | off = strict combo mode
     manager_fresh_hours: 6       # consider manager stale when older than this many hours
-    blocked_notify: false        # mute blocked/phantom notifications; send only execution notifications
+    blocked_notify: true         # enable blocked/phantom notifications
     # Adaptive combo filtering: dynamically enable/disable combos based on rolling performance
     adaptive_combos:
       enabled: false             # Disable adaptive combo filtering (learn-only for now)

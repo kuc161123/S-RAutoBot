@@ -2430,7 +2430,7 @@ class TradingBot:
                         except Exception:
                             pass
                         try:
-                            if self.tg and bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                            if self.tg and bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                 await self.tg.send_message(f"🚫 Blocked → Phantom | Gating: {gate_reason0} ({gate_ctx0.get('combo_id','n/a')})")
                         except Exception:
                             pass
@@ -4907,7 +4907,7 @@ class TradingBot:
                                             )
                                         )
                                     )
-                                    if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                    if bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                         await self.tg.send_message(
                                             f"🚫 High‑WR combo blocked → Phantom\n"
                                             f"Gating: {reason_text} ({combo_label})\n"
@@ -7035,7 +7035,7 @@ class TradingBot:
                                     if self.tg and reason in ('daily_cap','hourly_budget'):
                                         comps = sc_feats.get('qscore_components', {}) or {}
                                         comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
-                                        if bool((((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                        if bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                             await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={reason}) — phantom recorded\nQ={float(sc_feats.get('qscore',0.0)):.1f}\n{comp_line}")
                                 except Exception:
                                     pass
@@ -11012,7 +11012,7 @@ class TradingBot:
                                     except Exception:
                                         pass
                                     try:
-                                        if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                        if self.tg and bool(((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                             comps = f"SR={qc.get('sr',0):.0f} HTF={qc.get('htf',0):.0f} BOS={qc.get('bos',0):.0f} Micro={qc.get('micro',0):.0f} Risk={qc.get('risk',0):.0f} Div={qc.get('div',0):.0f}"
                                             await self.tg.send_message(f"🟡 Rule-mode PHANTOM (stream): [{symbol}] Q={q:.1f} < {exec_min:.1f}\n{comps}")
                                     except Exception:
@@ -13936,7 +13936,7 @@ class TradingBot:
                                         pass
                                     tr_should = False
                                     try:
-                                        if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                        if self.tg and bool(((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                             await self.tg.send_message(f"🛑 Trend: [{sym}] Extreme volatility — rule-mode blocked; phantom recorded")
                                     except Exception:
                                         pass
@@ -14118,7 +14118,7 @@ class TradingBot:
                                             pass
                                         # Notify
                                         try:
-                                            if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                            if self.tg and bool(((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                                 await self.tg.send_message(f"🛑 Trend: [{sym}] HTF gate blocked — routed to phantom")
                                         except Exception:
                                             pass
@@ -15173,7 +15173,7 @@ class TradingBot:
                                     elif q >= ph_min:
                                         logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (Q={q:.1f} < {exec_min:.1f}) comps: {comps}")
                                         try:
-                                            if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                            if self.tg and bool(((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                                 try:
                                                     t15 = float(trend_features.get('ts15',0.0)); t60 = float(trend_features.get('ts60',0.0)); rc15 = float(trend_features.get('rc15',0.0)); rc60 = float(trend_features.get('rc60',0.0))
                                                     reg = 'Trending' if (t15>=60 or t60>=60) else ('Ranging' if (rc15>=0.6 or rc60>=0.6) else 'Neutral')
@@ -15198,7 +15198,7 @@ class TradingBot:
                                     else:
                                         logger.info(f"[{sym}] 🧮 Rule-mode: PHANTOM (low-quality Q={q:.1f} < {ph_min:.1f}) comps: {comps}")
                                         try:
-                                            if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                            if self.tg and bool(((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                                 try:
                                                     t15 = float(trend_features.get('ts15',0.0)); t60 = float(trend_features.get('ts60',0.0)); rc15 = float(trend_features.get('rc15',0.0)); rc60 = float(trend_features.get('rc60',0.0))
                                                     reg = 'Trending' if (t15>=60 or t60>=60) else ('Ranging' if (rc15>=0.6 or rc60>=0.6) else 'Neutral')
@@ -15275,7 +15275,7 @@ class TradingBot:
                                 if not should_take_trade:
                                     # Notify ML reject diverted to phantom
                                     try:
-                                        if self.tg and bool((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False))):
+                                        if self.tg and bool(((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('blocked_notify', False)):
                                             await self.tg.send_message(f"🛑 Trend: [{sym}] ML reject — ML {ml_score:.1f} < thr {threshold:.1f} (phantom recorded)")
                                     except Exception:
                                         pass

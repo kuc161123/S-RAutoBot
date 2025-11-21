@@ -8218,29 +8218,24 @@ class TradingBot:
                     except Exception:
                         pass
                     combo_line = f"Combo {combo_id} (WR {combo_wr:.1f}%)\n" if combo_id and combo_wr else ""
-                    # Only push close notifications for Scalp strategy per notification policy
-                    try:
-                        strat_name_l = str(getattr(pos, 'strategy_name', '') or '').lower()
-                    except Exception:
-                        strat_name_l = ''
-                    if strat_name_l.startswith('scalp'):
-                        message = (
-                            f"{outcome_emoji} *Trade Closed* {symbol} {pos.side.upper()}\n\n"
-                            f"Exit Price: {exit_price:.4f}\n"
-                            f"PnL: ${pnl_usd:.2f} ({pnl_percent:.2f}%)\n"
-                            f"{rr_line}"
-                            f"{q_line}"
-                            f"{combo_line}"
-                            f"Hold: {hold_minutes}m\n"
-                            f"Exit: {exit_label}\n"
-                            f"Strategy: {strategy_label}\n"
-                            f"{ml_details}"
-                        )
-                        # Add Execution WR button to notification
-                        keyboard = InlineKeyboardMarkup([
-                            [InlineKeyboardButton("📈 Execution WR", callback_data="ui:exec:wr")]
-                        ])
-                        asyncio.create_task(self.tg.send_message(message.strip(), reply_markup=keyboard))
+                    # Push close notifications for all strategies (profit or loss)
+                    message = (
+                        f"{outcome_emoji} *Trade Closed* {symbol} {pos.side.upper()}\n\n"
+                        f"Exit Price: {exit_price:.4f}\n"
+                        f"PnL: ${pnl_usd:.2f} ({pnl_percent:.2f}%)\n"
+                        f"{rr_line}"
+                        f"{q_line}"
+                        f"{combo_line}"
+                        f"Hold: {hold_minutes}m\n"
+                        f"Exit: {exit_label}\n"
+                        f"Strategy: {strategy_label}\n"
+                        f"{ml_details}"
+                    )
+                    # Add Execution WR button to notification
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📈 Execution WR", callback_data="ui:exec:wr")]
+                    ])
+                    asyncio.create_task(self.tg.send_message(message.strip(), reply_markup=keyboard))
                 except Exception as notify_err:
                     logger.warning(f"Failed to send Telegram close notification: {notify_err}")
 

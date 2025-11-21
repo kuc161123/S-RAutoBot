@@ -1000,7 +1000,7 @@ class TGBot:
                 r_days = int(rec.get('days', 7)); r_min = int(rec.get('min_samples', 15)); r_only = bool(rec.get('prefer_only', True))
                 lines.append(f"• Status: On | Combos: {'On' if use_hw else 'Off'} | Base {base:.2f}% | Range {rmin:.2f}–{rmax:.2f}%")
                 lines.append(f"• Recency: {r_days}d N≥{r_min} | Prefer‑only: {'yes' if r_only else 'no'}")
-                # Gating mode indicator (Adaptive vs Pro Rules fallback), per side
+                # Gating mode indicator + recommendation banner
                 try:
                     mgr = self.shared.get('adaptive_combo_mgr')
                     cfg = self.shared.get('config', {}) or {}
@@ -1021,6 +1021,32 @@ class TGBot:
                     r_short = _side_ready('short')
                     lines.append(f"• Gating mode (Longs): {'Adaptive Combos' if r_long else 'Indicator Rules (Pro fallback)'}")
                     lines.append(f"• Gating mode (Shorts): {'Adaptive Combos' if r_short else 'Indicator Rules (Pro fallback)'}")
+                    # Recommendation: suggest enabling combos when WR_lb ≥ 55% and N≥30 per side
+                    rec_lines = []
+                    def _recommend(side:str):
+                        try:
+                            if not (mgr and getattr(mgr, 'enabled', False)):
+                                return None
+                            active = mgr.get_active_combos(side)
+                            best = None
+                            for c in active:
+                                n = int(c.get('n', 0) or 0)
+                                wr = float(c.get('wr', 0.0) or 0.0)
+                                if n >= 30 and wr >= 55.0:
+                                    if best is None or wr > best['wr']:
+                                        best = {'key': c.get('combo_id'), 'wr': wr, 'n': n}
+                            return best
+                        except Exception:
+                            return None
+                    rec_long = _recommend('long')
+                    rec_short = _recommend('short')
+                    if rec_long:
+                        rec_lines.append(f"• Recommend: Enable COMBO for LONGS (best {rec_long['key']} WR {rec_long['wr']:.1f}% N={rec_long['n']})")
+                    if rec_short:
+                        rec_lines.append(f"• Recommend: Enable COMBO for SHORTS (best {rec_short['key']} WR {rec_short['wr']:.1f}% N={rec_short['n']})")
+                    if not rec_lines:
+                        rec_lines.append("• Recommend: Stay on Rules (combos still learning)")
+                    lines.extend(rec_lines)
                 except Exception:
                     pass
 

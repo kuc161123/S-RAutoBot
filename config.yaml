@@ -688,7 +688,7 @@ scalp:
     adaptive_combos:
       enabled: true              # Re-enable adaptive combo filtering
       min_wr_threshold: 45.0     # Minimum WR% to enable combo (default 45%)
-      min_sample_size: 20        # Minimum N for statistical validity
+      min_sample_size: 1000      # Require large sample size before enabling combos
       use_wilson_lb: false       # Gate on raw WR (Wilson LB still shown in UI)
       ev_floor_r: -1000.0        # Disable EV floor (set very low); EV_R remains informational
       update_frequency_trades: 50  # Recalculate every N completed trades

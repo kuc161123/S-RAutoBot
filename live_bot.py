@@ -837,6 +837,44 @@ class TradingBot:
         except Exception:
             return False
 
+    async def _scalp_extra_vol_gate(self, sym: str, side: str, sc_sig, feats: dict, ml_score: float = 0.0) -> bool:
+        """Additional volume gate after Pro/Combo rules. Returns True if passed.
+        On fail: notifies (rules block) and records phantom.
+        """
+        try:
+            cfg = getattr(self, 'config', {}) or {}
+            ex_cfg = ((cfg.get('scalp', {}) or {}).get('exec', {}) or {})
+            evg = (ex_cfg.get('extra_vol_gate') or {})
+            if not bool(evg.get('enabled', False)):
+                return True
+            vmin = float(evg.get('min_ratio', 1.20))
+            notify = bool(evg.get('notify', True))
+            try:
+                vr = float((feats or {}).get('volume_ratio', 0.0) or 0.0)
+            except Exception:
+                vr = 0.0
+            if vr >= vmin:
+                return True
+            # Block: notify and record phantom
+            if notify:
+                try:
+                    await self._notify_block(sym, kind='rules', side=side, feats=feats or {}, combo_id=None, pre_reason=f"Vol {vr:.2f}<{vmin:.2f}")
+                except Exception:
+                    pass
+            try:
+                await self._scalp_gate_and_record_phantom(sym, sc_sig, feats or {}, ml_score=float(ml_score or 0.0))
+            except Exception:
+                # Fallback: direct record if helper fails
+                try:
+                    from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                    scpt = _get_scpt()
+                    scpt.record_scalp_signal(sym, {'side': side, 'entry': feats.get('entry'), 'sl': feats.get('sl'), 'tp': feats.get('tp')}, float(ml_score or 0.0), False, feats)
+                except Exception:
+                    pass
+            return False
+        except Exception:
+            return True
+
     async def _scalp_gate_and_record_phantom(self, sym: str, sc_sig, feats: dict, ml_score: float = 0.0):
         """Run gate for a phantom-only scalp signal, send block notification if rejected, then record phantom."""
         try:
@@ -6399,6 +6437,14 @@ class TradingBot:
                                 except Exception:
                                     pass
                                 try:
+                                    # Extra volume gate before execution
+                                    vol_ok_extra = True
+                                    try:
+                                        vol_ok_extra = await self._scalp_extra_vol_gate(sym, sc_sig.side, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
+                                    except Exception:
+                                        vol_ok_extra = True
+                                    if not vol_ok_extra:
+                                        continue
                                     # Prefer new signature with exec_id; fallback to legacy signature if unavailable
                                     try:
                                         did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)

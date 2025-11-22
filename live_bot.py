@@ -891,7 +891,7 @@ class TradingBot:
         try:
             from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
             scpt = _get_scpt()
-            scpt.record_scalp_signal(
+            return scpt.record_scalp_signal(
                 sym,
                 {'side': getattr(sc_sig, 'side', None), 'entry': getattr(sc_sig, 'entry', None), 'sl': getattr(sc_sig, 'sl', None), 'tp': getattr(sc_sig, 'tp', None)},
                 float(ml_score or 0.0),
@@ -899,7 +899,7 @@ class TradingBot:
                 feats or {}
             )
         except Exception:
-            pass
+            return None
 
     async def _notify_block(self, sym: str, *, kind: str, side: str, feats: dict, combo_id: str | None = None, pre_reason: str | None = None):
         """Notify a Scalp execution block with reason, obeying config + rate limit.
@@ -4838,13 +4838,16 @@ class TradingBot:
                                     sc_feats_hi['qscore'] = float(_qs[0]); sc_feats_hi['qscore_components'] = dict(_qs[1]); sc_feats_hi['qscore_reasons'] = list(_qs[2])
                                 except Exception:
                                     pass
-                                scpt.record_scalp_signal(
-                                    sym,
-                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                    float(ml_s_immediate or 0.0),
-                                    bool(executed),
-                                    sc_feats_hi
-                                )
+                                if executed:
+                                    scpt.record_scalp_signal(
+                                        sym,
+                                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                        float(ml_s_immediate or 0.0),
+                                        True,
+                                        sc_feats_hi
+                                    )
+                                else:
+                                    await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats_hi, ml_score=float(ml_s_immediate or 0.0))
                             except Exception:
                                 pass
                             if executed:
@@ -5008,12 +5011,11 @@ class TradingBot:
                                 except Exception:
                                     ml_s_nc = None
 
-                                scpt2.record_scalp_signal(
+                                await self._scalp_gate_and_record_phantom(
                                     sym,
-                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                    float(ml_s_nc if ml_s_nc is not None else (ml_s if 'ml_s' in locals() and ml_s is not None else 0.0)),
-                                    False,
-                                    nc_feats
+                                    sc_sig,
+                                    nc_feats,
+                                    ml_score=float(ml_s_nc if ml_s_nc is not None else (ml_s if 'ml_s' in locals() and ml_s is not None else 0.0))
                                 )
                             except Exception as _nce:
                                 logger.debug(f"[{sym}] noncombo phantom record failed: {_nce}")
@@ -5061,17 +5063,16 @@ class TradingBot:
                                 ml_s_early, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats_early)
                             except Exception:
                                 ml_s_early = 0.0
-                            scpt.record_scalp_signal(
+                            await self._scalp_gate_and_record_phantom(
                                 sym,
-                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                float(ml_s_early or 0.0),
-                                False,
+                                sc_sig,
                                 (lambda _f: (
                                     (lambda _qs: (_f.update({'qscore': float(_qs[0]), 'qscore_components': dict(_qs[1]), 'qscore_reasons': list(_qs[2])}), _f)[1])(
                                         self._compute_qscore_scalp(sym, sc_sig.side, float(sc_sig.entry), float(sc_sig.sl), float(sc_sig.tp), df3=_df_src, df15=self.frames.get(sym), sc_feats=_f)
                                     ),
                                     _f
-                                )[1])(sc_feats_early)
+                                )[1])(sc_feats_early),
+                                ml_score=float(ml_s_early or 0.0)
                             )
                             try:
                                 self._scalp_stats['signals'] = self._scalp_stats.get('signals', 0) + 1
@@ -5309,13 +5310,7 @@ class TradingBot:
                                 except Exception:
                                     pass
                                 try:
-                                    scpt.record_scalp_signal(
-                                        sym,
-                                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                        float(ml_s or 0.0),
-                                        False,
-                                        sc_feats
-                                    )
+                                    await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
                                     _scalp_decision_logged = True
                                     logger.debug(f"[{sym}] 🩳 Phantom recording successful (blocked by gates)")
                                 except Exception as e:
@@ -5591,13 +5586,7 @@ class TradingBot:
                                 except Exception:
                                     pass
                                 try:
-                                    scpt.record_scalp_signal(
-                                        sym,
-                                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                        float(ml_s or 0.0),
-                                        False,
-                                        sc_feats
-                                    )
+                                    await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
                                     _scalp_decision_logged = True
                                     logger.debug(f"[{sym}] 🩳 Phantom recording successful (blocked by gates)")
                                 except Exception as e:
@@ -5817,13 +5806,7 @@ class TradingBot:
                                         except Exception:
                                             pass
                                         try:
-                                            scpt.record_scalp_signal(
-                                                sym,
-                                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                                float(ml_s or 0.0),
-                                                False,
-                                                sc_feats
-                                            )
+                                            await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
                                             _scalp_decision_logged = True
                                             self._scalp_cooldown[sym] = bar_ts
                                             blist.append(now_ts)
@@ -5898,13 +5881,7 @@ class TradingBot:
                                         except Exception:
                                             pass
                                         try:
-                                            scpt.record_scalp_signal(
-                                                sym,
-                                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                                float(ml_s or 0.0),
-                                                False,
-                                                sc_feats
-                                            )
+                                            await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
                                             _scalp_decision_logged = True
                                             self._scalp_cooldown[sym] = bar_ts
                                             blist.append(now_ts)
@@ -6228,13 +6205,7 @@ class TradingBot:
                                 except Exception:
                                     pass
                                 try:
-                                    scpt.record_scalp_signal(
-                                        sym,
-                                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                        float(ml_s or 0.0),
-                                        False,
-                                        sc_feats
-                                    )
+                                    await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
                                     _scalp_decision_logged = True
                                     logger.debug(f"[{sym}] 🩳 Phantom recording successful (blocked by gates)")
                                 except Exception as e:
@@ -6258,13 +6229,7 @@ class TradingBot:
                                                 f"Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f})"
                                             )
                                         try:
-                                            scpt.record_scalp_signal(
-                                                sym,
-                                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                                float(ml_s or 0.0),
-                                                False,
-                                                sc_feats
-                                            )
+                                            await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
                                             _scalp_decision_logged = True
                                         except Exception:
                                             pass
@@ -6689,13 +6654,16 @@ class TradingBot:
                                     except Exception:
                                         pass
                                 # Record as executed mirror for learning
-                                scpt.record_scalp_signal(
-                                    sym,
-                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                    float(ml_s or 0.0),
-                                    bool(executed),
-                                    sc_feats
-                                )
+                                if executed:
+                                    scpt.record_scalp_signal(
+                                        sym,
+                                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                        float(ml_s or 0.0),
+                                        True,
+                                        sc_feats
+                                    )
+                                else:
+                                    await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
                                 if executed:
                                     logger.info(f"[{sym}] 🧮 Scalp decision final: exec_scalp (reason=ml_extreme {float(ml_s or 0.0):.1f}>={hi_thr:.0f})")
                                     # Skip rest of gating for this detection
@@ -6746,12 +6714,11 @@ class TradingBot:
                         if q_score < ph_min:
                             logger.info(f"[{sym}] 📦 Scalp phantom REJECTED (force_accept): Q={q_score:.1f} < {ph_min:.1f}")
                             continue
-                        _rec = scpt.record_scalp_signal(
+                        _rec = await self._scalp_gate_and_record_phantom(
                             sym,
-                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                            float(ml_s or 0.0),
-                            False,
-                            sc_feats
+                            sc_sig,
+                            sc_feats,
+                            ml_score=float(ml_s or 0.0)
                         )
                         if _rec is not None:
                             try:
@@ -6777,12 +6744,11 @@ class TradingBot:
                             logger.info(f"[{sym}] 📦 Scalp phantom REJECTED: Q={q_score:.1f} < {ph_min:.1f}")
                             continue
                         logger.info(f"[{sym}] 📝 Scalp phantom ACCEPTED: Q={q_score:.1f} ≥ {ph_min:.1f}")
-                        _rec = scpt.record_scalp_signal(
+                        _rec = await self._scalp_gate_and_record_phantom(
                             sym,
-                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                            float(ml_s or 0.0),
-                            False,
-                            sc_feats
+                            sc_sig,
+                            sc_feats,
+                            ml_score=float(ml_s or 0.0)
                         )
                         if _rec is not None:
                             try:
@@ -7083,13 +7049,16 @@ class TradingBot:
                             scpt.cancel_active(sym)
                         except Exception:
                             pass
-                    scpt.record_scalp_signal(
-                        sym,
-                        {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                        float(ml_s_immediate or 0.0),
-                        bool(executed),
-                        sc_feats
-                    )
+                    if executed:
+                        scpt.record_scalp_signal(
+                            sym,
+                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                            float(ml_s_immediate or 0.0),
+                            True,
+                            sc_feats
+                        )
+                    else:
+                        await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s_immediate or 0.0))
                 except Exception:
                     pass
                 if executed:
@@ -7174,12 +7143,11 @@ class TradingBot:
             except Exception:
                 force_accept = False
             if force_accept:
-                scpt.record_scalp_signal(
+                await self._scalp_gate_and_record_phantom(
                     sym,
-                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                    float(ml_s or 0.0) if 'ml_s' in locals() else 0.0,
-                    False,
-                    sc_feats
+                    sc_sig,
+                    sc_feats,
+                    ml_score=float(ml_s or 0.0) if 'ml_s' in locals() else 0.0
                 )
                 logger.info(f"[{sym}] 👻 Phantom-only (Scalp fallback): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
                 try:
@@ -7211,13 +7179,16 @@ class TradingBot:
                             executed = False
                         else:
                             executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
-                        scpt.record_scalp_signal(
-                            sym,
-                            {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                            float(ml_s or 0.0),
-                            bool(executed),
-                            sc_feats
-                        )
+                        if executed:
+                            scpt.record_scalp_signal(
+                                sym,
+                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
+                                float(ml_s or 0.0),
+                                True,
+                                sc_feats
+                            )
+                        else:
+                            await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
                         if executed:
                             logger.info(f"[{sym}] 🧮 Scalp decision final: exec_scalp (reason=ml_extreme {float(ml_s or 0.0):.1f}>={hi_thr:.0f})")
                             blist.append(now_ts)
@@ -7228,12 +7199,11 @@ class TradingBot:
                 except Exception as _ee:
                     logger.info(f"[{sym}] Scalp High-ML (fallback) error: {_ee}")
             if sc_remaining > 0 and daily_ok:
-                scpt.record_scalp_signal(
+                await self._scalp_gate_and_record_phantom(
                     sym,
-                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                    float(ml_s or 0.0) if 'ml_s' in locals() else 0.0,
-                    False,
-                    sc_feats
+                    sc_sig,
+                    sc_feats,
+                    ml_score=float(ml_s or 0.0) if 'ml_s' in locals() else 0.0
                 )
                 try:
                     if hasattr(self, 'flow_controller') and self.flow_controller and self.flow_controller.enabled:
@@ -15699,13 +15669,7 @@ class TradingBot:
                                                         ml_s = 0.0
                                                 except Exception:
                                                     ml_s = 0.0
-                                                scpt.record_scalp_signal(
-                                                    sym,
-                                                    {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                                    float(ml_s or 0.0),
-                                                    False,
-                                                    sc_feats
-                                                )
+                                                await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
                                                 # Count accepted Scalp phantom for flow pacing
                                                 try:
                                                     if hasattr(self, 'flow_controller') and self.flow_controller:

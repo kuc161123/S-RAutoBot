@@ -655,7 +655,7 @@ scalp:
     ml_enabled: false        # if true, seeds Scalp ML with historical phantom outcomes on startup
   exec:
     enabled: true                 # Enable Scalp executes (Adaptive Combos + Pro Rules fallback)
-    risk_percent: 1.0             # Per-trade risk for Scalp executes (1% of equity per trade)
+    risk_percent: 2.0             # Per-trade risk for Scalp executes (2% of equity per trade)
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
     adaptive_risk:
       enabled: false              # Disable adaptive risk; use fixed risk_percent

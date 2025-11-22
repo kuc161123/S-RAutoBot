@@ -6437,14 +6437,6 @@ class TradingBot:
                                 except Exception:
                                     pass
                                 try:
-                                    # Extra volume gate before execution
-                                    vol_ok_extra = True
-                                    try:
-                                        vol_ok_extra = await self._scalp_extra_vol_gate(sym, sc_sig.side, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
-                                    except Exception:
-                                        vol_ok_extra = True
-                                    if not vol_ok_extra:
-                                        continue
                                     # Prefer new signature with exec_id; fallback to legacy signature if unavailable
                                     try:
                                         did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)

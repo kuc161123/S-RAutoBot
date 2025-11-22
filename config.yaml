@@ -685,7 +685,7 @@ scalp:
     manager_fresh_hours: 6       # consider manager stale when older than this many hours
     blocked_notify: true         # enable blocked/phantom notifications
     extra_vol_gate:
-      enabled: true             # Enforce an additional volume gate even when hard_gates.vol is off
+      enabled: false            # Disabled: rely on existing volume features
       min_ratio: 1.20           # Minimum volume_ratio required to execute
       notify: true              # Send block notification when this gate fails
     # Adaptive combo filtering: dynamically enable/disable combos based on rolling performance

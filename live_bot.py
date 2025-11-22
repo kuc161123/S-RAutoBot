@@ -955,6 +955,8 @@ class TradingBot:
                 mtf = bool(feats.get('mtf_agree_15', False))
                 rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
                 macd = 'bull' if mh > 0 else 'bear'
+                mh_abs = abs(mh)
+                mh_floor = 0.0005  # simple MACD hist strength floor
                 vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
                 # Wick/vol thresholds from hard gates
                 hg_local = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
@@ -962,31 +964,40 @@ class TradingBot:
                 wdelta_local = float(hg_local.get('wick_delta_min', 0.12))
                 wick_ok = (lw >= uw + wdelta_local) if str(side).lower() == 'long' else (uw >= lw + wdelta_local)
                 vol_ok = volr >= vmin_local
+                vol_strong = volr >= max(vmin_local, 1.50)
                 fails = []
                 if not mtf:
                     fails.append('MTF')
                 else:
                     if str(side).lower() == 'long':
-                        if rsi_bin not in ('50-60','60-70'):
+                        rsi_ok = (50 <= rsi < 65) or (65 <= rsi < 70 and vol_strong)
+                        if not rsi_ok:
                             fails.append('RSI')
-                        if macd != 'bull':
+                        macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
+                        if not macd_ok:
                             fails.append('MACD')
-                        if vwap_bin not in ('<0.6','1.2+'):
+                        v_ok = (vwap_bin == '<0.6') or (vwap_bin == '1.2+' and macd_ok and vol_ok)
+                        if not v_ok:
                             fails.append('VWAP')
-                        if str(fibz) not in ('0-23','23-38','38-50'):
+                        fib_ok = (str(fibz) in ('0-23','23-38')) or (str(fibz) == '38-50' and vol_strong)
+                        if not fib_ok:
                             fails.append('Fib')
                         if not vol_ok:
                             fails.append('Vol')
                         if not wick_ok:
                             fails.append('Wick')
                     else:
-                        if rsi_bin not in ('<30','30-40'):
+                        rsi_ok = (rsi < 35) or (35 <= rsi < 40 and vol_strong)
+                        if not rsi_ok:
                             fails.append('RSI')
-                        if macd != 'bear':
+                        macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
+                        if not macd_ok:
                             fails.append('MACD')
-                        if vwap_bin not in ('<0.6','0.6-1.0'):
+                        v_ok = vwap_bin in ('<0.6','0.6-1.0')
+                        if not v_ok:
                             fails.append('VWAP')
-                        if str(fibz) not in ('61-78','78-100'):
+                        fib_ok = (str(fibz) in ('78-100')) or (str(fibz) == '61-78' and vol_strong)
+                        if not fib_ok:
                             fails.append('Fib')
                         if not vol_ok:
                             fails.append('Vol')
@@ -1084,20 +1095,28 @@ class TradingBot:
             # Bins (stricter high-quality rules)
             rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-50' if rsi < 50 else '50-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
             macd = 'bull' if mh > 0 else 'bear'
+            mh_abs = abs(mh)
+            mh_floor = 0.0005
             vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
             s = str(side).lower()
             ok = False
+            vol_strong = False
+            try:
+                volr_tmp = float(f.get('volume_ratio', 0.0) or 0.0)
+                vol_strong = volr_tmp >= 1.50
+            except Exception:
+                vol_strong = False
             if s == 'long':
-                rsi_ok = (rsi_bin in ('50-60','60-70'))
-                v_ok = vwap_bin in ('<0.6','1.2+')
-                macd_ok = (macd == 'bull')
-                fib_ok = (fibz in ('0-23','23-38','38-50'))
+                rsi_ok = (50 <= rsi < 65) or (65 <= rsi < 70 and vol_strong)
+                v_ok = (vwap_bin == '<0.6') or (vwap_bin == '1.2+' and (macd == 'bull') and vol_strong)
+                macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
+                fib_ok = (fibz in ('0-23','23-38')) or (fibz == '38-50' and vol_strong)
                 ok = bool(rsi_ok and v_ok and macd_ok and fib_ok)
             else:
-                rsi_ok = (rsi_bin in ('<30','30-40'))
-                macd_ok = (macd == 'bear')
+                rsi_ok = (rsi < 35) or (35 <= rsi < 40 and vol_strong)
+                macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
                 v_ok = vwap_bin in ('<0.6','0.6-1.0')
-                fib_ok = (fibz in ('61-78','78-100'))
+                fib_ok = (fibz in ('78-100')) or (fibz == '61-78' and vol_strong)
                 ok = bool(rsi_ok and macd_ok and v_ok and fib_ok)
             if ok:
                 return True, 'fallback_pro_ok', ctx

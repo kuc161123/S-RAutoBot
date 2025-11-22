@@ -887,11 +887,17 @@ class TradingBot:
                 await self._notify_block(sym, kind=kind, side=str(getattr(sc_sig, 'side','')), feats=feats or {}, combo_id=gate_ctx.get('combo_id') if isinstance(gate_ctx, dict) else None)
             except Exception:
                 pass
+        # Record the phantom (centralized path)
         try:
             from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
             scpt = _get_scpt()
-            # Route phantom through gate/notification
-            asyncio.create_task(self._scalp_gate_and_record_phantom(sym, sc_sig, feats, ml_score=float(ml_score or 0.0)))
+            scpt.record_scalp_signal(
+                sym,
+                {'side': getattr(sc_sig, 'side', None), 'entry': getattr(sc_sig, 'entry', None), 'sl': getattr(sc_sig, 'sl', None), 'tp': getattr(sc_sig, 'tp', None)},
+                float(ml_score or 0.0),
+                False,
+                feats or {}
+            )
         except Exception:
             pass
 
@@ -1285,7 +1291,7 @@ class TradingBot:
             else:
                 wick_pass = True
 
-            slope_enabled = bool(hg.get('slope_enabled', False))
+            slope_enabled = False  # Force slope gate off per policy
             fast = float(feats.get('ema_slope_fast', 0.0) or 0.0)
             slow = float(feats.get('ema_slope_slow', 0.0) or 0.0)
 

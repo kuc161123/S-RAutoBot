@@ -586,12 +586,12 @@ scalp:
     # Individual gate enables (only apply to execution, phantoms track all)
     htf_enabled: false          # DISABLED - HTF gate removed from execution paths
     htf_min_ts15: 70.0
-    vol_enabled: true           # ENABLED - Require volume expansion with Body gate for Scalp
-    vol_ratio_min_3m: 1.30      # 1.3x 20-bar avg (execution gate)
+    vol_enabled: false          # DISABLED - Remove volume hard gate for execution
+    vol_ratio_min_3m: 1.30      # kept for reference (not applied when vol_enabled=false)
     body_enabled: false         # DISABLED - Body is handled in signal generator, not execution
     body_ratio_min_3m: 0.30
     # Wick alignment gate (execution): dominant wick in trade direction by delta
-    wick_enabled: true
+    wick_enabled: false         # DISABLED - Remove wick hard gate for execution
     wick_delta_min: 0.12
     # Volatility regime gate (execution): allow only configured regimes
     regime_enabled: false
@@ -686,7 +686,7 @@ scalp:
     blocked_notify: true         # enable blocked/phantom notifications
     # Adaptive combo filtering: dynamically enable/disable combos based on rolling performance
     adaptive_combos:
-      enabled: false             # Disable adaptive combo filtering (learn-only for now)
+      enabled: true              # Re-enable adaptive combo filtering
       min_wr_threshold: 45.0     # Minimum WR% to enable combo (default 45%)
       min_sample_size: 20        # Minimum N for statistical validity
       use_wilson_lb: false       # Gate on raw WR (Wilson LB still shown in UI)

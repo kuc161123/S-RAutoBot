@@ -1285,7 +1285,7 @@ class TradingBot:
             else:
                 wick_pass = True
 
-            slope_enabled = bool(hg.get('slope_enabled', False))
+            slope_enabled = False  # Disable slope gate per updated policy
             fast = float(feats.get('ema_slope_fast', 0.0) or 0.0)
             slow = float(feats.get('ema_slope_slow', 0.0) or 0.0)
 

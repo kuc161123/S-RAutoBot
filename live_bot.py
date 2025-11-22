@@ -6428,12 +6428,11 @@ class TradingBot:
                                     continue
                                 except Exception:
                                     pass
-                                    else:
-                                        # Pull detailed reason from executor if set
-                                        try:
-                                            exec_reason = (getattr(self, '_scalp_last_exec_reason', {}) or {}).get(sym, exec_reason)
-                                        except Exception:
-                                            pass
+                                # Pull detailed reason from executor if set (did_exec is False here)
+                                try:
+                                    exec_reason = (getattr(self, '_scalp_last_exec_reason', {}) or {}).get(sym, exec_reason)
+                                except Exception:
+                                    pass
                     except Exception as _xe:
                         did_exec = False
                         try:

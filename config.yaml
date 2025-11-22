@@ -586,12 +586,12 @@ scalp:
     # Individual gate enables (only apply to execution, phantoms track all)
     htf_enabled: false          # DISABLED - HTF gate removed from execution paths
     htf_min_ts15: 70.0
-    vol_enabled: false          # DISABLED - Remove volume hard gate for execution
+    vol_enabled: true           # ENABLED - Require volume expansion for execution
     vol_ratio_min_3m: 1.30      # kept for reference (not applied when vol_enabled=false)
     body_enabled: false         # DISABLED - Body is handled in signal generator, not execution
     body_ratio_min_3m: 0.30
     # Wick alignment gate (execution): dominant wick in trade direction by delta
-    wick_enabled: false         # DISABLED - Remove wick hard gate for execution
+    wick_enabled: true          # ENABLED - Require wick dominance for execution
     wick_delta_min: 0.12
     # Volatility regime gate (execution): allow only configured regimes
     regime_enabled: false

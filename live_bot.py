@@ -837,6 +837,26 @@ class TradingBot:
         except Exception:
             return False
 
+    async def _scalp_gate_and_record_phantom(self, sym: str, sc_sig, feats: dict, ml_score: float = 0.0):
+        """Run gate for a phantom-only scalp signal, send block notification if rejected, then record phantom."""
+        try:
+            allowed, gate_reason, gate_ctx = self._scalp_combo_allowed(str(getattr(sc_sig, 'side', '')), feats or {})
+        except Exception:
+            allowed, gate_reason, gate_ctx = (False, 'insufficient_features', {})
+        if not allowed:
+            try:
+                kind = 'adaptive' if str(gate_reason).startswith('adaptive') else 'rules'
+                await self._notify_block(sym, kind=kind, side=str(getattr(sc_sig, 'side','')), feats=feats or {}, combo_id=gate_ctx.get('combo_id') if isinstance(gate_ctx, dict) else None)
+            except Exception:
+                pass
+        try:
+            from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+            scpt = _get_scpt()
+            # Route phantom through gate/notification
+            asyncio.create_task(self._scalp_gate_and_record_phantom(sym, sc_sig, feats, ml_score=float(ml_score or 0.0)))
+        except Exception:
+            pass
+
     async def _notify_block(self, sym: str, *, kind: str, side: str, feats: dict, combo_id: str | None = None, pre_reason: str | None = None):
         """Notify a Scalp execution block with reason, obeying config + rate limit.
 
@@ -2392,7 +2412,8 @@ class TradingBot:
                     try:
                         from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
                         scpt0 = _get_scpt()
-                        scpt0.record_scalp_signal(sym, {'side': sig_obj.side, 'entry': sig_obj.entry, 'sl': sig_obj.sl, 'tp': sig_obj.tp}, float(ml_score or 0.0), False, feats_for_gate)
+                        # Gate + notify + record phantom
+                        await self._scalp_gate_and_record_phantom(sym, sig_obj, feats_for_gate, ml_score=float(ml_score or 0.0))
                     except Exception:
                         pass
                     try:
@@ -5635,13 +5656,7 @@ class TradingBot:
                                         except Exception:
                                             pass
                                         try:
-                                            scpt.record_scalp_signal(
-                                                sym,
-                                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                                float(ml_s or 0.0),
-                                                False,
-                                                sc_feats
-                                            )
+                                            await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
                                             _scalp_decision_logged = True
                                             self._scalp_cooldown[sym] = bar_ts
                                             blist.append(now_ts)
@@ -6004,6 +6019,7 @@ class TradingBot:
                                 did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                             if did_exec:
                                 try:
+                                    # Record executed mirror and log decision
                                     scpt.record_scalp_signal(
                                         sym,
                                         {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
@@ -6398,25 +6414,20 @@ class TradingBot:
                                         self._scalp_exec_counter['count'] += 1
                                         exec_reason = 'qgate'
                                         # On success, record executed mirror and short-circuit the rest of the loop
-                                        try:
-                                            scpt.record_scalp_signal(
-                                                sym,
-                                                {'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp},
-                                                float(ml_s or 0.0),
-                                                True,
-                                                sc_feats
-                                            )
-                                            _scalp_decision_logged = True
-                                            self._scalp_cooldown[sym] = bar_ts
-                                            blist.append(now_ts)
-                                            self._scalp_budget[sym] = blist
-                                            try:
-                                                logger.info(f"[{sym}|id={exec_id}] 🧮 Scalp decision final: exec_scalp (reason=qscore {float(sc_feats.get('qscore',0.0)):.1f}>={exec_thr:.0f})")
-                                            except Exception:
-                                                pass
-                                            continue
-                                        except Exception:
-                                            pass
+                                try:
+                                    # Gate + record executed mirror
+                                    await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
+                                    _scalp_decision_logged = True
+                                    self._scalp_cooldown[sym] = bar_ts
+                                    blist.append(now_ts)
+                                    self._scalp_budget[sym] = blist
+                                    try:
+                                        logger.info(f"[{sym}|id={exec_id}] 🧮 Scalp decision final: exec_scalp (reason=qscore {float(sc_feats.get('qscore',0.0)):.1f}>={exec_thr:.0f})")
+                                    except Exception:
+                                        pass
+                                    continue
+                                except Exception:
+                                    pass
                                     else:
                                         # Pull detailed reason from executor if set
                                         try:

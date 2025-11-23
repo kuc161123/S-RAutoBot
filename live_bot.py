@@ -2540,6 +2540,10 @@ class TradingBot:
                                     # Updated RSI logic: (40-60) OR (<30) OR (60-70 with vol≥1.50)
                                     if not ((40 <= rsi0 < 60) or (rsi0 < 30) or (60 <= rsi0 < 70 and volr0 >= 1.50)):
                                         sub_reasons.append('rsi')
+                                    # MACD: Must be bull with histogram strength ≥0.0005 (matches Pro Rules)
+                                    mh_floor = 0.0005
+                                    if not (macd == 'bull' and abs(mh0) >= mh_floor):
+                                        sub_reasons.append('macd')
                                     # Updated VWAP logic: <0.6 OR (0.6-1.2 with bull MACD + vol≥1.50) OR (1.2+ with bull MACD + vol≥1.50)
                                     v_ok = (vwap_bin == '<0.6') or \
                                            (vwap_bin == '0.6-1.2' and macd == 'bull' and volr0 >= 1.50) or \

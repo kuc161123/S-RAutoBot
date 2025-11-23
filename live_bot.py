@@ -937,7 +937,7 @@ class TradingBot:
                 if combo_id:
                     lines.append(f"Combo: {combo_id}")
             elif kind == 'rules':
-                # Compute bins and failures (stricter high-quality rule set)
+                # Compute bins and Pro-Rule failures (RSI/MACD/VWAP/Fib only)
                 try:
                     rsi = float(feats.get('rsi_14', 50.0) or 50.0)
                 except Exception:
@@ -960,12 +960,9 @@ class TradingBot:
                 rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
                 macd = 'bull' if mh > 0 else 'bear'
                 mh_abs = abs(mh)
-                mh_floor = 0.0005  # simple MACD hist strength floor
+                mh_floor = 0.0005
                 vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
-                vol_strong = volr >= 1.50
-
-                
-                # Fibonacci binning (standardized)
+                # Derive fib zone if missing
                 if not isinstance(fibz, str) or not fibz:
                     try:
                         frel = float(feats.get('fib_ret', 0.0))
@@ -973,43 +970,39 @@ class TradingBot:
                         fibz = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
                     except Exception:
                         fibz = 'n/a'
-
-                # Re-evaluate Pro Rules to determine specific failure reasons for the log
-                reasons = []
-                if kind == 'rules':
-                    s = str(side).lower()
-                    vol_strong = False
-                    try:
-                        volr_tmp = float(feats.get('volume_ratio', 0.0) or 0.0)
-                        vol_strong = volr_tmp >= 1.50
-                    except Exception:
-                        vol_strong = False
-
-                    if s == 'long':
-                        # Long Rules: RSI 40-70 or 30-40; VWAP <1.2 (or strong vol); MACD Bull; Fib 23-61
-                        if not ((40 <= rsi < 70) or (30 <= rsi < 40)):
-                            reasons.append('RSI')
-                        if not ((vwap_bin == '<0.6') or (vwap_bin == '0.6-1.0') or (vwap_bin == '1.0-1.2' and vol_strong)):
-                            reasons.append('VWAP')
-                        if not (macd == 'bull' and abs(mh) >= 0.0005):
-                            reasons.append('MACD')
-                        if not (fibz in ('23-38', '38-50', '50-61')):
-                            reasons.append('Fib')
-                    else:
-                        # Short Rules: RSI 30-60 or 60-70 (vol); VWAP <1.2; MACD Bear; Fib 23-78
-                        if not ((30 <= rsi < 60) or (60 <= rsi < 70 and vol_strong)):
-                            reasons.append('RSI')
-                        if not (vwap_bin in ('<0.6', '0.6-1.0', '1.0-1.2')):
-                            reasons.append('VWAP')
-                        if not (macd == 'bear' and abs(mh) >= 0.0005):
-                            reasons.append('MACD')
-                        if not (fibz in ('23-38', '38-50', '50-61', '61-78')):
-                            reasons.append('Fib')
-                    if not mtf:
-                        reasons.append('MTF')
-
+                vol_strong = volr >= 1.50
+                reasons: list[str] = []
+                s = str(side).lower()
+                if s == 'long':
+                    # RSI: 40-60 or <30 or 60-70 with strong volume
+                    rsi_ok = (40 <= rsi < 60) or (rsi < 30) or (60 <= rsi < 70 and vol_strong)
+                    # MACD: bull with minimum hist strength
+                    macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
+                    # VWAP: <0.6 OR (0.6-1.0 with bull+vol) OR (1.2+ with bull+vol)
+                    v_ok = (vwap_bin == '<0.6') or \
+                           (vwap_bin == '0.6-1.0' and macd == 'bull' and vol_strong) or \
+                           (vwap_bin == '1.2+' and macd == 'bull' and vol_strong)
+                    # Fib: 0-23..50-61, or 61-78 with strong vol
+                    fib_ok = (fibz in ('0-23', '23-38', '38-50', '50-61')) or (fibz == '61-78' and vol_strong)
+                else:
+                    # RSI: <35 OR 35-50 with strong vol OR 50-60
+                    rsi_ok = (rsi < 35) or (35 <= rsi < 50 and vol_strong) or (50 <= rsi < 60)
+                    # MACD: bear with minimum hist strength
+                    macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
+                    # VWAP: <0.6, 0.6-1.0, 1.0-1.2 (1.2+ blocked)
+                    v_ok = vwap_bin in ('<0.6', '0.6-1.0', '1.0-1.2')
+                    # Fib: 50-61..78-100
+                    fib_ok = fibz in ('50-61', '61-78', '78-100')
+                if not rsi_ok:
+                    reasons.append('RSI')
+                if not macd_ok:
+                    reasons.append('MACD')
+                if not v_ok:
+                    reasons.append('VWAP')
+                if not fib_ok:
+                    reasons.append('Fib')
                 lines.append(f"{sym} {str(side).upper()} | Reason: {', '.join(reasons) if reasons else 'rules'}")
-                # Context line kept for operators (vol/wick shown as info only)
+                # Context line: show Pro bins + vol/wick as info only
                 try:
                     uw = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
                     lw = float(feats.get('lower_wick_ratio', 0.0) or 0.0)
@@ -1018,8 +1011,12 @@ class TradingBot:
                 hg_local = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
                 vmin_local = float(hg_local.get('vol_ratio_min_3m', 1.30))
                 wdelta_local = float(hg_local.get('wick_delta_min', 0.12))
-                wick_delta = (lw-uw if str(side).lower()=='long' else uw-lw)
-                lines.append(f"RSI:{rsi_bin} MACD:{macd} VWAP:{vwap_bin} Fib:{fibz} MTF:{'✓' if mtf else '✗'} Vol:{vol_ratio:.2f}/{vmin_local:.2f} WickΔ:{wick_delta:.2f} (min {wdelta_local})")
+                wick_delta = (lw - uw) if s == 'long' else (uw - lw)
+                lines.append(
+                    f"RSI:{rsi_bin} MACD:{macd} VWAP:{vwap_bin} Fib:{fibz or 'n/a'} "
+                    f"MTF:{'✓' if mtf else '✗'} Vol:{volr:.2f}/{vmin_local:.2f} "
+                    f"WickΔ:{wick_delta:.2f} (min {wdelta_local:.2f})"
+                )
             else:
                 title = "🚫 Blocked — Pre‑Gate"
                 lines.append(f"{sym} {str(side).upper()} | {pre_reason or 'pre‑gate'}")
@@ -2443,25 +2440,12 @@ class TradingBot:
                 pass
             # Execute new side
             try:
-                # Ensure gate sees current features
-                try:
-                    if not hasattr(self, '_last_signal_features'):
-                        self._last_signal_features = {}
-                    self._last_signal_features[sym] = dict(sc_feats or {})
-                except Exception:
-                    pass
                 did = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(sc_feats.get('ml', 0.0) or 0.0), exec_id=exec_id, risk_percent_override=risk_pct)
                 if did:
                     logger.info(f"[{sym}|id={exec_id}] FLIP: re-entry placed successfully ({sc_sig.side})")
                     return True
             except TypeError:
                 # Fallback when older signature is present
-                try:
-                    if not hasattr(self, '_last_signal_features'):
-                        self._last_signal_features = {}
-                    self._last_signal_features[sym] = dict(sc_feats or {})
-                except Exception:
-                    pass
                 did = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(sc_feats.get('ml', 0.0) or 0.0))
                 if did:
                     return True
@@ -3573,21 +3557,6 @@ class TradingBot:
                         await self.tg.send_system_message(msg)
                 except Exception:
                     pass
-
-                # Record executed trade as a "mirror" phantom for analytics/learning
-                try:
-                    from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
-                    scpt_exec = _get_scpt()
-                    scpt_exec.record_scalp_signal(
-                        sym,
-                        {'side': getattr(sig_obj, 'side', ''), 'entry': float(actual_entry), 'sl': float(sig_obj.sl), 'tp': float(sig_obj.tp)},
-                        float(ml_score or 0.0),
-                        True,  # was_executed=True
-                        feats_for_gate or {}
-                    )
-                except Exception as _ex_rec:
-                    logger.debug(f"[{sym}] Failed to record executed mirror phantom: {_ex_rec}")
-
                 # Successful execution
                 return True
         except Exception as e:
@@ -4937,12 +4906,6 @@ class TradingBot:
                         else:
                             executed = False
                             try:
-                                try:
-                                    if not hasattr(self, '_last_signal_features'):
-                                        self._last_signal_features = {}
-                                    self._last_signal_features[sym] = dict(sc_feats_hi or {})
-                                except Exception:
-                                    pass
                                 executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s_immediate or 0.0))
                             except Exception as _ee:
                                 logger.info(f"[{sym}] Scalp execute error: {_ee}")
@@ -6176,20 +6139,8 @@ class TradingBot:
                                 pass
                             # Execute with risk override (central gate will notify)
                             try:
-                                try:
-                                    if not hasattr(self, '_last_signal_features'):
-                                        self._last_signal_features = {}
-                                    self._last_signal_features[sym] = dict(sc_feats or {})
-                                except Exception:
-                                    pass
                                 did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=sc_feats.get('exec_id','n/a'), risk_percent_override=risk_pct)
                             except TypeError:
-                                try:
-                                    if not hasattr(self, '_last_signal_features'):
-                                        self._last_signal_features = {}
-                                    self._last_signal_features[sym] = dict(sc_feats or {})
-                                except Exception:
-                                    pass
                                 did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                             if did_exec:
                                 try:
@@ -6555,23 +6506,17 @@ class TradingBot:
                                             except Exception:
                                                 reg_line = "Regime: —"
                                             gate_vals3 = " | ".join([wick_line, vol_line, slope_line, bbw_line, reg_line])
+                                        except Exception:
+                                            gate_vals3 = ""
+                                        # Removed pre-execution notification - central gate handles all notifications
                                 except Exception:
-                                    gate_vals3 = ""
-                                # Removed pre-execution notification - central gate handles all notifications
-                        except Exception:
-                            pass
-                        try:
-                            try:
-                                if not hasattr(self, '_last_signal_features'):
-                                    self._last_signal_features = {}
-                                self._last_signal_features[sym] = dict(sc_feats or {})
-                            except Exception:
-                                pass
-                            # Prefer new signature with exec_id; fallback to legacy signature if unavailable
-                            try:
-                                did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)
-                            except TypeError:
-                                did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                                    pass
+                                try:
+                                    # Prefer new signature with exec_id; fallback to legacy signature if unavailable
+                                    try:
+                                        did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)
+                                    except TypeError:
+                                        did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                                 finally:
                                     try:
                                         if old_risk is not None:
@@ -6780,20 +6725,8 @@ class TradingBot:
                                     except Exception:
                                         exec_id_h = None
                                     try:
-                                        try:
-                                            if not hasattr(self, '_last_signal_features'):
-                                                self._last_signal_features = {}
-                                            self._last_signal_features[sym] = dict(sc_feats or {})
-                                        except Exception:
-                                            pass
                                         executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id_h)
                                     except TypeError:
-                                        try:
-                                            if not hasattr(self, '_last_signal_features'):
-                                                self._last_signal_features = {}
-                                            self._last_signal_features[sym] = dict(sc_feats or {})
-                                        except Exception:
-                                            pass
                                         executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                                 # Optionally cancel any pre-existing active scalp phantom to avoid duplicate tracking
                                 try:
@@ -7185,12 +7118,6 @@ class TradingBot:
                     return
                 executed = False
                 try:
-                    try:
-                        if not hasattr(self, '_last_signal_features'):
-                            self._last_signal_features = {}
-                        self._last_signal_features[sym] = dict(sc_feats or {})
-                    except Exception:
-                        pass
                     executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s_immediate or 0.0))
                 except Exception as _ee:
                     logger.info(f"[{sym}] Scalp fallback execute error: {_ee}")
@@ -7336,12 +7263,6 @@ class TradingBot:
                             logger.info(f"[{sym}] 🛑 Scalp execution (fallback) blocked by regime gate (vol={sc_feats.get('volatility_regime')} fast={fast:.2f} slow={slow:.2f} side={side})")
                             executed = False
                         else:
-                            try:
-                                if not hasattr(self, '_last_signal_features'):
-                                    self._last_signal_features = {}
-                                self._last_signal_features[sym] = dict(sc_feats or {})
-                            except Exception:
-                                pass
                             executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                         if executed:
                             scpt.record_scalp_signal(
@@ -12854,12 +12775,6 @@ class TradingBot:
                             # Route Scalp executions to the dedicated stream-side executor for robust TP/SL handling
                             try:
                                 if strategy_name == 'scalp':
-                                    try:
-                                        if not hasattr(self, '_last_signal_features'):
-                                            self._last_signal_features = {}
-                                        self._last_signal_features[sym] = {}
-                                    except Exception:
-                                        pass
                                     return await self._execute_scalp_trade(sym, sig_obj, ml_score=float(ml_score or 0.0))
                             except Exception:
                                 # Fall through to generic path if executor is unavailable

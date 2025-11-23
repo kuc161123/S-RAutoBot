@@ -2785,6 +2785,7 @@ class TGBot:
             "• /scalpqa — Scalp quality report",
             "• /scalpgates — Gate analysis",
             "• /combo_status — Adaptive combo status",
+            "• /scalppro — Pro analytics (RSI/MACD/VWAP/Fib/MTF)",
             "• /force_adaptive [N] — Force adaptive mode",
             "",
             "Risk",
@@ -9726,7 +9727,12 @@ class TGBot:
                         side_lines.append(f"{side_label} No combos tracked.")
                         return side_lines
 
-                    top_wr = sorted(combos, key=lambda c: c['wr'], reverse=True)[:10]
+                    # Sort by WR descending, then by sample size N descending
+                    top_wr = sorted(
+                        combos,
+                        key=lambda c: (c['wr'], c['n']),
+                        reverse=True
+                    )[:10]
 
                     side_lines.append(side_label)
                     for i, c in enumerate(top_wr, start=1):

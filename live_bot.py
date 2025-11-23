@@ -972,44 +972,58 @@ class TradingBot:
                 vmin_local = float(hg_local.get('vol_ratio_min_3m', 1.30))
                 wdelta_local = float(hg_local.get('wick_delta_min', 0.12))
                 wick_ok = (lw >= uw + wdelta_local) if str(side).lower() == 'long' else (uw >= lw + wdelta_local)
-                # Temporarily ignore vol/wick gates to increase flow
-                vol_ok = True
-                vol_strong = True
+                # Calculate vol_strong properly (matches Pro Rules)
+                vol_strong = volr >= 1.50
                 fails = []
                 if not mtf:
                     fails.append('MTF')
                 else:
                     if str(side).lower() == 'long':
-                        rsi_ok = (50 <= rsi < 65) or (65 <= rsi < 70 and vol_strong)
+                        # Updated to match Pro Rules (lines 1118-1128)
+                        # RSI: (40-60) OR (<30) OR (60-70 with vol≥1.50)
+                        rsi_ok = (40 <= rsi < 60) or (rsi < 30) or (60 <= rsi < 70 and vol_strong)
                         if not rsi_ok:
                             fails.append('RSI')
                         macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
                         if not macd_ok:
                             fails.append('MACD')
-                        v_ok = (vwap_bin == '<0.6') or (vwap_bin == '1.2+' and macd_ok and vol_ok)
+                        # VWAP: <0.6 OR (0.6-1.0 with bull MACD + vol≥1.50) OR (1.2+ with bull MACD + vol≥1.50)
+                        # Note: 1.0-1.2 bin NOT allowed for LONGS
+                        v_ok = (vwap_bin == '<0.6') or \
+                               (vwap_bin == '0.6-1.0' and macd == 'bull' and vol_strong) or \
+                               (vwap_bin == '1.2+' and macd == 'bull' and vol_strong)
                         if not v_ok:
                             fails.append('VWAP')
-                        fib_ok = (str(fibz) in ('0-23','23-38')) or (str(fibz) == '38-50' and vol_strong)
+                        # Fib: Include Golden Zone (50-61%) and allow 61-78% with vol
+                        fib_ok = (str(fibz) in ('0-23','23-38','38-50','50-61')) or \
+                                 (str(fibz) == '61-78' and vol_strong)
                         if not fib_ok:
                             fails.append('Fib')
-                        if not vol_ok:
+                        # Vol gate (using actual volume check, not hardcoded True)
+                        if volr < vmin_local:
                             fails.append('Vol')
                         if not wick_ok:
                             fails.append('Wick')
                     else:
-                        rsi_ok = (rsi < 35) or (35 <= rsi < 40 and vol_strong)
+                        # Updated to match Pro Rules (lines 1129-1139)
+                        # RSI: (<35) OR (35-50 with vol≥1.50) OR (50-60)
+                        rsi_ok = (rsi < 35) or (35 <= rsi < 50 and vol_strong) or (50 <= rsi < 60)
                         if not rsi_ok:
                             fails.append('RSI')
                         macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
                         if not macd_ok:
                             fails.append('MACD')
-                        v_ok = vwap_bin in ('<0.6','0.6-1.0')
+                        # VWAP: Expanded mean reversion zones (<1.2 ATR from VWAP)
+                        # Allows: <0.6, 0.6-1.0, 1.0-1.2 (does NOT allow 1.2+)
+                        v_ok = vwap_bin in ('<0.6','0.6-1.0','1.0-1.2')
                         if not v_ok:
                             fails.append('VWAP')
-                        fib_ok = (str(fibz) in ('78-100')) or (str(fibz) == '61-78' and vol_strong)
+                        # Fib: Include Golden Zone (50-61%) for shorts
+                        fib_ok = str(fibz) in ('50-61','61-78','78-100')
                         if not fib_ok:
                             fails.append('Fib')
-                        if not vol_ok:
+                        # Vol gate (using actual volume check, not hardcoded True)
+                        if volr < vmin_local:
                             fails.append('Vol')
                         if not wick_ok:
                             fails.append('Wick')

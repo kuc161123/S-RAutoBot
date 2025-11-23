@@ -82,10 +82,13 @@ class TGBot:
         # Adaptive combo management commands
         self.app.add_handler(CommandHandler("combo_status", self.combo_status_cmd))
         self.app.add_handler(CommandHandler("combostatus", self.combo_status_cmd))
+        self.app.add_handler(CommandHandler("combos", self.combo_status_cmd))
         self.app.add_handler(CommandHandler("combo_refresh", self.combo_refresh_cmd))
         self.app.add_handler(CommandHandler("comborefresh", self.combo_refresh_cmd))
         self.app.add_handler(CommandHandler("combo_threshold", self.combo_threshold_cmd))
         self.app.add_handler(CommandHandler("combothreshold", self.combo_threshold_cmd))
+        self.app.add_handler(CommandHandler("force_adaptive", self.force_adaptive_combos))
+        self.app.add_handler(CommandHandler("forceadaptive", self.force_adaptive_combos))
         self.app.add_handler(CommandHandler("status", self.status))
         # Simple responsiveness probe
         self.app.add_handler(CommandHandler("ping", self.ping))
@@ -2781,6 +2784,8 @@ class TGBot:
             "Scalp",
             "• /scalpqa — Scalp quality report",
             "• /scalpgates — Gate analysis",
+            "• /combo_status — Adaptive combo status",
+            "• /force_adaptive [N] — Force adaptive mode",
             "",
             "Risk",
             "• /risk — Show current risk",
@@ -9681,10 +9686,81 @@ class TGBot:
                     lines.append(f"{side_emoji} WR {combo['wr']:.1f}% (N={combo['n']}){ev_line}")
                     lines.append(f"   {combo['combo_id']}")
 
+            # Show disabled combos if requested
+            if ctx.args and 'all' in ctx.args:
+                lines.append("")
+                lines.append("*Disabled Combos (Top 10 by N)*")
+                all_state = mgr._load_combo_state()
+                disabled_list = [v for v in all_state.values() if not v.get('enabled')]
+                disabled_sorted = sorted(disabled_list, key=lambda x: x.get('n', 0), reverse=True)[:10]
+                for combo in disabled_sorted:
+                    side_emoji = "🟢" if combo.get('side') == 'long' else "🔴"
+                    wr = float(combo.get('wr', 0.0))
+                    n = int(combo.get('n', 0))
+                    lines.append(f"{side_emoji} WR {wr:.1f}% (N={n})")
+                    lines.append(f"   {combo['combo_id']}")
+            elif not active_combos:
+                lines.append("")
+                lines.append("No active combos. Use `/combo_status all` to see disabled ones.")
+
             await self.safe_reply(update, "\n".join(lines))
 
         except Exception as e:
             logger.error(f"Error in combo_status_cmd: {e}", exc_info=True)
+            await self.safe_reply(update, f"❌ Error: {e}")
+
+    async def force_adaptive_combos(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Force enable adaptive combos with custom N and disable fallback.
+
+        Usage: /force_adaptive [min_n]
+        Example: /force_adaptive 5  -> Sets min_sample_size=5, fallback='off', updates filters.
+        """
+        try:
+            mgr = self.shared.get('adaptive_combo_mgr')
+            if not mgr:
+                await self.safe_reply(update, "❌ Adaptive combo manager not available")
+                return
+
+            # Parse N (default to 5 if not provided)
+            target_n = 5
+            if ctx.args:
+                try:
+                    target_n = int(ctx.args[0])
+                except ValueError:
+                    pass
+            
+            # Update Manager Settings
+            old_n = mgr.min_sample_size
+            mgr.min_sample_size = target_n
+            
+            # Update Config (Runtime)
+            cfg = self.shared.get('config', {})
+            if 'scalp' not in cfg: cfg['scalp'] = {}
+            if 'exec' not in cfg['scalp']: cfg['scalp']['exec'] = {}
+            
+            old_fallback = cfg['scalp']['exec'].get('fallback_until_ready', 'pro')
+            cfg['scalp']['exec']['fallback_until_ready'] = 'off'
+            
+            # Update adaptive config in memory
+            if 'adaptive_combos' not in cfg['scalp']['exec']: cfg['scalp']['exec']['adaptive_combos'] = {}
+            cfg['scalp']['exec']['adaptive_combos']['min_sample_size'] = target_n
+            
+            # Force Update
+            enabled, disabled, changes = mgr.update_combo_filters(force=True)
+            
+            msg = (
+                f"✅ *Adaptive Combos Forced*\n\n"
+                f"• Min Sample Size: {old_n} → {target_n}\n"
+                f"• Fallback Mode: {old_fallback} → off\n"
+                f"• Filter Update: {enabled} enabled, {disabled} disabled\n\n"
+                f"⚠️ *Warning*: This overrides safety defaults. Monitor closely.\n"
+                f"Use `/combo_threshold` to adjust WR if needed."
+            )
+            await self.safe_reply(update, msg)
+            logger.info(f"Force adaptive combos: N={target_n}, fallback=off, enabled={enabled}")
+
+        except Exception as e:
+            logger.error(f"Error in force_adaptive_combos: {e}", exc_info=True)
             await self.safe_reply(update, f"❌ Error: {e}")
 
     async def combo_refresh_cmd(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):

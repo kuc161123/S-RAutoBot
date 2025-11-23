@@ -841,6 +841,8 @@ class TradingBot:
         """Additional volume gate after Pro/Combo rules. Returns True if passed.
         On fail: notifies (rules block) and records phantom.
         """
+        # Temporarily disabled to increase flow.
+        return True
         try:
             cfg = getattr(self, 'config', {}) or {}
             ex_cfg = ((cfg.get('scalp', {}) or {}).get('exec', {}) or {})
@@ -958,7 +960,8 @@ class TradingBot:
                 except Exception:
                     vwap = 999.0
                 fibz = feats.get('fib_zone')
-                mtf = bool(feats.get('mtf_agree_15', False))
+                # Temporarily ignore MTF alignment to increase flow
+                mtf = True
                 rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
                 macd = 'bull' if mh > 0 else 'bear'
                 mh_abs = abs(mh)
@@ -969,8 +972,9 @@ class TradingBot:
                 vmin_local = float(hg_local.get('vol_ratio_min_3m', 1.30))
                 wdelta_local = float(hg_local.get('wick_delta_min', 0.12))
                 wick_ok = (lw >= uw + wdelta_local) if str(side).lower() == 'long' else (uw >= lw + wdelta_local)
-                vol_ok = volr >= vmin_local
-                vol_strong = volr >= max(vmin_local, 1.50)
+                # Temporarily ignore vol/wick gates to increase flow
+                vol_ok = True
+                vol_strong = True
                 fails = []
                 if not mtf:
                     fails.append('MTF')
@@ -1095,9 +1099,8 @@ class TradingBot:
                     fibz = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
                 except Exception:
                     fibz = None
-            mtf = bool(f.get('mtf_agree_15', False))
-            if not mtf:
-                return False, 'fallback_pro_block', ctx
+            # Temporarily ignore MTF alignment to increase flow
+            mtf = True
             # Bins (stricter high-quality rules)
             rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-50' if rsi < 50 else '50-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
             macd = 'bull' if mh > 0 else 'bear'
@@ -1129,11 +1132,8 @@ class TradingBot:
             else:
                 return False, 'fallback_pro_block', ctx
         elif fallback_mode == 'mtf':
-            mtf_ok = bool((feats or {}).get('mtf_agree_15', False))
-            if mtf_ok:
-                return True, 'fallback_mtf_ok', ctx
-            else:
-                return False, 'fallback_mtf_block', ctx
+            # Temporarily ignore MTF alignment to increase flow
+            return True, 'fallback_mtf_ok', ctx
         else:
             # No fallback gating
             return True, 'fallback_off', ctx
@@ -1279,17 +1279,16 @@ class TradingBot:
             vol_enabled = bool(hg.get('vol_enabled', False))
             vr = float(feats.get('volume_ratio', 0.0) or 0.0)
             vmin = float(hg.get('vol_ratio_min_3m', 1.30))
-            vol_pass = (vr >= vmin) if vol_enabled else False
+            vol_enabled = False  # temporarily disable volume gate
+            vol_pass = True
 
             # Wick alignment gate (execution-only): require dominant wick in trade direction by delta
             wick_enabled = bool(hg.get('wick_enabled', True))
             uw = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
             lw = float(feats.get('lower_wick_ratio', 0.0) or 0.0)
             wdelta = float(hg.get('wick_delta_min', 0.12))
-            if wick_enabled:
-                wick_pass = (lw >= uw + wdelta) if side == 'long' else (uw >= lw + wdelta)
-            else:
-                wick_pass = True
+            wick_enabled = False  # temporarily disable wick gate
+            wick_pass = True
 
             slope_enabled = False  # Force slope gate off per policy
             fast = float(feats.get('ema_slope_fast', 0.0) or 0.0)

@@ -3560,6 +3560,21 @@ class TradingBot:
                         await self.tg.send_system_message(msg)
                 except Exception:
                     pass
+
+                # Record executed trade as a "mirror" phantom for analytics/learning
+                try:
+                    from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                    scpt_exec = _get_scpt()
+                    scpt_exec.record_scalp_signal(
+                        sym,
+                        {'side': getattr(sig_obj, 'side', ''), 'entry': float(actual_entry), 'sl': float(sig_obj.sl), 'tp': float(sig_obj.tp)},
+                        float(ml_score or 0.0),
+                        True,  # was_executed=True
+                        feats_for_gate or {}
+                    )
+                except Exception as _ex_rec:
+                    logger.debug(f"[{sym}] Failed to record executed mirror phantom: {_ex_rec}")
+
                 # Successful execution
                 return True
         except Exception as e:

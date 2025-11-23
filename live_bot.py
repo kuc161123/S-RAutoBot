@@ -2537,16 +2537,28 @@ class TradingBot:
                                         sub_reasons.append('wick')
                                     if volr0 < vmin_local:
                                         sub_reasons.append('vol')
-                                    if rsi_bin not in ('40-60','60-70'):
+                                    # Updated RSI logic: (40-60) OR (<30) OR (60-70 with vol≥1.50)
+                                    if not ((40 <= rsi0 < 60) or (rsi0 < 30) or (60 <= rsi0 < 70 and volr0 >= 1.50)):
                                         sub_reasons.append('rsi')
-                                    v_ok = (vwap_bin == '<0.6') or (vwap_bin == '1.2+' and macd == 'bull')
+                                    # Updated VWAP logic: <0.6 OR (0.6-1.2 with bull MACD + vol≥1.50) OR (1.2+ with bull MACD + vol≥1.50)
+                                    v_ok = (vwap_bin == '<0.6') or \
+                                           (vwap_bin == '0.6-1.2' and macd == 'bull' and volr0 >= 1.50) or \
+                                           (vwap_bin == '1.2+' and macd == 'bull' and volr0 >= 1.50)
                                     if not v_ok:
-                                        # Attribute to VWAP unless the only failure is MACD requirement on 1.2+
-                                        if vwap_bin == '1.2+' and macd != 'bull':
-                                            sub_reasons.append('macd')
+                                        # Attribute to VWAP, MACD, or Vol based on what failed
+                                        if vwap_bin in ('0.6-1.2', '1.2+'):
+                                            if macd != 'bull':
+                                                sub_reasons.append('macd')
+                                            elif volr0 < 1.50:
+                                                sub_reasons.append('vol')
+                                            else:
+                                                sub_reasons.append('vwap')
                                         else:
                                             sub_reasons.append('vwap')
-                                    if not fib_ok:
+                                    # Updated Fib logic: Include Golden Zone (50-61%) and allow 61-78% with vol
+                                    fib_ok_long = str(fibz0) in ('0-23','23-38','38-50','50-61') or \
+                                                  (str(fibz0) == '61-78' and volr0 >= 1.50)
+                                    if not fib_ok_long:
                                         sub_reasons.append('fib')
                                 else:
                                     wick_ok = (uw0 >= lw0 + wdelta_local)
@@ -2554,14 +2566,18 @@ class TradingBot:
                                         sub_reasons.append('wick')
                                     if volr0 < vmin_local:
                                         sub_reasons.append('vol')
-                                    if rsi_bin not in ('<30','30-40'):
+                                    # Updated RSI logic: (<35) OR (35-50 with vol≥1.50) OR (50-60)
+                                    if not ((rsi0 < 35) or (35 <= rsi0 < 50 and volr0 >= 1.50) or (50 <= rsi0 < 60)):
                                         sub_reasons.append('rsi')
+                                    # MACD unchanged for shorts
                                     if macd != 'bear':
                                         sub_reasons.append('macd')
-                                    if vwap_bin not in ('<0.6','0.6-1.2'):
-                                        sub_reasons.append('vwap')
-                                    # For shorts, require fib in upper bands for Pro rules (61-100)
-                                    if str(fibz0) not in ('61-78','78-100'):
+                                    # Updated VWAP logic: Expanded to include all mean reversion zones (no restriction)
+                                    # All bins allowed for shorts: <0.6, 0.6-1.2, 1.2+
+                                    # (No VWAP blocking for shorts in Pro Rules)
+                                    # Updated Fib logic: Include Golden Zone (50-61%) for shorts
+                                    fib_ok_short = str(fibz0) in ('50-61','61-78','78-100')
+                                    if not fib_ok_short:
                                         sub_reasons.append('fib')
                         # Increment counters
                         self._scalp_incr_block_counter(kind0)

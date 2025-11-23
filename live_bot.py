@@ -2525,7 +2525,8 @@ class TradingBot:
                             else:
                                 rsi_bin = '<30' if rsi0 < 30 else '30-40' if rsi0 < 40 else '40-60' if rsi0 < 60 else '60-70' if rsi0 < 70 else '70+'
                                 macd = 'bull' if mh0 > 0 else 'bear'
-                                vwap_bin = '<0.6' if vwap0 < 0.6 else '0.6-1.2' if vwap0 < 1.2 else '1.2+'
+                                # Align notification bins with Pro Rules bins for consistency
+                                vwap_bin = '<0.6' if vwap0 < 0.6 else '0.6-1.0' if vwap0 < 1.0 else '1.0-1.2' if vwap0 < 1.2 else '1.2+'
                                 fib_ok = str(fibz0) in ('0-23','23-38','38-50','50-61','61-78','78-100')
                                 # Wick/Vol gates for rules
                                 hg_local = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
@@ -2544,13 +2545,14 @@ class TradingBot:
                                     mh_floor = 0.0005
                                     if not (macd == 'bull' and abs(mh0) >= mh_floor):
                                         sub_reasons.append('macd')
-                                    # Updated VWAP logic: <0.6 OR (0.6-1.2 with bull MACD + vol≥1.50) OR (1.2+ with bull MACD + vol≥1.50)
+                                    # Updated VWAP logic: <0.6 OR (0.6-1.0 with bull MACD + vol≥1.50) OR (1.0-1.2 with bull MACD + vol≥1.50) OR (1.2+ with bull MACD + vol≥1.50)
                                     v_ok = (vwap_bin == '<0.6') or \
-                                           (vwap_bin == '0.6-1.2' and macd == 'bull' and volr0 >= 1.50) or \
+                                           (vwap_bin == '0.6-1.0' and macd == 'bull' and volr0 >= 1.50) or \
+                                           (vwap_bin == '1.0-1.2' and macd == 'bull' and volr0 >= 1.50) or \
                                            (vwap_bin == '1.2+' and macd == 'bull' and volr0 >= 1.50)
                                     if not v_ok:
                                         # Attribute to VWAP, MACD, or Vol based on what failed
-                                        if vwap_bin in ('0.6-1.2', '1.2+'):
+                                        if vwap_bin in ('0.6-1.0', '1.0-1.2', '1.2+'):
                                             if macd != 'bull':
                                                 sub_reasons.append('macd')
                                             elif volr0 < 1.50:
@@ -2576,9 +2578,10 @@ class TradingBot:
                                     # MACD unchanged for shorts
                                     if macd != 'bear':
                                         sub_reasons.append('macd')
-                                    # Updated VWAP logic: Expanded to include all mean reversion zones (no restriction)
-                                    # All bins allowed for shorts: <0.6, 0.6-1.2, 1.2+
-                                    # (No VWAP blocking for shorts in Pro Rules)
+                                    # VWAP for shorts: Pro Rules allow <0.6, 0.6-1.0, 1.0-1.2 (maps to notification bins <0.6, 0.6-1.2)
+                                    # Block 1.2+ bin (NOT allowed in Pro Rules for shorts)
+                                    if vwap_bin == '1.2+':
+                                        sub_reasons.append('vwap')
                                     # Updated Fib logic: Include Golden Zone (50-61%) for shorts
                                     fib_ok_short = str(fibz0) in ('50-61','61-78','78-100')
                                     if not fib_ok_short:

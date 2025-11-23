@@ -947,11 +947,6 @@ class TradingBot:
                 except Exception:
                     volr = 0.0
                 try:
-                    uw = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
-                    lw = float(feats.get('lower_wick_ratio', 0.0) or 0.0)
-                except Exception:
-                    uw = lw = 0.0
-                try:
                     mh = float(feats.get('macd_hist', 0.0) or 0.0)
                 except Exception:
                     mh = 0.0
@@ -967,68 +962,78 @@ class TradingBot:
                 mh_abs = abs(mh)
                 mh_floor = 0.0005  # simple MACD hist strength floor
                 vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
-                # Wick/vol thresholds from hard gates
-                hg_local = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
-                vmin_local = float(hg_local.get('vol_ratio_min_3m', 1.30))
-                wdelta_local = float(hg_local.get('wick_delta_min', 0.12))
-                wick_ok = (lw >= uw + wdelta_local) if str(side).lower() == 'long' else (uw >= lw + wdelta_local)
-                # Calculate vol_strong properly (matches Pro Rules)
                 vol_strong = volr >= 1.50
                 fails = []
                 if not mtf:
                     fails.append('MTF')
                 else:
                     if str(side).lower() == 'long':
-                        # Updated to match Pro Rules (lines 1118-1128)
-                        # RSI: (40-60) OR (<30) OR (60-70 with vol≥1.50)
                         rsi_ok = (40 <= rsi < 60) or (rsi < 30) or (60 <= rsi < 70 and vol_strong)
-                        if not rsi_ok:
-                            fails.append('RSI')
                         macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
-                        if not macd_ok:
-                            fails.append('MACD')
-                        # VWAP: <0.6 OR (0.6-1.0 with bull MACD + vol≥1.50) OR (1.2+ with bull MACD + vol≥1.50)
-                        # Note: 1.0-1.2 bin NOT allowed for LONGS
                         v_ok = (vwap_bin == '<0.6') or \
                                (vwap_bin == '0.6-1.0' and macd == 'bull' and vol_strong) or \
                                (vwap_bin == '1.2+' and macd == 'bull' and vol_strong)
-                        if not v_ok:
-                            fails.append('VWAP')
-                        # Fib: Include Golden Zone (50-61%) and allow 61-78% with vol
                         fib_ok = (str(fibz) in ('0-23','23-38','38-50','50-61')) or \
                                  (str(fibz) == '61-78' and vol_strong)
-                        if not fib_ok:
-                            fails.append('Fib')
-                        # Vol gate (using actual volume check, not hardcoded True)
-                        if volr < vmin_local:
-                            fails.append('Vol')
-                        if not wick_ok:
-                            fails.append('Wick')
-                    else:
-                        # Updated to match Pro Rules (lines 1129-1139)
-                        # RSI: (<35) OR (35-50 with vol≥1.50) OR (50-60)
-                        rsi_ok = (rsi < 35) or (35 <= rsi < 50 and vol_strong) or (50 <= rsi < 60)
                         if not rsi_ok:
                             fails.append('RSI')
-                        macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
                         if not macd_ok:
-                            fails.append('MACD')
-                        # VWAP: Expanded mean reversion zones (<1.2 ATR from VWAP)
-                        # Allows: <0.6, 0.6-1.0, 1.0-1.2 (does NOT allow 1.2+)
-                        v_ok = vwap_bin in ('<0.6','0.6-1.0','1.0-1.2')
-                        if not v_ok:
-                            fails.append('VWAP')
-                        # Fib: Include Golden Zone (50-61%) for shorts
-                        fib_ok = str(fibz) in ('50-61','61-78','78-100')
-                        if not fib_ok:
-                            fails.append('Fib')
-                        # Vol gate (using actual volume check, not hardcoded True)
-                        if volr < vmin_local:
-                            fails.append('Vol')
-                        if not wick_ok:
-                            fails.append('Wick')
-                lines.append(f"{sym} {str(side).upper()} | Reason: {', '.join(fails) if fails else 'rules'}")
-                lines.append(f"RSI:{rsi_bin} MACD:{macd} VWAP:{vwap_bin} Fib:{fibz or 'n/a'} MTF:{'✓' if mtf else '✗'} Vol:{volr:.2f}/{vmin_local:.2f} WickΔ:{(lw-uw if str(side).lower()=='long' else uw-lw):.2f} (min {wdelta_local:.2f})")
+                
+                # Fibonacci binning (standardized)
+                if not isinstance(fibz, str) or not fibz:
+                    try:
+                        frel = float(feats.get('fib_ret', 0.0))
+                        fr = frel * 100.0 if frel <= 1.0 else frel
+                        fibz = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
+                    except Exception:
+                        fibz = 'n/a'
+
+                # Re-evaluate Pro Rules to determine specific failure reasons for the log
+                reasons = []
+                if kind == 'rules':
+                    s = str(side).lower()
+                    vol_strong = False
+                    try:
+                        volr_tmp = float(feats.get('volume_ratio', 0.0) or 0.0)
+                        vol_strong = volr_tmp >= 1.50
+                    except Exception:
+                        vol_strong = False
+
+                    if s == 'long':
+                        # Long Rules: RSI 40-70 or 30-40; VWAP <1.2 (or strong vol); MACD Bull; Fib 23-61
+                        if not ((40 <= rsi < 70) or (30 <= rsi < 40)):
+                            reasons.append('RSI')
+                        if not ((vwap_bin == '<0.6') or (vwap_bin == '0.6-1.0') or (vwap_bin == '1.0-1.2' and vol_strong)):
+                            reasons.append('VWAP')
+                        if not (macd == 'bull' and abs(mh) >= 0.0005):
+                            reasons.append('MACD')
+                        if not (fibz in ('23-38', '38-50', '50-61')):
+                            reasons.append('Fib')
+                    else:
+                        # Short Rules: RSI 30-60 or 60-70 (vol); VWAP <1.2; MACD Bear; Fib 23-78
+                        if not ((30 <= rsi < 60) or (60 <= rsi < 70 and vol_strong)):
+                            reasons.append('RSI')
+                        if not (vwap_bin in ('<0.6', '0.6-1.0', '1.0-1.2')):
+                            reasons.append('VWAP')
+                        if not (macd == 'bear' and abs(mh) >= 0.0005):
+                            reasons.append('MACD')
+                        if not (fibz in ('23-38', '38-50', '50-61', '61-78')):
+                            reasons.append('Fib')
+                    if not mtf:
+                        reasons.append('MTF')
+
+                lines.append(f"{sym} {str(side).upper()} | Reason: {', '.join(reasons) if reasons else 'rules'}")
+                # Context line kept for operators (vol/wick shown as info only)
+                try:
+                    uw = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
+                    lw = float(feats.get('lower_wick_ratio', 0.0) or 0.0)
+                except Exception:
+                    uw = lw = 0.0
+                hg_local = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
+                vmin_local = float(hg_local.get('vol_ratio_min_3m', 1.30))
+                wdelta_local = float(hg_local.get('wick_delta_min', 0.12))
+                wick_delta = (lw-uw if str(side).lower()=='long' else uw-lw)
+                lines.append(f"RSI:{rsi_bin} MACD:{macd} VWAP:{vwap_bin} Fib:{fibz} MTF:{'✓' if mtf else '✗'} Vol:{vol_ratio:.2f}/{vmin_local:.2f} WickΔ:{wick_delta:.2f} (min {wdelta_local})")
             else:
                 title = "🚫 Blocked — Pre‑Gate"
                 lines.append(f"{sym} {str(side).upper()} | {pre_reason or 'pre‑gate'}")
@@ -1113,8 +1118,10 @@ class TradingBot:
                     fibz = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
                 except Exception:
                     fibz = None
-            # Temporarily ignore MTF alignment to increase flow
-            mtf = True
+            
+            # ENABLED: MTF alignment for higher probability (15m trend agreement)
+            mtf = bool(f.get('mtf_agree_15', False))
+            
             # Bins (stricter high-quality rules)
             rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-50' if rsi < 50 else '50-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
             macd = 'bull' if mh > 0 else 'bear'
@@ -1129,28 +1136,45 @@ class TradingBot:
                 vol_strong = volr_tmp >= 1.50
             except Exception:
                 vol_strong = False
+                
             if s == 'long':
-                # Research-backed: 73% WR with MACD+RSI, expanded ranges for trending/reversal contexts
-                # RSI: Trending (40-60), Reversal (<30), or Extended (60-70) with volume ≥1.50
-                rsi_ok = (40 <= rsi < 60) or (rsi < 30) or (60 <= rsi < 70 and vol_strong)
-                # VWAP: Strong pullback (<0.6) or mid-zone (0.6-1.0) with confirmation or far (1.2+) with confirmation
-                v_ok = (vwap_bin == '<0.6') or (vwap_bin == '0.6-1.0' and macd == 'bull' and vol_strong) or (vwap_bin == '1.2+' and macd == 'bull' and vol_strong)
-                # MACD: Bullish histogram with minimum strength (unchanged, proven effective)
+                # OPTIMIZED LONG RULES:
+                # 1. RSI: 40-70 (Trend Strength) OR 30-40 (Pullback). Avoid <30 (falling knife) unless confirmed elsewhere.
+                rsi_ok = (40 <= rsi < 70) or (30 <= rsi < 40)
+                
+                # 2. VWAP: Price > VWAP or near it. 
+                #    <0.6 (Close), 0.6-1.0 (Mid). Avoid >1.2 (Overextended) unless strong vol.
+                v_ok = (vwap_bin == '<0.6') or (vwap_bin == '0.6-1.0') or (vwap_bin == '1.0-1.2' and vol_strong)
+                
+                # 3. MACD: Must be Bullish.
                 macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
-                # Fibonacci: Include Golden Zone (50-61.8%) - highest probability reversal area
-                fib_ok = (fibz in ('0-23','23-38','38-50','50-61')) or (fibz == '61-78' and vol_strong)
-                ok = bool(rsi_ok and v_ok and macd_ok and fib_ok)
+                
+                # 4. Fibonacci: Focus on Golden Zone (38-61%) and Shallow Pullbacks (23-38%).
+                #    Avoid 0-23 (Chasing tops) and 78-100 (Deep reversal risk).
+                fib_ok = (fibz in ('23-38', '38-50', '50-61'))
+                
+                # 5. MTF: Must agree for Pro safety.
+                ok = bool(rsi_ok and v_ok and macd_ok and fib_ok and mtf)
+                
             else:
-                # Research-backed: Shorts benefit from expanded RSI ranges and mean reversion zones
-                # RSI: Strong oversold (<35), relaxed (35-50) with volume, or downtrend resistance (50-60)
-                rsi_ok = (rsi < 35) or (35 <= rsi < 50 and vol_strong) or (50 <= rsi < 60)
-                # MACD: Bearish histogram with minimum strength (unchanged, proven effective)
+                # OPTIMIZED SHORT RULES:
+                # 1. RSI: 30-60 (Trend Bearish). 
+                #    Sell Rallies (50-70). Avoid <30 (Oversold hole).
+                rsi_ok = (30 <= rsi < 60) or (60 <= rsi < 70 and vol_strong)
+                
+                # 2. MACD: Must be Bearish.
                 macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
-                # VWAP: Expanded mean reversion zones for shorts (<1.2 ATR from VWAP)
-                v_ok = vwap_bin in ('<0.6','0.6-1.0','1.0-1.2')
-                # Fibonacci: Include Golden Zone (50-61.8%) for short entries at resistance
-                fib_ok = (fibz in ('50-61','61-78','78-100'))
-                ok = bool(rsi_ok and macd_ok and v_ok and fib_ok)
+                
+                # 3. VWAP: Price < VWAP or near it.
+                v_ok = vwap_bin in ('<0.6', '0.6-1.0', '1.0-1.2')
+                
+                # 4. Fibonacci: Sell Rallies into Golden Zone (38-61%) or Shallow (23-38%).
+                #    Avoid 78-100 (Too deep/Reversal) and 0-23 (Chasing bottoms).
+                fib_ok = (fibz in ('23-38', '38-50', '50-61', '61-78'))
+                
+                # 5. MTF: Must agree.
+                ok = bool(rsi_ok and macd_ok and v_ok and fib_ok and mtf)
+                
             if ok:
                 return True, 'fallback_pro_ok', ctx
             else:

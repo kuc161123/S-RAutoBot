@@ -963,21 +963,7 @@ class TradingBot:
                 mh_floor = 0.0005  # simple MACD hist strength floor
                 vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
                 vol_strong = volr >= 1.50
-                fails = []
-                if not mtf:
-                    fails.append('MTF')
-                else:
-                    if str(side).lower() == 'long':
-                        rsi_ok = (40 <= rsi < 60) or (rsi < 30) or (60 <= rsi < 70 and vol_strong)
-                        macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
-                        v_ok = (vwap_bin == '<0.6') or \
-                               (vwap_bin == '0.6-1.0' and macd == 'bull' and vol_strong) or \
-                               (vwap_bin == '1.2+' and macd == 'bull' and vol_strong)
-                        fib_ok = (str(fibz) in ('0-23','23-38','38-50','50-61')) or \
-                                 (str(fibz) == '61-78' and vol_strong)
-                        if not rsi_ok:
-                            fails.append('RSI')
-                        if not macd_ok:
+
                 
                 # Fibonacci binning (standardized)
                 if not isinstance(fibz, str) or not fibz:

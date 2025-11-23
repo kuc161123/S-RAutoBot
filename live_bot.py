@@ -2443,12 +2443,25 @@ class TradingBot:
                 pass
             # Execute new side
             try:
+                # Ensure gate sees current features
+                try:
+                    if not hasattr(self, '_last_signal_features'):
+                        self._last_signal_features = {}
+                    self._last_signal_features[sym] = dict(sc_feats or {})
+                except Exception:
+                    pass
                 did = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(sc_feats.get('ml', 0.0) or 0.0), exec_id=exec_id, risk_percent_override=risk_pct)
                 if did:
                     logger.info(f"[{sym}|id={exec_id}] FLIP: re-entry placed successfully ({sc_sig.side})")
                     return True
             except TypeError:
                 # Fallback when older signature is present
+                try:
+                    if not hasattr(self, '_last_signal_features'):
+                        self._last_signal_features = {}
+                    self._last_signal_features[sym] = dict(sc_feats or {})
+                except Exception:
+                    pass
                 did = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(sc_feats.get('ml', 0.0) or 0.0))
                 if did:
                     return True
@@ -4924,6 +4937,12 @@ class TradingBot:
                         else:
                             executed = False
                             try:
+                                try:
+                                    if not hasattr(self, '_last_signal_features'):
+                                        self._last_signal_features = {}
+                                    self._last_signal_features[sym] = dict(sc_feats_hi or {})
+                                except Exception:
+                                    pass
                                 executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s_immediate or 0.0))
                             except Exception as _ee:
                                 logger.info(f"[{sym}] Scalp execute error: {_ee}")
@@ -6157,8 +6176,20 @@ class TradingBot:
                                 pass
                             # Execute with risk override (central gate will notify)
                             try:
+                                try:
+                                    if not hasattr(self, '_last_signal_features'):
+                                        self._last_signal_features = {}
+                                    self._last_signal_features[sym] = dict(sc_feats or {})
+                                except Exception:
+                                    pass
                                 did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=sc_feats.get('exec_id','n/a'), risk_percent_override=risk_pct)
                             except TypeError:
+                                try:
+                                    if not hasattr(self, '_last_signal_features'):
+                                        self._last_signal_features = {}
+                                    self._last_signal_features[sym] = dict(sc_feats or {})
+                                except Exception:
+                                    pass
                                 did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                             if did_exec:
                                 try:
@@ -6524,17 +6555,23 @@ class TradingBot:
                                             except Exception:
                                                 reg_line = "Regime: —"
                                             gate_vals3 = " | ".join([wick_line, vol_line, slope_line, bbw_line, reg_line])
-                                        except Exception:
-                                            gate_vals3 = ""
-                                        # Removed pre-execution notification - central gate handles all notifications
                                 except Exception:
-                                    pass
-                                try:
-                                    # Prefer new signature with exec_id; fallback to legacy signature if unavailable
-                                    try:
-                                        did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)
-                                    except TypeError:
-                                        did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                                    gate_vals3 = ""
+                                # Removed pre-execution notification - central gate handles all notifications
+                        except Exception:
+                            pass
+                        try:
+                            try:
+                                if not hasattr(self, '_last_signal_features'):
+                                    self._last_signal_features = {}
+                                self._last_signal_features[sym] = dict(sc_feats or {})
+                            except Exception:
+                                pass
+                            # Prefer new signature with exec_id; fallback to legacy signature if unavailable
+                            try:
+                                did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)
+                            except TypeError:
+                                did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                                 finally:
                                     try:
                                         if old_risk is not None:
@@ -6743,8 +6780,20 @@ class TradingBot:
                                     except Exception:
                                         exec_id_h = None
                                     try:
+                                        try:
+                                            if not hasattr(self, '_last_signal_features'):
+                                                self._last_signal_features = {}
+                                            self._last_signal_features[sym] = dict(sc_feats or {})
+                                        except Exception:
+                                            pass
                                         executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id_h)
                                     except TypeError:
+                                        try:
+                                            if not hasattr(self, '_last_signal_features'):
+                                                self._last_signal_features = {}
+                                            self._last_signal_features[sym] = dict(sc_feats or {})
+                                        except Exception:
+                                            pass
                                         executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                                 # Optionally cancel any pre-existing active scalp phantom to avoid duplicate tracking
                                 try:
@@ -7136,6 +7185,12 @@ class TradingBot:
                     return
                 executed = False
                 try:
+                    try:
+                        if not hasattr(self, '_last_signal_features'):
+                            self._last_signal_features = {}
+                        self._last_signal_features[sym] = dict(sc_feats or {})
+                    except Exception:
+                        pass
                     executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s_immediate or 0.0))
                 except Exception as _ee:
                     logger.info(f"[{sym}] Scalp fallback execute error: {_ee}")
@@ -7281,6 +7336,12 @@ class TradingBot:
                             logger.info(f"[{sym}] 🛑 Scalp execution (fallback) blocked by regime gate (vol={sc_feats.get('volatility_regime')} fast={fast:.2f} slow={slow:.2f} side={side})")
                             executed = False
                         else:
+                            try:
+                                if not hasattr(self, '_last_signal_features'):
+                                    self._last_signal_features = {}
+                                self._last_signal_features[sym] = dict(sc_feats or {})
+                            except Exception:
+                                pass
                             executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
                         if executed:
                             scpt.record_scalp_signal(
@@ -12793,6 +12854,12 @@ class TradingBot:
                             # Route Scalp executions to the dedicated stream-side executor for robust TP/SL handling
                             try:
                                 if strategy_name == 'scalp':
+                                    try:
+                                        if not hasattr(self, '_last_signal_features'):
+                                            self._last_signal_features = {}
+                                        self._last_signal_features[sym] = {}
+                                    except Exception:
+                                        pass
                                     return await self._execute_scalp_trade(sym, sig_obj, ml_score=float(ml_score or 0.0))
                             except Exception:
                                 # Fall through to generic path if executor is unavailable

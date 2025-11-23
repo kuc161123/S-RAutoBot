@@ -2734,6 +2734,41 @@ class TradingBot:
                     except Exception:
                         pass
                     return False
+                # Send execution notification after central gate passes and before order placement
+                try:
+                    if self.tg:
+                        try:
+                            # Build comprehensive execute message with gate info
+                            gate_info = f"Gate: {gate_reason0}"
+                            if gate_ctx0.get('combo_id'):
+                                gate_info += f" | Combo: {gate_ctx0.get('combo_id')}"
+                            if route_info.get('wr') is not None:
+                                gate_info += f" | WR: {route_info['wr']:.1f}%"
+                            if route_info.get('n') is not None:
+                                gate_info += f" (N={route_info['n']})"
+
+                            qscore_str = ""
+                            try:
+                                qv = float(feats_for_gate.get('qscore', 0.0) or 0.0)
+                                if qv > 0:
+                                    qscore_str = f" | Q={qv:.1f}"
+                            except Exception:
+                                pass
+
+                            ml_str = ""
+                            if ml_score > 0:
+                                ml_str = f" | ML={ml_score:.1f}"
+
+                            await self.tg.send_message(
+                                f"🟢 Scalp EXECUTE: {sym} {str(sig_obj.side).upper()} (id={exec_id})\n"
+                                f"{gate_info}\n"
+                                f"Entry={fmt.format(float(sig_obj.entry))} SL={fmt.format(float(sig_obj.sl))} TP={fmt.format(float(sig_obj.tp))}\n"
+                                f"Qty={qty:.3f}{ml_str}{qscore_str}"
+                            )
+                        except Exception as _notify_err:
+                            logger.debug(f"Execute notification error: {_notify_err}")
+                except Exception:
+                    pass
                 side = "Buy" if sig_obj.side == "long" else "Sell"
                 try:
                     m_resp = bybit.place_market(sym, side, qty, reduce_only=False)
@@ -6041,17 +6076,10 @@ class TradingBot:
                                     summary_line = f"Gates: Wick{'✅' if wick_pass else '❌'} Vol{v_show} Slope{s_show} BBW{bbw_show} Reg{reg_show}"
                                 except Exception:
                                     summary_line = ""
-                                await self.tg.send_message(
-                                    f"🟢 Scalp EXECUTE (Gate): {sym} {sc_sig.side.upper()} id={exec_id} — Reason: {reason_txt}\n"
-                                    f"Entry={sc_sig.entry:.4f} SL={sc_sig.sl:.4f} TP={sc_sig.tp:.4f}\n"
-                                    f"ML={float(ml_s or 0.0):.1f} | Q={qv:.1f} | Risk={risk_pct:.1f}% per trade\n"
-                                    f"{summary_line}\n"
-                                    f"{' | '.join(gate_lines)}\n"
-                                    f"{comp_line}"
-                                )
+                                # Removed pre-execution notification - central gate handles all notifications
                             except Exception:
                                 pass
-                            # Execute with risk override
+                            # Execute with risk override (central gate will notify)
                             try:
                                 did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=sc_feats.get('exec_id','n/a'), risk_percent_override=risk_pct)
                             except TypeError:
@@ -6422,7 +6450,7 @@ class TradingBot:
                                             gate_vals3 = " | ".join([wick_line, vol_line, slope_line, bbw_line, reg_line])
                                         except Exception:
                                             gate_vals3 = ""
-                                        await self.tg.send_message(f"🟢 Scalp EXECUTE: {sym} {sc_sig.side.upper()} Q={float(sc_feats.get('qscore',0.0)):.1f} (≥ {exec_thr:.0f}){vol_str}{gate_str} (id={exec_id})\n{gate_vals3}\n{comp_line}")
+                                        # Removed pre-execution notification - central gate handles all notifications
                                 except Exception:
                                     pass
                                 try:

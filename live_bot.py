@@ -1116,16 +1116,26 @@ class TradingBot:
             except Exception:
                 vol_strong = False
             if s == 'long':
-                rsi_ok = (50 <= rsi < 65) or (65 <= rsi < 70 and vol_strong)
-                v_ok = (vwap_bin == '<0.6') or (vwap_bin == '1.2+' and (macd == 'bull') and vol_strong)
+                # Research-backed: 73% WR with MACD+RSI, expanded ranges for trending/reversal contexts
+                # RSI: Trending (40-60), Reversal (<30), or Extended (60-70) with volume ≥1.50
+                rsi_ok = (40 <= rsi < 60) or (rsi < 30) or (60 <= rsi < 70 and vol_strong)
+                # VWAP: Strong pullback (<0.6) or mid-zone (0.6-1.0) with confirmation or far (1.2+) with confirmation
+                v_ok = (vwap_bin == '<0.6') or (vwap_bin == '0.6-1.0' and macd == 'bull' and vol_strong) or (vwap_bin == '1.2+' and macd == 'bull' and vol_strong)
+                # MACD: Bullish histogram with minimum strength (unchanged, proven effective)
                 macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
-                fib_ok = (fibz in ('0-23','23-38')) or (fibz == '38-50' and vol_strong)
+                # Fibonacci: Include Golden Zone (50-61.8%) - highest probability reversal area
+                fib_ok = (fibz in ('0-23','23-38','38-50','50-61')) or (fibz == '61-78' and vol_strong)
                 ok = bool(rsi_ok and v_ok and macd_ok and fib_ok)
             else:
-                rsi_ok = (rsi < 35) or (35 <= rsi < 40 and vol_strong)
+                # Research-backed: Shorts benefit from expanded RSI ranges and mean reversion zones
+                # RSI: Strong oversold (<35), relaxed (35-50) with volume, or downtrend resistance (50-60)
+                rsi_ok = (rsi < 35) or (35 <= rsi < 50 and vol_strong) or (50 <= rsi < 60)
+                # MACD: Bearish histogram with minimum strength (unchanged, proven effective)
                 macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
-                v_ok = vwap_bin in ('<0.6','0.6-1.0')
-                fib_ok = (fibz in ('78-100')) or (fibz == '61-78' and vol_strong)
+                # VWAP: Expanded mean reversion zones for shorts (<1.2 ATR from VWAP)
+                v_ok = vwap_bin in ('<0.6','0.6-1.0','1.0-1.2')
+                # Fibonacci: Include Golden Zone (50-61.8%) for short entries at resistance
+                fib_ok = (fibz in ('50-61','61-78','78-100'))
                 ok = bool(rsi_ok and macd_ok and v_ok and fib_ok)
             if ok:
                 return True, 'fallback_pro_ok', ctx

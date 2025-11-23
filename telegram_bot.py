@@ -9686,10 +9686,10 @@ class TGBot:
                     lines.append(f"{side_emoji} WR {combo['wr']:.1f}% (N={combo['n']}){ev_line}")
                     lines.append(f"   {combo['combo_id']}")
 
-            # Show disabled combos + balanced top combos if requested
+            # Show disabled combos + top-per-side combos if requested
             if ctx.args and 'all' in ctx.args:
                 lines.append("")
-                lines.append("*Balanced Top Combos (WR & N)*")
+                lines.append("*Top Combos by Win Rate*")
 
                 # Load per-side state to avoid cross-side overwrites
                 try:
@@ -9703,7 +9703,7 @@ class TGBot:
                     short_state = mgr._load_combo_state()
                     short_state = {k: v for k, v in short_state.items() if v.get('side') == 'short'}
 
-                def _build_balanced_side(state: dict, side_label: str) -> list[str]:
+                def _build_top_wr_side(state: dict, side_label: str) -> list[str]:
                     side_lines: list[str] = []
                     combos = []
                     for data in (state or {}).values():
@@ -9719,41 +9719,36 @@ class TGBot:
                             'wr': wr,
                             'n': n,
                             'enabled': bool(data.get('enabled', False)),
+                            'ev_r': data.get('ev_r'),
                         })
 
                     if not combos:
                         side_lines.append(f"{side_label} No combos tracked.")
                         return side_lines
 
-                    # Compute WR and N ranks within this side
-                    by_wr = sorted(combos, key=lambda c: c['wr'], reverse=True)
-                    for idx, c in enumerate(by_wr, start=1):
-                        c['wr_rank'] = idx
-                    by_n = sorted(combos, key=lambda c: c['n'], reverse=True)
-                    for idx, c in enumerate(by_n, start=1):
-                        c['n_rank'] = idx
-
-                    # Score: lower combined rank is better; tie-break by N then WR
-                    scored = sorted(
-                        combos,
-                        key=lambda c: (c.get('wr_rank', 9999) + c.get('n_rank', 9999), -c['n'], -c['wr'])
-                    )[:10]
+                    top_wr = sorted(combos, key=lambda c: c['wr'], reverse=True)[:10]
 
                     side_lines.append(side_label)
-                    for i, c in enumerate(scored, start=1):
+                    for i, c in enumerate(top_wr, start=1):
                         status_emoji = "🟢" if c.get('enabled') else "🔴"
+                        ev = c.get('ev_r')
+                        ev_line = ""
+                        if ev is not None:
+                            try:
+                                ev_line = f", EV {float(ev):+.2f}R"
+                            except Exception:
+                                ev_line = ""
                         side_lines.append(
-                            f"{i}) {status_emoji} WR {c['wr']:.1f}% "
-                            f"(N={c['n']} | WR#{c.get('wr_rank', 0)} / N#{c.get('n_rank', 0)})"
+                            f"{i}) {status_emoji} WR {c['wr']:.1f}% (N={c['n']}{ev_line})"
                         )
                         side_lines.append(f"   {c['combo_id']}")
                     return side_lines
 
                 # Longs
-                lines.extend(_build_balanced_side(long_state, "🟢 *Longs (Top 10 by WR & N)*"))
+                lines.extend(_build_top_wr_side(long_state, "🟢 *Top Long Combos (Top 10 by WR)*"))
                 lines.append("")
                 # Shorts
-                lines.extend(_build_balanced_side(short_state, "🔴 *Shorts (Top 10 by WR & N)*"))
+                lines.extend(_build_top_wr_side(short_state, "🔴 *Top Short Combos (Top 10 by WR)*"))
 
                 # Preserve original disabled-by-N view for reference
                 lines.append("")

@@ -2545,14 +2545,18 @@ class TradingBot:
                                     mh_floor = 0.0005
                                     if not (macd == 'bull' and abs(mh0) >= mh_floor):
                                         sub_reasons.append('macd')
-                                    # Updated VWAP logic: <0.6 OR (0.6-1.0 with bull MACD + vol≥1.50) OR (1.0-1.2 with bull MACD + vol≥1.50) OR (1.2+ with bull MACD + vol≥1.50)
+                                    # VWAP logic matching Pro Rules: <0.6 OR (0.6-1.0 with bull MACD + vol≥1.50) OR (1.2+ with bull MACD + vol≥1.50)
+                                    # Note: 1.0-1.2 bin is NOT allowed for LONGS in Pro Rules
                                     v_ok = (vwap_bin == '<0.6') or \
                                            (vwap_bin == '0.6-1.0' and macd == 'bull' and volr0 >= 1.50) or \
-                                           (vwap_bin == '1.0-1.2' and macd == 'bull' and volr0 >= 1.50) or \
                                            (vwap_bin == '1.2+' and macd == 'bull' and volr0 >= 1.50)
                                     if not v_ok:
                                         # Attribute to VWAP, MACD, or Vol based on what failed
-                                        if vwap_bin in ('0.6-1.0', '1.0-1.2', '1.2+'):
+                                        if vwap_bin == '1.0-1.2':
+                                            # 1.0-1.2 bin not allowed for LONGS - always block for VWAP
+                                            sub_reasons.append('vwap')
+                                        elif vwap_bin in ('0.6-1.0', '1.2+'):
+                                            # Conditional bins: need MACD + Vol
                                             if macd != 'bull':
                                                 sub_reasons.append('macd')
                                             elif volr0 < 1.50:

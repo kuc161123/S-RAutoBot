@@ -986,7 +986,7 @@ class TGBot:
         except Exception:
             pass
 
-        # Adaptive Risk block (status + top combos with 7d sparklines)
+        # Adaptive Risk block (status + gating mode + combo analytics)
         try:
             cfg = self.shared.get('config', {}) or {}
             ar = (((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('adaptive_risk', {}) or {})
@@ -1053,59 +1053,88 @@ class TGBot:
                 except Exception:
                     pass
 
-                # Show top few active combos with 7d recency and risk estimate
+                # Active combos summary (exec vs phantom, 30d + 24h)
                 mgr = self.shared.get('adaptive_combo_mgr')
-                shown = 0
                 if mgr and getattr(mgr, 'enabled', False):
                     try:
-                        active = mgr.get_active_combos(None)  # both sides
-                        # Compute recency stats and select top by 7d N
-                        per = []
-                        for c in active:
-                            key = c.get('combo_id'); side = c.get('side') or 'short'
-                            recs = self._scalp_combo_recency(key, side, days=r_days)
-                            n7 = int(recs.get('n', 0)); w7 = int(recs.get('w', 0)); rr_sum = float(recs.get('rr_sum', 0.0))
-                            series = recs.get('days', []) or []
-                            wr_lb7 = self._wilson_lb(w7, n7) if n7 > 0 else 0.0
-                            evr7 = (rr_sum / n7) if n7 > 0 else 0.0
-                            per.append((n7, key, side, wr_lb7, evr7, series))
-                        per.sort(key=lambda t: t[0], reverse=True)
-                        # Ladder from config
-                        ladder = ar.get('wr_lb_ladder') or {45:1.0,55:1.5,65:2.0,70:2.5}
-                        # Normalize ladder
-                        if isinstance(ladder, dict):
-                            ladder_list = [{'wr_lb': float(k), 'mult': float(v)} for k, v in ladder.items()]
-                        else:
-                            ladder_list = [{'wr_lb': float(d.get('wr_lb')), 'mult': float(d.get('mult'))} for d in ladder]
-                        ladder_list = sorted([d for d in ladder_list if d.get('wr_lb') is not None], key=lambda d: d['wr_lb'])
-                        for n7, key, side, wr_lb7, evr7, series in per[:4]:
-                            risk_est = base
-                            reason = None
-                            if n7 >= r_min:
-                                mult = 1.0
-                                for step in ladder_list:
-                                    if wr_lb7 >= float(step['wr_lb']):
-                                        mult = float(step['mult'])
-                                ev_floor = float(rec.get('ev_floor_r', ar.get('ev_floor_r', 0.0)))
-                                if evr7 >= ev_floor:
-                                    risk_est = max(rmin, min(rmax, base * mult))
-                                else:
-                                    risk_est = base; reason = 'EV<floor'
-                            else:
-                                risk_est = base; reason = 'sparse'
-                            n_series = [d.get('n', 0) for d in series]
-                            wr_series = [d.get('wr_lb', 0.0) for d in series]
-                            n_spark = self._sparkline(n_series)
-                            wr_spark = self._sparkline(wr_series, zero_to_hundred=True)
-                            reason_tag = f" (reason: {reason})" if reason else ""
-                            lines.append(f"• {side.upper()} {key} — 7d N={n7} WR_LB={wr_lb7:.1f}% EV_R={evr7:+.2f} | Risk≈{risk_est:.2f}%{reason_tag}")
-                            lines.append(f"  N:  {n_spark}")
-                            lines.append(f"  WR: {wr_spark}")
-                            shown += 1
-                    except Exception as _ar:
-                        logger.debug(f"Adaptive risk panel error: {_ar}")
-                if shown == 0:
-                    lines.append("• No recent combo recency data (yet)")
+                        stats = mgr.get_stats_summary()
+                        lt = stats.get('long_totals', {}) or {}
+                        st = stats.get('short_totals', {}) or {}
+                        if (lt.get('n', 0) or 0) > 0 or (st.get('n', 0) or 0) > 0:
+                            lines.append("")
+                            lines.append("🎯 *Active Combos*")
+                            # Longs summary
+                            if lt.get('n', 0):
+                                lines.append(
+                                    f"🟢 Longs: N={lt.get('n',0)} "
+                                    f"(Exec {lt.get('n_exec',0)}, Phantom {lt.get('n_phantom',0)}) "
+                                    f"| 24h: +{lt.get('n_24h',0)} "
+                                    f"(Exec {lt.get('n_exec_24h',0)}, Phantom {lt.get('n_phantom_24h',0)})"
+                                )
+                            # Shorts summary
+                            if st.get('n', 0):
+                                lines.append(
+                                    f"🔴 Shorts: N={st.get('n',0)} "
+                                    f"(Exec {st.get('n_exec',0)}, Phantom {st.get('n_phantom',0)}) "
+                                    f"| 24h: +{st.get('n_24h',0)} "
+                                    f"(Exec {st.get('n_exec_24h',0)}, Phantom {st.get('n_phantom_24h',0)})"
+                                )
+
+                        # Per-side active combos with WR breakdown
+                        active_longs = mgr.get_active_combos('long')
+                        active_shorts = mgr.get_active_combos('short')
+
+                        def _wr_split(combo):
+                            try:
+                                n = int(combo.get('n', 0) or 0)
+                                n_exec = int(combo.get('n_exec', 0) or 0)
+                                n_ph = int(combo.get('n_phantom', 0) or 0)
+                                # These splits are not stored directly; derive from WR + aggregates if needed.
+                                # For now, we only display total WR; exec/phantom split WR requires extra tracking.
+                                return n_exec, n_ph
+                            except Exception:
+                                return 0, 0
+
+                        def _render_active_side(combos, header, emoji):
+                            if not combos:
+                                return
+                            lines.append("")
+                            lines.append(f"{emoji} {header} ({len(combos)} enabled)")
+                            combos_sorted = sorted(
+                                combos,
+                                key=lambda c: (float(c.get('wr', 0.0) or 0.0), int(c.get('n', 0) or 0)),
+                                reverse=True
+                            )[:3]
+                            for idx, c in enumerate(combos_sorted, start=1):
+                                wr = float(c.get('wr', 0.0) or 0.0)
+                                n = int(c.get('n', 0) or 0)
+                                ev = c.get('ev_r', None)
+                                ev_str = ""
+                                if ev is not None:
+                                    try:
+                                        ev_str = f", EV_R {float(ev):+.2f}R"
+                                    except Exception:
+                                        ev_str = ""
+                                n_exec = int(c.get('n_exec', 0) or 0)
+                                n_ph = int(c.get('n_phantom', 0) or 0)
+                                n_24 = int(c.get('n_24h', 0) or 0)
+                                n_exec_24 = int(c.get('n_exec_24h', 0) or 0)
+                                n_ph_24 = int(c.get('n_phantom_24h', 0) or 0)
+                                lines.append(
+                                    f"{idx}) {emoji} WR {wr:.1f}% (N={n}{ev_str})"
+                                )
+                                lines.append(
+                                    f"   Exec {n_exec}, Phantom {n_ph} | 24h: +{n_24} "
+                                    f"(Exec {n_exec_24}, Phantom {n_ph_24})"
+                                )
+                                lines.append(f"   {c.get('combo_id','')}")
+
+                        if active_longs:
+                            _render_active_side(active_longs, "*Longs*", "🟢")
+                        if active_shorts:
+                            _render_active_side(active_shorts, "*Shorts*", "🔴")
+                    except Exception as _ac:
+                        logger.debug(f"Active combos panel error: {_ac}")
                 # Optional: Blocked counters (last 24h)
                 try:
                     import os, redis
@@ -9668,24 +9697,85 @@ class TGBot:
                 f"Total Updates: {stats['update_count']}",
             ]
 
+            # 30d aggregate totals (exec vs phantom) per side
+            try:
+                lt = stats.get('long_totals', {}) or {}
+                st = stats.get('short_totals', {}) or {}
+                if (lt.get('n', 0) or 0) > 0 or (st.get('n', 0) or 0) > 0:
+                    lines.append("")
+                    lines.append("📈 *30d Combo Totals*")
+                    if lt.get('n', 0):
+                        lines.append(
+                            f"🟢 Longs: N={lt.get('n',0)} "
+                            f"(Exec {lt.get('n_exec',0)}, Phantom {lt.get('n_phantom',0)}) "
+                            f"| 24h: +{lt.get('n_24h',0)} "
+                            f"(Exec {lt.get('n_exec_24h',0)}, Phantom {lt.get('n_phantom_24h',0)})"
+                        )
+                    if st.get('n', 0):
+                        lines.append(
+                            f"🔴 Shorts: N={st.get('n',0)} "
+                            f"(Exec {st.get('n_exec',0)}, Phantom {st.get('n_phantom',0)}) "
+                            f"| 24h: +{st.get('n_24h',0)} "
+                            f"(Exec {st.get('n_exec_24h',0)}, Phantom {st.get('n_phantom_24h',0)})"
+                        )
+            except Exception:
+                pass
+
             if stats.get('recent_changes'):
                 lines.append("")
                 lines.append("*Recent Changes (last 10)*")
                 for change in stats['recent_changes']:
                     lines.append(f"• {change}")
 
-            # Show top enabled combos
-            active_combos = mgr.get_active_combos()
-            if active_combos:
-                # Sort by WR descending
-                active_combos_sorted = sorted(active_combos, key=lambda x: x['wr'], reverse=True)[:10]
+            # Show active combos with exec/phantom breakdown
+            active_longs = mgr.get_active_combos('long')
+            active_shorts = mgr.get_active_combos('short')
+            if active_longs or active_shorts:
                 lines.append("")
-                lines.append("*Top 10 Enabled Combos*")
-                for combo in active_combos_sorted:
-                    side_emoji = "🟢" if combo['side'] == 'long' else "🔴"
-                    ev_line = f" | EV {combo.get('ev_r', 0):+.2f}R" if combo.get('ev_r') is not None else ""
-                    lines.append(f"{side_emoji} WR {combo['wr']:.1f}% (N={combo['n']}){ev_line}")
-                    lines.append(f"   {combo['combo_id']}")
+                lines.append("🎯 *Active Combos*")
+
+                def _format_active_side(combos, header, emoji):
+                    if not combos:
+                        return
+                    # Sort by WR then N
+                    combos_sorted = sorted(
+                        combos,
+                        key=lambda c: (float(c.get('wr', 0.0) or 0.0), int(c.get('n', 0) or 0)),
+                        reverse=True
+                    )[:10]
+                    lines.append(f"{emoji} {header} ({len(combos)} enabled)")
+                    for idx, c in enumerate(combos_sorted, start=1):
+                        try:
+                            wr = float(c.get('wr', 0.0) or 0.0)
+                            n = int(c.get('n', 0) or 0)
+                            ev = c.get('ev_r', None)
+                            ev_str = ""
+                            if ev is not None:
+                                try:
+                                    ev_str = f", EV_R {float(ev):+.2f}R"
+                                except Exception:
+                                    ev_str = ""
+                            n_exec = int(c.get('n_exec', 0) or 0)
+                            n_ph = int(c.get('n_phantom', 0) or 0)
+                            n_24 = int(c.get('n_24h', 0) or 0)
+                            n_exec_24 = int(c.get('n_exec_24h', 0) or 0)
+                            n_ph_24 = int(c.get('n_phantom_24h', 0) or 0)
+                            lines.append(
+                                f"{idx}) {emoji} WR {wr:.1f}% (N={n}{ev_str})"
+                            )
+                            lines.append(
+                                f"   Exec {n_exec}, Phantom {n_ph} | 24h: +{n_24} "
+                                f"(Exec {n_exec_24}, Phantom {n_ph_24})"
+                            )
+                            lines.append(f"   {c.get('combo_id','')}")
+                        except Exception:
+                            continue
+
+                if active_longs:
+                    _format_active_side(active_longs, "*Longs*", "🟢")
+                if active_shorts:
+                    lines.append("")
+                    _format_active_side(active_shorts, "*Shorts*", "🔴")
 
             # Show disabled combos + top-per-side combos if requested
             if ctx.args and 'all' in ctx.args:

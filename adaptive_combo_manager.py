@@ -26,11 +26,17 @@ class ComboPerformance:
     combo_id: str
     side: str  # 'long' or 'short'
     wr: float  # Win rate percentage
-    n: int  # Sample size
-    wins: int  # Number of wins
+    n: int  # Sample size (all trades)
+    wins: int  # Number of wins (all trades)
     ev_r: float  # Expected value in R multiples
     last_updated: str  # ISO timestamp
     enabled: bool  # Whether combo is active
+    # Extended breakdown counts for analytics (exec vs phantom, 30d + 24h)
+    n_exec: int = 0
+    n_phantom: int = 0
+    n_24h: int = 0
+    n_exec_24h: int = 0
+    n_phantom_24h: int = 0
 
 
 class AdaptiveComboManager:
@@ -119,7 +125,9 @@ class AdaptiveComboManager:
             logger.warning("No phantom tracker available for combo analysis")
             return {}
 
-        cutoff = datetime.utcnow() - timedelta(days=self.lookback_days)
+        now = datetime.utcnow()
+        cutoff = now - timedelta(days=self.lookback_days)
+        cutoff_24h = now - timedelta(days=1)
 
         # Collect decisive phantoms with required features (robust to string types)
         items = []  # (rsi, macd_hist, vwap, fib_zone, mtf, win, rr, side)
@@ -219,8 +227,23 @@ class AdaptiveComboManager:
                     rr = _to_float(rr)
                     rr = rr if rr is not None else 0.0
                     win = 1 if getattr(p, 'outcome', None) == 'win' else 0
+                    is_exec = bool(getattr(p, 'was_executed', False))
+                    is_recent = bool(et >= cutoff_24h) if isinstance(et, datetime) else False
 
-                    items.append((float(rsi), float(mh), float(vwap), str(fibz), bool(mtf), win, rr, p_side))
+                    items.append(
+                        (
+                            float(rsi),
+                            float(mh),
+                            float(vwap),
+                            str(fibz),
+                            bool(mtf),
+                            win,
+                            rr,
+                            p_side,
+                            is_exec,
+                            is_recent,
+                        )
+                    )
                 except Exception as e:
                     logger.debug(f"Error processing phantom for combo analysis: {e}")
                     continue
@@ -252,8 +275,8 @@ class AdaptiveComboManager:
             return None
 
         # Aggregate by combo pattern
-        combos = {}  # combo_key → {n, w, rr}
-        for rsi, mh, vwap, fibz, mtf, win, rr, p_side in items:
+        combos = {}  # combo_key → aggregates
+        for rsi, mh, vwap, fibz, mtf, win, rr, p_side, is_exec, is_recent in items:
             r = lab(rsi, rsi_bins)
             m = lab(mh, macd_bins)
             v = lab(vwap, vwap_bins)
@@ -265,14 +288,37 @@ class AdaptiveComboManager:
 
             # Combo key format: "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
             key = f"RSI:{r} MACD:{m} VWAP:{v} Fib:{fz} {ma}"
-            agg = combos.setdefault(key, {'n': 0, 'w': 0, 'rr': 0.0, 'side': p_side})
+            agg = combos.setdefault(
+                key,
+                {
+                    'n': 0,
+                    'w': 0,
+                    'rr': 0.0,
+                    'side': p_side,
+                    'n_exec': 0,
+                    'n_phantom': 0,
+                    'n_24h': 0,
+                    'n_exec_24h': 0,
+                    'n_phantom_24h': 0,
+                },
+            )
             agg['n'] += 1
             agg['w'] += int(win)
             agg['rr'] += rr
+            if is_exec:
+                agg['n_exec'] += 1
+                if is_recent:
+                    agg['n_exec_24h'] += 1
+            else:
+                agg['n_phantom'] += 1
+                if is_recent:
+                    agg['n_phantom_24h'] += 1
+            if is_recent:
+                agg['n_24h'] += 1
 
         # Convert to ComboPerformance objects
         results = {}
-        now_iso = datetime.utcnow().isoformat()
+        now_iso = now.isoformat()
 
         for key, agg in combos.items():
             n = agg['n']
@@ -292,7 +338,12 @@ class AdaptiveComboManager:
                 wins=w,
                 ev_r=ev_r,
                 last_updated=now_iso,
-                enabled=enabled  # preliminary; final gating applied in update_combo_filters()
+                enabled=enabled,  # preliminary; final gating applied in update_combo_filters()
+                n_exec=int(agg.get('n_exec', 0)),
+                n_phantom=int(agg.get('n_phantom', 0)),
+                n_24h=int(agg.get('n_24h', 0)),
+                n_exec_24h=int(agg.get('n_exec_24h', 0)),
+                n_phantom_24h=int(agg.get('n_phantom_24h', 0)),
             )
 
         logger.info(f"Analyzed {len(items)} phantoms → {len(results)} combos (side={side}, {self.lookback_days}d)")
@@ -508,7 +559,12 @@ class AdaptiveComboManager:
                 'wr': data.get('wr', 0.0),
                 'n': data.get('n', 0),
                 'ev_r': data.get('ev_r', 0.0),
-                'last_updated': data.get('last_updated', '')
+                'last_updated': data.get('last_updated', ''),
+                'n_exec': data.get('n_exec', 0),
+                'n_phantom': data.get('n_phantom', 0),
+                'n_24h': data.get('n_24h', 0),
+                'n_exec_24h': data.get('n_exec_24h', 0),
+                'n_phantom_24h': data.get('n_phantom_24h', 0),
             })
 
         return active
@@ -549,6 +605,9 @@ class AdaptiveComboManager:
             short_enabled = sum(1 for v in short_state.values() if v.get('enabled'))
             short_disabled = sum(1 for v in short_state.values() if not v.get('enabled'))
             total = len(long_state) + len(short_state)
+            state_all = {}
+            state_all.update(long_state or {})
+            state_all.update(short_state or {})
         else:
             state = self._load_combo_state()
             long_enabled = sum(1 for v in state.values() if v.get('enabled') and v.get('side') == 'long')
@@ -556,6 +615,26 @@ class AdaptiveComboManager:
             short_enabled = sum(1 for v in state.values() if v.get('enabled') and v.get('side') == 'short')
             short_disabled = sum(1 for v in state.values() if not v.get('enabled') and v.get('side') == 'short')
             total = len(state)
+            state_all = state
+
+        def _agg_side(state_dict: Dict[str, dict], side_label: str) -> dict:
+            totals = {'n': 0, 'n_exec': 0, 'n_phantom': 0, 'n_24h': 0, 'n_exec_24h': 0, 'n_phantom_24h': 0}
+            for v in (state_dict or {}).values():
+                try:
+                    if side_label and v.get('side') != side_label:
+                        continue
+                    totals['n'] += int(v.get('n', 0) or 0)
+                    totals['n_exec'] += int(v.get('n_exec', 0) or 0)
+                    totals['n_phantom'] += int(v.get('n_phantom', 0) or 0)
+                    totals['n_24h'] += int(v.get('n_24h', 0) or 0)
+                    totals['n_exec_24h'] += int(v.get('n_exec_24h', 0) or 0)
+                    totals['n_phantom_24h'] += int(v.get('n_phantom_24h', 0) or 0)
+                except Exception:
+                    continue
+            return totals
+
+        long_totals = _agg_side(state_all, 'long')
+        short_totals = _agg_side(state_all, 'short')
 
         return {
             'enabled': self.enabled,
@@ -569,5 +648,7 @@ class AdaptiveComboManager:
             'short_enabled': short_enabled,
             'short_disabled': short_disabled,
             'total_combos': total,
-            'recent_changes': self.combo_changes[-10:]  # Last 10 changes
+            'recent_changes': self.combo_changes[-10:],  # Last 10 changes
+            'long_totals': long_totals,
+            'short_totals': short_totals,
         }

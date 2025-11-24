@@ -9713,7 +9713,9 @@ class TGBot:
                             n = int(data.get('n', 0) or 0)
                         except Exception:
                             continue
-                        if n <= 0:
+                        # Require a minimum sample size so small-N 100% WR patterns
+                        # don't dominate the ranking (focus on proven combos).
+                        if n < 30:
                             continue
                         combos.append({
                             'combo_id': data.get('combo_id') or '',

@@ -1486,58 +1486,112 @@ class TGBot:
         except Exception:
             pass
 
-        # Active Combos (from adaptive filter)
+        # Active Combos (from adaptive filter) – always show when manager enabled
         try:
             mgr = self.shared.get('adaptive_combo_mgr')
             if mgr and mgr.enabled:
+                try:
+                    stats_cm = mgr.get_stats_summary()
+                except Exception:
+                    stats_cm = {}
+
+                lt = (stats_cm.get('long_totals') or {}) if isinstance(stats_cm, dict) else {}
+                st = (stats_cm.get('short_totals') or {}) if isinstance(stats_cm, dict) else {}
+
                 lines.append("")
                 lines.append("🎯 *Active Combos*")
 
-                # Get active combos for each side
+                # Long/Short 30d totals with exec/phantom split
+                if lt.get('n', 0):
+                    try:
+                        n = int(lt.get('n', 0) or 0)
+                        ne = int(lt.get('n_exec', 0) or 0)
+                        np = int(lt.get('n_phantom', 0) or 0)
+                        we = int(lt.get('wins_exec', 0) or 0)
+                        wp = int(lt.get('wins_phantom', 0) or 0)
+                        wr_total = ((we + wp) / n * 100.0) if n > 0 else 0.0
+                        wr_exec = (we / ne * 100.0) if ne > 0 else 0.0
+                        wr_ph = (wp / np * 100.0) if np > 0 else 0.0
+                        lines.append(
+                            f"🟢 Longs: N={n} (Exec {ne}, Phantom {np}) "
+                            f"| WR {wr_total:.1f}% (Exec {wr_exec:.1f}%, Phantom {wr_ph:.1f}%)"
+                        )
+                    except Exception:
+                        lines.append(
+                            f"🟢 Longs: N={lt.get('n',0)} (Exec {lt.get('n_exec',0)}, Phantom {lt.get('n_phantom',0)})"
+                        )
+                else:
+                    lines.append("🟢 Longs: N=0")
+
+                if st.get('n', 0):
+                    try:
+                        n = int(st.get('n', 0) or 0)
+                        ne = int(st.get('n_exec', 0) or 0)
+                        np = int(st.get('n_phantom', 0) or 0)
+                        we = int(st.get('wins_exec', 0) or 0)
+                        wp = int(st.get('wins_phantom', 0) or 0)
+                        wr_total = ((we + wp) / n * 100.0) if n > 0 else 0.0
+                        wr_exec = (we / ne * 100.0) if ne > 0 else 0.0
+                        wr_ph = (wp / np * 100.0) if np > 0 else 0.0
+                        lines.append(
+                            f"🔴 Shorts: N={n} (Exec {ne}, Phantom {np}) "
+                            f"| WR {wr_total:.1f}% (Exec {wr_exec:.1f}%, Phantom {wr_ph:.1f}%)"
+                        )
+                    except Exception:
+                        lines.append(
+                            f"🔴 Shorts: N={st.get('n',0)} (Exec {st.get('n_exec',0)}, Phantom {st.get('n_phantom',0)})"
+                        )
+                else:
+                    lines.append("🔴 Shorts: N=0")
+
+                # Per-side active combos with WR and exec/phantom breakdown (top 3)
                 long_combos = mgr.get_active_combos(side='long')
                 short_combos = mgr.get_active_combos(side='short')
 
-                # Sort by WR descending
-                long_combos_sorted = sorted(long_combos, key=lambda x: x['wr'], reverse=True)[:5]
-                short_combos_sorted = sorted(short_combos, key=lambda x: x['wr'], reverse=True)[:5]
-
-                if long_combos_sorted:
-                    lines.append(f"🟢 *Longs ({len(long_combos)} enabled)*")
-                    for combo in long_combos_sorted:
+                def _render_side(combos, header, emoji):
+                    if not combos:
+                        lines.append(f"{emoji} {header}: None enabled")
+                        return
+                    combos_sorted = sorted(
+                        combos,
+                        key=lambda c: (float(c.get('wr', 0.0) or 0.0), int(c.get('n', 0) or 0)),
+                        reverse=True
+                    )[:3]
+                    lines.append(f"{emoji} *{header} ({len(combos)} enabled)*")
+                    for combo in combos_sorted:
                         try:
                             cid = combo.get('combo_id', '')
                             wr = float(combo.get('wr', 0.0) or 0.0)
                             n = int(combo.get('n', 0) or 0)
                             evr = float(combo.get('ev_r', 0.0) or 0.0)
-                            # Compute Wilson lower bound from wr and n (wins≈wr*n/100)
+                            wins_exec = int(combo.get('wins_exec', 0) or 0)
+                            wins_ph = int(combo.get('wins_phantom', 0) or 0)
+                            n_exec = int(combo.get('n_exec', 0) or 0)
+                            n_ph = int(combo.get('n_phantom', 0) or 0)
+                            wr_exec = (wins_exec / n_exec * 100.0) if n_exec > 0 else 0.0
+                            wr_ph = (wins_ph / n_ph * 100.0) if n_ph > 0 else 0.0
+                            # Wilson lower bound from wr and n
                             try:
-                                wins = int(round((wr/100.0) * n))
-                                wr_lb = self._wilson_lb(wins, n)
+                                wins_total = int(round((wr / 100.0) * n))
+                                wr_lb = self._wilson_lb(wins_total, n)
                             except Exception:
                                 wr_lb = wr
-                            # Show WR with LB, EV_R and N with combo label
-                            lines.append(f"• WR {wr:.1f}% (LB {wr_lb:.1f}%) | EV_R {evr:+.2f} | N={n} | {cid}")
+                            lines.append(
+                                f"• WR {wr:.1f}% (LB {wr_lb:.1f}%) | EV_R {evr:+.2f} | N={n} | {cid}"
+                            )
+                            lines.append(
+                                f"   Exec {n_exec} (WR {wr_exec:.1f}%), Phantom {n_ph} (WR {wr_ph:.1f}%)"
+                            )
                         except Exception:
-                            lines.append(f"• WR {combo['wr']:.1f}% (N={combo['n']})")
+                            lines.append(f"• WR {combo.get('wr',0.0):.1f}% (N={combo.get('n',0)})")
+
+                if long_combos:
+                    _render_side(long_combos, "Longs", "🟢")
                 else:
                     lines.append("🟢 Longs: None enabled")
 
-                if short_combos_sorted:
-                    lines.append(f"🔴 *Shorts ({len(short_combos)} enabled)*")
-                    for combo in short_combos_sorted:
-                        try:
-                            cid = combo.get('combo_id', '')
-                            wr = float(combo.get('wr', 0.0) or 0.0)
-                            n = int(combo.get('n', 0) or 0)
-                            evr = float(combo.get('ev_r', 0.0) or 0.0)
-                            try:
-                                wins = int(round((wr/100.0) * n))
-                                wr_lb = self._wilson_lb(wins, n)
-                            except Exception:
-                                wr_lb = wr
-                            lines.append(f"• WR {wr:.1f}% (LB {wr_lb:.1f}%) | EV_R {evr:+.2f} | N={n} | {cid}")
-                        except Exception:
-                            lines.append(f"• WR {combo['wr']:.1f}% (N={combo['n']})")
+                if short_combos:
+                    _render_side(short_combos, "Shorts", "🔴")
                 else:
                     lines.append("🔴 Shorts: None enabled")
 

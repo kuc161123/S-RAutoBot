@@ -34,6 +34,8 @@ class ComboPerformance:
     # Extended breakdown counts for analytics (exec vs phantom, 30d + 24h)
     n_exec: int = 0
     n_phantom: int = 0
+    wins_exec: int = 0
+    wins_phantom: int = 0
     n_24h: int = 0
     n_exec_24h: int = 0
     n_phantom_24h: int = 0
@@ -297,6 +299,8 @@ class AdaptiveComboManager:
                     'side': p_side,
                     'n_exec': 0,
                     'n_phantom': 0,
+                    'w_exec': 0,
+                    'w_phantom': 0,
                     'n_24h': 0,
                     'n_exec_24h': 0,
                     'n_phantom_24h': 0,
@@ -307,10 +311,14 @@ class AdaptiveComboManager:
             agg['rr'] += rr
             if is_exec:
                 agg['n_exec'] += 1
+                if win:
+                    agg['w_exec'] += 1
                 if is_recent:
                     agg['n_exec_24h'] += 1
             else:
                 agg['n_phantom'] += 1
+                if win:
+                    agg['w_phantom'] += 1
                 if is_recent:
                     agg['n_phantom_24h'] += 1
             if is_recent:
@@ -341,6 +349,8 @@ class AdaptiveComboManager:
                 enabled=enabled,  # preliminary; final gating applied in update_combo_filters()
                 n_exec=int(agg.get('n_exec', 0)),
                 n_phantom=int(agg.get('n_phantom', 0)),
+                wins_exec=int(agg.get('w_exec', 0)),
+                wins_phantom=int(agg.get('w_phantom', 0)),
                 n_24h=int(agg.get('n_24h', 0)),
                 n_exec_24h=int(agg.get('n_exec_24h', 0)),
                 n_phantom_24h=int(agg.get('n_phantom_24h', 0)),
@@ -562,6 +572,8 @@ class AdaptiveComboManager:
                 'last_updated': data.get('last_updated', ''),
                 'n_exec': data.get('n_exec', 0),
                 'n_phantom': data.get('n_phantom', 0),
+                'wins_exec': data.get('wins_exec', 0),
+                'wins_phantom': data.get('wins_phantom', 0),
                 'n_24h': data.get('n_24h', 0),
                 'n_exec_24h': data.get('n_exec_24h', 0),
                 'n_phantom_24h': data.get('n_phantom_24h', 0),
@@ -618,7 +630,16 @@ class AdaptiveComboManager:
             state_all = state
 
         def _agg_side(state_dict: Dict[str, dict], side_label: str) -> dict:
-            totals = {'n': 0, 'n_exec': 0, 'n_phantom': 0, 'n_24h': 0, 'n_exec_24h': 0, 'n_phantom_24h': 0}
+            totals = {
+                'n': 0,
+                'n_exec': 0,
+                'n_phantom': 0,
+                'wins_exec': 0,
+                'wins_phantom': 0,
+                'n_24h': 0,
+                'n_exec_24h': 0,
+                'n_phantom_24h': 0,
+            }
             for v in (state_dict or {}).values():
                 try:
                     if side_label and v.get('side') != side_label:
@@ -626,6 +647,8 @@ class AdaptiveComboManager:
                     totals['n'] += int(v.get('n', 0) or 0)
                     totals['n_exec'] += int(v.get('n_exec', 0) or 0)
                     totals['n_phantom'] += int(v.get('n_phantom', 0) or 0)
+                    totals['wins_exec'] += int(v.get('wins_exec', 0) or 0)
+                    totals['wins_phantom'] += int(v.get('wins_phantom', 0) or 0)
                     totals['n_24h'] += int(v.get('n_24h', 0) or 0)
                     totals['n_exec_24h'] += int(v.get('n_exec_24h', 0) or 0)
                     totals['n_phantom_24h'] += int(v.get('n_phantom_24h', 0) or 0)

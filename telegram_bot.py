@@ -1084,17 +1084,6 @@ class TGBot:
                         active_longs = mgr.get_active_combos('long')
                         active_shorts = mgr.get_active_combos('short')
 
-                        def _wr_split(combo):
-                            try:
-                                n = int(combo.get('n', 0) or 0)
-                                n_exec = int(combo.get('n_exec', 0) or 0)
-                                n_ph = int(combo.get('n_phantom', 0) or 0)
-                                # These splits are not stored directly; derive from WR + aggregates if needed.
-                                # For now, we only display total WR; exec/phantom split WR requires extra tracking.
-                                return n_exec, n_ph
-                            except Exception:
-                                return 0, 0
-
                         def _render_active_side(combos, header, emoji):
                             if not combos:
                                 return
@@ -1117,6 +1106,10 @@ class TGBot:
                                         ev_str = ""
                                 n_exec = int(c.get('n_exec', 0) or 0)
                                 n_ph = int(c.get('n_phantom', 0) or 0)
+                                w_exec = int(c.get('wins_exec', 0) or 0)
+                                w_ph = int(c.get('wins_phantom', 0) or 0)
+                                wr_exec = (w_exec / n_exec * 100.0) if n_exec > 0 else 0.0
+                                wr_ph = (w_ph / n_ph * 100.0) if n_ph > 0 else 0.0
                                 n_24 = int(c.get('n_24h', 0) or 0)
                                 n_exec_24 = int(c.get('n_exec_24h', 0) or 0)
                                 n_ph_24 = int(c.get('n_phantom_24h', 0) or 0)
@@ -1124,7 +1117,10 @@ class TGBot:
                                     f"{idx}) {emoji} WR {wr:.1f}% (N={n}{ev_str})"
                                 )
                                 lines.append(
-                                    f"   Exec {n_exec}, Phantom {n_ph} | 24h: +{n_24} "
+                                    f"   Exec {n_exec} (WR {wr_exec:.1f}%), Phantom {n_ph} (WR {wr_ph:.1f}%)"
+                                )
+                                lines.append(
+                                    f"   24h: +{n_24} "
                                     f"(Exec {n_exec_24}, Phantom {n_ph_24})"
                                 )
                                 lines.append(f"   {c.get('combo_id','')}")

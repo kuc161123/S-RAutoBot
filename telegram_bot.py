@@ -1501,49 +1501,6 @@ class TGBot:
                 lines.append("")
                 lines.append("🎯 *Active Combos*")
 
-                # Long/Short 30d totals with exec/phantom split
-                if lt.get('n', 0):
-                    try:
-                        n = int(lt.get('n', 0) or 0)
-                        ne = int(lt.get('n_exec', 0) or 0)
-                        np = int(lt.get('n_phantom', 0) or 0)
-                        we = int(lt.get('wins_exec', 0) or 0)
-                        wp = int(lt.get('wins_phantom', 0) or 0)
-                        wr_total = ((we + wp) / n * 100.0) if n > 0 else 0.0
-                        wr_exec = (we / ne * 100.0) if ne > 0 else 0.0
-                        wr_ph = (wp / np * 100.0) if np > 0 else 0.0
-                        lines.append(
-                            f"🟢 Longs: N={n} (Exec {ne}, Phantom {np}) "
-                            f"| WR {wr_total:.1f}% (Exec {wr_exec:.1f}%, Phantom {wr_ph:.1f}%)"
-                        )
-                    except Exception:
-                        lines.append(
-                            f"🟢 Longs: N={lt.get('n',0)} (Exec {lt.get('n_exec',0)}, Phantom {lt.get('n_phantom',0)})"
-                        )
-                else:
-                    lines.append("🟢 Longs: N=0")
-
-                if st.get('n', 0):
-                    try:
-                        n = int(st.get('n', 0) or 0)
-                        ne = int(st.get('n_exec', 0) or 0)
-                        np = int(st.get('n_phantom', 0) or 0)
-                        we = int(st.get('wins_exec', 0) or 0)
-                        wp = int(st.get('wins_phantom', 0) or 0)
-                        wr_total = ((we + wp) / n * 100.0) if n > 0 else 0.0
-                        wr_exec = (we / ne * 100.0) if ne > 0 else 0.0
-                        wr_ph = (wp / np * 100.0) if np > 0 else 0.0
-                        lines.append(
-                            f"🔴 Shorts: N={n} (Exec {ne}, Phantom {np}) "
-                            f"| WR {wr_total:.1f}% (Exec {wr_exec:.1f}%, Phantom {wr_ph:.1f}%)"
-                        )
-                    except Exception:
-                        lines.append(
-                            f"🔴 Shorts: N={st.get('n',0)} (Exec {st.get('n_exec',0)}, Phantom {st.get('n_phantom',0)})"
-                        )
-                else:
-                    lines.append("🔴 Shorts: N=0")
-
                 # Per-side active combos with WR and exec/phantom breakdown (top 3)
                 long_combos = mgr.get_active_combos(side='long')
                 short_combos = mgr.get_active_combos(side='short')

@@ -691,7 +691,7 @@ scalp:
     # Adaptive combo filtering: dynamically enable/disable combos based on rolling performance
     adaptive_combos:
       enabled: true              # Re-enable adaptive combo filtering
-      min_wr_threshold: 45.0     # Minimum WR% to enable combo (default 45%)
+      min_wr_threshold: 40.0     # Minimum WR% to enable combo (default 40%)
       min_sample_size: 30        # Require at least 30 samples before enabling combos
       use_wilson_lb: false       # Gate on raw WR (Wilson LB still shown in UI)
       ev_floor_r: -1000.0        # Disable EV floor (set very low); EV_R remains informational

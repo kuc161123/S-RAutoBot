@@ -1505,7 +1505,45 @@ class TGBot:
                 long_combos = mgr.get_active_combos(side='long')
                 short_combos = mgr.get_active_combos(side='short')
 
-                def _render_side(combos, header, emoji):
+                # Snapshot of current positions for Exec mapping
+                try:
+                    book = self.shared.get('book')
+                    pos_map = getattr(book, 'positions', {}) if book else {}
+                except Exception:
+                    pos_map = {}
+                # Last signal features (per symbol) for combo_id mapping
+                try:
+                    bot = self.shared.get('bot_instance')
+                    lsf = getattr(bot, '_last_signal_features', {}) if bot else {}
+                except Exception:
+                    lsf = {}
+                # Snapshot of active scalp phantoms
+                try:
+                    from scalp_phantom_tracker import get_scalp_phantom_tracker
+                    scpt = get_scalp_phantom_tracker()
+                    active_ph = getattr(scpt, 'active', {}) or {}
+                except Exception:
+                    active_ph = {}
+
+                def _combo_key_from_feats(f: dict) -> str | None:
+                    try:
+                        rsi = f.get('rsi_14'); mh = f.get('macd_hist'); vwap = f.get('vwap_dist_atr')
+                        fibz = f.get('fib_zone'); mtf = f.get('mtf_agree_15')
+                        if not (isinstance(rsi,(int,float)) and isinstance(mh,(int,float)) and isinstance(vwap,(int,float)) and isinstance(fibz,str) and isinstance(mtf,(bool,int))):
+                            return None
+                        def _rsi_bin(x: float) -> str:
+                            return '<30' if x < 30 else '30-40' if x < 40 else '40-60' if x < 60 else '60-70' if x < 70 else '70+'
+                        def _macd_bin(h: float) -> str:
+                            return 'bull' if h > 0 else 'bear'
+                        def _vwap_bin(x: float) -> str:
+                            return '<0.6' if x < 0.6 else '0.6-1.2' if x < 1.2 else '1.2+'
+                        rb = _rsi_bin(float(rsi)); mb = _macd_bin(float(mh)); vb = _vwap_bin(float(vwap))
+                        ma = 'MTF' if bool(mtf) else 'noMTF'
+                        return f"RSI:{rb} MACD:{mb} VWAP:{vb} Fib:{fibz} {ma}"
+                    except Exception:
+                        return None
+
+                def _render_side(combos, header, emoji, side_label: str):
                     if not combos:
                         lines.append(f"{emoji} {header}: None enabled")
                         return
@@ -1539,16 +1577,77 @@ class TGBot:
                             lines.append(
                                 f"   Exec {n_exec} (WR {wr_exec:.1f}%), Phantom {n_ph} (WR {wr_ph:.1f}%)"
                             )
+                            # Map open executed trades to this combo
+                            open_exec = []
+                            for sym, p in (pos_map.items() if isinstance(pos_map, dict) else []):
+                                try:
+                                    strat_name = str(getattr(p, 'strategy_name', '') or '').lower()
+                                    if not strat_name.startswith('scalp'):
+                                        continue
+                                    pos_side = str(getattr(p, 'side', '') or '').lower()
+                                    if pos_side != side_label:
+                                        continue
+                                    feats_sym = (lsf.get(sym, {}) or {})
+                                    sym_combo = feats_sym.get('combo_id')
+                                    if sym_combo == cid:
+                                        open_exec.append((sym, p))
+                                except Exception:
+                                    continue
+                            # Map open phantoms to this combo
+                            open_ph = []
+                            for sym, lst in (active_ph.items() if isinstance(active_ph, dict) else []):
+                                for ph in (lst or []):
+                                    try:
+                                        ph_side = str(getattr(ph, 'side', '') or '').lower()
+                                        if ph_side != side_label:
+                                            continue
+                                        f = getattr(ph, 'features', {}) or {}
+                                        ck = _combo_key_from_feats(f)
+                                        if ck == cid:
+                                            open_ph.append((sym, ph))
+                                    except Exception:
+                                        continue
+                            total_open = len(open_exec) + len(open_ph)
+                            lines.append(
+                                f"   Open: {total_open} (Exec {len(open_exec)}, Phantom {len(open_ph)})"
+                            )
+                            # Show up to 3 open entries
+                            shown = 0
+                            for sym, p in open_exec:
+                                try:
+                                    ep = float(getattr(p, 'entry', 0.0) or 0.0)
+                                    side_up = str(getattr(p, 'side', '') or '').upper()
+                                    lines.append(
+                                        f"   • Exec — {sym} {side_up} @ {ep:.4f}"
+                                    )
+                                    shown += 1
+                                    if shown >= 3:
+                                        break
+                                except Exception:
+                                    continue
+                            if shown < 3:
+                                for sym, ph in open_ph:
+                                    try:
+                                        ep = float(getattr(ph, 'entry_price', 0.0) or 0.0)
+                                        side_up = str(getattr(ph, 'side', '') or '').upper()
+                                        lines.append(
+                                            f"   • Phantom — {sym} {side_up} @ {ep:.4f}"
+                                        )
+                                        shown += 1
+                                        if shown >= 3:
+                                            break
+                                    except Exception:
+                                        continue
                         except Exception:
                             lines.append(f"• WR {combo.get('wr',0.0):.1f}% (N={combo.get('n',0)})")
 
                 if long_combos:
-                    _render_side(long_combos, "Longs", "🟢")
+                    _render_side(long_combos, "Longs", "🟢", "long")
                 else:
                     lines.append("🟢 Longs: None enabled")
 
                 if short_combos:
-                    _render_side(short_combos, "Shorts", "🔴")
+                    _render_side(short_combos, "Shorts", "🔴", "short")
                 else:
                     lines.append("🔴 Shorts: None enabled")
 

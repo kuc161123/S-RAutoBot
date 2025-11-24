@@ -3692,17 +3692,44 @@ class TradingBot:
             try:
                 sym = sc_meta.get('symbol') if isinstance(sc_meta, dict) else None
                 df15 = self.frames.get(sym) if hasattr(self, 'frames') and sym in getattr(self, 'frames', {}) else None
-                if df15 is not None and not df15.empty and len(df15['close']) >= 50:
-                    e20 = df15['close'].ewm(span=20, adjust=False).mean()
-                    e50 = df15['close'].ewm(span=50, adjust=False).mean()
-                    out['ema_dir_15m'] = 'up' if float(e20.iloc[-1]) > float(e50.iloc[-1]) else ('down' if float(e20.iloc[-1]) < float(e50.iloc[-1]) else 'none')
+
+                def _ema_dir_from(df_src: 'pd.DataFrame') -> str:
+                    try:
+                        if df_src is None or getattr(df_src, 'empty', True):
+                            return 'none'
+                        closes = df_src['close']
+                        # Prefer longer MTF EMAs (100/250) when we have sufficient history
+                        if len(closes) >= 250:
+                            e_fast = closes.ewm(span=100, adjust=False).mean()
+                            e_slow = closes.ewm(span=250, adjust=False).mean()
+                        elif len(closes) >= 50:
+                            # Fallback to original 20/50 when history is shorter
+                            e_fast = closes.ewm(span=20, adjust=False).mean()
+                            e_slow = closes.ewm(span=50, adjust=False).mean()
+                        else:
+                            return 'none'
+                        f_last = float(e_fast.iloc[-1]); s_last = float(e_slow.iloc[-1])
+                        if f_last > s_last:
+                            return 'up'
+                        if f_last < s_last:
+                            return 'down'
+                        return 'none'
+                    except Exception:
+                        return 'none'
+
+                if df15 is not None and not df15.empty:
+                    out['ema_dir_15m'] = _ema_dir_from(df15)
                 else:
-                    # Proxy MTF using 3m data when 15m stream is disabled (simple 20/50 on 3m).
+                    # Proxy MTF using 3m data when 15m stream is disabled: resample to 15m first
                     df3p = self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None
-                    if df3p is not None and not getattr(df3p, 'empty', True) and len(df3p['close']) >= 50:
-                        e20 = df3p['close'].ewm(span=20, adjust=False).mean()
-                        e50 = df3p['close'].ewm(span=50, adjust=False).mean()
-                        out['ema_dir_15m'] = 'up' if float(e20.iloc[-1]) > float(e50.iloc[-1]) else ('down' if float(e20.iloc[-1]) < float(e50.iloc[-1]) else 'none')
+                    if df3p is not None and not getattr(df3p, 'empty', True):
+                        try:
+                            df15_proxy = df3p.resample("15T").agg(
+                                {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
+                            ).dropna()
+                        except Exception:
+                            df15_proxy = None
+                        out['ema_dir_15m'] = _ema_dir_from(df15_proxy)
                     else:
                         out['ema_dir_15m'] = 'none'
             except Exception:

@@ -3434,6 +3434,37 @@ class TradingBot:
                     self._position_meta[sym] = mrec
                 except Exception:
                     pass
+                # Mirror executed trade into Scalp phantom tracker for combo analytics (was_executed=True)
+                try:
+                    from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt_exec
+                    scpt_exec = _get_scpt_exec()
+                    sig_snapshot = {
+                        'side': sig_obj.side,
+                        'entry': float(actual_entry),
+                        'sl': float(sig_obj.sl),
+                        'tp': float(sig_obj.tp),
+                    }
+                    feats_exec = {}
+                    try:
+                        # Use latest gating features as the source of indicator + combo metadata
+                        feats_exec = dict(feats_for_gate or {})
+                    except Exception:
+                        feats_exec = {}
+                    # Ensure combo_id present when available
+                    try:
+                        if combo_id_for_pos and isinstance(feats_exec, dict):
+                            feats_exec.setdefault('combo_id', combo_id_for_pos)
+                    except Exception:
+                        pass
+                    scpt_exec.record_scalp_signal(
+                        sym,
+                        sig_snapshot,
+                        float(ml_score or 0.0),
+                        True,
+                        feats_exec,
+                    )
+                except Exception:
+                    pass
             # Telegram notify
                 try:
                     if self.tg:

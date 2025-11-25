@@ -1063,6 +1063,12 @@ class TradingBot:
         combo_id = self._scalp_combo_key_from_features(feats or {})
         if combo_id:
             ctx['combo_id'] = combo_id
+            # Annotate features so downstream consumers (phantoms, dashboard) can see combo_id directly
+            try:
+                if isinstance(feats, dict):
+                    feats['combo_id'] = combo_id
+            except Exception:
+                pass
         mgr_ready = self._adaptive_combo_ready(side)
         mgr = getattr(self, 'adaptive_combo_mgr', None)
 
@@ -2488,6 +2494,16 @@ class TradingBot:
                     'wr': None,
                     'n': None
                 }
+                # Stable combo_id for position metadata (fallback to recompute from features when missing)
+                try:
+                    combo_id_for_pos = route_info.get('combo_id')
+                except Exception:
+                    combo_id_for_pos = None
+                if not combo_id_for_pos:
+                    try:
+                        combo_id_for_pos = self._scalp_combo_key_from_features(feats_for_gate or {})
+                    except Exception:
+                        combo_id_for_pos = None
                 # Enrich combo stats if available (adaptive manager state)
                 try:
                     if route_info['combo_id'] and getattr(self, 'adaptive_combo_mgr', None):
@@ -3405,7 +3421,16 @@ class TradingBot:
                     except Exception:
                         gate_decision = None
                     risk_used = float(risk_percent_override) if risk_percent_override is not None else float(getattr(self.sizer.risk, 'risk_percent', 0.0) or 0.0)
-                    mrec.update({'strategy': 'scalp', 'scalp_gate': gate_decision or 'qscore', 'risk_pct': risk_used, 'exec_id': exec_id or '', 'qty': float(qty), 'entry': float(actual_entry), 'entry_time': datetime.utcnow()})
+                    mrec.update({
+                        'strategy': 'scalp',
+                        'scalp_gate': gate_decision or 'qscore',
+                        'risk_pct': risk_used,
+                        'exec_id': exec_id or '',
+                        'qty': float(qty),
+                        'entry': float(actual_entry),
+                        'entry_time': datetime.utcnow(),
+                        'combo_id': combo_id_for_pos
+                    })
                     self._position_meta[sym] = mrec
                 except Exception:
                     pass

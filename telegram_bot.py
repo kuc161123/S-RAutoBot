@@ -1511,12 +1511,18 @@ class TGBot:
                     pos_map = getattr(book, 'positions', {}) if book else {}
                 except Exception:
                     pos_map = {}
-                # Last signal features (per symbol) for combo_id mapping
+                # Last signal features (per symbol) for combo_id mapping (fallback only)
                 try:
                     bot = self.shared.get('bot_instance')
                     lsf = getattr(bot, '_last_signal_features', {}) if bot else {}
                 except Exception:
                     lsf = {}
+                # Per-position metadata (primary source for combo_id on executed trades)
+                try:
+                    bot = self.shared.get('bot_instance')
+                    pos_meta = getattr(bot, '_position_meta', {}) if bot else {}
+                except Exception:
+                    pos_meta = {}
                 # Snapshot of active scalp phantoms
                 try:
                     from scalp_phantom_tracker import get_scalp_phantom_tracker
@@ -1587,8 +1593,12 @@ class TGBot:
                                     pos_side = str(getattr(p, 'side', '') or '').lower()
                                     if pos_side != side_label:
                                         continue
-                                    feats_sym = (lsf.get(sym, {}) or {})
-                                    sym_combo = feats_sym.get('combo_id')
+                                    # Prefer combo_id from position metadata; fall back to last_signal_features for legacy entries
+                                    meta = pos_meta.get(sym, {}) if isinstance(pos_meta, dict) else {}
+                                    sym_combo = meta.get('combo_id')
+                                    if not sym_combo:
+                                        feats_sym = (lsf.get(sym, {}) or {})
+                                        sym_combo = feats_sym.get('combo_id')
                                     if sym_combo == cid:
                                         open_exec.append((sym, p))
                                 except Exception:

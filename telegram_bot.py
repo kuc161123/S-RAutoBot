@@ -2931,6 +2931,7 @@ class TGBot:
             "• /scalpgates — Gate analysis",
             "• /combo_status — Adaptive combo status",
             "• /scalppro — Pro analytics (RSI/MACD/VWAP/Fib/MTF)",
+            "• /combo_threshold <L> [S] — Set LB WR thresholds (long/short)",
             "• /force_adaptive [N] — Force adaptive mode",
             "",
             "Risk",
@@ -9797,11 +9798,14 @@ class TGBot:
 
             stats = mgr.get_stats_summary()
 
+            thr_l = float(stats.get('min_wr_threshold_long', stats.get('min_wr_threshold', 0.0)) or 0.0)
+            thr_s = float(stats.get('min_wr_threshold_short', stats.get('min_wr_threshold', 0.0)) or 0.0)
+
             lines = [
                 "📊 *Adaptive Combo Filter Status*",
                 "",
                 f"Status: {'🟢 ENABLED' if stats['enabled'] else '🔴 DISABLED'}",
-                f"Threshold: WR ≥{stats['min_wr_threshold']:.1f}%, N ≥{stats['min_sample_size']}",
+                f"Thresholds: Long LB WR ≥{thr_l:.1f}%, Short LB WR ≥{thr_s:.1f}%, N ≥{stats['min_sample_size']}",
                 f"Lookback: {stats['lookback_days']} days",
                 "",
                 "*Current State*",
@@ -10083,11 +10087,12 @@ class TGBot:
             await self.safe_reply(update, f"❌ Error: {e}")
 
     async def combo_threshold_cmd(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Adjust the WR threshold for combo filtering.
+        """Adjust the LB WR thresholds for combo filtering.
 
         Usage:
-        /combo_threshold <wr>  - Set new threshold (e.g., 45)
-        /combo_threshold       - Show current threshold
+        /combo_threshold              - Show current thresholds
+        /combo_threshold X            - Set both long/short LB WR to X (e.g., 40)
+        /combo_threshold L S          - Set long LB WR=L and short LB WR=S
         """
         try:
             mgr = self.shared.get('adaptive_combo_mgr')
@@ -10096,34 +10101,61 @@ class TGBot:
                 return
 
             if not ctx.args:
+                # Show current thresholds
+                thr_l = getattr(mgr, 'min_wr_threshold_long', getattr(mgr, 'min_wr_threshold', 0.0))
+                thr_s = getattr(mgr, 'min_wr_threshold_short', getattr(mgr, 'min_wr_threshold', 0.0))
                 await self.safe_reply(update,
                     f"📊 Current Threshold\n"
-                    f"WR ≥{mgr.min_wr_threshold:.1f}%\n"
+                    f"Long LB WR ≥{thr_l:.1f}%\n"
+                    f"Short LB WR ≥{thr_s:.1f}%\n"
                     f"N ≥{mgr.min_sample_size}\n\n"
-                    f"Usage: /combo_threshold <wr>"
+                    f"Gating uses Wilson lower-bound WR.\n"
+                    f"Usage: /combo_threshold <L> [S]"
                 )
                 return
 
+            # Parse thresholds
+            args = ctx.args
             try:
-                new_threshold = float(ctx.args[0])
+                if len(args) == 1:
+                    thr_long = float(args[0])
+                    thr_short = float(args[0])
+                else:
+                    thr_long = float(args[0])
+                    thr_short = float(args[1])
             except ValueError:
-                await self.safe_reply(update, "❌ Invalid threshold. Must be a number (e.g., 45)")
+                await self.safe_reply(update, "❌ Invalid threshold(s). Must be numbers (e.g., 45 or 45 30)")
                 return
 
-            if not (0 <= new_threshold <= 100):
-                await self.safe_reply(update, "❌ Threshold must be between 0 and 100")
+            if not (0.0 <= thr_long <= 100.0 and 0.0 <= thr_short <= 100.0):
+                await self.safe_reply(update, "❌ Thresholds must be between 0 and 100")
                 return
 
-            old_threshold = mgr.min_wr_threshold
-            mgr.min_wr_threshold = new_threshold
+            old_long = getattr(mgr, 'min_wr_threshold_long', getattr(mgr, 'min_wr_threshold', 0.0))
+            old_short = getattr(mgr, 'min_wr_threshold_short', getattr(mgr, 'min_wr_threshold', 0.0))
 
-            # Trigger refresh with new threshold
+            # Update manager thresholds (side-specific) and keep global as fallback
+            mgr.min_wr_threshold_long = thr_long
+            mgr.min_wr_threshold_short = thr_short
+            try:
+                mgr.min_wr_threshold = min(thr_long, thr_short)
+            except Exception:
+                pass
+
+            # Update runtime config snapshot for consistency (non-persistent)
+            cfg = self.shared.get('config', {}) or {}
+            acfg = (((cfg.setdefault('scalp', {}).setdefault('exec', {})).setdefault('adaptive_combos', {})))
+            acfg['min_wr_threshold_long'] = thr_long
+            acfg['min_wr_threshold_short'] = thr_short
+            acfg['use_wilson_lb'] = True
+
+            # Trigger refresh with new thresholds
             enabled_count, disabled_count, changes = mgr.update_combo_filters(force=True)
 
             await self.safe_reply(update,
                 f"✅ *Threshold Updated*\n\n"
-                f"Old: {old_threshold:.1f}%\n"
-                f"New: {new_threshold:.1f}%\n\n"
+                f"Old Long: {old_long:.1f}% → New Long: {thr_long:.1f}%\n"
+                f"Old Short: {old_short:.1f}% → New Short: {thr_short:.1f}%\n\n"
                 f"🟢 Enabled: {enabled_count}\n"
                 f"🔴 Disabled: {disabled_count}\n"
                 f"Changes: {len(changes)}\n\n"

@@ -62,7 +62,11 @@ class AdaptiveComboManager:
         # Load adaptive config with defaults
         adaptive_cfg = ((config.get('scalp', {}) or {}).get('exec', {}) or {}).get('adaptive_combos', {}) or {}
         self.enabled = bool(adaptive_cfg.get('enabled', True))
+        # Global WR threshold (fallback); side-specific thresholds may override this
         self.min_wr_threshold = float(adaptive_cfg.get('min_wr_threshold', 45.0))
+        # Side-specific WR thresholds (allow different gates for longs vs shorts)
+        self.min_wr_threshold_long = float(adaptive_cfg.get('min_wr_threshold_long', self.min_wr_threshold))
+        self.min_wr_threshold_short = float(adaptive_cfg.get('min_wr_threshold_short', self.min_wr_threshold))
         self.min_sample_size = int(adaptive_cfg.get('min_sample_size', 20))
         self.lookback_days = int(adaptive_cfg.get('lookback_days', 30))
         self.long_short_separate = bool(adaptive_cfg.get('long_short_separate', True))
@@ -82,7 +86,13 @@ class AdaptiveComboManager:
         self.update_count = 0
         self.combo_changes = []  # List of recent enable/disable events
 
-        logger.info(f"Adaptive Combo Manager initialized: enabled={self.enabled}, min_WR={self.min_wr_threshold}%, min_N={self.min_sample_size}")
+        logger.info(
+            "Adaptive Combo Manager initialized: "
+            f"enabled={self.enabled}, "
+            f"min_WR_long={self.min_wr_threshold_long}%, "
+            f"min_WR_short={self.min_wr_threshold_short}%, "
+            f"min_N={self.min_sample_size}"
+        )
 
     def _wilson_lb(self, wins: int, n: int, z: float = 1.96) -> float:
         """Wilson score lower bound (%). Returns 0..100."""
@@ -335,8 +345,18 @@ class AdaptiveComboManager:
             ev_r = (agg['rr'] / n) if n else 0.0
             combo_side = agg['side']
 
-            # Determine if combo should be enabled
-            enabled = (wr >= self.min_wr_threshold and n >= self.min_sample_size)
+            # Preliminary enable flag (final decision applied in update_combo_filters)
+            # Use side-specific thresholds where available
+            try:
+                if str(combo_side).lower() == 'long':
+                    thr_side = float(self.min_wr_threshold_long)
+                elif str(combo_side).lower() == 'short':
+                    thr_side = float(self.min_wr_threshold_short)
+                else:
+                    thr_side = float(self.min_wr_threshold)
+            except Exception:
+                thr_side = float(self.min_wr_threshold)
+            enabled = (wr >= thr_side and n >= self.min_sample_size)
 
             results[key] = ComboPerformance(
                 combo_id=key,
@@ -408,7 +428,16 @@ class AdaptiveComboManager:
                 wr_metric = self._wilson_lb(perf.wins, perf.n) if self.use_wilson_lb else float(perf.wr)
                 n_ok = perf.n >= self.min_sample_size
                 ev_ok = float(perf.ev_r) >= float(self.ev_floor_r)
-                thr = float(self.min_wr_threshold)
+                # Side-specific WR thresholds (fall back to global when side missing)
+                try:
+                    if str(perf.side).lower() == 'long':
+                        thr = float(self.min_wr_threshold_long)
+                    elif str(perf.side).lower() == 'short':
+                        thr = float(self.min_wr_threshold_short)
+                    else:
+                        thr = float(self.min_wr_threshold)
+                except Exception:
+                    thr = float(self.min_wr_threshold)
 
                 # Base gating (no hysteresis)
                 base_enabled = bool(n_ok and ev_ok and (wr_metric >= thr))
@@ -460,15 +489,33 @@ class AdaptiveComboManager:
                 try:
                     import asyncio
                     for change_msg in changes:
+                        # Side-aware thresholds for messaging (fallback to global)
+                        try:
+                            side_tag = 'long' if '(LONG)' in change_msg else 'short' if '(SHORT)' in change_msg else 'all'
+                        except Exception:
+                            side_tag = 'all'
+                        if side_tag == 'long':
+                            thr_used = float(self.min_wr_threshold_long)
+                        elif side_tag == 'short':
+                            thr_used = float(self.min_wr_threshold_short)
+                        else:
+                            thr_used = float(self.min_wr_threshold)
                         # Determine emoji and reason
                         if "ENABLED" in change_msg:
                             emoji = "🟢"
-                            reason = f"WR above threshold ({self.min_wr_threshold:.1f}%) with sufficient data"
+                            reason = f"WR above threshold ({thr_used:.1f}%) with sufficient data"
                         else:
                             emoji = "🔴"
-                            reason = f"WR below threshold ({self.min_wr_threshold:.1f}%)"
+                            reason = f"WR below threshold ({thr_used:.1f}%)"
 
-                        notification = f"{emoji} **Combo Filter Update**\n{change_msg}\nReason: {reason}\nThreshold: WR ≥{self.min_wr_threshold:.1f}%, N ≥{self.min_sample_size}"
+                        notification = (
+                            f"{emoji} **Combo Filter Update**\n"
+                            f"{change_msg}\n"
+                            f"Reason: {reason}\n"
+                            f"Thresholds: Long LB WR ≥{self.min_wr_threshold_long:.1f}%, "
+                            f"Short LB WR ≥{self.min_wr_threshold_short:.1f}%, "
+                            f"N ≥{self.min_sample_size}"
+                        )
                         asyncio.create_task(self.telegram_bot.send_message(notification))
                 except Exception as notif_err:
                     logger.debug(f"Failed to send combo change notification: {notif_err}")
@@ -662,6 +709,8 @@ class AdaptiveComboManager:
         return {
             'enabled': self.enabled,
             'min_wr_threshold': self.min_wr_threshold,
+            'min_wr_threshold_long': self.min_wr_threshold_long,
+            'min_wr_threshold_short': self.min_wr_threshold_short,
             'min_sample_size': self.min_sample_size,
             'lookback_days': self.lookback_days,
             'last_update': self.last_update.isoformat() if self.last_update else None,

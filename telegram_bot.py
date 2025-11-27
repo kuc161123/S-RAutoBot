@@ -9983,7 +9983,7 @@ class TGBot:
                     n = int(combo.get('n', 0))
                     lines.append(f"{side_emoji} WR {wr:.1f}% (N={n})")
                     lines.append(f"   {combo['combo_id']}")
-            elif not active_combos:
+            else:
                 lines.append("")
                 lines.append("No active combos. Use `/combo_status all` to see disabled ones.")
 

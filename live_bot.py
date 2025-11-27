@@ -1082,7 +1082,7 @@ class TradingBot:
             except Exception:
                 return False, 'no_manager_state', ctx
 
-        # Fallback path (manager not ready)
+        # Fallback path (manager not ready or no active combos)
         if fallback_mode == 'pro':
             # Build bins from features
             f = feats or {}
@@ -1169,11 +1169,11 @@ class TradingBot:
             else:
                 return False, 'fallback_pro_block', ctx
         elif fallback_mode == 'mtf':
-            # Temporarily ignore MTF alignment to increase flow
+            # MTF-only fallback: allow while combos learn, but mark as fallback path
             return True, 'fallback_mtf_ok', ctx
         else:
-            # No fallback gating
-            return True, 'fallback_off', ctx
+            # Strict combo-only mode: when manager is not ready, block execution (phantoms still recorded)
+            return False, 'fallback_off_block', ctx
         
     
 

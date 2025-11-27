@@ -680,8 +680,9 @@ scalp:
     block_noncombo: true         # Block non-combo signals when combos_only=true
     mute_disabled_paths: false   # Allow notifications for gate-path decisions
     # Fallback policy: before Adaptive Combos are ready, use Pro Rules (MTF+RSI+MACD+VWAP+Fib)
+    # In strict combo-only mode (fallback_until_ready: off), execution is blocked until combos are active
     require_combo_enabled: true    # Require enabled combo for execution when manager is ready
-    fallback_until_ready: pro    # pro = Pro Rules fallback | mtf = MTF only | off = strict combo mode
+    fallback_until_ready: off    # pro = Pro Rules fallback | mtf = MTF only | off = strict combo-only mode
     manager_fresh_hours: 6       # consider manager stale when older than this many hours
     blocked_notify: true         # enable blocked/phantom notifications
     extra_vol_gate:
@@ -693,7 +694,7 @@ scalp:
       enabled: true              # Re-enable adaptive combo filtering
       min_wr_threshold: 40.0     # Global fallback WR% threshold (unused when side-specific values set)
       min_wr_threshold_long: 45.0  # Long-side minimum LB WR% to enable combo
-      min_wr_threshold_short: 30.0 # Short-side minimum LB WR% to enable combo
+      min_wr_threshold_short: 45.0 # Short-side minimum LB WR% to enable combo
       min_sample_size: 30        # Require at least 30 samples before enabling combos
       use_wilson_lb: true        # Gate on Wilson lower-bound WR instead of raw WR
       ev_floor_r: -1000.0        # Disable EV floor (set very low); EV_R remains informational

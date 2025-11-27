@@ -878,17 +878,62 @@ class TradingBot:
             return True
 
     async def _scalp_gate_and_record_phantom(self, sym: str, sc_sig, feats: dict, ml_score: float = 0.0):
-        """Run gate for a phantom-only scalp signal, send block notification if rejected, then record phantom."""
+        """Run gate for a phantom-only scalp signal, send block notification if rejected, then record phantom.
+
+        In strict combos-only mode (combos_only + require_combo_enabled + fallback_until_ready=='off'),
+        when a combo is enabled this function will execute instead of recording a phantom.
+        """
         try:
             allowed, gate_reason, gate_ctx = self._scalp_combo_allowed(str(getattr(sc_sig, 'side', '')), feats or {})
         except Exception:
             allowed, gate_reason, gate_ctx = (False, 'insufficient_features', {})
+
+        # If allowed and strict combo-only mode is active, execute instead of recording a phantom
+        try:
+            cfg = getattr(self, 'config', {}) or {}
+            ex_cfg = ((cfg.get('scalp', {}) or {}).get('exec', {}) or {})
+            combos_only = bool(ex_cfg.get('combos_only', False))
+            require_combo = bool(ex_cfg.get('require_combo_enabled', True))
+            fb_mode = str(ex_cfg.get('fallback_until_ready', 'pro')).lower()
+        except Exception:
+            combos_only = False
+            require_combo = True
+            fb_mode = 'pro'
+
+        if allowed and combos_only and require_combo and fb_mode == 'off':
+            try:
+                # Route through central execute path; mirror phantom will be recorded there
+                await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_score or 0.0))
+            except Exception:
+                # If execution fails, fall back to phantom recording to avoid losing data
+                try:
+                    from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt_exec_fallback
+                    scpt_fb = _get_scpt_exec_fallback()
+                    scpt_fb.record_scalp_signal(
+                        sym,
+                        {'side': getattr(sc_sig, 'side', None), 'entry': getattr(sc_sig, 'entry', None), 'sl': getattr(sc_sig, 'sl', None), 'tp': getattr(sc_sig, 'tp', None)},
+                        float(ml_score or 0.0),
+                        False,
+                        feats or {}
+                    )
+                except Exception:
+                    pass
+            return None
+
+        # Not allowed (or not strict combo-only mode) → notify and record phantom
         if not allowed:
             try:
                 kind = 'adaptive' if str(gate_reason).startswith('adaptive') else 'rules'
-                await self._notify_block(sym, kind=kind, side=str(getattr(sc_sig, 'side','')), feats=feats or {}, combo_id=gate_ctx.get('combo_id') if isinstance(gate_ctx, dict) else None)
+                await self._notify_block(
+                    sym,
+                    kind=kind,
+                    side=str(getattr(sc_sig, 'side','')),
+                    feats=feats or {},
+                    combo_id=gate_ctx.get('combo_id') if isinstance(gate_ctx, dict) else None,
+                )
             except Exception:
                 pass
+
         # Record the phantom (centralized path)
         try:
             from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt

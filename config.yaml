@@ -882,7 +882,7 @@ scalp:
         vol_ratio_max: 1.05       # Volume spike threshold (≤ means low-volume)
         weekend_tighten_pct: 0.15 # Tighten thresholds by 15% on weekends (UTC)
   # Rule-mode scoring for Scalp (phantom-only). Used for telemetry/notifications; not for execution yet.
-    rule_mode:
+  rule_mode:
     execute_q_min: -100   # Disable Qscore as a hard execution gate (combos-only mode)
     phantom_q_min: 15     # Phantom recording threshold - capture wide range for gate analysis
     weights:              # normalized automatically

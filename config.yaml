@@ -658,18 +658,16 @@ scalp:
     risk_percent: 2.0             # Per-trade risk for Scalp executes (2% of equity per trade)
     daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
     adaptive_risk:
-      enabled: false              # Disable adaptive risk; use fixed risk_percent
-      use_for_high_wr: false      # No adaptive sizing
-      base_percent: 1.0           # Base risk when no adjustment applies
+      enabled: true               # Enable adaptive risk based on combo LB WR
+      use_for_high_wr: true       # Prefer using adaptive sizing when WR is strong
+      base_percent: 0.5           # Base risk when no adjustment applies (LB below first bucket)
       min_percent: 0.5            # Floor for adjusted risk
-      max_percent: 3.0            # Ceiling for adjusted risk
+      max_percent: 2.0            # Ceiling for adjusted risk
       min_samples: 30             # Overall samples required when using non-recency fallback
       ev_floor_r: 0.0             # Minimum EV_R required (in R) to apply any increase
       wr_lb_ladder:               # Wilson lower-bound WR thresholds → multipliers
-        45: 1.0
-        55: 1.5
-        65: 2.0
-        70: 2.5
+        40: 1.0    # LB <40% → 0.5% risk (base)
+        50: 4.0    # LB ≥50% → 2.0% risk (0.5 * 4), 40–50% → 1.0% risk
       recency:                    # Recency feature for sizing
         days: 7                   # Lookback days for recent performance
         min_samples: 15           # Require at least this many recent closes

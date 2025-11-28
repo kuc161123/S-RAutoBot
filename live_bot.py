@@ -981,6 +981,36 @@ class TradingBot:
                 lines.append(f"{sym} {str(side).upper()} | Combo disabled")
                 if combo_id:
                     lines.append(f"Combo: {combo_id}")
+                    # Enrich with combo stats when available
+                    try:
+                        mgr = getattr(self, 'adaptive_combo_mgr', None)
+                        if mgr:
+                            side_key = str(side).lower()
+                            state = mgr._load_combo_state(side_key if side_key in ('long', 'short') else None)
+                            perf = state.get(combo_id) if isinstance(state, dict) else None
+                            if isinstance(perf, dict):
+                                wr = float(perf.get('wr', 0.0) or 0.0)
+                                n = int(perf.get('n', 0) or 0)
+                                wins = int(perf.get('wins', 0) or 0)
+                                # Compute Wilson LB with manager helper (fallback to WR if unavailable)
+                                try:
+                                    lb = mgr._wilson_lb(wins, n)
+                                except Exception:
+                                    lb = wr
+                                thr_long = float(getattr(mgr, 'min_wr_threshold_long', getattr(mgr, 'min_wr_threshold', 0.0)))
+                                thr_short = float(getattr(mgr, 'min_wr_threshold_short', getattr(mgr, 'min_wr_threshold', 0.0)))
+                                thr_side = thr_long if side_key == 'long' else thr_short
+                                n_min = int(getattr(mgr, 'min_sample_size', 0) or 0)
+                                lines.append("")
+                                lines.append("Inputs")
+                                lines.append(f"• LB WR   : {lb:.1f}% (raw {wr:.1f}%)")
+                                lines.append(f"• Samples : N={n}")
+                                lines.append("")
+                                lines.append("Criteria (Pass/Fail)")
+                                lines.append(f"• Sample size   {'✅' if n >= n_min else '❌'}  N={n} (min {n_min})")
+                                lines.append(f"• LB WR thresh  {'✅' if lb >= thr_side else '❌'}  {lb:.1f}% (thr {thr_side:.1f}%)")
+                    except Exception:
+                        pass
             elif kind == 'rules':
                 # Compute bins and Pro-Rule failures (RSI/MACD/VWAP/Fib only)
                 try:
@@ -1038,16 +1068,7 @@ class TradingBot:
                     v_ok = vwap_bin in ('<0.6', '0.6-1.0', '1.0-1.2')
                     # Fib: 50-61..78-100
                     fib_ok = fibz in ('50-61', '61-78', '78-100')
-                if not rsi_ok:
-                    reasons.append('RSI')
-                if not macd_ok:
-                    reasons.append('MACD')
-                if not v_ok:
-                    reasons.append('VWAP')
-                if not fib_ok:
-                    reasons.append('Fib')
-                lines.append(f"{sym} {str(side).upper()} | Reason: {', '.join(reasons) if reasons else 'rules'}")
-                # Context line: show Pro bins + vol/wick as info only
+                # Volume and Wick gate status (for visibility only)
                 try:
                     uw = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
                     lw = float(feats.get('lower_wick_ratio', 0.0) or 0.0)
@@ -1057,17 +1078,51 @@ class TradingBot:
                 vmin_local = float(hg_local.get('vol_ratio_min_3m', 1.30))
                 wdelta_local = float(hg_local.get('wick_delta_min', 0.12))
                 wick_delta = (lw - uw) if s == 'long' else (uw - lw)
-                lines.append(
-                    f"RSI:{rsi_bin} MACD:{macd} VWAP:{vwap_bin} Fib:{fibz or 'n/a'} "
-                    f"MTF:{'✓' if mtf else '✗'} Vol:{volr:.2f}/{vmin_local:.2f} "
-                    f"WickΔ:{wick_delta:.2f} (min {wdelta_local:.2f})"
-                )
+                vol_ok = volr >= vmin_local
+                if s == 'long':
+                    wick_ok = (lw >= uw + wdelta_local)
+                else:
+                    wick_ok = (uw >= lw + wdelta_local)
+                if not rsi_ok:
+                    reasons.append('RSI')
+                if not macd_ok:
+                    reasons.append('MACD')
+                if not v_ok:
+                    reasons.append('VWAP')
+                if not fib_ok:
+                    reasons.append('Fib')
+                lines.append(f"{sym} {str(side).upper()} | Reason: {', '.join(reasons) if reasons else 'rules'}")
+                # Detailed breakdown
+                lines.append("")
+                lines.append("Inputs")
+                lines.append(f"• RSI  : {rsi:.1f} (bin {rsi_bin})")
+                lines.append(f"• MACD : {macd} (hist {mh:.4f})")
+                lines.append(f"• VWAP : {vwap:.2f} ATR (bin {vwap_bin})")
+                lines.append(f"• Fib  : {fibz or 'n/a'}")
+                lines.append(f"• MTF  : {'✓' if mtf else '✗'}")
+                lines.append(f"• Vol  : {volr:.2f}x (min {vmin_local:.2f}x)")
+                lines.append(f"• Wick : L={lw:.2f} U={uw:.2f} Δ={wick_delta:.2f} (min {wdelta_local:.2f})")
+                lines.append("")
+                lines.append("Criteria (Pass/Fail)")
+                if s == 'long':
+                    lines.append(f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: 40–60 or <30, or 60–70 with strong vol")
+                    lines.append(f"• MACD  {'✅' if macd_ok else '❌'}  allowed: bull with |hist| ≥ {mh_floor:.4f}")
+                    lines.append(f"• VWAP  {'✅' if v_ok else '❌'}  allowed: <0.6 or 0.6–1.0 with bull+strong vol, or 1.2+ with bull+strong vol")
+                    lines.append(f"• Fib   {'✅' if fib_ok else '❌'}  allowed: 0–23, 23–38, 38–50, 50–61 (61–78 with strong vol)")
+                else:
+                    lines.append(f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: <35, or 35–50 with strong vol, or 50–60")
+                    lines.append(f"• MACD  {'✅' if macd_ok else '❌'}  allowed: bear with |hist| ≥ {mh_floor:.4f}")
+                    lines.append(f"• VWAP  {'✅' if v_ok else '❌'}  allowed: <0.6, 0.6–1.0, 1.0–1.2")
+                    lines.append(f"• Fib   {'✅' if fib_ok else '❌'}  allowed: 50–61, 61–78, 78–100")
+                lines.append(f"• Vol   {'✅' if vol_ok else '❌'}  volume vs gate min {vmin_local:.2f}x")
+                lines.append(f"• Wick  {'✅' if wick_ok else '❌'}  dominant wick Δ≥{wdelta_local:.2f} in trade direction")
             else:
                 title = "🚫 Blocked — Pre‑Gate"
                 lines.append(f"{sym} {str(side).upper()} | {pre_reason or 'pre‑gate'}")
                 lines.append("Routed via gate; recorded phantom.")
 
             # Footer
+            lines.append("")
             lines.append("Recorded phantom. Use /watchlist for candidates.")
 
             # Build keyboard

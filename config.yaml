@@ -691,8 +691,8 @@ scalp:
     adaptive_combos:
       enabled: true              # Re-enable adaptive combo filtering
       min_wr_threshold: 40.0     # Global fallback WR% threshold (unused when side-specific values set)
-      min_wr_threshold_long: 45.0  # Long-side minimum LB WR% to enable combo
-      min_wr_threshold_short: 45.0 # Short-side minimum LB WR% to enable combo
+      min_wr_threshold_long: 40.0  # Long-side minimum LB WR% to enable combo
+      min_wr_threshold_short: 40.0 # Short-side minimum LB WR% to enable combo
       min_sample_size: 30        # Require at least 30 samples before enabling combos
       use_wilson_lb: true        # Gate on Wilson lower-bound WR instead of raw WR
       ev_floor_r: -1000.0        # Disable EV floor (set very low); EV_R remains informational

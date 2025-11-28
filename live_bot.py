@@ -6661,18 +6661,20 @@ class TradingBot:
                                         self._scalp_exec_counter['count'] += 1
                                         exec_reason = 'qgate'
                                         # On success, record executed mirror and short-circuit the rest of the loop
+                                # Record phantom only when execution did NOT proceed.
+                                # Executed mirrors are recorded inside _execute_scalp_trade (was_executed=True).
                                 try:
-                                    # Gate + record executed mirror
-                                    await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
-                                    _scalp_decision_logged = True
-                                    self._scalp_cooldown[sym] = bar_ts
-                                    blist.append(now_ts)
-                                    self._scalp_budget[sym] = blist
-                                    try:
-                                        logger.info(f"[{sym}|id={exec_id}] 🧮 Scalp decision final: exec_scalp (reason=qscore {float(sc_feats.get('qscore',0.0)):.1f}>={exec_thr:.0f})")
-                                    except Exception:
-                                        pass
-                                    continue
+                                    if not did_exec:
+                                        await self._scalp_gate_and_record_phantom(sym, sc_sig, sc_feats, ml_score=float(ml_s or 0.0))
+                                        _scalp_decision_logged = True
+                                        self._scalp_cooldown[sym] = bar_ts
+                                        blist.append(now_ts)
+                                        self._scalp_budget[sym] = blist
+                                        try:
+                                            logger.info(f"[{sym}|id={exec_id}] 🧮 Scalp decision final: phantom (qscore {float(sc_feats.get('qscore',0.0)):.1f}<exec_thr {exec_thr:.0f} or exec guard)")
+                                        except Exception:
+                                            pass
+                                        continue
                                 except Exception:
                                     pass
                                 # Pull detailed reason from executor if set (did_exec is False here)
@@ -6893,7 +6895,7 @@ class TradingBot:
                                     continue
                         except Exception as _ee:
                             logger.info(f"[{sym}] Scalp High-ML override error: {_ee}")
-                    # Enforce per-strategy hourly per-symbol budget for scalp
+                    # Enforce per-strategy hourly per-symbol budget for scalp (analytics only; no longer a hard gate)
                     hb = self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
                     sc_limit = int(hb.get('scalp', sc_limit))
                     # now_ts and blist already initialized above; refresh list for safety
@@ -6901,7 +6903,7 @@ class TradingBot:
                     blist = [ts for ts in self._scalp_budget.get(sym, []) if (now_ts - ts) < 3600]
                     self._scalp_budget[sym] = blist
                     sc_remaining = sc_limit - len(blist)
-                    # Daily cap (none) per strategy for scalp
+                    # Daily cap (none) per strategy for scalp (analytics only; no longer a hard gate)
                     daily_ok = True
                     n_key = None
                     try:
@@ -6913,9 +6915,8 @@ class TradingBot:
                             n_val = int(scpt.redis_client.get(n_key) or 0)
                             daily_ok = n_val < none_cap
                     except Exception:
-                        pass
-                    # Visibility into decision inputs
-                    # Decision context (reduce to DEBUG to avoid log noise)
+                        daily_ok = True
+                    # Visibility into decision inputs (budgets now informational only)
                     try:
                         logger.debug(f"[{sym}] 🩳 Scalp decision context: dedup_ok={dedup_ok} hourly_remaining={max(0, sc_remaining)} daily_ok={daily_ok}")
                     except Exception:
@@ -6955,8 +6956,8 @@ class TradingBot:
                             self._scalp_budget[sym] = blist
                         else:
                             logger.info(f"[{sym}] 🛑 Scalp phantom (none route debug) dropped by regime gate (tracker)")
-                    elif sc_remaining > 0 and daily_ok:
-                        # Check phantom Q-score threshold (cut extreme noise)
+                    else:
+                        # Budgets are informational only: always allow phantom when Qscore ≥ phantom_q_min
                         ph_min = float(((self.config.get('scalp', {}) or {}).get('rule_mode', {}) or {}).get('phantom_q_min', 20))
                         q_score = float(sc_feats.get('qscore', 0.0))
                         if q_score < ph_min:
@@ -6980,7 +6981,7 @@ class TradingBot:
                                     self.flow_controller.increment_accepted('scalp', 1)
                             except Exception:
                                 pass
-                            # Increment daily none count for scalp
+                            # Increment daily none count for scalp (still tracked, but not a gate)
                             try:
                                 if scpt.redis_client is not None and n_key is not None:
                                     scpt.redis_client.incr(n_key)
@@ -6994,29 +6995,8 @@ class TradingBot:
                             except Exception:
                                 pass
                             try:
-                                # Explain why not executed: budgets or below ML override (still phantom)
-                                reason = 'unknown'
-                                try:
-                                    if not daily_ok:
-                                        reason = 'daily_cap'
-                                    elif sc_remaining <= 0:
-                                        reason = 'hourly_budget'
-                                    else:
-                                        reason = f"ml<thr {float(ml_s or 0.0):.1f}<{hi_thr:.0f}"
-                                except Exception:
-                                    pass
-                                logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason={reason})")
+                                logger.info(f"[{sym}] 🧮 Scalp decision final: phantom (reason=qscore/budget_not_gated)")
                                 _scalp_decision_logged = True
-                                # Telegram notify for blocked reasons leading to phantom (non-q reasons), include Qscore
-                                try:
-                                    if self.tg and reason in ('daily_cap','hourly_budget'):
-                                        comps = sc_feats.get('qscore_components', {}) or {}
-                                        comp_line = f"MOM={comps.get('mom',0):.0f} PULL={comps.get('pull',0):.0f} Micro={comps.get('micro',0):.0f} HTF={comps.get('htf',0):.0f} SR={comps.get('sr',0):.0f} Risk={comps.get('risk',0):.0f}"
-                                        nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
-                                        if bool(nb.get('enabled', True)):
-                                            await self.tg.send_message(f"🛑 Scalp: [{sym}] EXEC blocked (reason={reason}) — phantom recorded\nQ={float(sc_feats.get('qscore',0.0)):.1f}\n{comp_line}")
-                                except Exception:
-                                    pass
                             except Exception:
                                 pass
                             self._scalp_cooldown[sym] = bar_ts
@@ -7025,35 +7005,6 @@ class TradingBot:
                         else:
                             logger.debug(f"[{sym}] 🛑 Scalp phantom (none route) dropped by regime gate (tracker)")
                             _scalp_decision_logged = True
-                        # Shadow execute Scalp if ML is trained and score ≥ threshold
-                        try:
-                            scorer = get_scalp_scorer() if get_scalp_scorer is not None else None
-                            if getattr(scorer, 'is_ml_ready', False):
-                                score, _ = scorer.score_signal({'side': sc_sig.side}, sc_feats)
-                                thr_sc = getattr(scorer, 'min_score', 75)
-                                if score >= thr_sc:
-                                    from shadow_trade_simulator import get_shadow_tracker
-                                    get_shadow_tracker().record_shadow_trade(
-                                        strategy='scalp',
-                                        symbol=sym,
-                                        side=sc_sig.side,
-                                        entry=float(sc_sig.entry),
-                                        sl=float(sc_sig.sl),
-                                        tp=float(sc_sig.tp),
-                                        ml_score=float(score or 0.0),
-                                        features=sc_feats or {}
-                                    )
-                                    logger.debug(f"[{sym}] 🩳 Scalp shadow trade recorded (score {score:.1f} ≥ {thr_sc})")
-                        except Exception as se:
-                            logger.debug(f"[{sym}] Scalp shadow error: {se}")
-                    else:
-                        # Blocked by hourly per-symbol budget or daily cap
-                        try:
-                            reason = 'hourly_budget' if sc_remaining <= 0 else ('daily_cap' if not daily_ok else 'unknown')
-                            logger.info(f"[{sym}] 🧮 Scalp decision final: blocked (reason={reason})")
-                            _scalp_decision_logged = True
-                        except Exception:
-                            pass
                 except Exception as e:
                     # Elevate to WARNING so it is visible at default log level
                     logger.warning(f"[{sym}] Scalp(3m) record error: {e}")

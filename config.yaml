@@ -586,12 +586,12 @@ scalp:
     # Individual gate enables (only apply to execution, phantoms track all)
     htf_enabled: false          # DISABLED - HTF gate removed from execution paths
     htf_min_ts15: 70.0
-    vol_enabled: true           # ENABLED - Require volume expansion for execution
-    vol_ratio_min_3m: 1.30      # kept for reference (not applied when vol_enabled=false)
+    vol_enabled: false          # DISABLED - Volume not required; rely on combo only
+    vol_ratio_min_3m: 1.30      # kept for reference (used only if vol_enabled=true)
     body_enabled: false         # DISABLED - Body is handled in signal generator, not execution
     body_ratio_min_3m: 0.30
     # Wick alignment gate (execution): dominant wick in trade direction by delta
-    wick_enabled: true          # ENABLED - Require wick dominance for execution
+    wick_enabled: false         # DISABLED - Wick not required; rely on combo + other gates
     wick_delta_min: 0.12
     # Volatility regime gate (execution): allow only configured regimes
     regime_enabled: false
@@ -599,7 +599,7 @@ scalp:
     align_15m_enabled: false    # DISABLED
     leader_align_btc_enabled: false  # DISABLED
     # EMA slope gate (execution)
-    slope_enabled: true
+    slope_enabled: false        # DISABLED - Slope not required; rely on combo + other gates
     slope_mode: trend             # trend | mr
     slope_fast_only: false        # REQUIRE fast + slow alignment (full slope)
     slope_fast_min_pb: 0.03       # 0.03% per bar minimum (absolute) for fast slope

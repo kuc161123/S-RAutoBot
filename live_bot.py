@@ -1091,7 +1091,7 @@ class TradingBot:
 
     def _scalp_combo_allowed(self, side: str, feats: dict) -> tuple[bool, str, dict]:
         """Return (allowed, reason, ctx) based on manager readiness and fallback policy.
-        reasons: adaptive_enabled | adaptive_disabled | fallback_mtf_ok | fallback_mtf_block | insufficient_features | no_manager_state
+        reasons: adaptive_enabled | adaptive_disabled | fallback_mtf_ok | fallback_mtf_block | fallback_off_block | insufficient_features | no_manager_state
         ctx contains combo_id when available.
         """
         ctx = {}
@@ -1114,17 +1114,22 @@ class TradingBot:
                     feats['combo_id'] = combo_id
             except Exception:
                 pass
-        mgr_ready = self._adaptive_combo_ready(side)
         mgr = getattr(self, 'adaptive_combo_mgr', None)
 
-        if mgr_ready and require_combo:
+        # When an adaptive combo manager is present, gate strictly by per-combo enabled state.
+        # Do not depend on "readiness" timers: if a combo is enabled in state, it is eligible.
+        if mgr and require_combo:
             try:
-                active = [c.get('combo_id') for c in (mgr.get_active_combos(str(side).lower()) or [])]
-                if combo_id and combo_id in active:
+                side_key = str(side).lower()
+                active_list = mgr.get_active_combos(side_key)
+                active_ids = [c.get('combo_id') for c in (active_list or [])]
+                if combo_id and combo_id in active_ids:
                     return True, 'adaptive_enabled', ctx
-                else:
+                # Combo_id present but not enabled → adaptive_disabled
+                if combo_id:
                     return False, 'adaptive_disabled', ctx
             except Exception:
+                # Manager present but state unavailable
                 return False, 'no_manager_state', ctx
 
         # Fallback path (manager not ready or no active combos)
@@ -5240,7 +5245,8 @@ class TradingBot:
                             except Exception as _nce:
                                 logger.debug(f"[{sym}] noncombo phantom record failed: {_nce}")
                             self._scalp_last_exec_reason[sym] = 'noncombo_strict_block'
-                            logger.info(f"[{sym}] ⛔ Scalp NON‑COMBO blocked (combos_only, fallback=off); skipping gate-based execution")
+                            # Clarify that this is strict combos-only mode: combo not enabled for execution
+                            logger.info(f"[{sym}] ⛔ Scalp NON‑COMBO blocked (combos_only strict: combo not enabled); skipping gate-based execution")
                             continue
                 except Exception:
                     pass

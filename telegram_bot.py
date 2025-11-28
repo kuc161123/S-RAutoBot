@@ -1603,7 +1603,7 @@ class TGBot:
                                         open_exec.append((sym, p))
                                 except Exception:
                                     continue
-                            # Map open phantoms to this combo
+                            # Map open phantoms to this combo (exclude strict non-combo routes)
                             open_ph = []
                             for sym, lst in (active_ph.items() if isinstance(active_ph, dict) else []):
                                 for ph in (lst or []):
@@ -1612,6 +1612,10 @@ class TGBot:
                                         if ph_side != side_label:
                                             continue
                                         f = getattr(ph, 'features', {}) or {}
+                                        # Skip phantoms that were created via strict non-combo blocks
+                                        routing = str(f.get('routing', '') or '')
+                                        if routing.startswith('noncombo_'):
+                                            continue
                                         ck = _combo_key_from_feats(f)
                                         if ck == cid:
                                             open_ph.append((sym, ph))

@@ -1958,6 +1958,52 @@ class TradingBot:
         except Exception:
             return True, 'err'
 
+    async def _http_health_server(self):
+        """Minimal HTTP server for PaaS health checks (no trading logic).
+
+        Some hosting platforms expect the process to listen on $PORT; if not,
+        they may restart the container even when the bot itself is healthy.
+        This tiny server responds 200 OK on any request so the scalp engine
+        can keep running independently of HTTP traffic.
+        """
+        try:
+            import asyncio as _asyncio
+            port = int(os.getenv("PORT", "8080"))
+
+            async def _handle(reader, writer):
+                try:
+                    # Read and ignore request data
+                    try:
+                        await reader.read(1024)
+                    except Exception:
+                        pass
+                    # Simple HTTP 200 OK response
+                    resp = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK"
+                    try:
+                        writer.write(resp)
+                        await writer.drain()
+                    except Exception:
+                        pass
+                finally:
+                    try:
+                        writer.close()
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
+
+            server = await _asyncio.start_server(_handle, host="0.0.0.0", port=port)
+            try:
+                logger.info(f"🌐 HTTP health server listening on 0.0.0.0:{port}")
+            except Exception:
+                pass
+            async with server:
+                await server.serve_forever()
+        except Exception as e:
+            try:
+                logger.warning(f"Health server failed to start: {e}")
+            except Exception:
+                pass
+
     async def _bot_heartbeat(self):
         """Periodic liveness/health heartbeat for the main trading loop.
 
@@ -12116,6 +12162,15 @@ class TradingBot:
                 logger.info("Network health monitor started")
         except Exception:
             pass
+
+        # Start tiny HTTP health server to satisfy PaaS health checks (if any)
+        try:
+            self._create_task(self._http_health_server())
+        except Exception as _hs:
+            try:
+                logger.debug(f"Health server not started: {_hs}")
+            except Exception:
+                pass
 
         # Warm-start Scalp heartbeats (optional)
         try:

@@ -1864,6 +1864,11 @@ class TGBot:
 
         return "\n".join(lines), kb
 
+    # In scalp-only mode, reuse the Scalp dashboard for any legacy Trend dashboard calls
+    def _build_trend_dashboard(self):
+        """Trend/Range dashboard disabled; delegate to Scalp dashboard."""
+        return self._build_scalp_dashboard(more=False)
+
     def _build_dashboard(self):
         """Build dashboard text and inline keyboard without sending it.
         Returns (text:str, keyboard:InlineKeyboardMarkup|None).
@@ -4035,15 +4040,8 @@ class TGBot:
             if not self._cooldown_ok('dashboard'):
                 await self.safe_reply(update, "⏳ Please wait before using /dashboard again")
                 return
-            # Pick dashboard based on enabled strategies; show Scalp-only when others are disabled
-            cfg = self.shared.get('config', {}) or {}
-            trend_enabled = bool(((cfg.get('trend', {}) or {}).get('enabled', True)))
-            range_enabled = bool(((cfg.get('range', {}) or {}).get('enabled', True)))
-            if (not trend_enabled) and (not range_enabled):
-                text, kb = self._build_scalp_dashboard()
-            else:
-                # Default to Trend-centric dashboard when any other strategy is active
-                text, kb = self._build_trend_dashboard()
+            # Scalp-only bot: always show Scalp dashboard
+            text, kb = self._build_scalp_dashboard()
 
             # Send message with keyboard buttons via robust safe_reply
             await self.safe_reply(update, text, parse_mode='Markdown', reply_markup=kb)
@@ -4057,10 +4055,10 @@ class TGBot:
         try:
             query = update.callback_query
             data = query.data or ""
-            # Trend-only UI routes (take precedence)
+            # Dashboard refresh: always use Scalp dashboard in scalp-only bot
             if data in ("ui:dash:refresh", "ui:dash:refresh:trend"):
                 await query.answer("Refreshing…")
-                text, kb = self._build_trend_dashboard()
+                text, kb = self._build_scalp_dashboard()
                 try:
                     await query.edit_message_text(text, reply_markup=kb, parse_mode='Markdown')
                 except Exception:

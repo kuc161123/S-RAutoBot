@@ -8062,7 +8062,8 @@ class TradingBot:
                 pass
             # Run one-shot range detection
             try:
-                from strategy_range_fbo import detect_range_fbo_signal
+                # Stub for disabled Range strategy
+                detect_range_fbo_signal = (lambda *args, **kwargs: None)
                 sig = detect_range_fbo_signal(df, rcfg, symbol)
             except Exception:
                 sig = None
@@ -8164,7 +8165,8 @@ class TradingBot:
                 except Exception:
                     pt = None
                 if pt is None:
-                    from phantom_trade_tracker import get_phantom_tracker
+                    # Stub for disabled phantom tracker
+                    get_phantom_tracker = (lambda *args, **kwargs: None)
                     pt = get_phantom_tracker()
                 pt.record_signal(symbol, {'side': sig.side, 'entry': float(sig.entry), 'sl': float(sig.sl), 'tp': float(sig.tp)}, 0.0, False, feats, 'range_fbo')
             except Exception:
@@ -9150,7 +9152,8 @@ class TradingBot:
                                     strat_l = str(getattr(pos, 'strategy_name','')).lower()
                                     if strat_l.startswith('range'):
                                         try:
-                                            from ml_scorer_range import get_range_scorer
+                                            # Stub for disabled range scorer
+                                            get_range_scorer = (lambda *args, **kwargs: None)
                                             rml = get_range_scorer()
                                             try:
                                                 signal_data['was_executed'] = True
@@ -9836,7 +9839,7 @@ class TradingBot:
             # Reduce verbosity of non-trend modules explicitly
             try:
                 for name in (
-                    'enhanced_market_regime', 'strategy_mean_reversion', 'ml_scorer_mean_reversion',
+                    'enhanced_market_regime', # 'strategy_mean_reversion', 'ml_scorer_mean_reversion',
                     'enhanced_mr_scorer', 'mr_phantom_tracker', 'strategy_scalp', 'scalp_phantom_tracker',
                     'ml_scorer_scalp'
                 ):
@@ -9865,7 +9868,7 @@ class TradingBot:
         try:
             for name in (
                 'enhanced_mr_scorer', 'mr_phantom_tracker',
-                'strategy_regimes', 'strategy_mean_reversion', 'ml_signal_scorer_immediate', 'ml_scorer_mean_reversion',
+                'strategy_regimes', # 'strategy_mean_reversion', 'ml_signal_scorer_immediate', 'ml_scorer_mean_reversion',
                 'backtester', 'enhanced_backtester',
                 'regime_classifier', 'market_regime', 'enhanced_market_regime'
             ):
@@ -9940,10 +9943,10 @@ class TradingBot:
             pass
         
         # Import strategies for parallel system
-        from strategy_mean_reversion import detect_signal as detect_signal_mean_reversion
-        # Use pullback strategy detection with detailed logging
-        from strategy_pullback import detect_signal_pullback as detect_trend_signal
-        from strategy_pullback import reset_symbol_state as _reset_symbol_state
+        # Stubs for disabled strategies (Trend, MR)
+        detect_signal_mean_reversion = (lambda *args, **kwargs: None)
+        detect_trend_signal = (lambda *args, **kwargs: None)
+        _reset_symbol_state = (lambda *args, **kwargs: None)
         # Cache Trend detect function for 3m micro-step usage
         try:
             self._detect_trend_signal = detect_trend_signal
@@ -10043,7 +10046,8 @@ class TradingBot:
         
         # Always initialize Trend Phantom Tracker so Telegram dashboard has stats
         try:
-            from phantom_trade_tracker import get_phantom_tracker as _get_pt
+            # Stub for disabled phantom tracker
+            _get_pt = (lambda *args, **kwargs: None)
             phantom_tracker = _get_pt()
             try:
                 phantom_tracker.set_notifier(self._notify_trend_phantom)
@@ -10195,7 +10199,8 @@ class TradingBot:
                     # Initialize original ML system (best-effort, don't fail phantom wiring if unavailable)
                     ml_scorer = None
                     try:
-                        from ml_signal_scorer_immediate import get_immediate_scorer as _get_immediate_scorer
+                        # Stub for disabled immediate scorer
+                        _get_immediate_scorer = (lambda *args, **kwargs: None)
                         try:
                             ml_scorer = _get_immediate_scorer()
                         except Exception as _ml_e:
@@ -10388,7 +10393,9 @@ class TradingBot:
 
         # Wire Trend pullback state persistence + hydrate from Redis
         try:
-            from strategy_pullback import set_trend_state_store, hydrate_trend_states
+            # Stub for disabled Trend state store
+            set_trend_state_store = (lambda *args, **kwargs: None)
+            hydrate_trend_states = (lambda *args, **kwargs: None)
             set_trend_state_store(self._redis)
             restored = hydrate_trend_states(self.frames, timeframe_min=int(tf), max_age_bars=int((cfg.get('trend',{}) or {}).get('state_max_age_bars', 48)))
             if restored:
@@ -10653,7 +10660,12 @@ class TradingBot:
 
                 # Wire Trend event notifications to Telegram
                 try:
-                    from strategy_pullback import set_trend_event_notifier, set_trend_microframe_provider, set_trend_entry_executor, set_trend_phantom_recorder, set_trend_invalidation_hook
+                    # Stubs for disabled Trend components
+                    set_trend_event_notifier = (lambda *args, **kwargs: None)
+                    set_trend_microframe_provider = (lambda *args, **kwargs: None)
+                    set_trend_entry_executor = (lambda *args, **kwargs: None)
+                    set_trend_phantom_recorder = (lambda *args, **kwargs: None)
+                    set_trend_invalidation_hook = (lambda *args, **kwargs: None)
                     def _trend_notifier(symbol: str, text: str):
                         try:
                             # Fire-and-forget send to Telegram
@@ -10823,7 +10835,7 @@ class TradingBot:
                                     pass
                                 # Persist HTF gate decision into trend state
                                 try:
-                                    from strategy_pullback import update_htf_gate
+                                    update_htf_gate = (lambda *args, **kwargs: None)
                                     m = {}
                                     try:
                                         m = self._compute_symbol_htf_exec_metrics(symbol, df_main)
@@ -10868,7 +10880,7 @@ class TradingBot:
                                     pass
                                 # Reset state to NEUTRAL since not executed
                                 try:
-                                    from strategy_pullback import revert_to_neutral
+                                    revert_to_neutral = (lambda *args, **kwargs: None)
                                     revert_to_neutral(symbol)
                                 except Exception:
                                     pass
@@ -10918,7 +10930,7 @@ class TradingBot:
                                         pass
                                     # Revert state & notify
                                     try:
-                                        from strategy_pullback import revert_to_neutral
+                                        revert_to_neutral = (lambda *args, **kwargs: None)
                                         revert_to_neutral(symbol)
                                     except Exception:
                                         pass
@@ -11143,7 +11155,7 @@ class TradingBot:
                                     pass
                                 # Mark executed in Trend states snapshot
                                 try:
-                                    from strategy_pullback import mark_executed
+                                    mark_executed = (lambda *args, **kwargs: None)
                                     mark_executed(symbol)
                                 except Exception:
                                     pass
@@ -11668,7 +11680,7 @@ class TradingBot:
         try:
             if bool(((cfg.get('range', {}) or {}).get('enabled', False))):
                 async def _range_fbo_scanner():
-                    from strategy_range_fbo import detect_range_fbo_signal
+                    detect_range_fbo_signal = (lambda *args, **kwargs: None)
                     settings = cfg.get('range', {}) or {}
                     # Heartbeat control (lightweight "no FBO" per 15m bar)
                     log_cfg = (settings.get('logging') or {})
@@ -13283,7 +13295,7 @@ class TradingBot:
                                 # Mark Trend executed in state snapshot
                                 try:
                                     if strategy_name in ('trend_pullback','trend_breakout'):
-                                        from strategy_pullback import mark_executed
+                                        mark_executed = (lambda *args, **kwargs: None)
                                         mark_executed(sym)
                                 except Exception:
                                     pass
@@ -13991,7 +14003,7 @@ class TradingBot:
                                         ok_gate, thr_adj, mode = True, thr_tr, 'error'
                                     # Persist HTF gate decision into trend state
                                     try:
-                                        from strategy_pullback import update_htf_gate
+                                        update_htf_gate = (lambda *args, **kwargs: None)
                                         meta_gate = {'mode': mode}
                                         if isinstance(_m, dict):
                                             for k in ('ts1h','ts4h','ema_dir_1h','ema_dir_4h','adx_1h','struct_dir_1h','struct_dir_4h'):
@@ -14023,7 +14035,7 @@ class TradingBot:
                                             pass
                                         # Reset state to NEUTRAL since not executed
                                         try:
-                                            from strategy_pullback import revert_to_neutral
+                                            revert_to_neutral = (lambda *args, **kwargs: None)
                                             revert_to_neutral(sym)
                                         except Exception:
                                             pass
@@ -15192,7 +15204,7 @@ class TradingBot:
                                         pass
                                     # Reset state to NEUTRAL since not executed
                                     try:
-                                        from strategy_pullback import revert_to_neutral
+                                        revert_to_neutral = (lambda *args, **kwargs: None)
                                         revert_to_neutral(sym)
                                     except Exception:
                                         pass
@@ -16037,7 +16049,9 @@ class TradingBot:
 
                             else:
                                 # Use trend features (fallback system)
-                                from strategy_pullback_ml_learning import calculate_ml_features, BreakoutState  # legacy import; not used if enhanced
+                                # Stub for disabled Trend ML features
+                                calculate_ml_features = (lambda *args, **kwargs: {})
+                                BreakoutState = None
 
                                 logger.info(f"🧠 [{sym}] TREND ML ANALYSIS:")
 
@@ -16318,7 +16332,7 @@ class TradingBot:
                             except Exception:
                                 pass
                             try:
-                                from strategy_pullback import revert_to_neutral
+                                revert_to_neutral = (lambda *args, **kwargs: None)
                                 revert_to_neutral(sym)
                             except Exception:
                                 pass

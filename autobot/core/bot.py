@@ -10480,6 +10480,12 @@ class TradingBot:
 
         # Setup shared data for Telegram - all ML components are now in scope
         # If Telegram was started early, reuse and update the existing shared dict
+        # In scalp-only mode we no longer maintain a live Trend Settings object;
+        # expose a simple scalar risk_reward instead for UI consumption.
+        try:
+            scalp_rr = float((cfg.get('scalp', {}) or {}).get('rr', cfg.get('trade', {}).get('rr', 2.5)))
+        except Exception:
+            scalp_rr = 2.5
         shared_updates = {
             "risk": risk,
             "book": book,
@@ -10495,9 +10501,9 @@ class TradingBot:
             "last_balance": None,
             "timeframe": tf,
             "symbols_config": symbols,
-            "risk_reward": settings.rr,
-            # Expose live Trend Settings object for runtime adjustments (RR, timeouts)
-            "trend_settings": settings,
+            "risk_reward": scalp_rr,
+            # Trend settings disabled in scalp-only bot
+            "trend_settings": None,
             # Enhanced ML system components
             "enhanced_mr_scorer": enhanced_mr_scorer,
             "mr_phantom_tracker": mr_phantom_tracker,

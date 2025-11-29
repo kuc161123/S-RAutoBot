@@ -897,7 +897,9 @@ class TradingBot:
         In strict combos-only mode (combos_only + require_combo_enabled + fallback_until_ready=='off'),
         when a combo is enabled this function will execute instead of recording a phantom.
         """
-        # Manual A-tier diagnostics: count every phantom path as checked + log match/non-match
+        # Manual A-tier diagnostics + optional execution: count every phantom path as checked,
+        # log match/non-match, and if the fixed A-tier pattern matches, execute immediately
+        # (bypassing combo gate) and record an executed phantom for learning.
         try:
             cfg_m = getattr(self, 'config', {}) or {}
             mce = (((cfg_m.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
@@ -921,7 +923,82 @@ class TradingBot:
                         )
                     except Exception:
                         pass
-                    if not _match:
+                    if _match:
+                        # Manual A-tier pattern matched on a phantom path: treat as an immediate
+                        # execution opportunity, bypassing combo gate. Mirror the LIVE path
+                        # semantics: block if a position already exists; otherwise execute and
+                        # record an executed phantom for learning.
+                        try:
+                            # Guard: do not open a new position if one already exists
+                            try:
+                                book = getattr(self, 'book', None)
+                            except Exception:
+                                book = None
+                            if book is not None and getattr(book, 'positions', None) is not None and sym in book.positions:
+                                try:
+                                    logger.info(f"[{sym}] 🛑 Manual combo exec (PHANTOM) blocked: reason=position_exists")
+                                except Exception:
+                                    pass
+                                try:
+                                    self._manual_combo_stats['blocked_pos'] = self._manual_combo_stats.get('blocked_pos', 0) + 1
+                                except Exception:
+                                    pass
+                            else:
+                                # Execute with manual bypass; ML score is not used for this fixed pattern
+                                try:
+                                    import uuid as _uuid
+                                    exec_id_manual = _uuid.uuid4().hex[:8]
+                                except Exception:
+                                    exec_id_manual = 'manual_ph'
+                                did_manual = False
+                                try:
+                                    did_manual = await self._execute_scalp_trade(
+                                        sym,
+                                        sc_sig,
+                                        ml_score=0.0,
+                                        exec_id=exec_id_manual,
+                                        bypass_combo_gate=True
+                                    )
+                                except TypeError:
+                                    did_manual = await self._execute_scalp_trade(
+                                        sym,
+                                        sc_sig,
+                                        exec_id=exec_id_manual
+                                    )
+                                except Exception:
+                                    did_manual = False
+                                if did_manual:
+                                    # Increment manual exec counter and record an executed phantom
+                                    try:
+                                        self._manual_combo_stats['exec'] = self._manual_combo_stats.get('exec', 0) + 1
+                                    except Exception:
+                                        pass
+                                    try:
+                                        from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt_manual
+                                        scpt_m = _get_scpt_manual()
+                                        scpt_m.record_scalp_signal(
+                                            sym,
+                                            {
+                                                'side': getattr(sc_sig, 'side', None),
+                                                'entry': getattr(sc_sig, 'entry', None),
+                                                'sl': getattr(sc_sig, 'sl', None),
+                                                'tp': getattr(sc_sig, 'tp', None)
+                                            },
+                                            float(ml_score or 0.0),
+                                            True,
+                                            feats or {}
+                                        )
+                                    except Exception:
+                                        pass
+                                    # Short-circuit: execution already handled, no further gating
+                                    return None
+                                else:
+                                    # Execution attempt failed; track as an error and fall back
+                                    try:
+                                        self._manual_combo_stats['errors'] = self._manual_combo_stats.get('errors', 0) + 1
+                                    except Exception:
+                                        pass
+                    else:
                         self._manual_combo_stats['nonmatch'] = self._manual_combo_stats.get('nonmatch', 0) + 1
                 except Exception:
                     pass

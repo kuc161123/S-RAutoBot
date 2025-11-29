@@ -2548,7 +2548,7 @@ class TradingBot:
                 logger.warning(f"[{sym}|id={exec_id}] FLIP re-entry error: {e}")
             return False
 
-    async def _execute_scalp_trade(self, sym: str, sig_obj, ml_score: float = 0.0, exec_id: str = None, risk_percent_override: float | None = None) -> bool:
+    async def _execute_scalp_trade(self, sym: str, sig_obj, ml_score: float = 0.0, exec_id: str = None, risk_percent_override: float | None = None, bypass_combo_gate: bool = False) -> bool:
         """Execute a Scalp trade immediately. Returns True if executed.
 
         Bypasses routing/regime/micro gates. Still subject to hard execution guards
@@ -2565,14 +2565,23 @@ class TradingBot:
                 lock = _asyncio.Lock()
                 self._exec_locks[sym] = lock
             async with lock:
-                # Global adaptive/MTF gating for any scalp execute path
+                # Global adaptive/MTF gating for any scalp execute path (unless bypassed by manual combo exec)
                 try:
                     feats_for_gate = {}
                     try:
                         feats_for_gate = dict((getattr(self, '_last_signal_features', {}) or {}).get(sym, {}) or {})
                     except Exception:
                         feats_for_gate = {}
-                    allowed0, gate_reason0, gate_ctx0 = self._scalp_combo_allowed(str(getattr(sig_obj,'side','')), feats_for_gate)
+                    if bypass_combo_gate:
+                        # Skip combo manager gating; still derive combo_id for analytics
+                        try:
+                            cid = self._scalp_combo_key_from_features(feats_for_gate or {})
+                        except Exception:
+                            cid = None
+                        gate_ctx0 = {'combo_id': cid} if cid else {}
+                        allowed0, gate_reason0 = True, 'manual_bypass'
+                    else:
+                        allowed0, gate_reason0, gate_ctx0 = self._scalp_combo_allowed(str(getattr(sig_obj,'side','')), feats_for_gate)
                 except Exception:
                     allowed0, gate_reason0, gate_ctx0 = (False, 'insufficient_features', {})
                 # Capture routing context for notifications
@@ -2616,7 +2625,7 @@ class TradingBot:
                 except Exception:
                     pass
 
-                if not allowed0:
+                if not allowed0 and not bypass_combo_gate:
                     # Record phantom and notify blocked (minimal path)
                     try:
                         from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
@@ -5733,6 +5742,45 @@ class TradingBot:
                                     pass
                                 self._scalp_cooldown[sym] = bar_ts
                                 continue
+                    # Manual A-tier combo execution (fixed pattern, bypassing combo gate)
+                    try:
+                        mce_cfg = (((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
+                        if bool(mce_cfg.get('enabled', False)) and self._scalp_manual_exec_allowed(sc_sig.side, sc_feats):
+                            if sym in self.book.positions:
+                                logger.info(f"[{sym}] 🛑 Manual combo exec blocked: reason=position_exists")
+                            else:
+                                try:
+                                    import uuid as _uuid
+                                    exec_id_manual = _uuid.uuid4().hex[:8]
+                                except Exception:
+                                    exec_id_manual = 'manual'
+                                try:
+                                    did_manual = await self._execute_scalp_trade(
+                                        sym,
+                                        sc_sig,
+                                        ml_score=float(ml_s or 0.0),
+                                        exec_id=exec_id_manual,
+                                        bypass_combo_gate=True
+                                    )
+                                except TypeError:
+                                    did_manual = await self._execute_scalp_trade(
+                                        sym,
+                                        sc_sig,
+                                        ml_score=float(ml_s or 0.0),
+                                        exec_id=exec_id_manual
+                                    )
+                                if did_manual:
+                                    logger.info(
+                                        f"[{sym}|id={exec_id_manual}] ✅ MANUAL_COMBO_EXEC: "
+                                        f"RSI:40-60 MACD:bull VWAP:1.2+ Fib:50-61 noMTF"
+                                    )
+                                    _scalp_decision_logged = True
+                                    self._scalp_cooldown[sym] = bar_ts
+                                    blist.append(now_ts)
+                                    self._scalp_budget[sym] = blist
+                                    continue
+                    except Exception:
+                        pass
                     # Scalp Qscore execution gate
                     exec_enabled = True
                     exec_thr = 60.0
@@ -7199,6 +7247,52 @@ class TradingBot:
             return delta.total_seconds() > stale_minutes * 60
         except Exception:
             return True
+
+    def _scalp_manual_exec_allowed(self, side: str, feats: dict) -> bool:
+        """Manual A-tier combo: execute when this fixed pattern matches.
+
+        Current pattern (longs only):
+        RSI:40-60 MACD:bull VWAP:1.2+ Fib:50-61 noMTF
+        """
+        try:
+            cfg = getattr(self, 'config', {}) or {}
+            mce = (((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
+            if not bool(mce.get('enabled', False)):
+                return False
+            s = str(side).lower()
+            if bool(mce.get('longs_only', True)) and s != 'long':
+                return False
+            # Pull indicators
+            try:
+                rsi = float(feats.get('rsi_14', 0.0) or 0.0)
+            except Exception:
+                return False
+            try:
+                mh = float(feats.get('macd_hist', 0.0) or 0.0)
+            except Exception:
+                return False
+            try:
+                vwap = float(feats.get('vwap_dist_atr', 0.0) or 0.0)
+            except Exception:
+                return False
+            fibz = feats.get('fib_zone')
+            if not isinstance(fibz, str) or not fibz:
+                try:
+                    frel = float(feats.get('fib_ret'))
+                    fr = frel*100.0 if frel <= 1.0 else frel
+                    fibz = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
+                except Exception:
+                    return False
+            mtf = bool(feats.get('mtf_agree_15', False))
+            # Apply fixed pattern
+            rsi_ok = (40.0 <= rsi < 60.0)
+            macd_ok = (mh > 0.0)
+            vwap_ok = (vwap >= 1.2)
+            fib_ok = (fibz == '50-61')
+            mtf_ok = (mtf is False)
+            return bool(rsi_ok and macd_ok and vwap_ok and fib_ok and mtf_ok)
+        except Exception:
+            return False
 
     async def _maybe_run_scalp_fallback(self, sym: str, df: pd.DataFrame, regime_analysis, cluster_id: Optional[int]):
         """Run Scalp detection on main/3m frames when the secondary stream is unavailable or stale.

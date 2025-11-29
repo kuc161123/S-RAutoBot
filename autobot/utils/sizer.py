@@ -1,4 +1,5 @@
-from position_mgr import RiskConfig, round_step
+from __future__ import annotations
+from autobot.utils.position import RiskConfig, round_step
 import logging
 
 logger = logging.getLogger(__name__)

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Scalping Strategy (Phase 0 - Phantom-only pilot)
 

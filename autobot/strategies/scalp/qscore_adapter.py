@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import List, Tuple, Dict
 import json
 import logging
@@ -42,7 +43,7 @@ class ScalpQAdapter(QScoreAdapterBase):
         return out
 
 
-_INSTANCE: ScalpQAdapter | None = None
+_INSTANCE: Optional['ScalpQAdapter'] = None
 
 
 def get_scalp_qadapter() -> ScalpQAdapter:

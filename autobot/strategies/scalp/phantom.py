@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass, asdict
 import uuid
 import yaml
-from position_mgr import round_step
+from autobot.utils.position import round_step
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Callable
 
@@ -732,7 +732,7 @@ class ScalpPhantomTracker:
         # Feed outcome to Scalp ML scorer for learning — skip timeouts/cancels
         try:
             if str(getattr(ph, 'exit_reason', '')) != 'timeout' and outcome in ('win','loss'):
-                from ml_scorer_scalp import get_scalp_scorer
+                from autobot.strategies.scalp.scorer import get_scalp_scorer
                 scorer = get_scalp_scorer()
                 signal = {
                     'features': ph.features or {},

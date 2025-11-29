@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Adaptive Combo Manager
 
@@ -128,7 +129,7 @@ class AdaptiveComboManager:
         scpt = self.phantom_tracker
         if not scpt:
             try:
-                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                 scpt = get_scalp_phantom_tracker()
             except Exception as e:
                 logger.debug(f"Could not get scalp phantom tracker: {e}")

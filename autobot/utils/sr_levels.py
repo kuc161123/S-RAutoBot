@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Multi-Timeframe Support/Resistance Detection
 Finds major S/R levels from higher timeframes for better trend/MR entries

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Enhanced Market Regime Detection
 Sophisticated classification for parallel strategy routing
@@ -162,16 +163,7 @@ _CLASSIFIER = None
 
 
 def _get_classifier():
-    global _CLASSIFIER
-    if _CLASSIFIER is None:
-        try:
-            from regime_classifier import get_regime_classifier
-
-            _CLASSIFIER = get_regime_classifier()
-        except Exception as exc:
-            logger.debug(f"Regime classifier unavailable: {exc}")
-            _CLASSIFIER = False
-    return _CLASSIFIER if _CLASSIFIER not in (None, False) else None
+    return None
 
 def _atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
     """Calculate Average True Range"""

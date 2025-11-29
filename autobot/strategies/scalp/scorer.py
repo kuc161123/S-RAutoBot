@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 ML Scorer for Scalping Strategy (Phase 0)
 
@@ -6,7 +7,7 @@ Starts phantom-only; can be promoted to execution later.
 """
 import logging, os, json, pickle, base64
 from datetime import datetime
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
@@ -42,7 +43,7 @@ class ScalpMLScorer:
         self.min_score = self.INITIAL_THRESHOLD
         self.models = {}
         self.scaler = StandardScaler()
-        self.calibrator: IsotonicRegression | None = None
+        self.calibrator: Optional[IsotonicRegression] = None
         self.ev_buckets: dict = {}
         self.is_ml_ready = False
         self.completed_trades = 0

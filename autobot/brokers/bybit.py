@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Enhanced Bybit v5 REST wrapper with proper error handling
 import time, hmac, hashlib, requests, json, os
 from dataclasses import dataclass
@@ -11,7 +12,7 @@ class BybitConfig:
     base_url: str
     api_key: str
     api_secret: str
-    alt_base_url: str | None = None
+    alt_base_url: Optional[str] = None
     use_alt_on_fail: bool = False
 
 class Bybit:

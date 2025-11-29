@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Multi-WebSocket Handler for Bybit
 Handles >200 symbol subscriptions by splitting across multiple connections
@@ -9,7 +10,7 @@ import websockets
 import time
 import socket
 from urllib.parse import urlparse
-from typing import List, AsyncGenerator, Tuple
+from typing import List, AsyncGenerator, Tuple, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class MultiWebSocketHandler:
     
     MAX_SUBS_PER_CONNECTION = 190  # Keep under 200 limit with buffer
     
-    def __init__(self, ws_url: str, running_flag, alt_ws_url: str | None = None, use_alt_on_fail: bool = False):
+    def __init__(self, ws_url: str, running_flag, alt_ws_url: Optional[str] = None, use_alt_on_fail: bool = False):
         self.ws_url = ws_url
         self._ws_alt_url = alt_ws_url
         self._use_alt_on_fail = bool(use_alt_on_fail and bool(alt_ws_url))

@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 PostgreSQL candle storage for Railway deployment
 Provides persistent storage across all deployments

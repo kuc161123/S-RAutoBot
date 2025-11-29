@@ -1,3 +1,4 @@
+from __future__ import annotations
 from datetime import datetime, timezone
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -20,7 +21,7 @@ def get_trend_scorer():
 def get_mean_reversion_scorer():
     return None
 
-from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
+from autobot.utils.regime import get_enhanced_market_regime, get_regime_summary
 
 logger = logging.getLogger(__name__)
 
@@ -284,7 +285,7 @@ class TGBot:
             # Prefer Redis from phantom tracker if available
             r = None
             try:
-                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                 scpt = get_scalp_phantom_tracker()
                 r = getattr(scpt, 'redis_client', None)
             except Exception:
@@ -498,7 +499,7 @@ class TGBot:
             # Scalp via ScalpPhantomTracker
             sc_w = sc_l = 0
             try:
-                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                 scpt = get_scalp_phantom_tracker()
                 for arr in (getattr(scpt, 'completed', {}) or {}).values():
                     for p in arr:
@@ -652,7 +653,7 @@ class TGBot:
 
         # Scalp Phantom aggregate
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             total = wins = losses = timeouts = 0
             open_cnt = 0
@@ -683,7 +684,7 @@ class TGBot:
             lines.append(f"• Tracked: {total} | Open: {open_cnt} | WR: {wr:.1f}% (W/L {wins}/{losses}) | Timeouts: {timeouts}")
             # Learned threshold snapshot (Scalp)
             try:
-                from ml_qscore_scalp_adapter import get_scalp_qadapter
+                from autobot.strategies.scalp.qscore_adapter import get_scalp_qadapter
                 thr = get_scalp_qadapter().get_threshold({'session': self._session_label(), 'volatility_regime': 'global'}, default=60.0)
                 lines.append(f"• Qthr (learned): {thr:.1f}")
             except Exception:
@@ -1141,7 +1142,7 @@ class TGBot:
                     # Prefer phantom tracker redis if available
                     if r is None:
                         try:
-                            from scalp_phantom_tracker import get_scalp_phantom_tracker
+                            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                             r = getattr(get_scalp_phantom_tracker(), 'redis_client', None)
                         except Exception:
                             r = None
@@ -1184,7 +1185,7 @@ class TGBot:
         except Exception as _e_ar:
             logger.debug(f"Adaptive risk block skipped: {_e_ar}")
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             st = scpt.get_scalp_phantom_stats()
             lines.append("")
@@ -1557,7 +1558,7 @@ class TGBot:
                     pos_meta = {}
                 # Snapshot of active scalp phantoms
                 try:
-                    from scalp_phantom_tracker import get_scalp_phantom_tracker
+                    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                     scpt = get_scalp_phantom_tracker()
                     active_ph = getattr(scpt, 'active', {}) or {}
                 except Exception:
@@ -1841,7 +1842,7 @@ class TGBot:
             pos_count = 0
         phantom_open = 0
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             phantom_open = sum(1 for lst in (getattr(scpt, 'active', {}) or {}).values() for p in (lst or []) if not getattr(p, 'exit_time', None))
         except Exception:
@@ -2077,7 +2078,7 @@ class TGBot:
 
         # Scalp ML
         try:
-            from ml_scorer_scalp import get_scalp_scorer
+            from autobot.strategies.scalp.scorer import get_scalp_scorer
             sc_scorer = get_scalp_scorer()
             lines.append("")
             lines.append("🩳 *Scalp ML*")
@@ -2112,7 +2113,7 @@ class TGBot:
 
         # Scalp Phantom
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             st = scpt.get_scalp_phantom_stats()
             lines.append("🩳 *Scalp Phantom*")
@@ -2134,7 +2135,7 @@ class TGBot:
             # Recent WR over last 50 scalp phantoms
             recent_wr = cur_wr
             try:
-                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                 scpt2 = get_scalp_phantom_tracker()
                 recents = []
                 for trades in getattr(scpt2, 'completed', {}).values():
@@ -2339,7 +2340,7 @@ class TGBot:
             sc_open_trades = sc_open_syms = 0
             sc_timeouts = 0
             try:
-                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                 scpt = get_scalp_phantom_tracker()
                 try:
                     for trades in scpt.completed.values():
@@ -3070,7 +3071,7 @@ class TGBot:
             except Exception:
                 pass
             try:
-                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                 scpt = get_scalp_phantom_tracker()
                 sc_stats = scpt.get_scalp_phantom_stats()
             except Exception:
@@ -3116,7 +3117,7 @@ class TGBot:
                 except Exception:
                     pass
                 try:
-                    from scalp_phantom_tracker import get_scalp_phantom_tracker
+                    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                     scpt = get_scalp_phantom_tracker()
                     sc_acc = sum(1 for trades in scpt.completed.values() for p in trades if p.signal_time.strftime('%Y%m%d') == day and not getattr(p,'was_executed', False))
                     sc_acc += sum(1 for p in scpt.active.values() if p.signal_time.strftime('%Y%m%d') == day)
@@ -5780,7 +5781,7 @@ class TGBot:
             except Exception:
                 pass
             try:
-                from ml_scorer_scalp import get_scalp_scorer
+                from autobot.strategies.scalp.scorer import get_scalp_scorer
                 scalp_scorer = get_scalp_scorer()
             except Exception:
                 pass
@@ -6406,7 +6407,7 @@ class TGBot:
         await self.safe_reply(update, "HTF S/R module disabled.")
         return
         try:
-            from multi_timeframe_sr import mtf_sr
+            from autobot.utils.sr_levels import mtf_sr
             
             msg = "📊 *HTF Support/Resistance Status*\n"
             msg += "━" * 30 + "\n\n"
@@ -6494,7 +6495,7 @@ class TGBot:
             msg = await update.message.reply_text("🔄 Updating HTF S/R levels for all symbols...")
             
             # Update HTF levels
-            from multi_timeframe_sr import initialize_all_sr_levels
+            from autobot.utils.sr_levels import initialize_all_sr_levels
             results = initialize_all_sr_levels(frames)
             
             # Update message with results
@@ -6881,7 +6882,7 @@ class TGBot:
 
             # Check if enhanced regime detection is available
             try:
-                from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
+                from autobot.utils.regime import get_enhanced_market_regime, get_regime_summary
             except ImportError:
                 msg += "❌ *Enhanced regime detection not available*\n"
                 await self.safe_reply(update, msg)
@@ -7080,7 +7081,7 @@ class TGBot:
 
             # Market Regime Detection
             try:
-                from enhanced_market_regime import get_enhanced_market_regime
+                from autobot.utils.regime import get_enhanced_market_regime
                 msg += "• ✅ Enhanced Regime Detection\n"
             except:
                 msg += "• ❌ Enhanced Regime Detection (Error)\n"
@@ -7167,10 +7168,10 @@ class TGBot:
             # Fallbacks when Redis is unavailable or counters are zero
             # Derive usage and blocked from in-memory trackers
             try:
-                from phantom_trade_tracker import get_phantom_tracker
-                from mr_phantom_tracker import get_mr_phantom_tracker
-                from scalp_phantom_tracker import get_scalp_phantom_tracker
-                from symbol_clustering import load_symbol_clusters
+                get_phantom_tracker = None
+                get_mr_phantom_tracker = None
+                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
+                from autobot.utils.symbols import load_symbol_clusters
                 clusters_map = load_symbol_clusters()
             except Exception:
                 get_phantom_tracker = get_mr_phantom_tracker = get_scalp_phantom_tracker = None  # type: ignore
@@ -7385,7 +7386,7 @@ class TGBot:
     async def scalp_qa(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Quick summary of scalp phantom stats using the dedicated scalp tracker."""
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             st = scpt.get_scalp_phantom_stats()
             total = st.get('total', 0)
@@ -7395,7 +7396,7 @@ class TGBot:
             # Scalp ML stats
             ml_ready = False; thr = 75; samples = 0; nxt = None; trainable = None; total_rec = None
             try:
-                from ml_scorer_scalp import get_scalp_scorer
+                from autobot.strategies.scalp.scorer import get_scalp_scorer
                 s = get_scalp_scorer()
                 ml_ready = bool(getattr(s, 'is_ml_ready', False))
                 thr = getattr(s, 'min_score', 75)
@@ -7450,7 +7451,7 @@ class TGBot:
         Computes WR and EV (mean realized R) for phantoms with qscore ≥ thresholds over recent windows.
         """
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker, ScalpPhantomTrade
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker, ScalpPhantomTrade
             scpt = get_scalp_phantom_tracker()
             # Gather completed phantom trades with qscore and outcome (exclude timeouts)
             trades: list = []
@@ -7531,7 +7532,7 @@ class TGBot:
     async def scalp_gate_analysis(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Analyze Scalp phantom performance by hard gate pass/fail combinations."""
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
 
             # Parse days argument
@@ -7611,7 +7612,7 @@ class TGBot:
     async def scalp_comprehensive_analysis(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Comprehensive Scalp analysis: all variables, combinations, recommendations."""
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
 
             # Parse month argument
@@ -7855,7 +7856,7 @@ class TGBot:
     async def scalp_patterns(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show Scalp ML patterns: feature importances, time patterns, and condition buckets."""
         try:
-            from ml_scorer_scalp import get_scalp_scorer
+            from autobot.strategies.scalp.scorer import get_scalp_scorer
             s = get_scalp_scorer()
             pat = s.get_patterns() if s else {}
             lines = ["🤖 *Scalp ML Patterns*", ""]
@@ -7919,7 +7920,7 @@ class TGBot:
         """Show 30d Qscore bucket win rates for Scalp phantoms (decisive outcomes only)."""
         try:
             from datetime import datetime, timedelta
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             cutoff = datetime.utcnow() - timedelta(days=30)
             # Collect decisive phantoms with qscore
@@ -7973,7 +7974,7 @@ class TGBot:
         """Show 30d ML-score bucket win rates for Scalp phantoms (decisive outcomes only)."""
         try:
             from datetime import datetime, timedelta
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             cutoff = datetime.utcnow() - timedelta(days=30)
             # Collect decisive phantoms with ml score
@@ -8026,7 +8027,7 @@ class TGBot:
         """Show 30d WR by session and day of week for Scalp phantoms (decisive only)."""
         try:
             from datetime import datetime, timedelta
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             cutoff = datetime.utcnow() - timedelta(days=30)
             # Aggregate
@@ -8125,7 +8126,7 @@ class TGBot:
         """
         try:
             from datetime import datetime, timedelta
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             cutoff = datetime.utcnow() - timedelta(days=30)
 
@@ -8425,7 +8426,7 @@ class TGBot:
         try:
             from datetime import datetime, timedelta
             from math import sqrt
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
 
             def wilson_ci(w:int, n:int, z:float=1.96):
                 if n <= 0:
@@ -8694,7 +8695,7 @@ class TGBot:
         """
         try:
             from datetime import datetime, timedelta
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             cutoff = datetime.utcnow() - timedelta(days=30)
 
@@ -8891,7 +8892,7 @@ class TGBot:
         try:
             from datetime import datetime, timedelta
             from math import sqrt
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
 
             def wilson_ci(w:int, n:int, z:float=1.96):
                 if n <= 0:
@@ -9025,7 +9026,7 @@ class TGBot:
         """
         try:
             from datetime import datetime, timedelta
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             cutoff = datetime.utcnow() - timedelta(days=30)
 
@@ -9242,7 +9243,7 @@ class TGBot:
         try:
             from datetime import datetime, timedelta
             from math import sqrt
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
 
             def wilson_ci(w:int, n:int, z:float=1.96):
                 if n <= 0:
@@ -9484,7 +9485,7 @@ class TGBot:
         """
         try:
             from datetime import datetime, timedelta
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
 
             scpt = get_scalp_phantom_tracker()
             cutoff = datetime.utcnow() - timedelta(days=30)
@@ -9588,7 +9589,7 @@ class TGBot:
         """List all currently open Scalp phantoms (non-executed, no exit)."""
         try:
             from datetime import datetime
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
             open_list = []
             for sym, lst in (getattr(scpt, 'active', {}) or {}).items():
@@ -9675,7 +9676,7 @@ class TGBot:
         Outputs top combos and a YAML snippet for pro_exec.combos.
         """
         try:
-            from ml_scorer_scalp import get_scalp_scorer
+            from autobot.strategies.scalp.scorer import get_scalp_scorer
             scorer = get_scalp_scorer()
             res = scorer.recommend_strategies(days=30, min_n=50, top_n=12)
             if res.get('error'):
@@ -9709,7 +9710,7 @@ class TGBot:
     async def scalp_ultimate(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Ultimate analysis: All 50+ variables, phantoms + executed trades"""
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
 
             # Kickoff without Markdown to avoid parse noise in logs
@@ -9817,7 +9818,7 @@ class TGBot:
         /scalpcombos     -> show current status
         """
         try:
-            state: str | None = None
+            state: Optional[str] = None
             if ctx.args:
                 state = str(ctx.args[0]).strip().lower()
 
@@ -9888,7 +9889,7 @@ class TGBot:
         /scalpcombosmute on|off  (no args -> show status)
         """
         try:
-            state: str | None = None
+            state: Optional[str] = None
             if ctx.args:
                 state = str(ctx.args[0]).strip().lower()
 
@@ -10630,7 +10631,7 @@ class TGBot:
         """
         try:
             from datetime import datetime, timedelta
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
 
             cutoff = datetime.utcnow() - timedelta(days=days)
@@ -10874,7 +10875,7 @@ class TGBot:
     async def scalp_recommendations(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Generate actionable recommendations with config snippet."""
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
 
             # Get analysis and recommendations
@@ -10936,7 +10937,7 @@ class TGBot:
     async def scalp_monthly_trends(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Analyze Scalp variable performance trends across months."""
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
             scpt = get_scalp_phantom_tracker()
 
             # Parse months argument (optional)
@@ -11073,7 +11074,7 @@ class TGBot:
                 pass
             # Scalp from ScalpPhantomTracker
             try:
-                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                 scpt = get_scalp_phantom_tracker()
                 for arr in (getattr(scpt, 'completed', {}) or {}).values():
                     for p in arr:
@@ -11154,7 +11155,7 @@ class TGBot:
                 pass
             # Scalp from ScalpPhantomTracker
             try:
-                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                 scpt = get_scalp_phantom_tracker()
                 for arr in (getattr(scpt, 'completed', {}) or {}).values():
                     for p in arr:
@@ -11194,7 +11195,7 @@ class TGBot:
 
             # Stats from dedicated scalp tracker
             try:
-                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                 scpt = get_scalp_phantom_tracker()
                 st = scpt.get_scalp_phantom_stats()
             except Exception:
@@ -11203,7 +11204,7 @@ class TGBot:
             # Scalp scorer readiness
             ml_ready = False
             try:
-                from ml_scorer_scalp import get_scalp_scorer
+                from autobot.strategies.scalp.scorer import get_scalp_scorer
                 s = get_scalp_scorer()
                 ml_ready = bool(getattr(s, 'is_ml_ready', False))
                 thr = getattr(s, 'min_score', thr)
@@ -11215,7 +11216,7 @@ class TGBot:
             # Recent WR(window)
             recent_wr = wr
             try:
-                from scalp_phantom_tracker import get_scalp_phantom_tracker
+                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                 scpt = get_scalp_phantom_tracker()
                 recents = []
                 for trades in getattr(scpt, 'completed', {}).values():

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # Standard library imports
 import asyncio
 import json
@@ -22,12 +23,13 @@ except Exception:
     _redis = None
 
 # Core trading components
-from broker_bybit import Bybit, BybitConfig
-from candle_storage_postgres import CandleStorage
-from multi_websocket_handler import MultiWebSocketHandler
-from position_mgr import RiskConfig, Book, Position
-from sizer import Sizer
-from telegram_bot import TGBot
+# Core trading components
+from autobot.brokers.bybit import Bybit, BybitConfig
+from autobot.data.storage import CandleStorage
+from autobot.data.websocket import MultiWebSocketHandler
+from autobot.utils.position import RiskConfig, Book, Position
+from autobot.utils.sizer import Sizer
+from autobot.core.telegram import TGBot
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 # from fear_greed_fetcher import FearGreedFetcher  # Disabled - not using sentiment filtering
 
@@ -79,18 +81,18 @@ def mark_executed(*args, **kwargs):
 # Try to import Scalp components; fall back to stubs if unavailable
 SCALP_AVAILABLE = False
 try:
-    from strategy_scalp import detect_scalp_signal, ScalpSettings
+    from autobot.strategies.scalp.detector import detect_scalp_signal, ScalpSettings
 except Exception as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Scalp import: strategy_scalp unavailable: {e}")
 try:
-    from scalp_phantom_tracker import get_scalp_phantom_tracker
+    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
 except Exception as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Scalp import: scalp_phantom_tracker unavailable: {e}")
 try:
     # ML scorer is optional for phantom recording
-    from ml_scorer_scalp import get_scalp_scorer
+    from autobot.strategies.scalp.scorer import get_scalp_scorer
 except Exception as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Scalp import: ml_scorer_scalp unavailable: {e}")
@@ -101,7 +103,7 @@ SCALP_AVAILABLE = bool(detect_scalp_signal is not None and get_scalp_phantom_tra
 # Safe accessor for Scalp Phantom Tracker to avoid local scoping issues
 def _safe_get_scalp_phantom_tracker():
     try:
-        from scalp_phantom_tracker import get_scalp_phantom_tracker as _g
+        from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _g
         return _g()
     except Exception as e:
         try:
@@ -112,15 +114,16 @@ def _safe_get_scalp_phantom_tracker():
 
 # Trade tracking with PostgreSQL fallback
 try:
-    from trade_tracker_postgres import TradeTrackerPostgres as TradeTracker, Trade
+    from autobot.data.tracker import TradeTrackerPostgres as TradeTracker, Trade
     USING_POSTGRES_TRACKER = True
 except ImportError:
-    from trade_tracker import TradeTracker, Trade
-    USING_POSTGRES_TRACKER = False
+    # Fallback if import fails (shouldn't happen with correct structure)
+    from autobot.data.tracker import TradeTrackerPostgres as TradeTracker, Trade
+    USING_POSTGRES_TRACKER = True
 
 # Market regime detection (used for context only, not for strategy execution)
 try:
-    from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
+    from autobot.utils.regime import get_enhanced_market_regime, get_regime_summary
     logger = logging.getLogger(__name__)
     logger.info("Market regime detection available")
     REGIME_AVAILABLE = True
@@ -793,7 +796,7 @@ class TradingBot:
             logger.error(f"Combo update ({reason}) failed: {e}", exc_info=True)
 
     # ===== Scalp Adaptive Risk helpers =====
-    def _scalp_combo_key_from_features(self, feats: dict) -> str | None:
+    def _scalp_combo_key_from_features(self, feats: dict) -> Optional[str]:
         try:
             rsi = feats.get('rsi_14'); mh = feats.get('macd_hist'); vwap = feats.get('vwap_dist_atr')
             fibz = feats.get('fib_zone'); mtf = feats.get('mtf_agree_15')
@@ -836,14 +839,14 @@ class TradingBot:
         except Exception:
             return False
 
-    def _scalp_incr_block_counter(self, kind: str, sub: str | None = None):
+    def _scalp_incr_block_counter(self, kind: str, sub: Optional[str] = None):
         # kind: 'adaptive' | 'rules'; sub: optional reason bucket (e.g., 'mtf','vwap','rsi','macd','fib','disabled')
         try:
             r = getattr(self, '_redis', None)
             if r is None:
                 # Try phantom tracker redis
                 try:
-                    from scalp_phantom_tracker import get_scalp_phantom_tracker
+                    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                     scpt = get_scalp_phantom_tracker()
                     r = getattr(scpt, 'redis_client', None)
                 except Exception:
@@ -912,7 +915,7 @@ class TradingBot:
             except Exception:
                 # Fallback: direct record if helper fails
                 try:
-                    from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                     scpt = _get_scpt()
                     scpt.record_scalp_signal(sym, {'side': side, 'entry': feats.get('entry'), 'sl': feats.get('sl'), 'tp': feats.get('tp')}, float(ml_score or 0.0), False, feats)
                 except Exception:
@@ -995,7 +998,7 @@ class TradingBot:
             except Exception:
                 # If execution fails, fall back to phantom recording to avoid losing data
                 try:
-                    from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt_exec_fallback
+                    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt_exec_fallback
                     scpt_fb = _get_scpt_exec_fallback()
                     scpt_fb.record_scalp_signal(
                         sym,
@@ -1024,7 +1027,7 @@ class TradingBot:
 
         # Record the phantom (centralized path)
         try:
-            from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
             scpt = _get_scpt()
             return scpt.record_scalp_signal(
                 sym,
@@ -1036,7 +1039,7 @@ class TradingBot:
         except Exception:
             return None
 
-    async def _notify_block(self, sym: str, *, kind: str, side: str, feats: dict, combo_id: str | None = None, pre_reason: str | None = None):
+    async def _notify_block(self, sym: str, *, kind: str, side: str, feats: dict, combo_id: Optional[str] = None, pre_reason: Optional[str] = None):
         """Notify a Scalp execution block with reason, obeying config + rate limit.
 
         kind: 'adaptive' | 'rules' | 'pre'
@@ -1353,7 +1356,7 @@ class TradingBot:
         except Exception:
             return 0.0
 
-    def _scalp_get_adaptive_risk(self, sym: str, side: str, feats: dict) -> float | None:
+    def _scalp_get_adaptive_risk(self, sym: str, side: str, feats: dict) -> Optional[float]:
         try:
             cfg = getattr(self, 'config', {}) or {}
             ar = (((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('adaptive_risk', {}) or {})
@@ -2383,7 +2386,7 @@ class TradingBot:
                 logger.warning(f"[{sym}|id={exec_id}] FLIP re-entry error: {e}")
             return False
 
-    async def _execute_scalp_trade(self, sym: str, sig_obj, ml_score: float = 0.0, exec_id: str = None, risk_percent_override: float | None = None, bypass_combo_gate: bool = False) -> bool:
+    async def _execute_scalp_trade(self, sym: str, sig_obj, ml_score: float = 0.0, exec_id: str = None, risk_percent_override: Optional[float] = None, bypass_combo_gate: bool = False) -> bool:
         """Execute a Scalp trade immediately. Returns True if executed.
 
         Bypasses routing/regime/micro gates. Still subject to hard execution guards
@@ -2463,7 +2466,7 @@ class TradingBot:
                 if not allowed0 and not bypass_combo_gate:
                     # Record phantom and notify blocked (minimal path)
                     try:
-                        from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                        from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                         scpt0 = _get_scpt()
                         # Gate + notify + record phantom
                         await self._scalp_gate_and_record_phantom(sym, sig_obj, feats_for_gate, ml_score=float(ml_score or 0.0))
@@ -2676,7 +2679,7 @@ class TradingBot:
                     exec_id = 'n/a'
             # Round TP/SL to tick size (directional for SL). Mirror mode can bypass extra adjustments.
                 m = meta_for(sym, cfg.get('symbol_meta', {}))
-                from position_mgr import round_step
+                from autobot.utils.position import round_step
                 import math as _math
                 tick_size = float(m.get("tick_size", 0.000001))
                 # Price formatter based on tick size for consistent logs
@@ -3035,7 +3038,7 @@ class TradingBot:
                             gross = rr * R * (1.0 + fee_total_pct + slip_pct) * (1.0 + max(-0.25, min(0.25, rr_bias_pct)))
                             new_tp = float(actual_entry) - gross
                         # Round TP to tick size
-                        from position_mgr import round_step
+                        from autobot.utils.position import round_step
                         new_tp = round_step(new_tp, tick_size)
                         sig_obj.tp = float(new_tp)
                         try:
@@ -3148,7 +3151,7 @@ class TradingBot:
                         sl_present = (slv not in (None, '', '0')) and (float(slv) > 0)
                         # Also verify order-book protections
                         qty_step = float(m.get('qty_step', 0.001)) if 'm' in locals() else 0.001
-                        from position_mgr import round_step as _rstep
+                        from autobot.utils.position import round_step as _rstep
                         qty_for_orders = _rstep(pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty, qty_step)
                         tp_order_ok = False; sl_cond_ok = False
                         try:
@@ -3260,7 +3263,7 @@ class TradingBot:
                             sl_side = "Sell" if side_str == 'long' else "Buy"
                             # Round qty to step
                             try:
-                                from position_mgr import round_step as _rstep
+                                from autobot.utils.position import round_step as _rstep
                                 qty_step = float(m.get('qty_step', 0.001)) if 'm' in locals() else 0.001
                                 qty_orders = _rstep(pos_qty_for_tpsl if 'pos_qty_for_tpsl' in locals() else qty, qty_step)
                             except Exception:
@@ -3457,7 +3460,7 @@ class TradingBot:
                     pass
                 # Mirror executed trade into Scalp phantom tracker for combo analytics (was_executed=True)
                 try:
-                    from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt_exec
+                    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt_exec
                     scpt_exec = _get_scpt_exec()
                     sig_snapshot = {
                         'side': sig_obj.side,
@@ -3654,8 +3657,8 @@ class TradingBot:
 
 
     # --- Scalp feature builder for ML/phantom ---
-    def _build_scalp_features(self, df: pd.DataFrame, sc_meta: dict | None = None,
-                              vol_level: str | None = None, cluster_id: int | None = None) -> dict:
+    def _build_scalp_features(self, df: pd.DataFrame, sc_meta: Optional[dict] = None,
+                              vol_level: Optional[str] = None, cluster_id: Optional[int] = None) -> dict:
         """Compute Scalp ML features from a given dataframe window.
 
         Returns a dict matching ml_scorer_scalp._prepare_features keys.
@@ -4062,7 +4065,7 @@ class TradingBot:
 
     def _compute_qscore_scalp(self, symbol: str, side: str, entry: float, sl: float, tp: float,
                                df3: 'pd.DataFrame' = None, df15: 'pd.DataFrame' = None,
-                               sc_feats: dict | None = None) -> tuple[float, dict, list[str]]:
+                               sc_feats: Optional[dict] = None) -> tuple[float, dict, list[str]]:
         """Compute Scalp quality score (0–100) with component breakdown.
 
         Components: mom, pull, micro, htf, sr, risk.
@@ -4131,7 +4134,7 @@ class TradingBot:
 
             # SR clearance ahead (15m HTF levels)
             try:
-                from multi_timeframe_sr import mtf_sr
+                from autobot.utils.sr_levels import mtf_sr
                 dfref = df15 if df15 is not None else self.frames.get(symbol)
                 price = float(dfref['close'].iloc[-1]) if dfref is not None and len(dfref) else float(df3['close'].iloc[-1]) if df3 is not None and len(df3) else 0.0
                 prev = dfref['close'].shift() if dfref is not None else (df3['close'].shift() if df3 is not None else None)
@@ -4277,7 +4280,7 @@ class TradingBot:
                 # Update any active Scalp phantoms for this symbol using the latest bar extremes
                 try:
                     if SCALP_AVAILABLE:
-                        from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                        from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                         scpt = _get_scpt()
                         scpt.update_scalp_phantom_prices(sym, float(row['close'].iloc[0]), df=self.frames_3m.get(sym))
                 except Exception as e:
@@ -5012,7 +5015,7 @@ class TradingBot:
                         # Score ML for learning even though we execute immediately
                         ml_s_immediate = 0.0
                         try:
-                            from ml_scorer_scalp import get_scalp_scorer
+                            from autobot.strategies.scalp.scorer import get_scalp_scorer
                             _scorer = get_scalp_scorer()
                             ml_s_immediate, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats_hi)
                         except Exception:
@@ -5028,7 +5031,7 @@ class TradingBot:
                                 executed = False
                             # Record executed phantom for learning
                             try:
-                                from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                                 scpt = _get_scpt()
                                 # Optionally cancel any pre-existing active scalp phantom to avoid duplicate tracking
                                 try:
@@ -5089,7 +5092,7 @@ class TradingBot:
                             # This builds a full feature set and delegates to the central executor,
                             # which will apply combo/rules gating and either execute or record a phantom.
                             try:
-                                from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                                 scpt2 = _get_scpt()
 
                                 # Build features from the best available frame source
@@ -5147,7 +5150,7 @@ class TradingBot:
                                 # Compute ML score for learning record
                                 ml_s_nc = None
                                 try:
-                                    from ml_scorer_scalp import get_scalp_scorer
+                                    from autobot.strategies.scalp.scorer import get_scalp_scorer
                                     _scorer = get_scalp_scorer()
                                     ml_s_nc, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, nc_feats)
                                 except Exception:
@@ -5182,7 +5185,7 @@ class TradingBot:
                     fa_cfg = (self.config.get('scalp', {}).get('debug', {}) or {}) if hasattr(self, 'config') else {}
                     if bool(fa_cfg.get('force_accept', False)):
                         try:
-                            from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                             scpt = _get_scpt()
                             # Choose a source df safely without boolean evaluation on DataFrames
                             _df_src = None
@@ -5209,7 +5212,7 @@ class TradingBot:
                             # Compute Scalp ML score for visibility (heuristic if model not ready)
                             ml_s_early = 0.0
                             try:
-                                from ml_scorer_scalp import get_scalp_scorer
+                                from autobot.strategies.scalp.scorer import get_scalp_scorer
                                 _scorer = get_scalp_scorer()
                                 ml_s_early, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats_early)
                             except Exception:
@@ -5421,7 +5424,7 @@ class TradingBot:
                     # Compute Scalp ML score if scorer is available
                     ml_s = 0.0
                     try:
-                        from ml_scorer_scalp import get_scalp_scorer
+                        from autobot.strategies.scalp.scorer import get_scalp_scorer
                         _scorer = get_scalp_scorer()
                         ml_s, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats)
                     except Exception:
@@ -5672,7 +5675,7 @@ class TradingBot:
                     session_ok = True
                     # EV-based threshold bump for Scalp
                     try:
-                        from ml_scorer_scalp import get_scalp_scorer
+                        from autobot.strategies.scalp.scorer import get_scalp_scorer
                         sc_ev_scorer = get_scalp_scorer()
                         ev_thr_sc = float(sc_ev_scorer.get_ev_threshold(sc_feats))
                         hi_thr = max(hi_thr, ev_thr_sc)
@@ -7073,7 +7076,7 @@ class TradingBot:
                             pass
                         ph_open = 0
                         try:
-                            from scalp_phantom_tracker import get_scalp_phantom_tracker
+                            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                             scpt2 = get_scalp_phantom_tracker()
                             act = getattr(scpt2, 'active', {}) or {}
                             ph_open = sum(len(lst) for lst in act.values())
@@ -7244,7 +7247,7 @@ class TradingBot:
             # Score Scalp ML for learning even on immediate executes
             ml_s_immediate = 0.0
             try:
-                from ml_scorer_scalp import get_scalp_scorer
+                from autobot.strategies.scalp.scorer import get_scalp_scorer
                 _scorer = get_scalp_scorer()
                 ml_s_immediate, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, sc_feats)
             except Exception:
@@ -7622,7 +7625,7 @@ class TradingBot:
                                 try:
                                     # Compute PnL using tracker util
                                     pnl_usd, pnl_pct = tt.calculate_pnl(symbol, side, entry, exit_price, qty, 1.0)
-                                    from trade_tracker_postgres import Trade
+                                    from autobot.data.tracker import Trade
                                     trade = Trade(
                                         symbol=symbol,
                                         side=str(side).lower(),
@@ -8139,7 +8142,7 @@ class TradingBot:
             except Exception:
                 pass
             try:
-                from symbol_clustering import load_symbol_clusters
+                from autobot.utils.symbols import load_symbol_clusters
                 clusters = load_symbol_clusters()
                 feats['symbol_cluster'] = int(clusters.get(symbol, 3))
             except Exception:
@@ -8274,7 +8277,7 @@ class TradingBot:
             comp['risk'] = 80.0 if 0.01 <= width_pct <= 0.08 else 50.0
             # SR confluence (HTF S/R near band edge)
             try:
-                from multi_timeframe_sr import mtf_sr
+                from autobot.utils.sr_levels import mtf_sr
                 # Compute ATR(14) for normalization
                 prev = cl.shift()
                 tr = np.maximum(high - low, np.maximum((high - prev).abs(), (low - prev).abs()))
@@ -8913,8 +8916,8 @@ class TradingBot:
                             phantom_tracker.force_close_executed(symbol, exit_price, exit_reason)
                         elif pos.strategy_name == 'scalp':
                             try:
-                                from scalp_phantom_tracker import get_scalp_phantom_tracker
-                                from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
+                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                                 scpt = _get_scpt()
                                 scpt.force_close_executed(symbol, exit_price, exit_reason)
                                 logger.info(f"[{symbol}] Scalp phantom mirror closed (exit={exit_price:.4f}, reason={exit_reason})")
@@ -9399,7 +9402,7 @@ class TradingBot:
                             tp, sl = sl, tp
                     
                     # Add to book
-                    from position_mgr import Position
+                    from autobot.utils.position import Position
                     # Try to restore strategy from Redis; in trend-only mode default to trend_pullback
                     recovered_strategy = "unknown"
                     try:
@@ -9692,7 +9695,7 @@ class TradingBot:
             if needs_generation:
                 logger.info("🎯 Generating enhanced clusters from historical data...")
                 try:
-                    from symbol_clustering import SymbolClusterer
+                    from autobot.utils.symbols import SymbolClusterer
                     from datetime import datetime
                     import json
                     import numpy as np
@@ -10060,7 +10063,7 @@ class TradingBot:
         try:
             from ml_qscore_trend_adapter import get_trend_qadapter
             from ml_qscore_range_adapter import get_range_qadapter
-            from ml_qscore_scalp_adapter import get_scalp_qadapter
+            from autobot.strategies.scalp.qscore_adapter import get_scalp_qadapter
             self._qadapt_trend = get_trend_qadapter()
             self._qadapt_range = get_range_qadapter()
             self._qadapt_scalp = get_scalp_qadapter()
@@ -10076,7 +10079,7 @@ class TradingBot:
         # Always wire Scalp phantom notifier for lifecycle messages (open/close)
         try:
             if SCALP_AVAILABLE:
-                from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                 scpt_always = _get_scpt()
                 scpt_always.set_notifier(self._notify_scalp_phantom)
                 # Log initialization success
@@ -10100,7 +10103,7 @@ class TradingBot:
                     # Wire Scalp phantom notifier for Telegram lifecycle messages
                     try:
                         if SCALP_AVAILABLE:
-                            from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                             scpt = _get_scpt()
                             scpt.set_notifier(self._notify_scalp_phantom)
                             # Note: Backfill notifications removed to prevent Telegram pool exhaustion
@@ -10215,7 +10218,7 @@ class TradingBot:
                         pass
                     try:
                         if SCALP_AVAILABLE:
-                            from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                             scpt = _get_scpt()
                             scpt.set_notifier(self._notify_scalp_phantom)
                             # Backfill open notifications for already-active scalp phantoms
@@ -10279,7 +10282,7 @@ class TradingBot:
         # Initialize basic symbol clustering (enhanced will be done after data load)
         symbol_clusters = {}
         try:
-            from symbol_clustering import load_symbol_clusters
+            from autobot.utils.symbols import load_symbol_clusters
             symbol_clusters = load_symbol_clusters()
             logger.info(f"Loaded basic symbol clusters for {len(symbol_clusters)} symbols")
         except Exception as e:
@@ -10485,7 +10488,7 @@ class TradingBot:
 
         # Initialize adaptive combo manager for dynamic filtering
         try:
-            from adaptive_combo_manager import AdaptiveComboManager
+            from autobot.strategies.scalp.combos import AdaptiveComboManager
             # Use the safe accessor to get phantom tracker (avoids scoping issues)
             scpt = None
             if SCALP_AVAILABLE:
@@ -11042,7 +11045,7 @@ class TradingBot:
                                                 pass
                                             # Partial reduce-only limit at TP1
                                             try:
-                                                from position_mgr import round_step
+                                                from autobot.utils.position import round_step
                                                 qty_step = float(meta_for(symbol, self.shared.get("meta", {})).get('qty_step', 0.001)) if hasattr(self, 'shared') else 0.001
                                                 qty1 = round_step(float(qty) * frac, qty_step)
                                                 tp1_resp = self.bybit.place_reduce_only_limit(symbol, tp_side, float(qty1), float(tp1), post_only=True, reduce_only=True)
@@ -11080,7 +11083,7 @@ class TradingBot:
                                     pass
                                 # Track locally
                                 try:
-                                    from position_mgr import Position
+                                    from autobot.utils.position import Position
                                     # Attach qscore from last signal features if present
                                     try:
                                         qv = float(((getattr(self, '_last_signal_features', {}) or {}).get(symbol, {}) or {}).get('qscore', 0.0) or 0.0)
@@ -11226,7 +11229,7 @@ class TradingBot:
                 # Wire scalp phantom notifications to Telegram (ensure after Telegram init)
                 try:
                     if SCALP_AVAILABLE:
-                        from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                        from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                         scpt = _get_scpt()
                         scpt.set_notifier(self._notify_scalp_phantom)
                         # Backfill open notifications for already-active scalp phantoms
@@ -11369,7 +11372,7 @@ class TradingBot:
                 # Wire scalp phantom notifications to Telegram (if scalp modules available)
                 try:
                     if SCALP_AVAILABLE:
-                        from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                        from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                         scpt = _get_scpt()
                         # Downtime backfill for Scalp phantoms using exchange klines (guarded by config; default OFF)
                         try:
@@ -11804,7 +11807,7 @@ class TradingBot:
                                     except Exception:
                                         feats['session'] = 'us'
                                     try:
-                                        from symbol_clustering import load_symbol_clusters
+                                        from autobot.utils.symbols import load_symbol_clusters
                                         clusters = load_symbol_clusters()
                                         feats['symbol_cluster'] = int(clusters.get(sym, 3))
                                     except Exception:
@@ -11827,7 +11830,7 @@ class TradingBot:
                                     try:
                                         sr_cfg = ((settings.get('sr_confluence') or {}))
                                         if bool(sr_cfg.get('enabled', True)):
-                                            from multi_timeframe_sr import mtf_sr
+                                            from autobot.utils.sr_levels import mtf_sr
                                             # ATR(14)
                                             prev = df['close'].shift()
                                             trarr = np.maximum(df['high'] - df['low'], np.maximum((df['high'] - prev).abs(), (df['low'] - prev).abs()))
@@ -12365,7 +12368,7 @@ class TradingBot:
                                 pass
                             # Scalp phantom tracker price updates (if available)
                             try:
-                                from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                                 scpt = _get_scpt()
                                 df3u = self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None
                                 scpt.update_scalp_phantom_prices(sym, current_price, df=df3u if df3u is not None and not df3u.empty else df)
@@ -12932,7 +12935,7 @@ class TradingBot:
                                 return False
                             # Get symbol metadata and round TP/SL
                             m = meta_for(sym, shared["meta"])
-                            from position_mgr import round_step
+                            from autobot.utils.position import round_step
                             tick_size = m.get("tick_size", 0.000001)
                             original_tp = sig_obj.tp; original_sl = sig_obj.sl
                             sig_obj.tp = round_step(sig_obj.tp, tick_size)
@@ -13160,7 +13163,7 @@ class TradingBot:
                             try:
                                 sc_cfg = ((((self.config.get('trend', {}) or {}).get('exec', {}) or {}).get('scaleout', {}) or {}))
                                 if strategy_name in ('trend_pullback','trend_breakout') and bool(sc_cfg.get('enabled', False)) and qty > 0:
-                                    from position_mgr import round_step
+                                    from autobot.utils.position import round_step
                                     qty_step = float(m.get('qty_step', 0.001))
                                     frac = max(0.1, min(0.9, float(sc_cfg.get('fraction', 0.5))))
                                     tp1_r = float(sc_cfg.get('tp1_r', 1.6))
@@ -13707,7 +13710,7 @@ class TradingBot:
                                 # Symbol cluster
                                 sym_cluster = 3
                                 try:
-                                    from symbol_clustering import load_symbol_clusters
+                                    from autobot.utils.symbols import load_symbol_clusters
                                     clusters = load_symbol_clusters()
                                     sym_cluster = int(clusters.get(sym, 3))
                                 except Exception:
@@ -14367,7 +14370,7 @@ class TradingBot:
                             if promote_en and SCALP_AVAILABLE and detect_scalp_signal is not None:
                                 # Promotion readiness from phantom stats (supports recent WR)
                                 try:
-                                    from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                                    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                                     scpt = _get_scpt()
                                     st = scpt.get_scalp_phantom_stats() or {}
                                     samples = int(st.get('total', 0))
@@ -14660,7 +14663,7 @@ class TradingBot:
                                                 raise Exception("position_exists")
                                             # Meta and TP/SL rounding
                                             m = meta_for(sym, shared["meta"])
-                                            from position_mgr import round_step
+                                            from autobot.utils.position import round_step
                                             tick_size = m.get("tick_size", 0.000001)
                                             original_tp = soft_sig_mr.tp; original_sl = soft_sig_mr.sl
                                             soft_sig_mr.tp = round_step(soft_sig_mr.tp, tick_size)
@@ -15400,7 +15403,7 @@ class TradingBot:
 
                             # Load cluster id for quotas
                             try:
-                                from symbol_clustering import load_symbol_clusters
+                                from autobot.utils.symbols import load_symbol_clusters
                                 clusters_map = load_symbol_clusters()
                                 cluster_id = int(clusters_map.get(sym, 3))
                             except Exception:
@@ -15441,7 +15444,7 @@ class TradingBot:
 
                                         # Get symbol metadata and round TP/SL
                                         m = meta_for(sym, shared["meta"])
-                                        from position_mgr import round_step
+                                        from autobot.utils.position import round_step
                                         tick_size = m.get("tick_size", 0.000001)
                                         original_tp = sig_mr.tp; original_sl = sig_mr.sl
                                         sig_mr.tp = round_step(sig_mr.tp, tick_size)
@@ -15815,8 +15818,8 @@ class TradingBot:
                                             sc_feats['routing'] = 'none'
                                             logger.info(f"[{sym}] 👻 Phantom-only (Scalp none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
                                             try:
-                                                from scalp_phantom_tracker import get_scalp_phantom_tracker
-                                                from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
+                                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
+                                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                                                 scpt = _get_scpt()
                                                 # Compute ML for router-driven scalp phantom
                                                 ml_s = 0.0
@@ -16362,7 +16365,7 @@ class TradingBot:
                 m = meta_for(sym, shared["meta"])
 
                 # Round TP/SL to symbol's tick size to prevent API errors
-                from position_mgr import round_step
+                from autobot.utils.position import round_step
                 tick_size = m.get("tick_size", 0.000001) # Default to a small tick size
                 
                 original_tp = sig.tp

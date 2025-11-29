@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Enhanced Trade History and Statistics Tracker with PostgreSQL persistence
 Ensures trades are never lost, even on crashes or restarts

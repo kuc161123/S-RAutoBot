@@ -33,7 +33,7 @@ logs/
 *.sqlite
 *.sqlite3
 ml_data/
-data/
+/data/
 
 # OS
 .DS_Store

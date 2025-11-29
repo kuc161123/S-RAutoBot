@@ -14,7 +14,7 @@ def kill_existing_bots():
     try:
         # Find python processes running live_bot.py
         result = subprocess.run(
-            ["pgrep", "-f", "live_bot.py"],
+            ["pgrep", "-f", "autobot.core.bot"],
             capture_output=True,
             text=True
         )
@@ -119,4 +119,4 @@ if __name__ == "__main__":
                 print("[Bootstrap] Skipped (models present and no force).")
 
     print("Launching live bot...")
-    os.execvp(sys.executable, [sys.executable, "live_bot.py"])
+    os.execvp(sys.executable, [sys.executable, "-m", "autobot.core.bot"])

@@ -717,8 +717,14 @@ class TradingBot:
         # Per-combo block stats: how many signals were blocked by adaptive/rules
         # while mapping to a given combo_id (diagnostics only, per-run)
         self._scalp_combo_block_stats: Dict[str, Dict[str, int]] = {}
-        # Manual A-tier combo counters: executions and blocks
-        self._manual_combo_stats: Dict[str, int] = {'exec': 0, 'blocked_pos': 0, 'errors': 0}
+        # Manual A-tier combo counters: executions, blocks, errors, and non-matches
+        self._manual_combo_stats: Dict[str, int] = {
+            'exec': 0,
+            'blocked_pos': 0,
+            'errors': 0,
+            'checked': 0,
+            'nonmatch': 0,
+        }
 
     def _btc_micro_trend(self) -> str:
         """Compute BTC 1–3m micro-trend direction: up/down/none."""
@@ -5557,40 +5563,61 @@ class TradingBot:
                 # potential executes and would-be phantom signals.
                 try:
                     mce_cfg = (((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
-                    if bool(mce_cfg.get('enabled', False)) and self._scalp_manual_exec_allowed(sc_sig.side, sc_feats):
-                        if sym in self.book.positions:
-                            logger.info(f"[{sym}] 🛑 Manual combo exec blocked: reason=position_exists")
+                    if bool(mce_cfg.get('enabled', False)):
+                        # Count every signal checked against manual pattern
+                        try:
+                            self._manual_combo_stats['checked'] = self._manual_combo_stats.get('checked', 0) + 1
+                        except Exception:
+                            pass
+                        if self._scalp_manual_exec_allowed(sc_sig.side, sc_feats):
+                            if sym in self.book.positions:
+                                logger.info(f"[{sym}] 🛑 Manual combo exec blocked: reason=position_exists")
+                                try:
+                                    self._manual_combo_stats['blocked_pos'] = self._manual_combo_stats.get('blocked_pos', 0) + 1
+                                except Exception:
+                                    pass
+                            else:
+                                try:
+                                    import uuid as _uuid
+                                    exec_id_manual = _uuid.uuid4().hex[:8]
+                                except Exception:
+                                    exec_id_manual = 'manual'
+                                try:
+                                    did_manual = await self._execute_scalp_trade(
+                                        sym,
+                                        sc_sig,
+                                        ml_score=float(ml_s or 0.0),
+                                        exec_id=exec_id_manual,
+                                        bypass_combo_gate=True
+                                    )
+                                except TypeError:
+                                    did_manual = await self._execute_scalp_trade(
+                                        sym,
+                                        sc_sig,
+                                        ml_score=float(ml_s or 0.0),
+                                        exec_id=exec_id_manual
+                                    )
+                                if did_manual:
+                                    logger.info(
+                                        f"[{sym}|id={exec_id_manual}] ✅ MANUAL_COMBO_EXEC: "
+                                        f"RSI:40-60 MACD:bull VWAP:1.2+ Fib:50-61 noMTF"
+                                    )
+                                    _scalp_decision_logged = True
+                                    self._scalp_cooldown[sym] = bar_ts
+                                    blist.append(now_ts)
+                                    self._scalp_budget[sym] = blist
+                                    continue
+                                else:
+                                    try:
+                                        self._manual_combo_stats['errors'] = self._manual_combo_stats.get('errors', 0) + 1
+                                    except Exception:
+                                        pass
                         else:
+                            # Manual pattern did not match this signal
                             try:
-                                import uuid as _uuid
-                                exec_id_manual = _uuid.uuid4().hex[:8]
+                                self._manual_combo_stats['nonmatch'] = self._manual_combo_stats.get('nonmatch', 0) + 1
                             except Exception:
-                                exec_id_manual = 'manual'
-                            try:
-                                did_manual = await self._execute_scalp_trade(
-                                    sym,
-                                    sc_sig,
-                                    ml_score=float(ml_s or 0.0),
-                                    exec_id=exec_id_manual,
-                                    bypass_combo_gate=True
-                                )
-                            except TypeError:
-                                did_manual = await self._execute_scalp_trade(
-                                    sym,
-                                    sc_sig,
-                                    ml_score=float(ml_s or 0.0),
-                                    exec_id=exec_id_manual
-                                )
-                            if did_manual:
-                                logger.info(
-                                    f"[{sym}|id={exec_id_manual}] ✅ MANUAL_COMBO_EXEC: "
-                                    f"RSI:40-60 MACD:bull VWAP:1.2+ Fib:50-61 noMTF"
-                                )
-                                _scalp_decision_logged = True
-                                self._scalp_cooldown[sym] = bar_ts
-                                blist.append(now_ts)
-                                self._scalp_budget[sym] = blist
-                                continue
+                                pass
                 except Exception:
                     pass
                 # Ensure hourly per-symbol pacing vars exist before any High-ML early exit uses them

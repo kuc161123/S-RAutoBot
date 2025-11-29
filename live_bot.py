@@ -78,35 +78,20 @@ except ImportError:
     from trade_tracker import TradeTracker, Trade
     USING_POSTGRES_TRACKER = False
 
-# ML system (Trend + Enhanced Mean Reversion only)
+# Market regime detection (used for context only, not for strategy execution)
 try:
-    from phantom_trade_tracker import get_phantom_tracker
-    from enhanced_mr_scorer import get_enhanced_mr_scorer
-    from mr_phantom_tracker import get_mr_phantom_tracker
-    from ml_scorer_trend import get_trend_scorer
     from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
     logger = logging.getLogger(__name__)
-    logger.info("Using Enhanced ML System (Trend + Enhanced MR)")
-    ML_AVAILABLE = True
-    ENHANCED_ML_AVAILABLE = True
+    logger.info("Market regime detection available")
+    REGIME_AVAILABLE = True
 except Exception as e:
-    ML_AVAILABLE = False
-    ENHANCED_ML_AVAILABLE = False
+    REGIME_AVAILABLE = False
     logger = logging.getLogger(__name__)
-    logger.warning(f"ML system not available: {e}")
+    logger.warning(f"Regime detection not available: {e}")
 
-# Disable legacy Mean Reversion (classic) path
-def detect_signal_mean_reversion(*args, **kwargs):
-    return None
+# Disabled strategies removed (Trend, MR, Range)
 
-# Symbol data collection for ML learning
-try:
-    from symbol_data_collector import get_symbol_collector
-    SYMBOL_COLLECTOR_AVAILABLE = True
-    logger.info("Symbol data collector initialized for future ML")
-except ImportError as e:
-    SYMBOL_COLLECTOR_AVAILABLE = False
-    logger.warning(f"Symbol data collector not available: {e}")
+# Symbol data collector removed (not used)
 
 # Setup logging
 logging.basicConfig(

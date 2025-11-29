@@ -13,6 +13,13 @@ import asyncio
 import logging
 
 # Disabled ML scorer imports removed (Trend, MR strategies disabled)
+# Provide stubs to avoid NameError in legacy handlers; they will simply return None.
+def get_trend_scorer():
+    return None
+
+def get_mean_reversion_scorer():
+    return None
+
 from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
 
 logger = logging.getLogger(__name__)
@@ -5035,22 +5042,7 @@ class TGBot:
             await update.message.reply_text("Error getting recent trades")
 
     # Removed: trend_high_ml method (Trend strategy disabled)
-        """Set Trend high-ML execution threshold (also updates min_ml). Usage: /trendhighml 90"""
-        try:
-            if not ctx.args:
-                await self.safe_reply(update, "Usage: /trendhighml <threshold>")
-                return
-            val = float(ctx.args[0])
-            cfg = self.shared.get('config', {}) or {}
-            tr_exec = ((cfg.setdefault('trend', {})).setdefault('exec', {}))
-            old_hi = tr_exec.get('high_ml_force', None)
-            old_min = tr_exec.get('min_ml', None)
-            tr_exec['high_ml_force'] = val
-            tr_exec['min_ml'] = min(val, tr_exec.get('min_ml', val))
-            await self.safe_reply(update, f"✅ Trend high‑ML threshold updated: {old_hi} → {val} (min_ml: {old_min} → {tr_exec['min_ml']})")
-        except Exception as exc:
-            logger.warning(f"trend_high_ml failed: {exc}")
-            await self.safe_reply(update, "⚠️ Failed to update Trend high‑ML threshold")
+
 
     # Removed: trend_states method (Trend strategy disabled)
         """Show current Trend Pullback state per symbol"""

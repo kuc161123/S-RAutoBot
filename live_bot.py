@@ -27,7 +27,6 @@ from candle_storage_postgres import CandleStorage
 from multi_websocket_handler import MultiWebSocketHandler
 from position_mgr import RiskConfig, Book, Position
 from sizer import Sizer
-from strategy_pullback import Settings  # Settings are the same for both strategies
 from telegram_bot import TGBot
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 # from fear_greed_fetcher import FearGreedFetcher  # Disabled - not using sentiment filtering
@@ -37,6 +36,47 @@ detect_scalp_signal = None
 ScalpSettings = None
 get_scalp_phantom_tracker = None
 get_scalp_scorer = None
+
+# Stubs for disabled Trend/MR components to avoid NameError in legacy paths
+def detect_trend_signal(*args, **kwargs):
+    return None
+
+class Settings:
+    def __init__(self, **kwargs):
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+def revert_to_neutral(*args, **kwargs):
+    return None
+
+def update_htf_gate(*args, **kwargs):
+    return None
+
+def set_trend_state_store(*args, **kwargs):
+    return None
+
+def hydrate_trend_states(*args, **kwargs):
+    return None
+
+def set_trend_event_notifier(*args, **kwargs):
+    return None
+
+def set_trend_microframe_provider(*args, **kwargs):
+    return None
+
+def set_trend_entry_executor(*args, **kwargs):
+    return None
+
+def set_trend_phantom_recorder(*args, **kwargs):
+    return None
+
+def set_trend_invalidation_hook(*args, **kwargs):
+    return None
+
+def mark_executed(*args, **kwargs):
+    return None
+
+# Try to import Scalp components; fall back to stubs if unavailable
 SCALP_AVAILABLE = False
 try:
     from strategy_scalp import detect_scalp_signal, ScalpSettings
@@ -90,8 +130,13 @@ except Exception as e:
     logger.warning(f"Regime detection not available: {e}")
 
 # Disabled strategies removed (Trend, MR, Range)
-
-# Symbol data collector removed (not used)
+# Explicitly disable non-Scalp ML / trackers to avoid NameErrors in legacy paths
+ML_AVAILABLE = False
+ENHANCED_ML_AVAILABLE = False
+get_trend_scorer = None
+get_enhanced_mr_scorer = None
+get_mr_phantom_tracker = None
+get_phantom_tracker = None
 
 # Setup logging
 logging.basicConfig(
@@ -9925,11 +9970,9 @@ class TradingBot:
                     detect_signal_mean_reversion = (lambda *args, **kwargs: None)
                 except Exception:
                     pass
-        use_enhanced_parallel = cfg["trade"].get("use_enhanced_parallel", True) and ENHANCED_ML_AVAILABLE
-        use_regime_switching = cfg["trade"].get("use_regime_switching", False)
-        # Backward-compat: no reset function in Trend-only mode
+        use_enhanced_parallel = False
+        use_regime_switching = False
         reset_symbol_state = None
-
         # Exploration flags (phantom-only loosening per strategy)
         exploration_enabled = bool(cfg.get('exploration', {}).get('enabled', True))
         mr_explore = cfg.get('mr', {}).get('explore', {})
@@ -9942,79 +9985,9 @@ class TradingBot:
         phantom_enable_virtual = bool(phantom_cfg.get('enable_virtual_snapshots', False))
         phantom_virtual_delta = int(phantom_cfg.get('virtual_snapshots_delta', 5))
 
-        if use_enhanced_parallel:
-            strategy_type = "Enhanced Parallel (Trend Pullback + Mean Reversion with ML)"
-            logger.info(f"📊 Strategy: {strategy_type}")
-            logger.info("🧠 Using Enhanced Parallel ML System with regime-based strategy routing")
-        else:
-            strategy_type = "Trend Pullback"
-            logger.info(f"📊 Strategy: {strategy_type}")
-        
-        # Initialize strategy settings
-        settings = Settings(
-            atr_len=cfg["trade"]["atr_len"],
-            sl_buf_atr=cfg["trade"]["sl_buf_atr"],
-            rr=cfg["trade"]["rr"],
-            use_ema=cfg["trade"]["use_ema"],
-            ema_len=cfg["trade"]["ema_len"],
-            use_vol=cfg["trade"]["use_vol"],
-            vol_len=cfg["trade"]["vol_len"],
-            vol_mult=cfg["trade"]["vol_mult"],
-            both_hit_rule=cfg["trade"]["both_hit_rule"],
-            confirmation_candles=cfg["trade"].get("confirmation_candles", 2),
-            # Trend-specific breathing room for pivot stops
-            extra_pivot_breath_pct=float(((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('extra_pivot_breath_pct', 0.01)),
-            confirmation_timeout_bars=int((cfg.get('trend', {}) or {}).get('confirmation_timeout_bars', 6)),
-            use_3m_pullback=bool((((cfg.get('trend', {}) or {}).get('context', {}) or {}).get('use_3m_pullback', True))),
-            use_3m_confirm=bool((((cfg.get('trend', {}) or {}).get('context', {}) or {}).get('use_3m_confirm', True))),
-            # Microstructure + BOS config (with safe defaults)
-            retest_enabled=bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('retest', {}) or {}).get('enabled', True)),
-            retest_distance_mode=str((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('retest', {}) or {}).get('distance_mode', 'atr')),
-            retest_max_dist_atr=float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('retest', {}) or {}).get('max_dist_atr', 0.50)),
-            retest_max_dist_pct=float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('retest', {}) or {}).get('max_dist_pct', 0.40)),
-            require_protective_hl_for_long=bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('micro', {}) or {}).get('require_protective_hl_for_long', True)),
-            require_protective_lh_for_short=bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('micro', {}) or {}).get('require_protective_lh_for_short', True)),
-            bos_body_min_ratio=float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('bos', {}) or {}).get('body_min_ratio', 0.25)),
-            bos_confirm_closes=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('bos', {}) or {}).get('confirm_closes', 1)),
-            breakout_to_pullback_bars_3m=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('timeouts', {}) or {}).get('breakout_to_pullback_bars_3m', 25)),
-            pullback_to_bos_bars_3m=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('timeouts', {}) or {}).get('pullback_to_bos_bars_3m', 25)),
-            breakout_buffer_atr=float((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('breakout_buffer_atr', 0.05))),
-            # Divergence config (TSI/RSI) for 3m strict gating
-            div_enabled=bool(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('enabled', False))),
-            div_mode=str(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('mode', 'optional'))),
-            div_require=str(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('require', 'any'))),
-            div_use_rsi=bool('rsi' in ((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('oscillators', ['rsi','tsi']))),
-            div_use_tsi=bool('tsi' in ((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('oscillators', ['rsi','tsi']))),
-            div_rsi_len=int(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('rsi_len', 14))),
-            div_tsi_long=int(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('tsi_long', 25))),
-            div_tsi_short=int(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('tsi_short', 13))),
-            div_window_bars_3m=int(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('confirm_window_bars_3m', 6))),
-            div_min_strength_rsi=float(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('min_strength', {})).get('rsi', 2.0) if isinstance(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('min_strength', {})), dict) else 2.0),
-            div_min_strength_tsi=float(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('min_strength', {})).get('tsi', 0.3) if isinstance(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('min_strength', {})), dict) else 0.3),
-            div_notify=bool(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('divergence', {}) or {}).get('notify', True)))
-            ,
-            bos_armed_hold_minutes=int((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('bos_hold_minutes', 300)))
-            ,
-            sl_mode=str(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('sl_mode', 'breakout')))),
-            breakout_sl_buffer_atr=float(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('breakout_sl_buffer_atr', 0.30)))),
-            min_r_pct=float(((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('min_r_pct', 0.005))))
-        )
-        # Pullback detection uses the generic Settings() already constructed above
-        # Keep a separate alias to avoid refactoring call sites
-        tr_cfg = cfg.get('trend', {}) or {}
-        trend_settings = settings
-        try:
-            self._trend_settings = trend_settings
-        except Exception:
-            pass
-        # Log effective Trend 3m timeouts for visibility
-        try:
-            logger.info(
-                f"🔧 Trend 3m timeouts: breakout→pullback={int(getattr(trend_settings,'breakout_to_pullback_bars_3m',0))} bars, "
-                f"pullback→BOS={int(getattr(trend_settings,'pullback_to_bos_bars_3m',0))} bars"
-            )
-        except Exception:
-            pass
+        # Trend/MR disabled: no trend settings or detectors
+        self._trend_settings = None
+        self._detect_trend_signal = None
         # Propagate rule_mode to strategy (disable SR hard gate when enabled)
         try:
             rm = (cfg.get('trend', {}) or {}).get('rule_mode', {})

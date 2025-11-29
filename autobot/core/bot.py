@@ -1957,7 +1957,55 @@ class TradingBot:
                 return dn, ('dn_tick' if dn else 'no_dn_tick')
         except Exception:
             return True, 'err'
-        
+
+    async def _bot_heartbeat(self):
+        """Periodic liveness/health heartbeat for the main trading loop.
+
+        Logs at INFO so you can quickly see whether the bot is alive,
+        whether the main WS stream is delivering klines, and whether
+        Scalp confirmations are flowing.
+        """
+        import asyncio as _asyncio
+        import time as _t
+        while True:
+            try:
+                if not getattr(self, 'running', False):
+                    break
+                now = _t.monotonic()
+                last_main = float(getattr(self, '_last_main_kline', 0.0) or 0.0)
+                age = (now - last_main) if last_main else None
+                try:
+                    confirms = int(self._scalp_stats.get('confirms', 0)) if hasattr(self, '_scalp_stats') else 0
+                except Exception:
+                    confirms = 0
+                try:
+                    frames3_ct = len(self.frames_3m) if hasattr(self, 'frames_3m') else 0
+                except Exception:
+                    frames3_ct = 0
+                try:
+                    ws_ok = bool(getattr(self, '_ws_connected', False))
+                except Exception:
+                    ws_ok = False
+                msg = f"💓 Bot heartbeat: running={self.running} ws_connected={ws_ok} frames_3m={frames3_ct}"
+                if age is not None:
+                    msg += f" last_main_kline_age={age:.0f}s"
+                msg += f" scalp_confirms={confirms}"
+                try:
+                    logger.info(msg)
+                except Exception:
+                    pass
+                await _asyncio.sleep(60)
+            except Exception:
+                # Never crash the bot from heartbeat
+                try:
+                    logger.debug("Heartbeat loop error; continuing")
+                except Exception:
+                    pass
+                try:
+                    await _asyncio.sleep(60)
+                except Exception:
+                    break
+
     def _create_task(self, coro):
         try:
             loop = asyncio.get_running_loop()
@@ -12180,6 +12228,13 @@ class TradingBot:
         try:
             self._create_task(self._watch_main_stream(idle_seconds))
             logger.info(f"Main stream watchdog started (idle>{idle_seconds}s)")
+        except Exception:
+            pass
+
+        # Start a generic bot heartbeat so we can observe liveness even when no trades fire
+        try:
+            self._create_task(self._bot_heartbeat())
+            logger.info("Bot heartbeat loop started (interval≈60s)")
         except Exception:
             pass
 

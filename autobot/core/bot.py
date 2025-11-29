@@ -754,14 +754,6 @@ class TradingBot:
         # Per-combo block stats: how many signals were blocked by adaptive/rules
         # while mapping to a given combo_id (diagnostics only, per-run)
         self._scalp_combo_block_stats: Dict[str, Dict[str, int]] = {}
-        # Manual A-tier combo counters: executions, blocks, errors, and non-matches
-        self._manual_combo_stats: Dict[str, int] = {
-            'exec': 0,
-            'blocked_pos': 0,
-            'errors': 0,
-            'checked': 0,
-            'nonmatch': 0,
-        }
 
     def _btc_micro_trend(self) -> str:
         """Compute BTC 1–3m micro-trend direction: up/down/none."""
@@ -934,39 +926,6 @@ class TradingBot:
         In strict combos-only mode (combos_only + require_combo_enabled + fallback_until_ready=='off'),
         when a combo is enabled this function will execute instead of recording a phantom.
         """
-        # Manual A-tier diagnostics for phantom paths: count checks and log match/non-match
-        try:
-            cfg_m = getattr(self, 'config', {}) or {}
-            mce = (((cfg_m.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
-            if bool(mce.get('enabled', False)):
-                try:
-                    self._manual_combo_stats['checked'] = self._manual_combo_stats.get('checked', 0) + 1
-                except Exception:
-                    pass
-                try:
-                    side_m = str(getattr(sc_sig, 'side', ''))
-                    _fe = feats or {}
-                    _match = bool(self._scalp_manual_exec_allowed(side_m, _fe))
-                    try:
-                        logger.info(
-                            f"[{sym}] Manual A-tier check (PHANTOM): "
-                            f"side={side_m} match={_match} "
-                            f"rsi={_fe.get('rsi_14')} macd={_fe.get('macd_hist')} "
-                            f"vwap={_fe.get('vwap_dist_atr')} fib_zone={_fe.get('fib_zone')} "
-                            f"mtf={_fe.get('mtf_agree_15')}"
-                        )
-                    except Exception:
-                        pass
-                    if not _match:
-                        try:
-                            self._manual_combo_stats['nonmatch'] = self._manual_combo_stats.get('nonmatch', 0) + 1
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
         try:
             allowed, gate_reason, gate_ctx = self._scalp_combo_allowed(str(getattr(sc_sig, 'side', '')), feats or {})
         except Exception:
@@ -2757,12 +2716,6 @@ class TradingBot:
                         self._scalp_last_exec_reason[sym] = 'position_exists'
                     except Exception:
                         pass
-                    # Track manual combo position blocks when bypassing combo gate
-                    try:
-                        if bypass_combo_gate:
-                            self._manual_combo_stats['blocked_pos'] = self._manual_combo_stats.get('blocked_pos', 0) + 1
-                    except Exception:
-                        pass
                     return False
             # Determine execution id for tracing
                 try:
@@ -2851,25 +2804,6 @@ class TradingBot:
                     pass
             # Sizing (with optional per-trade risk override)
                 try:
-                    # If no override provided, compute manual or adaptive risk
-                    if risk_percent_override is None:
-                        # Manual combo exec override when bypassing combo gate
-                        try:
-                            if bypass_combo_gate:
-                                cfg = getattr(self, 'config', {}) or {}
-                                mce = (((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
-                                mode = str(mce.get('risk_mode', 'percent')).lower()
-                                if mode == 'percent':
-                                    rp = float(mce.get('risk_percent', 0.0) or 0.0)
-                                    if rp > 0.0:
-                                        risk_percent_override = rp
-                                elif mode == 'usd':
-                                    usd = float(mce.get('risk_usd', 0.0) or 0.0)
-                                    bal = float(getattr(base_sizer, 'account_balance', 0.0) or 0.0)
-                                    if usd > 0.0 and bal > 0.0:
-                                        risk_percent_override = (usd / bal) * 100.0
-                        except Exception:
-                            pass
                     if risk_percent_override is None:
                         try:
                             feats_for_risk = {}
@@ -3735,21 +3669,8 @@ class TradingBot:
                         await self.tg.send_system_message(msg)
                 except Exception:
                     pass
-                # Successful execution
-                # Track manual combo exec stats when bypassing combo gate
-                try:
-                    if bypass_combo_gate:
-                        self._manual_combo_stats['exec'] = self._manual_combo_stats.get('exec', 0) + 1
-                except Exception:
-                    pass
                 return True
         except Exception as e:
-            # Track manual combo errors when bypassing combo gate
-            try:
-                if bypass_combo_gate:
-                    self._manual_combo_stats['errors'] = self._manual_combo_stats.get('errors', 0) + 1
-            except Exception:
-                pass
             logger.info(f"[{sym}] Scalp stream execute error: {e}")
             return False
 
@@ -5435,87 +5356,6 @@ class TradingBot:
                 except Exception:
                     pass
                 sc_feats['routing'] = 'none'
-                # Manual A-tier combo execution first: if this fixed pattern matches,
-                # bypass all further gates and execute immediately. Applies to both
-                # potential executes and would-be phantom signals.
-                try:
-                    mce_cfg = (((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
-                    if bool(mce_cfg.get('enabled', False)):
-                        # Count every signal checked against manual pattern
-                        try:
-                            self._manual_combo_stats['checked'] = self._manual_combo_stats.get('checked', 0) + 1
-                        except Exception:
-                            pass
-                        try:
-                            _fe = sc_feats or {}
-                            _side = str(getattr(sc_sig, 'side', ''))
-                            _match = bool(self._scalp_manual_exec_allowed(_side, _fe))
-                            # Log the manual A-tier evaluation for live (execute-capable) paths
-                            try:
-                                logger.info(
-                                    f"[{sym}] Manual A-tier check (LIVE): "
-                                    f"side={_side} match={_match} "
-                                    f"rsi={_fe.get('rsi_14')} macd={_fe.get('macd_hist')} "
-                                    f"vwap={_fe.get('vwap_dist_atr')} fib_zone={_fe.get('fib_zone')} "
-                                    f"mtf={_fe.get('mtf_agree_15')}"
-                                )
-                            except Exception:
-                                pass
-                            if _match:
-                                if sym in self.book.positions:
-                                    logger.info(f"[{sym}] 🛑 Manual combo exec blocked: reason=position_exists")
-                                    try:
-                                        self._manual_combo_stats['blocked_pos'] = self._manual_combo_stats.get('blocked_pos', 0) + 1
-                                    except Exception:
-                                        pass
-                                else:
-                                    try:
-                                        import uuid as _uuid
-                                        exec_id_manual = _uuid.uuid4().hex[:8]
-                                    except Exception:
-                                        exec_id_manual = 'manual'
-                                    try:
-                                        # Manual A-tier executes bypass combo gate and do not depend on ML;
-                                        # pass a neutral ml_score (0.0) to avoid undefined ml_s usage.
-                                        did_manual = await self._execute_scalp_trade(
-                                            sym,
-                                            sc_sig,
-                                            ml_score=0.0,
-                                            exec_id=exec_id_manual,
-                                            bypass_combo_gate=True
-                                        )
-                                    except TypeError:
-                                        # Backward-compatible call signature without ml_score argument
-                                        did_manual = await self._execute_scalp_trade(
-                                            sym,
-                                            sc_sig,
-                                            exec_id=exec_id_manual
-                                        )
-                                    if did_manual:
-                                        logger.info(
-                                            f"[{sym}|id={exec_id_manual}] ✅ MANUAL_COMBO_EXEC: "
-                                            "RSI:40-60 MACD:bull VWAP:1.2+ Fib:50-61 noMTF"
-                                        )
-                                        _scalp_decision_logged = True
-                                        self._scalp_cooldown[sym] = bar_ts
-                                        blist.append(now_ts)
-                                        self._scalp_budget[sym] = blist
-                                        continue
-                                    else:
-                                        try:
-                                            self._manual_combo_stats['errors'] = self._manual_combo_stats.get('errors', 0) + 1
-                                        except Exception:
-                                            pass
-                            else:
-                                # Manual pattern did not match this signal
-                                try:
-                                    self._manual_combo_stats['nonmatch'] = self._manual_combo_stats.get('nonmatch', 0) + 1
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
                 # Ensure hourly per-symbol pacing vars exist before any High-ML early exit uses them
                 try:
                     hb = self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
@@ -7229,52 +7069,6 @@ class TradingBot:
             return delta.total_seconds() > stale_minutes * 60
         except Exception:
             return True
-
-    def _scalp_manual_exec_allowed(self, side: str, feats: dict) -> bool:
-        """Manual A-tier combo: execute when this fixed pattern matches.
-
-        Current pattern (longs only):
-        RSI:40-60 MACD:bull VWAP:1.2+ Fib:50-61 noMTF
-        """
-        try:
-            cfg = getattr(self, 'config', {}) or {}
-            mce = (((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
-            if not bool(mce.get('enabled', False)):
-                return False
-            s = str(side).lower()
-            if bool(mce.get('longs_only', True)) and s != 'long':
-                return False
-            # Pull indicators
-            try:
-                rsi = float(feats.get('rsi_14', 0.0) or 0.0)
-            except Exception:
-                return False
-            try:
-                mh = float(feats.get('macd_hist', 0.0) or 0.0)
-            except Exception:
-                return False
-            try:
-                vwap = float(feats.get('vwap_dist_atr', 0.0) or 0.0)
-            except Exception:
-                return False
-            fibz = feats.get('fib_zone')
-            if not isinstance(fibz, str) or not fibz:
-                try:
-                    frel = float(feats.get('fib_ret'))
-                    fr = frel*100.0 if frel <= 1.0 else frel
-                    fibz = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
-                except Exception:
-                    return False
-            mtf = bool(feats.get('mtf_agree_15', False))
-            # Apply fixed pattern
-            rsi_ok = (40.0 <= rsi < 60.0)
-            macd_ok = (mh > 0.0)
-            vwap_ok = (vwap >= 1.2)
-            fib_ok = (fibz == '50-61')
-            mtf_ok = (mtf is False)
-            return bool(rsi_ok and macd_ok and vwap_ok and fib_ok and mtf_ok)
-        except Exception:
-            return False
 
     async def _maybe_run_scalp_fallback(self, sym: str, df: pd.DataFrame, regime_analysis, cluster_id: Optional[int]):
         """Run Scalp detection on main/3m frames when the secondary stream is unavailable or stale.

@@ -375,12 +375,6 @@ scalp:
         min_samples: 15           # Require at least this many recent closes
         prefer_only: true         # If recency is missing, fall back to base (1%)
         ev_floor_r: 0.0           # Optional EV floor for recency; falls back to top ev_floor_r if absent
-    manual_combo_exec:
-      enabled: true               # Enable manual A-tier combo execution path
-      longs_only: true            # For now, only apply to long signals
-      risk_mode: percent          # percent | usd
-      risk_percent: 1.0           # default 1% when using percent mode
-      risk_usd: 0.0               # fixed USD risk when using usd mode
     # Execute based on Adaptive Combo Manager (dynamically enabled combos) or Pro Rules fallback
     combos_only: true            # Use combos as primary gate when ready
     block_noncombo: true         # Block non-combo signals when combos_only=true

@@ -5348,8 +5348,10 @@ class TradingBot:
                 except Exception:
                     pass
 
-                # If combos-only mode is enabled, route through adaptive gate for pro rules fallback
-                # or block completely if fallback mode is 'off'
+                # If combos-only mode is enabled, route through adaptive gate for Pro/MTF fallback.
+                # In strict mode (fallback='off') we rely on the central gate (_scalp_combo_allowed)
+                # to block non-combo patterns; do NOT pre-block here or enabled combos would never
+                # reach the executor.
                 try:
                     _excfg = ((self.config.get('scalp', {}) or {}).get('exec', {}) or {})
                     _fbm = str(_excfg.get('fallback_until_ready', 'pro')).lower()
@@ -5367,7 +5369,9 @@ class TradingBot:
                     # Handle combos_only mode based on fallback setting
                     if bool(_excfg.get('combos_only', False)) and bool(_excfg.get('block_noncombo', False)):
                         if _fbm in ('pro', 'mtf'):
-                            # Route through adaptive gate for pro rules fallback or MTF check
+                            # Route through adaptive gate for Pro Rules fallback or MTF check.
+                            # This builds a full feature set and delegates to the central executor,
+                            # which will apply combo/rules gating and either execute or record a phantom.
                             try:
                                 from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
                                 scpt2 = _get_scpt()
@@ -5433,8 +5437,8 @@ class TradingBot:
                                 except Exception:
                                     ml_s_nc = None
 
-                                # Route through central gate for adaptive/MTF gating + notification
-                                # This will call _execute_scalp_trade → _scalp_combo_allowed → _notify_block
+                                # Route through central gate for adaptive/MTF gating + notification.
+                                # This will call _execute_scalp_trade → _scalp_combo_allowed → _notify_block.
                                 await self._scalp_gate_or_execute(sym, sc_sig, nc_feats, ml_score=float(ml_s_nc or 0.0))
                                 self._scalp_last_exec_reason[sym] = f'noncombo_{_fbm}_routed'
                                 logger.info(f"[{sym}] ⛔ Scalp NON‑COMBO routed through {_fbm} fallback gate (combos_only=true)")
@@ -5444,77 +5448,15 @@ class TradingBot:
                                 logger.warning(f"[{sym}] noncombo gate routing failed: {_nce}")
                                 # Fall through to normal gate-based execution
                         else:
-                            # Strict mode: fallback='off', block completely
-                            # Record phantom with full feature set for learning, then skip
+                            # Strict mode (fallback='off'): do not pre-block here.
+                            # Central combo gate (_scalp_combo_allowed) will:
+                            #   • allow enabled combos, or
+                            #   • block non-combo/disabled patterns (fallback_off_block).
+                            # We simply log the strict mode state and proceed.
                             try:
-                                from scalp_phantom_tracker import get_scalp_phantom_tracker as _get_scpt
-                                scpt2 = _get_scpt()
-
-                                # Build features from the best available frame source
-                                _df_src_nc = None
-                                try:
-                                    _df_src_nc = self.frames_3m.get(sym)
-                                    if _df_src_nc is None or getattr(_df_src_nc, 'empty', True):
-                                        _df_src_nc = self.frames.get(sym)
-                                    if _df_src_nc is None or getattr(_df_src_nc, 'empty', True):
-                                        _df_src_nc = df
-                                except Exception:
-                                    _df_src_nc = df
-
-                                _meta_nc = dict(getattr(sc_sig, 'meta', {}) or {})
-                                try:
-                                    _meta_nc.update({'symbol': sym, 'side': getattr(sc_sig, 'side', None), 'entry': getattr(sc_sig, 'entry', None), 'sl': getattr(sc_sig, 'sl', None), 'tp': getattr(sc_sig, 'tp', None)})
-                                except Exception:
-                                    pass
-                                nc_feats = self._build_scalp_features(
-                                    _df_src_nc,
-                                    _meta_nc,
-                                    (vol_level if 'vol_level' in locals() else None),
-                                    None
-                                )
-                                # Attach HTF composites if available
-                                try:
-                                    comp = self._get_htf_metrics(sym, self.frames.get(sym))
-                                    nc_feats['ts15'] = float(comp.get('ts15', 0.0)); nc_feats['ts60'] = float(comp.get('ts60', 0.0))
-                                    nc_feats['rc15'] = float(comp.get('rc15', 0.0)); nc_feats['rc60'] = float(comp.get('rc60', 0.0))
-                                except Exception:
-                                    pass
-                                # Compute Qscore snapshot for analysis continuity
-                                try:
-                                    _qs = self._compute_qscore_scalp(
-                                        sym, sc_sig.side, float(sc_sig.entry), float(sc_sig.sl), float(sc_sig.tp),
-                                        df3=_df_src_nc, df15=self.frames.get(sym), sc_feats=nc_feats
-                                    )
-                                    nc_feats['qscore'] = float(_qs[0]); nc_feats['qscore_components'] = dict(_qs[1]); nc_feats['qscore_reasons'] = list(_qs[2])
-                                except Exception:
-                                    pass
-                                # Mark routing for attribution
-                                try:
-                                    nc_feats['routing'] = 'noncombo_strict_block'
-                                except Exception:
-                                    pass
-
-                                # Compute ML score for learning record (fallback to existing ml_s)
-                                ml_s_nc = None
-                                try:
-                                    from ml_scorer_scalp import get_scalp_scorer
-                                    _scorer = get_scalp_scorer()
-                                    ml_s_nc, _ = _scorer.score_signal({'side': sc_sig.side, 'entry': sc_sig.entry, 'sl': sc_sig.sl, 'tp': sc_sig.tp}, nc_feats)
-                                except Exception:
-                                    ml_s_nc = None
-
-                                await self._scalp_gate_and_record_phantom(
-                                    sym,
-                                    sc_sig,
-                                    nc_feats,
-                                    ml_score=float(ml_s_nc if ml_s_nc is not None else (ml_s if 'ml_s' in locals() and ml_s is not None else 0.0))
-                                )
-                            except Exception as _nce:
-                                logger.debug(f"[{sym}] noncombo phantom record failed: {_nce}")
-                            self._scalp_last_exec_reason[sym] = 'noncombo_strict_block'
-                            # Clarify that this is strict combos-only mode: combo not enabled for execution
-                            logger.info(f"[{sym}] ⛔ Scalp NON‑COMBO blocked (combos_only strict: combo not enabled); skipping gate-based execution")
-                            continue
+                                logger.info(f"[{sym}] combos_only strict mode active (fallback=off); delegating to central combo gate")
+                            except Exception:
+                                pass
                 except Exception:
                     pass
 

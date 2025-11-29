@@ -102,8 +102,6 @@ class TGBot:
         self.app.add_handler(CommandHandler("status", self.status))
         # Simple responsiveness probe
         self.app.add_handler(CommandHandler("ping", self.ping))
-        # Simple responsiveness probe
-        self.app.add_handler(CommandHandler("ping", self.ping))
         self.app.add_handler(CommandHandler("panic_close", self.panic_close))
         self.app.add_handler(CommandHandler("balance", self.balance))
         self.app.add_handler(CommandHandler("health", self.health))
@@ -2491,14 +2489,27 @@ class TGBot:
         import asyncio
 
         async def _runner():
+            # Extra diagnostics around the polling lifecycle to debug CancelledError
+            try:
+                logger.info("Telegram polling runner starting (_legacy_start_polling)...")
+            except Exception:
+                pass
             try:
                 await self._legacy_start_polling()
             except asyncio.CancelledError:
                 # Normal during shutdown; Application/Updater will log details
-                pass
+                try:
+                    logger.info("Telegram polling runner cancelled (asyncio.CancelledError) — likely during shutdown")
+                except Exception:
+                    pass
             except Exception as e:
                 try:
                     logger.error(f"Telegram polling loop crashed: {e}")
+                except Exception:
+                    pass
+            else:
+                try:
+                    logger.info("Telegram polling runner completed without error")
                 except Exception:
                     pass
 
@@ -2519,6 +2530,10 @@ class TGBot:
 
     async def _legacy_start_polling(self):
         """Initialize/start Application and start the Updater polling loop."""
+        try:
+            logger.info("Telegram legacy polling: initialize/start sequence beginning")
+        except Exception:
+            pass
         try:
             await self.app.initialize()
         except Exception:
@@ -2572,7 +2587,7 @@ class TGBot:
                         pass
         except Exception as _pe:
             logger.error(f"TG get_updates probe failed: {_pe}")
-        logger.info(f"Telegram bot started polling (chat_id={self.chat_id})")
+        logger.info(f"Telegram bot starting updater.polling (chat_id={self.chat_id})")
         await self.app.updater.start_polling(
             drop_pending_updates=True,
             allowed_updates=["message","callback_query","channel_post"],
@@ -2696,6 +2711,10 @@ class TGBot:
         """Stop the bot"""
         if getattr(self, 'running', False):
             # Application.stop() stops the updater internally; avoid double-stop which can log CancelledError
+            try:
+                logger.info("Telegram stop() called — stopping Application and shutting down")
+            except Exception:
+                pass
             await self.app.stop()
             await self.app.shutdown()
             self.running = False

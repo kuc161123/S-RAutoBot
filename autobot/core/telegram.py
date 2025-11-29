@@ -2692,19 +2692,6 @@ class TGBot:
         except Exception:
             pass
 
-    async def ping(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        try:
-            uid = getattr(update.effective_user, 'id', 'n/a')
-            cid = getattr(update.effective_chat, 'id', 'n/a')
-            logger.info(f"/ping from user={uid} chat={cid}")
-            await self.safe_reply(update, "🏓 pong — bot alive")
-        except Exception as e:
-            logger.error(f"Error in ping: {e}")
-            try:
-                await update.message.reply_text("❌ ping error")
-            except Exception:
-                pass
-
     async def stop(self):
         """Stop the bot"""
         if getattr(self, 'running', False):

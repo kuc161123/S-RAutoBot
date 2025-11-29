@@ -1183,6 +1183,12 @@ class TradingBot:
             require_combo = True
             fallback_mode = 'mtf'
         allow_fallback = fallback_mode != 'off'
+        # Determine if manager is fresh and has enabled combos for this side
+        ready_side = False
+        try:
+            ready_side = self._adaptive_combo_ready(side)
+        except Exception:
+            ready_side = False
 
         # Build combo key if possible
         combo_id = self._scalp_combo_key_from_features(feats or {})
@@ -1196,24 +1202,22 @@ class TradingBot:
                 pass
         mgr = getattr(self, 'adaptive_combo_mgr', None)
 
-        # When an adaptive combo manager is present, gate strictly by per-combo enabled state.
-        # Do not depend on "readiness" timers: if a combo is enabled in state, it is eligible.
-        if mgr and require_combo:
+        # When adaptive manager is ready for this side, require an enabled combo and do NOT fall back.
+        if mgr and require_combo and ready_side:
             try:
                 side_key = str(side).lower()
                 active_list = mgr.get_active_combos(side_key)
                 active_ids = [c.get('combo_id') for c in (active_list or [])]
                 if combo_id and combo_id in active_ids:
                     return True, 'adaptive_enabled', ctx
-                # Combo present but disabled: optionally fall back to Pro rules
-                if combo_id:
-                    if not allow_fallback:
-                        return False, 'adaptive_disabled', ctx
-                    ctx['combo_disabled'] = True
+                # Manager ready but combo not enabled → block (no fallback once ready)
+                return False, 'adaptive_disabled', ctx
             except Exception:
-                # Manager present but state unavailable
-                if not allow_fallback:
-                    return False, 'no_manager_state', ctx
+                return False, 'no_manager_state', ctx
+
+        # Manager not ready or combos not enabled → allow Pro fallback if configured
+        if mgr and require_combo and combo_id and not ready_side and allow_fallback:
+            ctx['combo_disabled'] = True
 
         # Fallback path (manager not ready or no active combos)
         if fallback_mode == 'pro':

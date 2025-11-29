@@ -897,44 +897,36 @@ class TradingBot:
         In strict combos-only mode (combos_only + require_combo_enabled + fallback_until_ready=='off'),
         when a combo is enabled this function will execute instead of recording a phantom.
         """
-        # Manual A-tier diagnostics + optional execution: count every phantom path as checked,
-        # log match/non-match, and optionally execute when the fixed pattern matches.
+        # Manual A-tier diagnostics for phantom paths: count checks and log match/non-match
         try:
             cfg_m = getattr(self, 'config', {}) or {}
             mce = (((cfg_m.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
             if bool(mce.get('enabled', False)):
-                # Count every phantom path checked against manual pattern
                 try:
                     self._manual_combo_stats['checked'] = self._manual_combo_stats.get('checked', 0) + 1
                 except Exception:
                     pass
-
-                side_m = str(getattr(sc_sig, 'side', ''))
-                _fe = feats or {}
-                _match = bool(self._scalp_manual_exec_allowed(side_m, _fe))
-
-                # Log the manual A-tier evaluation for phantom paths
                 try:
-                    logger.info(
-                        f"[{sym}] Manual A-tier check (PHANTOM): "
-                        f"side={side_m} match={_match} "
-                        f"rsi={_fe.get('rsi_14')} macd={_fe.get('macd_hist')} "
-                        f"vwap={_fe.get('vwap_dist_atr')} fib_zone={_fe.get('fib_zone')} "
-                        f"mtf={_fe.get('mtf_agree_15')}"
-                    )
-                except Exception:
-                    pass
-
-                if _match:
-                    # For now, phantom path remains diagnostic-only; counting checks/matches
-                    # is sufficient to verify that the manual combo is being evaluated here.
-                    pass
-                else:
-                    # Manual pattern did not match this phantom signal
+                    side_m = str(getattr(sc_sig, 'side', ''))
+                    _fe = feats or {}
+                    _match = bool(self._scalp_manual_exec_allowed(side_m, _fe))
                     try:
-                        self._manual_combo_stats['nonmatch'] = self._manual_combo_stats.get('nonmatch', 0) + 1
+                        logger.info(
+                            f"[{sym}] Manual A-tier check (PHANTOM): "
+                            f"side={side_m} match={_match} "
+                            f"rsi={_fe.get('rsi_14')} macd={_fe.get('macd_hist')} "
+                            f"vwap={_fe.get('vwap_dist_atr')} fib_zone={_fe.get('fib_zone')} "
+                            f"mtf={_fe.get('mtf_agree_15')}"
+                        )
                     except Exception:
                         pass
+                    if not _match:
+                        try:
+                            self._manual_combo_stats['nonmatch'] = self._manual_combo_stats.get('nonmatch', 0) + 1
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
         except Exception:
             pass
 

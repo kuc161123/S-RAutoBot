@@ -75,6 +75,9 @@ class TGBot:
         self.app.add_handler(CommandHandler("ml90_risk", self.ml90_risk))
         self.app.add_handler(CommandHandler("scalp_set_risk_percent", self.scalp_set_risk_percent))
         self.app.add_handler(CommandHandler("scalp_get_risk", self.scalp_get_risk))
+        # Manual A-tier combo risk controls
+        self.app.add_handler(CommandHandler("manualcombo_risk", self.manual_combo_risk))
+        self.app.add_handler(CommandHandler("manualcombo_riskusd", self.manual_combo_risk_usd))
         self.app.add_handler(CommandHandler("scalp_ml_recommend", self.scalp_ml_recommend))
         # Combos-only controls
         self.app.add_handler(CommandHandler("scalpcombos", self.scalp_combos_toggle))
@@ -2973,6 +2976,8 @@ class TGBot:
             "• /scalpriskstate — Scalp adaptive risk state",
             "• /scalprisklimits <base> <min> <max>",
             "• /scalpriskladder <LB:mult,...> (e.g., 40:1.0,50:4.0)",
+            "• /manualcombo_risk <pct> — Manual A-tier combo risk %",
+            "• /manualcombo_riskusd <usd> — Manual A-tier combo risk in USDT",
             "",
             "Settings (via dashboard → Settings)",
             "• Rule thresholds, stream entry, scale‑out, timeouts",
@@ -3595,6 +3600,110 @@ class TGBot:
         except Exception as e:
             logger.error(f"Error in scalp_get_risk: {e}")
             await update.message.reply_text("Error retrieving scalp risk settings")
+
+    async def manual_combo_risk(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Set risk percentage for manual A-tier combo execution."""
+        try:
+            if not ctx.args:
+                await update.message.reply_text("Usage: /manualcombo_risk 1.0")
+                return
+
+            value = float(ctx.args[0])
+            if value <= 0:
+                await update.message.reply_text("❌ Risk must be greater than 0%")
+                return
+
+            # Update in-memory config
+            try:
+                bot = self.shared.get('bot_instance')
+                if bot and hasattr(bot, 'config') and isinstance(bot.config, dict):
+                    mce = bot.config.setdefault('scalp', {}).setdefault('exec', {}).setdefault('manual_combo_exec', {})
+                    mce['risk_mode'] = 'percent'
+                    mce['risk_percent'] = float(value)
+                    logger.info(f"Updated manual_combo_exec risk_percent to {value}%")
+            except Exception as e:
+                logger.error(f"Error updating in-memory manual combo risk: {e}")
+
+            # Persist to config.yaml
+            try:
+                import yaml
+                with open('config.yaml', 'r') as f:
+                    cfg = yaml.safe_load(f) or {}
+                mce_cfg = cfg.setdefault('scalp', {}).setdefault('exec', {}).setdefault('manual_combo_exec', {})
+                mce_cfg['risk_mode'] = 'percent'
+                mce_cfg['risk_percent'] = float(value)
+                with open('config.yaml', 'w') as f:
+                    yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+            except Exception as e:
+                logger.error(f"Error writing manual combo risk to config.yaml: {e}")
+
+            # Approximate USD per trade using current balance if available
+            usd_info = ""
+            try:
+                broker = self.shared.get("broker")
+                if broker and hasattr(broker, "get_balance"):
+                    bal = broker.get_balance()
+                    if bal:
+                        usd_amount = float(bal) * (value / 100.0)
+                        usd_info = f" (≈${usd_amount:.2f} per trade)"
+            except Exception:
+                pass
+
+            await update.message.reply_text(
+                f"✅ Manual combo risk set to {value:.2f}%{usd_info}\n"
+                f"_Pattern: RSI:40-60 MACD:bull VWAP:1.2+ Fib:50-61 noMTF_"
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Invalid number. Example: /manualcombo_risk 1.0")
+        except Exception as e:
+            logger.error(f"Error in manual_combo_risk: {e}")
+            await update.message.reply_text("Error updating manual combo risk %")
+
+    async def manual_combo_risk_usd(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        """Set fixed USD risk for manual A-tier combo execution."""
+        try:
+            if not ctx.args:
+                await update.message.reply_text("Usage: /manualcombo_riskusd 5")
+                return
+
+            value = float(ctx.args[0])
+            if value <= 0:
+                await update.message.reply_text("❌ Risk must be greater than 0 USDT")
+                return
+
+            # Update in-memory config
+            try:
+                bot = self.shared.get('bot_instance')
+                if bot and hasattr(bot, 'config') and isinstance(bot.config, dict):
+                    mce = bot.config.setdefault('scalp', {}).setdefault('exec', {}).setdefault('manual_combo_exec', {})
+                    mce['risk_mode'] = 'usd'
+                    mce['risk_usd'] = float(value)
+                    logger.info(f"Updated manual_combo_exec risk_usd to {value} USDT")
+            except Exception as e:
+                logger.error(f"Error updating in-memory manual combo USD risk: {e}")
+
+            # Persist to config.yaml
+            try:
+                import yaml
+                with open('config.yaml', 'r') as f:
+                    cfg = yaml.safe_load(f) or {}
+                mce_cfg = cfg.setdefault('scalp', {}).setdefault('exec', {}).setdefault('manual_combo_exec', {})
+                mce_cfg['risk_mode'] = 'usd'
+                mce_cfg['risk_usd'] = float(value)
+                with open('config.yaml', 'w') as f:
+                    yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+            except Exception as e:
+                logger.error(f"Error writing manual combo USD risk to config.yaml: {e}")
+
+            await update.message.reply_text(
+                f"✅ Manual combo risk set to ≈${value:.2f} per trade\n"
+                f"_Pattern: RSI:40-60 MACD:bull VWAP:1.2+ Fib:50-61 noMTF_"
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Invalid number. Example: /manualcombo_riskusd 5")
+        except Exception as e:
+            logger.error(f"Error in manual_combo_risk_usd: {e}")
+            await update.message.reply_text("Error updating manual combo USD risk")
 
     async def ml90_risk(self, update:Update, ctx:ContextTypes.DEFAULT_TYPE):
         """Get or set ML≥90 bypass risk percentage"""

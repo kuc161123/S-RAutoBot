@@ -2893,7 +2893,25 @@ class TradingBot:
                     pass
             # Sizing (with optional per-trade risk override)
                 try:
-                    # If no override provided, compute adaptive risk from combo performance
+                    # If no override provided, compute manual or adaptive risk
+                    if risk_percent_override is None:
+                        # Manual combo exec override when bypassing combo gate
+                        try:
+                            if bypass_combo_gate:
+                                cfg = getattr(self, 'config', {}) or {}
+                                mce = (((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
+                                mode = str(mce.get('risk_mode', 'percent')).lower()
+                                if mode == 'percent':
+                                    rp = float(mce.get('risk_percent', 0.0) or 0.0)
+                                    if rp > 0.0:
+                                        risk_percent_override = rp
+                                elif mode == 'usd':
+                                    usd = float(mce.get('risk_usd', 0.0) or 0.0)
+                                    bal = float(getattr(base_sizer, 'account_balance', 0.0) or 0.0)
+                                    if usd > 0.0 and bal > 0.0:
+                                        risk_percent_override = (usd / bal) * 100.0
+                        except Exception:
+                            pass
                     if risk_percent_override is None:
                         try:
                             feats_for_risk = {}
@@ -5495,6 +5513,47 @@ class TradingBot:
                 except Exception:
                     pass
                 sc_feats['routing'] = 'none'
+                # Manual A-tier combo execution first: if this fixed pattern matches,
+                # bypass all further gates and execute immediately. Applies to both
+                # potential executes and would-be phantom signals.
+                try:
+                    mce_cfg = (((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
+                    if bool(mce_cfg.get('enabled', False)) and self._scalp_manual_exec_allowed(sc_sig.side, sc_feats):
+                        if sym in self.book.positions:
+                            logger.info(f"[{sym}] 🛑 Manual combo exec blocked: reason=position_exists")
+                        else:
+                            try:
+                                import uuid as _uuid
+                                exec_id_manual = _uuid.uuid4().hex[:8]
+                            except Exception:
+                                exec_id_manual = 'manual'
+                            try:
+                                did_manual = await self._execute_scalp_trade(
+                                    sym,
+                                    sc_sig,
+                                    ml_score=float(ml_s or 0.0),
+                                    exec_id=exec_id_manual,
+                                    bypass_combo_gate=True
+                                )
+                            except TypeError:
+                                did_manual = await self._execute_scalp_trade(
+                                    sym,
+                                    sc_sig,
+                                    ml_score=float(ml_s or 0.0),
+                                    exec_id=exec_id_manual
+                                )
+                            if did_manual:
+                                logger.info(
+                                    f"[{sym}|id={exec_id_manual}] ✅ MANUAL_COMBO_EXEC: "
+                                    f"RSI:40-60 MACD:bull VWAP:1.2+ Fib:50-61 noMTF"
+                                )
+                                _scalp_decision_logged = True
+                                self._scalp_cooldown[sym] = bar_ts
+                                blist.append(now_ts)
+                                self._scalp_budget[sym] = blist
+                                continue
+                except Exception:
+                    pass
                 # Ensure hourly per-symbol pacing vars exist before any High-ML early exit uses them
                 try:
                     hb = self.config.get('phantom', {}).get('hourly_symbol_budget', {}) or {}
@@ -5742,45 +5801,6 @@ class TradingBot:
                                     pass
                                 self._scalp_cooldown[sym] = bar_ts
                                 continue
-                    # Manual A-tier combo execution (fixed pattern, bypassing combo gate)
-                    try:
-                        mce_cfg = (((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
-                        if bool(mce_cfg.get('enabled', False)) and self._scalp_manual_exec_allowed(sc_sig.side, sc_feats):
-                            if sym in self.book.positions:
-                                logger.info(f"[{sym}] 🛑 Manual combo exec blocked: reason=position_exists")
-                            else:
-                                try:
-                                    import uuid as _uuid
-                                    exec_id_manual = _uuid.uuid4().hex[:8]
-                                except Exception:
-                                    exec_id_manual = 'manual'
-                                try:
-                                    did_manual = await self._execute_scalp_trade(
-                                        sym,
-                                        sc_sig,
-                                        ml_score=float(ml_s or 0.0),
-                                        exec_id=exec_id_manual,
-                                        bypass_combo_gate=True
-                                    )
-                                except TypeError:
-                                    did_manual = await self._execute_scalp_trade(
-                                        sym,
-                                        sc_sig,
-                                        ml_score=float(ml_s or 0.0),
-                                        exec_id=exec_id_manual
-                                    )
-                                if did_manual:
-                                    logger.info(
-                                        f"[{sym}|id={exec_id_manual}] ✅ MANUAL_COMBO_EXEC: "
-                                        f"RSI:40-60 MACD:bull VWAP:1.2+ Fib:50-61 noMTF"
-                                    )
-                                    _scalp_decision_logged = True
-                                    self._scalp_cooldown[sym] = bar_ts
-                                    blist.append(now_ts)
-                                    self._scalp_budget[sym] = blist
-                                    continue
-                    except Exception:
-                        pass
                     # Scalp Qscore execution gate
                     exec_enabled = True
                     exec_thr = 60.0

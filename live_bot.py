@@ -5629,18 +5629,20 @@ class TradingBot:
                                     except Exception:
                                         exec_id_manual = 'manual'
                                     try:
+                                        # Manual A-tier executes bypass combo gate and do not depend on ML;
+                                        # pass a neutral ml_score (0.0) to avoid undefined ml_s usage.
                                         did_manual = await self._execute_scalp_trade(
                                             sym,
                                             sc_sig,
-                                            ml_score=float(ml_s or 0.0),
+                                            ml_score=0.0,
                                             exec_id=exec_id_manual,
                                             bypass_combo_gate=True
                                         )
                                     except TypeError:
+                                        # Backward-compatible call signature without ml_score argument
                                         did_manual = await self._execute_scalp_trade(
                                             sym,
                                             sc_sig,
-                                            ml_score=float(ml_s or 0.0),
                                             exec_id=exec_id_manual
                                         )
                                     if did_manual:

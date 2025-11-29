@@ -2161,15 +2161,7 @@ class TGBot:
         except Exception:
             pass
 
-        # Scalp Shadow (ML-based)
-        try:
-            from shadow_trade_simulator import get_shadow_tracker
-            sstats = get_shadow_tracker().get_stats().get('scalp', {})
-            if sstats:
-                lines.append("🩳 *Scalp Shadow*")
-                lines.append(f"• Trades: {sstats.get('total',0)} | WR: {sstats.get('wr',0.0):.1f}%")
-        except Exception as exc:
-            logger.debug(f"Scalp shadow stats unavailable: {exc}")
+        # Scalp Shadow (ML-based) — disabled in scalp-only bot
 
         # Positions
         positions = book.positions if book else {}
@@ -4801,44 +4793,9 @@ class TGBot:
                         pass
                 await query.edit_message_text(msg, parse_mode='Markdown')
             elif data.startswith("ui:shadow:stats"):
+                # Shadow simulator UI is disabled in scalp-only mode
                 await query.answer()
-                try:
-                    from shadow_trade_simulator import get_shadow_tracker
-                    st = get_shadow_tracker()
-                    s_stats = st.get_stats()
-                except Exception:
-                    s_stats = {}
-                # Baseline from executed trades
-                tt = self.shared.get('trade_tracker')
-                trades = getattr(tt, 'trades', []) or []
-                def _baseline_for(key: str):
-                    wins = losses = 0
-                    for t in trades:
-                        strat = (getattr(t, 'strategy_name', '') or '').lower()
-                        grp = 'trend' if ('trend' in strat or 'pullback' in strat) else 'enhanced_mr' if ('mr' in strat or 'reversion' in strat) else None
-                        if grp == key:
-                            pnl = float(getattr(t, 'pnl_usd', 0))
-                            if pnl > 0:
-                                wins += 1
-                            else:
-                                losses += 1
-                    total = wins + losses
-                    wr = (wins/total*100.0) if total else 0.0
-                    return wins, losses, total, wr
-                pbw, pbl, pbt, pbwr = _baseline_for('trend')
-                mrw, mrl, mrt, mrwr = _baseline_for('enhanced_mr')
-                msg = [
-                    "🧪 *Shadow vs Baseline*",
-                    "",
-                    "🔵 Trend",
-                    f"• Baseline: W {pbw} / L {pbl} (WR {pbwr:.1f}%)",
-                    f"• Shadow:   W {s_stats.get('trend',{}).get('wins',0)} / L {s_stats.get('trend',{}).get('losses',0)} (WR {s_stats.get('trend',{}).get('wr',0.0):.1f}%)",
-                    "",
-                    "🌀 Mean Reversion",
-                    f"• Baseline: W {mrw} / L {mrl} (WR {mrwr:.1f}%)",
-                    f"• Shadow:   W {s_stats.get('enhanced_mr',{}).get('wins',0)} / L {s_stats.get('enhanced_mr',{}).get('losses',0)} (WR {s_stats.get('enhanced_mr',{}).get('wr',0.0):.1f}%)",
-                ]
-                await query.edit_message_text("\n".join(msg), parse_mode='Markdown')
+                await query.edit_message_text("🧪 Shadow simulator is disabled in this scalp-only build.", parse_mode='Markdown')
             elif data.startswith("ui:risk:main"):
                 await query.answer()
                 risk = self.shared.get('risk')
@@ -6058,51 +6015,11 @@ class TGBot:
             await update.message.reply_text("Error getting ML patterns")
 
     async def shadow_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Compare baseline executed vs shadow-simulated ML nudges per strategy."""
+        """Shadow simulator is disabled in scalp-only bot."""
         try:
-            try:
-                from shadow_trade_simulator import get_shadow_tracker
-                st = get_shadow_tracker()
-                s_stats = st.get_stats()
-            except Exception:
-                s_stats = {}
-
-            # Baseline from executed trades
-            tt = self.shared.get('trade_tracker')
-            trades = getattr(tt, 'trades', []) or []
-            def _baseline_for(key: str):
-                wins = losses = 0
-                for t in trades:
-                    strat = (getattr(t, 'strategy_name', '') or '').lower()
-                    grp = 'trend' if ('trend' in strat or 'pullback' in strat) else 'enhanced_mr' if ('mr' in strat or 'reversion' in strat) else None
-                    if grp == key:
-                        pnl = float(getattr(t, 'pnl_usd', 0))
-                        if pnl > 0:
-                            wins += 1
-                        else:
-                            losses += 1
-                total = wins + losses
-                wr = (wins/total*100.0) if total else 0.0
-                return wins, losses, total, wr
-
-                pbw, pbl, pbt, pbwr = _baseline_for('trend')
-            mrw, mrl, mrt, mrwr = _baseline_for('enhanced_mr')
-
-            lines = [
-                "🧪 *Shadow vs Baseline*",
-                "",
-                    "🔵 Trend",
-                f"• Baseline: W {pbw} / L {pbl} (WR {pbwr:.1f}%)",
-                    f"• Shadow:   W {s_stats.get('trend',{}).get('wins',0)} / L {s_stats.get('trend',{}).get('losses',0)} (WR {s_stats.get('trend',{}).get('wr',0.0):.1f}%)",
-                "",
-                "🌀 Mean Reversion",
-                f"• Baseline: W {mrw} / L {mrl} (WR {mrwr:.1f}%)",
-                f"• Shadow:   W {s_stats.get('enhanced_mr',{}).get('wins',0)} / L {s_stats.get('enhanced_mr',{}).get('losses',0)} (WR {s_stats.get('enhanced_mr',{}).get('wr',0.0):.1f}%)",
-            ]
-            await self.safe_reply(update, "\n".join(lines))
+            await self.safe_reply(update, "🧪 Shadow simulator is disabled in this scalp-only build.")
         except Exception as e:
             logger.error(f"Error in shadow_stats: {e}")
-            await update.message.reply_text("Error getting shadow stats")
     
     async def ml_retrain_info(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         """Show ML retrain countdown information"""
@@ -7445,17 +7362,6 @@ class TGBot:
                     nxt = None
             except Exception:
                 pass
-            # Scalp shadow stats
-            sh_total = sh_wr = 0.0; sh_w = sh_l = 0
-            try:
-                from shadow_trade_simulator import get_shadow_tracker
-                sstats = get_shadow_tracker().get_stats().get('scalp', {})
-                sh_total = sstats.get('total', 0)
-                sh_w = sstats.get('wins', 0)
-                sh_l = sstats.get('losses', 0)
-                sh_wr = sstats.get('wr', 0.0)
-            except Exception:
-                pass
             # Gate pass rate
             gate_pass_count = 0
             gate_pass_pct = 0.0
@@ -7472,8 +7378,7 @@ class TGBot:
                 f"• Next retrain in: {nxt if nxt is not None else '-'} trades",
                 f"• Phantom recorded: {total} | WR: {wr:.1f}% (W/L {wins}/{losses})",
                 f"• All gates pass: {gate_pass_count}/{total} ({gate_pass_pct:.1f}%)",
-                f"• Shadow (ML-based): {int(sh_total)} | WR: {sh_wr:.1f}% (W/L {sh_w}/{sh_l})",
-                "_Scalp runs phantom-only; shadow sim reflects ML decision quality_"
+                "_Scalp runs phantom-only; shadow sim disabled in this build_"
             ]
             await self.safe_reply(update, "\n".join(msg))
         except Exception as e:

@@ -16895,12 +16895,19 @@ class TradingBot:
     async def start(self):
         """Start the bot"""
         self.running = True
-        logger.info("Starting trading bot...")
-        await self.run()
+        logger.info("🚀 TradingBot.start() called — setting running=True and entering run()")
+        try:
+            await self.run()
+            # If we ever get here, the main loop exited without raising; log explicitly
+            logger.warning("⚠️ TradingBot.run() completed normally — live bot loop has exited")
+        except Exception as e:
+            # Surface any unexpected top-level error with full traceback
+            logger.error(f"🔥 TradingBot.run() raised {type(e).__name__}: {e}", exc_info=True)
+            raise
     
     async def stop(self):
         """Stop the bot"""
-        logger.info("Stopping trading bot...")
+        logger.info("🛑 TradingBot.stop() called — beginning graceful shutdown")
         self.running = False
         # Cancel background tasks
         try:
@@ -16958,7 +16965,9 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
     
     try:
+        logger.info("🔧 __main__ entry: starting asyncio.run(bot.start())")
         asyncio.run(bot.start())
+        logger.info("✅ asyncio.run(bot.start()) completed")
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
         # Save candles before shutdown

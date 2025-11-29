@@ -22,8 +22,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Sanity check: ensure live_bot.py parses in this image
-RUN python -m py_compile live_bot.py
+    # Sanity check: ensure core bot and telegram parse in this image
+RUN python -m py_compile autobot/core/bot.py autobot/core/telegram.py
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

@@ -100,6 +100,10 @@ except Exception as e:
 # Consider Scalp available if signal detection and tracker are present
 SCALP_AVAILABLE = bool(detect_scalp_signal is not None and get_scalp_phantom_tracker is not None)
 
+# Symbol data collector (optional; disabled by default)
+SYMBOL_COLLECTOR_AVAILABLE = False
+get_symbol_collector = None
+
 # Safe accessor for Scalp Phantom Tracker to avoid local scoping issues
 def _safe_get_scalp_phantom_tracker():
     try:
@@ -10038,14 +10042,8 @@ class TradingBot:
         use_ml = cfg["trade"].get("use_ml_scoring", True)  # Default to True for immediate learning
         
         
-        # Initialize symbol data collector
+        # Symbol data collector disabled
         symbol_collector = None
-        if SYMBOL_COLLECTOR_AVAILABLE:
-            try:
-                symbol_collector = get_symbol_collector()
-                logger.info("📊 Symbol data collector active - tracking for future ML")
-            except Exception as e:
-                logger.warning(f"Could not initialize symbol collector: {e}")
         
         # Always initialize Trend Phantom Tracker so Telegram dashboard has stats
         try:

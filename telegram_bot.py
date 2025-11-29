@@ -1502,6 +1502,34 @@ class TGBot:
                 st = (stats_cm.get('short_totals') or {}) if isinstance(stats_cm, dict) else {}
 
                 lines.append("")
+                # Manual A-tier combo summary (exec path)
+                try:
+                    bot_mc = self.shared.get('bot_instance')
+                    cfg_mc = self.shared.get('config', {}) or {}
+                    mce_cfg = (((cfg_mc.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
+                    m_enabled = bool(mce_cfg.get('enabled', False))
+                    m_longs = bool(mce_cfg.get('longs_only', True))
+                    mode = str(mce_cfg.get('risk_mode', 'percent')).lower()
+                    rp = float(mce_cfg.get('risk_percent', 0.0) or 0.0)
+                    ru = float(mce_cfg.get('risk_usd', 0.0) or 0.0)
+                    mc_stats = getattr(bot_mc, '_manual_combo_stats', {}) if bot_mc else {}
+                    mc_exec = int(mc_stats.get('exec', 0) or 0)
+                    mc_block = int(mc_stats.get('blocked_pos', 0) or 0)
+                    mc_err = int(mc_stats.get('errors', 0) or 0)
+                    lines.append("🧩 *Manual A-tier Combo*")
+                    status_line = "On" if m_enabled else "Off"
+                    status_line += " | Longs only" if m_longs else " | Long/Short"
+                    lines.append(f"• Status: {status_line}")
+                    if mode == 'percent':
+                        lines.append(f"• Risk: {rp:.2f}% (mode: percent)")
+                    else:
+                        lines.append(f"• Risk: ≈${ru:.2f} (mode: usd)")
+                    lines.append("• Pattern: RSI:40-60 MACD:bull VWAP:1.2+ Fib:50-61 noMTF")
+                    lines.append(f"• Counters: Exec {mc_exec}, Blocked(pos) {mc_block}, Errors {mc_err}")
+                    lines.append("")
+                except Exception:
+                    pass
+
                 lines.append("🎯 *Active Combos*")
 
                 # Per-side active combos with WR and exec/phantom breakdown (top 3)
@@ -1533,12 +1561,14 @@ class TGBot:
                     active_ph = getattr(scpt, 'active', {}) or {}
                 except Exception:
                     active_ph = {}
-                # Combo shadow-miss diagnostics (per-run, from bot)
+                # Combo diagnostics (per-run, from bot)
                 try:
                     bot_for_miss = self.shared.get('bot_instance')
                     combo_miss_stats = getattr(bot_for_miss, '_scalp_combo_miss_stats', {}) if bot_for_miss else {}
+                    combo_block_stats = getattr(bot_for_miss, '_scalp_combo_block_stats', {}) if bot_for_miss else {}
                 except Exception:
                     combo_miss_stats = {}
+                    combo_block_stats = {}
 
                 def _combo_key_from_feats(f: dict) -> str | None:
                     try:
@@ -1680,6 +1710,16 @@ class TGBot:
                                     me = int(miss.get('exec_error', 0) or 0)
                                     mo = int(miss.get('other', 0) or 0)
                                     lines.append(f"   Would-have-exec (missed): total {mt} (pos {mp}, errors {me}, other {mo})")
+                            except Exception:
+                                pass
+                            # Combo block summary (diagnostics only)
+                            try:
+                                blk = combo_block_stats.get(cid, {})
+                                bt = int(blk.get('total', 0) or 0)
+                                if bt > 0:
+                                    ba = int(blk.get('adaptive', 0) or 0)
+                                    br = int(blk.get('rules', 0) or 0)
+                                    lines.append(f"   Blocked signals: total {bt} (adaptive {ba}, rules {br})")
                             except Exception:
                                 pass
                         except Exception:

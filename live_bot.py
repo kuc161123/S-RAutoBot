@@ -714,6 +714,11 @@ class TradingBot:
         # Combo shadow miss stats: track cases where an enabled combo was allowed
         # by the gate but no execution occurred (diagnostics only, per-run)
         self._scalp_combo_miss_stats: Dict[str, Dict[str, int]] = {}
+        # Per-combo block stats: how many signals were blocked by adaptive/rules
+        # while mapping to a given combo_id (diagnostics only, per-run)
+        self._scalp_combo_block_stats: Dict[str, Dict[str, int]] = {}
+        # Manual A-tier combo counters: executions and blocks
+        self._manual_combo_stats: Dict[str, int] = {'exec': 0, 'blocked_pos': 0, 'errors': 0}
 
     def _btc_micro_trend(self) -> str:
         """Compute BTC 1–3m micro-trend direction: up/down/none."""
@@ -2756,6 +2761,22 @@ class TradingBot:
                                 await self.tg.send_message(f"🚫 Blocked → Phantom | Gating: {gate_reason0} ({gate_ctx0.get('combo_id','n/a')})")
                         except Exception:
                             pass
+                    # Per-combo block stats
+                    try:
+                        combo_id_dbg = gate_ctx0.get('combo_id')
+                    except Exception:
+                        combo_id_dbg = None
+                    try:
+                        if combo_id_dbg:
+                            bs = self._scalp_combo_block_stats.setdefault(combo_id_dbg, {'total': 0, 'adaptive': 0, 'rules': 0})
+                            bs['total'] += 1
+                            kind0 = 'adaptive' if gate_reason0.startswith('adaptive') else 'rules'
+                            if kind0 == 'adaptive':
+                                bs['adaptive'] += 1
+                            else:
+                                bs['rules'] += 1
+                    except Exception:
+                        pass
                     # Combo shadow-miss diagnostics: allowed combo but no exec
                     try:
                         cfg = getattr(self, 'config', {}) or {}
@@ -2768,18 +2789,18 @@ class TradingBot:
                         require_combo = True
                         fb_mode = 'pro'
                     try:
-                        combo_id_dbg = gate_ctx0.get('combo_id')
+                        combo_id_dbg2 = gate_ctx0.get('combo_id')
                     except Exception:
-                        combo_id_dbg = None
+                        combo_id_dbg2 = None
                     try:
-                        if combos_only and require_combo and fb_mode == 'off' and combo_id_dbg and gate_reason0 == 'adaptive_enabled':
+                        if combos_only and require_combo and fb_mode == 'off' and combo_id_dbg2 and gate_reason0 == 'adaptive_enabled':
                             # We *intended* to allow this combo, but execution path returned False
                             reason = 'unknown'
                             try:
                                 reason = (getattr(self, '_scalp_last_exec_reason', {}) or {}).get(sym, reason)
                             except Exception:
                                 reason = 'unknown'
-                            stats = self._scalp_combo_miss_stats.setdefault(combo_id_dbg, {'total': 0, 'position_exists': 0, 'exec_error': 0, 'other': 0})
+                            stats = self._scalp_combo_miss_stats.setdefault(combo_id_dbg2, {'total': 0, 'position_exists': 0, 'exec_error': 0, 'other': 0})
                             stats['total'] += 1
                             if reason == 'position_exists':
                                 stats['position_exists'] += 1
@@ -2788,7 +2809,7 @@ class TradingBot:
                             else:
                                 stats['other'] += 1
                             logger.warning(
-                                f"[{sym}] ❗ COMBO SHADOW MISS: combo={combo_id_dbg} side={str(getattr(sig_obj,'side',''))} "
+                                f"[{sym}] ❗ COMBO SHADOW MISS: combo={combo_id_dbg2} side={str(getattr(sig_obj,'side',''))} "
                                 f"allowed=adaptive_enabled but did_exec=False (reason={reason})"
                             )
                     except Exception:
@@ -2803,6 +2824,12 @@ class TradingBot:
                 if sym in book.positions:
                     try:
                         self._scalp_last_exec_reason[sym] = 'position_exists'
+                    except Exception:
+                        pass
+                    # Track manual combo position blocks when bypassing combo gate
+                    try:
+                        if bypass_combo_gate:
+                            self._manual_combo_stats['blocked_pos'] = self._manual_combo_stats.get('blocked_pos', 0) + 1
                     except Exception:
                         pass
                     return False
@@ -3778,8 +3805,20 @@ class TradingBot:
                 except Exception:
                     pass
                 # Successful execution
+                # Track manual combo exec stats when bypassing combo gate
+                try:
+                    if bypass_combo_gate:
+                        self._manual_combo_stats['exec'] = self._manual_combo_stats.get('exec', 0) + 1
+                except Exception:
+                    pass
                 return True
         except Exception as e:
+            # Track manual combo errors when bypassing combo gate
+            try:
+                if bypass_combo_gate:
+                    self._manual_combo_stats['errors'] = self._manual_combo_stats.get('errors', 0) + 1
+            except Exception:
+                pass
             logger.info(f"[{sym}] Scalp stream execute error: {e}")
             return False
 

@@ -897,6 +897,24 @@ class TradingBot:
         In strict combos-only mode (combos_only + require_combo_enabled + fallback_until_ready=='off'),
         when a combo is enabled this function will execute instead of recording a phantom.
         """
+        # Manual A-tier diagnostics: count every phantom path as checked/non-match
+        try:
+            cfg_m = getattr(self, 'config', {}) or {}
+            mce = (((cfg_m.get('scalp', {}) or {}).get('exec', {}) or {}).get('manual_combo_exec', {}) or {})
+            if bool(mce.get('enabled', False)):
+                try:
+                    self._manual_combo_stats['checked'] = self._manual_combo_stats.get('checked', 0) + 1
+                except Exception:
+                    pass
+                try:
+                    side_m = str(getattr(sc_sig, 'side', ''))
+                    if not self._scalp_manual_exec_allowed(side_m, feats or {}):
+                        self._manual_combo_stats['nonmatch'] = self._manual_combo_stats.get('nonmatch', 0) + 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         try:
             allowed, gate_reason, gate_ctx = self._scalp_combo_allowed(str(getattr(sc_sig, 'side', '')), feats or {})
         except Exception:

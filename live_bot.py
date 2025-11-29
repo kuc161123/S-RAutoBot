@@ -1564,93 +1564,12 @@ class TradingBot:
         except Exception:
             return False, ['gates:error']
 
-    def _phantom_trend_regime_ok(self, sym: str, df: 'pd.DataFrame', regime_analysis) -> tuple[bool, str]:
-        """Return whether Trend phantom should be recorded under current regime.
+    # Removed: _phantom_trend_regime_ok (Trend strategy disabled)
+    # Removed: _phantom_mr_regime_ok (MR strategy disabled)
+    # Removed: _compute_qscore (Trend rule-mode disabled)
 
-        Applies router.htf_bias thresholds if enabled; otherwise uses trend.regime settings.
-        """
-        try:
-            if getattr(self, '_disable_gates', False):
-                return True, 'gates_disabled'
-        except Exception:
-            pass
-        # Config override: ungated Trend phantom flow (learn-first)
-        try:
-            if bool(((self.config.get('phantom', {}) or {}).get('ungated_trend', False))):
-                return True, 'ungated_trend'
-        except Exception:
-            pass
-        try:
-            cfg = self.config
-        except Exception:
-            cfg = {}
-        # Prefer HTF metrics when enabled
-        try:
-            htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
-            if bool(htf_cfg.get('enabled', False)):
-                metrics = self._get_htf_metrics(sym, df)
-                min_ts = float((htf_cfg.get('trend', {}) or {}).get('min_trend_strength', 60.0))
-                ts15 = float(metrics.get('ts15', 0.0)); ts60 = float(metrics.get('ts60', 0.0))
-                ok = (ts15 >= min_ts) and ((ts60 == 0.0) or (ts60 >= min_ts))
-                reason = f"ts15/ts60 {ts15:.1f}/{ts60:.1f} {'>=' if ok else '<'} {min_ts:.1f}"
-                return ok, reason
-        except Exception:
-            pass
-        # Fallback to trend.regime config
-        try:
-            tr_reg = (cfg.get('trend', {}) or {}).get('regime', {})
-            if bool(tr_reg.get('enabled', True)):
-                prim = getattr(regime_analysis, 'primary_regime', 'unknown') if regime_analysis else 'unknown'
-                conf = float(getattr(regime_analysis, 'regime_confidence', 0.0) or 0.0)
-                vol = str(getattr(regime_analysis, 'volatility_level', 'normal') or 'normal')
-                min_conf = float(tr_reg.get('min_conf', 0.60))
-                allowed_vol = set(tr_reg.get('allowed_vol', ['low', 'normal']))
-                ok = (prim == 'trending') and (conf >= min_conf) and (vol in allowed_vol)
-                reason = f"prim={prim} conf={conf:.2f} vol={vol} min_conf={min_conf:.2f} allowed={','.join(sorted(allowed_vol))}"
-                return ok, reason
-        except Exception:
-            pass
-        # If no regime config, allow by default
-        return True, 'regime_n/a'
 
-    def _phantom_mr_regime_ok(self, sym: str, df: 'pd.DataFrame', regime_analysis) -> tuple[bool, str]:
-        """Return whether MR phantom should be recorded under current regime.
 
-        Uses router.htf_bias thresholds for range/ts if enabled; else basic MR regime checks.
-        """
-        try:
-            if getattr(self, '_disable_gates', False):
-                return True, 'gates_disabled'
-        except Exception:
-            pass
-        try:
-            cfg = self.config
-        except Exception:
-            cfg = {}
-        try:
-            htf_cfg = (cfg.get('router', {}) or {}).get('htf_bias', {})
-            if bool(htf_cfg.get('enabled', False)):
-                metrics = self._get_htf_metrics(sym, df)
-                min_rq = float((htf_cfg.get('mr', {}) or {}).get('min_range_quality', 0.60))
-                max_ts = float((htf_cfg.get('mr', {}) or {}).get('max_trend_strength', 40.0))
-                rc15 = float(metrics.get('rc15', 0.0)); rc60 = float(metrics.get('rc60', 0.0)); ts15 = float(metrics.get('ts15', 0.0)); ts60 = float(metrics.get('ts60', 0.0))
-                ok = (rc15 >= min_rq) and ((rc60 == 0.0) or (rc60 >= min_rq)) and (ts15 <= max_ts) and ((ts60 == 0.0) or (ts60 <= max_ts))
-                reason = f"rc15/rc60 {rc15:.2f}/{rc60:.2f}≥{min_rq:.2f} & ts15/ts60 {ts15:.1f}/{ts60:.1f}≤{max_ts:.1f}"
-                return ok, reason
-        except Exception:
-            pass
-        try:
-            mr_reg = (cfg.get('mr', {}) or {}).get('regime', {})
-            if bool(mr_reg.get('enabled', True)):
-                prim = getattr(regime_analysis, 'primary_regime', 'unknown') if regime_analysis else 'unknown'
-                conf = float(getattr(regime_analysis, 'regime_confidence', 0.0) or 0.0)
-                min_conf = float(mr_reg.get('min_conf', 0.60))
-                ok = (prim == 'ranging') and (conf >= min_conf)
-                reason = f"prim={prim} conf={conf:.2f} min_conf={min_conf:.2f}"
-                return ok, reason
-        except Exception:
-            pass
-        return True, 'regime_n/a'
 
     def _resample_ohlcv(self, df: pd.DataFrame, minutes: int) -> pd.DataFrame:
         try:

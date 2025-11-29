@@ -998,8 +998,12 @@ class TradingBot:
                                         self._manual_combo_stats['errors'] = self._manual_combo_stats.get('errors', 0) + 1
                                     except Exception:
                                         pass
-                    else:
-                        self._manual_combo_stats['nonmatch'] = self._manual_combo_stats.get('nonmatch', 0) + 1
+                    if not _match:
+                        # Manual pattern did not match this phantom signal
+                        try:
+                            self._manual_combo_stats['nonmatch'] = self._manual_combo_stats.get('nonmatch', 0) + 1
+                        except Exception:
+                            pass
                 except Exception:
                     pass
         except Exception:

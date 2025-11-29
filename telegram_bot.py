@@ -12,8 +12,7 @@ import telegram.error
 import asyncio
 import logging
 
-from ml_scorer_trend import get_trend_scorer
-from ml_scorer_mean_reversion import get_mean_reversion_scorer
+# Disabled ML scorer imports removed (Trend, MR strategies disabled)
 from enhanced_market_regime import get_enhanced_market_regime, get_regime_summary
 
 logger = logging.getLogger(__name__)
@@ -119,17 +118,11 @@ class TGBot:
         self.app.add_handler(CommandHandler("clusters", self.cluster_status))
         self.app.add_handler(CommandHandler("update_clusters", self.update_clusters))
         self.app.add_handler(CommandHandler("set_ml_threshold", self.set_ml_threshold))
-        self.app.add_handler(CommandHandler("mr_ml", self.mr_ml_stats))
-        self.app.add_handler(CommandHandler("mr_retrain", self.mr_retrain))
-        self.app.add_handler(CommandHandler("enhanced_mr", self.enhanced_mr_stats))
-        self.app.add_handler(CommandHandler("enhancedmr", self.enhanced_mr_stats))  # Alternative command name
-        self.app.add_handler(CommandHandler("mr_phantom", self.mr_phantom_stats))
-        self.app.add_handler(CommandHandler("mrphantom", self.mr_phantom_stats))  # Alternative command name
+        # MR commands removed (strategy disabled)
         self.app.add_handler(CommandHandler("parallel_performance", self.parallel_performance))
         self.app.add_handler(CommandHandler("parallelperformance", self.parallel_performance))  # Alternative command name
         # Trend pullback state snapshot
-        self.app.add_handler(CommandHandler("trend_states", self.trend_states))
-        self.app.add_handler(CommandHandler("trendstates", self.trend_states))  # Alternative command name
+        # Trend commands removed (strategy disabled)
         self.app.add_handler(CommandHandler("regime_analysis", self.regime_analysis))
         self.app.add_handler(CommandHandler("regimeanalysis", self.regime_analysis))  # Alternative command name
         self.app.add_handler(CommandHandler("regime", self.regime_single))
@@ -169,9 +162,7 @@ class TGBot:
         self.app.add_handler(CommandHandler("scalpoffhoursexception", self.scalp_offhours_exception))
         # Vars-by-time command (implemented below); keep registration here
         self.app.add_handler(CommandHandler("scalptimewrvars", self.scalp_time_vars_cmd))
-        self.app.add_handler(CommandHandler("trendpromote", self.trend_promotion_status))
-        # Trend ML high-ML threshold changer
-        self.app.add_handler(CommandHandler("trendhighml", self.trend_high_ml))
+        # Trend promotion and high ML commands removed
         self.app.add_handler(CallbackQueryHandler(self.ui_callback, pattern=r"^ui:"))
         # Capture numeric input replies when a settings prompt is active
         self.app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), self._on_text))
@@ -185,8 +176,8 @@ class TGBot:
         self.app.add_handler(CommandHandler("flowstatus", self.flow_debug))
         # High-ML threshold controls per strategy (with and without underscores)
         self.app.add_handler(CommandHandler("scalp_highml", self.set_scalp_highml))
-        self.app.add_handler(CommandHandler("mr_highml", self.set_mr_highml))
-        self.app.add_handler(CommandHandler("trend_highml", self.set_trend_highml))
+        # MR high ML setter removed
+        # Trend high ML setter removed
         # Global error handler
         self.app.add_error_handler(self._on_error)
 
@@ -198,8 +189,8 @@ class TGBot:
             return 'us'
         # Aliases without underscore as requested
         self.app.add_handler(CommandHandler("scalphighml", self.set_scalp_highml))
-        self.app.add_handler(CommandHandler("mrhighml", self.set_mr_highml))
-        self.app.add_handler(CommandHandler("trendhighml", self.set_trend_highml))
+        # MR alias removed
+        # Alias removed
         # Qscore threshold adjustments
         self.app.add_handler(CommandHandler("set_qscore", self.set_qscore))
 
@@ -5043,7 +5034,7 @@ class TGBot:
             logger.error(f"Error in recent_trades: {e}")
             await update.message.reply_text("Error getting recent trades")
 
-    async def trend_high_ml(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # Removed: trend_high_ml method (Trend strategy disabled)
         """Set Trend high-ML execution threshold (also updates min_ml). Usage: /trendhighml 90"""
         try:
             if not ctx.args:
@@ -5061,7 +5052,7 @@ class TGBot:
             logger.warning(f"trend_high_ml failed: {exc}")
             await self.safe_reply(update, "⚠️ Failed to update Trend high‑ML threshold")
 
-    async def trend_states(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # Removed: trend_states method (Trend strategy disabled)
         """Show current Trend Pullback state per symbol"""
         try:
             from strategy_pullback import get_trend_states_snapshot
@@ -6540,7 +6531,7 @@ class TGBot:
             logger.error(f"Error in update_htf_sr: {e}")
             await update.message.reply_text("Error updating HTF S/R levels")
 
-    async def mr_ml_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # Removed: mr_ml_stats method (MR strategy disabled)
         """Show detailed Mean Reversion ML statistics"""
         # MR disabled UX guard
         try:
@@ -6610,7 +6601,7 @@ class TGBot:
             logger.error(f"Error in mr_ml_stats: {e}")
             await update.message.reply_text("Error getting Mean Reversion ML statistics")
 
-    async def mr_retrain(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # Removed: mr_retrain method (MR strategy disabled)
         """Force retrain Mean Reversion ML models"""
         # MR disabled UX guard
         try:
@@ -6742,7 +6733,7 @@ class TGBot:
             logger.error(f"Error in enhanced_mr_stats: {e}")
             await update.message.reply_text("Error getting Enhanced MR ML stats")
 
-    async def mr_phantom_stats(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # Removed: mr_phantom_stats method (MR strategy disabled)
         """Show Mean Reversion phantom trade statistics"""
         # MR disabled UX guard
         try:
@@ -11266,7 +11257,7 @@ class TGBot:
             logger.error(f"Error in scalp_promotion_status: {e}")
             await update.message.reply_text("Error getting scalp promotion status")
 
-    async def trend_promotion_status(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # Removed: trend_promotion_status method (Trend strategy disabled)
         """Summarize Trend promotion (corking) status and readiness."""
         try:
             cfg = self.shared.get('config') or {}

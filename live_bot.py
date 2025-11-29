@@ -888,6 +888,17 @@ class TradingBot:
         except Exception:
             allowed, gate_reason, gate_ctx = (False, 'insufficient_features', {})
 
+        # Debug/visibility: log combo gate decision for phantom paths
+        try:
+            combo_id_dbg = gate_ctx.get('combo_id') if isinstance(gate_ctx, dict) else None
+            if combo_id_dbg:
+                logger.info(
+                    f"[{sym}] Combo gate (PHANTOM): side={str(getattr(sc_sig,'side',''))} "
+                    f"combo_id={combo_id_dbg} allowed={allowed} reason={gate_reason}"
+                )
+        except Exception:
+            pass
+
         # If allowed and strict combo-only mode is active, execute instead of recording a phantom
         try:
             cfg = getattr(self, 'config', {}) or {}
@@ -2588,6 +2599,17 @@ class TradingBot:
                                 route_info['wr'] = c.get('wr')
                                 route_info['n'] = c.get('n')
                                 break
+                except Exception:
+                    pass
+
+                # Debug/visibility: log combo gate decision for execute paths
+                try:
+                    if route_info['combo_id']:
+                        logger.info(
+                            f"[{sym}] Combo gate (EXEC): side={str(getattr(sig_obj,'side',''))} "
+                            f"combo_id={route_info['combo_id']} allowed={allowed0} reason={gate_reason0} "
+                            f"active_wr={route_info.get('wr')} active_n={route_info.get('n')}"
+                        )
                 except Exception:
                     pass
 

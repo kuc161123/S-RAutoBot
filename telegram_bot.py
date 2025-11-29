@@ -1516,6 +1516,8 @@ class TGBot:
                     mc_exec = int(mc_stats.get('exec', 0) or 0)
                     mc_block = int(mc_stats.get('blocked_pos', 0) or 0)
                     mc_err = int(mc_stats.get('errors', 0) or 0)
+                    mc_checked = int(mc_stats.get('checked', 0) or 0)
+                    mc_nonmatch = int(mc_stats.get('nonmatch', 0) or 0)
                     lines.append("🧩 *Manual A-tier Combo*")
                     status_line = "On" if m_enabled else "Off"
                     status_line += " | Longs only" if m_longs else " | Long/Short"
@@ -1526,6 +1528,7 @@ class TGBot:
                         lines.append(f"• Risk: ≈${ru:.2f} (mode: usd)")
                     lines.append("• Pattern: RSI:40-60 MACD:bull VWAP:1.2+ Fib:50-61 noMTF")
                     lines.append(f"• Counters: Exec {mc_exec}, Blocked(pos) {mc_block}, Errors {mc_err}")
+                    lines.append(f"• Checked: {mc_checked} (non-match {mc_nonmatch})")
                     lines.append("")
                 except Exception:
                     pass

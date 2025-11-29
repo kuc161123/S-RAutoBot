@@ -5020,11 +5020,28 @@ class TradingBot:
                                                     ex_combo = ','.join(self._scalp_watch_agg['combo'][:3])
                                                     ex_near = ','.join(self._scalp_watch_agg['near'][:3])
                                                     logger.info(f"Scalp watchlist: Pro {pr} | Combo {co} | Near {ne} — PRO[{ex_pro}] COMBO[{ex_combo}] NEAR[{ex_near}]")
+                                                    # Update shared watchlist snapshot for /watchlist
                                                     try:
                                                         if getattr(self, 'tg', None) and getattr(self.tg, 'shared', None):
                                                             self.tg.shared['scalp_watchlist'] = {
-                                                                'ts': int(now_ts), 'pro': list(self._scalp_watch_agg['pro']), 'combo': list(self._scalp_watch_agg['combo']), 'near': list(self._scalp_watch_agg['near'])
+                                                                'ts': int(now_ts),
+                                                                'pro': list(self._scalp_watch_agg['pro']),
+                                                                'combo': list(self._scalp_watch_agg['combo']),
+                                                                'near': list(self._scalp_watch_agg['near'])
                                                             }
+                                                    except Exception:
+                                                        pass
+                                                    # Optional Telegram notification summarizing current watchlist
+                                                    try:
+                                                        if getattr(self, 'tg', None):
+                                                            lines = [
+                                                                "👀 *Scalp Watchlist*",
+                                                                f"• Pro: {pr} ({ex_pro or '-'})",
+                                                                f"• Combos: {co} ({ex_combo or '-'})",
+                                                                f"• Near: {ne} ({ex_near or '-'})",
+                                                            ]
+                                                            # Use system_message to bypass execute-only filter but keep format consistent
+                                                            await self.tg.send_system_message("\n".join(lines))
                                                     except Exception:
                                                         pass
                                                 self._scalp_watch_agg = {'pro': [], 'combo': [], 'near': []}

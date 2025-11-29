@@ -1625,6 +1625,16 @@ class TGBot:
                             lines.append(
                                 f"   Open: {total_open} (Exec {len(open_exec)}, Phantom {len(open_ph)})"
                             )
+                            # 7d recency stats for this combo
+                            try:
+                                rec = self._scalp_combo_recency(cid, side_label, days=7)
+                                n7 = int(rec.get('n', 0) or 0)
+                                w7 = int(rec.get('w', 0) or 0)
+                                if n7 > 0:
+                                    wr7 = (w7 / n7) * 100.0
+                                    lines.append(f"   7d: N={n7} WR {wr7:.1f}%")
+                            except Exception:
+                                pass
                             # Show up to 3 open entries
                             shown = 0
                             for sym, p in open_exec:

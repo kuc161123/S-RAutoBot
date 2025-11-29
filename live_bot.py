@@ -981,36 +981,6 @@ class TradingBot:
                 lines.append(f"{sym} {str(side).upper()} | Combo disabled")
                 if combo_id:
                     lines.append(f"Combo: {combo_id}")
-                    # Enrich with combo stats when available
-                    try:
-                        mgr = getattr(self, 'adaptive_combo_mgr', None)
-                        if mgr:
-                            side_key = str(side).lower()
-                            state = mgr._load_combo_state(side_key if side_key in ('long', 'short') else None)
-                            perf = state.get(combo_id) if isinstance(state, dict) else None
-                            if isinstance(perf, dict):
-                                wr = float(perf.get('wr', 0.0) or 0.0)
-                                n = int(perf.get('n', 0) or 0)
-                                wins = int(perf.get('wins', 0) or 0)
-                                # Compute Wilson LB with manager helper (fallback to WR if unavailable)
-                                try:
-                                    lb = mgr._wilson_lb(wins, n)
-                                except Exception:
-                                    lb = wr
-                                thr_long = float(getattr(mgr, 'min_wr_threshold_long', getattr(mgr, 'min_wr_threshold', 0.0)))
-                                thr_short = float(getattr(mgr, 'min_wr_threshold_short', getattr(mgr, 'min_wr_threshold', 0.0)))
-                                thr_side = thr_long if side_key == 'long' else thr_short
-                                n_min = int(getattr(mgr, 'min_sample_size', 0) or 0)
-                                lines.append("")
-                                lines.append("Inputs")
-                                lines.append(f"• LB WR   : {lb:.1f}% (raw {wr:.1f}%)")
-                                lines.append(f"• Samples : N={n}")
-                                lines.append("")
-                                lines.append("Criteria (Pass/Fail)")
-                                lines.append(f"• Sample size   {'✅' if n >= n_min else '❌'}  N={n} (min {n_min})")
-                                lines.append(f"• LB WR thresh  {'✅' if lb >= thr_side else '❌'}  {lb:.1f}% (thr {thr_side:.1f}%)")
-                    except Exception:
-                        pass
             elif kind == 'rules':
                 # Compute bins and Pro-Rule failures (RSI/MACD/VWAP/Fib only)
                 try:

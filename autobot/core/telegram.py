@@ -2474,16 +2474,45 @@ class TGBot:
         return "\n".join(lines), kb
 
     async def start_polling(self):
-        """Start the bot polling (force legacy path to avoid event-loop conflicts)."""
+        """Start the bot polling without blocking the caller.
+
+        We deliberately run the legacy polling loop in a background task so that
+        the trading bot startup (data backfill, WebSocket streams, etc.) can
+        continue. Previously this awaited the polling loop directly, which
+        meant the main bot `run()` coroutine never progressed beyond Telegram
+        startup on some deployments.
+        """
+        # Idempotent guard
         if not hasattr(self, 'running'):
             self.running = False
         if self.running:
             return
-        # Always use legacy polling to avoid "Cannot close a running event loop" issues
-        await self._legacy_start_polling()
+
+        import asyncio
+
+        async def _runner():
+            try:
+                await self._legacy_start_polling()
+            except asyncio.CancelledError:
+                # Normal during shutdown; Application/Updater will log details
+                pass
+            except Exception as e:
+                try:
+                    logger.error(f"Telegram polling loop crashed: {e}")
+                except Exception:
+                    pass
+
+        # Mark as running before scheduling to avoid races with concurrent callers
+        self.running = True
+        try:
+            asyncio.create_task(_runner())
+        except Exception:
+            # If task scheduling fails, reset running flag
+            self.running = False
+            return
+
         # Start outbox drain after polling starts
         try:
-            import asyncio
             asyncio.create_task(self._outbox_drain())
         except Exception:
             pass

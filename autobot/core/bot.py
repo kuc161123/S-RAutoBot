@@ -1182,6 +1182,7 @@ class TradingBot:
         except Exception:
             require_combo = True
             fallback_mode = 'mtf'
+        allow_fallback = fallback_mode != 'off'
 
         # Build combo key if possible
         combo_id = self._scalp_combo_key_from_features(feats or {})
@@ -1204,12 +1205,15 @@ class TradingBot:
                 active_ids = [c.get('combo_id') for c in (active_list or [])]
                 if combo_id and combo_id in active_ids:
                     return True, 'adaptive_enabled', ctx
-                # Combo_id present but not enabled → adaptive_disabled
+                # Combo present but disabled: optionally fall back to Pro rules
                 if combo_id:
-                    return False, 'adaptive_disabled', ctx
+                    if not allow_fallback:
+                        return False, 'adaptive_disabled', ctx
+                    ctx['combo_disabled'] = True
             except Exception:
                 # Manager present but state unavailable
-                return False, 'no_manager_state', ctx
+                if not allow_fallback:
+                    return False, 'no_manager_state', ctx
 
         # Fallback path (manager not ready or no active combos)
         if fallback_mode == 'pro':
@@ -1236,11 +1240,47 @@ class TradingBot:
                     fibz = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
                 except Exception:
                     fibz = None
-            
-            # ENABLED: MTF alignment for higher probability (15m trend agreement)
+
+            # Prefer curated Pro combos (config) when available
+            try:
+                combos_cfg = (((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('combos', []) or [])
+            except Exception:
+                combos_cfg = []
+            if combos_cfg:
+                side_lc = str(side).lower()
+                for c in combos_cfg:
+                    try:
+                        if not bool(c.get('enabled', False)):
+                            continue
+                        if str(c.get('side', '')).lower() != side_lc:
+                            continue
+                        rsi_min = float(c.get('rsi_min', -999))
+                        rsi_max = float(c.get('rsi_max', 999))
+                        vwap_min = float(c.get('vwap_min', -999))
+                        vwap_max = float(c.get('vwap_max', 999))
+                        macd_state = str(c.get('macd_state', '')).lower()
+                        fib_list = c.get('fib_zones') or []
+                        mtf_req = bool(c.get('mtf_agree', False))
+                        if not (rsi_min <= rsi <= rsi_max):
+                            continue
+                        if not (vwap_min <= vwap <= vwap_max):
+                            continue
+                        if macd_state == 'bull' and mh <= 0:
+                            continue
+                        if macd_state == 'bear' and mh >= 0:
+                            continue
+                        if fib_list and fibz not in fib_list:
+                            continue
+                        if bool(f.get('mtf_agree_15', False)) != mtf_req:
+                            continue
+                        ctx['combo_id'] = f"pro:{c.get('id')}"
+                        return True, 'pro_combo_match', ctx
+                    except Exception:
+                        continue
+                return False, 'pro_combo_block', ctx
+
+            # Legacy Pro rule fallback (when no curated combos provided)
             mtf = bool(f.get('mtf_agree_15', False))
-            
-            # Bins (stricter high-quality rules)
             rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-50' if rsi < 50 else '50-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
             macd = 'bull' if mh > 0 else 'bear'
             mh_abs = abs(mh)
@@ -1254,45 +1294,20 @@ class TradingBot:
                 vol_strong = volr_tmp >= 1.50
             except Exception:
                 vol_strong = False
-                
+
             if s == 'long':
-                # OPTIMIZED LONG RULES:
-                # 1. RSI: 40-70 (Trend Strength) OR 30-40 (Pullback). Avoid <30 (falling knife) unless confirmed elsewhere.
                 rsi_ok = (40 <= rsi < 70) or (30 <= rsi < 40)
-                
-                # 2. VWAP: Price > VWAP or near it. 
-                #    <0.6 (Close), 0.6-1.0 (Mid). Avoid >1.2 (Overextended) unless strong vol.
                 v_ok = (vwap_bin == '<0.6') or (vwap_bin == '0.6-1.0') or (vwap_bin == '1.0-1.2' and vol_strong)
-                
-                # 3. MACD: Must be Bullish.
                 macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
-                
-                # 4. Fibonacci: Focus on Golden Zone (38-61%) and Shallow Pullbacks (23-38%).
-                #    Avoid 0-23 (Chasing tops) and 78-100 (Deep reversal risk).
                 fib_ok = (fibz in ('23-38', '38-50', '50-61'))
-                
-                # 5. MTF: Must agree for Pro safety.
                 ok = bool(rsi_ok and v_ok and macd_ok and fib_ok and mtf)
-                
             else:
-                # OPTIMIZED SHORT RULES:
-                # 1. RSI: 30-60 (Trend Bearish). 
-                #    Sell Rallies (50-70). Avoid <30 (Oversold hole).
                 rsi_ok = (30 <= rsi < 60) or (60 <= rsi < 70 and vol_strong)
-                
-                # 2. MACD: Must be Bearish.
                 macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
-                
-                # 3. VWAP: Price < VWAP or near it.
                 v_ok = vwap_bin in ('<0.6', '0.6-1.0', '1.0-1.2')
-                
-                # 4. Fibonacci: Sell Rallies into Golden Zone (38-61%) or Shallow (23-38%).
-                #    Avoid 78-100 (Too deep/Reversal) and 0-23 (Chasing bottoms).
                 fib_ok = (fibz in ('23-38', '38-50', '50-61', '61-78'))
-                
-                # 5. MTF: Must agree.
                 ok = bool(rsi_ok and macd_ok and v_ok and fib_ok and mtf)
-                
+
             if ok:
                 return True, 'fallback_pro_ok', ctx
             else:

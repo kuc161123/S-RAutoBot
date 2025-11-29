@@ -711,6 +711,9 @@ class TradingBot:
             self._ws_first_kline_logs: int = 0
         except Exception:
             self._ws_first_kline_logs = 0
+        # Combo shadow miss stats: track cases where an enabled combo was allowed
+        # by the gate but no execution occurred (diagnostics only, per-run)
+        self._scalp_combo_miss_stats: Dict[str, Dict[str, int]] = {}
 
     def _btc_micro_trend(self) -> str:
         """Compute BTC 1–3m micro-trend direction: up/down/none."""
@@ -2744,6 +2747,43 @@ class TradingBot:
                                 await self.tg.send_message(f"🚫 Blocked → Phantom | Gating: {gate_reason0} ({gate_ctx0.get('combo_id','n/a')})")
                         except Exception:
                             pass
+                    # Combo shadow-miss diagnostics: allowed combo but no exec
+                    try:
+                        cfg = getattr(self, 'config', {}) or {}
+                        ex_cfg = ((cfg.get('scalp', {}) or {}).get('exec', {}) or {})
+                        combos_only = bool(ex_cfg.get('combos_only', False))
+                        require_combo = bool(ex_cfg.get('require_combo_enabled', True))
+                        fb_mode = str(ex_cfg.get('fallback_until_ready', 'pro')).lower()
+                    except Exception:
+                        combos_only = False
+                        require_combo = True
+                        fb_mode = 'pro'
+                    try:
+                        combo_id_dbg = gate_ctx0.get('combo_id')
+                    except Exception:
+                        combo_id_dbg = None
+                    try:
+                        if combos_only and require_combo and fb_mode == 'off' and combo_id_dbg and gate_reason0 == 'adaptive_enabled':
+                            # We *intended* to allow this combo, but execution path returned False
+                            reason = 'unknown'
+                            try:
+                                reason = (getattr(self, '_scalp_last_exec_reason', {}) or {}).get(sym, reason)
+                            except Exception:
+                                reason = 'unknown'
+                            stats = self._scalp_combo_miss_stats.setdefault(combo_id_dbg, {'total': 0, 'position_exists': 0, 'exec_error': 0, 'other': 0})
+                            stats['total'] += 1
+                            if reason == 'position_exists':
+                                stats['position_exists'] += 1
+                            elif reason in ('exec_exception', 'exec_guard', 'tpsl_error'):
+                                stats['exec_error'] += 1
+                            else:
+                                stats['other'] += 1
+                            logger.warning(
+                                f"[{sym}] ❗ COMBO SHADOW MISS: combo={combo_id_dbg} side={str(getattr(sig_obj,'side',''))} "
+                                f"allowed=adaptive_enabled but did_exec=False (reason={reason})"
+                            )
+                    except Exception:
+                        pass
                     return False
                 bybit = self.bybit
                 book = self.book

@@ -1530,6 +1530,12 @@ class TGBot:
                     active_ph = getattr(scpt, 'active', {}) or {}
                 except Exception:
                     active_ph = {}
+                # Combo shadow-miss diagnostics (per-run, from bot)
+                try:
+                    bot_for_miss = self.shared.get('bot_instance')
+                    combo_miss_stats = getattr(bot_for_miss, '_scalp_combo_miss_stats', {}) if bot_for_miss else {}
+                except Exception:
+                    combo_miss_stats = {}
 
                 def _combo_key_from_feats(f: dict) -> str | None:
                     try:
@@ -1662,6 +1668,17 @@ class TGBot:
                                             break
                                     except Exception:
                                         continue
+                            # Combo shadow-miss summary (diagnostics only)
+                            try:
+                                miss = combo_miss_stats.get(cid, {})
+                                mt = int(miss.get('total', 0) or 0)
+                                if mt > 0:
+                                    mp = int(miss.get('position_exists', 0) or 0)
+                                    me = int(miss.get('exec_error', 0) or 0)
+                                    mo = int(miss.get('other', 0) or 0)
+                                    lines.append(f"   Would-have-exec (missed): total {mt} (pos {mp}, errors {me}, other {mo})")
+                            except Exception:
+                                pass
                         except Exception:
                             lines.append(f"• WR {combo.get('wr',0.0):.1f}% (N={combo.get('n',0)})")
 

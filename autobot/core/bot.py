@@ -107,6 +107,18 @@ get_enhanced_mr_scorer = None
 get_mr_phantom_tracker = None
 get_phantom_tracker = None
 
+# Per-Symbol Optimized Pro Rules (Backtested WR)
+# Auto-generated from backtesting - symbols with optimal configurations
+PER_SYMBOL_PRO_RULES = {
+    '0GUSDT': {
+        'rsi_min_long': 35, 'rsi_max_long': 65,
+        'rsi_min_short': 35, 'rsi_max_short': 55,
+        'vwap_dist_max': 1.8, 'vol_ratio_min': 1.2,
+        'macd_hist_min': 0.0003, 'bb_width_min': 0.008,
+        'wr': 47.6, 'trades': 21  # Backtest results
+    },
+}
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,

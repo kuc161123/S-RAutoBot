@@ -11,6 +11,7 @@ bybit:
   api_secret: ${BYBIT_API_SECRET}
 trade:
   symbols:
+  - 0GUSDT
   - BTCUSDT
   - ETHUSDT
   - BNBUSDT

@@ -39,44 +39,6 @@ ScalpSettings = None
 get_scalp_phantom_tracker = None
 get_scalp_scorer = None
 
-# Stubs for disabled Trend/MR components to avoid NameError in legacy paths
-def detect_trend_signal(*args, **kwargs):
-    return None
-
-class Settings:
-    def __init__(self, **kwargs):
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-def revert_to_neutral(*args, **kwargs):
-    return None
-
-def update_htf_gate(*args, **kwargs):
-    return None
-
-def set_trend_state_store(*args, **kwargs):
-    return None
-
-def hydrate_trend_states(*args, **kwargs):
-    return None
-
-def set_trend_event_notifier(*args, **kwargs):
-    return None
-
-def set_trend_microframe_provider(*args, **kwargs):
-    return None
-
-def set_trend_entry_executor(*args, **kwargs):
-    return None
-
-def set_trend_phantom_recorder(*args, **kwargs):
-    return None
-
-def set_trend_invalidation_hook(*args, **kwargs):
-    return None
-
-def mark_executed(*args, **kwargs):
-    return None
 
 # Try to import Scalp components; fall back to stubs if unavailable
 SCALP_AVAILABLE = False
@@ -543,39 +505,7 @@ class FlowController:
         except Exception:
             return 'off_hours'
 
-    # --- Per-strategy gate adjustments ---
-    def adjust_trend(self, slope_min: float, ema_min: float, breakout_min: float) -> Dict[str, float]:
-        r = self._relax_ratio('trend')
-        lim = self.limits.get('trend', {})
-        g = self.guards.get('trend', {})
-        slope_adj = slope_min - r * float(lim.get('slope', 0.0))
-        ema_adj = ema_min - r * float(lim.get('ema_stack', 0.0))
-        br_adj = breakout_min - r * float(lim.get('breakout', 0.0))
-        # Apply guards
-        slope_adj = max(float(g.get('slope_min', 0.0)), slope_adj)
-        ema_adj = max(float(g.get('ema_stack_min', 0.0)), ema_adj)
-        br_adj = max(float(g.get('breakout_min', 0.0)), br_adj)
-        return {'slope_min': slope_adj, 'ema_min': ema_adj, 'breakout_min': br_adj, 'relax': r}
-
-    # Backward-compat shim (no-op mapping)
-    def adjust_pullback(self, trend_min: float, confirm_min: float, mtf_min: float) -> Dict[str, float]:
-        return {'trend_min': trend_min, 'confirm_min': confirm_min, 'mtf_min': mtf_min, 'relax': 0.0}
-
-    def adjust_mr(self, rc_min: float, touches_min: int, dist_mid_min: float, rev_min: float) -> Dict[str, float]:
-        r = self._relax_ratio('mr')
-        lim = self.limits.get('mr', {})
-        g = self.guards.get('mr', {})
-        rc_adj = rc_min - r * float(lim.get('rc', 0.0))
-        touches_adj = touches_min - int(round(r * float(lim.get('touches', 0.0))))
-        dist_adj = dist_mid_min - r * float(lim.get('dist_mid_atr', 0.0))
-        rev_adj = rev_min - r * float(lim.get('rev_atr', 0.0))
-        # Apply guards
-        rc_adj = max(float(g.get('rc_min', 0.0)), rc_adj)
-        touches_adj = max(int(g.get('touches_min', 0)), touches_adj)
-        dist_adj = max(float(g.get('dist_mid_atr_min', 0.0)), dist_adj)
-        rev_adj = max(float(g.get('rev_candle_atr_min', 0.0)), rev_adj)
-        return {'rc_min': rc_adj, 'touches_min': touches_adj, 'dist_mid_min': dist_adj, 'rev_min': rev_adj, 'relax': r}
-
+    # --- Scalp-only gate adjustment ---
     def adjust_scalp(self, sc_settings):
         """Mutate a ScalpSettings instance using relax ratio."""
         r = self._relax_ratio('scalp')
@@ -1797,77 +1727,6 @@ class TradingBot:
             return metrics
         except Exception:
             return {'ts1h': 0.0, 'ts4h': 0.0, 'ema_dir_1h': 'none', 'ema_dir_4h': 'none', 'ema_dist_1h': 0.0, 'ema_dist_4h': 0.0, 'adx_1h': 0.0, 'rsi_1h': 50.0, 'struct_dir_1h': 'none', 'struct_dir_4h': 'none'}
-
-
-    def _apply_htf_exec_gate(self, symbol: str, df: 'pd.DataFrame', side: str, threshold: float) -> tuple[bool, float, str, Dict[str, object]]:
-        """Apply per-symbol HTF gate for Trend execution.
-
-        Returns: (allowed, new_threshold, reason, metrics)
-        - In gated mode, allowed=False skips execution; threshold unchanged
-        - In soft mode, allowed may remain False but threshold is increased; caller can re-evaluate ML
-        """
-        try:
-            cfg = getattr(self, 'config', {}) or {}
-            gate = ((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('htf_gate', {}) or {}))
-            enabled = bool(gate.get('enabled', True))
-            if not enabled:
-                return True, threshold, 'disabled', {}
-            mode = str(gate.get('mode', 'gated')).lower()
-            min_ts1h = float(gate.get('min_trend_strength_1h', 60.0))
-            min_ts4h = float(gate.get('min_trend_strength_4h', 55.0))
-            ema_required = bool(gate.get('ema_alignment', True))
-            adx_min_1h = float(gate.get('adx_min_1h', 0.0))
-            struct_required = bool(gate.get('structure_confluence', False))
-            soft_delta = float(gate.get('soft_delta', 5.0))
-
-            m = self._compute_symbol_htf_exec_metrics(symbol, df)
-            ts1h = float(m.get('ts1h', 0.0)); ts4h = float(m.get('ts4h', 0.0))
-            ema_ok_1h = (m.get('ema_dir_1h') == ('up' if side == 'long' else 'down')) if ema_required else True
-            ema_ok_4h = (m.get('ema_dir_4h') == ('up' if side == 'long' else 'down')) if (ema_required and min_ts4h > 0) else True
-            adx_ok = (float(m.get('adx_1h', 0.0)) >= adx_min_1h) if adx_min_1h > 0 else True
-            struct_ok_1h = (m.get('struct_dir_1h') == ('up' if side == 'long' else 'down')) if struct_required else True
-            struct_ok_4h = (m.get('struct_dir_4h') == ('up' if side == 'long' else 'down')) if (struct_required and min_ts4h > 0) else True
-            ts_ok = (ts1h >= min_ts1h) and ((min_ts4h <= 0) or (ts4h >= min_ts4h))
-            all_ok = ts_ok and ema_ok_1h and ema_ok_4h and adx_ok and struct_ok_1h and struct_ok_4h
-            if all_ok:
-                try:
-                    logger.info(f"[{symbol}] HTF Gate: PASS ts1h={ts1h:.1f}/{min_ts1h:.1f} ts4h={ts4h:.1f}/{min_ts4h:.1f} ema={ema_ok_1h}/{ema_ok_4h} struct={struct_ok_1h}/{struct_ok_4h} adx1h={m.get('adx_1h',0.0):.1f}/{adx_min_1h:.1f} mode={mode}")
-                except Exception:
-                    pass
-                # Event
-                try:
-                    ev = self.shared.get('trend_events', [])
-                    ev.append({'symbol': symbol, 'text': f"HTF PASS ({side}) ts1h={ts1h:.0f} ts4h={ts4h:.0f} ema={ema_ok_1h}/{ema_ok_4h} adx={m.get('adx_1h',0.0):.0f}"})
-                    self.shared['trend_events'] = ev[-200:]
-                except Exception:
-                    pass
-                return True, threshold, 'pass', m
-            else:
-                if mode == 'soft':
-                    new_thr = float(threshold) + soft_delta
-                    try:
-                        logger.info(f"[{symbol}] HTF Gate: SOFT +thr={soft_delta:.0f} → new_thr={new_thr:.0f} (ts1h={ts1h:.1f}/{min_ts1h:.1f} ts4h={ts4h:.1f}/{min_ts4h:.1f} ema={ema_ok_1h}/{ema_ok_4h} struct={struct_ok_1h}/{struct_ok_4h} adx1h={m.get('adx_1h',0.0):.1f}/{adx_min_1h:.1f})")
-                    except Exception:
-                        pass
-                    return False, new_thr, 'soft', m
-                else:
-                    try:
-                        logger.info(f"[{symbol}] HTF Gate: FAIL ts1h={ts1h:.1f}/{min_ts1h:.1f} ts4h={ts4h:.1f}/{min_ts4h:.1f} ema={ema_ok_1h}/{ema_ok_4h} struct={struct_ok_1h}/{struct_ok_4h} adx1h={m.get('adx_1h',0.0):.1f}/{adx_min_1h:.1f} mode=gated")
-                    except Exception:
-                        pass
-                    try:
-                        ev = self.shared.get('trend_events', [])
-                        ev.append({'symbol': symbol, 'text': f"HTF FAIL ({side}) ts1h={ts1h:.0f} ts4h={ts4h:.0f} ema={ema_ok_1h}/{ema_ok_4h} adx={m.get('adx_1h',0.0):.0f}"})
-                        self.shared['trend_events'] = ev[-200:]
-                    except Exception:
-                        pass
-                    return False, threshold, 'gated', m
-        except Exception as _ge:
-            try:
-                logger.debug(f"[{symbol}] HTF gate error: {_ge}")
-            except Exception:
-                pass
-            return True, threshold, 'error', {}
 
 
     # --- 3m micro-context checks (diagnostic) ---

@@ -3656,8 +3656,10 @@ class TradingBot:
                             df_src = self.frames_3m.get(sym) if (hasattr(self, 'frames_3m') and self.frames_3m.get(sym) is not None and not self.frames_3m.get(sym).empty) else self.frames.get(sym)
                             sc_meta2 = {'symbol': sym, 'side': getattr(sig_obj,'side',None), 'entry': getattr(sig_obj,'entry',None), 'sl': getattr(sig_obj,'sl',None), 'tp': getattr(sig_obj,'tp',None)}
                             feats = self._build_scalp_features(df_src if df_src is not None else self.frames.get(sym), sc_meta2, None, None)
-                            # Wick/Volume gate values
+                            # Wick/Volume gate values (informational; mark when bypassed)
                             try:
+                                combo_id_msg = str(sc_feats.get('combo_id', '') or '')
+                                is_pro_combo = combo_id_msg.startswith('pro:')
                                 hg = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
                                 vmin = float(hg.get('vol_ratio_min_3m', 1.20))
                                 volr = float(feats.get('volume_ratio', 0.0) or 0.0)
@@ -3665,7 +3667,12 @@ class TradingBot:
                                 uw = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
                                 lw = float(feats.get('lower_wick_ratio', 0.0) or 0.0)
                                 wick_ok = (lw >= uw + wdelta) if str(getattr(sig_obj,'side','short')).lower()=='long' else (uw >= lw + wdelta)
-                                feat_lines.append(f"Gates: Wick {'✅' if wick_ok else '❌'} Δ≥{wdelta:.2f} | Vol {'✅' if volr>=vmin else '❌'} {volr:.2f} (≥ {vmin:.2f})")
+                                if is_pro_combo:
+                                    feat_lines.append(f"Gates: Pro combo {combo_id_msg} (vol/wick informational)")
+                                    feat_lines.append(f" - Wick: L={lw:.2f} U={uw:.2f} Δ={wdelta:.2f}")
+                                    feat_lines.append(f" - Vol : {volr:.2f} (min {vmin:.2f})")
+                                else:
+                                    feat_lines.append(f"Gates: Wick {'✅' if wick_ok else '❌'} Δ≥{wdelta:.2f} | Vol {'✅' if volr>=vmin else '❌'} {volr:.2f} (≥ {vmin:.2f})")
                             except Exception:
                                 pass
                             # Core features

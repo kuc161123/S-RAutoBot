@@ -1250,7 +1250,8 @@ class TradingBot:
                     fibz = None
 
             # Pro rule fallback (no curated config combos)
-            mtf = bool(f.get('mtf_agree_15', False))
+            # MTF uses 3m EMA(20/50) trend alignment from features
+            mtf = bool(f.get('mtf_agree_20_50', False))
             rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-50' if rsi < 50 else '50-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
             macd = 'bull' if mh > 0 else 'bear'
             mh_abs = abs(mh)
@@ -3761,6 +3762,7 @@ class TradingBot:
             def _ema(s: pd.Series, n: int) -> pd.Series:
                 return s.ewm(span=n, adjust=False).mean()
 
+            ema20_last = ema50_last = None
             if len(close) >= 20:
                 ema_fast = _ema(close, 20)
                 if len(ema_fast) >= 11:
@@ -3768,6 +3770,10 @@ class TradingBot:
                     out['ema_slope_fast'] = float((slope_fast / max(1e-9, price)) * 100.0)
                 else:
                     out['ema_slope_fast'] = 0.0
+                try:
+                    ema20_last = float(ema_fast.iloc[-1])
+                except Exception:
+                    ema20_last = None
             else:
                 out['ema_slope_fast'] = 0.0
             if len(close) >= 50:
@@ -3777,8 +3783,31 @@ class TradingBot:
                     out['ema_slope_slow'] = float((slope_slow / max(1e-9, price)) * 100.0)
                 else:
                     out['ema_slope_slow'] = 0.0
+                try:
+                    ema50_last = float(ema_slow.iloc[-1])
+                except Exception:
+                    ema50_last = None
             else:
                 out['ema_slope_slow'] = 0.0
+
+            # 3m MTF trend alignment: EMA(20) vs EMA(50)
+            try:
+                if ema20_last is None and len(close) >= 20:
+                    ema20_last = float(_ema(close, 20).iloc[-1])
+            except Exception:
+                ema20_last = ema20_last
+            try:
+                if ema50_last is None and len(close) >= 50:
+                    ema50_last = float(_ema(close, 50).iloc[-1])
+            except Exception:
+                ema50_last = ema50_last
+            try:
+                if ema20_last is not None and ema50_last is not None:
+                    out['mtf_agree_20_50'] = bool(ema20_last > ema50_last)
+                else:
+                    out['mtf_agree_20_50'] = False
+            except Exception:
+                out['mtf_agree_20_50'] = False
 
             # Wick ratios (last candle) and body features
             if len(tail) >= 1:

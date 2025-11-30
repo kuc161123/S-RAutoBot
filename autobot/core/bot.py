@@ -115,7 +115,14 @@ PER_SYMBOL_PRO_RULES = {
         'rsi_min_short': 35, 'rsi_max_short': 55,
         'vwap_dist_max': 1.8, 'vol_ratio_min': 1.2,
         'macd_hist_min': 0.0003, 'bb_width_min': 0.008,
-        'wr': 47.6, 'trades': 21  # Backtest results
+        'wr': 47.6, 'trades': 21
+    },
+    'BTCUSDT': {
+        'rsi_min_long': 38, 'rsi_max_long': 62,
+        'rsi_min_short': 35, 'rsi_max_short': 55,
+        'vwap_dist_max': 1.8, 'vol_ratio_min': 1.2,
+        'macd_hist_min': 0.0003, 'bb_width_min': 0.008,
+        'wr': 40.0, 'trades': 15
     },
 }
 

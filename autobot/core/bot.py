@@ -1046,11 +1046,12 @@ class TradingBot:
                     reasons.append('ATR')
                 if not bbw_ok:
                     reasons.append('BBW')
+                lines.append("🚫 Blocked — Rules")
                 lines.append(f"{sym} {str(side).upper()} | Reason: {', '.join(reasons) if reasons else 'Pro rule'}")
                 lines.append("")
                 lines.append("Inputs")
                 lines.append(f"• RSI  : {rsi:.1f} (bin {rsi_bin})")
-                lines.append(f"• MACD : {macd} (hist {mh:.4f})")
+                lines.append(f"• MACD : {macd} (hist {mh:.5f})")
                 lines.append(f"• VWAP : {vwap:.2f} ATR (bin {vwap_bin})")
                 lines.append(f"• Fib  : {fibz or 'n/a'}")
                 lines.append(f"• MTF  : {'✓' if mtf else '✗'}")
@@ -1058,6 +1059,16 @@ class TradingBot:
                 lines.append(f"• Wick : L={lw:.2f} U={uw:.2f} Δ={wick_delta:.2f} (min {wdelta_local:.2f}, dir≥{wick_min:.2f})")
                 lines.append(f"• ATR% : {atr_pct:.3f}% (min 0.050%)")
                 lines.append(f"• BBW% : {bbw_pct*100.0:.3f}% (min 1.000%)")
+                lines.append("")
+                lines.append("Criteria (Pass/Fail)")
+                lines.append(f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: {'40-60' if side=='long' else '35-55'}")
+                lines.append(f"• MACD  {'✅' if macd_ok else '❌'}  allowed: {macd} with |hist| ≥ 0.0003")
+                lines.append(f"• VWAP  {'✅' if v_ok else '❌'}  allowed: <1.3 (or 1.5 with vol≥2.0x)")
+                lines.append(f"• Fib   {'✅' if fib_ok else '❌'}  allowed: 38-50, 50-61, 61-78, 23-38")
+                lines.append(f"• Vol   {'✅' if vol_ok else '❌'}  volume vs gate min 1.50x")
+                lines.append(f"• Wick  {'✅' if wick_ok else '❌'}  dominant wick Δ≥{wdelta_local} and dir≥{wick_min}")
+                lines.append(f"• ATR   {'✅' if atr_ok else '❌'}  atr_pct ≥ 0.050%")
+                lines.append(f"• BBW   {'✅' if bbw_ok else '❌'}  bb_width_pct ≥ 0.010")
                 lines.append("")
                 lines.append("Criteria (Pass/Fail)")
                 if s == 'long':
@@ -4770,6 +4781,59 @@ class TradingBot:
                                     reasons.append('orb_block')
                                 if not reasons:
                                     reasons.append('filters_unmet')
+               # --- Pro Rules (High Precision) ---
+        # Backtest-optimized for >50% WR:
+        # - RSI: 40-60 (Long), 35-55 (Short)
+        # - Volume: 1.5x (Strict)
+        # - VWAP: 1.3 (Relaxed)
+        # - MACD: 0.0003 (Relaxed)
+        
+        # 1. RSI Gate (Stricter)
+        rsi_val = float(m.get('rsi', 50.0))
+        if side == 'long':
+            if not (40 <= rsi_val <= 60):
+                reasons.append(f"RSI {rsi_val:.1f} not in 40-60")
+        else:
+            if not (35 <= rsi_val <= 55):
+                reasons.append(f"RSI {rsi_val:.1f} not in 35-55")
+
+        # 2. MACD Gate (Relaxed)
+        hist = float(m.get('macd_hist', 0.0))
+        min_hist = 0.0003
+        if abs(hist) < min_hist:
+            reasons.append(f"MACD hist {hist:.5f} < {min_hist}")
+        
+        # 3. Fibonacci Gate (Standard)
+        fib_level = str(m.get('fib_level', 'none'))
+        if fib_level not in ('38-50', '50-61', '61-78', '23-38'):
+            reasons.append(f"Fib {fib_level} not valid")
+
+        # 4. Volume Gate (Strict 1.5x)
+        vol_ratio = float(m.get('vol_ratio', 0.0))
+        min_vol = 1.50
+        if vol_ratio < min_vol:
+            reasons.append(f"Vol {vol_ratio:.2f}x < {min_vol}x")
+
+        # 5. Wick Gate (Standard)
+        wick_delta = float(m.get('wick_delta', 0.0))
+        wick_dir = float(m.get('wick_dir', 0.0))
+        if wick_delta < 0.10: # Kept at 0.10 from previous optimization
+             reasons.append(f"Wick delta {wick_delta:.2f} < 0.10")
+
+        # 6. VWAP Gate (Relaxed 1.3)
+        dist_atr = float(m.get('vwap_dist_atr', 0.0))
+        max_dist = 1.3
+        # Allow wider if volume is very strong (2.0x+)
+        if vol_ratio >= 2.0:
+            max_dist = 1.5
+            
+        if dist_atr > max_dist:
+             reasons.append(f"VWAP dist {dist_atr:.2f} > {max_dist}")
+
+        # 7. BB Width (Standard)
+        bbw = float(m.get('bb_width', 0.0))
+        if bbw < 0.008:
+            reasons.append(f"BBW {bbw:.4f} < 0.008")
                                 # Update per-symbol Scalp state flags
                                 try:
                                     import time as _t

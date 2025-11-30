@@ -1589,12 +1589,6 @@ class TradingBot:
         except Exception:
             return False, ['gates:error']
 
-    # Removed: _phantom_trend_regime_ok (Trend strategy disabled)
-    # Removed: _phantom_mr_regime_ok (MR strategy disabled)
-    # Removed: _compute_qscore (Trend rule-mode disabled)
-
-
-
 
     def _resample_ohlcv(self, df: pd.DataFrame, minutes: int) -> pd.DataFrame:
         try:
@@ -1803,10 +1797,6 @@ class TradingBot:
             return metrics
         except Exception:
             return {'ts1h': 0.0, 'ts4h': 0.0, 'ema_dir_1h': 'none', 'ema_dir_4h': 'none', 'ema_dist_1h': 0.0, 'ema_dist_4h': 0.0, 'adx_1h': 0.0, 'rsi_1h': 50.0, 'struct_dir_1h': 'none', 'struct_dir_4h': 'none'}
-
-    # Removed: _compute_qscore method (Trend rule-mode disabled, ~160 lines)
-
-
 
 
     def _apply_htf_exec_gate(self, symbol: str, df: 'pd.DataFrame', side: str, threshold: float) -> tuple[bool, float, str, Dict[str, object]]:

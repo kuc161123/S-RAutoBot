@@ -4892,10 +4892,7 @@ class TGBot:
             logger.error(f"Error in recent_trades: {e}")
             await update.message.reply_text("Error getting recent trades")
 
-    # Removed: trend_high_ml method (Trend strategy disabled)
 
-
-    # Removed: trend_states method (Trend strategy disabled)
         """Show current Trend Pullback state per symbol"""
         try:
             from strategy_pullback import get_trend_states_snapshot
@@ -6334,7 +6331,7 @@ class TGBot:
             logger.error(f"Error in update_htf_sr: {e}")
             await update.message.reply_text("Error updating HTF S/R levels")
 
-    # Removed: mr_ml_stats method (MR strategy disabled)
+
         """Show detailed Mean Reversion ML statistics"""
         # MR disabled UX guard
         try:
@@ -6404,7 +6401,7 @@ class TGBot:
             logger.error(f"Error in mr_ml_stats: {e}")
             await update.message.reply_text("Error getting Mean Reversion ML statistics")
 
-    # Removed: mr_retrain method (MR strategy disabled)
+
         """Force retrain Mean Reversion ML models"""
         # MR disabled UX guard
         try:
@@ -6536,7 +6533,7 @@ class TGBot:
             logger.error(f"Error in enhanced_mr_stats: {e}")
             await update.message.reply_text("Error getting Enhanced MR ML stats")
 
-    # Removed: mr_phantom_stats method (MR strategy disabled)
+
         """Show Mean Reversion phantom trade statistics"""
         # MR disabled UX guard
         try:
@@ -11048,7 +11045,7 @@ class TGBot:
             logger.error(f"Error in scalp_promotion_status: {e}")
             await update.message.reply_text("Error getting scalp promotion status")
 
-    # Removed: trend_promotion_status method (Trend strategy disabled)
+
         """Summarize Trend promotion (corking) status and readiness."""
         try:
             cfg = self.shared.get('config') or {}

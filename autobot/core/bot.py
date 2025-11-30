@@ -1036,7 +1036,7 @@ class TradingBot:
                 if combo_id:
                     lines.append(f"Combo: {combo_id}")
             elif kind == 'rules':
-                # Compute bins and Pro-Rule failures (RSI/MACD/VWAP/Fib only)
+                # Compute Pro-Rule failures (strict, aligned with fallback)
                 try:
                     rsi = float(feats.get('rsi_14', 50.0) or 50.0)
                 except Exception:
@@ -1054,14 +1054,12 @@ class TradingBot:
                 except Exception:
                     vwap = 999.0
                 fibz = feats.get('fib_zone')
-                # Temporarily ignore MTF alignment to increase flow
-                mtf = True
+                mtf = bool(feats.get('mtf_agree_15', False))
                 rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
                 macd = 'bull' if mh > 0 else 'bear'
                 mh_abs = abs(mh)
-                mh_floor = 0.0005
-                vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
-                # Derive fib zone if missing
+                mh_floor = 0.0010
+                vwap_bin = '<1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
                 if not isinstance(fibz, str) or not fibz:
                     try:
                         frel = float(feats.get('fib_ret', 0.0))
@@ -1069,44 +1067,39 @@ class TradingBot:
                         fibz = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
                     except Exception:
                         fibz = 'n/a'
-                vol_strong = volr >= 1.50
-                reasons: list[str] = []
-                s = str(side).lower()
-                if s == 'long':
-                    # RSI: 40-60 or <30 or 60-70 with strong volume
-                    rsi_ok = (40 <= rsi < 60) or (rsi < 30) or (60 <= rsi < 70 and vol_strong)
-                    # MACD: bull with minimum hist strength
-                    macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
-                    # VWAP: <0.6 OR (0.6-1.0 with bull+vol) OR (1.2+ with bull+vol)
-                    v_ok = (vwap_bin == '<0.6') or \
-                           (vwap_bin == '0.6-1.0' and macd == 'bull' and vol_strong) or \
-                           (vwap_bin == '1.2+' and macd == 'bull' and vol_strong)
-                    # Fib: 0-23..50-61, or 61-78 with strong vol
-                    fib_ok = (fibz in ('0-23', '23-38', '38-50', '50-61')) or (fibz == '61-78' and vol_strong)
-                else:
-                    # RSI: <35 OR 35-50 with strong vol OR 50-60
-                    rsi_ok = (rsi < 35) or (35 <= rsi < 50 and vol_strong) or (50 <= rsi < 60)
-                    # MACD: bear with minimum hist strength
-                    macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
-                    # VWAP: <0.6, 0.6-1.0, 1.0-1.2 (1.2+ blocked)
-                    v_ok = vwap_bin in ('<0.6', '0.6-1.0', '1.0-1.2')
-                    # Fib: 50-61..78-100
-                    fib_ok = fibz in ('50-61', '61-78', '78-100')
-                # Volume and Wick gate status (for visibility only)
+                vol_strong = volr >= 2.0
                 try:
                     uw = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
                     lw = float(feats.get('lower_wick_ratio', 0.0) or 0.0)
                 except Exception:
                     uw = lw = 0.0
-                hg_local = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
-                vmin_local = float(hg_local.get('vol_ratio_min_3m', 1.30))
-                wdelta_local = float(hg_local.get('wick_delta_min', 0.12))
-                wick_delta = (lw - uw) if s == 'long' else (uw - lw)
-                vol_ok = volr >= vmin_local
+                wdelta_local = 0.15
+                wick_min = 0.25
+                wick_delta = (lw - uw) if str(side).lower() == 'long' else (uw - lw)
+                vol_ok = volr >= 1.50
+                wick_ok = (wick_delta >= wdelta_local) and ((lw if str(side).lower()=='long' else uw) >= wick_min)
+                try:
+                    atr_pct = float(feats.get('atr_pct', 0.0) or 0.0)
+                except Exception:
+                    atr_pct = 0.0
+                try:
+                    bbw_pct = float(feats.get('bb_width_pct', 0.0) or 0.0)
+                except Exception:
+                    bbw_pct = 0.0
+                atr_ok = atr_pct >= 0.05
+                bbw_ok = bbw_pct >= 0.010
+                reasons: list[str] = []
+                s = str(side).lower()
                 if s == 'long':
-                    wick_ok = (lw >= uw + wdelta_local)
+                    rsi_ok = (40 <= rsi < 60)
+                    macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
+                    v_ok = (vwap_bin == '<1.0') or (vwap_bin == '1.0-1.2' and vol_strong)
+                    fib_ok = fibz in ('38-50', '50-61')
                 else:
-                    wick_ok = (uw >= lw + wdelta_local)
+                    rsi_ok = (35 <= rsi < 55)
+                    macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
+                    v_ok = (vwap_bin == '<1.0') or (vwap_bin == '1.0-1.2' and vol_strong)
+                    fib_ok = fibz in ('38-50', '50-61')
                 if not rsi_ok:
                     reasons.append('RSI')
                 if not macd_ok:
@@ -1115,8 +1108,15 @@ class TradingBot:
                     reasons.append('VWAP')
                 if not fib_ok:
                     reasons.append('Fib')
-                lines.append(f"{sym} {str(side).upper()} | Reason: {', '.join(reasons) if reasons else 'rules'}")
-                # Detailed breakdown
+                if not vol_ok:
+                    reasons.append('Vol')
+                if not wick_ok:
+                    reasons.append('Wick')
+                if not atr_ok:
+                    reasons.append('ATR')
+                if not bbw_ok:
+                    reasons.append('BBW')
+                lines.append(f"{sym} {str(side).upper()} | Reason: {', '.join(reasons) if reasons else 'Pro rule'}")
                 lines.append("")
                 lines.append("Inputs")
                 lines.append(f"• RSI  : {rsi:.1f} (bin {rsi_bin})")
@@ -1124,22 +1124,26 @@ class TradingBot:
                 lines.append(f"• VWAP : {vwap:.2f} ATR (bin {vwap_bin})")
                 lines.append(f"• Fib  : {fibz or 'n/a'}")
                 lines.append(f"• MTF  : {'✓' if mtf else '✗'}")
-                lines.append(f"• Vol  : {volr:.2f}x (min {vmin_local:.2f}x)")
-                lines.append(f"• Wick : L={lw:.2f} U={uw:.2f} Δ={wick_delta:.2f} (min {wdelta_local:.2f})")
+                lines.append(f"• Vol  : {volr:.2f}x (min 1.50x)")
+                lines.append(f"• Wick : L={lw:.2f} U={uw:.2f} Δ={wick_delta:.2f} (min {wdelta_local:.2f}, dir≥{wick_min:.2f})")
+                lines.append(f"• ATR% : {atr_pct:.3f}% (min 0.050%)")
+                lines.append(f"• BBW% : {bbw_pct*100.0:.3f}% (min 1.000%)")
                 lines.append("")
                 lines.append("Criteria (Pass/Fail)")
                 if s == 'long':
-                    lines.append(f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: 40–60 or <30, or 60–70 with strong vol")
-                    lines.append(f"• MACD  {'✅' if macd_ok else '❌'}  allowed: bull with |hist| ≥ {mh_floor:.4f}")
-                    lines.append(f"• VWAP  {'✅' if v_ok else '❌'}  allowed: <0.6 or 0.6–1.0 with bull+strong vol, or 1.2+ with bull+strong vol")
-                    lines.append(f"• Fib   {'✅' if fib_ok else '❌'}  allowed: 0–23, 23–38, 38–50, 50–61 (61–78 with strong vol)")
+                    lines.append(f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: 40–60")
+                    lines.append(f"• MACD  {'✅' if macd_ok else '❌'}  allowed: bull with |hist| ≥ 0.0010")
+                    lines.append(f"• VWAP  {'✅' if v_ok else '❌'}  allowed: <1.0 (or 1.0–1.2 with vol≥2.0x)")
+                    lines.append(f"• Fib   {'✅' if fib_ok else '❌'}  allowed: 38–50, 50–61")
                 else:
-                    lines.append(f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: <35, or 35–50 with strong vol, or 50–60")
-                    lines.append(f"• MACD  {'✅' if macd_ok else '❌'}  allowed: bear with |hist| ≥ {mh_floor:.4f}")
-                    lines.append(f"• VWAP  {'✅' if v_ok else '❌'}  allowed: <0.6, 0.6–1.0, 1.0–1.2")
-                    lines.append(f"• Fib   {'✅' if fib_ok else '❌'}  allowed: 50–61, 61–78, 78–100")
-                lines.append(f"• Vol   {'✅' if vol_ok else '❌'}  volume vs gate min {vmin_local:.2f}x")
-                lines.append(f"• Wick  {'✅' if wick_ok else '❌'}  dominant wick Δ≥{wdelta_local:.2f} in trade direction")
+                    lines.append(f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: 35–55")
+                    lines.append(f"• MACD  {'✅' if macd_ok else '❌'}  allowed: bear with |hist| ≥ 0.0010")
+                    lines.append(f"• VWAP  {'✅' if v_ok else '❌'}  allowed: <1.0 (or 1.0–1.2 with vol≥2.0x)")
+                    lines.append(f"• Fib   {'✅' if fib_ok else '❌'}  allowed: 38–50, 50–61")
+                lines.append(f"• Vol   {'✅' if vol_ok else '❌'}  volume vs gate min 1.50x")
+                lines.append(f"• Wick  {'✅' if wick_ok else '❌'}  dominant wick Δ≥{wdelta_local:.2f} and dir≥{wick_min:.2f}")
+                lines.append(f"• ATR   {'✅' if atr_ok else '❌'}  atr_pct ≥ 0.050%")
+                lines.append(f"• BBW   {'✅' if bbw_ok else '❌'}  bb_width_pct ≥ 0.010")
             else:
                 title = "🚫 Blocked — Pre‑Gate"
                 lines.append(f"{sym} {str(side).upper()} | {pre_reason or 'pre‑gate'}")
@@ -1245,45 +1249,7 @@ class TradingBot:
                 except Exception:
                     fibz = None
 
-            # Prefer curated Pro combos (config) when available
-            try:
-                combos_cfg = (((cfg.get('scalp', {}) or {}).get('exec', {}) or {}).get('combos', []) or [])
-            except Exception:
-                combos_cfg = []
-            if combos_cfg:
-                side_lc = str(side).lower()
-                for c in combos_cfg:
-                    try:
-                        if not bool(c.get('enabled', False)):
-                            continue
-                        if str(c.get('side', '')).lower() != side_lc:
-                            continue
-                        rsi_min = float(c.get('rsi_min', -999))
-                        rsi_max = float(c.get('rsi_max', 999))
-                        vwap_min = float(c.get('vwap_min', -999))
-                        vwap_max = float(c.get('vwap_max', 999))
-                        macd_state = str(c.get('macd_state', '')).lower()
-                        fib_list = c.get('fib_zones') or []
-                        mtf_req = bool(c.get('mtf_agree', False))
-                        if not (rsi_min <= rsi <= rsi_max):
-                            continue
-                        if not (vwap_min <= vwap <= vwap_max):
-                            continue
-                        if macd_state == 'bull' and mh <= 0:
-                            continue
-                        if macd_state == 'bear' and mh >= 0:
-                            continue
-                        if fib_list and fibz not in fib_list:
-                            continue
-                        if bool(f.get('mtf_agree_15', False)) != mtf_req:
-                            continue
-                        ctx['combo_id'] = f"pro:{c.get('id')}"
-                        return True, 'pro_combo_match', ctx
-                    except Exception:
-                        continue
-                return False, 'pro_combo_block', ctx
-
-            # Legacy Pro rule fallback (when no curated combos provided)
+            # Pro rule fallback (no curated config combos)
             mtf = bool(f.get('mtf_agree_15', False))
             rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-50' if rsi < 50 else '50-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
             macd = 'bull' if mh > 0 else 'bear'

@@ -394,12 +394,15 @@ scalp:
     # Adaptive combo filtering: dynamically enable/disable combos based on rolling performance
     adaptive_combos:
       enabled: true              # Re-enable adaptive combo filtering
-      min_wr_threshold: 42.0     # Global fallback WR% threshold (unused when side-specific values set)
-      min_wr_threshold_long: 42.0  # Long-side minimum Wilson LB WR% to enable combo (≈52% raw WR at n=30)
-      min_wr_threshold_short: 44.0 # Short-side minimum Wilson LB WR% to enable combo (≈54% raw WR at n=30)
+      use_ev_r_only: true        # Use EV_R as primary/only gate (simpler, more direct than WR+EV_R)
+      use_ev_r_confidence: true   # Use confidence intervals for EV_R (accounts for sample size uncertainty)
+      ev_r_confidence_level: 0.95 # 95% confidence level for EV_R lower bound
+      ev_floor_r: 0.3            # Minimum EV_R lower bound (0.3 R = strong profitability, ≈42% WR equivalent)
+      min_wr_threshold: 42.0     # Global fallback WR% threshold (unused when use_ev_r_only=true)
+      min_wr_threshold_long: 42.0  # Long-side minimum Wilson LB WR% (unused when use_ev_r_only=true)
+      min_wr_threshold_short: 44.0 # Short-side minimum Wilson LB WR% (unused when use_ev_r_only=true)
       min_sample_size: 30        # Require at least 30 samples before enabling combos
-      use_wilson_lb: true        # Gate on Wilson lower-bound WR% (more statistically sound, accounts for sample size)
-      ev_floor_r: 0.2             # Require minimum 0.2 R expected value (ensures meaningful profitability)
+      use_wilson_lb: true        # Gate on Wilson lower-bound WR% (unused when use_ev_r_only=true)
       update_frequency_trades: 50  # Recalculate every N completed trades
       update_frequency_hours: 1  # Or every N hours (whichever comes first)
       lookback_days: 30          # Rolling window for WR calculation (days)

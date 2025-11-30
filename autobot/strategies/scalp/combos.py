@@ -258,6 +258,13 @@ class AdaptiveComboManager:
             self.ev_floor_r = float(adaptive_cfg.get('ev_floor_r', 0.0))
         except Exception:
             self.ev_floor_r = 0.0
+        # EV_R only mode: use EV_R as primary/only gate (simpler and more direct)
+        self.use_ev_r_only = bool(adaptive_cfg.get('use_ev_r_only', False))
+        self.use_ev_r_confidence = bool(adaptive_cfg.get('use_ev_r_confidence', True))  # Use confidence intervals when EV_R only
+        try:
+            self.ev_r_confidence_level = float(adaptive_cfg.get('ev_r_confidence_level', 0.95))
+        except Exception:
+            self.ev_r_confidence_level = 0.95
         # Strict side loads: when True, load per-side keys directly to avoid long/short overwrites
         self.strict_side_keys = bool(adaptive_cfg.get('strict_side_keys', True))
 
@@ -266,11 +273,14 @@ class AdaptiveComboManager:
         self.update_count = 0
         self.combo_changes = []  # List of recent enable/disable events
 
+        mode_str = "EV_R only" if self.use_ev_r_only else f"WR (LB={self.use_wilson_lb}) + EV_R"
         logger.info(
             "Adaptive Combo Manager initialized: "
             f"enabled={self.enabled}, "
+            f"mode={mode_str}, "
             f"min_WR_long={self.min_wr_threshold_long}%, "
             f"min_WR_short={self.min_wr_threshold_short}%, "
+            f"min_EV_R={self.ev_floor_r}, "
             f"min_N={self.min_sample_size}"
         )
 
@@ -287,6 +297,49 @@ class AdaptiveComboManager:
             return max(0.0, min(1.0, center - margin)) * 100.0
         except Exception:
             return 0.0
+    
+    def _ev_r_confidence_lb(self, ev_r_values: List[float], confidence: float = 0.95) -> float:
+        """
+        Calculate EV_R lower bound with confidence interval
+        
+        Args:
+            ev_r_values: List of realized R values from trades
+            confidence: Confidence level (0.95 = 95%)
+        
+        Returns:
+            Lower bound of EV_R confidence interval
+        """
+        try:
+            if len(ev_r_values) < 2:
+                return float(np.mean(ev_r_values)) if ev_r_values else 0.0
+            
+            import numpy as np
+            mean_ev = float(np.mean(ev_r_values))
+            std_ev = float(np.std(ev_r_values))
+            n = len(ev_r_values)
+            
+            if std_ev == 0.0 or n < 2:
+                return mean_ev
+            
+            # Use t-distribution for small samples
+            try:
+                from scipy import stats
+                t_critical = stats.t.ppf((1 + confidence) / 2, n - 1)
+                margin = t_critical * (std_ev / np.sqrt(n))
+                return mean_ev - margin  # Lower bound
+            except ImportError:
+                # Fallback to normal distribution if scipy not available
+                import math as _m
+                z_critical = 1.96 if confidence == 0.95 else 2.576  # 95% or 99%
+                margin = z_critical * (std_ev / _m.sqrt(n))
+                return mean_ev - margin
+        except Exception as e:
+            logger.debug(f"Error calculating EV_R confidence: {e}")
+            # Fallback to mean
+            try:
+                return float(np.mean(ev_r_values)) if ev_r_values else 0.0
+            except:
+                return 0.0
 
     def _get_redis_key(self, side: Optional[str] = None) -> str:
         """Get Redis key for storing combo performance data"""
@@ -522,21 +575,46 @@ class AdaptiveComboManager:
             n = agg['n']
             w = agg['w']
             wr = (w / n * 100.0) if n else 0.0
+            
+            # Calculate EV_R (mean of realized R values)
+            # Collect all R values for this combo for confidence calculation
+            combo_rr_values = []
+            for rsi, mh, vwap, fibz, mtf, win, rr, p_side, is_exec, is_recent in items:
+                # Reconstruct combo key to match
+                r = lab(rsi, rsi_bins)
+                m = lab(mh, macd_bins)
+                v = lab(vwap, vwap_bins)
+                fz = fibz if fibz in fib_bins else None
+                ma = 'MTF' if bool(mtf) else 'noMTF'
+                item_key = f"RSI:{r} MACD:{m} VWAP:{v} Fib:{fz} {ma}"
+                if item_key == key and (not side or p_side == side):
+                    combo_rr_values.append(rr)
+            
             ev_r = (agg['rr'] / n) if n else 0.0
             combo_side = agg['side']
+            
+            # Calculate EV_R confidence lower bound if using EV_R only mode
+            ev_r_lb = ev_r
+            if self.use_ev_r_only and self.use_ev_r_confidence and len(combo_rr_values) >= 2:
+                ev_r_lb = self._ev_r_confidence_lb(combo_rr_values, self.ev_r_confidence_level)
 
             # Preliminary enable flag (final decision applied in update_combo_filters)
-            # Use side-specific thresholds where available
-            try:
-                if str(combo_side).lower() == 'long':
-                    thr_side = float(self.min_wr_threshold_long)
-                elif str(combo_side).lower() == 'short':
-                    thr_side = float(self.min_wr_threshold_short)
-                else:
+            if self.use_ev_r_only:
+                # EV_R only mode: gate only on EV_R (with confidence) and sample size
+                ev_ok = ev_r_lb >= self.ev_floor_r if self.use_ev_r_confidence else ev_r >= self.ev_floor_r
+                enabled = (n >= self.min_sample_size and ev_ok)
+            else:
+                # Original mode: gate on WR + EV_R
+                try:
+                    if str(combo_side).lower() == 'long':
+                        thr_side = float(self.min_wr_threshold_long)
+                    elif str(combo_side).lower() == 'short':
+                        thr_side = float(self.min_wr_threshold_short)
+                    else:
+                        thr_side = float(self.min_wr_threshold)
+                except Exception:
                     thr_side = float(self.min_wr_threshold)
-            except Exception:
-                thr_side = float(self.min_wr_threshold)
-            enabled = (wr >= thr_side and n >= self.min_sample_size)
+                enabled = (wr >= thr_side and n >= self.min_sample_size and ev_r >= self.ev_floor_r)
 
             results[key] = ComboPerformance(
                 combo_id=key,
@@ -604,49 +682,95 @@ class AdaptiveComboManager:
 
             for key, perf in all_combos.items():
                 prev_enabled = prev_state.get(key, {}).get('enabled', False)
-                # Compute WR metric (Wilson LB when enabled, otherwise raw WR)
-                wr_metric = self._wilson_lb(perf.wins, perf.n) if self.use_wilson_lb else float(perf.wr)
                 n_ok = perf.n >= self.min_sample_size
-                ev_ok = float(perf.ev_r) >= float(self.ev_floor_r)
-                # Side-specific WR thresholds (fall back to global when side missing)
-                try:
-                    if str(perf.side).lower() == 'long':
-                        thr = float(self.min_wr_threshold_long)
-                    elif str(perf.side).lower() == 'short':
-                        thr = float(self.min_wr_threshold_short)
+                
+                if self.use_ev_r_only:
+                    # EV_R only mode: gate on EV_R (with confidence) and sample size
+                    ev_r_value = float(perf.ev_r)
+                    
+                    # Calculate EV_R confidence lower bound if enabled
+                    # Note: For full confidence calculation, we'd need individual R values
+                    # For now, use a simplified margin based on sample size
+                    if self.use_ev_r_confidence and perf.n >= 2:
+                        # Approximate confidence margin (simplified)
+                        if perf.n < 30:
+                            margin = 0.15  # Conservative margin for small samples
+                        elif perf.n < 50:
+                            margin = 0.10
+                        elif perf.n < 100:
+                            margin = 0.05
+                        else:
+                            margin = 0.02
+                        ev_r_lb = ev_r_value - margin
                     else:
+                        ev_r_lb = ev_r_value
+                    
+                    ev_ok = ev_r_lb >= self.ev_floor_r
+                    base_enabled = bool(n_ok and ev_ok)
+                    curr_enabled = base_enabled
+                    
+                    # Apply hysteresis around EV_R
+                    if prev_enabled and not curr_enabled:
+                        # Keep enabled if EV_R is close to threshold
+                        ev_r_margin = self.ev_floor_r * (self.hysteresis_pct / 100.0)  # Convert % to R
+                        if ev_ok and n_ok and ev_r_lb >= (self.ev_floor_r - ev_r_margin):
+                            curr_enabled = True
+                    elif (not prev_enabled) and curr_enabled:
+                        # Require EV_R exceed threshold + margin to enable
+                        ev_r_margin = self.ev_floor_r * (self.hysteresis_pct / 100.0)
+                        if ev_r_lb < (self.ev_floor_r + ev_r_margin):
+                            curr_enabled = False
+                else:
+                    # Original mode: gate on WR + EV_R
+                    # Compute WR metric (Wilson LB when enabled, otherwise raw WR)
+                    wr_metric = self._wilson_lb(perf.wins, perf.n) if self.use_wilson_lb else float(perf.wr)
+                    ev_ok = float(perf.ev_r) >= float(self.ev_floor_r)
+                    # Side-specific WR thresholds (fall back to global when side missing)
+                    try:
+                        if str(perf.side).lower() == 'long':
+                            thr = float(self.min_wr_threshold_long)
+                        elif str(perf.side).lower() == 'short':
+                            thr = float(self.min_wr_threshold_short)
+                        else:
+                            thr = float(self.min_wr_threshold)
+                    except Exception:
                         thr = float(self.min_wr_threshold)
-                except Exception:
-                    thr = float(self.min_wr_threshold)
 
-                # Base gating (no hysteresis)
-                base_enabled = bool(n_ok and ev_ok and (wr_metric >= thr))
-                curr_enabled = base_enabled
+                    # Base gating (no hysteresis)
+                    base_enabled = bool(n_ok and ev_ok and (wr_metric >= thr))
+                    curr_enabled = base_enabled
 
-                # Apply hysteresis around WR metric only (EV and N are hard gates)
-                if prev_enabled and not curr_enabled:
-                    # Only WR margin may keep it enabled; EV/N failures should disable
-                    if ev_ok and n_ok and wr_metric >= (thr - self.hysteresis_pct):
-                        curr_enabled = True
-                elif (not prev_enabled) and curr_enabled:
-                    # Require WR exceed threshold + hysteresis to enable
-                    if wr_metric < (thr + self.hysteresis_pct):
-                        curr_enabled = False
+                    # Apply hysteresis around WR metric only (EV and N are hard gates)
+                    if prev_enabled and not curr_enabled:
+                        # Only WR margin may keep it enabled; EV/N failures should disable
+                        if ev_ok and n_ok and wr_metric >= (thr - self.hysteresis_pct):
+                            curr_enabled = True
+                    elif (not prev_enabled) and curr_enabled:
+                        # Require WR exceed threshold + hysteresis to enable
+                        if wr_metric < (thr + self.hysteresis_pct):
+                            curr_enabled = False
 
                 # Track state changes
                 if curr_enabled != prev_enabled:
                     status = "ENABLED" if curr_enabled else "DISABLED"
                     try:
-                        if self.use_wilson_lb:
-                            metric_label = "LB"
+                        if self.use_ev_r_only:
+                            ev_r_display = ev_r_lb if self.use_ev_r_confidence else ev_r_value
+                            msg = (
+                                f"{status}: {key} ({perf.side.upper()}) - "
+                                f"EV_R {ev_r_display:+.2f} (raw {perf.ev_r:+.2f}) N={perf.n}"
+                            )
                         else:
-                            metric_label = "WR"
-                        msg = (
-                            f"{status}: {key} ({perf.side.upper()}) - "
-                            f"WR {perf.wr:.1f}% ({metric_label} {wr_metric:.1f}%) EV_R {perf.ev_r:+.2f} N={perf.n}"
-                        )
+                            if self.use_wilson_lb:
+                                metric_label = "LB"
+                            else:
+                                metric_label = "WR"
+                            msg = (
+                                f"{status}: {key} ({perf.side.upper()}) - "
+                                f"WR {perf.wr:.1f}% ({metric_label} {wr_metric:.1f}%) EV_R {perf.ev_r:+.2f} N={perf.n}"
+                            )
                     except Exception:
-                        msg = f"{status}: {key} ({perf.side.upper()}) - WR {perf.wr:.1f}% (N={perf.n})"
+                        msg = f"{status}: {key} ({perf.side.upper()}) - EV_R {perf.ev_r:+.2f} N={perf.n}" if self.use_ev_r_only else f"{status}: {key} ({perf.side.upper()}) - WR {perf.wr:.1f}% (N={perf.n})"
                     changes.append(msg)
                     logger.info(f"Combo state change: {msg}")
 

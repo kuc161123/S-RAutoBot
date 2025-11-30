@@ -124,6 +124,13 @@ PER_SYMBOL_PRO_RULES = {
         'macd_hist_min': 0.0003, 'bb_width_min': 0.008,
         'wr': 40.0, 'trades': 15
     },
+    'SOLUSDT': {
+        'rsi_min_long': 35, 'rsi_max_long': 65,
+        'rsi_min_short': 35, 'rsi_max_short': 55,
+        'vwap_dist_max': 1.8, 'vol_ratio_min': 1.2,
+        'macd_hist_min': 0.0003, 'bb_width_min': 0.008,
+        'wr': 61.5, 'trades': 13
+    },
 }
 
 # Setup logging

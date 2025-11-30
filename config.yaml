@@ -13,6 +13,7 @@ trade:
   symbols:
   - 0GUSDT
   - BTCUSDT
+  - SOLUSDT
   - ETHUSDT
   - BNBUSDT
   - DOGEUSDT

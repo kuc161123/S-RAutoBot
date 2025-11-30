@@ -1249,58 +1249,63 @@ class TradingBot:
                 except Exception:
                     fibz = None
 
-            # Pro rule fallback (no curated config combos)
-            # MTF uses 3m EMA(20/50) trend alignment from features
+            # Pro rule fallback (optimized thresholds - research-backed)
+            # Removed MTF requirement - defeats purpose when combos aren't ready
+            # MTF uses 3m EMA(20/50) trend alignment from features (for reference only)
             mtf = bool(f.get('mtf_agree_20_50', False))
             rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-50' if rsi < 50 else '50-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
             macd = 'bull' if mh > 0 else 'bear'
             mh_abs = abs(mh)
-            mh_floor = 0.0010  # stricter MACD magnitude
+            mh_floor = 0.0003  # Reduced from 0.0010 - trust direction more than magnitude
             vwap_bin = '<1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
             s = str(side).lower()
             ok = False
             vol_strong = False
             try:
                 volr_tmp = float(f.get('volume_ratio', 0.0) or 0.0)
-                vol_strong = volr_tmp >= 2.0
+                vol_strong = volr_tmp >= 1.8  # Reduced from 2.0 for Tier 2 VWAP
             except Exception:
                 vol_strong = False
             # Baseline volume/wick/volatility gates for Pro fallback
             vol_ok = False
             try:
-                vol_ok = volr_tmp >= 1.50
+                vol_ok = volr_tmp >= 1.20  # Reduced from 1.50 - catch moderate momentum
             except Exception:
                 vol_ok = False
             try:
                 uw = float(f.get('upper_wick_ratio', 0.0) or 0.0)
                 lw = float(f.get('lower_wick_ratio', 0.0) or 0.0)
-                wdelta = 0.15
+                wdelta = 0.10  # Reduced from 0.15 - less restrictive
                 wick_ratio_min = 0.25
                 wick_ok = ((lw >= uw + wdelta) and (lw >= wick_ratio_min)) if s == 'long' else ((uw >= lw + wdelta) and (uw >= wick_ratio_min))
             except Exception:
                 wick_ok = False
             # Market activity gates
             try:
-                atr_ok = float(f.get('atr_pct', 0.0) or 0.0) >= 0.05  # % of price
+                atr_ok = float(f.get('atr_pct', 0.0) or 0.0) >= 0.05  # % of price - kept same
             except Exception:
                 atr_ok = False
             try:
-                bbw_ok = float(f.get('bb_width_pct', 0.0) or 0.0) >= 0.010  # 1%
+                bbw_ok = float(f.get('bb_width_pct', 0.0) or 0.0) >= 0.008  # 0.8% - reduced from 1.0%
             except Exception:
                 bbw_ok = False
 
             if s == 'long':
-                rsi_ok = (40 <= rsi < 60)
-                v_ok = (vwap_bin == '<1.0') or (vwap_bin == '1.0-1.2' and vol_strong)
+                rsi_ok = (38 <= rsi < 62)  # Widened from 40-60
+                # Tier 2 VWAP: expanded to 1.3 ATR with relaxed volume
+                v_ok = (vwap < 1.0) or (vwap < 1.3 and vol_strong)
                 macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
-                fib_ok = (fibz in ('38-50', '50-61'))
-                ok = bool(rsi_ok and v_ok and macd_ok and fib_ok and mtf and vol_ok and wick_ok and atr_ok and bbw_ok)
+                fib_ok = (fibz in ('23-38', '38-50', '50-61'))  # Added '23-38' zone
+                # MTF REMOVED from boolean check - no longer required
+                ok = bool(rsi_ok and v_ok and macd_ok and fib_ok and vol_ok and wick_ok and atr_ok and bbw_ok)
             else:
-                rsi_ok = (35 <= rsi < 55)
+                rsi_ok = (33 <= rsi < 57)  # Widened from 35-55
                 macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
-                v_ok = (vwap_bin == '<1.0') or (vwap_bin == '1.0-1.2' and vol_strong)
-                fib_ok = (fibz in ('38-50', '50-61'))
-                ok = bool(rsi_ok and macd_ok and v_ok and fib_ok and mtf and vol_ok and wick_ok and atr_ok and bbw_ok)
+                # Tier 2 VWAP: expanded to 1.3 ATR with relaxed volume
+                v_ok = (vwap < 1.0) or (vwap < 1.3 and vol_strong)
+                fib_ok = (fibz in ('23-38', '38-50', '50-61'))  # Added '23-38' zone
+                # MTF REMOVED from boolean check - no longer required
+                ok = bool(rsi_ok and macd_ok and v_ok and fib_ok and vol_ok and wick_ok and atr_ok and bbw_ok)
 
             if ok:
                 return True, 'fallback_pro_ok', ctx
@@ -2873,41 +2878,8 @@ class TradingBot:
                     except Exception:
                         pass
                     return False
-                # Send execution notification after central gate passes and before order placement
-                try:
-                    if self.tg:
-                        try:
-                            # Build comprehensive execute message with gate info
-                            gate_info = f"Gate: {gate_reason0}"
-                            if gate_ctx0.get('combo_id'):
-                                gate_info += f" | Combo: {gate_ctx0.get('combo_id')}"
-                            if route_info.get('wr') is not None:
-                                gate_info += f" | WR: {route_info['wr']:.1f}%"
-                            if route_info.get('n') is not None:
-                                gate_info += f" (N={route_info['n']})"
-
-                            qscore_str = ""
-                            try:
-                                qv = float(feats_for_gate.get('qscore', 0.0) or 0.0)
-                                if qv > 0:
-                                    qscore_str = f" | Q={qv:.1f}"
-                            except Exception:
-                                pass
-
-                            ml_str = ""
-                            if ml_score > 0:
-                                ml_str = f" | ML={ml_score:.1f}"
-
-                            await self.tg.send_message(
-                                f"🟢 Scalp EXECUTE: {sym} {str(sig_obj.side).upper()} (id={exec_id})\n"
-                                f"{gate_info}\n"
-                                f"Entry={fmt.format(float(sig_obj.entry))} SL={fmt.format(float(sig_obj.sl))} TP={fmt.format(float(sig_obj.tp))}\n"
-                                f"Qty={qty:.3f}{ml_str}{qscore_str}"
-                            )
-                        except Exception as _notify_err:
-                            logger.debug(f"Execute notification error: {_notify_err}")
-                except Exception:
-                    pass
+                
+                # Place market order
                 side = "Buy" if sig_obj.side == "long" else "Sell"
                 try:
                     m_resp = bybit.place_market(sym, side, qty, reduce_only=False)
@@ -2921,9 +2893,81 @@ class TradingBot:
                             oid = None
                     except Exception:
                         rc = rm = 'n/a'; oid = None
+                    
                     logger.info(f"[{sym}|id={exec_id}] Market order placed: side={side} qty={qty} retCode={rc} retMsg={rm} orderId={oid}")
+                    
+                    # Send success notification only if order succeeded (retCode == '0')
+                    if rc == '0':
+                        try:
+                            if self.tg:
+                                # Build comprehensive execute message with gate info
+                                gate_info = f"Gate: {gate_reason0}"
+                                if gate_ctx0.get('combo_id'):
+                                    gate_info += f" | Combo: {gate_ctx0.get('combo_id')}"
+                                if route_info.get('wr') is not None:
+                                    gate_info += f" | WR: {route_info['wr']:.1f}%"
+                                if route_info.get('n') is not None:
+                                    gate_info += f" (N={route_info['n']})"
+
+                                qscore_str = ""
+                                try:
+                                    qv = float(feats_for_gate.get('qscore', 0.0) or 0.0)
+                                    if qv > 0:
+                                        qscore_str = f" | Q={qv:.1f}"
+                                except Exception:
+                                    pass
+
+                                ml_str = ""
+                                if ml_score > 0:
+                                    ml_str = f" | ML={ml_score:.1f}"
+
+                                order_id_str = f" | OrderID={oid}" if oid else ""
+
+                                await self.tg.send_message(
+                                    f"🟢 Scalp EXECUTE: {sym} {str(sig_obj.side).upper()} (id={exec_id})\\n"
+                                    f"{gate_info}\\n"
+                                    f"Entry={fmt.format(float(sig_obj.entry))} SL={fmt.format(float(sig_obj.sl))} TP={fmt.format(float(sig_obj.tp))}\\n"
+                                    f"Qty={qty:.3f}{ml_str}{qscore_str}{order_id_str}"
+                                )
+                        except Exception as _notify_err:
+                            logger.debug(f"Execute notification error: {_notify_err}")
+                    else:
+                        # Order failed (retCode != '0') - send failure notification
+                        logger.error(f"[{sym}|id={exec_id}] Order failed with retCode={rc}: {rm}")
+                        try:
+                            if self.tg:
+                                await self.tg.send_message(
+                                    f"❌ Scalp ORDER FAILED: {sym} {str(sig_obj.side).upper()} (id={exec_id})\\n"
+                                    f"Error: retCode={rc} | {rm}\\n"
+                                    f"Entry={fmt.format(float(sig_obj.entry))} Qty={qty:.3f}"
+                                )
+                        except Exception as _notify_err:
+                            logger.debug(f"Failure notification error: {_notify_err}")
+                        
+                        # Record failure reason
+                        try:
+                            self._scalp_last_exec_reason[sym] = 'order_rejected'
+                            if not hasattr(self, '_scalp_last_exec_detail'):
+                                self._scalp_last_exec_detail = {}
+                            self._scalp_last_exec_detail[sym] = f"retCode={rc} retMsg={rm}"
+                        except Exception:
+                            pass
+                        return False
+                        
                 except Exception as _me:
                     logger.error(f"[{sym}|id={exec_id}] Market order error: {_me}")
+                    
+                    # Send exception notification
+                    try:
+                        if self.tg:
+                            await self.tg.send_message(
+                                f"❌ Scalp ORDER FAILED: {sym} {str(sig_obj.side).upper()} (id={exec_id})\\n"
+                                f"Exception: {type(_me).__name__}: {_me}\\n"
+                                f"Entry={fmt.format(float(sig_obj.entry))} Qty={qty:.3f}"
+                            )
+                    except Exception as _notify_err:
+                        logger.debug(f"Exception notification error: {_notify_err}")
+                    
                     try:
                         self._scalp_last_exec_reason[sym] = 'market_order_error'
                         if not hasattr(self, '_scalp_last_exec_detail'):

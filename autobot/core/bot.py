@@ -2910,26 +2910,29 @@ class TradingBot:
                     e_sig = float(getattr(sig_obj, 'entry', actual_entry))
                     sl_sig = float(getattr(sig_obj, 'sl', actual_entry))
                     tp_sig = float(getattr(sig_obj, 'tp', actual_entry))
+                    # Get R:R ratio from config (default 2.1)
+                    target_rr = float(((self.config.get('scalp', {}) or {}).get('rr', 2.1)))
                     if sig_obj.side == 'long':
                         R = max(tick_size, e_sig - sl_sig)
-                        rr = ((tp_sig - e_sig) / R) if R > 0 else float(((self.config.get('scalp', {}) or {}).get('rr', 2.0)))
+                        # Use target R:R from config, not calculated from signal TP
                         new_sl = actual_entry - R
-                        new_tp = actual_entry + rr * R
+                        new_tp = actual_entry + target_rr * R
                         new_sl = _floor_tick(new_sl, tick_size)
                         if new_sl >= actual_entry:
                             new_sl = _floor_tick(actual_entry - (2.0 * tick_size), tick_size)
                         new_tp = _ceil_tick(new_tp, tick_size)
                     else:
                         R = max(tick_size, sl_sig - e_sig)
-                        rr = ((e_sig - tp_sig) / R) if R > 0 else float(((self.config.get('scalp', {}) or {}).get('rr', 2.0)))
+                        # Use target R:R from config, not calculated from signal TP
                         new_sl = actual_entry + R
-                        new_tp = actual_entry - rr * R
+                        new_tp = actual_entry - target_rr * R
                         new_sl = _ceil_tick(new_sl, tick_size)
                         if new_sl <= actual_entry:
                             new_sl = _ceil_tick(actual_entry + (2.0 * tick_size), tick_size)
                         new_tp = _floor_tick(new_tp, tick_size)
                     sig_obj.sl = float(new_sl)
                     sig_obj.tp = float(new_tp)
+                    logger.info(f"[{sym}|id={exec_id}] Rebased TP/SL: Entry={actual_entry:.4f} SL={sig_obj.sl:.4f} TP={sig_obj.tp:.4f} (R:R={target_rr:.2f})")
                     try:
                         import decimal as _dec
                         _d = _dec.Decimal(str(tick_size))
@@ -16377,16 +16380,18 @@ class TradingBot:
                             # Recalculate TP based on actual entry to maintain R:R ratio
                             if actual_entry != sig.entry:
                                 risk_distance = abs(actual_entry - sig.sl)
+                                # Get R:R from config (default 2.1)
+                                target_rr = float(((self.config.get('scalp', {}) or {}).get('rr', 2.1)))
                                 # Apply same R:R ratio and fee adjustment
                                 fee_adjustment = 1.00165  # Same as in strategy
                                 if sig.side == "long":
-                                    new_tp = actual_entry + (risk_distance * settings.rr * fee_adjustment)
+                                    new_tp = actual_entry + (risk_distance * target_rr * fee_adjustment)
                                 else:
-                                    new_tp = actual_entry - (risk_distance * settings.rr * fee_adjustment)
+                                    new_tp = actual_entry - (risk_distance * target_rr * fee_adjustment)
 
                                 # Log the adjustment
-                                tp_adjustment_pct = ((new_tp - sig.tp) / sig.tp) * 100
-                                logger.info(f"[{sym}] Adjusting TP from {sig.tp:.4f} to {new_tp:.4f} ({tp_adjustment_pct:+.2f}%) to maintain {settings.rr}:1 R:R")
+                                tp_adjustment_pct = ((new_tp - sig.tp) / sig.tp) * 100 if sig.tp > 0 else 0.0
+                                logger.info(f"[{sym}] Adjusting TP from {sig.tp:.4f} to {new_tp:.4f} ({tp_adjustment_pct:+.2f}%) to maintain {target_rr:.2f}:1 R:R")
                                 sig.tp = new_tp
                                 # Trend: Recalc SL to preserve risk if slippage is material (bounded by pivots)
                                 try:

@@ -240,6 +240,7 @@ scalp:
   # If true, run a single 3m stream only (disables main 15m stream)
   stream_3m_only: true
   timeframe: 3           # Future: stream 3m for scalps; current uses main tf
+  rr: 2.1                # Risk to reward ratio (1:2.1)
   use_ml: false
   threshold: 70
   block_regime: true     # Block trades during extreme volatility (ATR > 4%, BB > 90th percentile)

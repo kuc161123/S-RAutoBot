@@ -7117,11 +7117,7 @@ class TradingBot:
 
         This preserves Scalp independence by only engaging when the 3m loop isn't producing confirms.
         """
-        # Trend-only mode: completely skip Scalp fallback path
-        try:
-            # Removed _trend_only check (trend strategy disabled, only scalp active)
-        except Exception:
-            pass
+        # Removed trend-only mode check (trend strategy disabled, only scalp active)
         # Guards
         try:
             s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}

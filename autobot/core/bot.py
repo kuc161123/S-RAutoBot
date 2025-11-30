@@ -676,15 +676,8 @@ class TradingBot:
         self._close_confirm_misses: Dict[str, int] = {}
         self._close_warned: Dict[str, str] = {}
         # HTF gating persistence (per-strategy per-symbol)
-        self._htf_hold: Dict[str, Dict[str, Dict[str, object]]] = {
-            'mr': {},
-            'trend': {}
-        }
-        # Trend history readiness tracking (avoid log spam when 15m history is short)
-        self._trend_hist_warned: Dict[str, bool] = {}
-        self._trend_hist_min: int = 80  # minimum 15m bars required for pullback detection
-        # Trend-only mode toggle (set in run() from config/env)
-        self._trend_only: bool = False
+        # Removed _htf_hold for disabled strategies (trend, mr) - only scalp active
+        # Removed trend history tracking and trend_only mode (trend strategy disabled, only scalp active)
         # Per-position metadata: breakout levels, policy flags, timestamps
         self._position_meta: Dict[str, dict] = {}
         # Per-symbol HTF exec metrics cache (refresh on 15m close)
@@ -4412,11 +4405,7 @@ class TradingBot:
                     logger.debug(f"[{sym}] 3m BE monitor error: {_e}")
 
                 # Trend-only mode: skip Scalp analysis/logging on 3m stream but keep Trend micro-step above
-                try:
-                    if getattr(self, '_trend_only', False):
-                        continue
-                except Exception:
-                    pass
+                # Removed _trend_only check (trend strategy disabled, only scalp active)
 
                 # Analysis trace (start)
                 try:
@@ -7130,8 +7119,7 @@ class TradingBot:
         """
         # Trend-only mode: completely skip Scalp fallback path
         try:
-            if getattr(self, '_trend_only', False):
-                return
+            # Removed _trend_only check (trend strategy disabled, only scalp active)
         except Exception:
             pass
         # Guards
@@ -9367,8 +9355,8 @@ class TradingBot:
                                 recovered_strategy = v
                         if recovered_strategy == "unknown":
                             try:
-                                if getattr(self, '_trend_only', False):
-                                    recovered_strategy = 'trend_pullback'
+                                # Removed _trend_only check (trend strategy disabled)
+                                recovered_strategy = 'scalp'  # Only active strategy
                             except Exception:
                                 pass
                     except Exception:
@@ -9636,26 +9624,10 @@ class TradingBot:
         except Exception:
             self._trend_only = False
         try:
-            if not self._trend_only:
-                env_flag = str(os.getenv('TREND_ONLY', '')).strip().lower()
-                self._trend_only = env_flag in ('1','true','yes','on')
+            # Removed _trend_only initialization and config mutation (trend strategy disabled, only scalp active)
+            # Trend-only mode is no longer supported
         except Exception:
             pass
-        if self._trend_only:
-            # Mutate runtime config to disable Scalp and MR execution paths
-            try:
-                cfg.setdefault('scalp', {})['enabled'] = False
-            except Exception:
-                pass
-            try:
-                cfg.setdefault('mr', {}).setdefault('exec', {})['enabled'] = False
-            except Exception:
-                pass
-            # Prefer pure Trend Pullback path (no enhanced-parallel orchestration)
-            try:
-                cfg.setdefault('trade', {})['use_enhanced_parallel'] = False
-            except Exception:
-                pass
             # Silence non-trend logs via a lightweight filter
             class _TrendOnlyFilter(logging.Filter):
                 def filter(self, record: logging.LogRecord) -> bool:
@@ -14304,8 +14276,9 @@ class TradingBot:
                         continue
 
                     # --- ENHANCED PARALLEL STRATEGY ROUTING ---
+                    # Note: Only scalp strategy is active, trend/mr/range strategies disabled
                     sig = None
-                    selected_strategy = "trend_pullback"  # Default
+                    selected_strategy = "scalp"  # Only active strategy
                     selected_ml_scorer = ml_scorer
                     selected_phantom_tracker = phantom_tracker
 
@@ -16393,9 +16366,10 @@ class TradingBot:
                                 tp_adjustment_pct = ((new_tp - sig.tp) / sig.tp) * 100 if sig.tp > 0 else 0.0
                                 logger.info(f"[{sym}] Adjusting TP from {sig.tp:.4f} to {new_tp:.4f} ({tp_adjustment_pct:+.2f}%) to maintain {target_rr:.2f}:1 R:R")
                                 sig.tp = new_tp
-                                # Trend: Recalc SL to preserve risk if slippage is material (bounded by pivots)
+                                # Removed Trend/MR strategy SL recalculation (strategies disabled, only scalp active)
+                                # Old code for trend_pullback and enhanced_mr removed
                                 try:
-                                    if selected_strategy == 'trend_pullback':
+                                    if False:  # Disabled: trend_pullback strategy removed
                                         sl_cfg = (cfg.get('trend', {}) or {}).get('exec', {}).get('slippage_recalc', {}) if 'cfg' in locals() else {}
                                         enabled = bool(sl_cfg.get('enabled', True))
                                         min_pct = float(sl_cfg.get('min_pct', 0.001))

@@ -9623,7 +9623,7 @@ class TradingBot:
             # Removed _trend_only initialization and config mutation (trend strategy disabled, only scalp active)
             # Trend-only mode is no longer supported
         except Exception:
-            pass
+            pass  # Config access error handling
             # Silence non-trend logs via a lightweight filter
             class _TrendOnlyFilter(logging.Filter):
                 def filter(self, record: logging.LogRecord) -> bool:

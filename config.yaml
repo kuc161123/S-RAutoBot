@@ -399,7 +399,7 @@ scalp:
       min_wr_threshold_short: 45.0 # Short-side minimum WR% to enable combo
       min_sample_size: 30        # Require at least 30 samples before enabling combos
       use_wilson_lb: false       # Gate on raw WR% instead of Wilson lower-bound
-      ev_floor_r: -1000.0        # Disable EV floor (set very low); EV_R remains informational
+      ev_floor_r: 0.0             # Require non-negative EV_R (0.0 = break-even minimum); combos with negative EV are disabled
       update_frequency_trades: 50  # Recalculate every N completed trades
       update_frequency_hours: 1  # Or every N hours (whichever comes first)
       lookback_days: 30          # Rolling window for WR calculation (days)

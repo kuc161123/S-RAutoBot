@@ -76,6 +76,8 @@ class AdaptiveComboManager:
         # Robust gating options
         self.use_wilson_lb = bool(adaptive_cfg.get('use_wilson_lb', True))
         try:
+            # Default to 0.0 to filter out negative EV combos (was -1000.0 = disabled)
+            # Combos must have non-negative expected value to be enabled
             self.ev_floor_r = float(adaptive_cfg.get('ev_floor_r', 0.0))
         except Exception:
             self.ev_floor_r = 0.0
@@ -642,7 +644,7 @@ class AdaptiveComboManager:
             combo_pattern: Dictionary with combo features (RSI, MACD, VWAP, Fib, MTF)
 
         Returns:
-            True if combo is enabled, False otherwise
+            True if combo is enabled, False otherwise (fail-closed: only explicitly enabled combos allowed)
         """
         # Build combo key from pattern
         try:
@@ -655,10 +657,13 @@ class AdaptiveComboManager:
             if combo_id and combo_id in state:
                 return state[combo_id].get('enabled', False)
 
-            return True  # Default to enabled if not found (fail open)
+            # Fail-closed: Only combos explicitly enabled by manager are allowed
+            # Unknown combos are blocked until they prove their performance
+            return False
         except Exception as e:
             logger.debug(f"Error checking combo enabled status: {e}")
-            return True  # Fail open
+            # Fail-closed: On error, block the combo for safety
+            return False
 
     def get_stats_summary(self) -> dict:
         """Get summary statistics for Telegram display"""

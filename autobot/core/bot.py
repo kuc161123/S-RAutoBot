@@ -1169,6 +1169,9 @@ class TradingBot:
                 if combo_id and combo_id in active_ids:
                     return True, 'adaptive_enabled', ctx
                 # Manager ready but combo not enabled → block (no fallback once ready)
+                # Fail-closed: Only explicitly enabled combos are allowed
+                if combo_id:
+                    logger.debug(f"[{sym}] Combo blocked: {combo_id} not in enabled list (manager ready, {len(active_ids)} combos enabled for {side_key})")
                 return False, 'adaptive_disabled', ctx
             except Exception:
                 return False, 'no_manager_state', ctx

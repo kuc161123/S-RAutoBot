@@ -9619,12 +9619,9 @@ class TradingBot:
             self._trend_only = bool(((cfg.get('modes', {}) or {}).get('trend_only', False)))
         except Exception:
             self._trend_only = False
-        try:
-            # Removed _trend_only initialization and config mutation (trend strategy disabled, only scalp active)
-            # Trend-only mode is no longer supported
-        except Exception:
-            pass  # Config access error handling
-            # Silence non-trend logs via a lightweight filter
+        # Removed _trend_only initialization and config mutation (trend strategy disabled, only scalp active)
+        # Trend-only mode is no longer supported
+        # Silence non-trend logs via a lightweight filter
             class _TrendOnlyFilter(logging.Filter):
                 def filter(self, record: logging.LogRecord) -> bool:
                     msg = str(record.getMessage())

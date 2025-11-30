@@ -261,7 +261,7 @@ class ProRulesBacktester:
         return df.dropna()
     
     def check_pro_rules(self, row: pd.Series, params: dict, side: str) -> bool:
-        """Check if signal passes pro rules with all optimized parameters"""
+        """Check if signal passes pro rules"""
         s = str(side).lower()
         
         # Extract values
@@ -278,42 +278,41 @@ class ProRulesBacktester:
         except:
             return False
         
-        # RSI check (optimized ranges)
+        # RSI check
         if s == 'long':
             rsi_ok = params['rsi_min_long'] <= rsi <= params['rsi_max_long']
         else:
             rsi_ok = params['rsi_min_short'] <= rsi <= params['rsi_max_short']
         
-        # MACD check (optimized minimum)
+        # MACD check
         macd_ok = False
         if s == 'long':
             macd_ok = (macd_hist > 0) and (abs(macd_hist) >= params['macd_hist_min'])
         else:
             macd_ok = (macd_hist < 0) and (abs(macd_hist) >= params['macd_hist_min'])
         
-        # VWAP check (optimized maximum)
+        # VWAP check
         vwap_ok = vwap_dist_atr <= params['vwap_dist_max']
         
-        # Volume check (optimized minimum)
+        # Volume check
         vol_ok = vol_ratio >= params['vol_ratio_min']
         
-        # BB Width check (optimized minimum)
+        # BB Width check
         bbw_ok = bb_width_pct >= params['bb_width_min']
         
-        # ATR check (optimized minimum)
-        atr_ok = atr_pct >= params['atr_pct_min']
+        # ATR check
+        atr_ok = atr_pct >= 0.05
         
-        # Wick check (optimized parameters)
-        wdelta = params['wick_delta_min']
-        wick_ratio_min = params['wick_ratio_min']
+        # Wick check
+        wdelta = 0.10
+        wick_ratio_min = 0.25
         if s == 'long':
             wick_ok = (lower_wick_ratio >= upper_wick_ratio + wdelta) and (lower_wick_ratio >= wick_ratio_min)
         else:
             wick_ok = (upper_wick_ratio >= lower_wick_ratio + wdelta) and (upper_wick_ratio >= wick_ratio_min)
         
-        # Fib check (optimized zones - can be list of allowed zones)
-        allowed_fib_zones = params.get('fib_zones', ['23-38', '38-50', '50-61'])
-        fib_ok = fib_zone in allowed_fib_zones
+        # Fib check
+        fib_ok = fib_zone in ('23-38', '38-50', '50-61')
         
         # MTF check (simplified - using our proxy)
         mtf_ok = bool(row['mtf_agree_15']) if s == 'long' else True  # Simplified
@@ -419,128 +418,75 @@ class ProRulesBacktester:
         
         print(f"  ✓ Data ready: {len(df)} candles")
         
-        # Expanded parameter grid - testing ALL pro rules parameters
-        # Reduced ranges to keep search space manageable while still comprehensive
-        # RSI ranges
+        # Parameter grid
         rsi_long_opts = [
-            (35, 65), (38, 62), (40, 60), (42, 58)
+            (35, 65), (38, 62), (40, 60), (42, 58), (45, 55)
         ]
         rsi_short_opts = [
-            (30, 60), (33, 57), (35, 55), (38, 52)
+            (30, 60), (33, 57), (35, 55), (38, 52), (40, 50)
         ]
-        
-        # VWAP distance (ATR)
         vwap_opts = [1.0, 1.2, 1.3, 1.5, 1.8]
-        
-        # Volume ratio
-        vol_opts = [1.2, 1.5, 1.8, 2.0]
-        
-        # MACD histogram minimum
+        vol_opts = [1.2, 1.5, 1.8, 2.0, 2.5]
         macd_opts = [0.0003, 0.0005, 0.001, 0.0015]
-        
-        # BB width minimum
         bb_width_opts = [0.008, 0.010, 0.012, 0.015]
         
-        # ATR percentage minimum
-        atr_pct_opts = [0.04, 0.05, 0.06, 0.08]
-        
-        # Wick delta minimum
-        wick_delta_opts = [0.08, 0.10, 0.12, 0.15]
-        
-        # Wick ratio minimum
-        wick_ratio_opts = [0.20, 0.25, 0.30]
-        
-        # Fib zones (combinations of allowed zones)
-        fib_zone_combos = [
-            ['23-38', '38-50', '50-61'],  # Standard
-            ['38-50', '50-61'],           # Higher zones
-            ['23-38', '38-50'],           # Lower zones
-            ['50-61', '61-78'],           # Upper zones
-            ['38-50'],                    # Single zone
-            ['50-61'],                    # Single zone
-        ]
-        
-        # Test LONG - all parameter combinations
-        print(f"  Testing LONG combinations (all parameters)...")
-        long_combinations = list(itertools.product(
-            rsi_long_opts, vwap_opts, vol_opts, macd_opts, 
-            bb_width_opts, atr_pct_opts, wick_delta_opts, 
-            wick_ratio_opts, fib_zone_combos
-        ))
-        print(f"    Total combinations: {len(long_combinations)}")
+        # Test LONG
+        print(f"  Testing LONG combinations...")
+        long_combinations = list(itertools.product(rsi_long_opts, vwap_opts, vol_opts, macd_opts, bb_width_opts))
         long_results = []
         
-        for i, (rsi_l, vwap, vol, macd, bbw, atr, wd, wr, fibz) in enumerate(long_combinations):
+        for i, (rsi_l, vwap, vol, macd, bbw) in enumerate(long_combinations):
             params = {
                 'rsi_min_long': rsi_l[0], 'rsi_max_long': rsi_l[1],
                 'rsi_min_short': 35, 'rsi_max_short': 55,  # Dummy for long test
                 'vwap_dist_max': vwap,
                 'vol_ratio_min': vol,
                 'macd_hist_min': macd,
-                'bb_width_min': bbw,
-                'atr_pct_min': atr,
-                'wick_delta_min': wd,
-                'wick_ratio_min': wr,
-                'fib_zones': fibz
+                'bb_width_min': bbw
             }
             
-            trades, wins, wr_val = self.run_backtest(df, params, 'long')
+            trades, wins, wr = self.run_backtest(df, params, 'long')
             
             if trades >= 10:  # Minimum trades threshold
                 long_results.append({
                     'params': params,
                     'trades': trades,
                     'wins': wins,
-                    'win_rate': wr_val,
-                    'score': trades * wr_val  # Volume * Quality
+                    'win_rate': wr,
+                    'score': trades * wr  # Volume * Quality
                 })
             
-            if (i + 1) % 500 == 0:
-                pct = (i + 1) / len(long_combinations) * 100
-                print(f"    LONG Progress: {i+1}/{len(long_combinations)} ({pct:.1f}%) | Valid: {len(long_results)}")
+            if (i + 1) % 100 == 0:
+                print(f"    Progress: {i+1}/{len(long_combinations)}")
         
-        print(f"    LONG: Found {len(long_results)} valid configurations")
-        
-        # Test SHORT - all parameter combinations
-        print(f"  Testing SHORT combinations (all parameters)...")
-        short_combinations = list(itertools.product(
-            rsi_short_opts, vwap_opts, vol_opts, macd_opts,
-            bb_width_opts, atr_pct_opts, wick_delta_opts,
-            wick_ratio_opts, fib_zone_combos
-        ))
-        print(f"    Total combinations: {len(short_combinations)}")
+        # Test SHORT
+        print(f"  Testing SHORT combinations...")
+        short_combinations = list(itertools.product(rsi_short_opts, vwap_opts, vol_opts, macd_opts, bb_width_opts))
         short_results = []
         
-        for i, (rsi_s, vwap, vol, macd, bbw, atr, wd, wr, fibz) in enumerate(short_combinations):
+        for i, (rsi_s, vwap, vol, macd, bbw) in enumerate(short_combinations):
             params = {
                 'rsi_min_long': 40, 'rsi_max_long': 60,  # Dummy for short test
                 'rsi_min_short': rsi_s[0], 'rsi_max_short': rsi_s[1],
                 'vwap_dist_max': vwap,
                 'vol_ratio_min': vol,
                 'macd_hist_min': macd,
-                'bb_width_min': bbw,
-                'atr_pct_min': atr,
-                'wick_delta_min': wd,
-                'wick_ratio_min': wr,
-                'fib_zones': fibz
+                'bb_width_min': bbw
             }
             
-            trades, wins, wr_val = self.run_backtest(df, params, 'short')
+            trades, wins, wr = self.run_backtest(df, params, 'short')
             
             if trades >= 10:
                 short_results.append({
                     'params': params,
                     'trades': trades,
                     'wins': wins,
-                    'win_rate': wr_val,
-                    'score': trades * wr_val
+                    'win_rate': wr,
+                    'score': trades * wr
                 })
             
-            if (i + 1) % 500 == 0:
-                pct = (i + 1) / len(short_combinations) * 100
-                print(f"    SHORT Progress: {i+1}/{len(short_combinations)} ({pct:.1f}%) | Valid: {len(short_results)}")
-        
-        print(f"    SHORT: Found {len(short_results)} valid configurations")
+            if (i + 1) % 100 == 0:
+                print(f"    Progress: {i+1}/{len(short_combinations)}")
         
         # Find best for each side
         best_long = None
@@ -566,27 +512,19 @@ class ProRulesBacktester:
         # Print summary
         print(f"\n  Results:")
         if best_long:
-            p = best_long['params']
             print(f"    LONG:  WR={best_long['win_rate']:.1f}% | Trades={best_long['trades']} | Score={best_long['score']:.1f}")
-            print(f"      RSI: {p['rsi_min_long']}-{p['rsi_max_long']} | VWAP: {p['vwap_dist_max']} | Vol: {p['vol_ratio_min']}x")
-            print(f"      MACD: {p['macd_hist_min']} | BBW: {p['bb_width_min']} | ATR: {p['atr_pct_min']}%")
-            print(f"      Wick Δ: {p['wick_delta_min']} | Wick Min: {p['wick_ratio_min']} | Fib: {p['fib_zones']}")
         else:
             print(f"    LONG:  No valid configuration (WR < 40% or <10 trades)")
         
         if best_short:
-            p = best_short['params']
             print(f"    SHORT: WR={best_short['win_rate']:.1f}% | Trades={best_short['trades']} | Score={best_short['score']:.1f}")
-            print(f"      RSI: {p['rsi_min_short']}-{p['rsi_max_short']} | VWAP: {p['vwap_dist_max']} | Vol: {p['vol_ratio_min']}x")
-            print(f"      MACD: {p['macd_hist_min']} | BBW: {p['bb_width_min']} | ATR: {p['atr_pct_min']}%")
-            print(f"      Wick Δ: {p['wick_delta_min']} | Wick Min: {p['wick_ratio_min']} | Fib: {p['fib_zones']}")
         else:
             print(f"    SHORT: No valid configuration (WR < 40% or <10 trades)")
         
         return result
     
-    def run_full_backtest(self, symbols: List[str] = None, min_wr: float = 40.0, resume: bool = True):
-        """Run full backtest on all symbols - processes one at a time and saves incrementally"""
+    def run_full_backtest(self, symbols: List[str] = None, min_wr: float = 40.0):
+        """Run full backtest on all symbols"""
         if symbols is None:
             symbols = self.get_all_symbols()
         
@@ -594,97 +532,43 @@ class ProRulesBacktester:
             print("No symbols to test")
             return
         
-        # Results file
-        output_file = "backtest_pro_rules_results.json"
-        progress_file = "backtest_pro_rules_progress.json"
-        
-        # Load existing results if resuming
-        results = {}
-        completed_symbols = set()
-        if resume:
-            try:
-                if os.path.exists(output_file):
-                    with open(output_file, 'r') as f:
-                        results = json.load(f)
-                    completed_symbols = set(results.keys())
-                    print(f"Loaded {len(completed_symbols)} previously completed symbols")
-            except Exception as e:
-                print(f"Could not load previous results: {e}")
-        
         print(f"\n{'='*80}")
         print(f"Starting Full Pro Rules Backtest")
-        print(f"Total symbols: {len(symbols)}")
-        print(f"Already completed: {len(completed_symbols)}")
-        print(f"Remaining: {len(symbols) - len(completed_symbols)}")
+        print(f"Symbols: {len(symbols)}")
         print(f"Timeframe: 3m")
         print(f"Candles: 5000")
         print(f"Min WR: {min_wr}%")
-        print(f"Results file: {output_file}")
         print(f"{'='*80}\n")
         
-        valid_count = sum(1 for r in results.values() if r.get('long') or r.get('short'))
+        results = {}
+        valid_count = 0
         
-        # Process symbols one by one
         for idx, symbol in enumerate(symbols, 1):
-            # Skip if already completed
-            if symbol in completed_symbols:
-                print(f"\n[{idx}/{len(symbols)}] Skipping {symbol} (already completed)")
-                continue
-            
-            print(f"\n{'='*80}")
-            print(f"[{idx}/{len(symbols)}] Processing {symbol}...")
-            print(f"{'='*80}")
-            
+            print(f"\n[{idx}/{len(symbols)}] Processing {symbol}...")
             try:
                 result = self.optimize_symbol(symbol)
-                
-                # Save result immediately
                 if result:
                     results[symbol] = result
-                    if result.get('long') or result.get('short'):
+                    if result['long'] or result['short']:
                         valid_count += 1
-                else:
-                    # Still save even if no valid config (mark as failed)
-                    results[symbol] = {'symbol': symbol, 'long': None, 'short': None, 'error': 'No valid configuration'}
-                
-                # Save to file after each symbol
-                with open(output_file, 'w') as f:
-                    json.dump(results, f, indent=2)
-                
-                # Save progress
-                with open(progress_file, 'w') as f:
-                    json.dump({
-                        'completed': list(results.keys()),
-                        'total': len(symbols),
-                        'current': idx,
-                        'valid_count': valid_count
-                    }, f, indent=2)
-                
-                print(f"\n✓ Saved results for {symbol}")
-                print(f"  Progress: {idx}/{len(symbols)} | Valid configs: {valid_count}")
-                
-            except KeyboardInterrupt:
-                print(f"\n\n⚠️  Interrupted by user")
-                print(f"Progress saved. Resume by running the script again.")
-                break
             except Exception as e:
-                print(f"  ❌ Error processing {symbol}: {e}")
+                print(f"  ❌ Error: {e}")
                 import traceback
                 traceback.print_exc()
-                
-                # Save error result
-                results[symbol] = {'symbol': symbol, 'long': None, 'short': None, 'error': str(e)}
-                with open(output_file, 'w') as f:
-                    json.dump(results, f, indent=2)
             
-            # Rate limiting between symbols
-            time.sleep(1)
+            # Rate limiting
+            time.sleep(0.5)
         
-        # Final summary
+        # Save results
+        output_file = f"backtest_pro_rules_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(output_file, 'w') as f:
+            json.dump(results, f, indent=2)
+        
+        # Print summary
         print(f"\n{'='*80}")
         print(f"BACKTEST SUMMARY")
         print(f"{'='*80}")
-        print(f"Total symbols tested: {len(results)}")
+        print(f"Total symbols tested: {len(symbols)}")
         print(f"Symbols with valid configs (WR >= {min_wr}%): {valid_count}")
         print(f"\nResults saved to: {output_file}")
         
@@ -693,8 +577,7 @@ class ProRulesBacktester:
         print(f"PER-SYMBOL RESULTS (WR >= {min_wr}%)")
         print(f"{'='*80}")
         
-        for symbol in sorted(results.keys()):
-            result = results[symbol]
+        for symbol, result in sorted(results.items()):
             if not (result.get('long') or result.get('short')):
                 continue
             
@@ -702,18 +585,18 @@ class ProRulesBacktester:
             if result.get('long'):
                 l = result['long']
                 p = l['params']
-                print(f"  LONG:  WR={l['win_rate']:.1f}% | Trades={l['trades']}")
-                print(f"    RSI: {p['rsi_min_long']}-{p['rsi_max_long']} | VWAP: {p['vwap_dist_max']} | Vol: {p['vol_ratio_min']}x")
-                print(f"    MACD: {p['macd_hist_min']} | BBW: {p['bb_width_min']} | ATR: {p['atr_pct_min']}%")
-                print(f"    Wick Δ: {p['wick_delta_min']} | Wick Min: {p['wick_ratio_min']} | Fib: {p['fib_zones']}")
+                print(f"  LONG:  WR={l['win_rate']:.1f}% | Trades={l['trades']} | "
+                      f"RSI={p['rsi_min_long']}-{p['rsi_max_long']} | "
+                      f"VWAP={p['vwap_dist_max']} | Vol={p['vol_ratio_min']}x | "
+                      f"MACD={p['macd_hist_min']} | BBW={p['bb_width_min']}")
             
             if result.get('short'):
                 s = result['short']
                 p = s['params']
-                print(f"  SHORT: WR={s['win_rate']:.1f}% | Trades={s['trades']}")
-                print(f"    RSI: {p['rsi_min_short']}-{p['rsi_max_short']} | VWAP: {p['vwap_dist_max']} | Vol: {p['vol_ratio_min']}x")
-                print(f"    MACD: {p['macd_hist_min']} | BBW: {p['bb_width_min']} | ATR: {p['atr_pct_min']}%")
-                print(f"    Wick Δ: {p['wick_delta_min']} | Wick Min: {p['wick_ratio_min']} | Fib: {p['fib_zones']}")
+                print(f"  SHORT: WR={s['win_rate']:.1f}% | Trades={s['trades']} | "
+                      f"RSI={p['rsi_min_short']}-{p['rsi_max_short']} | "
+                      f"VWAP={p['vwap_dist_max']} | Vol={p['vol_ratio_min']}x | "
+                      f"MACD={p['macd_hist_min']} | BBW={p['bb_width_min']}")
 
 if __name__ == "__main__":
     backtester = ProRulesBacktester()

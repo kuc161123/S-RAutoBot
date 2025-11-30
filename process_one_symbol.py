@@ -8,7 +8,7 @@ import json
 import requests
 from backtest_single_symbol import SingleSymbolOptimizer
 
-def fetch_data(symbol, limit=100000):
+def fetch_data(symbol, limit=5000):
     url = "https://api.bybit.com/v5/market/kline"
     base_params = {"category": "linear", "symbol": symbol, "interval": "3", "limit": 1000}
     

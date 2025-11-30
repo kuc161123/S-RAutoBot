@@ -1166,8 +1166,38 @@ class TradingBot:
                 side_key = str(side).lower()
                 active_list = mgr.get_active_combos(side_key)
                 active_ids = [c.get('combo_id') for c in (active_list or [])]
+                
+                # Also check structured combo_key for better matching
+                if combo_id:
+                    # Try structured matching if available
+                    try:
+                        from autobot.strategies.scalp.combos import ComboKey
+                        current_combo_key = ComboKey.from_string(combo_id)
+                        if current_combo_key:
+                            # Check if any active combo matches the structured key
+                            for active_combo in active_list:
+                                active_combo_key_dict = active_combo.get('combo_key')
+                                if active_combo_key_dict:
+                                    active_combo_key = ComboKey(
+                                        rsi_bin=active_combo_key_dict['rsi_bin'],
+                                        macd_bin=active_combo_key_dict['macd_bin'],
+                                        vwap_bin=active_combo_key_dict['vwap_bin'],
+                                        fib_zone=active_combo_key_dict['fib_zone'],
+                                        mtf=active_combo_key_dict['mtf']
+                                    )
+                                    if (current_combo_key.rsi_bin == active_combo_key.rsi_bin and
+                                        current_combo_key.macd_bin == active_combo_key.macd_bin and
+                                        current_combo_key.vwap_bin == active_combo_key.vwap_bin and
+                                        current_combo_key.fib_zone == active_combo_key.fib_zone and
+                                        current_combo_key.mtf == active_combo_key.mtf):
+                                        return True, 'adaptive_enabled', ctx
+                    except Exception as e:
+                        logger.debug(f"Structured combo matching failed, using string match: {e}")
+                
+                # Fallback to string matching
                 if combo_id and combo_id in active_ids:
                     return True, 'adaptive_enabled', ctx
+                
                 # Manager ready but combo not enabled → block (no fallback once ready)
                 # Fail-closed: Only explicitly enabled combos are allowed
                 if combo_id:

@@ -14,11 +14,188 @@ Usage:
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ComboKey:
+    """Structured combo identifier for efficient parsing and matching"""
+    rsi_bin: str
+    macd_bin: str
+    vwap_bin: str
+    fib_zone: str
+    mtf: bool
+    
+    def to_string(self) -> str:
+        """Convert to combo key string format"""
+        mtf_str = 'MTF' if self.mtf else 'noMTF'
+        return f"RSI:{self.rsi_bin} MACD:{self.macd_bin} VWAP:{self.vwap_bin} Fib:{self.fib_zone} {mtf_str}"
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary for serialization"""
+        return {
+            'rsi_bin': self.rsi_bin,
+            'macd_bin': self.macd_bin,
+            'vwap_bin': self.vwap_bin,
+            'fib_zone': self.fib_zone,
+            'mtf': self.mtf
+        }
+    
+    @classmethod
+    def from_string(cls, key_str: str) -> Optional['ComboKey']:
+        """
+        Parse combo key string back to structured format
+        
+        Example: "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
+        """
+        try:
+            # Pattern: "RSI:<bin> MACD:<bull|bear> VWAP:<bin> Fib:<zone> <MTF|noMTF>"
+            pattern = r'RSI:([^\s]+)\s+MACD:(bull|bear)\s+VWAP:([^\s]+)\s+Fib:([^\s]+)\s+(MTF|noMTF)'
+            match = re.match(pattern, key_str.strip())
+            
+            if not match:
+                logger.warning(f"Failed to parse combo key: {key_str}")
+                return None
+            
+            rsi_bin, macd_bin, vwap_bin, fib_zone, mtf_str = match.groups()
+            mtf = mtf_str == 'MTF'
+            
+            return cls(
+                rsi_bin=rsi_bin,
+                macd_bin=macd_bin,
+                vwap_bin=vwap_bin,
+                fib_zone=fib_zone,
+                mtf=mtf
+            )
+        except Exception as e:
+            logger.warning(f"Error parsing combo key '{key_str}': {e}")
+            return None
+    
+    def matches_features(self, feats: dict) -> bool:
+        """
+        Check if features match this combo key
+        
+        Args:
+            feats: Dictionary with rsi_14, macd_hist, vwap_dist_atr, fib_zone, mtf_agree_15
+        
+        Returns:
+            True if features match this combo
+        """
+        try:
+            # Bin RSI
+            rsi = float(feats.get('rsi_14', 0))
+            rsi_bins = [
+                ("<30", lambda x: x < 30),
+                ("30-40", lambda x: 30 <= x < 40),
+                ("40-60", lambda x: 40 <= x < 60),
+                ("60-70", lambda x: 60 <= x < 70),
+                ("70+", lambda x: x >= 70)
+            ]
+            rsi_match = False
+            for bin_name, bin_fn in rsi_bins:
+                if bin_name == self.rsi_bin and bin_fn(rsi):
+                    rsi_match = True
+                    break
+            
+            # Bin MACD
+            macd_hist = float(feats.get('macd_hist', 0))
+            macd_match = (self.macd_bin == 'bull' and macd_hist > 0) or (self.macd_bin == 'bear' and macd_hist <= 0)
+            
+            # Bin VWAP
+            vwap = float(feats.get('vwap_dist_atr', 0))
+            vwap_bins = [
+                ("<0.6", lambda x: x < 0.6),
+                ("0.6-1.2", lambda x: 0.6 <= x < 1.2),
+                ("1.2+", lambda x: x >= 1.2)
+            ]
+            vwap_match = False
+            for bin_name, bin_fn in vwap_bins:
+                if bin_name == self.vwap_bin and bin_fn(vwap):
+                    vwap_match = True
+                    break
+            
+            # Fib zone
+            fib_zone = str(feats.get('fib_zone', ''))
+            fib_match = fib_zone == self.fib_zone
+            
+            # MTF
+            mtf_agree = bool(feats.get('mtf_agree_15', False))
+            mtf_match = self.mtf == mtf_agree
+            
+            return rsi_match and macd_match and vwap_match and fib_match and mtf_match
+            
+        except Exception as e:
+            logger.debug(f"Error matching combo key to features: {e}")
+            return False
+    
+    @classmethod
+    def from_features(cls, feats: dict) -> Optional['ComboKey']:
+        """
+        Create ComboKey from feature dictionary
+        
+        Args:
+            feats: Dictionary with rsi_14, macd_hist, vwap_dist_atr, fib_zone, mtf_agree_15
+        
+        Returns:
+            ComboKey object or None if features invalid
+        """
+        try:
+            # Bin RSI
+            rsi = float(feats.get('rsi_14', 0))
+            rsi_bins = [
+                ("<30", lambda x: x < 30),
+                ("30-40", lambda x: 30 <= x < 40),
+                ("40-60", lambda x: 40 <= x < 60),
+                ("60-70", lambda x: 60 <= x < 70),
+                ("70+", lambda x: x >= 70)
+            ]
+            rsi_bin = None
+            for bin_name, bin_fn in rsi_bins:
+                if bin_fn(rsi):
+                    rsi_bin = bin_name
+                    break
+            
+            # Bin MACD
+            macd_hist = float(feats.get('macd_hist', 0))
+            macd_bin = 'bull' if macd_hist > 0 else 'bear'
+            
+            # Bin VWAP
+            vwap = float(feats.get('vwap_dist_atr', 0))
+            vwap_bins = [
+                ("<0.6", lambda x: x < 0.6),
+                ("0.6-1.2", lambda x: 0.6 <= x < 1.2),
+                ("1.2+", lambda x: x >= 1.2)
+            ]
+            vwap_bin = None
+            for bin_name, bin_fn in vwap_bins:
+                if bin_fn(vwap):
+                    vwap_bin = bin_name
+                    break
+            
+            # Fib zone
+            fib_zone = str(feats.get('fib_zone', ''))
+            
+            # MTF
+            mtf = bool(feats.get('mtf_agree_15', False))
+            
+            if not all([rsi_bin, macd_bin, vwap_bin, fib_zone]):
+                return None
+            
+            return cls(
+                rsi_bin=rsi_bin,
+                macd_bin=macd_bin,
+                vwap_bin=vwap_bin,
+                fib_zone=fib_zone,
+                mtf=mtf
+            )
+        except Exception as e:
+            logger.debug(f"Error creating ComboKey from features: {e}")
+            return None
 
 
 @dataclass
@@ -615,11 +792,11 @@ class AdaptiveComboManager:
             if side and data.get('side') != side:
                 continue
 
-            # Convert combo key back to constraints for matching
-            # This would need to parse "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
-            # and map to numeric ranges. For now, return metadata only.
-            active.append({
+            # Parse combo key to structured format for better matching
+            combo_key = ComboKey.from_string(key)
+            combo_dict = {
                 'combo_id': key,
+                'combo_key': combo_key.to_dict() if combo_key else None,  # Structured format
                 'side': data.get('side'),
                 'wr': data.get('wr', 0.0),
                 'n': data.get('n', 0),
@@ -632,7 +809,8 @@ class AdaptiveComboManager:
                 'n_24h': data.get('n_24h', 0),
                 'n_exec_24h': data.get('n_exec_24h', 0),
                 'n_phantom_24h': data.get('n_phantom_24h', 0),
-            })
+            }
+            active.append(combo_dict)
 
         return active
 
@@ -641,22 +819,29 @@ class AdaptiveComboManager:
         Check if a specific combo pattern is currently enabled
 
         Args:
-            combo_pattern: Dictionary with combo features (RSI, MACD, VWAP, Fib, MTF)
+            combo_pattern: Dictionary with combo features (RSI, MACD, VWAP, Fib, MTF) or combo_id string
 
         Returns:
             True if combo is enabled, False otherwise (fail-closed: only explicitly enabled combos allowed)
         """
-        # Build combo key from pattern
         try:
-            # This would need proper binning logic
-            # For now, check if any active combo matches
             state = self._load_combo_state()
-
-            # Simplified: check if pattern's combo_id exists and is enabled
+            
+            # If combo_id is provided, check directly
             combo_id = combo_pattern.get('combo_id')
-            if combo_id and combo_id in state:
-                return state[combo_id].get('enabled', False)
-
+            if combo_id and isinstance(combo_id, str):
+                if combo_id in state:
+                    return state[combo_id].get('enabled', False)
+                return False
+            
+            # If features are provided, create ComboKey and match
+            if isinstance(combo_pattern, dict) and 'rsi_14' in combo_pattern:
+                combo_key = ComboKey.from_features(combo_pattern)
+                if combo_key:
+                    combo_id_str = combo_key.to_string()
+                    if combo_id_str in state:
+                        return state[combo_id_str].get('enabled', False)
+            
             # Fail-closed: Only combos explicitly enabled by manager are allowed
             # Unknown combos are blocked until they prove their performance
             return False

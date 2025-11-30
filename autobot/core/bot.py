@@ -1288,42 +1288,52 @@ class TradingBot:
             rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-50' if rsi < 50 else '50-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
             macd = 'bull' if mh > 0 else 'bear'
             mh_abs = abs(mh)
-            mh_floor = 0.0005
-            vwap_bin = '<0.6' if vwap < 0.6 else '0.6-1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
+            mh_floor = 0.0010  # stricter MACD magnitude
+            vwap_bin = '<1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
             s = str(side).lower()
             ok = False
             vol_strong = False
             try:
                 volr_tmp = float(f.get('volume_ratio', 0.0) or 0.0)
-                vol_strong = volr_tmp >= 1.50
+                vol_strong = volr_tmp >= 2.0
             except Exception:
                 vol_strong = False
-            # Baseline volume/wick gates for Pro fallback
+            # Baseline volume/wick/volatility gates for Pro fallback
             vol_ok = False
             try:
-                vol_ok = volr_tmp >= 1.30
+                vol_ok = volr_tmp >= 1.50
             except Exception:
                 vol_ok = False
             try:
                 uw = float(f.get('upper_wick_ratio', 0.0) or 0.0)
                 lw = float(f.get('lower_wick_ratio', 0.0) or 0.0)
-                wdelta = 0.12
-                wick_ok = (lw >= uw + wdelta) if s == 'long' else (uw >= lw + wdelta)
+                wdelta = 0.15
+                wick_ratio_min = 0.25
+                wick_ok = ((lw >= uw + wdelta) and (lw >= wick_ratio_min)) if s == 'long' else ((uw >= lw + wdelta) and (uw >= wick_ratio_min))
             except Exception:
                 wick_ok = False
+            # Market activity gates
+            try:
+                atr_ok = float(f.get('atr_pct', 0.0) or 0.0) >= 0.05  # % of price
+            except Exception:
+                atr_ok = False
+            try:
+                bbw_ok = float(f.get('bb_width_pct', 0.0) or 0.0) >= 0.010  # 1%
+            except Exception:
+                bbw_ok = False
 
             if s == 'long':
-                rsi_ok = (40 <= rsi < 70) or (30 <= rsi < 40)
-                v_ok = (vwap_bin == '<0.6') or (vwap_bin == '0.6-1.0') or (vwap_bin == '1.0-1.2' and vol_strong)
+                rsi_ok = (40 <= rsi < 60)
+                v_ok = (vwap_bin == '<1.0') or (vwap_bin == '1.0-1.2' and vol_strong)
                 macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
-                fib_ok = (fibz in ('23-38', '38-50', '50-61'))
-                ok = bool(rsi_ok and v_ok and macd_ok and fib_ok and mtf and vol_ok and wick_ok)
+                fib_ok = (fibz in ('38-50', '50-61'))
+                ok = bool(rsi_ok and v_ok and macd_ok and fib_ok and mtf and vol_ok and wick_ok and atr_ok and bbw_ok)
             else:
-                rsi_ok = (30 <= rsi < 60) or (60 <= rsi < 70 and vol_strong)
+                rsi_ok = (35 <= rsi < 55)
                 macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
-                v_ok = vwap_bin in ('<0.6', '0.6-1.0', '1.0-1.2')
-                fib_ok = (fibz in ('23-38', '38-50', '50-61', '61-78'))
-                ok = bool(rsi_ok and macd_ok and v_ok and fib_ok and mtf and vol_ok and wick_ok)
+                v_ok = (vwap_bin == '<1.0') or (vwap_bin == '1.0-1.2' and vol_strong)
+                fib_ok = (fibz in ('38-50', '50-61'))
+                ok = bool(rsi_ok and macd_ok and v_ok and fib_ok and mtf and vol_ok and wick_ok and atr_ok and bbw_ok)
 
             if ok:
                 return True, 'fallback_pro_ok', ctx

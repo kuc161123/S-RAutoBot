@@ -883,7 +883,7 @@ class TradingBot:
         when a combo is enabled this function will execute instead of recording a phantom.
         """
         try:
-            allowed, gate_reason, gate_ctx = self._scalp_combo_allowed(str(getattr(sc_sig, 'side', '')), feats or {})
+            allowed, gate_reason, gate_ctx = self._scalp_combo_allowed(sym, str(getattr(sc_sig, 'side', '')), feats or {})
         except Exception:
             allowed, gate_reason, gate_ctx = (False, 'insufficient_features', {})
 
@@ -1011,18 +1011,23 @@ class TradingBot:
                     vwap = 999.0
                 fibz = feats.get('fib_zone')
                 mtf = bool(feats.get('mtf_agree_15', False))
+                # Default High Precision Rules
+                rules = {
+                    'rsi_min_long': 40, 'rsi_max_long': 60,
+                    'rsi_min_short': 35, 'rsi_max_short': 55,
+                    'vwap_dist_max': 1.3, 'vol_ratio_min': 1.5,
+                    'macd_hist_min': 0.0003, 'bb_width_min': 0.010
+                }
+                # Override with per-symbol rules if available
+                if sym in PER_SYMBOL_PRO_RULES:
+                    rules.update(PER_SYMBOL_PRO_RULES[sym])
+
                 rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
                 macd = 'bull' if mh > 0 else 'bear'
                 mh_abs = abs(mh)
-                mh_floor = 0.0010
+                mh_floor = rules['macd_hist_min']
                 vwap_bin = '<1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
-                if not isinstance(fibz, str) or not fibz:
-                    try:
-                        frel = float(feats.get('fib_ret', 0.0))
-                        fr = frel * 100.0 if frel <= 1.0 else frel
-                        fibz = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
-                    except Exception:
-                        fibz = 'n/a'
+                
                 vol_strong = volr >= 2.0
                 try:
                     uw = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
@@ -1032,8 +1037,10 @@ class TradingBot:
                 wdelta_local = 0.15
                 wick_min = 0.25
                 wick_delta = (lw - uw) if str(side).lower() == 'long' else (uw - lw)
-                vol_ok = volr >= 1.50
+                
+                vol_ok = volr >= rules['vol_ratio_min']
                 wick_ok = (wick_delta >= wdelta_local) and ((lw if str(side).lower()=='long' else uw) >= wick_min)
+                
                 try:
                     atr_pct = float(feats.get('atr_pct', 0.0) or 0.0)
                 except Exception:
@@ -1042,36 +1049,32 @@ class TradingBot:
                     bbw_pct = float(feats.get('bb_width_pct', 0.0) or 0.0)
                 except Exception:
                     bbw_pct = 0.0
+                
                 atr_ok = atr_pct >= 0.05
-                bbw_ok = bbw_pct >= 0.010
+                bbw_ok = bbw_pct >= rules['bb_width_min']
+                
                 reasons: list[str] = []
                 s = str(side).lower()
                 if s == 'long':
-                    rsi_ok = (40 <= rsi < 60)
+                    rsi_ok = (rules['rsi_min_long'] <= rsi <= rules['rsi_max_long'])
                     macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
-                    v_ok = (vwap_bin == '<1.0') or (vwap_bin == '1.0-1.2' and vol_strong)
-                    fib_ok = fibz in ('38-50', '50-61')
+                    v_ok = (vwap <= rules['vwap_dist_max'])
+                    fib_ok = fibz in ('23-38', '38-50', '50-61')
                 else:
-                    rsi_ok = (35 <= rsi < 55)
+                    rsi_ok = (rules['rsi_min_short'] <= rsi <= rules['rsi_max_short'])
                     macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
-                    v_ok = (vwap_bin == '<1.0') or (vwap_bin == '1.0-1.2' and vol_strong)
-                    fib_ok = fibz in ('38-50', '50-61')
-                if not rsi_ok:
-                    reasons.append('RSI')
-                if not macd_ok:
-                    reasons.append('MACD')
-                if not v_ok:
-                    reasons.append('VWAP')
-                if not fib_ok:
-                    reasons.append('Fib')
-                if not vol_ok:
-                    reasons.append('Vol')
-                if not wick_ok:
-                    reasons.append('Wick')
-                if not atr_ok:
-                    reasons.append('ATR')
-                if not bbw_ok:
-                    reasons.append('BBW')
+                    v_ok = (vwap <= rules['vwap_dist_max'])
+                    fib_ok = fibz in ('23-38', '38-50', '50-61')
+                
+                if not rsi_ok: reasons.append(f"RSI {rsi:.1f}")
+                if not macd_ok: reasons.append(f"MACD {mh:.5f}")
+                if not v_ok: reasons.append(f"VWAP {vwap:.2f}")
+                if not fib_ok: reasons.append(f"Fib {fibz}")
+                if not vol_ok: reasons.append(f"Vol {volr:.2f}")
+                if not wick_ok: reasons.append("Wick")
+                if not atr_ok: reasons.append("ATR")
+                if not bbw_ok: reasons.append("BBW")
+
                 lines.append("🚫 Blocked — Rules")
                 lines.append(f"{sym} {str(side).upper()} | Reason: {', '.join(reasons) if reasons else 'Pro rule'}")
                 lines.append("")
@@ -1081,20 +1084,20 @@ class TradingBot:
                 lines.append(f"• VWAP : {vwap:.2f} ATR (bin {vwap_bin})")
                 lines.append(f"• Fib  : {fibz or 'n/a'}")
                 lines.append(f"• MTF  : {'✓' if mtf else '✗'}")
-                lines.append(f"• Vol  : {volr:.2f}x (min 1.50x)")
-                lines.append(f"• Wick : L={lw:.2f} U={uw:.2f} Δ={wick_delta:.2f} (min {wdelta_local:.2f}, dir≥{wick_min:.2f})")
+                lines.append(f"• Vol  : {volr:.2f}x (min {rules['vol_ratio_min']}x)")
+                lines.append(f"• Wick : L={lw:.2f} U={uw:.2f} Δ={wick_delta:.2f}")
                 lines.append(f"• ATR% : {atr_pct:.3f}% (min 0.050%)")
-                lines.append(f"• BBW% : {bbw_pct*100.0:.3f}% (min 1.000%)")
+                lines.append(f"• BBW% : {bbw_pct*100.0:.3f}% (min {rules['bb_width_min']*100:.3f}%)")
                 lines.append("")
                 lines.append("Criteria (Pass/Fail)")
-                lines.append(f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: {'40-60' if side=='long' else '35-55'}")
-                lines.append(f"• MACD  {'✅' if macd_ok else '❌'}  allowed: {macd} with |hist| ≥ 0.0003")
-                lines.append(f"• VWAP  {'✅' if v_ok else '❌'}  allowed: <1.3 (or 1.5 with vol≥2.0x)")
-                lines.append(f"• Fib   {'✅' if fib_ok else '❌'}  allowed: 38-50, 50-61, 61-78, 23-38")
-                lines.append(f"• Vol   {'✅' if vol_ok else '❌'}  volume vs gate min 1.50x")
-                lines.append(f"• Wick  {'✅' if wick_ok else '❌'}  dominant wick Δ≥{wdelta_local} and dir≥{wick_min}")
+                lines.append(f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: {rules['rsi_min_long']}-{rules['rsi_max_long']}" if side=='long' else f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: {rules['rsi_min_short']}-{rules['rsi_max_short']}")
+                lines.append(f"• MACD  {'✅' if macd_ok else '❌'}  allowed: {macd} with |hist| ≥ {rules['macd_hist_min']}")
+                lines.append(f"• VWAP  {'✅' if v_ok else '❌'}  allowed: ≤ {rules['vwap_dist_max']} ATR")
+                lines.append(f"• Fib   {'✅' if fib_ok else '❌'}  allowed: 23-38, 38-50, 50-61")
+                lines.append(f"• Vol   {'✅' if vol_ok else '❌'}  volume ≥ {rules['vol_ratio_min']}x")
+                lines.append(f"• Wick  {'✅' if wick_ok else '❌'}  dominant wick Δ≥{wdelta_local}")
                 lines.append(f"• ATR   {'✅' if atr_ok else '❌'}  atr_pct ≥ 0.050%")
-                lines.append(f"• BBW   {'✅' if bbw_ok else '❌'}  bb_width_pct ≥ 0.010")
+                lines.append(f"• BBW   {'✅' if bbw_ok else '❌'}  bb_width_pct ≥ {rules['bb_width_min']*100:.3f}%")
             else:
                 title = "🚫 Blocked — Pre‑Gate"
                 lines.append(f"{sym} {str(side).upper()} | {pre_reason or 'pre‑gate'}")
@@ -1123,7 +1126,7 @@ class TradingBot:
         except Exception:
             pass
 
-    def _scalp_combo_allowed(self, side: str, feats: dict) -> tuple[bool, str, dict]:
+    def _scalp_combo_allowed(self, sym: str, side: str, feats: dict) -> tuple[bool, str, dict]:
         """Return (allowed, reason, ctx) based on manager readiness and fallback policy.
         reasons: adaptive_enabled | adaptive_disabled | fallback_mtf_ok | fallback_mtf_block | fallback_off_block | insufficient_features | no_manager_state
         ctx contains combo_id when available.
@@ -1200,62 +1203,65 @@ class TradingBot:
                 except Exception:
                     fibz = None
 
-            # Pro rule fallback (optimized thresholds - research-backed)
-            # Removed MTF requirement - defeats purpose when combos aren't ready
-            # MTF uses 3m EMA(20/50) trend alignment from features (for reference only)
-            mtf = bool(f.get('mtf_agree_20_50', False))
+            # Pro rule fallback (optimized thresholds)
+            # Default High Precision Rules
+            rules = {
+                'rsi_min_long': 40, 'rsi_max_long': 60,
+                'rsi_min_short': 35, 'rsi_max_short': 55,
+                'vwap_dist_max': 1.3, 'vol_ratio_min': 1.5,
+                'macd_hist_min': 0.0003, 'bb_width_min': 0.010
+            }
+            # Override with per-symbol rules if available
+            if sym in PER_SYMBOL_PRO_RULES:
+                rules.update(PER_SYMBOL_PRO_RULES[sym])
+
             rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-50' if rsi < 50 else '50-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
             macd = 'bull' if mh > 0 else 'bear'
             mh_abs = abs(mh)
-            mh_floor = 0.0003  # Reduced from 0.0010 - trust direction more than magnitude
+            mh_floor = rules['macd_hist_min']
             vwap_bin = '<1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
             s = str(side).lower()
-            ok = False
-            vol_strong = False
+            
+            # Volume check
             try:
                 volr_tmp = float(f.get('volume_ratio', 0.0) or 0.0)
-                vol_strong = volr_tmp >= 1.8  # Reduced from 2.0 for Tier 2 VWAP
-            except Exception:
-                vol_strong = False
-            # Baseline volume/wick/volatility gates for Pro fallback
-            vol_ok = False
-            try:
-                vol_ok = volr_tmp >= 1.20  # Reduced from 1.50 - catch moderate momentum
+                vol_ok = volr_tmp >= rules['vol_ratio_min']
             except Exception:
                 vol_ok = False
+
+            # Wick check
             try:
                 uw = float(f.get('upper_wick_ratio', 0.0) or 0.0)
                 lw = float(f.get('lower_wick_ratio', 0.0) or 0.0)
-                wdelta = 0.10  # Reduced from 0.15 - less restrictive
+                wdelta = 0.10
                 wick_ratio_min = 0.25
                 wick_ok = ((lw >= uw + wdelta) and (lw >= wick_ratio_min)) if s == 'long' else ((uw >= lw + wdelta) and (uw >= wick_ratio_min))
             except Exception:
                 wick_ok = False
-            # Market activity gates
+
+            # ATR check
             try:
-                atr_ok = float(f.get('atr_pct', 0.0) or 0.0) >= 0.05  # % of price - kept same
+                atr_ok = float(f.get('atr_pct', 0.0) or 0.0) >= 0.05
             except Exception:
                 atr_ok = False
+
+            # BBW check
             try:
-                bbw_ok = float(f.get('bb_width_pct', 0.0) or 0.0) >= 0.008  # 0.8% - reduced from 1.0%
+                bbw_ok = float(f.get('bb_width_pct', 0.0) or 0.0) >= rules['bb_width_min']
             except Exception:
                 bbw_ok = False
 
             if s == 'long':
-                rsi_ok = (38 <= rsi < 62)  # Widened from 40-60
-                # Tier 2 VWAP: expanded to 1.3 ATR with relaxed volume
-                v_ok = (vwap < 1.0) or (vwap < 1.3 and vol_strong)
+                rsi_ok = (rules['rsi_min_long'] <= rsi <= rules['rsi_max_long'])
+                v_ok = (vwap <= rules['vwap_dist_max'])
                 macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
-                fib_ok = (fibz in ('23-38', '38-50', '50-61'))  # Added '23-38' zone
-                # MTF REMOVED from boolean check - no longer required
+                fib_ok = (fibz in ('23-38', '38-50', '50-61'))
                 ok = bool(rsi_ok and v_ok and macd_ok and fib_ok and vol_ok and wick_ok and atr_ok and bbw_ok)
             else:
-                rsi_ok = (33 <= rsi < 57)  # Widened from 35-55
+                rsi_ok = (rules['rsi_min_short'] <= rsi <= rules['rsi_max_short'])
                 macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
-                # Tier 2 VWAP: expanded to 1.3 ATR with relaxed volume
-                v_ok = (vwap < 1.0) or (vwap < 1.3 and vol_strong)
-                fib_ok = (fibz in ('23-38', '38-50', '50-61'))  # Added '23-38' zone
-                # MTF REMOVED from boolean check - no longer required
+                v_ok = (vwap <= rules['vwap_dist_max'])
+                fib_ok = (fibz in ('23-38', '38-50', '50-61'))
                 ok = bool(rsi_ok and macd_ok and v_ok and fib_ok and vol_ok and wick_ok and atr_ok and bbw_ok)
 
             if ok:
@@ -2360,7 +2366,7 @@ class TradingBot:
                         gate_ctx0 = {'combo_id': cid} if cid else {}
                         allowed0, gate_reason0 = True, 'manual_bypass'
                     else:
-                        allowed0, gate_reason0, gate_ctx0 = self._scalp_combo_allowed(str(getattr(sig_obj,'side','')), feats_for_gate)
+                        allowed0, gate_reason0, gate_ctx0 = self._scalp_combo_allowed(sym, str(getattr(sig_obj,'side','')), feats_for_gate)
                 except Exception:
                     allowed0, gate_reason0, gate_ctx0 = (False, 'insufficient_features', {})
                 # Capture routing context for notifications

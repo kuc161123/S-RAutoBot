@@ -425,7 +425,7 @@ class AdaptiveComboManager:
 
             for key, perf in all_combos.items():
                 prev_enabled = prev_state.get(key, {}).get('enabled', False)
-                # Compute WR metric (Wilson LB when enabled)
+                # Compute WR metric (Wilson LB when enabled, otherwise raw WR)
                 wr_metric = self._wilson_lb(perf.wins, perf.n) if self.use_wilson_lb else float(perf.wr)
                 n_ok = perf.n >= self.min_sample_size
                 ev_ok = float(perf.ev_r) >= float(self.ev_floor_r)
@@ -458,9 +458,13 @@ class AdaptiveComboManager:
                 if curr_enabled != prev_enabled:
                     status = "ENABLED" if curr_enabled else "DISABLED"
                     try:
+                        if self.use_wilson_lb:
+                            metric_label = "LB"
+                        else:
+                            metric_label = "WR"
                         msg = (
                             f"{status}: {key} ({perf.side.upper()}) - "
-                            f"WR {perf.wr:.1f}% (LB {wr_metric:.1f}%) EV_R {perf.ev_r:+.2f} N={perf.n}"
+                            f"WR {perf.wr:.1f}% ({metric_label} {wr_metric:.1f}%) EV_R {perf.ev_r:+.2f} N={perf.n}"
                         )
                     except Exception:
                         msg = f"{status}: {key} ({perf.side.upper()}) - WR {perf.wr:.1f}% (N={perf.n})"
@@ -509,12 +513,13 @@ class AdaptiveComboManager:
                             emoji = "🔴"
                             reason = f"WR below threshold ({thr_used:.1f}%)"
 
+                        metric_name = "LB WR" if self.use_wilson_lb else "WR"
                         notification = (
                             f"{emoji} **Combo Filter Update**\n"
                             f"{change_msg}\n"
                             f"Reason: {reason}\n"
-                            f"Thresholds: Long LB WR ≥{self.min_wr_threshold_long:.1f}%, "
-                            f"Short LB WR ≥{self.min_wr_threshold_short:.1f}%, "
+                            f"Thresholds: Long {metric_name} ≥{self.min_wr_threshold_long:.1f}%, "
+                            f"Short {metric_name} ≥{self.min_wr_threshold_short:.1f}%, "
                             f"N ≥{self.min_sample_size}"
                         )
                         asyncio.create_task(self.telegram_bot.send_message(notification))

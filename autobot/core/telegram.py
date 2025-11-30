@@ -3005,7 +3005,7 @@ class TGBot:
             "• /scalpgates — Gate analysis",
             "• /combo_status — Adaptive combo status",
             "• /scalppro — Pro analytics (RSI/MACD/VWAP/Fib/MTF)",
-            "• /combo_threshold <L> [S] — Set LB WR thresholds (long/short)",
+            "• /combo_threshold <L> [S] — Set WR% thresholds (long/short)",
             "• /force_adaptive [N] — Force adaptive mode",
             "",
             "Risk",
@@ -9766,11 +9766,12 @@ class TGBot:
             thr_l = float(stats.get('min_wr_threshold_long', stats.get('min_wr_threshold', 0.0)) or 0.0)
             thr_s = float(stats.get('min_wr_threshold_short', stats.get('min_wr_threshold', 0.0)) or 0.0)
 
+            metric_name = "WR"
             lines = [
                 "📊 *Adaptive Combo Filter Status*",
                 "",
                 f"Status: {'🟢 ENABLED' if stats['enabled'] else '🔴 DISABLED'}",
-                f"Thresholds: Long LB WR ≥{thr_l:.1f}%, Short LB WR ≥{thr_s:.1f}%, N ≥{stats['min_sample_size']}",
+                f"Thresholds: Long {metric_name} ≥{thr_l:.1f}%, Short {metric_name} ≥{thr_s:.1f}%, N ≥{stats['min_sample_size']}",
                 f"Lookback: {stats['lookback_days']} days",
                 "",
                 "*Current State*",
@@ -10052,12 +10053,12 @@ class TGBot:
             await self.safe_reply(update, f"❌ Error: {e}")
 
     async def combo_threshold_cmd(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-        """Adjust the LB WR thresholds for combo filtering.
+        """Adjust the WR% thresholds for combo filtering.
 
         Usage:
         /combo_threshold              - Show current thresholds
-        /combo_threshold X            - Set both long/short LB WR to X (e.g., 40)
-        /combo_threshold L S          - Set long LB WR=L and short LB WR=S
+        /combo_threshold X            - Set both long/short WR to X (e.g., 45)
+        /combo_threshold L S          - Set long WR=L and short WR=S
         """
         try:
             mgr = self.shared.get('adaptive_combo_mgr')
@@ -10071,10 +10072,10 @@ class TGBot:
                 thr_s = getattr(mgr, 'min_wr_threshold_short', getattr(mgr, 'min_wr_threshold', 0.0))
                 await self.safe_reply(update,
                     f"📊 Current Threshold\n"
-                    f"Long LB WR ≥{thr_l:.1f}%\n"
-                    f"Short LB WR ≥{thr_s:.1f}%\n"
+                    f"Long WR ≥{thr_l:.1f}%\n"
+                    f"Short WR ≥{thr_s:.1f}%\n"
                     f"N ≥{mgr.min_sample_size}\n\n"
-                    f"Gating uses Wilson lower-bound WR.\n"
+                    f"Gating uses raw WR% (not Wilson lower-bound).\n"
                     f"Usage: /combo_threshold <L> [S]"
                 )
                 return
@@ -10112,7 +10113,7 @@ class TGBot:
             acfg = (((cfg.setdefault('scalp', {}).setdefault('exec', {})).setdefault('adaptive_combos', {})))
             acfg['min_wr_threshold_long'] = thr_long
             acfg['min_wr_threshold_short'] = thr_short
-            acfg['use_wilson_lb'] = True
+            acfg['use_wilson_lb'] = False
 
             # Trigger refresh with new thresholds
             enabled_count, disabled_count, changes = mgr.update_combo_filters(force=True)

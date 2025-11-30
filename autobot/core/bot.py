@@ -1069,22 +1069,6 @@ class TradingBot:
                 lines.append(f"• Wick  {'✅' if wick_ok else '❌'}  dominant wick Δ≥{wdelta_local} and dir≥{wick_min}")
                 lines.append(f"• ATR   {'✅' if atr_ok else '❌'}  atr_pct ≥ 0.050%")
                 lines.append(f"• BBW   {'✅' if bbw_ok else '❌'}  bb_width_pct ≥ 0.010")
-                lines.append("")
-                lines.append("Criteria (Pass/Fail)")
-                if s == 'long':
-                    lines.append(f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: 40–60")
-                    lines.append(f"• MACD  {'✅' if macd_ok else '❌'}  allowed: bull with |hist| ≥ 0.0010")
-                    lines.append(f"• VWAP  {'✅' if v_ok else '❌'}  allowed: <1.0 (or 1.0–1.2 with vol≥2.0x)")
-                    lines.append(f"• Fib   {'✅' if fib_ok else '❌'}  allowed: 38–50, 50–61")
-                else:
-                    lines.append(f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: 35–55")
-                    lines.append(f"• MACD  {'✅' if macd_ok else '❌'}  allowed: bear with |hist| ≥ 0.0010")
-                    lines.append(f"• VWAP  {'✅' if v_ok else '❌'}  allowed: <1.0 (or 1.0–1.2 with vol≥2.0x)")
-                    lines.append(f"• Fib   {'✅' if fib_ok else '❌'}  allowed: 38–50, 50–61")
-                lines.append(f"• Vol   {'✅' if vol_ok else '❌'}  volume vs gate min 1.50x")
-                lines.append(f"• Wick  {'✅' if wick_ok else '❌'}  dominant wick Δ≥{wdelta_local:.2f} and dir≥{wick_min:.2f}")
-                lines.append(f"• ATR   {'✅' if atr_ok else '❌'}  atr_pct ≥ 0.050%")
-                lines.append(f"• BBW   {'✅' if bbw_ok else '❌'}  bb_width_pct ≥ 0.010")
             else:
                 title = "🚫 Blocked — Pre‑Gate"
                 lines.append(f"{sym} {str(side).upper()} | {pre_reason or 'pre‑gate'}")

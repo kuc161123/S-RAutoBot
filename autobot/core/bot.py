@@ -1125,6 +1125,24 @@ class TradingBot:
         ctx contains combo_id when available.
         """
         ctx = {}
+
+        # 1. Check Symbol Overrides (Golden Combos)
+        try:
+            overrides = getattr(self, 'symbol_overrides', {}) or {}
+            sym_cfg = overrides.get(sym)
+            if sym_cfg:
+                golden_combos = sym_cfg.get('combos', [])
+                cid = self._scalp_combo_key_from_features(feats or {})
+                if cid and cid in golden_combos:
+                    ctx['combo_id'] = cid
+                    try:
+                        if isinstance(feats, dict): feats['combo_id'] = cid
+                    except Exception: pass
+                    logger.info(f"[{sym}] 🌟 Golden Combo Override: {cid}")
+                    return True, 'symbol_override', ctx
+        except Exception:
+            pass
+
         try:
             cfg = getattr(self, 'config', {}) or {}
             exec_cfg = ((cfg.get('scalp', {}) or {}).get('exec', {}) or {})
@@ -9680,6 +9698,19 @@ class TradingBot:
 
         # Store config as instance variable
         self.config = cfg
+        
+        # Load symbol overrides if available
+        self.symbol_overrides = {}
+        try:
+            import os
+            if os.path.exists("symbol_overrides.yaml"):
+                with open("symbol_overrides.yaml", "r") as f:
+                    self.symbol_overrides = yaml.safe_load(f) or {}
+                logger.info(f"Loaded {len(self.symbol_overrides)} symbol overrides")
+        except Exception as e:
+            logger.warning(f"Failed to load symbol_overrides.yaml: {e}")
+            self.symbol_overrides = {}
+
         # Global ML disable: if config requests no ML scoring, set env to disable
         try:
             use_ml_cfg = bool(((cfg.get('trade', {}) or {}).get('use_ml_scoring', True)))

@@ -1,0 +1,67 @@
+# Symbol-Specific "Golden Combo" Overrides
+# These combinations have shown high win rates (>55%) in recent backtests.
+# The bot will prioritize these combos if encountered.
+
+BTCUSDT:
+  combos:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF"
+
+ETHUSDT:
+  combos:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
+
+SOLUSDT:
+  combos:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
+
+ADAUSDT:
+  combos:
+    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:61-78 noMTF"
+
+DOTUSDT:
+  combos:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
+
+HBARUSDT:
+  combos:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+
+0GUSDT:
+  combos:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:50-61 noMTF"
+
+LTCUSDT:
+  combos:
+    - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
+
+BCHUSDT:
+  combos:
+    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 MTF"
+
+LINKUSDT:
+  combos:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+
+POLUSDT:
+  combos:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
+
+APTUSDT:
+  combos:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
+
+ICPUSDT:
+  combos:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+
+NEARUSDT:
+  combos:
+    - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:23-38 MTF"
+
+KASUSDT:
+  combos:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF"
+
+DOGEUSDT:
+  combos:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"

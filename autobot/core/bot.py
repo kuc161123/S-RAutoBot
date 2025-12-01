@@ -2769,7 +2769,7 @@ class TradingBot:
                         pass
                     return False
             # Leverage and market order
-                max_lev = int(m.get("max_leverage", 10))
+                max_lev = int(m.get("max_leverage", 1))
                 lev_resp = bybit.set_leverage(sym, max_lev)
                 if lev_resp is None:
                     try:
@@ -2921,6 +2921,19 @@ class TradingBot:
                             logger.error(f"[{sym}|id={exec_id}] INVALID SIGNAL: TP ({tp_sig:.6f}) >= entry ({e_sig:.6f}) for SHORT!")
                         if tp_sig <= 0:
                             logger.error(f"[{sym}|id={exec_id}] INVALID SIGNAL: TP ({tp_sig:.6f}) is NEGATIVE for SHORT!")
+                    
+                    # Save original signal values for notification
+                    try:
+                        if not hasattr(self, '_signal_values_log'):
+                            self._signal_values_log = {}
+                        self._signal_values_log[exec_id] = {
+                            'entry': e_sig,
+                            'sl': sl_sig,
+                            'tp': tp_sig,
+                            'side': side_str
+                        }
+                    except Exception:
+                        pass
                     
                     # Get R:R ratio from config (default 2.1)
                     target_rr = float(((self.config.get('scalp', {}) or {}).get('rr', 2.1)))
@@ -3664,13 +3677,37 @@ class TradingBot:
                                 pass
                         except Exception:
                             pass
+                        # Get original signal values for comparison
+                        try:
+                            e_sig = float(getattr(sig_obj, 'entry', actual_entry))
+                            sl_sig_orig = e_sig  # Will be set from history below
+                            tp_sig_orig = e_sig
+                            # Try to get from the logged values
+                            try:
+                                if hasattr(self, '_signal_values_log'):
+                                    sig_vals = self._signal_values_log.get(exec_id, {})
+                                    sl_sig_orig = float(sig_vals.get('sl', e_sig))
+                                    tp_sig_orig = float(sig_vals.get('tp', e_sig))
+                            except Exception:
+                                pass
+                        except Exception:
+                            e_sig = actual_entry
+                            sl_sig_orig = actual_entry
+                            tp_sig_orig = actual_entry
+                            
                         msg = (
                             f"🩳 Scalp: Executing {sym} {sig_obj.side.upper()} (id={exec_id})\n\n"
-                            f"Entry: {fmt.format(actual_entry)}\n"
-                            f"Stop Loss: {fmt.format(float(sig_obj.sl))}\n"
-                            f"Take Profit: {fmt.format(float(sig_obj.tp))}\n"
+                            f"📊 Signal Values:\n"
+                            f"  Entry: {fmt.format(e_sig)}\n"
+                            f"  SL: {fmt.format(sl_sig_orig)}\n"
+                            f"  TP: {fmt.format(tp_sig_orig)}\n\n"
+                            f"🎯 Actual Exchange Values:\n"
+                            f"  Entry: {fmt.format(actual_entry)}\n"
+                            f"  SL: {fmt.format(float(sig_obj.sl))}\n"
+                            f"  TP: {fmt.format(float(sig_obj.tp))}\n\n"
                             f"Quantity: {qty}\n"
                             f"Target RR: {target_rr:.2f}\n"
+                            f"Leverage: {max_lev}x\n"
                             f"Q: {qv:.1f}"
                         )
                         if reason_line:
@@ -12849,7 +12886,7 @@ class TradingBot:
                                     pass
                                 return False
                             # Set leverage and place order
-                            max_lev = int(m.get("max_leverage", 10))
+                            max_lev = int(m.get("max_leverage", 1))
                             bybit.set_leverage(sym, max_lev)
                             side = "Buy" if sig_obj.side == "long" else "Sell"
                             try:
@@ -14546,7 +14583,7 @@ class TradingBot:
                                                 logger.warning(f"[{sym}] Promotion forced (soft routing), but SL invalid relative to current price -> skip")
                                                 raise Exception("invalid_sl")
                                             # Set leverage and place order
-                                            max_lev = int(m.get("max_leverage", 10))
+                                            max_lev = int(m.get("max_leverage", 1))
                                             bybit.set_leverage(sym, max_lev)
                                             side = "Buy" if soft_sig_mr.side == "long" else "Sell"
                                             logger.info(f"[{sym}] MR Promotion (soft) placing {side} order for {qty} units")
@@ -15330,7 +15367,7 @@ class TradingBot:
                                             raise Exception("invalid_sl")
 
                                         # Set leverage and place market order
-                                        max_lev = int(m.get("max_leverage", 10))
+                                        max_lev = int(m.get("max_leverage", 1))
                                         bybit.set_leverage(sym, max_lev)
                                         side = "Buy" if sig_mr.side == "long" else "Sell"
                                         logger.info(f"[{sym}] MR Promotion placing {side} order for {qty} units")
@@ -16326,7 +16363,7 @@ class TradingBot:
                 logger.info(f"      💸 Risk Amount: ${risk_amount:.2f}")
 
                 # IMPORTANT: Set leverage BEFORE opening position to prevent TP/SL cancellation
-                max_lev = int(m.get("max_leverage", 10))
+                max_lev = int(m.get("max_leverage", 1))
                 logger.info(f"   ⚙️ Setting leverage to {max_lev}x (before position to preserve TP/SL)")
                 bybit.set_leverage(sym, max_lev)
                 

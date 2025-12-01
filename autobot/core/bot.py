@@ -985,7 +985,7 @@ class TradingBot:
                 lines.append(f"{sym} {str(side).upper()} | {pre_reason or 'pre‑gate'}")
                 lines.append("Routed via gate; recorded phantom.")
             else:
-                # Show combo-based blocking
+                # Show combo-based blocking with SIDE-SPECIFIC info
                 lines.append(f"{sym} {str(side).upper()}")
                 lines.append("")
                 
@@ -997,21 +997,40 @@ class TradingBot:
                 
                 lines.append("")
                 
-                # Show what combos ARE approved for this symbol
+                # Show what combos ARE approved for this symbol (SIDE-SPECIFIC)
                 try:
                     overrides = getattr(self, 'symbol_overrides', {}) or {}
                     sym_cfg = overrides.get(sym)
                     
                     if sym_cfg:
-                        golden = sym_cfg.get('combos', [])
-                        if golden:
-                            lines.append(f"✅ Approved Combos for {sym} ({len(golden)}):")
-                            for gc in golden[:3]:  # Show first 3
-                                lines.append(f"  • {gc}")
-                            if len(golden) > 3:
-                                lines.append(f"  ... and {len(golden)-3} more")
+                        side_key = str(side).lower()
+                        
+                        # Check for side-specific combos (v3 format)
+                        if side_key in sym_cfg:
+                            golden = sym_cfg.get(side_key, [])
+                            if golden:
+                                lines.append(f"✅ Approved {side_key.upper()} Combos for {sym} ({len(golden)}):")
+                                for gc in golden[:3]:
+                                    lines.append(f"  • {gc}")
+                                if len(golden) > 3:
+                                    lines.append(f"  ... and {len(golden)-3} more")
+                            else:
+                                lines.append(f"⚠️ No approved {side_key.upper()} combos for {sym}")
+                        elif 'combos' in sym_cfg:
+                            # V2 format (generic combos)
+                            golden = sym_cfg.get('combos', [])
+                            if golden:
+                                lines.append(f"✅ Approved Combos for {sym} ({len(golden)}):")
+                                for gc in golden[:3]:
+                                    lines.append(f"  • {gc}")
+                                if len(golden) > 3:
+                                    lines.append(f"  ... and {len(golden)-3} more")
                         else:
-                            lines.append(f"⚠️ No approved combos for {sym}")
+                            lines.append(f"⚠️ {sym} has no combos for {side_key.upper()}")
+                            # Show what sides ARE available
+                            available_sides = [k for k in sym_cfg.keys() if k in ('long', 'short')]
+                            if available_sides:
+                                lines.append(f"   Available: {', '.join(s.upper() for s in available_sides)}")
                     else:
                         lines.append(f"⚠️ {sym} not in backtest overrides")
                 except Exception:
@@ -1044,9 +1063,9 @@ class TradingBot:
         """Return (allowed, reason, ctx) ONLY for backtest-validated Golden Combos.
         
         DISABLED: Adaptive combo system and Pro Rules fallback.
-        ENABLED: Symbol overrides (backtest results) ONLY.
+        ENABLED: Symbol overrides (backtest results) ONLY - NOW SIDE-SPECIFIC.
         
-        reasons: symbol_override | override_not_found | override_mismatch
+        reasons: symbol_override | override_not_found | override_mismatch | wrong_side
         """
         ctx = {}
         
@@ -1058,7 +1077,7 @@ class TradingBot:
                 if isinstance(feats, dict): feats['combo_id'] = combo_id
             except Exception: pass
         
-        # Check Symbol Overrides (Golden Combos from backtest)
+        # Check Symbol Overrides (Golden Combos from backtest) - SIDE-SPECIFIC
         try:
             overrides = getattr(self, 'symbol_overrides', {}) or {}
             sym_cfg = overrides.get(sym)
@@ -1066,20 +1085,32 @@ class TradingBot:
             if not sym_cfg:
                 # No overrides defined for this symbol
                 return False, 'override_not_found', ctx
-                
-            golden_combos = sym_cfg.get('combos', [])
             
             if not combo_id:
                 # Cannot determine combo from features
                 return False, 'insufficient_features', ctx
+            
+            # Check side-specific combos
+            side_key = str(side).lower()
+            
+            # Support both formats: v2 (combos: []) and v3 (long: [], short: [])
+            if side_key in sym_cfg:
+                # V3 format: side-specific
+                golden_combos = sym_cfg.get(side_key, [])
+            elif 'combos' in sym_cfg:
+                # V2 format: generic combos (backward compatibility)
+                golden_combos = sym_cfg.get('combos', [])
+            else:
+                # Symbol exists but no combos for this side
+                return False, 'wrong_side', ctx
                 
             if combo_id in golden_combos:
-                # MATCH: This combo is validated by backtest
-                logger.info(f"[{sym}] 🎯 BACKTEST COMBO: {combo_id}")
+                # MATCH: This combo is validated by backtest for this side
+                logger.info(f"[{sym}] 🎯 BACKTEST COMBO ({side_key.upper()}): {combo_id}")
                 return True, 'symbol_override', ctx
             else:
-                # Signal detected but combo not in backtest-approved list
-                logger.debug(f"[{sym}] ⚠️ Combo blocked (not in backtest): {combo_id}")
+                # Signal detected but combo not in backtest-approved list for this side
+                logger.debug(f"[{sym}] ⚠️ Combo blocked (not in backtest for {side_key}): {combo_id}")
                 return False, 'override_mismatch', ctx
                 
         except Exception as e:

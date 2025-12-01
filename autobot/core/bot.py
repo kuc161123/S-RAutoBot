@@ -2903,6 +2903,25 @@ class TradingBot:
                     e_sig = float(getattr(sig_obj, 'entry', actual_entry))
                     sl_sig = float(getattr(sig_obj, 'sl', actual_entry))
                     tp_sig = float(getattr(sig_obj, 'tp', actual_entry))
+                    
+                    # Log original signal values for debugging
+                    side_str = str(getattr(sig_obj, 'side', 'short')).lower()
+                    logger.info(f"[{sym}|id={exec_id}] Original signal: side={side_str} entry={e_sig:.6f} sl={sl_sig:.6f} tp={tp_sig:.6f}")
+                    
+                    # Validate original signal values
+                    if side_str == 'long':
+                        if sl_sig >= e_sig:
+                            logger.error(f"[{sym}|id={exec_id}] INVALID SIGNAL: SL ({sl_sig:.6f}) >= entry ({e_sig:.6f}) for LONG!")
+                        if tp_sig <= e_sig:
+                            logger.error(f"[{sym}|id={exec_id}] INVALID SIGNAL: TP ({tp_sig:.6f}) <= entry ({e_sig:.6f}) for LONG!")
+                    else:  # short
+                        if sl_sig <= e_sig:
+                            logger.error(f"[{sym}|id={exec_id}] INVALID SIGNAL: SL ({sl_sig:.6f}) <= entry ({e_sig:.6f}) for SHORT!")
+                        if tp_sig >= e_sig:
+                            logger.error(f"[{sym}|id={exec_id}] INVALID SIGNAL: TP ({tp_sig:.6f}) >= entry ({e_sig:.6f}) for SHORT!")
+                        if tp_sig <= 0:
+                            logger.error(f"[{sym}|id={exec_id}] INVALID SIGNAL: TP ({tp_sig:.6f}) is NEGATIVE for SHORT!")
+                    
                     # Get R:R ratio from config (default 2.1)
                     target_rr = float(((self.config.get('scalp', {}) or {}).get('rr', 2.1)))
                     side_str = str(getattr(sig_obj, 'side', 'short')).lower()

@@ -275,7 +275,16 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
             sl = entry - min_dist
         if entry <= sl:
             return None
+        
+        # Calculate TP and validate
         tp = entry + s.rr * (entry - sl)
+        # Ensure SL is below entry (sanity check)
+        if sl >= entry:
+            return None
+        # Ensure TP is above entry
+        if tp <= entry:
+            return None
+            
         return ScalpSignal(
             side='long', entry=entry, sl=sl, tp=tp,
             reason=f"SCALP: accept={'vwap_bounce' if pattern=='bounce' else ('vwap_reject' if pattern=='reject' else 'means_or')}",
@@ -316,7 +325,19 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings = ScalpSettings(), sy
             sl = entry + min_dist
         if sl <= entry:
             return None
+        
+        # Calculate TP and ensure it's positive and below entry
         tp = entry - s.rr * (sl - entry)
+        # Validate TP is positive and below entry
+        if tp <= 0:
+            # TP went negative - use safer calculation (minimum 20% profit from entry)
+            tp = max(entry * 0.2, entry - (sl - entry) * 1.0)  # At least 1:1 R:R or 20% of entry
+            if tp <= 0:
+                return None  # Skip this signal if we can't get valid TP
+        if tp >= entry:
+            # TP is above entry for short - invalid
+            return None
+            
         return ScalpSignal(
             side='short', entry=entry, sl=sl, tp=tp,
             reason=f"SCALP: accept={'vwap_bounce' if pattern=='bounce' else ('vwap_reject' if pattern=='reject' else 'means_or')}",

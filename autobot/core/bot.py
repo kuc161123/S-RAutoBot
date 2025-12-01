@@ -954,7 +954,7 @@ class TradingBot:
     async def _notify_block(self, sym: str, *, kind: str, side: str, feats: dict, combo_id: Optional[str] = None, pre_reason: Optional[str] = None):
         """Notify a Scalp execution block with reason, obeying config + rate limit.
 
-        kind: 'adaptive' | 'rules' | 'pre'
+        kind: 'adaptive' | 'rules' | 'pre' | 'override'
         side: 'long' / 'short'
         pre_reason: when kind=='pre' (e.g., 'off_hours','qscore','cap','cooldown')
         """
@@ -976,125 +976,46 @@ class TradingBot:
                 return
             self._block_notify_rl[sym] = now
 
-            # Build reason lines
-            title = "🚫 Blocked — Rules"
+            # Build reason lines for BACKTEST-ONLY mode
+            title = "🚫 Blocked — Not in Backtest"
             lines = []
-            if kind == 'adaptive':
-                title = "🚫 Blocked — Adaptive"
-                lines.append(f"{sym} {str(side).upper()} | Combo disabled")
-                if combo_id:
-                    lines.append(f"Combo: {combo_id}")
-            elif kind == 'rules':
-                # Compute Pro-Rule failures (strict, aligned with fallback)
-                try:
-                    rsi = float(feats.get('rsi_14', 50.0) or 50.0)
-                except Exception:
-                    rsi = 50.0
-                try:
-                    volr = float(feats.get('volume_ratio', 0.0) or 0.0)
-                except Exception:
-                    volr = 0.0
-                try:
-                    mh = float(feats.get('macd_hist', 0.0) or 0.0)
-                except Exception:
-                    mh = 0.0
-                try:
-                    vwap = float(feats.get('vwap_dist_atr', 999.0) or 999.0)
-                except Exception:
-                    vwap = 999.0
-                fibz = feats.get('fib_zone')
-                mtf = bool(feats.get('mtf_agree_15', False))
-                # Default High Precision Rules
-                rules = {
-                    'rsi_min_long': 40, 'rsi_max_long': 60,
-                    'rsi_min_short': 35, 'rsi_max_short': 55,
-                    'vwap_dist_max': 1.3, 'vol_ratio_min': 1.5,
-                    'macd_hist_min': 0.0003, 'bb_width_min': 0.010
-                }
-                # Override with per-symbol rules if available
-                if sym in PER_SYMBOL_PRO_RULES:
-                    rules.update(PER_SYMBOL_PRO_RULES[sym])
-
-                rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
-                macd = 'bull' if mh > 0 else 'bear'
-                mh_abs = abs(mh)
-                mh_floor = rules['macd_hist_min']
-                vwap_bin = '<1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
-                
-                vol_strong = volr >= 2.0
-                try:
-                    uw = float(feats.get('upper_wick_ratio', 0.0) or 0.0)
-                    lw = float(feats.get('lower_wick_ratio', 0.0) or 0.0)
-                except Exception:
-                    uw = lw = 0.0
-                wdelta_local = 0.15
-                wick_min = 0.25
-                wick_delta = (lw - uw) if str(side).lower() == 'long' else (uw - lw)
-                
-                vol_ok = volr >= rules['vol_ratio_min']
-                wick_ok = (wick_delta >= wdelta_local) and ((lw if str(side).lower()=='long' else uw) >= wick_min)
-                
-                try:
-                    atr_pct = float(feats.get('atr_pct', 0.0) or 0.0)
-                except Exception:
-                    atr_pct = 0.0
-                try:
-                    bbw_pct = float(feats.get('bb_width_pct', 0.0) or 0.0)
-                except Exception:
-                    bbw_pct = 0.0
-                
-                atr_ok = atr_pct >= 0.05
-                bbw_ok = bbw_pct >= rules['bb_width_min']
-                
-                reasons: list[str] = []
-                s = str(side).lower()
-                if s == 'long':
-                    rsi_ok = (rules['rsi_min_long'] <= rsi <= rules['rsi_max_long'])
-                    macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
-                    v_ok = (vwap <= rules['vwap_dist_max'])
-                    fib_ok = fibz in ('23-38', '38-50', '50-61')
-                else:
-                    rsi_ok = (rules['rsi_min_short'] <= rsi <= rules['rsi_max_short'])
-                    macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
-                    v_ok = (vwap <= rules['vwap_dist_max'])
-                    fib_ok = fibz in ('23-38', '38-50', '50-61')
-                
-                if not rsi_ok: reasons.append(f"RSI {rsi:.1f}")
-                if not macd_ok: reasons.append(f"MACD {mh:.5f}")
-                if not v_ok: reasons.append(f"VWAP {vwap:.2f}")
-                if not fib_ok: reasons.append(f"Fib {fibz}")
-                if not vol_ok: reasons.append(f"Vol {volr:.2f}")
-                if not wick_ok: reasons.append("Wick")
-                if not atr_ok: reasons.append("ATR")
-                if not bbw_ok: reasons.append("BBW")
-
-                lines.append("🚫 Blocked — Rules")
-                lines.append(f"{sym} {str(side).upper()} | Reason: {', '.join(reasons) if reasons else 'Pro rule'}")
-                lines.append("")
-                lines.append("Inputs")
-                lines.append(f"• RSI  : {rsi:.1f} (bin {rsi_bin})")
-                lines.append(f"• MACD : {macd} (hist {mh:.5f})")
-                lines.append(f"• VWAP : {vwap:.2f} ATR (bin {vwap_bin})")
-                lines.append(f"• Fib  : {fibz or 'n/a'}")
-                lines.append(f"• MTF  : {'✓' if mtf else '✗'}")
-                lines.append(f"• Vol  : {volr:.2f}x (min {rules['vol_ratio_min']}x)")
-                lines.append(f"• Wick : L={lw:.2f} U={uw:.2f} Δ={wick_delta:.2f}")
-                lines.append(f"• ATR% : {atr_pct:.3f}% (min 0.050%)")
-                lines.append(f"• BBW% : {bbw_pct*100.0:.3f}% (min {rules['bb_width_min']*100:.3f}%)")
-                lines.append("")
-                lines.append("Criteria (Pass/Fail)")
-                lines.append(f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: {rules['rsi_min_long']}-{rules['rsi_max_long']}" if side=='long' else f"• RSI   {'✅' if rsi_ok else '❌'}  allowed: {rules['rsi_min_short']}-{rules['rsi_max_short']}")
-                lines.append(f"• MACD  {'✅' if macd_ok else '❌'}  allowed: {macd} with |hist| ≥ {rules['macd_hist_min']}")
-                lines.append(f"• VWAP  {'✅' if v_ok else '❌'}  allowed: ≤ {rules['vwap_dist_max']} ATR")
-                lines.append(f"• Fib   {'✅' if fib_ok else '❌'}  allowed: 23-38, 38-50, 50-61")
-                lines.append(f"• Vol   {'✅' if vol_ok else '❌'}  volume ≥ {rules['vol_ratio_min']}x")
-                lines.append(f"• Wick  {'✅' if wick_ok else '❌'}  dominant wick Δ≥{wdelta_local}")
-                lines.append(f"• ATR   {'✅' if atr_ok else '❌'}  atr_pct ≥ 0.050%")
-                lines.append(f"• BBW   {'✅' if bbw_ok else '❌'}  bb_width_pct ≥ {rules['bb_width_min']*100:.3f}%")
-            else:
+            
+            if kind == 'pre':
                 title = "🚫 Blocked — Pre‑Gate"
                 lines.append(f"{sym} {str(side).upper()} | {pre_reason or 'pre‑gate'}")
                 lines.append("Routed via gate; recorded phantom.")
+            else:
+                # Show combo-based blocking
+                lines.append(f"{sym} {str(side).upper()}")
+                lines.append("")
+                
+                if combo_id:
+                    lines.append(f"🔍 Detected Combo:")
+                    lines.append(f"  {combo_id}")
+                else:
+                    lines.append("⚠️ Could not determine combo from signal")
+                
+                lines.append("")
+                
+                # Show what combos ARE approved for this symbol
+                try:
+                    overrides = getattr(self, 'symbol_overrides', {}) or {}
+                    sym_cfg = overrides.get(sym)
+                    
+                    if sym_cfg:
+                        golden = sym_cfg.get('combos', [])
+                        if golden:
+                            lines.append(f"✅ Approved Combos for {sym} ({len(golden)}):")
+                            for gc in golden[:3]:  # Show first 3
+                                lines.append(f"  • {gc}")
+                            if len(golden) > 3:
+                                lines.append(f"  ... and {len(golden)-3} more")
+                        else:
+                            lines.append(f"⚠️ No approved combos for {sym}")
+                    else:
+                        lines.append(f"⚠️ {sym} not in backtest overrides")
+                except Exception:
+                    lines.append("⚠️ Override check failed")
 
             # Footer
             lines.append("")

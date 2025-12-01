@@ -997,7 +997,7 @@ class TradingBot:
                 
                 lines.append("")
                 
-                # Show what combos ARE approved for this symbol (SIDE-SPECIFIC)
+                # Show what combos ARE approved for this symbol (ALWAYS SHOW IF AVAILABLE)
                 try:
                     overrides = getattr(self, 'symbol_overrides', {}) or {}
                     sym_cfg = overrides.get(sym)
@@ -1005,32 +1005,49 @@ class TradingBot:
                     if sym_cfg:
                         side_key = str(side).lower()
                         
-                        # Check for side-specific combos (v3 format)
-                        if side_key in sym_cfg:
-                            golden = sym_cfg.get(side_key, [])
-                            if golden:
-                                lines.append(f"✅ Approved {side_key.upper()} Combos for {sym} ({len(golden)}):")
-                                for gc in golden[:3]:
+                        # Show ALL available combos for this symbol (both sides if present)
+                        shown_any = False
+                        
+                        # Check for LONG combos
+                        if 'long' in sym_cfg:
+                            long_combos = sym_cfg.get('long', [])
+                            if long_combos:
+                                marker = "✅" if side_key == 'long' else "ℹ️"
+                                lines.append(f"{marker} Approved LONG Combos for {sym} ({len(long_combos)}):")
+                                for gc in long_combos[:3]:
                                     lines.append(f"  • {gc}")
-                                if len(golden) > 3:
-                                    lines.append(f"  ... and {len(golden)-3} more")
-                            else:
-                                lines.append(f"⚠️ No approved {side_key.upper()} combos for {sym}")
-                        elif 'combos' in sym_cfg:
-                            # V2 format (generic combos)
-                            golden = sym_cfg.get('combos', [])
-                            if golden:
-                                lines.append(f"✅ Approved Combos for {sym} ({len(golden)}):")
-                                for gc in golden[:3]:
+                                if len(long_combos) > 3:
+                                    lines.append(f"  ... and {len(long_combos)-3} more")
+                                shown_any = True
+                        
+                        # Check for SHORT combos
+                        if 'short' in sym_cfg:
+                            short_combos = sym_cfg.get('short', [])
+                            if short_combos:
+                                if shown_any:
+                                    lines.append("")  # Separator
+                                marker = "✅" if side_key == 'short' else "ℹ️"
+                                lines.append(f"{marker} Approved SHORT Combos for {sym} ({len(short_combos)}):")
+                                for gc in short_combos[:3]:
                                     lines.append(f"  • {gc}")
-                                if len(golden) > 3:
-                                    lines.append(f"  ... and {len(golden)-3} more")
-                        else:
-                            lines.append(f"⚠️ {sym} has no combos for {side_key.upper()}")
-                            # Show what sides ARE available
-                            available_sides = [k for k in sym_cfg.keys() if k in ('long', 'short')]
-                            if available_sides:
-                                lines.append(f"   Available: {', '.join(s.upper() for s in available_sides)}")
+                                if len(short_combos) > 3:
+                                    lines.append(f"  ... and {len(short_combos)-3} more")
+                                shown_any = True
+                        
+                        # V2 format (generic combos) - backward compatibility
+                        if 'combos' in sym_cfg and not shown_any:
+                            generic_combos = sym_cfg.get('combos', [])
+                            if generic_combos:
+                                lines.append(f"✅ Approved Combos for {sym} ({len(generic_combos)}):")
+                                for gc in generic_combos[:3]:
+                                    lines.append(f"  • {gc}")
+                                if len(generic_combos) > 3:
+                                    lines.append(f"  ... and {len(generic_combos)-3} more")
+                                shown_any = True
+                        
+                        # If symbol exists but no combos found
+                        if not shown_any:
+                            lines.append(f"⚠️ {sym} in overrides but no combos defined")
                     else:
                         lines.append(f"⚠️ {sym} not in backtest overrides")
                 except Exception:

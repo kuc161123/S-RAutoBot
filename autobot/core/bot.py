@@ -2905,7 +2905,8 @@ class TradingBot:
                     tp_sig = float(getattr(sig_obj, 'tp', actual_entry))
                     # Get R:R ratio from config (default 2.1)
                     target_rr = float(((self.config.get('scalp', {}) or {}).get('rr', 2.1)))
-                    if sig_obj.side == 'long':
+                    side_str = str(getattr(sig_obj, 'side', 'short')).lower()
+                    if side_str == 'long':
                         R = max(tick_size, e_sig - sl_sig)
                         # Use target R:R from config, not calculated from signal TP
                         new_sl = actual_entry - R
@@ -2914,7 +2915,10 @@ class TradingBot:
                         if new_sl >= actual_entry:
                             new_sl = _floor_tick(actual_entry - (2.0 * tick_size), tick_size)
                         new_tp = _ceil_tick(new_tp, tick_size)
-                    else:
+                        # Validate TP is above entry
+                        if new_tp <= actual_entry:
+                            new_tp = _ceil_tick(actual_entry + (target_rr * R), tick_size)
+                    else:  # short
                         R = max(tick_size, sl_sig - e_sig)
                         # Use target R:R from config, not calculated from signal TP
                         new_sl = actual_entry + R
@@ -2923,6 +2927,29 @@ class TradingBot:
                         if new_sl <= actual_entry:
                             new_sl = _ceil_tick(actual_entry + (2.0 * tick_size), tick_size)
                         new_tp = _floor_tick(new_tp, tick_size)
+                        # Validate TP is positive and below entry
+                        if new_tp <= 0 or new_tp >= actual_entry:
+                            # TP went negative or above entry - recalculate with safer R
+                            safe_tp = max(tick_size, actual_entry * 0.5)  # At least 50% below entry or tick_size
+                            new_tp = _floor_tick(safe_tp, tick_size)
+                            logger.warning(f"[{sym}|id={exec_id}] TP calculation invalid (tp={actual_entry - target_rr * R:.6f}), using safe TP={new_tp:.4f}")
+                    
+                    # Final validation: ensure SL and TP are on correct sides
+                    if side_str == 'long':
+                        if new_sl >= actual_entry:
+                            new_sl = _floor_tick(actual_entry - (2.0 * tick_size), tick_size)
+                            logger.warning(f"[{sym}|id={exec_id}] SL above entry for LONG, corrected to {new_sl:.4f}")
+                        if new_tp <= actual_entry:
+                            new_tp = _ceil_tick(actual_entry + (2.0 * tick_size), tick_size)
+                            logger.warning(f"[{sym}|id={exec_id}] TP below entry for LONG, corrected to {new_tp:.4f}")
+                    else:  # short
+                        if new_sl <= actual_entry:
+                            new_sl = _ceil_tick(actual_entry + (2.0 * tick_size), tick_size)
+                            logger.warning(f"[{sym}|id={exec_id}] SL below entry for SHORT, corrected to {new_sl:.4f}")
+                        if new_tp >= actual_entry or new_tp <= 0:
+                            new_tp = _floor_tick(max(tick_size, actual_entry * 0.8), tick_size)
+                            logger.warning(f"[{sym}|id={exec_id}] TP above entry or negative for SHORT, corrected to {new_tp:.4f}")
+                    
                     sig_obj.sl = float(new_sl)
                     sig_obj.tp = float(new_tp)
                     logger.info(f"[{sym}|id={exec_id}] Rebased TP/SL: Entry={actual_entry:.4f} SL={sig_obj.sl:.4f} TP={sig_obj.tp:.4f} (R:R={target_rr:.2f})")

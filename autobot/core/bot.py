@@ -1120,204 +1120,50 @@ class TradingBot:
             pass
 
     def _scalp_combo_allowed(self, sym: str, side: str, feats: dict) -> tuple[bool, str, dict]:
-        """Return (allowed, reason, ctx) based on manager readiness and fallback policy.
-        reasons: adaptive_enabled | adaptive_disabled | fallback_mtf_ok | fallback_mtf_block | fallback_off_block | insufficient_features | no_manager_state
-        ctx contains combo_id when available.
+        """Return (allowed, reason, ctx) ONLY for backtest-validated Golden Combos.
+        
+        DISABLED: Adaptive combo system and Pro Rules fallback.
+        ENABLED: Symbol overrides (backtest results) ONLY.
+        
+        reasons: symbol_override | override_not_found | override_mismatch
         """
         ctx = {}
-
-        # 1. Check Symbol Overrides (Golden Combos)
-        try:
-            overrides = getattr(self, 'symbol_overrides', {}) or {}
-            sym_cfg = overrides.get(sym)
-            if sym_cfg:
-                golden_combos = sym_cfg.get('combos', [])
-                cid = self._scalp_combo_key_from_features(feats or {})
-                if cid and cid in golden_combos:
-                    ctx['combo_id'] = cid
-                    try:
-                        if isinstance(feats, dict): feats['combo_id'] = cid
-                    except Exception: pass
-                    logger.info(f"[{sym}] 🌟 Golden Combo Override: {cid}")
-                    return True, 'symbol_override', ctx
-        except Exception:
-            pass
-
-        try:
-            cfg = getattr(self, 'config', {}) or {}
-            exec_cfg = ((cfg.get('scalp', {}) or {}).get('exec', {}) or {})
-            require_combo = bool(exec_cfg.get('require_combo_enabled', True))
-            fallback_mode = str(exec_cfg.get('fallback_until_ready', 'mtf')).lower()
-        except Exception:
-            require_combo = True
-            fallback_mode = 'mtf'
-        allow_fallback = fallback_mode != 'off'
-        # Determine if manager is fresh and has enabled combos for this side
-        ready_side = False
-        try:
-            ready_side = self._adaptive_combo_ready(side)
-        except Exception:
-            ready_side = False
-
-        # Build combo key if possible
+        
+        # Build combo ID from features
         combo_id = self._scalp_combo_key_from_features(feats or {})
         if combo_id:
             ctx['combo_id'] = combo_id
-            # Annotate features so downstream consumers (phantoms, dashboard) can see combo_id directly
             try:
-                if isinstance(feats, dict):
-                    feats['combo_id'] = combo_id
-            except Exception:
-                pass
-        mgr = getattr(self, 'adaptive_combo_mgr', None)
-
-        # When adaptive manager is ready for this side, require an enabled combo and do NOT fall back.
-        if mgr and require_combo and ready_side:
-            try:
-                side_key = str(side).lower()
-                active_list = mgr.get_active_combos(side_key)
-                active_ids = [c.get('combo_id') for c in (active_list or [])]
-                
-                # Also check structured combo_key for better matching
-                if combo_id:
-                    # Try structured matching if available
-                    try:
-                        from autobot.strategies.scalp.combos import ComboKey
-                        current_combo_key = ComboKey.from_string(combo_id)
-                        if current_combo_key:
-                            # Check if any active combo matches the structured key
-                            for active_combo in active_list:
-                                active_combo_key_dict = active_combo.get('combo_key')
-                                if active_combo_key_dict:
-                                    active_combo_key = ComboKey(
-                                        rsi_bin=active_combo_key_dict['rsi_bin'],
-                                        macd_bin=active_combo_key_dict['macd_bin'],
-                                        vwap_bin=active_combo_key_dict['vwap_bin'],
-                                        fib_zone=active_combo_key_dict['fib_zone'],
-                                        mtf=active_combo_key_dict['mtf']
-                                    )
-                                    if (current_combo_key.rsi_bin == active_combo_key.rsi_bin and
-                                        current_combo_key.macd_bin == active_combo_key.macd_bin and
-                                        current_combo_key.vwap_bin == active_combo_key.vwap_bin and
-                                        current_combo_key.fib_zone == active_combo_key.fib_zone and
-                                        current_combo_key.mtf == active_combo_key.mtf):
-                                        return True, 'adaptive_enabled', ctx
-                    except Exception as e:
-                        logger.debug(f"Structured combo matching failed, using string match: {e}")
-                
-                # Fallback to string matching
-                if combo_id and combo_id in active_ids:
-                    return True, 'adaptive_enabled', ctx
-                
-                # Manager ready but combo not enabled → block (no fallback once ready)
-                # Fail-closed: Only explicitly enabled combos are allowed
-                if combo_id:
-                    logger.debug(f"[{sym}] Combo blocked: {combo_id} not in enabled list (manager ready, {len(active_ids)} combos enabled for {side_key})")
-                return False, 'adaptive_disabled', ctx
-            except Exception:
-                return False, 'no_manager_state', ctx
-
-        # Manager not ready or combos not enabled → allow Pro fallback if configured
-        if mgr and require_combo and combo_id and not ready_side and allow_fallback:
-            ctx['combo_disabled'] = True
-
-        # Fallback path (manager not ready or no active combos)
-        if fallback_mode == 'pro':
-            # Build bins from features
-            f = feats or {}
-            try:
-                rsi = float(f.get('rsi_14', 0.0) or 0.0)
-            except Exception:
-                rsi = 0.0
-            try:
-                mh = float(f.get('macd_hist', 0.0) or 0.0)
-            except Exception:
-                mh = 0.0
-            try:
-                vwap = float(f.get('vwap_dist_atr', 0.0) or 0.0)
-            except Exception:
-                vwap = 0.0
-            fibz = f.get('fib_zone')
-            if not isinstance(fibz, str) or not fibz:
-                # derive from fib_ret if possible
-                try:
-                    frel = float(f.get('fib_ret'))
-                    fr = frel*100.0 if frel <= 1.0 else frel
-                    fibz = '0-23' if fr < 23.6 else '23-38' if fr < 38.2 else '38-50' if fr < 50.0 else '50-61' if fr < 61.8 else '61-78' if fr < 78.6 else '78-100'
-                except Exception:
-                    fibz = None
-
-            # Pro rule fallback (optimized thresholds)
-            # Default High Precision Rules
-            rules = {
-                'rsi_min_long': 40, 'rsi_max_long': 60,
-                'rsi_min_short': 35, 'rsi_max_short': 55,
-                'vwap_dist_max': 1.3, 'vol_ratio_min': 1.5,
-                'macd_hist_min': 0.0003, 'bb_width_min': 0.010
-            }
-            # Override with per-symbol rules if available
-            if sym in PER_SYMBOL_PRO_RULES:
-                rules.update(PER_SYMBOL_PRO_RULES[sym])
-
-            rsi_bin = '<30' if rsi < 30 else '30-40' if rsi < 40 else '40-50' if rsi < 50 else '50-60' if rsi < 60 else '60-70' if rsi < 70 else '70+'
-            macd = 'bull' if mh > 0 else 'bear'
-            mh_abs = abs(mh)
-            mh_floor = rules['macd_hist_min']
-            vwap_bin = '<1.0' if vwap < 1.0 else '1.0-1.2' if vwap < 1.2 else '1.2+'
-            s = str(side).lower()
+                if isinstance(feats, dict): feats['combo_id'] = combo_id
+            except Exception: pass
+        
+        # Check Symbol Overrides (Golden Combos from backtest)
+        try:
+            overrides = getattr(self, 'symbol_overrides', {}) or {}
+            sym_cfg = overrides.get(sym)
             
-            # Volume check
-            try:
-                volr_tmp = float(f.get('volume_ratio', 0.0) or 0.0)
-                vol_ok = volr_tmp >= rules['vol_ratio_min']
-            except Exception:
-                vol_ok = False
-
-            # Wick check
-            try:
-                uw = float(f.get('upper_wick_ratio', 0.0) or 0.0)
-                lw = float(f.get('lower_wick_ratio', 0.0) or 0.0)
-                wdelta = 0.10
-                wick_ratio_min = 0.25
-                wick_ok = ((lw >= uw + wdelta) and (lw >= wick_ratio_min)) if s == 'long' else ((uw >= lw + wdelta) and (uw >= wick_ratio_min))
-            except Exception:
-                wick_ok = False
-
-            # ATR check
-            try:
-                atr_ok = float(f.get('atr_pct', 0.0) or 0.0) >= 0.05
-            except Exception:
-                atr_ok = False
-
-            # BBW check
-            try:
-                bbw_ok = float(f.get('bb_width_pct', 0.0) or 0.0) >= rules['bb_width_min']
-            except Exception:
-                bbw_ok = False
-
-            if s == 'long':
-                rsi_ok = (rules['rsi_min_long'] <= rsi <= rules['rsi_max_long'])
-                v_ok = (vwap <= rules['vwap_dist_max'])
-                macd_ok = (macd == 'bull' and mh_abs >= mh_floor)
-                fib_ok = (fibz in ('23-38', '38-50', '50-61'))
-                ok = bool(rsi_ok and v_ok and macd_ok and fib_ok and vol_ok and wick_ok and atr_ok and bbw_ok)
+            if not sym_cfg:
+                # No overrides defined for this symbol
+                return False, 'override_not_found', ctx
+                
+            golden_combos = sym_cfg.get('combos', [])
+            
+            if not combo_id:
+                # Cannot determine combo from features
+                return False, 'insufficient_features', ctx
+                
+            if combo_id in golden_combos:
+                # MATCH: This combo is validated by backtest
+                logger.info(f"[{sym}] 🎯 BACKTEST COMBO: {combo_id}")
+                return True, 'symbol_override', ctx
             else:
-                rsi_ok = (rules['rsi_min_short'] <= rsi <= rules['rsi_max_short'])
-                macd_ok = (macd == 'bear' and mh_abs >= mh_floor)
-                v_ok = (vwap <= rules['vwap_dist_max'])
-                fib_ok = (fibz in ('23-38', '38-50', '50-61'))
-                ok = bool(rsi_ok and macd_ok and v_ok and fib_ok and vol_ok and wick_ok and atr_ok and bbw_ok)
-
-            if ok:
-                return True, 'fallback_pro_ok', ctx
-            else:
-                return False, 'fallback_pro_block', ctx
-        elif fallback_mode == 'mtf':
-            # MTF-only fallback: allow while combos learn, but mark as fallback path
-            return True, 'fallback_mtf_ok', ctx
-        else:
-            # Strict combo-only mode: when manager is not ready, block execution (phantoms still recorded)
-            return False, 'fallback_off_block', ctx
+                # Signal detected but combo not in backtest-approved list
+                logger.debug(f"[{sym}] ⚠️ Combo blocked (not in backtest): {combo_id}")
+                return False, 'override_mismatch', ctx
+                
+        except Exception as e:
+            logger.error(f"[{sym}] Override check failed: {e}")
+            return False, 'override_error', ctx
         
     
 
@@ -2844,7 +2690,7 @@ class TradingBot:
                                 order_id_str = f" | OrderID={oid}" if oid else ""
 
                                 await self.tg.send_message(
-                                    f"🟢 Scalp EXECUTE: {sym} {str(sig_obj.side).upper()} (id={exec_id})\\n"
+                                    f"🎯 BACKTEST COMBO: {sym} {str(sig_obj.side).upper()} (id={exec_id})\\n"
                                     f"{gate_info}\\n"
                                     f"Entry={fmt.format(float(sig_obj.entry))} SL={fmt.format(float(sig_obj.sl))} TP={fmt.format(float(sig_obj.tp))}\\n"
                                     f"Qty={qty:.3f}{ml_str}{qscore_str}{order_id_str}"

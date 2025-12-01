@@ -128,6 +128,37 @@ class Bybit:
             raise last_err
         raise RuntimeError("Bybit request failed")
 
+    def get_instruments_info(self, category:str="linear", symbol:Optional[str]=None) -> list:
+        """Get instrument info (tick size, lot size, max leverage, etc.)"""
+        try:
+            params = {"category": category, "limit": 1000}
+            if symbol:
+                params["symbol"] = symbol
+            
+            # Handle pagination if fetching all symbols
+            all_items = []
+            cursor = ""
+            
+            while True:
+                if cursor:
+                    params["cursor"] = cursor
+                
+                resp = self._request("GET", "/v5/market/instruments-info", params)
+                
+                if resp and resp.get("result"):
+                    items = resp["result"].get("list", [])
+                    all_items.extend(items)
+                    cursor = resp["result"].get("nextPageCursor", "")
+                    if not cursor or symbol: # If specific symbol, no need to paginate
+                        break
+                else:
+                    break
+                    
+            return all_items
+        except Exception as e:
+            logger.error(f"Failed to get instruments info: {e}")
+            return []
+
     def get_balance(self) -> Optional[float]:
         """Get USDT balance (robust): try UNIFIED → CONTRACT → SPOT; prefer equity."""
         try:

@@ -10179,6 +10179,36 @@ class TradingBot:
             use_alt_on_fail=_bybit_use_alt
         ))
 
+        # Fetch instrument info to populate symbol_meta (max_leverage, tick_size, etc.)
+        try:
+            logger.info("Fetching instrument info from Bybit...")
+            instruments = self.bybit.get_instruments_info(category="linear")
+            if instruments:
+                if 'symbol_meta' not in self.config:
+                    self.config['symbol_meta'] = {}
+                
+                count = 0
+                for i in instruments:
+                    sym = i.get('symbol')
+                    if not sym: continue
+                    
+                    # Extract filters
+                    lot_filter = i.get('lotSizeFilter', {})
+                    price_filter = i.get('priceFilter', {})
+                    lev_filter = i.get('leverageFilter', {})
+                    
+                    meta = {
+                        'min_qty': float(lot_filter.get('minOrderQty', 0.001)),
+                        'qty_step': float(lot_filter.get('qtyStep', 0.001)),
+                        'tick_size': float(price_filter.get('tickSize', 0.1)),
+                        'max_leverage': float(lev_filter.get('maxLeverage', 25.0))
+                    }
+                    self.config['symbol_meta'][sym] = meta
+                    count += 1
+                logger.info(f"Populated metadata for {count} symbols")
+        except Exception as e:
+            logger.error(f"Failed to fetch instrument info: {e}")
+
         # Initialize adaptive phantom flow controller (phantom-only)
         try:
             flow_ctrl = FlowController(cfg, getattr(phantom_tracker, 'redis_client', None) if 'phantom_tracker' in locals() else None)

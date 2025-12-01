@@ -2769,7 +2769,7 @@ class TradingBot:
                         pass
                     return False
             # Leverage and market order
-                max_lev = int(m.get("max_leverage", 1))
+                max_lev = int(m.get("max_leverage", 25))  # Use Bybit's max leverage for symbol
                 lev_resp = bybit.set_leverage(sym, max_lev)
                 if lev_resp is None:
                     try:
@@ -12886,7 +12886,7 @@ class TradingBot:
                                     pass
                                 return False
                             # Set leverage and place order
-                            max_lev = int(m.get("max_leverage", 1))
+                            max_lev = int(m.get("max_leverage", 25))  # Use Bybit's max leverage for symbol
                             bybit.set_leverage(sym, max_lev)
                             side = "Buy" if sig_obj.side == "long" else "Sell"
                             try:
@@ -14583,7 +14583,7 @@ class TradingBot:
                                                 logger.warning(f"[{sym}] Promotion forced (soft routing), but SL invalid relative to current price -> skip")
                                                 raise Exception("invalid_sl")
                                             # Set leverage and place order
-                                            max_lev = int(m.get("max_leverage", 1))
+                                            max_lev = int(m.get("max_leverage", 25))  # Use Bybit's max leverage for symbol
                                             bybit.set_leverage(sym, max_lev)
                                             side = "Buy" if soft_sig_mr.side == "long" else "Sell"
                                             logger.info(f"[{sym}] MR Promotion (soft) placing {side} order for {qty} units")
@@ -15367,7 +15367,7 @@ class TradingBot:
                                             raise Exception("invalid_sl")
 
                                         # Set leverage and place market order
-                                        max_lev = int(m.get("max_leverage", 1))
+                                        max_lev = int(m.get("max_leverage", 25))  # Use Bybit's max leverage for symbol
                                         bybit.set_leverage(sym, max_lev)
                                         side = "Buy" if sig_mr.side == "long" else "Sell"
                                         logger.info(f"[{sym}] MR Promotion placing {side} order for {qty} units")
@@ -16363,7 +16363,7 @@ class TradingBot:
                 logger.info(f"      💸 Risk Amount: ${risk_amount:.2f}")
 
                 # IMPORTANT: Set leverage BEFORE opening position to prevent TP/SL cancellation
-                max_lev = int(m.get("max_leverage", 1))
+                max_lev = int(m.get("max_leverage", 25))  # Use Bybit's max leverage for symbol
                 logger.info(f"   ⚙️ Setting leverage to {max_lev}x (before position to preserve TP/SL)")
                 bybit.set_leverage(sym, max_lev)
                 

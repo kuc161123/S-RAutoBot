@@ -4406,7 +4406,7 @@ class TradingBot:
                 # Advance Trend microstructure on each confirmed 3m bar (no 15m wait)
                 try:
                     df15 = self.frames.get(sym)
-                    trend_enabled = bool((self.config.get('trend', {}) or {}).get('enabled', True))
+                    trend_enabled = bool((self.config.get('trend', {}) or {}).get('enabled', False))
                     if trend_enabled and df15 is not None and not df15.empty and getattr(self, '_detect_trend_signal', None) is not None and getattr(self, '_trend_settings', None) is not None:
                         # Run micro-step by invoking pullback detection (it consults 3m frames internally)
                         _ = self._detect_trend_signal(df15.copy(), self._trend_settings, sym)
@@ -13513,7 +13513,7 @@ class TradingBot:
                                         pass
 
                         # 2) Trend independent (check enabled flag)
-                        if not bool((cfg.get('trend', {}) or {}).get('enabled', True)):
+                        if not bool((cfg.get('trend', {}) or {}).get('enabled', False)):
                             continue  # Skip entirely - complete shutdown
                         try:
                             # Verbose heartbeat for Trend analysis
@@ -13890,7 +13890,7 @@ class TradingBot:
                                 sig_tr_ind.meta['high_ml'] = True
                                 # Allow/disallow Trend execution via config (default: disabled)
                                 try:
-                                    allow_tr_exec = bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('enabled', True)))
+                                    allow_tr_exec = bool((((cfg.get('trend', {}) or {}).get('exec', {}) or {}).get('enabled', False)))
                                 except Exception:
                                     allow_tr_exec = True
                                 executed = False

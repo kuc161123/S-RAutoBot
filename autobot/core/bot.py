@@ -83,6 +83,8 @@ class PhantomTracker:
                 allowed_msg = ""
                 if allowed_combos:
                     allowed_msg = "\n\n✅ **Allowed Combos**:\n" + "\n".join([f"- `{c}`" for c in allowed_combos])
+                else:
+                    allowed_msg = "\n\n🚫 **Allowed Combos**: None (Symbol not whitelisted)"
                 
                 msg = (
                     f"👻 **Phantom Signal Detected**\n"

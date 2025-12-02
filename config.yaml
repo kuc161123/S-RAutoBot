@@ -356,7 +356,7 @@ scalp:
   enabled: true
   stream_3m_only: true
   timeframe: 3
-  rr: 2.1
+  rr: 1.0
   use_ml: false
   threshold: 70
   block_regime: true

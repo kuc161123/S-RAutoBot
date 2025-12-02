@@ -196,7 +196,7 @@ class TGBot:
             f"✅ **Backtest Validated**: {combo_count} symbols with high-WR combos\n\n"
             "⚙️ **Configuration**:\n"
             f"💰 Risk Mode: {risk_mode} ({risk_val})\n"
-            "🎯 Target: 2.1R (BBW + Vol breakouts)\n"
+            "🎯 Target: 1.0R (High WR Scalping)\n"
             "📉 Entry: Next Candle Open (realistic)\n\n"
             "Use /help to see all commands."
         )

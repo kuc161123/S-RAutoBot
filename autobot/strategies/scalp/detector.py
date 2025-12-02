@@ -7,7 +7,7 @@ import numpy as np
 @dataclass
 class ScalpSettings:
     # Risk
-    rr: float = 1.0  # 1:1 R:R
+    rr: float = 1.0  # 1:1 R:R (Matches Backtest)
     atr_mult: float = 2.0  # 2 ATR Stop/Target
     
     # Breakout Thresholds

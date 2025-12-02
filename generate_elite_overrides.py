@@ -11,8 +11,8 @@ def generate_elite():
         return
 
     # Filter
-    # Criteria: Test WR > 50% AND Test Trades >= 10
-    elite = df[(df['Test_WR'] > 50) & (df['Test_N'] >= 10)].copy()
+    # Criteria: Test WR > 60% AND Test Trades >= 10
+    elite = df[(df['Test_WR'] > 60) & (df['Test_N'] >= 10)].copy()
     
     print(f"Total Strategies: {len(df)}")
     print(f"Elite Strategies: {len(elite)}")
@@ -40,7 +40,7 @@ def generate_elite():
     # Generate YAML manually to include comments
     yaml_lines = [
         "# Elite Strategies (Walk-Forward Validated)",
-        "# Criteria: Test WR > 50% AND Test N >= 10",
+        "# Criteria: Test WR > 60% AND Test N >= 10",
         f"# Generated: {pd.Timestamp.now()}",
         ""
     ]

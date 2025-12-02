@@ -1,6 +1,6 @@
 # Elite Strategies (Walk-Forward Validated)
-# Criteria: Test WR > 50% AND Test N >= 10
-# Generated: 2025-12-02 20:53:42.128435
+# Criteria: Test WR > 60% AND Test N >= 10
+# Generated: 2025-12-02 20:55:43.987764
 
 1000000BABYDOGEUSDT:
   short:
@@ -17,75 +17,20 @@
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
     # Train: 65.6%(93) -> Test: 68.8%(32)
 
-10000QUBICUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
-    # Train: 63.6%(77) -> Test: 52.3%(44)
-
 10000SATSUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
     # Train: 68.2%(44) -> Test: 62.5%(16)
-
-1000BONKUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
-    # Train: 62.5%(40) -> Test: 56.2%(16)
-
-1000BTTUSDT:
-  short:
-    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 67.2%(61) -> Test: 56.4%(39)
 
 1000CATUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
     # Train: 68.0%(50) -> Test: 71.4%(14)
 
-1000FLOKIUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
-    # Train: 81.5%(65) -> Test: 56.5%(23)
-
-1000LUNCUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 68.0%(50) -> Test: 57.9%(19)
-
-1000NEIROCTOUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 63.3%(49) -> Test: 56.2%(16)
-
-1000PEPEUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
-    # Train: 64.6%(96) -> Test: 51.3%(39)
-
-1000RATSUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
-    # Train: 67.9%(78) -> Test: 55.8%(43)
-
-1000TURBOUSDT:
-  long:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 noMTF"
-    # Train: 65.5%(58) -> Test: 58.3%(24)
-
 1000XECUSDT:
   short:
     - "RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF"
     # Train: 65.0%(40) -> Test: 64.7%(17)
-
-1000XUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 70.0%(40) -> Test: 60.0%(15)
-
-1INCHUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
-    # Train: 67.2%(64) -> Test: 59.1%(22)
 
 2ZUSDT:
   short:
@@ -97,41 +42,15 @@ ACEUSDT:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
     # Train: 70.7%(58) -> Test: 62.5%(24)
 
-ACHUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 72.2%(54) -> Test: 57.1%(21)
-
 ADAUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
     # Train: 63.8%(149) -> Test: 60.4%(53)
 
-AEROUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
-    # Train: 73.5%(49) -> Test: 57.1%(21)
-
-AGLDUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
-    # Train: 68.4%(57) -> Test: 57.6%(33)
-
 AIAUSDT:
-  long:
-    - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 66.7%(63) -> Test: 59.3%(27)
   short:
     - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:23-38 MTF"
     # Train: 74.5%(47) -> Test: 73.3%(15)
-
-AINUSDT:
-  long:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
-    # Train: 61.5%(52) -> Test: 58.3%(36)
-  short:
-    - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
-    # Train: 63.4%(41) -> Test: 60.0%(10)
 
 AIOZUSDT:
   short:
@@ -149,22 +68,9 @@ ALCHUSDT:
     # Train: 75.8%(66) -> Test: 66.7%(18)
 
 ALEOUSDT:
-  long:
-    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
-    # Train: 64.2%(106) -> Test: 60.0%(50)
   short:
     - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
     # Train: 65.8%(73) -> Test: 68.4%(19)
-
-ALUUSDT:
-  short:
-    - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 61.3%(93) -> Test: 51.4%(37)
-
-ANIMEUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
-    # Train: 64.6%(65) -> Test: 56.0%(25)
 
 API3USDT:
   short:
@@ -186,21 +92,6 @@ ARBUSDT:
     - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
     # Train: 64.7%(68) -> Test: 70.4%(27)
 
-ARCUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:50-61 noMTF"
-    # Train: 61.9%(63) -> Test: 55.6%(18)
-
-ARKMUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:38-50 MTF"
-    # Train: 67.2%(64) -> Test: 55.6%(18)
-
-ARPAUSDT:
-  long:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 noMTF"
-    # Train: 67.9%(53) -> Test: 56.0%(25)
-
 ARUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
@@ -216,25 +107,10 @@ ASTERUSDT:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
     # Train: 62.8%(94) -> Test: 64.1%(39)
 
-ATHUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
-    # Train: 70.7%(82) -> Test: 51.1%(47)
-
-AUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF"
-    # Train: 72.5%(51) -> Test: 53.8%(13)
-
 AVAAIUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:50-61 noMTF"
     # Train: 65.1%(43) -> Test: 64.3%(14)
-
-AXLUSDT:
-  short:
-    - "RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF"
-    # Train: 78.2%(55) -> Test: 57.1%(14)
 
 B2USDT:
   short:
@@ -246,16 +122,6 @@ BABYUSDT:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
     # Train: 66.7%(99) -> Test: 62.5%(32)
 
-BANANAS31USDT:
-  short:
-    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 63.6%(118) -> Test: 52.9%(51)
-
-BANANAUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
-    # Train: 63.8%(69) -> Test: 54.8%(31)
-
 BARDUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
@@ -265,9 +131,6 @@ BBUSDT:
   long:
     - "RSI:60-70 MACD:bear VWAP:0.6-1.2 Fib:0-23 MTF"
     # Train: 62.5%(40) -> Test: 72.7%(11)
-  short:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
-    # Train: 65.9%(41) -> Test: 53.3%(15)
 
 BCHUSDT:
   short:
@@ -279,16 +142,6 @@ BEAMUSDT:
     - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF"
     # Train: 72.2%(54) -> Test: 75.0%(20)
 
-BELUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 71.4%(42) -> Test: 52.2%(23)
-
-BERAUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:50-61 MTF"
-    # Train: 64.3%(42) -> Test: 58.8%(17)
-
 BIGTIMEUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
@@ -298,11 +151,6 @@ BLASTUSDT:
   short:
     - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
     # Train: 62.0%(71) -> Test: 66.7%(24)
-
-BLESSUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF"
-    # Train: 69.1%(81) -> Test: 51.9%(27)
 
 BLURUSDT:
   short:
@@ -320,9 +168,6 @@ BOMEUSDT:
     # Train: 73.1%(52) -> Test: 86.7%(15)
 
 BROCCOLIUSDT:
-  long:
-    - "RSI:60-70 MACD:bear VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 64.4%(45) -> Test: 57.1%(14)
   short:
     - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
     # Train: 82.2%(45) -> Test: 72.2%(18)
@@ -332,124 +177,35 @@ BRUSDT:
     - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
     # Train: 70.4%(54) -> Test: 61.1%(18)
 
-BSUUSDT:
-  long:
-    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:23-38 MTF"
-    # Train: 66.7%(45) -> Test: 53.3%(15)
-  short:
-    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 60.1%(183) -> Test: 54.7%(64)
-
-BSVUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
-    # Train: 73.5%(49) -> Test: 57.1%(14)
-
-BTCUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 71.4%(56) -> Test: 54.1%(37)
-
-BTRUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
-    # Train: 61.9%(63) -> Test: 59.1%(22)
-
 CARVUSDT:
   short:
     - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
     # Train: 64.7%(51) -> Test: 75.0%(20)
-
-CATIUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 64.2%(53) -> Test: 60.0%(25)
-
-CFXUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
-    # Train: 73.2%(41) -> Test: 52.6%(19)
 
 CHILLGUYUSDT:
   short:
     - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
     # Train: 67.3%(52) -> Test: 64.0%(25)
 
-CHRUSDT:
-  long:
-    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
-    # Train: 62.1%(103) -> Test: 51.0%(49)
-  short:
-    - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 67.2%(67) -> Test: 54.5%(11)
-
 CKBUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
     # Train: 63.1%(65) -> Test: 64.0%(25)
-
-CLANKERUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
-    # Train: 66.1%(59) -> Test: 54.5%(33)
 
 CLOUDUSDT:
   short:
     - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
     # Train: 78.0%(50) -> Test: 61.5%(13)
 
-COAIUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
-    # Train: 63.9%(83) -> Test: 52.6%(38)
-
-COMPUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:50-61 noMTF"
-    # Train: 72.1%(43) -> Test: 56.2%(16)
-
-COOKIEUSDT:
-  long:
-    - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:38-50 noMTF"
-    # Train: 64.0%(50) -> Test: 51.5%(33)
-  short:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 noMTF"
-    # Train: 68.0%(50) -> Test: 56.5%(23)
-
-COREUSDT:
-  short:
-    - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 67.9%(53) -> Test: 56.5%(23)
-
-COTIUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
-    # Train: 63.6%(66) -> Test: 51.7%(29)
-
-CROUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:0-23 MTF"
-    # Train: 68.6%(51) -> Test: 56.2%(16)
-
 CRVUSDT:
   short:
     - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF"
     # Train: 67.9%(53) -> Test: 76.5%(17)
 
-CTCUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 MTF"
-    # Train: 71.7%(53) -> Test: 57.7%(26)
-
 CUSDT:
   short:
     - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:38-50 MTF"
     # Train: 66.0%(50) -> Test: 63.2%(19)
-
-CVCUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:38-50 noMTF"
-    # Train: 70.7%(41) -> Test: 51.9%(27)
 
 CVXUSDT:
   short:
@@ -471,61 +227,25 @@ DBRUSDT:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
     # Train: 62.3%(77) -> Test: 64.3%(42)
 
-DEEPUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
-    # Train: 75.4%(69) -> Test: 59.1%(22)
-
 DEGENUSDT:
   short:
     - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
     # Train: 68.6%(51) -> Test: 62.5%(16)
 
 DENTUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 noMTF"
-    # Train: 60.8%(51) -> Test: 52.4%(21)
   short:
     - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
     # Train: 66.7%(42) -> Test: 76.9%(13)
-
-DEXEUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 MTF"
-    # Train: 61.2%(67) -> Test: 53.3%(30)
 
 DGBUSDT:
   short:
     - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
     # Train: 66.7%(54) -> Test: 68.8%(32)
 
-DIAUSDT:
-  long:
-    - "RSI:60-70 MACD:bear VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 61.4%(44) -> Test: 55.6%(18)
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
-    # Train: 64.5%(76) -> Test: 53.8%(26)
-
-DODOUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 66.7%(45) -> Test: 56.7%(30)
-
-DOGEUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:38-50 MTF"
-    # Train: 72.1%(43) -> Test: 60.0%(10)
-
 DOGUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
     # Train: 64.8%(105) -> Test: 66.7%(33)
-
-DOLOUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
-    # Train: 69.3%(88) -> Test: 55.6%(18)
 
 DOODUSDT:
   short:
@@ -552,73 +272,27 @@ ENAUSDT:
     - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF"
     # Train: 81.4%(43) -> Test: 61.5%(13)
 
-ENJUSDT:
-  short:
-    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 62.5%(317) -> Test: 50.4%(127)
-
-ENSUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
-    # Train: 60.7%(61) -> Test: 58.6%(29)
-
 ERAUSDT:
   short:
     - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
     # Train: 72.1%(43) -> Test: 61.5%(13)
-
-ESPORTSUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:61-78 noMTF"
-    # Train: 61.4%(70) -> Test: 53.2%(47)
 
 ESUSDT:
   short:
     - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
     # Train: 70.5%(44) -> Test: 71.4%(14)
 
-ETHBTCUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF"
-    # Train: 67.6%(74) -> Test: 55.0%(40)
-
-ETHFIUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:50-61 noMTF"
-    # Train: 66.7%(42) -> Test: 56.5%(23)
-
-ETHUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:38-50 MTF"
-    # Train: 66.7%(42) -> Test: 54.5%(22)
-
-EULUSDT:
-  short:
-    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 62.7%(118) -> Test: 54.0%(50)
-
 EVAAUSDT:
   long:
     - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
     # Train: 60.3%(136) -> Test: 62.8%(43)
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
-    # Train: 63.4%(41) -> Test: 57.1%(14)
 
 FARTCOINUSDT:
   short:
     - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:61-78 MTF"
     # Train: 62.3%(53) -> Test: 64.7%(17)
 
-FFUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF"
-    # Train: 65.5%(58) -> Test: 57.1%(21)
-
 FIDAUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:50-61 noMTF"
-    # Train: 62.7%(51) -> Test: 53.6%(28)
   short:
     - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
     # Train: 63.0%(54) -> Test: 65.4%(26)
@@ -633,25 +307,7 @@ FLOWUSDT:
     - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
     # Train: 71.2%(73) -> Test: 69.7%(33)
 
-FUSDT:
-  short:
-    - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
-    # Train: 66.7%(42) -> Test: 58.8%(17)
-
-FWOGUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 MTF"
-    # Train: 67.7%(93) -> Test: 53.8%(39)
-
-FXSUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
-    # Train: 70.0%(50) -> Test: 56.0%(25)
-
 GALAUSDT:
-  long:
-    - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:23-38 noMTF"
-    # Train: 62.5%(56) -> Test: 58.1%(31)
   short:
     - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
     # Train: 69.7%(66) -> Test: 66.7%(21)
@@ -661,40 +317,12 @@ GASUSDT:
     - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:23-38 MTF"
     # Train: 73.3%(45) -> Test: 83.3%(12)
 
-GIGAUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
-    # Train: 67.4%(46) -> Test: 56.2%(16)
-
-GLMUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
-    # Train: 67.3%(52) -> Test: 59.5%(37)
-
-GMTUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:23-38 MTF"
-    # Train: 65.1%(43) -> Test: 60.0%(15)
-
-GMXUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
-    # Train: 67.7%(96) -> Test: 59.5%(37)
-
 GNOUSDT:
   short:
     - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
     # Train: 68.5%(54) -> Test: 70.6%(17)
 
-GODSUSDT:
-  short:
-    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 61.1%(90) -> Test: 55.3%(38)
-
 GPSUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:50-61 noMTF"
-    # Train: 63.0%(46) -> Test: 52.4%(21)
   short:
     - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
     # Train: 65.5%(55) -> Test: 61.5%(13)
@@ -704,25 +332,10 @@ GRIFFAINUSDT:
     - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
     # Train: 65.5%(58) -> Test: 75.0%(28)
 
-GRTUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 MTF"
-    # Train: 67.9%(56) -> Test: 55.0%(20)
-
 HAEDALUSDT:
   short:
     - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
     # Train: 72.0%(50) -> Test: 64.3%(14)
-
-HANAUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
-    # Train: 68.0%(50) -> Test: 57.1%(14)
-
-HBARUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
-    # Train: 69.8%(63) -> Test: 56.2%(32)
 
 HFTUSDT:
   short:
@@ -734,48 +347,10 @@ HIGHUSDT:
     - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
     # Train: 65.4%(254) -> Test: 61.1%(126)
 
-HIPPOUSDT:
-  short:
-    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 64.4%(292) -> Test: 50.5%(111)
-
-HMSTRUSDT:
-  long:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 noMTF"
-    # Train: 60.4%(48) -> Test: 53.8%(26)
-
-HNTUSDT:
-  short:
-    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 64.2%(123) -> Test: 52.9%(70)
-
-HOLOUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:61-78 noMTF"
-    # Train: 60.3%(58) -> Test: 52.2%(23)
-  short:
-    - "RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF"
-    # Train: 61.0%(41) -> Test: 57.1%(14)
-
-HOMEUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 noMTF"
-    # Train: 68.0%(50) -> Test: 54.5%(11)
-
-HUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:38-50 MTF"
-    # Train: 62.0%(71) -> Test: 53.7%(41)
-
 HYPERUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
     # Train: 63.9%(61) -> Test: 75.0%(16)
-
-HYPEUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 MTF"
-    # Train: 66.0%(50) -> Test: 54.5%(22)
 
 ICXUSDT:
   short:
@@ -797,40 +372,15 @@ ILVUSDT:
     - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
     # Train: 62.8%(43) -> Test: 68.2%(22)
 
-INITUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:23-38 MTF"
-    # Train: 65.9%(44) -> Test: 58.8%(17)
-
-INJUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF"
-    # Train: 72.9%(59) -> Test: 55.6%(18)
-
 INUSDT:
   short:
     - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
     # Train: 62.7%(51) -> Test: 90.0%(10)
 
-IOTXUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 MTF"
-    # Train: 72.3%(47) -> Test: 60.0%(10)
-
 IOUSDT:
   short:
     - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
     # Train: 63.6%(66) -> Test: 62.1%(29)
-
-IPUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:50-61 noMTF"
-    # Train: 69.0%(58) -> Test: 52.3%(44)
-
-JELLYJELLYUSDT:
-  long:
-    - "RSI:60-70 MACD:bear VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 68.8%(48) -> Test: 54.5%(11)
 
 JTOUSDT:
   short:
@@ -841,11 +391,6 @@ JUPUSDT:
   short:
     - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
     # Train: 71.7%(46) -> Test: 60.7%(28)
-
-KASUSDT:
-  short:
-    - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 66.3%(92) -> Test: 52.6%(38)
 
 KAVAUSDT:
   short:
@@ -870,60 +415,20 @@ KNCUSDT:
     - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF"
     # Train: 63.0%(46) -> Test: 65.0%(20)
 
-L3USDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
-    # Train: 68.9%(45) -> Test: 57.1%(14)
-
-LDOUSDT:
-  long:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 60.9%(46) -> Test: 52.9%(17)
-
-LINKUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:23-38 MTF"
-    # Train: 67.5%(40) -> Test: 60.0%(10)
-
 LPTUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
     # Train: 67.9%(56) -> Test: 61.1%(18)
-
-LQTYUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 MTF"
-    # Train: 62.7%(51) -> Test: 60.0%(20)
-
-LSKUSDT:
-  short:
-    - "RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF"
-    # Train: 65.0%(60) -> Test: 58.1%(31)
-
-MAGICUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
-    # Train: 66.0%(103) -> Test: 51.2%(41)
 
 MANAUSDT:
   short:
     - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF"
     # Train: 61.7%(60) -> Test: 62.5%(24)
 
-MANTAUSDT:
-  short:
-    - "RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF"
-    # Train: 65.9%(41) -> Test: 57.1%(14)
-
 MAVIAUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
     # Train: 66.7%(42) -> Test: 65.2%(23)
-
-MAVUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
-    # Train: 61.4%(88) -> Test: 51.4%(35)
 
 MBOXUSDT:
   short:
@@ -931,17 +436,11 @@ MBOXUSDT:
     # Train: 63.0%(81) -> Test: 69.7%(33)
 
 MEMEUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:38-50 MTF"
-    # Train: 61.4%(70) -> Test: 52.9%(17)
   short:
     - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
     # Train: 64.4%(45) -> Test: 78.3%(23)
 
 METISUSDT:
-  long:
-    - "RSI:60-70 MACD:bear VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 62.2%(45) -> Test: 58.3%(12)
   short:
     - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
     # Train: 68.8%(48) -> Test: 63.6%(22)
@@ -950,11 +449,6 @@ MEUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:38-50 noMTF"
     # Train: 67.5%(40) -> Test: 61.5%(13)
-
-MITOUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
-    # Train: 67.9%(81) -> Test: 52.2%(23)
 
 MLNUSDT:
   long:
@@ -966,45 +460,15 @@ MMTUSDT:
     - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
     # Train: 62.7%(83) -> Test: 64.8%(54)
 
-MNTUSDT:
-  short:
-    - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 60.6%(142) -> Test: 56.4%(39)
-
-MOCAUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
-    # Train: 66.1%(56) -> Test: 52.5%(40)
-
 MONUSDT:
   short:
     - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
     # Train: 61.8%(55) -> Test: 75.0%(16)
 
-MOODENGUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 75.0%(40) -> Test: 56.5%(23)
-
-MORPHOUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 MTF"
-    # Train: 64.6%(79) -> Test: 54.2%(24)
-
 MOVEUSDT:
   short:
     - "RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF"
     # Train: 68.3%(60) -> Test: 63.2%(19)
-
-MTLUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
-    # Train: 72.1%(43) -> Test: 52.4%(21)
-
-MUBARAKUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 noMTF"
-    # Train: 62.5%(40) -> Test: 59.1%(22)
 
 MUSDT:
   short:
@@ -1016,21 +480,6 @@ NAORISUSDT:
     - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:38-50 MTF"
     # Train: 66.7%(42) -> Test: 71.4%(14)
 
-NFPUSDT:
-  short:
-    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Train: 63.6%(107) -> Test: 51.3%(39)
-
-NILUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
-    # Train: 67.8%(59) -> Test: 57.7%(26)
-
-NKNUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:23-38 MTF"
-    # Train: 65.3%(49) -> Test: 53.8%(13)
-
 NMRUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:61-78 noMTF"
@@ -1041,14 +490,6 @@ NOMUSDT:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
     # Train: 60.5%(43) -> Test: 61.5%(13)
 
-NSUSDT:
-  long:
-    - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
-    # Train: 60.8%(51) -> Test: 56.5%(23)
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
-    # Train: 67.2%(58) -> Test: 55.6%(27)
-
 OBOLUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
@@ -1058,11 +499,6 @@ OBTUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
     # Train: 61.9%(63) -> Test: 65.2%(23)
-
-OGUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
-    # Train: 68.7%(67) -> Test: 54.2%(24)
 
 OMUSDT:
   short:
@@ -1079,16 +515,6 @@ OPENUSDT:
     - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
     # Train: 63.4%(123) -> Test: 64.0%(25)
 
-OPUSDT:
-  long:
-    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:23-38 MTF"
-    # Train: 65.2%(46) -> Test: 58.8%(17)
-
-ORCAUSDT:
-  long:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
-    # Train: 60.7%(56) -> Test: 55.9%(34)
-
 ORDIUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
@@ -1098,11 +524,6 @@ PAXGUSDT:
   short:
     - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 noMTF"
     # Train: 79.1%(43) -> Test: 70.0%(30)
-
-PEOPLEUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:50-61 noMTF"
-    # Train: 70.7%(41) -> Test: 52.2%(23)
 
 PHAUSDT:
   short:
@@ -1129,38 +550,7 @@ PONKEUSDT:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
     # Train: 60.7%(61) -> Test: 62.5%(16)
 
-PORTALUSDT:
-  long:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 noMTF"
-    # Train: 60.8%(51) -> Test: 54.2%(24)
-  short:
-    - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
-    # Train: 64.7%(51) -> Test: 55.6%(18)
-
-POWRUSDT:
-  short:
-    - "RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF"
-    # Train: 80.4%(46) -> Test: 52.6%(19)
-
-PRCLUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 MTF"
-    # Train: 60.4%(53) -> Test: 57.1%(14)
-
-PROMUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:1.2+ Fib:23-38 MTF"
-    # Train: 70.5%(44) -> Test: 53.8%(13)
-
-PROVEUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 noMTF"
-    # Train: 66.0%(47) -> Test: 56.5%(23)
-
 PUFFERUSDT:
-  long:
-    - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
-    # Train: 62.5%(48) -> Test: 56.1%(41)
   short:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
     # Train: 66.0%(53) -> Test: 62.8%(43)
@@ -1175,41 +565,15 @@ QNTUSDT:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
     # Train: 69.6%(56) -> Test: 67.6%(34)
 
-QTUMUSDT:
-  short:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:0-23 MTF"
-    # Train: 64.3%(42) -> Test: 57.1%(14)
-
-RAREUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
-    # Train: 64.8%(54) -> Test: 53.3%(15)
-
 REDUSDT:
   long:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:50-61 noMTF"
     # Train: 61.4%(44) -> Test: 69.2%(13)
-  short:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:61-78 noMTF"
-    # Train: 71.4%(42) -> Test: 52.6%(19)
 
 REQUSDT:
   short:
     - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
     # Train: 61.7%(154) -> Test: 60.8%(79)
-
-RESOLVUSDT:
-  long:
-    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:61-78 noMTF"
-    # Train: 62.5%(40) -> Test: 52.2%(23)
-  short:
-    - "RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF"
-    # Train: 66.7%(54) -> Test: 60.0%(30)
-
-REZUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
-    # Train: 63.2%(68) -> Test: 51.3%(39)
 
 ROSEUSDT:
   short:

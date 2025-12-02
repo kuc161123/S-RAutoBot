@@ -768,7 +768,6 @@ class TradingBot:
             if r is None:
                 # Try phantom tracker redis
                 try:
-                    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                     scpt = get_scalp_phantom_tracker()
                     r = getattr(scpt, 'redis_client', None)
                 except Exception:
@@ -837,7 +836,6 @@ class TradingBot:
             except Exception:
                 # Fallback: direct record if helper fails
                 try:
-                    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                     scpt = _get_scpt()
                     scpt.record_scalp_signal(sym, {'side': side, 'entry': feats.get('entry'), 'sl': feats.get('sl'), 'tp': feats.get('tp')}, float(ml_score or 0.0), False, feats)
                 except Exception:
@@ -887,7 +885,6 @@ class TradingBot:
             except Exception:
                 # If execution fails, fall back to phantom recording to avoid losing data
                 try:
-                    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt_exec_fallback
                     scpt_fb = _get_scpt_exec_fallback()
                     scpt_fb.record_scalp_signal(
                         sym,
@@ -916,7 +913,6 @@ class TradingBot:
 
         # Record the phantom (centralized path)
         try:
-            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
             scpt = _get_scpt()
             return scpt.record_scalp_signal(
                 sym,
@@ -2810,14 +2806,8 @@ class TradingBot:
                 except Exception as e:
                     logger.debug(f"3m candle persist error for {sym}: {e}")
 
-                # Update any active Scalp phantoms for this symbol using the latest bar extremes
-                try:
-                    if SCALP_AVAILABLE:
-                        from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
-                        scpt = _get_scpt()
-                        scpt.update_scalp_phantom_prices(sym, float(row['close'].iloc[0]), df=self.frames_3m.get(sym))
-                except Exception as e:
-                    logger.error(f"[{sym}] Failed to update scalp phantoms on 3m bar close: {e}")
+                # Phantom tracking removed - using direct signal detection only
+                # (Legacy phantom.py module deleted)
 
                 # On 3m bar close, attempt phantom-only scalp detection for NONE regime
                 try:
@@ -3630,7 +3620,6 @@ class TradingBot:
                                 executed = False
                             # Record executed phantom for learning
                             try:
-                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                                 scpt = _get_scpt()
                                 # Optionally cancel any pre-existing active scalp phantom to avoid duplicate tracking
                                 try:
@@ -3691,7 +3680,6 @@ class TradingBot:
                             # This builds a full feature set and delegates to the central executor,
                             # which will apply combo/rules gating and either execute or record a phantom.
                             try:
-                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                                 scpt2 = _get_scpt()
 
                                 # Build features from the best available frame source
@@ -3784,7 +3772,6 @@ class TradingBot:
                     fa_cfg = (self.config.get('scalp', {}).get('debug', {}) or {}) if hasattr(self, 'config') else {}
                     if bool(fa_cfg.get('force_accept', False)):
                         try:
-                            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                             scpt = _get_scpt()
                             # Choose a source df safely without boolean evaluation on DataFrames
                             _df_src = None
@@ -5594,7 +5581,6 @@ class TradingBot:
                             pass
                         ph_open = 0
                         try:
-                            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
                             scpt2 = get_scalp_phantom_tracker()
                             act = getattr(scpt2, 'active', {}) or {}
                             ph_open = sum(len(lst) for lst in act.values())
@@ -7413,8 +7399,6 @@ class TradingBot:
                             phantom_tracker.force_close_executed(symbol, exit_price, exit_reason)
                         elif pos.strategy_name == 'scalp':
                             try:
-                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
-                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                                 scpt = _get_scpt()
                                 scpt.force_close_executed(symbol, exit_price, exit_reason)
                                 logger.info(f"[{symbol}] Scalp phantom mirror closed (exit={exit_price:.4f}, reason={exit_reason})")
@@ -8503,7 +8487,6 @@ class TradingBot:
         # Always wire Scalp phantom notifier for lifecycle messages (open/close)
         try:
             if SCALP_AVAILABLE:
-                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                 scpt_always = _get_scpt()
                 scpt_always.set_notifier(self._notify_scalp_phantom)
                 # Log initialization success
@@ -8527,7 +8510,6 @@ class TradingBot:
                     # Wire Scalp phantom notifier for Telegram lifecycle messages
                     try:
                         if SCALP_AVAILABLE:
-                            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                             scpt = _get_scpt()
                             scpt.set_notifier(self._notify_scalp_phantom)
                             # Note: Backfill notifications removed to prevent Telegram pool exhaustion
@@ -8642,7 +8624,6 @@ class TradingBot:
                         pass
                     try:
                         if SCALP_AVAILABLE:
-                            from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                             scpt = _get_scpt()
                             scpt.set_notifier(self._notify_scalp_phantom)
                             # Backfill open notifications for already-active scalp phantoms
@@ -9689,7 +9670,6 @@ class TradingBot:
                 # Wire scalp phantom notifications to Telegram (ensure after Telegram init)
                 try:
                     if SCALP_AVAILABLE:
-                        from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                         scpt = _get_scpt()
                         scpt.set_notifier(self._notify_scalp_phantom)
                         # Backfill open notifications for already-active scalp phantoms
@@ -9832,7 +9812,6 @@ class TradingBot:
                 # Wire scalp phantom notifications to Telegram (if scalp modules available)
                 try:
                     if SCALP_AVAILABLE:
-                        from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                         scpt = _get_scpt()
                         # Downtime backfill for Scalp phantoms using exchange klines (guarded by config; default OFF)
                         try:
@@ -10844,7 +10823,6 @@ class TradingBot:
                                 pass
                             # Scalp phantom tracker price updates (if available)
                             try:
-                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                                 scpt = _get_scpt()
                                 df3u = self.frames_3m.get(sym) if hasattr(self, 'frames_3m') else None
                                 scpt.update_scalp_phantom_prices(sym, current_price, df=df3u if df3u is not None and not df3u.empty else df)
@@ -12846,7 +12824,6 @@ class TradingBot:
                             if promote_en and SCALP_AVAILABLE and detect_scalp_signal is not None:
                                 # Promotion readiness from phantom stats (supports recent WR)
                                 try:
-                                    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                                     scpt = _get_scpt()
                                     st = scpt.get_scalp_phantom_stats() or {}
                                     samples = int(st.get('total', 0))
@@ -14295,8 +14272,6 @@ class TradingBot:
                                             sc_feats['routing'] = 'none'
                                             logger.info(f"[{sym}] 👻 Phantom-only (Scalp none): {sc_sig.side.upper()} @ {sc_sig.entry:.4f}")
                                             try:
-                                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
-                                                from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
                                                 scpt = _get_scpt()
                                                 # Compute ML for router-driven scalp phantom
                                                 ml_s = 0.0

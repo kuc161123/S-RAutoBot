@@ -668,7 +668,7 @@ class TradingBot:
         self._adaptive_combo_trade_count = 0  # Counter for triggering periodic updates
 
         # Phantom Tracker for Bot Level Filtering
-        self.phantom_tracker = PhantomTracker(None, self.shared)  # TG bot attached later
+        self.phantom_tracker = PhantomTracker(None, None)  # TG bot and shared attached later
 
         # Scalp diagnostics counters (reset periodically in summaries)
         self._scalp_stats: Dict[str, int] = {
@@ -9142,6 +9142,7 @@ class TradingBot:
                 # Link telegram bot to phantom tracker
                 if self.phantom_tracker:
                     self.phantom_tracker.tg = self.tg
+                    self.phantom_tracker.shared = self.shared
                 # Send shorter startup message for 20 symbols
                 # Format risk display
                 if risk.use_percent_risk:

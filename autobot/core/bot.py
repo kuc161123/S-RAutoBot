@@ -49,6 +49,24 @@ except Exception as e:
 # Consider Scalp available if signal detection is present
 SCALP_AVAILABLE = bool(detect_scalp_signal is not None)
 
+# Dummy phantom tracker (deprecated but needed for legacy code)
+class _DummyScalpTracker:
+    """Stub for removed phantom tracking functionality"""
+    def __init__(self):
+        self.redis_client = None
+    def record_scalp_signal(self, *args, **kwargs):
+        pass
+    def cancel_active(self, *args, **kwargs):
+        pass
+    def update_scalp_phantom_prices(self, *args, **kwargs):
+        pass
+
+def _get_scpt():
+    return _DummyScalpTracker()
+
+_get_scpt_exec_fallback = _get_scpt
+get_scalp_phantom_tracker = _get_scpt
+
 # Symbol data collector (optional; disabled by default)
 SYMBOL_COLLECTOR_AVAILABLE = False
 get_symbol_collector = None
@@ -1043,7 +1061,7 @@ class TradingBot:
                 try:
                     text = f"{title}\n" + "\n".join(lines)
                     # System message bypasses mute policy
-                    await self.tg.send_system_message(text, reply_markup=kb)
+                    await self.tg.send_message(text, reply_markup=kb)
                 except Exception:
                     pass
         except Exception:
@@ -1902,7 +1920,7 @@ class TradingBot:
             # Send a compact ready banner with useful commands
             if self.tg:
                 cmds = " /dashboard • /status • /balance"
-                await self.tg.send_system_message(
+                await self.tg.send_message(
                     "✅ *Bot Ready*\n\n"
                     "Streams active and data flowing.\n\n"
                     f"Use: {cmds}"
@@ -3522,7 +3540,7 @@ class TradingBot:
                                                                 f"• Near: {ne} ({ex_near or '-'})",
                                                             ]
                                                             # Use system_message to bypass execute-only filter but keep format consistent
-                                                            await self.tg.send_system_message("\n".join(lines))
+                                                            await self.tg.send_message("\n".join(lines))
                                                     except Exception:
                                                         pass
                                                 self._scalp_watch_agg = {'pro': [], 'combo': [], 'near': []}
@@ -8801,11 +8819,11 @@ class TradingBot:
                     # Note: stream-first startup — streams begin immediately, backfills run in background
                     sym_ct = len(symbols)
                     if stream_3m_only:
-                        await self.tg.send_system_message(
+                        await self.tg.send_message(
                             f"🔄 Bot restart acknowledged — initializing stream-first ({sym_ct} symbols, main 3m only)."
                         )
                     else:
-                        await self.tg.send_system_message(
+                        await self.tg.send_message(
                             f"🔄 Bot restart acknowledged — initializing stream-first ({sym_ct} symbols, main {tf}m + scalp 3m)."
                         )
                 except Exception:
@@ -9094,7 +9112,7 @@ class TradingBot:
                     gating_txt = "Adaptive Combos (when ready) → Pro Rules (MTF)"
                 except Exception:
                     rr_s = 2.1; base = 1.0; rmin = 0.5; rmax = 3.0; gating_txt = "Pro Rules (MTF)"
-                await self.tg.send_system_message(
+                await self.tg.send_message(
                     "🩳 *Scalp Strategy Online*\n\n"
                     f"📊 Monitoring: {len(symbols)} symbols | TF: 3m\n"
                     f"💰 Risk per trade: {risk_display} | R:R ~1:{rr_s:.1f}\n\n"

@@ -9057,6 +9057,8 @@ class TradingBot:
                 if not getattr(self, 'tg', None):
                     self.tg = TGBot(cfg["telegram"]["token"], int(cfg["telegram"]["chat_id"]), shared)
                     await self.tg.start_polling()
+                    # Send startup notification
+                    await self.tg.send_startup_notification()
                 else:
                     # Ensure the bot sees the updated shared dict
                     try:

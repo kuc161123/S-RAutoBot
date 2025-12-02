@@ -44,6 +44,9 @@ class TGBot:
         self.app.add_handler(CommandHandler("start", self.start))
         self.app.add_handler(CommandHandler("help", self.help))
         self.app.add_handler(CommandHandler("status", self.status))
+        self.app.add_handler(CommandHandler("health", self.health))
+        self.app.add_handler(CommandHandler("symbols", self.symbols_info))
+        self.app.add_handler(CommandHandler("backtest", self.backtest_info))
         self.app.add_handler(CommandHandler("risk", self.show_risk))
         self.app.add_handler(CommandHandler("set_risk", self.set_risk))
         self.app.add_handler(CommandHandler("risk_pct", self.set_risk_pct))
@@ -64,11 +67,17 @@ class TGBot:
         msg = (
             "🛠 **Bot Commands**\n\n"
             "📊 **Dashboard**\n"
-            "/status - Show active trades and daily stats\n\n"
+            "/status - Show active trades and daily stats\n"
+            "/health - Bot uptime and connection status\n"
+            "/symbols - Show active symbols count\n\n"
             "⚠️ **Risk Management**\n"
             "/risk - Show current risk settings\n"
-            "/risk_pct <value> - Set risk as % of equity (e.g., 1.0)\n"
-            "/risk_usd <value> - Set risk as fixed USD (e.g., 50)\n"
+            "/risk_pct <value> - Set risk % (0.1-5.0, e.g., /risk_pct 1.0)\n"
+            "/risk_usd <value> - Set risk USD (5-1000, e.g., /risk_usd 50)\n\n"
+            "📈 **Backtest Info**\n"
+            "/backtest - Show backtest validation stats\n\n"
+            "ℹ️ **Other**\n"
+            "/help - Show this help message\n"
         )
         await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
@@ -167,6 +176,76 @@ class TGBot:
         await self.app.start()
         await self.app.updater.start_polling(drop_pending_updates=True)
         logger.info("Telegram bot started")
+
+    async def send_startup_notification(self):
+        """Send startup notification with bot configuration"""
+        risk = self.shared.get('risk')
+        risk_mode = "Percentage" if (risk and risk.use_percent_risk) else "Fixed USD"
+        risk_val = f"{risk.risk_percent}%" if (risk and risk.use_percent_risk) else f"${risk.risk_usd if risk else 'N/A'}"
+        
+        # Get symbol count
+        overrides = self.shared.get('symbol_overrides', {})
+        combo_count = len([s for s in overrides.values() if s.get('long') or s.get('short')])
+        
+        msg = (
+            "🚀 **AutoTrading Bot Online**\n\n"
+            "📊 **Strategy**: Adaptive Combo (Volatility Breakout)\n"
+            f"✅ **Backtest Validated**: {combo_count} symbols with high-WR combos\n\n"
+            "⚙️ **Configuration**:\n"
+            f"💰 Risk Mode: {risk_mode} ({risk_val})\n"
+            "🎯 Target: 2.1R (BBW + Vol breakouts)\n"
+            "📉 Entry: Next Candle Open (realistic)\n\n"
+            "Use /help to see all commands."
+        )
+        await self.send_message(msg)
+
+    async def health(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show bot health status"""
+        import time
+        uptime = time.time() - self.shared.get('start_time', time.time())
+        uptime_str = f"{int(uptime//3600)}h {int((uptime%3600)//60)}m"
+        
+        msg = (
+            f"🏥 **Bot Health**\n\n"
+            f"⏱ Uptime: {uptime_str}\n"
+            f"🔗 Connection: {'✅ Active' if self.running else '❌ Inactive'}\n"
+            f"📡 Telegram: {'✅ Online' if self.running else '❌ Offline'}\n"
+        )
+        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+
+    async def symbols_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show symbol/combo information"""
+        overrides = self.shared.get('symbol_overrides', {})
+        total_symbols = len(overrides)
+        
+        long_count = len([s for s in overrides.values() if s.get('long')])
+        short_count = len([s for s in overrides.values() if s.get('short')])
+        
+        msg = (
+            f"📊 **Symbols & Combos**\n\n"
+            f"🎯 Validated Symbols: {total_symbols}\n"
+            f"📈 Long Combos: {long_count}\n"
+            f"📉 Short Combos: {short_count}\n\n"
+            f"All combos are backtest-validated with WR > 60%"
+        )
+        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
+
+    async def backtest_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show backtest validation information"""
+        msg = (
+            "📈 **Backtest Validation**\n\n"
+            "✅ **Methodology**:\n"
+            "• Entry: Next Candle Open (realistic)\n"
+            "• Costs: 0.16% per trade (slippage + fees)\n"
+            "• Sample Size: ~10k candles per symbol\n"
+            "• Filter: WR > 60%, N >= 30\n\n"
+            "🎯 **Strategy**:\n"
+            "• Trigger: BBW > 0.45 + Vol > 0.8\n"
+            "• Filter: RSI/MACD/VWAP/Fib combo classification\n"
+            "• Target: 2.1R fixed\n\n"
+            "All active combos passed strict validation."
+        )
+        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
     async def stop(self):
         self.running = False

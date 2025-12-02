@@ -91,6 +91,7 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     return d
 
 def get_combo(row) -> str:
+    """Build combo string from indicator values (matches backtest logic)"""
     # RSI Bin
     r = row['rsi']
     if r < 30: rb = '<30'

@@ -43,6 +43,7 @@ class TGBot:
         # Add Handlers
         self.app.add_handler(CommandHandler("start", self.start))
         self.app.add_handler(CommandHandler("help", self.help))
+        self.app.add_handler(CommandHandler("dashboard", self.status))  # Alias for status
         self.app.add_handler(CommandHandler("status", self.status))
         self.app.add_handler(CommandHandler("health", self.health))
         self.app.add_handler(CommandHandler("symbols", self.symbols_info))

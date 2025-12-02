@@ -10,200 +10,404 @@ trade:
   symbols:
   - 0GUSDT
   - 1000000BABYDOGEUSDT
+  - 1000000CHEEMSUSDT
   - 1000000MOGUSDT
+  - 10000ELONUSDT
   - 10000QUBICUSDT
+  - 10000SATSUSDT
   - 1000BONKUSDT
+  - 1000BTTUSDT
   - 1000CATUSDT
+  - 1000FLOKIUSDT
+  - 1000LUNCUSDT
+  - 1000NEIROCTOUSDT
   - 1000PEPEUSDT
+  - 1000RATSUSDT
   - 1000TAGUSDT
+  - 1000TOSHIUSDT
+  - 1000TURBOUSDT
+  - 1000XECUSDT
+  - 1000XUSDT
+  - 1INCHUSDT
+  - 2ZUSDT
   - 4USDT
+  - A2ZUSDT
   - AAVEUSDT
+  - ACEUSDT
+  - ACHUSDT
+  - ACTUSDT
+  - ACXUSDT
   - ADAUSDT
   - AERGOUSDT
   - AEROUSDT
+  - AEVOUSDT
+  - AGIUSDT
   - AGLDUSDT
   - AIAUSDT
+  - AINUSDT
+  - AIOUSDT
   - AIOZUSDT
   - AIXBTUSDT
   - AKEUSDT
+  - AKTUSDT
   - ALCHUSDT
+  - ALEOUSDT
   - ALGOUSDT
   - ALICEUSDT
   - ALLOUSDT
   - ALPINEUSDT
+  - ALTUSDT
   - ALUUSDT
   - ANIMEUSDT
   - ANKRUSDT
   - APEUSDT
+  - APEXUSDT
+  - API3USDT
+  - APRUSDT
   - APTUSDT
   - ARBUSDT
+  - ARCUSDT
+  - ARIAUSDT
+  - ARKMUSDT
+  - ARKUSDT
+  - ARPAUSDT
   - ARUSDT
   - ASPUSDT
   - ASRUSDT
+  - ASTERUSDT
+  - ASTRUSDT
+  - ATHUSDT
   - ATOMUSDT
+  - ATUSDT
+  - AUCTIONUSDT
   - AUSDT
   - AVAAIUSDT
+  - AVAUSDT
+  - AVAXUSDT
   - AVLUSDT
   - AVNTUSDT
+  - AWEUSDT
+  - AXLUSDT
   - AXSUSDT
+  - B2USDT
+  - B3USDT
+  - BABYUSDT
   - BANANAS31USDT
   - BANANAUSDT
+  - BANDUSDT
   - BANKUSDT
   - BANUSDT
+  - BARDUSDT
+  - BATUSDT
   - BBUSDT
+  - BCHUSDT
   - BEAMUSDT
   - BEATUSDT
   - BELUSDT
+  - BERAUSDT
+  - BICOUSDT
+  - BIGTIMEUSDT
   - BIOUSDT
+  - BLASTUSDT
   - BLESSUSDT
+  - BLUAIUSDT
+  - BLURUSDT
   - BMTUSDT
   - BNBUSDT
+  - BNTUSDT
+  - BOBAUSDT
+  - BOBBOBUSDT
   - BOMEUSDT
   - BRETTUSDT
+  - BROCCOLIUSDT
+  - BRUSDT
   - BSUUSDT
+  - BSVUSDT
   - BTCUSDT
   - BTRUSDT
   - BUSDT
   - C98USDT
+  - CAKEUSDT
+  - CAMPUSDT
   - CARVUSDT
+  - CATIUSDT
   - CCUSDT
+  - CELOUSDT
   - CETUSUSDT
   - CFXUSDT
+  - CGPTUSDT
   - CHILLGUYUSDT
+  - CHRUSDT
+  - CHZUSDT
   - CKBUSDT
   - CLANKERUSDT
   - CLOUDUSDT
+  - CLOUSDT
   - COAIUSDT
+  - COMMONUSDT
   - COMPUSDT
   - COOKIEUSDT
+  - COOKUSDT
   - COREUSDT
   - COTIUSDT
+  - COWUSDT
   - CROSSUSDT
+  - CROUSDT
+  - CRVUSDT
+  - CTCUSDT
+  - CTKUSDT
+  - CTSIUSDT
+  - CUDISUSDT
   - CUSDT
+  - CVCUSDT
+  - CVXUSDT
+  - CYBERUSDT
   - DAMUSDT
   - DASHUSDT
   - DBRUSDT
   - DEEPUSDT
+  - DEGENUSDT
   - DENTUSDT
+  - DEXEUSDT
   - DGBUSDT
   - DIAUSDT
   - DODOUSDT
   - DOGEUSDT
+  - DOGUSDT
+  - DOLOUSDT
   - DOODUSDT
+  - DOTUSDT
+  - DRIFTUSDT
+  - DUSKUSDT
   - DYDXUSDT
+  - DYMUSDT
+  - EDENUSDT
   - EDUUSDT
+  - EGLDUSDT
   - EIGENUSDT
   - ELXUSDT
+  - ENAUSDT
+  - ENJUSDT
+  - ENSOUSDT
+  - ENSUSDT
   - EPICUSDT
   - EPTUSDT
   - ERAUSDT
+  - ESPORTSUSDT
+  - ESUSDT
   - ETCUSDT
+  - ETHBTCUSDT
   - ETHFIUSDT
   - ETHUSDT
   - EULUSDT
   - EVAAUSDT
+  - FARTCOINUSDT
   - FFUSDT
   - FIDAUSDT
+  - FILUSDT
+  - FIOUSDT
   - FLOCKUSDT
+  - FLOWUSDT
+  - FLRUSDT
   - FLUIDUSDT
   - FLUXUSDT
   - FORMUSDT
   - FUSDT
+  - FWOGUSDT
+  - FXSUSDT
+  - GALAUSDT
+  - GASUSDT
   - GIGAUSDT
   - GIGGLEUSDT
   - GLMUSDT
+  - GMTUSDT
+  - GMXUSDT
   - GNOUSDT
+  - GOATUSDT
   - GODSUSDT
+  - GPSUSDT
   - GRASSUSDT
   - GRIFFAINUSDT
+  - GRTUSDT
+  - GUNUSDT
+  - HAEDALUSDT
   - HANAUSDT
   - HBARUSDT
+  - HEIUSDT
+  - HEMIUSDT
   - HFTUSDT
+  - HIGHUSDT
+  - HIPPOUSDT
   - HIVEUSDT
   - HMSTRUSDT
+  - HNTUSDT
   - HOLOUSDT
+  - HOMEUSDT
+  - HOOKUSDT
+  - HPOS10IUSDT
+  - HUMAUSDT
   - HUSDT
   - HYPERUSDT
+  - HYPEUSDT
   - ICNTUSDT
   - ICPUSDT
+  - ICXUSDT
   - IDEXUSDT
+  - IDUSDT
   - ILVUSDT
   - IMXUSDT
   - INITUSDT
   - INJUSDT
+  - INUSDT
   - IOSTUSDT
+  - IOTAUSDT
+  - IOTXUSDT
+  - IOUSDT
+  - IPUSDT
+  - IRYSUSDT
   - JASMYUSDT
   - JCTUSDT
   - JELLYJELLYUSDT
+  - JSTUSDT
   - JTOUSDT
+  - JUPUSDT
+  - KAIAUSDT
+  - KAITOUSDT
+  - KASUSDT
   - KAVAUSDT
   - KERNELUSDT
   - KGENUSDT
   - KITEUSDT
   - KMNOUSDT
   - KNCUSDT
+  - KSMUSDT
+  - L3USDT
   - LABUSDT
   - LAUSDT
+  - LDOUSDT
   - LIGHTUSDT
+  - LINEAUSDT
   - LINKUSDT
+  - LISTAUSDT
+  - LPTUSDT
+  - LQTYUSDT
   - LRCUSDT
+  - LSKUSDT
   - LTCUSDT
+  - LUMIAUSDT
+  - LUNA2USDT
+  - LYNUSDT
   - MAGICUSDT
   - MANAUSDT
+  - MANTAUSDT
+  - MASKUSDT
   - MAVIAUSDT
+  - MAVUSDT
+  - MBOXUSDT
+  - MELANIAUSDT
+  - MEMEUSDT
   - MERLUSDT
   - METISUSDT
   - METUSDT
   - MEUSDT
   - MEWUSDT
   - MINAUSDT
+  - MIRAUSDT
+  - MITOUSDT
+  - MLNUSDT
   - MMTUSDT
   - MNTUSDT
   - MOCAUSDT
   - MONUSDT
   - MOODENGUSDT
+  - MORPHOUSDT
+  - MOVEUSDT
+  - MOVRUSDT
+  - MTLUSDT
+  - MUBARAKUSDT
   - MUSDT
   - MYXUSDT
   - NAORISUSDT
   - NEARUSDT
   - NEOUSDT
+  - NEWTUSDT
   - NFPUSDT
+  - NILUSDT
   - NKNUSDT
+  - NMRUSDT
+  - NOMUSDT
+  - NOTUSDT
   - NSUSDT
+  - NTRNUSDT
+  - NXPCUSDT
+  - OBOLUSDT
+  - OBTUSDT
+  - OGNUSDT
+  - OGUSDT
   - OKBUSDT
+  - OLUSDT
   - OMUSDT
   - ONDOUSDT
   - ONEUSDT
+  - ONGUSDT
+  - ONTUSDT
+  - OPENUSDT
   - OPUSDT
+  - ORBSUSDT
+  - ORCAUSDT
+  - ORDERUSDT
   - ORDIUSDT
+  - OXTUSDT
   - PARTIUSDT
+  - PAXGUSDT
   - PEAQUSDT
   - PENDLEUSDT
   - PENGUUSDT
   - PEOPLEUSDT
+  - PHAUSDT
+  - PHBUSDT
   - PIEVERSEUSDT
   - PIGGYUSDT
   - PIPPINUSDT
+  - PIXELUSDT
   - PLUMEUSDT
+  - PNUTUSDT
   - POLUSDT
+  - POLYXUSDT
+  - PONKEUSDT
   - POPCATUSDT
+  - PORTALUSDT
+  - POWRUSDT
   - PRCLUSDT
   - PROMPTUSDT
+  - PROMUSDT
+  - PROVEUSDT
   - PTBUSDT
   - PUFFERUSDT
+  - PUMPBTCUSDT
   - PUMPFUNUSDT
+  - PUNDIXUSDT
   - PYRUSDT
   - PYTHUSDT
   - QNTUSDT
+  - QTUMUSDT
+  - QUSDT
   - RAREUSDT
   - RAYDIUMUSDT
+  - RDNTUSDT
   - RECALLUSDT
   - REDUSDT
+  - RENDERUSDT
   - REQUSDT
   - RESOLVUSDT
   - REZUSDT
+  - RIVERUSDT
+  - RLCUSDT
+  - RLUSDUSDT
   - ROAMUSDT
   - RONINUSDT
+  - ROSEUSDT
+  - RPLUSDT
   timeframe: '15'
   risk_usd: 10
   risk_percent: 1.0
@@ -288,7 +492,6 @@ phantom_flow:
       dist_mid_atr: 0.4
       rev_atr: 0.4
     scalp:
-      slope: 0.6 # Changed from 0.6 for faster scalping
       vwap_dist_atr: 0.6
       bb_width_pct: 0.3
       vol_ratio: 0.4
@@ -370,28 +573,46 @@ scalp:
   min_r_pct: 0.005
   dedup_hours: 3
   cooldown_bars: 4
-  
   signal:
     vwap_only: false
     vwap_require_alignment: true
     vwap_pattern: bounce
-    ema_trend_filter: true
-    ema_fast: 8
-    ema_slow: 21
-    bb_width_threshold: 0.002
-    volume_ratio_threshold: 1.2
-    body_ratio_threshold: 0.4
-    wick_delta_threshold: 0.0005
-    vwap_distance_threshold: 0.008
+    vwap_bounce_band_atr_min: 0.1
+    vwap_bounce_band_atr_max: 0.6
+    vwap_bounce_lookback_bars: 3
+    body_ratio_min: 0.25
+    wick_delta_min: 0.05
+    vwap_dist_atr_max: 1.5
+    vwap_mode: session_evwap
+    vwap_window: 50
+    vwap_session_scheme: sessions
+    vwap_session_windows:
+      asian: 00:00-08:00
+      european: 08:00-16:00
+      us: 16:00-24:00
+    vwap_session_warmup_bars: 30
+    vwap_cap_warmup: 2.0
+    min_bb_width_pct: 0.45
+    vol_ratio_min: 0.8
+    orb_soft:
+      enabled: false
+      vwap_cap_bump: 0.2
+      wick_delta_relax: 0.05
+      body_min_relax: 0.05
+    relax_by_session:
+      us: 1.0
+      european: 0.9
+      asian: 0.85
+      off_hours: 0.85
   hard_gates:
     apply_to_exec: true
     apply_to_phantoms: false
     htf_enabled: false
     htf_min_ts15: 70.0
     vol_enabled: false
-    vol_ratio_min: 0.8
+    vol_ratio_min_3m: 1.3
     body_enabled: false
-    body_ratio_min: 0.25
+    body_ratio_min_3m: 0.3
     wick_enabled: false
     wick_delta_min: 0.12
     regime_enabled: false
@@ -415,7 +636,7 @@ scalp:
     slope_short_slow_min: -999.0
     slope_short_slow_max: -0.015
     bbw_exec_enabled: false
-    min_bb_width_pct: 0.45
+    bbw_min_pct: 0.6
     bbw_max_pct: 0.9
     vwap_exec_enabled: false
     vwap_dist_atr_min: 0.4

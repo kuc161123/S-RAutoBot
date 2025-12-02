@@ -7833,6 +7833,21 @@ class TradingBot:
                 f"Entry: {entry:.4f}",
                 f"TP / SL: {tp:.4f} / {sl:.4f}"
             ]
+            
+            # Add backtest WR/N stats if available
+            try:
+                stats_dict = getattr(self, 'symbol_override_stats', {})
+                if symbol in stats_dict:
+                    side_key = side.lower()
+                    if side_key in stats_dict[symbol]:
+                        stat = stats_dict[symbol][side_key]
+                        wr = stat.get('wr', 0)
+                        n = stat.get('n', 0)
+                        if wr > 0 and n > 0:
+                            lines.append(f"📊 Combo: WR={wr:.1f}% (N={n})")
+            except Exception:
+                pass
+                
             if reason_line:
                 lines.append(reason_line)
             try:
@@ -7857,6 +7872,7 @@ class TradingBot:
                 lines.append(f"HTF: {'✅' if htf_pass else '❌'} {ts15:.0f} (≥ {thr_ts:.0f}) | Body: {'✅' if body_pass else '❌'} {body_ratio:.2f} dir={bdir} (≥ {bmin:.2f})")
             except Exception:
                 pass
+
 
             # Only send open notification to Telegram if this was an executed trade
             if was_executed:
@@ -9516,15 +9532,70 @@ class TradingBot:
         
         # Load symbol overrides if available
         self.symbol_overrides = {}
+        self.symbol_override_stats = {}  # Store WR/N stats from backtest
         try:
             import os
+            import re
             if os.path.exists("symbol_overrides.yaml"):
                 with open("symbol_overrides.yaml", "r") as f:
+                    lines = f.readlines()
+                    
+                # Reload for YAML parsing
+                with open("symbol_overrides.yaml", "r") as f:
                     self.symbol_overrides = yaml.safe_load(f) or {}
-                logger.info(f"Loaded {len(self.symbol_overrides)} symbol overrides")
+                
+                # Parse backtest stats from comments (line-by-line approach)
+                current_symbol = None
+                current_side = None
+                
+                for line in lines:
+                    # Detect symbol (top-level key)
+                    symbol_match = re.match(r'^([A-Z0-9]+USDT):', line)
+                    if symbol_match:
+                        current_symbol = symbol_match.group(1)
+                        if current_symbol not in self.symbol_override_stats:
+                            self.symbol_override_stats[current_symbol] = {}
+                        current_side = None
+                        continue
+                    
+                    # Detect side (indented under symbol)
+                    side_match = re.match(r'^  (long|short):', line)
+                    if side_match and current_symbol:
+                        current_side = side_match.group(1)
+                        continue
+                    
+                    # Parse backtest comment (after combo line)
+                    # Format: # Backtest: WR=XX.X%, N=XX
+                    backtest_match = re.match(r'\s*#\s*Backtest:\s*WR=([\d.]+)%,?\s*N=(\d+)', line)
+                    if backtest_match and current_symbol and current_side:
+                        try:
+                            wr = float(backtest_match.group(1))
+                            n = int(backtest_match.group(2))
+                            
+                            # Get combo from loaded YAML
+                            combo = None
+                            try:
+                                sym_data = self.symbol_overrides.get(current_symbol, {})
+                                side_data = sym_data.get(current_side, [])
+                                combo = side_data[0] if isinstance(side_data, list) and len(side_data) > 0 else None
+                            except Exception:
+                                pass
+                            
+                            self.symbol_override_stats[current_symbol][current_side] = {
+                                'wr': wr,
+                                'n': n,
+                                'combo': combo
+                            }
+                        except Exception as parse_err:
+                            logger.debug(f"Failed to parse backtest stats for {current_symbol} {current_side}: {parse_err}")
+                
+                stats_count = sum(len(sides) for sides in self.symbol_override_stats.values())
+                logger.info(f"Loaded {len(self.symbol_overrides)} symbol overrides with {stats_count} backtest stats")
         except Exception as e:
             logger.warning(f"Failed to load symbol_overrides.yaml: {e}")
             self.symbol_overrides = {}
+            self.symbol_override_stats = {}
+
 
         # Global ML disable: if config requests no ML scoring, set env to disable
         try:

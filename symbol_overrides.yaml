@@ -1,49 +1,762 @@
-# Symbol-Specific Golden Combos (ULTRA-DEEP, SIDE-SPECIFIC)
-# Filter: WR > 60% AND N >= 30
+# Ultra-Deep Backtest Results (400 Symbols)
+# Filter: WR > 60% AND N >= 30 (Side-Specific)
+# Processed: 400 symbols
+# Passed: 196 symbols
+# Date: 2025-12-02 09:04:13
 
 0GUSDT:
   long:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
     # Backtest: WR=69.2%, N=39
+
+1000000BABYDOGEUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=66.7%, N=33
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.3%, N=68
+
+1000000MOGUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=62.5%, N=32
   short:
     - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Backtest: WR=61.2%, N=49
+    # Backtest: WR=60.9%, N=46
+
+10000QUBICUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=62.9%, N=35
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.7%, N=33
+
+1000BONKUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=66.7%, N=30
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=60.2%, N=259
+
+1000CATUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.6%, N=66
+
+1000PEPEUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.6%, N=71
+
+1000TAGUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=62.3%, N=53
+
+4USDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=60.6%, N=33
+  short:
+    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=68.1%, N=47
+
+AAVEUSDT:
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=61.6%, N=216
+
+ADAUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=61.3%, N=31
+
+AERGOUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=60.9%, N=64
+
+AEROUSDT:
+  long:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=61.3%, N=31
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=60.1%, N=316
+
+AGLDUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=73.5%, N=34
+
+AIAUSDT:
+  short:
+    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:50-61 MTF"
+    # Backtest: WR=63.3%, N=30
+
+AIOZUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=65.9%, N=41
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=65.1%, N=43
+
+AIXBTUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.2%, N=83
+
+AKEUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=64.7%, N=34
+
+ALCHUSDT:
+  long:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=61.8%, N=34
+
+ALGOUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.8%, N=79
+
+ALICEUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=73.5%, N=34
+
+ALLOUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=67.4%, N=43
+
+ALPINEUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.7%, N=57
+
+ALUUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=63.3%, N=49
+
+ANIMEUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.3%, N=63
+
+ANKRUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.2%, N=74
+
+APEUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=61.4%, N=70
+
+APTUSDT:
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF"
+    # Backtest: WR=70.0%, N=30
+
+ARBUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.7%, N=84
+
+ARUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=67.7%, N=31
+  short:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=63.3%, N=30
+
+ASPUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=62.5%, N=32
+
+ASRUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=73.0%, N=37
+
+ATOMUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=61.3%, N=93
+
+AUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=65.9%, N=44
+
+AVAAIUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=62.2%, N=74
+
+AVLUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.7%, N=48
+
+AVNTUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=68.4%, N=38
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=74.2%, N=31
+
+AXSUSDT:
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=61.5%, N=205
+
+BANANAS31USDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
+    # Backtest: WR=61.1%, N=36
+
+BANANAUSDT:
+  long:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=60.6%, N=33
+
+BANKUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=74.3%, N=35
+
+BANUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=62.1%, N=58
+
+BBUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=61.4%, N=88
+
+BEAMUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.7%, N=72
+
+BEATUSDT:
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=65.6%, N=96
+
+BELUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.5%, N=43
+
+BIOUSDT:
+  long:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:23-38 noMTF"
+    # Backtest: WR=70.0%, N=30
+
+BLESSUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=63.6%, N=77
+
+BMTUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=63.0%, N=54
+
+BNBUSDT:
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=60.7%, N=280
+
+BOMEUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=68.9%, N=90
+
+BRETTUSDT:
+  short:
+    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=63.6%, N=33
+
+BSUUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=63.4%, N=41
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=67.4%, N=46
 
 BTCUSDT:
   long:
     - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
-    # Backtest: WR=65.9%, N=41
+    # Backtest: WR=64.3%, N=42
   short:
     - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
-    # Backtest: WR=62.4%, N=311
+    # Backtest: WR=61.3%, N=300
 
-SOLUSDT:
+BTRUSDT:
+  long:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
+    # Backtest: WR=61.1%, N=36
+
+BUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=62.9%, N=35
+
+C98USDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=66.7%, N=30
+
+CARVUSDT:
+  long:
+    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=63.4%, N=123
+
+CCUSDT:
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=60.8%, N=240
+
+CETUSUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.7%, N=56
+
+CFXUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
+    # Backtest: WR=62.9%, N=35
+
+CHILLGUYUSDT:
   short:
     - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
-    # Backtest: WR=60.3%, N=232
+    # Backtest: WR=63.6%, N=151
+
+CKBUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=67.7%, N=62
+
+CLANKERUSDT:
+  long:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
+    # Backtest: WR=65.6%, N=32
+
+CLOUDUSDT:
+  long:
+    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=61.2%, N=139
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=64.6%, N=178
+
+COAIUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
+    # Backtest: WR=73.5%, N=34
+  short:
+    - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
+    # Backtest: WR=63.9%, N=36
+
+COMPUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=73.3%, N=30
+
+COOKIEUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=60.6%, N=33
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.3%, N=63
+
+COREUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=62.7%, N=51
+
+COTIUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=71.9%, N=32
+
+CROSSUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=64.9%, N=57
+  short:
+    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=61.5%, N=39
+
+CUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=62.5%, N=56
+
+DAMUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
+    # Backtest: WR=65.6%, N=32
+
+DASHUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=70.8%, N=48
+
+DBRUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=60.3%, N=58
+
+DEEPUSDT:
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=60.6%, N=175
+
+DENTUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=62.1%, N=66
+
+DGBUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=63.5%, N=63
+
+DIAUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=64.6%, N=65
+
+DODOUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.0%, N=47
+
+DOGEUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=66.7%, N=30
+
+DOODUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=60.5%, N=38
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=63.3%, N=60
+
+DYDXUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=63.3%, N=30
+
+EDUUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.7%, N=66
+
+EIGENUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=63.3%, N=49
+
+ELXUSDT:
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=64.4%, N=163
+
+EPICUSDT:
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=61.4%, N=153
+
+EPTUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=65.3%, N=72
+
+ERAUSDT:
+  short:
+    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.5%, N=38
+
+ETCUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.3%, N=95
+
+ETHFIUSDT:
+  long:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=62.5%, N=32
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=62.8%, N=218
 
 ETHUSDT:
   short:
     - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
     # Backtest: WR=61.0%, N=292
 
-BNBUSDT:
-  short:
-    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
-    # Backtest: WR=61.4%, N=285
-
-DOGEUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
-    # Backtest: WR=67.7%, N=31
+EULUSDT:
   short:
     - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Backtest: WR=61.1%, N=72
+    # Backtest: WR=60.8%, N=51
 
-ADAUSDT:
+EVAAUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=63.0%, N=73
+
+FFUSDT:
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=62.0%, N=163
+
+FIDAUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=72.5%, N=69
+
+FLOCKUSDT:
+  long:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
+    # Backtest: WR=64.7%, N=34
+
+FLUIDUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=67.2%, N=67
+
+FLUXUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:61-78 noMTF"
+    # Backtest: WR=63.6%, N=33
+
+FORMUSDT:
   short:
     - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=66.7%, N=33
+
+FUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=64.7%, N=34
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=67.3%, N=55
+
+GIGAUSDT:
+  short:
+    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=74.3%, N=35
+
+GIGGLEUSDT:
+  short:
+    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=65.5%, N=55
+
+GLMUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
     # Backtest: WR=64.5%, N=31
+  short:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=63.6%, N=33
+
+GNOUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=66.7%, N=57
+
+GODSUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=62.2%, N=45
+
+GRASSUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=74.3%, N=35
+
+GRIFFAINUSDT:
+  short:
+    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.5%, N=38
+
+HANAUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.1%, N=62
+
+HBARUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=62.9%, N=116
+
+HFTUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=63.2%, N=38
+
+HIVEUSDT:
+  long:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
+    # Backtest: WR=70.6%, N=34
+
+HMSTRUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.2%, N=68
+
+HOLOUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=61.2%, N=67
+
+HUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=69.4%, N=36
+  short:
+    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=68.8%, N=32
+
+HYPERUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=65.4%, N=52
+
+ICNTUSDT:
+  long:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=63.1%, N=103
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=60.7%, N=122
+
+ICPUSDT:
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF"
+    # Backtest: WR=77.4%, N=31
+
+IDEXUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.7%, N=51
+
+ILVUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.7%, N=51
+
+IMXUSDT:
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=64.4%, N=180
+
+INITUSDT:
+  short:
+    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=61.3%, N=31
+
+INJUSDT:
+  short:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=75.0%, N=32
+
+IOSTUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=66.0%, N=53
+
+JASMYUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=62.5%, N=32
+
+JCTUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=63.3%, N=49
+
+JELLYJELLYUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=63.3%, N=30
+
+JTOUSDT:
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=61.1%, N=193
+
+KAVAUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.3%, N=58
+
+KERNELUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=69.2%, N=39
+
+KGENUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=67.6%, N=68
+
+KITEUSDT:
+  long:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
+    # Backtest: WR=67.6%, N=37
+  short:
+    - "RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=63.0%, N=46
+
+KMNOUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=62.2%, N=74
+
+KNCUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=67.3%, N=52
+
+LABUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=68.7%, N=67
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=64.7%, N=34
+
+LAUSDT:
+  long:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=60.6%, N=33
+
+LIGHTUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=63.0%, N=54
 
 LINKUSDT:
   long:
@@ -51,113 +764,330 @@ LINKUSDT:
     # Backtest: WR=63.3%, N=30
   short:
     - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
-    # Backtest: WR=64.7%, N=34
+    # Backtest: WR=62.5%, N=32
 
-HBARUSDT:
+LRCUSDT:
   short:
     - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Backtest: WR=62.9%, N=116
-
-POLUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
-    # Backtest: WR=65.6%, N=32
+    # Backtest: WR=61.7%, N=47
 
 LTCUSDT:
   long:
     - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
-    # Backtest: WR=66.0%, N=47
+    # Backtest: WR=68.9%, N=45
   short:
     - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Backtest: WR=64.6%, N=96
+    # Backtest: WR=64.3%, N=98
+
+MAGICUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=61.5%, N=65
+
+MANAUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.1%, N=59
+
+MAVIAUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=61.1%, N=36
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=62.1%, N=66
+
+MERLUSDT:
+  long:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=63.0%, N=146
+
+METISUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=68.8%, N=32
+
+METUSDT:
+  long:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=61.2%, N=209
+
+MEUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=63.9%, N=36
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=68.7%, N=67
+
+MEWUSDT:
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=64.2%, N=165
+
+MINAUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=64.9%, N=37
+
+MMTUSDT:
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 noMTF"
+    # Backtest: WR=77.4%, N=31
+
+MNTUSDT:
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=61.9%, N=176
+
+MOCAUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=62.5%, N=48
+
+MONUSDT:
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=61.4%, N=70
+
+MOODENGUSDT:
+  long:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=67.7%, N=31
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=73.5%, N=34
+
+MUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=66.7%, N=30
+
+MYXUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=65.7%, N=35
+
+NAORISUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=65.7%, N=35
 
 NEARUSDT:
   short:
     - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 MTF"
     # Backtest: WR=69.4%, N=36
 
-ICPUSDT:
+NEOUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=66.2%, N=68
+
+NFPUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=62.2%, N=45
+
+NKNUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=60.8%, N=51
+
+NSUSDT:
   long:
-    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:23-38 noMTF"
-    # Backtest: WR=66.7%, N=30
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=61.8%, N=34
+
+OKBUSDT:
+  long:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
+    # Backtest: WR=67.6%, N=34
+
+OMUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=65.0%, N=40
   short:
     - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF"
-    # Backtest: WR=76.7%, N=30
+    # Backtest: WR=70.6%, N=34
 
-FILUSDT:
-  short:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
-    # Backtest: WR=70.0%, N=30
-
-ARBUSDT:
+ONDOUSDT:
+  long:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=64.5%, N=31
   short:
     - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Backtest: WR=60.2%, N=83
+    # Backtest: WR=63.4%, N=82
 
-INJUSDT:
+ONEUSDT:
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=60.3%, N=219
+
+OPUSDT:
   short:
     - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
-    # Backtest: WR=75.0%, N=32
+    # Backtest: WR=63.3%, N=30
 
-ATOMUSDT:
+ORDIUSDT:
+  short:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=63.6%, N=33
+
+PARTIUSDT:
+  long:
+    - "RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF"
+    # Backtest: WR=60.6%, N=33
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=60.6%, N=33
+
+PEAQUSDT:
+  long:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 noMTF"
+    # Backtest: WR=63.3%, N=30
   short:
     - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Backtest: WR=62.2%, N=90
+    # Backtest: WR=62.3%, N=53
 
-IMXUSDT:
+PENDLEUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=67.6%, N=34
+
+PENGUUSDT:
+  short:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=61.2%, N=291
+
+PEOPLEUSDT:
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF"
+    # Backtest: WR=60.6%, N=33
+
+PIEVERSEUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF"
+    # Backtest: WR=66.7%, N=36
+
+PIGGYUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=63.3%, N=60
+
+PIPPINUSDT:
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF"
+    # Backtest: WR=70.0%, N=30
+
+PLUMEUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=61.1%, N=54
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=63.0%, N=73
+
+POLUSDT:
+  long:
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=65.6%, N=32
+
+POPCATUSDT:
+  short:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF"
+    # Backtest: WR=61.3%, N=31
+
+PRCLUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=61.9%, N=42
+
+PROMPTUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=62.5%, N=64
+
+PTBUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=61.8%, N=34
+
+PUFFERUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=62.2%, N=37
+
+PUMPFUNUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF"
+    # Backtest: WR=64.5%, N=31
   short:
     - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
-    # Backtest: WR=63.4%, N=186
+    # Backtest: WR=66.7%, N=210
+
+PYRUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=70.0%, N=30
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=67.7%, N=62
 
 PYTHUSDT:
   short:
     - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
     # Backtest: WR=65.8%, N=73
 
-ORDIUSDT:
-  short:
-    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF"
-    # Backtest: WR=62.5%, N=32
-
-AAVEUSDT:
-  short:
-    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
-    # Backtest: WR=62.3%, N=223
-
-ALGOUSDT:
-  short:
-    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Backtest: WR=61.5%, N=78
-
 QNTUSDT:
   long:
     - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
-    # Backtest: WR=61.8%, N=76
-
-ONDOUSDT:
-  long:
-    - "RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:61-78 noMTF"
-    # Backtest: WR=64.5%, N=31
-  short:
-    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Backtest: WR=63.4%, N=82
-
-SANDUSDT:
-  short:
-    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
     # Backtest: WR=61.6%, N=73
 
-MANAUSDT:
+RAREUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=61.1%, N=36
+
+RAYDIUMUSDT:
   short:
     - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
-    # Backtest: WR=69.0%, N=58
+    # Backtest: WR=65.2%, N=69
 
-AXSUSDT:
+RECALLUSDT:
   short:
-    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
-    # Backtest: WR=62.2%, N=209
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 MTF"
+    # Backtest: WR=66.7%, N=33
 
-CYBERUSDT:
+REDUSDT:
   long:
-    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF"
-    # Backtest: WR=63.3%, N=30
+    - "RSI:40-60 MACD:bear VWAP:<0.6 Fib:61-78 noMTF"
+    # Backtest: WR=61.3%, N=31
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=61.0%, N=77
+
+REQUSDT:
+  long:
+    - "RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=68.6%, N=35
+
+RESOLVUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF"
+    # Backtest: WR=73.0%, N=37
+
+REZUSDT:
+  short:
+    - "RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF"
+    # Backtest: WR=78.4%, N=37
+
+ROAMUSDT:
+  long:
+    - "RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF"
+    # Backtest: WR=68.6%, N=35
+
+RONINUSDT:
+  short:
+    - "RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF"
+    # Backtest: WR=62.9%, N=35

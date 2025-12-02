@@ -1,68 +1,209 @@
 bybit:
   base_url: https://api.bybit.com
-  # Optional fallback HTTP base URL (disabled by default)
   alt_base_url: https://api.bytick.com
-  # Reuse ALT endpoints on failure for HTTP and WS (if *_alt provided)
   use_alt_on_fail: true
   ws_public: wss://stream.bybit.com/v5/public/linear
-  # Optional fallback WS endpoint
   ws_public_alt: wss://stream.bytick.com/v5/public/linear
   api_key: ${BYBIT_API_KEY}
   api_secret: ${BYBIT_API_SECRET}
 trade:
   symbols:
   - 0GUSDT
-  - BTCUSDT
-  - SOLUSDT
-  - ETHUSDT
-  - BNBUSDT
-  - DOGEUSDT
-  - ADAUSDT
-  - AVAXUSDT
-  - LINKUSDT
-  - HBARUSDT
-  - DOTUSDT
-  - BCHUSDT
-  - POLUSDT
-  - LTCUSDT
-  - NEARUSDT
-  - KASUSDT
-  - APTUSDT
-  - ICPUSDT
-  - ENAUSDT
+  - 1000000BABYDOGEUSDT
+  - 1000000MOGUSDT
+  - 10000QUBICUSDT
+  - 1000BONKUSDT
+  - 1000CATUSDT
   - 1000PEPEUSDT
-  - RENDERUSDT
-  - FILUSDT
-  - ARBUSDT
-  - OPUSDT
-  - INJUSDT
-  - ATOMUSDT
-  - IMXUSDT
-  - PYTHUSDT
-  - ORDIUSDT
-  - GRTUSDT
-  - RUNEUSDT
+  - 1000TAGUSDT
+  - 4USDT
   - AAVEUSDT
+  - ADAUSDT
+  - AERGOUSDT
+  - AEROUSDT
+  - AGLDUSDT
+  - AIAUSDT
+  - AIOZUSDT
+  - AIXBTUSDT
+  - AKEUSDT
+  - ALCHUSDT
   - ALGOUSDT
-  - FLOWUSDT
-  - QNTUSDT
-  - JUPUSDT
-  - 1000FLOKIUSDT
-  - ONDOUSDT
-  - LDOUSDT
-  - CRVUSDT
-  - SANDUSDT
-  - MANAUSDT
-  - AXSUSDT
-  - GALAUSDT
-  - GMTUSDT
+  - ALICEUSDT
+  - ALLOUSDT
+  - ALPINEUSDT
+  - ALUUSDT
+  - ANIMEUSDT
+  - ANKRUSDT
   - APEUSDT
-  - CHZUSDT
-  - MASKUSDT
-  - ENJUSDT
-  - BLURUSDT
-  - CYBERUSDT
-  - ARKMUSDT
+  - APTUSDT
+  - ARBUSDT
+  - ARUSDT
+  - ASPUSDT
+  - ASRUSDT
+  - ATOMUSDT
+  - AUSDT
+  - AVAAIUSDT
+  - AVLUSDT
+  - AVNTUSDT
+  - AXSUSDT
+  - BANANAS31USDT
+  - BANANAUSDT
+  - BANKUSDT
+  - BANUSDT
+  - BBUSDT
+  - BEAMUSDT
+  - BEATUSDT
+  - BELUSDT
+  - BIOUSDT
+  - BLESSUSDT
+  - BMTUSDT
+  - BNBUSDT
+  - BOMEUSDT
+  - BRETTUSDT
+  - BSUUSDT
+  - BTCUSDT
+  - BTRUSDT
+  - BUSDT
+  - C98USDT
+  - CARVUSDT
+  - CCUSDT
+  - CETUSUSDT
+  - CFXUSDT
+  - CHILLGUYUSDT
+  - CKBUSDT
+  - CLANKERUSDT
+  - CLOUDUSDT
+  - COAIUSDT
+  - COMPUSDT
+  - COOKIEUSDT
+  - COREUSDT
+  - COTIUSDT
+  - CROSSUSDT
+  - CUSDT
+  - DAMUSDT
+  - DASHUSDT
+  - DBRUSDT
+  - DEEPUSDT
+  - DENTUSDT
+  - DGBUSDT
+  - DIAUSDT
+  - DODOUSDT
+  - DOGEUSDT
+  - DOODUSDT
+  - DYDXUSDT
+  - EDUUSDT
+  - EIGENUSDT
+  - ELXUSDT
+  - EPICUSDT
+  - EPTUSDT
+  - ERAUSDT
+  - ETCUSDT
+  - ETHFIUSDT
+  - ETHUSDT
+  - EULUSDT
+  - EVAAUSDT
+  - FFUSDT
+  - FIDAUSDT
+  - FLOCKUSDT
+  - FLUIDUSDT
+  - FLUXUSDT
+  - FORMUSDT
+  - FUSDT
+  - GIGAUSDT
+  - GIGGLEUSDT
+  - GLMUSDT
+  - GNOUSDT
+  - GODSUSDT
+  - GRASSUSDT
+  - GRIFFAINUSDT
+  - HANAUSDT
+  - HBARUSDT
+  - HFTUSDT
+  - HIVEUSDT
+  - HMSTRUSDT
+  - HOLOUSDT
+  - HUSDT
+  - HYPERUSDT
+  - ICNTUSDT
+  - ICPUSDT
+  - IDEXUSDT
+  - ILVUSDT
+  - IMXUSDT
+  - INITUSDT
+  - INJUSDT
+  - IOSTUSDT
+  - JASMYUSDT
+  - JCTUSDT
+  - JELLYJELLYUSDT
+  - JTOUSDT
+  - KAVAUSDT
+  - KERNELUSDT
+  - KGENUSDT
+  - KITEUSDT
+  - KMNOUSDT
+  - KNCUSDT
+  - LABUSDT
+  - LAUSDT
+  - LIGHTUSDT
+  - LINKUSDT
+  - LRCUSDT
+  - LTCUSDT
+  - MAGICUSDT
+  - MANAUSDT
+  - MAVIAUSDT
+  - MERLUSDT
+  - METISUSDT
+  - METUSDT
+  - MEUSDT
+  - MEWUSDT
+  - MINAUSDT
+  - MMTUSDT
+  - MNTUSDT
+  - MOCAUSDT
+  - MONUSDT
+  - MOODENGUSDT
+  - MUSDT
+  - MYXUSDT
+  - NAORISUSDT
+  - NEARUSDT
+  - NEOUSDT
+  - NFPUSDT
+  - NKNUSDT
+  - NSUSDT
+  - OKBUSDT
+  - OMUSDT
+  - ONDOUSDT
+  - ONEUSDT
+  - OPUSDT
+  - ORDIUSDT
+  - PARTIUSDT
+  - PEAQUSDT
+  - PENDLEUSDT
+  - PENGUUSDT
+  - PEOPLEUSDT
+  - PIEVERSEUSDT
+  - PIGGYUSDT
+  - PIPPINUSDT
+  - PLUMEUSDT
+  - POLUSDT
+  - POPCATUSDT
+  - PRCLUSDT
+  - PROMPTUSDT
+  - PTBUSDT
+  - PUFFERUSDT
+  - PUMPFUNUSDT
+  - PYRUSDT
+  - PYTHUSDT
+  - QNTUSDT
+  - RAREUSDT
+  - RAYDIUMUSDT
+  - RECALLUSDT
+  - REDUSDT
+  - REQUSDT
+  - RESOLVUSDT
+  - REZUSDT
+  - ROAMUSDT
+  - RONINUSDT
   timeframe: '15'
   risk_usd: 10
   risk_percent: 1.0
@@ -88,59 +229,18 @@ trade:
   ml_risk_max_percent: 4.0
   use_regime_switching: false
   use_enhanced_parallel: true
-  fee_total_pct: 0.00110   # Estimated total fee fraction for entry+exit (~0.11%) used for fee-aware sizing (aligns with screenshots)
-
-
-
-
-
-# Trend strategy removed (disabled)
-
+  fee_total_pct: 0.0011
 ml:
-  fail_open_on_error: false   # if true, allow execution on ML errors; else skip and record phantom
-
-# Phantom pacing (per-strategy) — increase Scalp flow, keep exec strict via Qscore
+  fail_open_on_error: false
 phantom:
-  hourly_symbol_budget:
-    scalp: 12   # increase phantom throughput per symbol per hour
-  caps:
-    scalp:
-      none: 0 # 0 = unlimited daily scalp phantoms (hourly budget still enforced)
-
-# Router removed (single strategy only)
-# Range FBO strategy removed (disabled)
-
-# Global exploration toggle
-exploration:
-  enabled: true
-
-# Mean Reversion strategy removed (disabled)
-
-telegram:
-  token: ${TELEGRAM_BOT_TOKEN}
-  chat_id: ${TELEGRAM_CHAT_ID}
-  probe:
-    get_updates_once: true   # one-time getUpdates probe on startup (set false to disable)
-    limit: 3
-  poll_mode: legacy          # run | legacy (force legacy to avoid event loop close errors)
-
-# Network diagnostics and monitoring
-network:
-  monitor:
-    enabled: true
-    interval_sec: 60
-phantom:
-  # Daily caps for phantom sampling to keep training balanced
-  ungated_trend: true      # Record Trend phantoms without regime gates (learn-first)
-  none_cap: 180          # was 120 — allow more global exploration per day
-  cluster3_cap: 45       # was 30 — higher for high-vol symbols
-  offhours_cap: 15       # tighten off-hours phantom sampling
-  # Per-strategy hourly per-symbol budgets (more aggressive)
+  ungated_trend: true
+  none_cap: 180
+  cluster3_cap: 45
+  offhours_cap: 15
   hourly_symbol_budget:
     trend: 1
     mr: 2
     scalp: 12
-  # Per-strategy daily caps (UTC) — isolation across strategies
   caps:
     trend:
       none: 120
@@ -154,13 +254,22 @@ phantom:
       none: 600
       cluster3: 120
       offhours: 80
-  # Virtual snapshot settings (for calibration around threshold)
   enable_virtual_snapshots: false
-  virtual_snapshots_delta: 5   # Create variants at (threshold ± delta)
-  # Whether to cancel phantoms on execution for same symbol/strategy
+  virtual_snapshots_delta: 5
   cancel_on_execute: true
-
-# Adaptive daily phantom flow controller (phantom-only; execution unaffected)
+exploration:
+  enabled: true
+telegram:
+  token: ${TELEGRAM_BOT_TOKEN}
+  chat_id: ${TELEGRAM_CHAT_ID}
+  probe:
+    get_updates_once: true
+    limit: 3
+  poll_mode: legacy
+network:
+  monitor:
+    enabled: true
+    interval_sec: 60
 phantom_flow:
   enabled: true
   daily_target:
@@ -170,244 +279,237 @@ phantom_flow:
   smoothing_hours: 2
   relax_limits:
     trend:
-      slope: 1.5            # reduce slope_min by up to 1.5 pct-points
-      ema_stack: 15.0       # reduce ema_stack_min by up to 15 points
-      breakout: 0.08        # reduce breakout_dist_atr_min by up to 0.08 ATR
+      slope: 1.5
+      ema_stack: 15.0
+      breakout: 0.08
     mr:
-      rc: 0.30              # reduce rc_min by up to 0.30
-      touches: 3            # reduce touches_min by up to 3
-      dist_mid_atr: 0.40    # reduce dist_mid_atr_min by up to 0.40
-      rev_atr: 0.40         # reduce rev_candle_atr_min by up to 0.40
+      rc: 0.3
+      touches: 3
+      dist_mid_atr: 0.4
+      rev_atr: 0.4
     scalp:
-      vwap_dist_atr: 0.60   # increase vwap_dist_atr_max by up to 0.60
-      bb_width_pct: 0.30    # reduce min_bb_width_pct by up to 0.30
-      vol_ratio: 0.40       # reduce vol_ratio_min by up to 0.40
-      wick: 0.15            # reduce wick_ratio_min by up to 0.15
+      vwap_dist_atr: 0.6
+      bb_width_pct: 0.3
+      vol_ratio: 0.4
+      wick: 0.15
   relax_mode:
     enable_deficit: true
-    deficit_scale: 0.30       # fraction of target used to scale deficit
-    weight_deficit: 0.60      # blend weight for deficit vs pace
+    deficit_scale: 0.3
+    weight_deficit: 0.6
     catchup:
       enabled: true
       pace_gap_trades: 8
-      boost_base: 0.30
+      boost_base: 0.3
       boost_slope: 0.02
-      max_boost: 0.40
+      max_boost: 0.4
     min_relax:
-      trend: 0.40
-      mr: 0.80
-      scalp: 0.60
+      trend: 0.4
+      mr: 0.8
+      scalp: 0.6
     wr_guard:
-      enabled: true           # Enabled: cap relax when WR is low
-      window: 40              # number of recent phantom closures
-      min_wr: 40.0            # threshold (%) below which cap applies
-      cap: 0.50               # max relax while guard active
-  # Session-based and inactivity bursts to dynamically adapt flow
+      enabled: true
+      window: 40
+      min_wr: 40.0
+      cap: 0.5
   session_multipliers:
-    trend: {asian: 0.8, european: 1.0, us: 1.1, off_hours: 0.7}
-    mr:    {asian: 0.9, european: 1.1, us: 1.0, off_hours: 0.8}
-    scalp: {asian: 1.0, european: 1.1, us: 1.2, off_hours: 0.9}
+    trend:
+      asian: 0.8
+      european: 1.0
+      us: 1.1
+      off_hours: 0.7
+    mr:
+      asian: 0.9
+      european: 1.1
+      us: 1.0
+      off_hours: 0.8
+    scalp:
+      asian: 1.0
+      european: 1.1
+      us: 1.2
+      off_hours: 0.9
   burst:
     enabled: true
     no_accept_minutes: 30
     boost: 0.25
-    max_boost: 0.40
-
-# Strategy isolation and execution arbitrator
+    max_boost: 0.4
 strategy_isolation:
-  enabled: false              # superseded by strategy_independence
+  enabled: false
   execution_policy: arbitrate
   min_quality_guards:
     trend:
       slope_min: 3.0
       ema_stack_min: 40.0
-      breakout_min: 0.10
+      breakout_min: 0.1
     mr:
       rc_min: 0.45
       touches_min: 3
-      dist_mid_atr_min: 0.30
-      rev_candle_atr_min: 0.70
+      dist_mid_atr_min: 0.3
+      rev_candle_atr_min: 0.7
     scalp:
-      vwap_dist_atr_max: 1.20
-      min_bb_width_pct: 0.40
-      vol_ratio_min: 0.90
-
-# Run Trend and MR independently (bypasses central router)
+      vwap_dist_atr_max: 1.2
+      min_bb_width_pct: 0.4
+      vol_ratio_min: 0.9
 strategy_independence:
   enabled: true
 scalp:
   enabled: true
-  # If true, run a single 3m stream only (disables main 15m stream)
   stream_3m_only: true
-  timeframe: 3           # Future: stream 3m for scalps; current uses main tf
-  rr: 2.1                # Risk to reward ratio (1:2.1)
+  timeframe: 3
+  rr: 2.1
   use_ml: false
   threshold: 70
-  block_regime: true     # Block trades during extreme volatility (ATR > 4%, BB > 90th percentile)
-  dedup_enabled: false   # Disable Redis-based dedup for Scalp phantoms (learn-first)
-  session_only: []       # Trade all sessions 24/7 (only block extreme volatility)
+  block_regime: true
+  dedup_enabled: false
+  session_only: []
   notifications:
     blocks:
-      enabled: true              # Enable block notifications (adaptive + rules)
-      pre_gate_enabled: false    # Disable pre-gate blocks for cleaner notifications
-      rate_limit_sec: 600        # Rate limit: max 1 per symbol per 10 minutes
-  rr: 2.1                # Target R:R (1:2.1)
-  # Enforce minimum 1R distance (0.5%) so fees don’t erode R
+      enabled: true
+      pre_gate_enabled: false
+      rate_limit_sec: 600
   min_r_pct: 0.005
-  dedup_hours: 3         # Slightly stricter dedup window to cut repeats
-  cooldown_bars: 4       # Stricter cooldown to reduce noise
-  # Signal-generation thresholds (phantoms also benefit)
+  dedup_hours: 3
+  cooldown_bars: 4
   signal:
-    # Signal-only thresholds (do not affect execution hard gates)
-    vwap_only: false           # Use full detection (keep wick/body/EMA/vol/BBW)
-    vwap_require_alignment: true  # Require EMA alignment with VWAP pattern
-    vwap_pattern: bounce       # VWAP strategy pattern: bounce | reject | revert
-    vwap_bounce_band_atr_min: 0.10
-    vwap_bounce_band_atr_max: 0.60
+    vwap_only: false
+    vwap_require_alignment: true
+    vwap_pattern: bounce
+    vwap_bounce_band_atr_min: 0.1
+    vwap_bounce_band_atr_max: 0.6
     vwap_bounce_lookback_bars: 3
-    body_ratio_min: 0.25       # was 0.30
-    wick_delta_min: 0.05       # was 0.10
-    vwap_dist_atr_max: 1.50    # allow deeper pulls for detection (cap applies to EVWAP distance)
-    # VWAP mode and anchoring — switch to session-anchored VWAP
-    vwap_mode: session_evwap   # evwap | session_evwap
-    vwap_window: 50            # EVWAP smoothing window (bars) within the session
-    vwap_session_scheme: sessions   # utc_day | sessions
-    vwap_session_windows: {asian: "00:00-08:00", european: "08:00-16:00", us: "16:00-24:00"}
+    body_ratio_min: 0.25
+    wick_delta_min: 0.05
+    vwap_dist_atr_max: 1.5
+    vwap_mode: session_evwap
+    vwap_window: 50
+    vwap_session_scheme: sessions
+    vwap_session_windows:
+      asian: 00:00-08:00
+      european: 08:00-16:00
+      us: 16:00-24:00
     vwap_session_warmup_bars: 30
     vwap_cap_warmup: 2.0
-    min_bb_width_pct: 0.45     # accept narrower bands in signal
-    vol_ratio_min: 0.80        # accept lighter volume expansion
-    # Optional soft ORB relax that slightly loosens thresholds when price has broken out of 20-bar range in trend direction
+    min_bb_width_pct: 0.45
+    vol_ratio_min: 0.8
     orb_soft:
-      enabled: false           # set true to activate soft relax on ORB
-      vwap_cap_bump: 0.20      # adds to vwap_dist_atr_max when ORB=true
-      wick_delta_relax: 0.05   # subtract from wick_delta_min when ORB=true
-      body_min_relax: 0.05     # subtract from body_ratio_min when ORB=true
-    # Session-aware relax multipliers (applied to soft relax amounts)
-    relax_by_session: {us: 1.0, european: 0.9, asian: 0.85, off_hours: 0.85}
+      enabled: false
+      vwap_cap_bump: 0.2
+      wick_delta_relax: 0.05
+      body_min_relax: 0.05
+    relax_by_session:
+      us: 1.0
+      european: 0.9
+      asian: 0.85
+      off_hours: 0.85
   hard_gates:
     apply_to_exec: true
-    apply_to_phantoms: false  # Phantoms always recorded for gate analysis
-    # Individual gate enables (only apply to execution, phantoms track all)
-    htf_enabled: false          # DISABLED - HTF gate removed from execution paths
+    apply_to_phantoms: false
+    htf_enabled: false
     htf_min_ts15: 70.0
-    vol_enabled: false          # DISABLED - Volume not required; rely on combo only
-    vol_ratio_min_3m: 1.30      # kept for reference (used only if vol_enabled=true)
-    body_enabled: false         # DISABLED - Body is handled in signal generator, not execution
-    body_ratio_min_3m: 0.30
-    # Wick alignment gate (execution): dominant wick in trade direction by delta
-    wick_enabled: false         # DISABLED - Wick not required; rely on combo + other gates
+    vol_enabled: false
+    vol_ratio_min_3m: 1.3
+    body_enabled: false
+    body_ratio_min_3m: 0.3
+    wick_enabled: false
     wick_delta_min: 0.12
-    # Volatility regime gate (execution): allow only configured regimes
     regime_enabled: false
-    allowed_regimes: ['normal','high']
-    align_15m_enabled: false    # DISABLED
-    leader_align_btc_enabled: false  # DISABLED
-    # EMA slope gate (execution)
-    slope_enabled: false        # DISABLED - Slope not required; rely on combo + other gates
-    slope_mode: trend             # trend | mr
-    slope_fast_only: false        # REQUIRE fast + slow alignment (full slope)
-    slope_fast_min_pb: 0.03       # 0.03% per bar minimum (absolute) for fast slope
-    slope_slow_min_pb: 0.015      # 0.015% per bar minimum (absolute) for slow slope
-    # Data-driven slope ranges: use specific ranges instead of minimums
-    slope_use_ranges: true        # ENABLED - Use range-based slope gates from analytics
-    # LONG ranges (63.6% WR: F:0.00-0.03 × S:0.015+)
-    slope_long_fast_min: 0.00
+    allowed_regimes:
+    - normal
+    - high
+    align_15m_enabled: false
+    leader_align_btc_enabled: false
+    slope_enabled: false
+    slope_mode: trend
+    slope_fast_only: false
+    slope_fast_min_pb: 0.03
+    slope_slow_min_pb: 0.015
+    slope_use_ranges: true
+    slope_long_fast_min: 0.0
     slope_long_fast_max: 0.03
     slope_long_slow_min: 0.015
-    slope_long_slow_max: 999.0    # No upper limit
-    # SHORT ranges (mirror for shorts, though data shows poor performance)
+    slope_long_slow_max: 999.0
     slope_short_fast_min: -0.03
-    slope_short_fast_max: 0.00
-    slope_short_slow_min: -999.0  # No lower limit
+    slope_short_fast_max: 0.0
+    slope_short_slow_min: -999.0
     slope_short_slow_max: -0.015
-    # Bollinger width percentile band (execution-only)
     bbw_exec_enabled: false
-    bbw_min_pct: 0.60
-    bbw_max_pct: 0.90
-    # VWAP execution gate disabled (use in signal only)
+    bbw_min_pct: 0.6
+    bbw_max_pct: 0.9
     vwap_exec_enabled: false
-    vwap_dist_atr_min: 0.40
-    vwap_dist_atr_max: 0.80
+    vwap_dist_atr_min: 0.4
+    vwap_dist_atr_max: 0.8
   logging:
-    heartbeat: true      # Per 3m-bar heartbeat when no Scalp signal
-    decision_only: false # If true, suppress analysis/heartbeat and show only decisions
-    kline_trace: false   # Disable per-message WS kline logs (keep first 5 per-connection)
-    warm_start_heartbeat: true  # Emit one immediate heartbeat per symbol after startup
+    heartbeat: true
+    decision_only: false
+    kline_trace: false
+    warm_start_heartbeat: true
   debug:
-    force_accept: false  # Off: return to normal acceptance with decision reasons
+    force_accept: false
   promote_enabled: false
   promote_min_samples: 200
   promote_min_wr: 50.0
   daily_exec_cap: 20
-  # Promotion metric config: use recent WR over last N phantoms
-  promote_metric: recent   # recent | overall
-  promote_window: 50       # number of recent phantoms for WR (when metric=recent)
-  promote_recent_secs: 30  # reuse 3m detection within this window for promotion
+  promote_metric: recent
+  promote_window: 50
+  promote_recent_secs: 30
   context:
     use_3m_context: true
     enforce: false
   explore:
     relax_enabled: true
-    # Relaxed, phantom-only thresholds to widen net (execution unchanged)
-    vwap_dist_atr_max: 1.20  # increased from 1.00 to capture deeper pullbacks for phantom learning
-    min_bb_width_pct: 0.55   # was 0.60 — accept slightly narrower bands
-    vol_ratio_min: 1.05      # was 1.10 — accept lighter volume expansion
-    wick_ratio_min: 0.20     # reduced from 0.25 to capture smaller reversal wicks for phantom learning
-    timeout_hours: 8         # auto-close scalp phantoms after 8 hours for learning
+    vwap_dist_atr_max: 1.2
+    min_bb_width_pct: 0.55
+    vol_ratio_min: 1.05
+    wick_ratio_min: 0.2
+    timeout_hours: 8
   backfill:
-    active_labeling: false   # if true, uses recent 3m bars to label open phantoms during downtime
-    ml_enabled: false        # if true, seeds Scalp ML with historical phantom outcomes on startup
+    active_labeling: false
+    ml_enabled: false
   exec:
-    enabled: true                 # Enable Scalp executes (Adaptive Combos + Pro Rules fallback)
-    risk_percent: 1.0             # Per-trade risk for Scalp executes (fixed 1% of equity per trade)
-    daily_cap: 0                  # 0 = unlimited scalp executes per UTC day
+    enabled: true
+    risk_percent: 1.0
+    daily_cap: 0
     adaptive_risk:
-      enabled: false              # Disable adaptive risk; use fixed risk_percent
-      use_for_high_wr: false      # No adaptive sizing while disabled
-      base_percent: 0.5           # Base risk when no adjustment applies (LB below first bucket)
-      min_percent: 0.5            # Floor for adjusted risk
-      max_percent: 2.0            # Ceiling for adjusted risk
-      min_samples: 30             # Overall samples required when using non-recency fallback
-      ev_floor_r: 0.0             # Minimum EV_R required (in R) to apply any increase
-      wr_lb_ladder:               # Wilson lower-bound WR thresholds → multipliers
-        40: 1.0    # LB <40% → 0.5% risk (base)
-        50: 4.0    # LB ≥50% → 2.0% risk (0.5 * 4), 40–50% → 1.0% risk
-      recency:                    # Recency feature for sizing
-        days: 7                   # Lookback days for recent performance
-        min_samples: 15           # Require at least this many recent closes
-        prefer_only: true         # If recency is missing, fall back to base (1%)
-        ev_floor_r: 0.0           # Optional EV floor for recency; falls back to top ev_floor_r if absent
-    # Execute based on Adaptive Combo Manager (dynamically enabled combos) or Pro Rules fallback
-    combos_only: true            # Use combos as primary gate when ready
-    block_noncombo: true         # Block non-combo signals when combos_only=true
-    mute_disabled_paths: false   # Allow notifications for gate-path decisions
-    # Fallback policy: before Adaptive Combos are ready, use Pro Rules (MTF+RSI+MACD+VWAP+Fib)
-    # In strict combo-only mode (fallback_until_ready: off), execution is blocked until combos are active
-    require_combo_enabled: true    # Require enabled combo for execution when manager is ready
-    fallback_until_ready: pro    # pro = Pro Rules fallback | mtf = MTF only | off = strict combo-only mode
-    manager_fresh_hours: 6       # consider manager stale when older than this many hours
-    blocked_notify: true         # enable blocked/phantom notifications
+      enabled: false
+      use_for_high_wr: false
+      base_percent: 0.5
+      min_percent: 0.5
+      max_percent: 2.0
+      min_samples: 30
+      ev_floor_r: 0.0
+      wr_lb_ladder:
+        40: 1.0
+        50: 4.0
+      recency:
+        days: 7
+        min_samples: 15
+        prefer_only: true
+        ev_floor_r: 0.0
+    combos_only: true
+    block_noncombo: true
+    mute_disabled_paths: false
+    require_combo_enabled: true
+    fallback_until_ready: pro
+    manager_fresh_hours: 6
+    blocked_notify: true
     extra_vol_gate:
-      enabled: false            # Disabled: rely on existing volume features
-      min_ratio: 1.20           # Minimum volume_ratio required to execute
-      notify: true              # Send block notification when this gate fails
-    # Adaptive combo filtering: dynamically enable/disable combos based on rolling performance
+      enabled: false
+      min_ratio: 1.2
+      notify: true
     adaptive_combos:
-      enabled: true              # Re-enable adaptive combo filtering
-      use_ev_r_only: true        # Use EV_R as primary/only gate (simpler, more direct than WR+EV_R)
-      use_ev_r_confidence: true   # Use confidence intervals for EV_R (accounts for sample size uncertainty)
-      ev_r_confidence_level: 0.95 # 95% confidence level for EV_R lower bound
-      ev_floor_r: 0.3            # Minimum EV_R lower bound (0.3 R = strong profitability, ≈42% WR equivalent)
-      min_wr_threshold: 42.0     # Global fallback WR% threshold (unused when use_ev_r_only=true)
-      min_wr_threshold_long: 42.0  # Long-side minimum Wilson LB WR% (unused when use_ev_r_only=true)
-      min_wr_threshold_short: 44.0 # Short-side minimum Wilson LB WR% (unused when use_ev_r_only=true)
-      min_sample_size: 30        # Require at least 30 samples before enabling combos
-      use_wilson_lb: true        # Gate on Wilson lower-bound WR% (unused when use_ev_r_only=true)
-      update_frequency_trades: 50  # Recalculate every N completed trades
-      update_frequency_hours: 1  # Or every N hours (whichever comes first)
-      lookback_days: 30          # Rolling window for WR calculation (days)
-      long_short_separate: true  # Track long/short combos separately
-      hysteresis_pct: 2.0        # WR buffer to avoid flip-flopping (%)
-      notify_changes: true       # Send Telegram notification on combo enable/disable
-      strict_side_keys: true     # Load per-side state to avoid long/short overwrites in memory
+      enabled: true
+      use_ev_r_only: true
+      use_ev_r_confidence: true
+      ev_r_confidence_level: 0.95
+      ev_floor_r: 0.3
+      min_wr_threshold: 42.0
+      min_wr_threshold_long: 42.0
+      min_wr_threshold_short: 44.0
+      min_sample_size: 30
+      use_wilson_lb: true
+      update_frequency_trades: 50
+      update_frequency_hours: 1
+      lookback_days: 30
+      long_short_separate: true
+      hysteresis_pct: 2.0
+      notify_changes: true
+      strict_side_keys: true

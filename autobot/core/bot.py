@@ -58,7 +58,7 @@ class PhantomTracker:
         self.phantoms = {}  # {symbol: {'count': 0, 'last_combo': '', 'last_time': datetime}}
         self.total_phantoms = 0
         
-    async def record_phantom(self, symbol: str, combo: str, side: str):
+    async def record_phantom(self, symbol: str, combo: str, side: str, allowed_combos: list = None):
         """Record a rejected signal as a phantom"""
         self.total_phantoms += 1
         
@@ -80,12 +80,17 @@ class PhantomTracker:
         # Notify (optional - maybe rate limit this?)
         if self.tg:
             try:
+                allowed_msg = ""
+                if allowed_combos:
+                    allowed_msg = "\n\n✅ **Allowed Combos**:\n" + "\n".join([f"- `{c}`" for c in allowed_combos])
+                
                 msg = (
                     f"👻 **Phantom Signal Detected**\n"
                     f"Symbol: `{symbol}`\n"
                     f"Side: {side.upper()}\n"
                     f"Combo: `{combo}`\n"
                     f"Action: **REJECTED** (Not in allowed list)"
+                    f"{allowed_msg}"
                 )
                 # Use send_message directly
                 await self.tg.send_message(msg)
@@ -3181,7 +3186,8 @@ class TradingBot:
                         if not allowed:
                             # Record Phantom (Rejected Signal)
                             if self.phantom_tracker:
-                                await self.phantom_tracker.record_phantom(sym, combo, side)
+                                allowed_list = sc_settings.allowed_combos_long if side == 'long' else sc_settings.allowed_combos_short
+                                await self.phantom_tracker.record_phantom(sym, combo, side, allowed_list)
                             sc_sig = None  # Reject signal
                 except Exception as e:
                     logger.debug(f"[{sym}] Scalp(3m) detection error: {e}")

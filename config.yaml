@@ -288,6 +288,7 @@ phantom_flow:
       dist_mid_atr: 0.4
       rev_atr: 0.4
     scalp:
+      slope: 0.6 # Changed from 0.6 for faster scalping
       vwap_dist_atr: 0.6
       bb_width_pct: 0.3
       vol_ratio: 0.4
@@ -369,37 +370,19 @@ scalp:
   min_r_pct: 0.005
   dedup_hours: 3
   cooldown_bars: 4
+  
   signal:
     vwap_only: false
     vwap_require_alignment: true
     vwap_pattern: bounce
-    vwap_bounce_band_atr_min: 0.1
-    vwap_bounce_band_atr_max: 0.6
-    vwap_bounce_lookback_bars: 3
-    body_ratio_min: 0.25
-    wick_delta_min: 0.05
-    vwap_dist_atr_max: 1.5
-    vwap_mode: session_evwap
-    vwap_window: 50
-    vwap_session_scheme: sessions
-    vwap_session_windows:
-      asian: 00:00-08:00
-      european: 08:00-16:00
-      us: 16:00-24:00
-    vwap_session_warmup_bars: 30
-    vwap_cap_warmup: 2.0
-    min_bb_width_pct: 0.45
-    vol_ratio_min: 0.8
-    orb_soft:
-      enabled: false
-      vwap_cap_bump: 0.2
-      wick_delta_relax: 0.05
-      body_min_relax: 0.05
-    relax_by_session:
-      us: 1.0
-      european: 0.9
-      asian: 0.85
-      off_hours: 0.85
+    ema_trend_filter: true
+    ema_fast: 8
+    ema_slow: 21
+    bb_width_threshold: 0.002
+    volume_ratio_threshold: 1.2
+    body_ratio_threshold: 0.4
+    wick_delta_threshold: 0.0005
+    vwap_distance_threshold: 0.008
   hard_gates:
     apply_to_exec: true
     apply_to_phantoms: false

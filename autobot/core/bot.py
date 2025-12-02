@@ -33,31 +33,18 @@ from autobot.core.telegram import TGBot
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 # from fear_greed_fetcher import FearGreedFetcher  # Disabled - not using sentiment filtering
 
-# Optional scalping modules (import granularly; ML scorer optional)
+# Optional scalping modules (import granularly)
 detect_scalp_signal = None
 ScalpSettings = None
-get_scalp_phantom_tracker = None
-get_scalp_scorer = None
-
 
 # Try to import Scalp components; fall back to stubs if unavailable
 SCALP_AVAILABLE = False
 try:
     from autobot.strategies.scalp.detector import detect_scalp_signal, ScalpSettings
+    SCALP_AVAILABLE = True
 except Exception as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Scalp import: strategy_scalp unavailable: {e}")
-try:
-    from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker
-except Exception as e:
-    logger = logging.getLogger(__name__)
-    logger.warning(f"Scalp import: scalp_phantom_tracker unavailable: {e}")
-try:
-    # ML scorer is optional for phantom recording
-    from autobot.strategies.scalp.scorer import get_scalp_scorer
-except Exception as e:
-    logger = logging.getLogger(__name__)
-    logger.warning(f"Scalp import: ml_scorer_scalp unavailable: {e}")
 
 # Consider Scalp available if signal detection and tracker are present
 SCALP_AVAILABLE = bool(detect_scalp_signal is not None and get_scalp_phantom_tracker is not None)
@@ -66,17 +53,7 @@ SCALP_AVAILABLE = bool(detect_scalp_signal is not None and get_scalp_phantom_tra
 SYMBOL_COLLECTOR_AVAILABLE = False
 get_symbol_collector = None
 
-# Safe accessor for Scalp Phantom Tracker to avoid local scoping issues
-def _safe_get_scalp_phantom_tracker():
-    try:
-        from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _g
-        return _g()
-    except Exception as e:
-        try:
-            logging.getLogger(__name__).debug(f"Scalp tracker import error: {e}")
-        except Exception:
-            pass
-        return None
+
 
 # Trade tracking with PostgreSQL fallback
 try:
@@ -825,7 +802,7 @@ class TradingBot:
         except Exception:
             pass
         try:
-            return await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_score or 0.0))
+            return await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(ml_score or 0.0))
         except Exception:
             return False
 
@@ -906,7 +883,7 @@ class TradingBot:
         if allowed and combos_only and require_combo and fb_mode == 'off':
             try:
                 # Route through central execute path; mirror phantom will be recorded there
-                await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_score or 0.0))
+                await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(ml_score or 0.0))
             except Exception:
                 # If execution fails, fall back to phantom recording to avoid losing data
                 try:
@@ -2179,13 +2156,13 @@ class TradingBot:
                 pass
             # Execute new side
             try:
-                did = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(sc_feats.get('ml', 0.0) or 0.0), exec_id=exec_id, risk_percent_override=risk_pct)
+                did = await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(sc_feats.get('ml', 0.0) or 0.0), exec_id=exec_id, risk_percent_override=risk_pct)
                 if did:
                     logger.info(f"[{sym}|id={exec_id}] FLIP: re-entry placed successfully ({sc_sig.side})")
                     return True
             except TypeError:
                 # Fallback when older signature is present
-                did = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(sc_feats.get('ml', 0.0) or 0.0))
+                did = await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(sc_feats.get('ml', 0.0) or 0.0))
                 if did:
                     return True
             except Exception as e:
@@ -2193,262 +2170,78 @@ class TradingBot:
             return False
 
     async def _execute_scalp_trade(self, sym: str, sig_obj, ml_score: float = 0.0, exec_id: str = None, risk_percent_override: Optional[float] = None, bypass_combo_gate: bool = False) -> bool:
-        """Execute a Scalp trade immediately. Returns True if executed.
-
-        Bypasses routing/regime/micro gates. Still subject to hard execution guards
-        (existing position, invalid SL/TP, sizing, exchange errors).
-        """
+        """Execute a Scalp trade immediately (Fresh Start Version)."""
         try:
-            # Ensure only one execution path runs per symbol to avoid duplicate TP/SL placements
-            try:
-                lock = self._exec_locks.get(sym)
-            except Exception:
-                lock = None
-            if lock is None:
-                import asyncio as _asyncio
-                lock = _asyncio.Lock()
-                self._exec_locks[sym] = lock
-            async with lock:
-                # Global adaptive/MTF gating for any scalp execute path (unless bypassed by manual combo exec)
-                try:
-                    feats_for_gate = {}
-                    try:
-                        feats_for_gate = dict((getattr(self, '_last_signal_features', {}) or {}).get(sym, {}) or {})
-                    except Exception:
-                        feats_for_gate = {}
-                    if bypass_combo_gate:
-                        # Skip combo manager gating; still derive combo_id for analytics
-                        try:
-                            cid = self._scalp_combo_key_from_features(feats_for_gate or {})
-                        except Exception:
-                            cid = None
-                        gate_ctx0 = {'combo_id': cid} if cid else {}
-                        allowed0, gate_reason0 = True, 'manual_bypass'
-                    else:
-                        allowed0, gate_reason0, gate_ctx0 = self._scalp_combo_allowed(sym, str(getattr(sig_obj,'side','')), feats_for_gate)
-                except Exception:
-                    allowed0, gate_reason0, gate_ctx0 = (False, 'insufficient_features', {})
-                # Capture routing context for notifications
-                route_info = {
-                    'reason': gate_reason0,
-                    'combo_id': gate_ctx0.get('combo_id') if isinstance(gate_ctx0, dict) else None,
-                    'path': 'combo' if gate_ctx0.get('combo_id') else 'rules',
-                    'wr': None,
-                    'n': None
-                }
-                # Stable combo_id for position metadata (fallback to recompute from features when missing)
-                try:
-                    combo_id_for_pos = route_info.get('combo_id')
-                except Exception:
-                    combo_id_for_pos = None
-                if not combo_id_for_pos:
-                    try:
-                        combo_id_for_pos = self._scalp_combo_key_from_features(feats_for_gate or {})
-                    except Exception:
-                        combo_id_for_pos = None
-                # Enrich combo stats if available (adaptive manager state)
-                try:
-                    if route_info['combo_id'] and getattr(self, 'adaptive_combo_mgr', None):
-                        active_list = self.adaptive_combo_mgr.get_active_combos(str(getattr(sig_obj, 'side', '')).lower())
-                        for c in active_list:
-                            if c.get('combo_id') == route_info['combo_id']:
-                                route_info['wr'] = c.get('wr')
-                                route_info['n'] = c.get('n')
-                                break
-                except Exception:
-                    pass
+            # 1. Calculate Size
+            risk = self.shared.get('risk')
+            if not risk:
+                logger.error(f"[{sym}] Cannot execute: Risk config missing")
+                return False
+                
+            entry = float(sig_obj.entry)
+            sl = float(sig_obj.sl)
+            tp = float(sig_obj.tp)
+            side = sig_obj.side
+            
+            # Determine Risk Amount
+            if risk.use_percent_risk:
+                equity = await self.broker.get_equity()
+                risk_amt = equity * (risk.risk_percent / 100.0)
+            else:
+                risk_amt = risk.risk_usd
+                
+            # Calculate Qty based on Stop Loss distance
+            dist_to_sl = abs(entry - sl)
+            if dist_to_sl == 0:
+                return False
+                
+            qty = risk_amt / dist_to_sl
+            
+            # Adjust to step size
+            qty = self.sizer.adjust_qty(sym, qty)
+            if qty <= 0:
+                logger.warning(f"[{sym}] Calculated qty is 0 (Risk: ${risk_amt:.2f}, Dist: {dist_to_sl})")
+                return False
 
-                # Debug/visibility: log combo gate decision for execute paths
-                try:
-                    if route_info['combo_id']:
-                        logger.info(
-                            f"[{sym}] Combo gate (EXEC): side={str(getattr(sig_obj,'side',''))} "
-                            f"combo_id={route_info['combo_id']} allowed={allowed0} reason={gate_reason0} "
-                            f"active_wr={route_info.get('wr')} active_n={route_info.get('n')}"
-                        )
-                except Exception:
-                    pass
+            # 2. Execute Order
+            logger.info(f"[{sym}] 🚀 EXECUTING {side.upper()} | Qty: {qty} | Entry: {entry} | SL: {sl} | TP: {tp}")
+            order = await self.broker.place_order(
+                symbol=sym,
+                side=side,
+                qty=qty,
+                order_type='Market',
+                sl=sl,
+                tp=tp,
+                reduce_only=False
+            )
+            
+            if not order:
+                logger.error(f"[{sym}] Order failed")
+                return False
+                
+            # 3. Notification
+            combo = sig_obj.meta.get('combo', 'Unknown')
+            atr = sig_obj.meta.get('atr', 0.0)
+            
+            msg = (
+                f"🚀 **ENTERING {side.upper()}: {sym}**\n"
+                f"✨ **Combo**: `{combo}`\n"
+                f"💰 **Risk**: ${risk_amt:.2f}\n"
+                f"📏 **Size**: {qty} {sym}\n"
+                f"🎯 **Target**: {tp:.4f}\n"
+                f"🛑 **Stop**: {sl:.4f}\n"
+                f"📊 **ATR**: {atr:.4f}"
+            )
+            await self.tg.send_message(msg)
+            
+            return True
 
-                if not allowed0 and not bypass_combo_gate:
-                    # Record phantom and notify blocked (minimal path)
-                    try:
-                        from autobot.strategies.scalp.phantom import get_scalp_phantom_tracker as _get_scpt
-                        scpt0 = _get_scpt()
-                        # Gate + notify + record phantom
-                        await self._scalp_gate_and_record_phantom(sym, sig_obj, feats_for_gate, ml_score=float(ml_score or 0.0))
-                    except Exception:
-                        pass
-                    try:
-                        kind0 = 'adaptive' if gate_reason0.startswith('adaptive') else 'rules'
-                        # Derive reason buckets for breakdown & notify
-                        sub_reasons: list[str] = []
-                        if kind0 == 'adaptive':
-                            sub_reasons.append('disabled')
-                        else:
-                            f = feats_for_gate or {}
-                            side0 = str(getattr(sig_obj, 'side', '')).lower()
-                            try:
-                                rsi0 = float(f.get('rsi_14', 50.0) or 50.0)
-                            except Exception:
-                                rsi0 = 50.0
-                            try:
-                                mh0 = float(f.get('macd_hist', 0.0) or 0.0)
-                            except Exception:
-                                mh0 = 0.0
-                            try:
-                                vwap0 = float(f.get('vwap_dist_atr', 999.0) or 999.0)
-                            except Exception:
-                                vwap0 = 999.0
-                            try:
-                                volr0 = float(f.get('volume_ratio', 0.0) or 0.0)
-                            except Exception:
-                                volr0 = 0.0
-                            try:
-                                uw0 = float(f.get('upper_wick_ratio', 0.0) or 0.0)
-                                lw0 = float(f.get('lower_wick_ratio', 0.0) or 0.0)
-                            except Exception:
-                                uw0 = lw0 = 0.0
-                            fibz0 = f.get('fib_zone')
-                            mtf0 = bool(f.get('mtf_agree_15', False))
-                            if not mtf0:
-                                sub_reasons.append('mtf')
-                            else:
-                                rsi_bin = '<30' if rsi0 < 30 else '30-40' if rsi0 < 40 else '40-60' if rsi0 < 60 else '60-70' if rsi0 < 70 else '70+'
-                                macd = 'bull' if mh0 > 0 else 'bear'
-                                # Align notification bins with Pro Rules bins for consistency
-                                vwap_bin = '<0.6' if vwap0 < 0.6 else '0.6-1.0' if vwap0 < 1.0 else '1.0-1.2' if vwap0 < 1.2 else '1.2+'
-                                fib_ok = str(fibz0) in ('0-23','23-38','38-50','50-61','61-78','78-100')
-                                # Wick/Vol gates for rules
-                                hg_local = (self.config.get('scalp', {}) or {}).get('hard_gates', {}) or {}
-                                vmin_local = float(hg_local.get('vol_ratio_min_3m', 1.20))
-                                wdelta_local = float(hg_local.get('wick_delta_min', 0.12))
-                                if side0 == 'long':
-                                    wick_ok = (lw0 >= uw0 + wdelta_local)
-                                    if not wick_ok:
-                                        sub_reasons.append('wick')
-                                    if volr0 < vmin_local:
-                                        sub_reasons.append('vol')
-                                    # Updated RSI logic: (40-60) OR (<30) OR (60-70 with vol≥1.50)
-                                    if not ((40 <= rsi0 < 60) or (rsi0 < 30) or (60 <= rsi0 < 70 and volr0 >= 1.50)):
-                                        sub_reasons.append('rsi')
-                                    # MACD: Must be bull with histogram strength ≥0.0005 (matches Pro Rules)
-                                    mh_floor = 0.0005
-                                    if not (macd == 'bull' and abs(mh0) >= mh_floor):
-                                        sub_reasons.append('macd')
-                                    # VWAP logic matching Pro Rules: <0.6 OR (0.6-1.0 with bull MACD + vol≥1.50) OR (1.2+ with bull MACD + vol≥1.50)
-                                    # Note: 1.0-1.2 bin is NOT allowed for LONGS in Pro Rules
-                                    v_ok = (vwap_bin == '<0.6') or \
-                                           (vwap_bin == '0.6-1.0' and macd == 'bull' and volr0 >= 1.50) or \
-                                           (vwap_bin == '1.2+' and macd == 'bull' and volr0 >= 1.50)
-                                    if not v_ok:
-                                        # Attribute to VWAP, MACD, or Vol based on what failed
-                                        if vwap_bin == '1.0-1.2':
-                                            # 1.0-1.2 bin not allowed for LONGS - always block for VWAP
-                                            sub_reasons.append('vwap')
-                                        elif vwap_bin in ('0.6-1.0', '1.2+'):
-                                            # Conditional bins: need MACD + Vol
-                                            if macd != 'bull':
-                                                sub_reasons.append('macd')
-                                            elif volr0 < 1.50:
-                                                sub_reasons.append('vol')
-                                            else:
-                                                sub_reasons.append('vwap')
-                                        else:
-                                            sub_reasons.append('vwap')
-                                    # Updated Fib logic: Include Golden Zone (50-61%) and allow 61-78% with vol
-                                    fib_ok_long = str(fibz0) in ('0-23','23-38','38-50','50-61') or \
-                                                  (str(fibz0) == '61-78' and volr0 >= 1.50)
-                                    if not fib_ok_long:
-                                        sub_reasons.append('fib')
-                                else:
-                                    wick_ok = (uw0 >= lw0 + wdelta_local)
-                                    if not wick_ok:
-                                        sub_reasons.append('wick')
-                                    if volr0 < vmin_local:
-                                        sub_reasons.append('vol')
-                                    # Updated RSI logic: (<35) OR (35-50 with vol≥1.50) OR (50-60)
-                                    if not ((rsi0 < 35) or (35 <= rsi0 < 50 and volr0 >= 1.50) or (50 <= rsi0 < 60)):
-                                        sub_reasons.append('rsi')
-                                    # MACD unchanged for shorts
-                                    if macd != 'bear':
-                                        sub_reasons.append('macd')
-                                    # VWAP for shorts: Pro Rules allow <0.6, 0.6-1.0, 1.0-1.2 (maps to notification bins <0.6, 0.6-1.2)
-                                    # Block 1.2+ bin (NOT allowed in Pro Rules for shorts)
-                                    if vwap_bin == '1.2+':
-                                        sub_reasons.append('vwap')
-                                    # Updated Fib logic: Include Golden Zone (50-61%) for shorts
-                                    fib_ok_short = str(fibz0) in ('50-61','61-78','78-100')
-                                    if not fib_ok_short:
-                                        sub_reasons.append('fib')
-                        # Increment counters
-                        self._scalp_incr_block_counter(kind0)
-                        for sr in set(sub_reasons):
-                            self._scalp_incr_block_counter(kind0, sr)
-                        # Notify
-                        try:
-                            await self._notify_block(sym, kind=kind0, side=str(getattr(sig_obj,'side','')), feats=feats_for_gate or {}, combo_id=gate_ctx0.get('combo_id'))
-                        except Exception:
-                            pass
-                    except Exception as _bcx:
-                        try:
-                            logger.debug(f"Block counter reason update skipped: {_bcx}")
-                        except Exception:
-                            pass
-                        try:
-                            nb = (((self.config.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
-                            if self.tg and bool(nb.get('enabled', True)):
-                                await self.tg.send_message(f"🚫 Blocked → Phantom | Gating: {gate_reason0} ({gate_ctx0.get('combo_id','n/a')})")
-                        except Exception:
-                            pass
-                    # Per-combo block stats
-                    try:
-                        combo_id_dbg = gate_ctx0.get('combo_id')
-                    except Exception:
-                        combo_id_dbg = None
-                    try:
-                        if combo_id_dbg:
-                            bs = self._scalp_combo_block_stats.setdefault(combo_id_dbg, {'total': 0, 'adaptive': 0, 'rules': 0})
-                            bs['total'] += 1
-                            kind0 = 'adaptive' if gate_reason0.startswith('adaptive') else 'rules'
-                            if kind0 == 'adaptive':
-                                bs['adaptive'] += 1
-                            else:
-                                bs['rules'] += 1
-                    except Exception:
-                        pass
-                    # Combo shadow-miss diagnostics: allowed combo but no exec
-                    try:
-                        cfg = getattr(self, 'config', {}) or {}
-                        ex_cfg = ((cfg.get('scalp', {}) or {}).get('exec', {}) or {})
-                        combos_only = bool(ex_cfg.get('combos_only', False))
-                        require_combo = bool(ex_cfg.get('require_combo_enabled', True))
-                        fb_mode = str(ex_cfg.get('fallback_until_ready', 'pro')).lower()
-                    except Exception:
-                        combos_only = False
-                        require_combo = True
-                        fb_mode = 'pro'
-                    try:
-                        combo_id_dbg2 = gate_ctx0.get('combo_id')
-                    except Exception:
-                        combo_id_dbg2 = None
-                    try:
-                        if combos_only and require_combo and fb_mode == 'off' and combo_id_dbg2 and gate_reason0 == 'adaptive_enabled':
-                            # We *intended* to allow this combo, but execution path returned False
-                            reason = 'unknown'
-                            try:
-                                reason = (getattr(self, '_scalp_last_exec_reason', {}) or {}).get(sym, reason)
-                            except Exception:
-                                reason = 'unknown'
-                            stats = self._scalp_combo_miss_stats.setdefault(combo_id_dbg2, {'total': 0, 'position_exists': 0, 'exec_error': 0, 'other': 0})
-                            stats['total'] += 1
-                            if reason == 'position_exists':
-                                stats['position_exists'] += 1
-                            elif reason in ('exec_exception', 'exec_guard', 'tpsl_error'):
-                                stats['exec_error'] += 1
-                            else:
-                                stats['other'] += 1
-                            logger.warning(
-                                f"[{sym}] ❗ COMBO SHADOW MISS: combo={combo_id_dbg2} side={str(getattr(sig_obj,'side',''))} "
+        except Exception as e:
+            logger.error(f"[{sym}] Execution error: {e}", exc_info=True)
+            return False
+
+
+                   f"[{sym}] ❗ COMBO SHADOW MISS: combo={combo_id_dbg2} side={str(getattr(sig_obj,'side',''))} "
                                 f"allowed=adaptive_enabled but did_exec=False (reason={reason})"
                             )
                     except Exception:
@@ -5012,7 +4805,7 @@ class TradingBot:
                         else:
                             executed = False
                             try:
-                                executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s_immediate or 0.0))
+                                executed = await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(ml_s_immediate or 0.0))
                             except Exception as _ee:
                                 logger.info(f"[{sym}] Scalp execute error: {_ee}")
                                 executed = False
@@ -6188,9 +5981,9 @@ class TradingBot:
                                 pass
                             # Execute with risk override (central gate will notify)
                             try:
-                                did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=sc_feats.get('exec_id','n/a'), risk_percent_override=risk_pct)
+                                did_exec = await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=sc_feats.get('exec_id','n/a'), risk_percent_override=risk_pct)
                             except TypeError:
-                                did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                                did_exec = await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(ml_s or 0.0))
                             if did_exec:
                                 try:
                                     # Record executed mirror and log decision
@@ -6563,9 +6356,9 @@ class TradingBot:
                                 try:
                                     # Prefer new signature with exec_id; fallback to legacy signature if unavailable
                                     try:
-                                        did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)
+                                        did_exec = await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id)
                                     except TypeError:
-                                        did_exec = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                                        did_exec = await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(ml_s or 0.0))
                                 finally:
                                     try:
                                         if old_risk is not None:
@@ -6776,9 +6569,9 @@ class TradingBot:
                                     except Exception:
                                         exec_id_h = None
                                     try:
-                                        executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id_h)
+                                        executed = await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(ml_s or 0.0), exec_id=exec_id_h)
                                     except TypeError:
-                                        executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                                        executed = await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(ml_s or 0.0))
                                 # Optionally cancel any pre-existing active scalp phantom to avoid duplicate tracking
                                 try:
                                     cancel_on_hi = bool(((self.config.get('scalp', {}) or {}).get('exec', {}) or {}).get('cancel_active_on_high_ml', True))
@@ -7066,12 +6859,23 @@ class TradingBot:
         # Run detection
         try:
             sc_set = ScalpSettings()
-            try:
-                s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
-                if 'min_r_pct' in s_cfg:
-                    sc_set.min_r_pct = float(s_cfg.get('min_r_pct'))
-            except Exception:
-                pass
+            
+            # Apply Config Settings
+            s_cfg = self.config.get('scalp', {}) if hasattr(self, 'config') else {}
+            if 'rr' in s_cfg: sc_set.rr = float(s_cfg['rr'])
+            if 'atr_mult' in s_cfg: sc_set.atr_mult = float(s_cfg['atr_mult'])
+            if 'bbw_pct_min' in s_cfg: sc_set.bbw_pct_min = float(s_cfg['bbw_pct_min'])
+            if 'vol_ratio_min' in s_cfg: sc_set.vol_ratio_min = float(s_cfg['vol_ratio_min'])
+            
+            # Apply Overrides (Golden Combos)
+            overrides = getattr(self, 'symbol_overrides', {}) or {}
+            sym_ov = overrides.get(sym, {})
+            if sym_ov:
+                if 'long' in sym_ov:
+                    sc_set.allowed_combos_long = sym_ov['long']
+                if 'short' in sym_ov:
+                    sc_set.allowed_combos_short = sym_ov['short']
+            
             sc_sig = detect_scalp_signal(df_for_scalp.copy(), sc_set, sym)
         except Exception as e:
             logger.debug(f"[{sym}] Scalp fallback detection error: {e}")
@@ -7113,7 +6917,7 @@ class TradingBot:
                     return
                 executed = False
                 try:
-                    executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s_immediate or 0.0))
+                    executed = await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(ml_s_immediate or 0.0))
                 except Exception as _ee:
                     logger.info(f"[{sym}] Scalp fallback execute error: {_ee}")
                     executed = False
@@ -7258,7 +7062,7 @@ class TradingBot:
                             logger.info(f"[{sym}] 🛑 Scalp execution (fallback) blocked by regime gate (vol={sc_feats.get('volatility_regime')} fast={fast:.2f} slow={slow:.2f} side={side})")
                             executed = False
                         else:
-                            executed = await self._execute_scalp_trade(sym, sc_sig, ml_score=float(ml_s or 0.0))
+                            executed = await self._execute_scalp_trade_v2(sym, sc_sig, ml_score=float(ml_s or 0.0))
                         if executed:
                             scpt.record_scalp_signal(
                                 sym,
@@ -8469,16 +8273,19 @@ class TradingBot:
                         except Exception:
                             qv = 0.0
                     q_line = f"Q: {qv:.1f}\n" if qv else ""
-                    # Include Combo metadata if known
-                    combo_id = None
-                    combo_wr = None
+                    # Extract Combo metadata from ml_reason (stored at entry)
+                    combo_line = ""
                     try:
-                        feats = ((getattr(self, '_last_signal_features', {}) or {}).get(symbol, {}) or {})
-                        combo_id = feats.get('combo_id')
-                        combo_wr = feats.get('combo_wr')
+                        if getattr(pos, 'ml_reason', None) and 'combo=' in pos.ml_reason:
+                            # Format: combo=... wr=... n=...
+                            parts = pos.ml_reason.split()
+                            c_id = next((p.split('=')[1] for p in parts if p.startswith('combo=')), 'Unknown')
+                            wr = next((p.split('=')[1] for p in parts if p.startswith('wr=')), '?')
+                            n = next((p.split('=')[1] for p in parts if p.startswith('n=')), '?')
+                            if c_id and c_id != 'None':
+                                combo_line = f"✨ Combo: `{c_id}` (WR {wr}% N={n})\n"
                     except Exception:
                         pass
-                    combo_line = f"Combo {combo_id} (WR {combo_wr:.1f}%)\n" if combo_id and combo_wr else ""
                     # Push close notifications for all strategies (profit or loss)
                     message = (
                         f"{outcome_emoji} *Trade Closed* {symbol} {pos.side.upper()}\n\n"
@@ -9536,12 +9343,19 @@ class TradingBot:
         try:
             import os
             import re
-            if os.path.exists("symbol_overrides.yaml"):
-                with open("symbol_overrides.yaml", "r") as f:
+            
+            override_file_path = None
+            if os.path.exists("symbol_overrides_400.yaml"):
+                override_file_path = "symbol_overrides_400.yaml"
+            elif os.path.exists("symbol_overrides.yaml"):
+                override_file_path = "symbol_overrides.yaml"
+
+            if override_file_path:
+                with open(override_file_path, "r") as f:
                     lines = f.readlines()
-                    
+                
                 # Reload for YAML parsing
-                with open("symbol_overrides.yaml", "r") as f:
+                with open(override_file_path, "r") as f:
                     self.symbol_overrides = yaml.safe_load(f) or {}
                 
                 # Parse backtest stats from comments (line-by-line approach)
@@ -12698,7 +12512,7 @@ class TradingBot:
                             # Route Scalp executions to the dedicated stream-side executor for robust TP/SL handling
                             try:
                                 if strategy_name == 'scalp':
-                                    return await self._execute_scalp_trade(sym, sig_obj, ml_score=float(ml_score or 0.0))
+                                    return await self._execute_scalp_trade_v2(sym, sig_obj, ml_score=float(ml_score or 0.0))
                             except Exception:
                                 # Fall through to generic path if executor is unavailable
                                 pass
@@ -16748,6 +16562,77 @@ class TradingBot:
             await self.ws.close()
         if self.tg:
             await self.tg.stop()
+
+    async def _execute_scalp_trade_v2(self, sym: str, sig_obj, ml_score: float = 0.0, exec_id: str = None, risk_percent_override: Optional[float] = None, bypass_combo_gate: bool = False) -> bool:
+        """Execute a Scalp trade immediately (Fresh Start Version)."""
+        try:
+            # 1. Calculate Size
+            risk = self.shared.get('risk')
+            if not risk:
+                logger.error(f"[{sym}] Cannot execute: Risk config missing")
+                return False
+                
+            entry = float(sig_obj.entry)
+            sl = float(sig_obj.sl)
+            tp = float(sig_obj.tp)
+            side = sig_obj.side
+            
+            # Determine Risk Amount
+            if risk.use_percent_risk:
+                equity = await self.broker.get_equity()
+                risk_amt = equity * (risk.risk_percent / 100.0)
+            else:
+                risk_amt = risk.risk_usd
+                
+            # Calculate Qty based on Stop Loss distance
+            dist_to_sl = abs(entry - sl)
+            if dist_to_sl == 0:
+                return False
+                
+            qty = risk_amt / dist_to_sl
+            
+            # Adjust to step size
+            qty = self.sizer.adjust_qty(sym, qty)
+            if qty <= 0:
+                logger.warning(f"[{sym}] Calculated qty is 0 (Risk: ${risk_amt:.2f}, Dist: {dist_to_sl})")
+                return False
+
+            # 2. Execute Order
+            logger.info(f"[{sym}] 🚀 EXECUTING {side.upper()} | Qty: {qty} | Entry: {entry} | SL: {sl} | TP: {tp}")
+            order = await self.broker.place_order(
+                symbol=sym,
+                side=side,
+                qty=qty,
+                order_type='Market',
+                sl=sl,
+                tp=tp,
+                reduce_only=False
+            )
+            
+            if not order:
+                logger.error(f"[{sym}] Order failed")
+                return False
+                
+            # 3. Notification
+            combo = sig_obj.meta.get('combo', 'Unknown')
+            atr = sig_obj.meta.get('atr', 0.0)
+            
+            msg = (
+                f"🚀 **ENTERING {side.upper()}: {sym}**\n"
+                f"✨ **Combo**: `{combo}`\n"
+                f"💰 **Risk**: ${risk_amt:.2f}\n"
+                f"📏 **Size**: {qty} {sym}\n"
+                f"🎯 **Target**: {tp:.4f}\n"
+                f"🛑 **Stop**: {sl:.4f}\n"
+                f"📊 **ATR**: {atr:.4f}"
+            )
+            await self.tg.send_message(msg)
+            
+            return True
+
+        except Exception as e:
+            logger.error(f"[{sym}] Execution error: {e}", exc_info=True)
+            return False
 
 def signal_handler(signum, frame):
     """Handle shutdown signals"""

@@ -151,31 +151,32 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings, symbol: str = "") ->
     atr = row['atr']
     
     # Long
+    # Long
     if row['close'] > row['open']:
-        if combo in s.allowed_combos_long:
-            sl = entry - s.atr_mult * atr
-            tp = entry + s.atr_mult * atr
-            return ScalpSignal(
-                side='long',
-                entry=entry,
-                sl=sl,
-                tp=tp,
-                reason=f"COMBO_LONG: {combo}",
-                meta={'combo': combo, 'atr': atr}
-            )
+        # Return signal regardless of allowed list (filtering moved to Bot Level)
+        sl = entry - s.atr_mult * atr
+        tp = entry + s.atr_mult * atr
+        return ScalpSignal(
+            side='long',
+            entry=entry,
+            sl=sl,
+            tp=tp,
+            reason=f"COMBO_LONG: {combo}",
+            meta={'combo': combo, 'atr': atr}
+        )
             
     # Short
     elif row['close'] < row['open']:
-        if combo in s.allowed_combos_short:
-            sl = entry + s.atr_mult * atr
-            tp = entry - s.atr_mult * atr
-            return ScalpSignal(
-                side='short',
-                entry=entry,
-                sl=sl,
-                tp=tp,
-                reason=f"COMBO_SHORT: {combo}",
-                meta={'combo': combo, 'atr': atr}
-            )
+        # Return signal regardless of allowed list (filtering moved to Bot Level)
+        sl = entry + s.atr_mult * atr
+        tp = entry - s.atr_mult * atr
+        return ScalpSignal(
+            side='short',
+            entry=entry,
+            sl=sl,
+            tp=tp,
+            reason=f"COMBO_SHORT: {combo}",
+            meta={'combo': combo, 'atr': atr}
+        )
             
     return None

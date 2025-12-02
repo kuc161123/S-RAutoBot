@@ -100,11 +100,13 @@ class TGBot:
         daily_pnl = meta.get('daily_pnl', 0.0)
         daily_wr = meta.get('daily_wr', 0.0)
         trades_today = meta.get('trades_today', 0)
+        phantom_count = self.shared.get('phantom_count', 0)
         
         msg = (
             f"📊 **Live Status**\n\n"
             f"💰 **Daily PnL**: ${daily_pnl:.2f}\n"
-            f"🎯 **Win Rate**: {daily_wr:.1f}% ({trades_today} trades)\n\n"
+            f"🎯 **Win Rate**: {daily_wr:.1f}% ({trades_today} trades)\n"
+            f"👻 **Phantoms**: {phantom_count}\n\n"
             f"**Active Positions**:\n"
             f"{active_msg}"
         )

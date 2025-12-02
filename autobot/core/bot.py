@@ -49,20 +49,51 @@ except Exception as e:
 # Consider Scalp available if signal detection is present
 SCALP_AVAILABLE = bool(detect_scalp_signal is not None)
 
-# Dummy phantom tracker (deprecated but needed for legacy code)
-class _DummyScalpTracker:
-    """Stub for removed phantom tracking functionality"""
-    def __init__(self):
-        self.redis_client = None
-    def record_scalp_signal(self, *args, **kwargs):
-        pass
-    def cancel_active(self, *args, **kwargs):
-        pass
-    def update_scalp_phantom_prices(self, *args, **kwargs):
-        pass
+# Lightweight Phantom Tracker for Bot Level Filtering
+class PhantomTracker:
+    """Tracks signals rejected by combo filter"""
+    def __init__(self, tg_bot=None, shared=None):
+        self.tg = tg_bot
+        self.shared = shared
+        self.phantoms = {}  # {symbol: {'count': 0, 'last_combo': '', 'last_time': datetime}}
+        self.total_phantoms = 0
+        
+    async def record_phantom(self, symbol: str, combo: str, side: str):
+        """Record a rejected signal as a phantom"""
+        self.total_phantoms += 1
+        
+        # Update shared state for Telegram visibility
+        if self.shared is not None:
+            self.shared['phantom_count'] = self.total_phantoms
+        
+        if symbol not in self.phantoms:
+            self.phantoms[symbol] = {'count': 0, 'last_combo': '', 'last_time': None}
+            
+        self.phantoms[symbol]['count'] += 1
+        self.phantoms[symbol]['last_combo'] = combo
+        self.phantoms[symbol]['last_time'] = datetime.now()
+        
+        # Log it
+        logger = logging.getLogger(__name__)
+        logger.info(f"👻 Phantom Recorded [{symbol}]: {side} | Combo: {combo}")
+        
+        # Notify (optional - maybe rate limit this?)
+        if self.tg:
+            try:
+                msg = (
+                    f"👻 **Phantom Signal Detected**\n"
+                    f"Symbol: `{symbol}`\n"
+                    f"Side: {side.upper()}\n"
+                    f"Combo: `{combo}`\n"
+                    f"Action: **REJECTED** (Not in allowed list)"
+                )
+                # Use send_message directly
+                await self.tg.send_message(msg)
+            except Exception:
+                pass
 
 def _get_scpt():
-    return _DummyScalpTracker()
+    return None  # Legacy support
 
 _get_scpt_exec_fallback = _get_scpt
 get_scalp_phantom_tracker = _get_scpt
@@ -635,6 +666,9 @@ class TradingBot:
         # Adaptive combo manager for dynamic filtering
         self.adaptive_combo_mgr = None  # Initialize later in run() after config is loaded
         self._adaptive_combo_trade_count = 0  # Counter for triggering periodic updates
+
+        # Phantom Tracker for Bot Level Filtering
+        self.phantom_tracker = PhantomTracker(None, self.shared)  # TG bot attached later
 
         # Scalp diagnostics counters (reset periodically in summaries)
         self._scalp_stats: Dict[str, int] = {
@@ -3132,6 +3166,23 @@ class TradingBot:
                         pass
                     df3_for_sig = self.frames_3m[sym].copy()
                     sc_sig = detect_scalp_signal(df3_for_sig, sc_settings, sym)
+                    
+                    # Bot Level Filtering & Phantom Tracking
+                    if sc_sig:
+                        combo = sc_sig.meta.get('combo')
+                        side = sc_sig.side
+                        allowed = False
+                        
+                        if side == 'long':
+                            allowed = combo in sc_settings.allowed_combos_long
+                        elif side == 'short':
+                            allowed = combo in sc_settings.allowed_combos_short
+                            
+                        if not allowed:
+                            # Record Phantom (Rejected Signal)
+                            if self.phantom_tracker:
+                                await self.phantom_tracker.record_phantom(sym, combo, side)
+                            sc_sig = None  # Reject signal
                 except Exception as e:
                     logger.debug(f"[{sym}] Scalp(3m) detection error: {e}")
                     sc_sig = None
@@ -9088,6 +9139,9 @@ class TradingBot:
                 # Link telegram bot to adaptive combo manager for notifications
                 if self.adaptive_combo_mgr:
                     self.adaptive_combo_mgr.telegram_bot = self.tg
+                # Link telegram bot to phantom tracker
+                if self.phantom_tracker:
+                    self.phantom_tracker.tg = self.tg
                 # Send shorter startup message for 20 symbols
                 # Format risk display
                 if risk.use_percent_risk:

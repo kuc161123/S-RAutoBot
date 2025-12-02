@@ -8941,7 +8941,7 @@ class TradingBot:
 
         # Initialize adaptive combo manager for dynamic filtering
         try:
-            from autobot.strategies.scalp.combos import AdaptiveComboManager
+            # REMOVED: AdaptiveComboManager (combos.py deleted, using direct detector logic)
             # Use the safe accessor to get phantom tracker (avoids scoping issues)
             scpt = None
             if SCALP_AVAILABLE:

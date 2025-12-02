@@ -46,8 +46,8 @@ except Exception as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"Scalp import: strategy_scalp unavailable: {e}")
 
-# Consider Scalp available if signal detection and tracker are present
-SCALP_AVAILABLE = bool(detect_scalp_signal is not None and get_scalp_phantom_tracker is not None)
+# Consider Scalp available if signal detection is present
+SCALP_AVAILABLE = bool(detect_scalp_signal is not None)
 
 # Symbol data collector (optional; disabled by default)
 SYMBOL_COLLECTOR_AVAILABLE = False

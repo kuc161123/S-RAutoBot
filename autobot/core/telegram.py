@@ -102,11 +102,44 @@ class TGBot:
         trades_today = meta.get('trades_today', 0)
         phantom_count = self.shared.get('phantom_count', 0)
         
+        # Strategy Health (Backtest Awareness)
+        import os
+        from datetime import datetime, timedelta
+        
+        health_msg = ""
+        try:
+            if os.path.exists("symbol_overrides_400.yaml"):
+                mtime = os.path.getmtime("symbol_overrides_400.yaml")
+                last_run = datetime.fromtimestamp(mtime)
+                next_run = last_run + timedelta(days=30)
+                days_left = (next_run - datetime.now()).days
+                
+                # Health Status
+                status_icon = "✅"
+                status_text = "Healthy"
+                
+                if trades_today >= 5 and daily_wr < 50:
+                    status_icon = "🚨"
+                    status_text = f"ACTION REQUIRED (WR {daily_wr:.1f}% < 50%)"
+                elif days_left < 0:
+                    status_icon = "⚠️"
+                    status_text = "Update Overdue!"
+                
+                health_msg = (
+                    f"\n🧠 **Strategy Health**\n"
+                    f"📅 Last Update: {last_run.strftime('%Y-%m-%d')}\n"
+                    f"⏳ Next Update: {next_run.strftime('%Y-%m-%d')} ({days_left} days)\n"
+                    f"🏥 Status: {status_icon} {status_text}\n"
+                )
+        except Exception:
+            pass
+
         msg = (
             f"📊 **Live Status**\n\n"
             f"💰 **Daily PnL**: ${daily_pnl:.2f}\n"
             f"🎯 **Win Rate**: {daily_wr:.1f}% ({trades_today} trades)\n"
-            f"👻 **Phantoms**: {phantom_count}\n\n"
+            f"👻 **Phantoms**: {phantom_count}\n"
+            f"{health_msg}\n"
             f"**Active Positions**:\n"
             f"{active_msg}"
         )

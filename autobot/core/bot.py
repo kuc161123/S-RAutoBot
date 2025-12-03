@@ -992,127 +992,22 @@ class TradingBot:
             return None
 
     async def _notify_block(self, sym: str, *, kind: str, side: str, feats: dict, combo_id: Optional[str] = None, pre_reason: Optional[str] = None):
-        """Notify a Scalp execution block with reason, obeying config + rate limit.
-
-        kind: 'adaptive' | 'rules' | 'pre' | 'override'
-        side: 'long' / 'short'
-        pre_reason: when kind=='pre' (e.g., 'off_hours','qscore','cap','cooldown')
-        """
+        """Notify phantom using PhantomTracker (replaces legacy block notification system)."""
+        # Get allowed combos from symbol_overrides
         try:
-            cfg = getattr(self, 'config', {}) or {}
-            nb = (((cfg.get('scalp', {}) or {}).get('notifications', {}) or {}).get('blocks', {}) or {})
-            enabled = bool(nb.get('enabled', True))
-            pre_enabled = bool(nb.get('pre_gate_enabled', False))
-            if not enabled:
-                return
-            if kind == 'pre' and not pre_enabled:
-                return
-            # per-symbol rate limit
-            import time as _t
-            now = _t.time()
-            ttl = int(nb.get('rate_limit_sec', 600))
-            last = float(self._block_notify_rl.get(sym, 0.0) or 0.0)
-            if (now - last) < max(30, ttl):
-                return
-            self._block_notify_rl[sym] = now
-
-            # Build reason lines for BACKTEST-ONLY mode
-            title = "🚫 Blocked — Not in Backtest"
-            lines = []
+            overrides = getattr(self, 'symbol_overrides', {}) or {}
+            sym_cfg = overrides.get(sym, {})
             
-            if kind == 'pre':
-                title = "🚫 Blocked — Pre‑Gate"
-                lines.append(f"{sym} {str(side).upper()} | {pre_reason or 'pre‑gate'}")
-                lines.append("Routed via gate; recorded phantom.")
-            else:
-                # Show combo-based blocking with SIDE-SPECIFIC info
-                lines.append(f"{sym} {str(side).upper()}")
-                lines.append("")
-                
-                if combo_id:
-                    lines.append(f"🔍 Detected Combo:")
-                    lines.append(f"  {combo_id}")
-                else:
-                    lines.append("⚠️ Could not determine combo from signal")
-                
-                lines.append("")
-                
-                # Show what combos ARE approved for this symbol (ALWAYS SHOW IF AVAILABLE)
-                try:
-                    overrides = getattr(self, 'symbol_overrides', {}) or {}
-                    sym_cfg = overrides.get(sym)
-                    
-                    if sym_cfg:
-                        side_key = str(side).lower()
-                        
-                        # Show ALL available combos for this symbol (both sides if present)
-                        shown_any = False
-                        
-                        # Check for LONG combos
-                        if 'long' in sym_cfg:
-                            long_combos = sym_cfg.get('long', [])
-                            if long_combos:
-                                marker = "✅" if side_key == 'long' else "ℹ️"
-                                lines.append(f"{marker} Approved LONG Combos for {sym} ({len(long_combos)}):")
-                                for gc in long_combos[:3]:
-                                    lines.append(f"  • {gc}")
-                                if len(long_combos) > 3:
-                                    lines.append(f"  ... and {len(long_combos)-3} more")
-                                shown_any = True
-                        
-                        # Check for SHORT combos
-                        if 'short' in sym_cfg:
-                            short_combos = sym_cfg.get('short', [])
-                            if short_combos:
-                                if shown_any:
-                                    lines.append("")  # Separator
-                                marker = "✅" if side_key == 'short' else "ℹ️"
-                                lines.append(f"{marker} Approved SHORT Combos for {sym} ({len(short_combos)}):")
-                                for gc in short_combos[:3]:
-                                    lines.append(f"  • {gc}")
-                                if len(short_combos) > 3:
-                                    lines.append(f"  ... and {len(short_combos)-3} more")
-                                shown_any = True
-                        
-                        # V2 format (generic combos) - backward compatibility
-                        if 'combos' in sym_cfg and not shown_any:
-                            generic_combos = sym_cfg.get('combos', [])
-                            if generic_combos:
-                                lines.append(f"✅ Approved Combos for {sym} ({len(generic_combos)}):")
-                                for gc in generic_combos[:3]:
-                                    lines.append(f"  • {gc}")
-                                if len(generic_combos) > 3:
-                                    lines.append(f"  ... and {len(generic_combos)-3} more")
-                                shown_any = True
-                        
-                        # If symbol exists but no combos found
-                        if not shown_any:
-                            lines.append(f"⚠️ {sym} in overrides but no combos defined")
-                    else:
-                        lines.append(f"⚠️ {sym} not in backtest overrides")
-                except Exception:
-                    lines.append("⚠️ Override check failed")
-
-            # Footer
-            lines.append("")
-            lines.append("Recorded phantom. Use /watchlist for candidates.")
-
-            # Build keyboard
-            try:
-                kb = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📈 Exec WR", callback_data="ui:exec:wr"), InlineKeyboardButton("🎯 Combos", callback_data="ui:scalp:combos")]
-                ])
-            except Exception:
-                kb = None
-
-            # Send
-            if getattr(self, 'tg', None):
-                try:
-                    text = f"{title}\n" + "\n".join(lines)
-                    # System message bypasses mute policy
-                    await self.tg.send_message(text, reply_markup=kb)
-                except Exception:
-                    pass
+            allowed_long = sym_cfg.get('long', []) if sym_cfg else []
+            allowed_short = sym_cfg.get('short', []) if sym_cfg else []
+            
+            # Use PhantomTracker for notification
+            if self.phantom_tracker and combo_id:
+                await self.phantom_tracker.record_phantom(
+                    sym, combo_id, side,
+                    allowed_combos_long=allowed_long,
+                    allowed_combos_short=allowed_short
+                )
         except Exception:
             pass
 

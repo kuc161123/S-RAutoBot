@@ -2967,6 +2967,20 @@ class TradingBot:
                                 sc_settings.min_r_pct = float(s_cfg.get('min_r_pct'))
                         except Exception:
                             pass
+                        
+                        # CRITICAL: Populate allowed combos from symbol_overrides
+                        # This was missing and causing phantom notifications to show "None"
+                        try:
+                            overrides = getattr(self, 'symbol_overrides', {}) or {}
+                            sym_ov = overrides.get(sym, {})
+                            if sym_ov:
+                                if 'long' in sym_ov:
+                                    sc_settings.allowed_combos_long = sym_ov['long']
+                                if 'short' in sym_ov:
+                                    sc_settings.allowed_combos_short = sym_ov['short']
+                        except Exception:
+                            pass
+                        
                         # Apply signal-generation specific thresholds (body, wick alignment, plus vwap/bbw/vol)
                         try:
                             if 'body_ratio_min' in sig_cfg:

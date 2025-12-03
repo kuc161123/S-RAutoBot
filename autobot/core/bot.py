@@ -107,11 +107,14 @@ class PhantomTracker:
             except Exception:
                 pass
 
+# DEPRECATED: Old ScalpPhantomTracker system - replaced by PhantomTracker
+# These functions return None and are kept only to prevent NameError in legacy code paths
+# All phantom tracking now goes through PhantomTracker.record_phantom()
 def _get_scpt():
-    return None  # Legacy support
+    return None  # Legacy stub - DO NOT USE
 
-_get_scpt_exec_fallback = _get_scpt
-get_scalp_phantom_tracker = _get_scpt
+_get_scpt_exec_fallback = _get_scpt  # Legacy alias
+get_scalp_phantom_tracker = _get_scpt  # Legacy alias
 
 # Symbol data collector (optional; disabled by default)
 SYMBOL_COLLECTOR_AVAILABLE = False

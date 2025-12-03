@@ -58,7 +58,7 @@ class PhantomTracker:
         self.phantoms = {}  # {symbol: {'count': 0, 'last_combo': '', 'last_time': datetime}}
         self.total_phantoms = 0
         
-    async def record_phantom(self, symbol: str, combo: str, side: str, allowed_combos: list = None):
+    async def record_phantom(self, symbol: str, combo: str, side: str, allowed_combos_long: list = None, allowed_combos_short: list = None):
         """Record a rejected signal as a phantom"""
         self.total_phantoms += 1
         
@@ -80,9 +80,17 @@ class PhantomTracker:
         # Notify (optional - maybe rate limit this?)
         if self.tg:
             try:
+                # Build comprehensive allowed combos message
                 allowed_msg = ""
-                if allowed_combos:
-                    allowed_msg = "\n\n✅ **Allowed Combos**:\n" + "\n".join([f"- `{c}`" for c in allowed_combos])
+                has_long = allowed_combos_long and len(allowed_combos_long) > 0
+                has_short = allowed_combos_short and len(allowed_combos_short) > 0
+                
+                if has_long or has_short:
+                    allowed_msg = "\n\n✅ **Allowed Combos**:"
+                    if has_long:
+                        allowed_msg += "\n**LONG**:\n" + "\n".join([f"- `{c}`" for c in allowed_combos_long])
+                    if has_short:
+                        allowed_msg += "\n**SHORT**:\n" + "\n".join([f"- `{c}`" for c in allowed_combos_short])
                 else:
                     allowed_msg = "\n\n🚫 **Allowed Combos**: None (Symbol not whitelisted)"
                 
@@ -3188,8 +3196,11 @@ class TradingBot:
                         if not allowed:
                             # Record Phantom (Rejected Signal)
                             if self.phantom_tracker:
-                                allowed_list = sc_settings.allowed_combos_long if side == 'long' else sc_settings.allowed_combos_short
-                                await self.phantom_tracker.record_phantom(sym, combo, side, allowed_list)
+                                await self.phantom_tracker.record_phantom(
+                                    sym, combo, side,
+                                    allowed_combos_long=sc_settings.allowed_combos_long,
+                                    allowed_combos_short=sc_settings.allowed_combos_short
+                                )
                             sc_sig = None  # Reject signal
                 except Exception as e:
                     logger.debug(f"[{sym}] Scalp(3m) detection error: {e}")

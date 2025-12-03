@@ -1,1 +1,18 @@
-{}
+AAVEUSDT:
+  short:
+  - RSI:40-60 MACD:bear VWAP:<0.6 Fib:0-23 MTF
+ALUUSDT:
+  long:
+  - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+APRUSDT:
+  short:
+  - RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF
+B2USDT:
+  short:
+  - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+BABYUSDT:
+  short:
+  - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+ROSEUSDT:
+  short:
+  - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF

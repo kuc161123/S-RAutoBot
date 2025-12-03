@@ -8857,34 +8857,9 @@ class TradingBot:
         last_analysis = {}
 
         # Initialize adaptive combo manager for dynamic filtering
-        try:
-            # REMOVED: AdaptiveComboManager (combos.py deleted, using direct detector logic)
-            # Use the safe accessor to get phantom tracker (avoids scoping issues)
-            scpt = None
-            if SCALP_AVAILABLE:
-                try:
-                    scpt = _safe_get_scalp_phantom_tracker()
-                except Exception as scpt_err:
-                    logger.debug(f"Could not get scalp phantom tracker for adaptive combos: {scpt_err}")
-
-            self.adaptive_combo_mgr = AdaptiveComboManager(cfg, self._redis, scpt)
-            logger.info(f"✅ Adaptive Combo Manager initialized: enabled={self.adaptive_combo_mgr.enabled}, phantom_tracker={'available' if scpt else 'unavailable'}")
-
-            # Run initial combo filter analysis (populate Redis state)
-            if self.adaptive_combo_mgr.enabled and scpt:
-                try:
-                    enabled_count, disabled_count, changes = self.adaptive_combo_mgr.update_combo_filters(force=True)
-                    logger.info(f"📊 Initial combo filter analysis: {enabled_count} enabled, {disabled_count} disabled")
-                    if changes:
-                        for change in changes[:5]:  # Log first 5 changes
-                            logger.info(f"  • {change}")
-                        if len(changes) > 5:
-                            logger.info(f"  ... and {len(changes) - 5} more")
-                except Exception as filter_err:
-                    logger.warning(f"Initial combo filter analysis failed: {filter_err}")
-        except Exception as acm_err:
-            logger.warning(f"Failed to initialize adaptive combo manager: {acm_err}")
-            self.adaptive_combo_mgr = None
+        # DISABLED: AdaptiveComboManager class was deleted, bot now uses config.yaml strategies directly
+        self.adaptive_combo_mgr = None
+        logger.info("📊 Using direct config.yaml strategies (AdaptiveComboManager disabled)")
 
         # Setup shared data for Telegram - all ML components are now in scope
         # If Telegram was started early, reuse and update the existing shared dict
@@ -8909,6 +8884,7 @@ class TradingBot:
             "last_balance": None,
             "timeframe": tf,
             "symbols_config": symbols,
+            "symbol_overrides": cfg.get("strategies", {}),  # Add strategies for dashboard
             "risk_reward": scalp_rr,
             # Trend settings disabled in scalp-only bot
             "trend_settings": None,

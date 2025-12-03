@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import logging
 import time
 from typing import Dict, Optional
-from sqlalchemy import create_engine, Column, BigInteger, Float, String, Index, text
+from sqlalchemy import create_engine, Column, Integer, BigInteger, Float, String, Index, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
@@ -23,7 +23,7 @@ class Candle(Base):
     """Candle data model for PostgreSQL"""
     __tablename__ = 'candles'
     
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     symbol = Column(String(20), nullable=False, index=True)
     timestamp = Column(BigInteger, nullable=False, index=True)
     open = Column(Float, nullable=False)
@@ -35,12 +35,11 @@ class Candle(Base):
     __table_args__ = (
         Index('idx_symbol_timestamp', 'symbol', 'timestamp', unique=True),
     )
-
 class Candle3m(Base):
     """3m Candle data model stored separately to avoid mixing timeframes"""
     __tablename__ = 'candles_3m'
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
     symbol = Column(String(20), nullable=False, index=True)
     timestamp = Column(BigInteger, nullable=False, index=True)
     open = Column(Float, nullable=False)

@@ -194,7 +194,7 @@ else:
 VERSION = "2025.10.10.1"
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 def new_frame():
     """Create an empty OHLCV frame with a UTC DatetimeIndex.
@@ -680,6 +680,9 @@ class TradingBot:
                         self._redis = None
         except Exception:
             self._redis = None
+
+        # Shared state dictionary (initialized empty, populated in start())
+        self.shared = {}
 
         # Adaptive combo manager for dynamic filtering
         self.adaptive_combo_mgr = None  # Initialize later in run() after config is loaded

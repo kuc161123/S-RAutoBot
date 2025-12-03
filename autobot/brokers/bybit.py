@@ -29,7 +29,7 @@ class Bybit:
         return hmac.new(self.cfg.api_secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
 
     def _request(self, method:str, path:str, params:dict=None) -> Dict[str, Any]:
-        recv_window = "5000"
+        recv_window = "20000" # Increased to handle time drift
         ts = self._ts()
         
         if method == "POST":

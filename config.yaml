@@ -288,11 +288,120 @@ trade:
   rr: 2.5
   sl_buf_atr: 1.5
   symbols:
-  - AAVEUSDT
-  - ALUUSDT
+  - 1000000BABYDOGEUSDT
+  - 1000000CHEEMSUSDT
+  - 1000000MOGUSDT
+  - 10000SATSUSDT
+  - 1000CATUSDT
+  - 1000XECUSDT
+  - 2ZUSDT
+  - ACEUSDT
+  - ADAUSDT
+  - AIAUSDT
+  - AIOZUSDT
+  - AIXBTUSDT
+  - ALCHUSDT
+  - ALEOUSDT
+  - API3USDT
   - APRUSDT
+  - APTUSDT
+  - ARBUSDT
+  - ARUSDT
+  - ASRUSDT
+  - ASTERUSDT
+  - AVAAIUSDT
   - B2USDT
   - BABYUSDT
+  - BARDUSDT
+  - BBUSDT
+  - BCHUSDT
+  - BEAMUSDT
+  - BIGTIMEUSDT
+  - BLASTUSDT
+  - BLURUSDT
+  - BOBAUSDT
+  - BOMEUSDT
+  - BROCCOLIUSDT
+  - BRUSDT
+  - CARVUSDT
+  - CHILLGUYUSDT
+  - CKBUSDT
+  - CLOUDUSDT
+  - CRVUSDT
+  - CUSDT
+  - CVXUSDT
+  - DAMUSDT
+  - DASHUSDT
+  - DBRUSDT
+  - DEGENUSDT
+  - DENTUSDT
+  - DGBUSDT
+  - DOGUSDT
+  - DOODUSDT
+  - DOTUSDT
+  - DYMUSDT
+  - EDENUSDT
+  - ENAUSDT
+  - ERAUSDT
+  - ESUSDT
+  - EVAAUSDT
+  - FARTCOINUSDT
+  - FIDAUSDT
+  - FIOUSDT
+  - FLOWUSDT
+  - GALAUSDT
+  - GASUSDT
+  - GNOUSDT
+  - GPSUSDT
+  - GRIFFAINUSDT
+  - HAEDALUSDT
+  - HFTUSDT
+  - HIGHUSDT
+  - HYPERUSDT
+  - ICXUSDT
+  - IDEXUSDT
+  - IDUSDT
+  - ILVUSDT
+  - INUSDT
+  - IOUSDT
+  - JTOUSDT
+  - JUPUSDT
+  - KAVAUSDT
+  - KITEUSDT
+  - KMNOUSDT
+  - KNCUSDT
+  - LPTUSDT
+  - MANAUSDT
+  - MAVIAUSDT
+  - MBOXUSDT
+  - MEMEUSDT
+  - METISUSDT
+  - MEUSDT
+  - MLNUSDT
+  - MMTUSDT
+  - MONUSDT
+  - MOVEUSDT
+  - MUSDT
+  - NAORISUSDT
+  - NMRUSDT
+  - NOMUSDT
+  - OBOLUSDT
+  - OBTUSDT
+  - OMUSDT
+  - ONTUSDT
+  - OPENUSDT
+  - ORDIUSDT
+  - PAXGUSDT
+  - PHAUSDT
+  - PIGGYUSDT
+  - PLUMEUSDT
+  - POLYXUSDT
+  - PONKEUSDT
+  - PUFFERUSDT
+  - PUMPBTCUSDT
+  - QNTUSDT
+  - REDUSDT
+  - REQUSDT
   - ROSEUSDT
   timeframe: '15'
   use_ema: false
@@ -305,3 +414,353 @@ trade:
   use_vol: false
   vol_len: 20
   vol_mult: 1.2
+strategies:
+  1000000BABYDOGEUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:38-50 MTF
+  1000000CHEEMSUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  1000000MOGUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  10000SATSUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  1000CATUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  1000XECUSDT:
+    short:
+    - RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF
+  2ZUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 MTF
+  ACEUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF
+  ADAUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  AIAUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:23-38 MTF
+  AIOZUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:61-78 noMTF
+  AIXBTUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  ALCHUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:38-50 MTF
+  ALEOUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  API3USDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF
+  APRUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF
+  APTUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  ARBUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  ARUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF
+  ASRUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  ASTERUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  AVAAIUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:50-61 noMTF
+  B2USDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  BABYUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  BARDUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF
+  BBUSDT:
+    long:
+    - RSI:60-70 MACD:bear VWAP:0.6-1.2 Fib:0-23 MTF
+  BCHUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:38-50 MTF
+  BEAMUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF
+  BIGTIMEUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  BLASTUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF
+  BLURUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:23-38 MTF
+  BOBAUSDT:
+    short:
+    - RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  BOMEUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  BROCCOLIUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  BRUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF
+  CARVUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  CHILLGUYUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  CKBUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  CLOUDUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  CRVUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF
+  CUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:38-50 MTF
+  CVXUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF
+  DAMUSDT:
+    short:
+    - RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  DASHUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 MTF
+  DBRUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  DEGENUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  DENTUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  DGBUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  DOGUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  DOODUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:0-23 MTF
+  DOTUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:38-50 MTF
+  DYMUSDT:
+    short:
+    - RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF
+  EDENUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF
+  ENAUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF
+  ERAUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:78-100 noMTF
+  ESUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  EVAAUSDT:
+    long:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF
+  FARTCOINUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:61-78 MTF
+  FIDAUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  FIOUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 MTF
+  FLOWUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  GALAUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  GASUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:23-38 MTF
+  GNOUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  GPSUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  GRIFFAINUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  HAEDALUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  HFTUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 MTF
+  HIGHUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  HYPERUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF
+  ICXUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  IDEXUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:23-38 MTF
+  IDUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  ILVUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  INUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF
+  IOUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  JTOUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 MTF
+  JUPUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  KAVAUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  KITEUSDT:
+    long:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 noMTF
+  KMNOUSDT:
+    long:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 noMTF
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:38-50 MTF
+  KNCUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF
+  LPTUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  MANAUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  MAVIAUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  MBOXUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  MEMEUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  METISUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  MEUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:38-50 noMTF
+  MLNUSDT:
+    long:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  MMTUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  MONUSDT:
+    short:
+    - RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF
+  MOVEUSDT:
+    short:
+    - RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF
+  MUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:23-38 MTF
+  NAORISUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:38-50 MTF
+  NMRUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:61-78 noMTF
+  NOMUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF
+  OBOLUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  OBTUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF
+  OMUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF
+  ONTUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  OPENUSDT:
+    short:
+    - RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  ORDIUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  PAXGUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 noMTF
+  PHAUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  PIGGYUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  PLUMEUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF
+  POLYXUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:23-38 MTF
+  PONKEUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF
+  PUFFERUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF
+  PUMPBTCUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  QNTUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF
+  REDUSDT:
+    long:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:50-61 noMTF
+  REQUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  ROSEUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+risk:
+  risk_percent: 0.5

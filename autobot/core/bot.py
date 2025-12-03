@@ -8140,79 +8140,11 @@ class TradingBot:
         # Store config as instance variable
         self.config = cfg
         
-        # Load symbol overrides if available
-        self.symbol_overrides = {}
-        self.symbol_override_stats = {}  # Store WR/N stats from backtest
-        try:
-            import os
-            import re
-            
-            override_file_path = None
-            if os.path.exists("symbol_overrides_400.yaml"):
-                override_file_path = "symbol_overrides_400.yaml"
-            elif os.path.exists("symbol_overrides.yaml"):
-                override_file_path = "symbol_overrides.yaml"
-
-            if override_file_path:
-                with open(override_file_path, "r") as f:
-                    lines = f.readlines()
-                
-                # Reload for YAML parsing
-                with open(override_file_path, "r") as f:
-                    self.symbol_overrides = yaml.safe_load(f) or {}
-                
-                # Parse backtest stats from comments (line-by-line approach)
-                current_symbol = None
-                current_side = None
-                
-                for line in lines:
-                    # Detect symbol (top-level key)
-                    symbol_match = re.match(r'^([A-Z0-9]+USDT):', line)
-                    if symbol_match:
-                        current_symbol = symbol_match.group(1)
-                        if current_symbol not in self.symbol_override_stats:
-                            self.symbol_override_stats[current_symbol] = {}
-                        current_side = None
-                        continue
-                    
-                    # Detect side (indented under symbol)
-                    side_match = re.match(r'^  (long|short):', line)
-                    if side_match and current_symbol:
-                        current_side = side_match.group(1)
-                        continue
-                    
-                    # Parse backtest comment (after combo line)
-                    # Format: # Backtest: WR=XX.X%, N=XX
-                    backtest_match = re.match(r'\s*#\s*Backtest:\s*WR=([\d.]+)%,?\s*N=(\d+)', line)
-                    if backtest_match and current_symbol and current_side:
-                        try:
-                            wr = float(backtest_match.group(1))
-                            n = int(backtest_match.group(2))
-                            
-                            # Get combo from loaded YAML
-                            combo = None
-                            try:
-                                sym_data = self.symbol_overrides.get(current_symbol, {})
-                                side_data = sym_data.get(current_side, [])
-                                combo = side_data[0] if isinstance(side_data, list) and len(side_data) > 0 else None
-                            except Exception:
-                                pass
-                            
-                            self.symbol_override_stats[current_symbol][current_side] = {
-                                'wr': wr,
-                                'n': n,
-                                'combo': combo
-                            }
-                        except Exception as parse_err:
-                            logger.debug(f"Failed to parse backtest stats for {current_symbol} {current_side}: {parse_err}")
-                
-                stats_count = sum(len(sides) for sides in self.symbol_override_stats.values())
-                logger.info(f"Loaded {len(self.symbol_overrides)} symbol overrides with {stats_count} backtest stats")
-        except Exception as e:
-            logger.warning(f"Failed to load symbol_overrides.yaml: {e}")
-            self.symbol_overrides = {}
-            self.symbol_override_stats = {}
-
+        # Load symbol overrides from config (strategies key)
+        self.symbol_overrides = cfg.get('strategies', {})
+        self.symbol_override_stats = {} # Stats parsing removed as it relied on file comments
+        
+        logger.info(f"Loaded {len(self.symbol_overrides)} symbol overrides from config")
 
         # Global ML disable: if config requests no ML scoring, set env to disable
         try:

@@ -78,3 +78,8 @@ COWUSDT:
 CROUSDT:
   short:
   - RSI:30-40 MACD:bear Fib:100+
+DEGENUSDT:
+  long:
+  - RSI:<30 MACD:bear Fib:78-100
+  short:
+  - RSI:40-60 MACD:bear Fib:0-23

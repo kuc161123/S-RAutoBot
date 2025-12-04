@@ -46,3 +46,6 @@ BBUSDT:
 BLUAIUSDT:
   long:
   - RSI:30-40 MACD:bear Fib:78-100
+BROCCOLIUSDT:
+  short:
+  - RSI:30-40 MACD:bear Fib:50-61

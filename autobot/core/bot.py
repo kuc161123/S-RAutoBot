@@ -116,8 +116,8 @@ class PhantomTracker:
                 )
                 # Use send_message directly
                 await self.tg.send_message(msg)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Phantom notify failed: {e}")
 
 # DEPRECATED: Old ScalpPhantomTracker system - replaced by PhantomTracker
 # These functions return None and are kept only to prevent NameError in legacy code paths
@@ -3157,8 +3157,16 @@ class TradingBot:
                                 sc_sig = vwap_sig
                                 logger.info(f"[{sym}] 🌊 VWAP Bounce Signal: {side.upper()} | {combo}")
                             else:
-                                # Optional: Record Phantom for VWAP?
-                                pass
+                                # Record Phantom for VWAP
+                                if self.phantom_tracker:
+                                    # Construct allowed lists for logging context
+                                    l_allowed = sym_cfg.get('long', [])
+                                    s_allowed = sym_cfg.get('short', [])
+                                    await self.phantom_tracker.record_phantom(
+                                        sym, combo, side,
+                                        allowed_combos_long=l_allowed,
+                                        allowed_combos_short=s_allowed
+                                    )
                     except Exception as e:
                         logger.debug(f"[{sym}] VWAP detection error: {e}")
 

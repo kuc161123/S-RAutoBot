@@ -9,6 +9,8 @@ import time
 from datetime import datetime
 from dataclasses import dataclass
 from autobot.brokers.bybit import Bybit, BybitConfig
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 
 # Setup Logging
 logging.basicConfig(
@@ -36,7 +38,13 @@ class VWAPBot:
         self.load_config()
         self.setup_broker()
         self.vwap_combos = {}
-        self.active_positions = {} # Cache to avoid API spam
+        self.active_positions = {} 
+        
+        # Risk Management (Dynamic)
+        self.risk_config = {
+            'type': 'percent', 
+            'value': self.cfg.get('risk', {}).get('risk_percent', 0.5)
+        }
         
         # Phantom Tracking
         self.phantom_trades = []
@@ -85,22 +93,71 @@ class VWAPBot:
             # logger.info(f"Loaded {len(self.vwap_combos)} VWAP Combo overrides")
         except FileNotFoundError:
             self.vwap_combos = {}
+
+    # --- Telegram Commands ---
+    async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        msg = (
+            "🤖 **VWAP BOT COMMANDS**\n\n"
+            "/help - Show this message\n"
+            "/status - Show current bot status & stats\n"
+            "/risk <value> <type> - Set risk (e.g. `/risk 1 %` or `/risk 10 $`)\n"
+            "/phantoms - Show phantom trade stats"
+        )
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+    async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        wins = self.phantom_stats['wins']
+        total = self.phantom_stats['total']
+        wr = (wins / total * 100) if total > 0 else 0.0
+        
+        msg = (
+            "📊 **BOT STATUS**\n\n"
+            f"**Risk Mode**: {self.risk_config['value']} {self.risk_config['type']}\n"
+            f"**Active Phantoms**: {len(self.phantom_trades)}\n"
+            f"**Phantom WR**: {wr:.1f}% ({wins}/{total})\n"
+            f"**Combos Loaded**: {len(self.vwap_combos)} symbols"
+        )
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+    async def cmd_risk(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        try:
+            args = context.args
+            if len(args) < 2:
+                await update.message.reply_text("Usage: `/risk 1 %` or `/risk 10 $`", parse_mode='Markdown')
+                return
             
+            val = float(args[0])
+            r_type = args[1].lower()
+            
+            if r_type in ['%', 'percent']:
+                self.risk_config = {'type': 'percent', 'value': val}
+                await update.message.reply_text(f"✅ Risk set to **{val}%** of balance", parse_mode='Markdown')
+            elif r_type in ['$', 'usd', 'usdt']:
+                self.risk_config = {'type': 'usd', 'value': val}
+                await update.message.reply_text(f"✅ Risk set to **${val}** per trade", parse_mode='Markdown')
+            else:
+                await update.message.reply_text("Invalid type. Use `%` or `$`.")
+                
+        except ValueError:
+            await update.message.reply_text("Invalid value.")
+
     async def send_telegram(self, msg):
+        # Keep this for internal notifications (using the same token)
+        # But now we also have the Application running.
+        # We can use self.tg_app.bot.send_message if initialized, 
+        # OR keep using aiohttp for simplicity/independence of the loop.
+        # Let's stick to aiohttp for the "push" notifications to avoid context issues,
+        # or better: use the bot instance from the app if available.
+        if hasattr(self, 'tg_app') and self.tg_app:
+            try:
+                await self.tg_app.bot.send_message(chat_id=self.cfg['telegram']['chat_id'], text=msg, parse_mode='Markdown')
+                return
+            except Exception as e:
+                logger.error(f"TG App Send Error: {e}")
+        
+        # Fallback to aiohttp
         token = self.cfg['telegram']['token']
         chat_id = self.cfg['telegram']['chat_id']
-        
-        # Debug Log
-        if token:
-            logger.info(f"TG Token loaded: {token[:5]}...{token[-5:]}")
-        else:
-            logger.error("TG Token is EMPTY")
-            
-        if chat_id:
-            logger.info(f"TG Chat ID loaded: {chat_id}")
-        else:
-            logger.error("TG Chat ID is EMPTY")
-
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         try:
             async with aiohttp.ClientSession() as session:
@@ -304,6 +361,7 @@ class VWAPBot:
         
         # Live Stats
         print(f"\n📊 LIVE TRADING")
+        print(f"   Risk Mode: {self.risk_config['value']} {self.risk_config['type']}")
         print(f"   Active Positions: {len(self.active_positions)}")
         
         # Phantom Stats
@@ -330,11 +388,16 @@ class VWAPBot:
             logger.info(f"Skipping {sym}: Already in position")
             return
 
-        # Calculate Risk
+        # Dynamic Risk Calculation
         balance = self.broker.get_balance() or 0
-        risk_pct = self.cfg.get('risk', {}).get('risk_percent', 0.5) / 100
-        risk_amt = balance * risk_pct
+        risk_val = self.risk_config['value']
+        risk_type = self.risk_config['type']
         
+        if risk_type == 'percent':
+            risk_amt = balance * (risk_val / 100)
+        else: # usd
+            risk_amt = risk_val
+            
         # R:R 1:2
         atr = row.atr
         entry = row.close
@@ -382,7 +445,7 @@ class VWAPBot:
                 f"Combo: `{combo}`\n"
                 f"Price: {entry}\n"
                 f"Size: {qty}\n"
-                f"Risk: ${risk_amt:.2f} ({risk_pct*100}%)\n"
+                f"Risk: ${risk_amt:.2f} ({risk_type})\n"
                 f"TP: {tp:.4f} (4ATR)\n"
                 f"SL: {sl:.4f} (2ATR)"
             )
@@ -392,25 +455,46 @@ class VWAPBot:
 
     async def run(self):
         logger.info("🤖 VWAP Bot Started")
-        await self.send_telegram("🤖 **VWAP Bot Started**\nMode: Aggressive\nStrategy: VWAP Bounce + Golden Combos")
+        
+        # Initialize Telegram App
+        token = self.cfg['telegram']['token']
+        self.tg_app = ApplicationBuilder().token(token).build()
+        
+        # Add Handlers
+        self.tg_app.add_handler(CommandHandler("help", self.cmd_help))
+        self.tg_app.add_handler(CommandHandler("status", self.cmd_status))
+        self.tg_app.add_handler(CommandHandler("risk", self.cmd_risk))
+        self.tg_app.add_handler(CommandHandler("phantoms", self.cmd_status)) # Alias
+        
+        await self.tg_app.initialize()
+        await self.tg_app.start()
+        await self.tg_app.updater.start_polling()
+        
+        await self.send_telegram("🤖 **VWAP Bot Started**\nCommands: /help, /status, /risk")
         
         # Load symbols
         with open('symbols_400.yaml', 'r') as f:
             symbols = yaml.safe_load(f)['symbols']
             
-        while True:
-            self.load_overrides()
-            
-            # Process Symbols
-            for sym in symbols:
-                await self.process_symbol(sym)
-                await asyncio.sleep(0.1) # Rate limit protection
-            
-            # Update Phantoms
-            await self.update_phantoms()
-            
-            # Show Dashboard
-            self.display_dashboard()
+        try:
+            while True:
+                self.load_overrides()
                 
-            logger.info("Loop complete. Sleeping...")
-            await asyncio.sleep(10) # 10s sleep between full loops # 10s sleep between full loops
+                # Process Symbols
+                for sym in symbols:
+                    await self.process_symbol(sym)
+                    await asyncio.sleep(0.1) # Rate limit protection
+                
+                # Update Phantoms
+                await self.update_phantoms()
+                
+                # Show Dashboard
+                self.display_dashboard()
+                    
+                logger.info("Loop complete. Sleeping...")
+                await asyncio.sleep(10) # 10s sleep between full loops
+        except Exception as e:
+            logger.error(f"Fatal Loop Error: {e}")
+        finally:
+            await self.tg_app.updater.stop()
+            await self.tg_app.stop()

@@ -39,6 +39,7 @@ class VWAPBot:
         self.setup_broker()
         self.vwap_combos = {}
         self.active_positions = {} 
+        self.tg_app = None
         
         # Risk Management (Dynamic)
         self.risk_config = {
@@ -50,6 +51,12 @@ class VWAPBot:
         self.phantom_trades = []
         self.phantom_stats = {'wins': 0, 'losses': 0, 'total': 0}
         self.phantom_history = []
+        self.last_phantom_notify = {}  # Cooldown tracker
+        
+        # Stats
+        self.loop_count = 0
+        self.signals_detected = 0
+        self.trades_executed = 0
         
     def load_config(self):
         # Load .env manually
@@ -90,7 +97,6 @@ class VWAPBot:
         try:
             with open('symbol_overrides_VWAP_Combo.yaml', 'r') as f:
                 self.vwap_combos = yaml.safe_load(f) or {}
-            # logger.info(f"Loaded {len(self.vwap_combos)} VWAP Combo overrides")
         except FileNotFoundError:
             self.vwap_combos = {}
 
@@ -99,24 +105,41 @@ class VWAPBot:
         msg = (
             "🤖 **VWAP BOT COMMANDS**\n\n"
             "/help - Show this message\n"
-            "/status - Show current bot status & stats\n"
-            "/risk <value> <type> - Set risk (e.g. `/risk 1 %` or `/risk 10 $`)\n"
-            "/phantoms - Show phantom trade stats"
+            "/status - Show bot status & stats\n"
+            "/risk <value> <type> - Set risk\n"
+            "  Example: `/risk 1 %` or `/risk 10 $`\n"
+            "/phantoms - Show phantom trades"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         wins = self.phantom_stats['wins']
-        total = self.phantom_stats['total']
+        losses = self.phantom_stats['losses']
+        total = wins + losses
         wr = (wins / total * 100) if total > 0 else 0.0
         
         msg = (
             "📊 **BOT STATUS**\n\n"
-            f"**Risk Mode**: {self.risk_config['value']} {self.risk_config['type']}\n"
-            f"**Active Phantoms**: {len(self.phantom_trades)}\n"
-            f"**Phantom WR**: {wr:.1f}% ({wins}/{total})\n"
-            f"**Combos Loaded**: {len(self.vwap_combos)} symbols"
+            f"⚙️ Risk: {self.risk_config['value']} {self.risk_config['type']}\n"
+            f"📈 Signals: {self.signals_detected}\n"
+            f"💰 Trades: {self.trades_executed}\n"
+            f"🔄 Loops: {self.loop_count}\n\n"
+            f"👻 **Phantoms**\n"
+            f"Active: {len(self.phantom_trades)}\n"
+            f"WR: {wr:.1f}% ({wins}W/{losses}L)\n\n"
+            f"📂 Combos: {len(self.vwap_combos)} symbols"
         )
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+    async def cmd_phantoms(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self.phantom_trades:
+            await update.message.reply_text("👻 No active phantom trades.")
+            return
+            
+        msg = "👻 **ACTIVE PHANTOMS**\n\n"
+        for pt in self.phantom_trades[-10:]:
+            elapsed = int((time.time() - pt.start_time) / 60)
+            msg += f"• `{pt.symbol}` {pt.side.upper()} ({elapsed}m)\n"
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     async def cmd_risk(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -142,66 +165,54 @@ class VWAPBot:
             await update.message.reply_text("Invalid value.")
 
     async def send_telegram(self, msg):
-        # Keep this for internal notifications (using the same token)
-        # But now we also have the Application running.
-        # We can use self.tg_app.bot.send_message if initialized, 
-        # OR keep using aiohttp for simplicity/independence of the loop.
-        # Let's stick to aiohttp for the "push" notifications to avoid context issues,
-        # or better: use the bot instance from the app if available.
-        if hasattr(self, 'tg_app') and self.tg_app:
-            try:
-                await self.tg_app.bot.send_message(chat_id=self.cfg['telegram']['chat_id'], text=msg, parse_mode='Markdown')
+        """Send Telegram notification"""
+        try:
+            if self.tg_app and self.tg_app.bot:
+                await self.tg_app.bot.send_message(
+                    chat_id=self.cfg['telegram']['chat_id'], 
+                    text=msg, 
+                    parse_mode='Markdown'
+                )
                 return
-            except Exception as e:
-                logger.error(f"TG App Send Error: {e}")
+        except Exception as e:
+            logger.warning(f"TG App error, using fallback: {e}")
         
         # Fallback to aiohttp
-        token = self.cfg['telegram']['token']
-        chat_id = self.cfg['telegram']['chat_id']
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
         try:
+            token = self.cfg['telegram']['token']
+            chat_id = self.cfg['telegram']['chat_id']
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
             async with aiohttp.ClientSession() as session:
                 payload = {"chat_id": chat_id, "text": msg, "parse_mode": "Markdown"}
-                async with session.post(url, json=payload) as resp:
+                async with session.post(url, json=payload, timeout=10) as resp:
                     if resp.status != 200:
-                        logger.error(f"Telegram failed: {await resp.text()}")
+                        logger.error(f"Telegram failed: {resp.status}")
         except Exception as e:
             logger.error(f"Telegram error: {e}")
 
     def calculate_indicators(self, df):
         if len(df) < 50: return df
         
-        # ATR
         df['atr'] = df.ta.atr(length=14)
-        
-        # RSI
         df['rsi'] = df.ta.rsi(length=14)
         
-        # MACD
         macd = df.ta.macd(close='close', fast=12, slow=26, signal=9)
         df['macd'] = macd['MACD_12_26_9']
         df['macd_signal'] = macd['MACDs_12_26_9']
         
-        # VWAP
         try:
             vwap = df.ta.vwap(high='high', low='low', close='close', volume='volume')
-            if isinstance(vwap, pd.DataFrame):
-                df['vwap'] = vwap.iloc[:, 0]
-            else:
-                df['vwap'] = vwap
+            df['vwap'] = vwap.iloc[:, 0] if isinstance(vwap, pd.DataFrame) else vwap
         except Exception:
-            # Fallback VWAP
             tp = (df['high'] + df['low'] + df['close']) / 3
-            df['vwap'] = (tp * df['volume']).rolling(1440//3).sum() / df['volume'].rolling(1440//3).sum()
+            df['vwap'] = (tp * df['volume']).rolling(480).sum() / df['volume'].rolling(480).sum()
 
-        # Fib (Rolling 50 High/Low)
         df['roll_high'] = df['high'].rolling(50).max()
         df['roll_low'] = df['low'].rolling(50).min()
         
         return df.dropna()
 
     def get_combo(self, row):
-        # RSI Bin
         rsi = row.rsi
         if rsi < 30: r_bin = '<30'
         elif rsi < 40: r_bin = '30-40'
@@ -209,13 +220,9 @@ class VWAPBot:
         elif rsi < 70: r_bin = '60-70'
         else: r_bin = '70+'
         
-        # MACD Bin
         m_bin = 'bull' if row.macd > row.macd_signal else 'bear'
         
-        # Fib Bin
-        high = row.roll_high
-        low = row.roll_low
-        close = row.close
+        high, low, close = row.roll_high, row.roll_low, row.close
         if high == low: f_bin = '0-23'
         else:
             fib = (high - close) / (high - low) * 100
@@ -231,270 +238,220 @@ class VWAPBot:
 
     async def process_symbol(self, sym):
         try:
-            # 1. Check Overrides First (Optimization)
-            if sym not in self.vwap_combos:
-                # Still process for Phantom Tracking? 
-                # If we want to track ALL phantoms, we should process.
-                # But to save API calls, maybe only process if we are tracking phantoms generally?
-                # User said "signals that get blocked get tracked".
-                # Blocked means: Signal detected -> Checked against list -> Rejected.
-                # So we MUST process every symbol to detect the signal first.
-                pass 
-                
-            # 2. Fetch Data
             klines = self.broker.get_klines(sym, '3', limit=200)
             if not klines: return
             
             df = pd.DataFrame(klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
-            # Convert start to datetime and set index
             df['start'] = pd.to_datetime(df['start'].astype(int), unit='ms')
             df.set_index('start', inplace=True)
             df.sort_index(inplace=True)
             
-            for c in ['open','high','low','close','volume']: df[c] = df[c].astype(float)
+            for c in ['open','high','low','close','volume']: 
+                df[c] = df[c].astype(float)
             
             df = self.calculate_indicators(df)
-            if df.empty: return
+            if df.empty or len(df) < 3: return
             
-            row = df.iloc[-1] # Current candle (or last closed? Strategy uses CLOSE logic, so we check last CLOSED candle usually, but for live we check current if it just closed? 
-            # Backtest uses: if row.low <= vwap and row.close > vwap. This implies the candle HAS closed.
-            # So we should look at iloc[-2] if iloc[-1] is the currently forming candle?
-            # Bybit get_klines returns the latest candle which is usually incomplete.
-            # So we must use iloc[-2] (the last completed candle).
+            last_candle = df.iloc[-2]  # Last CLOSED candle
             
-            last_candle = df.iloc[-2]
-            
-            # 3. Check Signal
-            signal = None
+            # Check Signal
             side = None
-            
-            # Long: Low touched VWAP, Close > VWAP
             if last_candle.low <= last_candle.vwap and last_candle.close > last_candle.vwap:
                 side = 'long'
-            # Short: High touched VWAP, Close < VWAP
             elif last_candle.high >= last_candle.vwap and last_candle.close < last_candle.vwap:
                 side = 'short'
                 
             if side:
+                self.signals_detected += 1
                 combo = self.get_combo(last_candle)
                 
-                # Risk Params (needed for Phantom too)
                 atr = last_candle.atr
                 entry = last_candle.close
                 if side == 'long':
-                    sl = entry - (2.0 * atr)
-                    tp = entry + (4.0 * atr)
+                    sl, tp = entry - (2.0 * atr), entry + (4.0 * atr)
                 else:
-                    sl = entry + (2.0 * atr)
-                    tp = entry - (4.0 * atr)
+                    sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
                 
-                # Check if allowed
                 allowed = self.vwap_combos.get(sym, {}).get(side, [])
                 
                 if combo in allowed:
-                    # VALID SIGNAL
-                    logger.info(f"🚀 SIGNAL: {sym} {side} {combo}")
+                    logger.info(f"🚀 VALID SIGNAL: {sym} {side} {combo}")
                     await self.execute_trade(sym, side, last_candle, combo)
                 else:
-                    # Phantom / Blocked
-                    # Check if we already have a phantom for this symbol/side to avoid spam
+                    # Phantom - with cooldown (1 notification per symbol per 30 min)
                     existing = [p for p in self.phantom_trades if p.symbol == sym]
-                    if not existing:
-                        logger.info(f"👻 Blocked (Phantom Started): {sym} {side} {combo}")
+                    cooldown_key = f"{sym}_{side}"
+                    last_notify = self.last_phantom_notify.get(cooldown_key, 0)
+                    
+                    if not existing and (time.time() - last_notify) > 1800:  # 30 min cooldown
+                        logger.info(f"👻 PHANTOM: {sym} {side} {combo}")
                         
-                        # Create Phantom Trade
                         pt = PhantomTrade(sym, side, entry, tp, sl, combo, time.time())
                         self.phantom_trades.append(pt)
                         self.phantom_stats['total'] += 1
+                        self.last_phantom_notify[cooldown_key] = time.time()
                         
-                        # Send Blocked Notification
-                        msg = (
-                            f"👻 **PHANTOM STARTED**\n"
-                            f"Symbol: `{sym}`\n"
-                            f"Side: {side.upper()}\n"
+                        # Simplified notification
+                        await self.send_telegram(
+                            f"👻 `{sym}` {side.upper()}\n"
                             f"Combo: `{combo}`\n"
-                            f"TP: `{tp:.4f}` | SL: `{sl:.4f}`\n"
-                            f"Reason: WR < 40%"
+                            f"TP: {tp:.4f} | SL: {sl:.4f}"
                         )
-                        await self.send_telegram(msg)
                     
         except Exception as e:
-            logger.error(f"Error processing {sym}: {e}")
+            logger.error(f"Error {sym}: {e}")
 
     async def update_phantoms(self):
-        """Check status of running phantom trades"""
-        for pt in self.phantom_trades[:]: # Copy to iterate
+        """Check phantom trade outcomes"""
+        for pt in self.phantom_trades[:]:
             try:
-                # Fetch current price (lightweight)
                 ticker = self.broker.get_ticker(pt.symbol)
                 if not ticker: continue
-                current_price = float(ticker['lastPrice'])
+                
+                price = float(ticker.get('lastPrice', 0))
+                if price == 0: continue
                 
                 outcome = None
                 if pt.side == 'long':
-                    if current_price >= pt.tp: outcome = 'win'
-                    elif current_price <= pt.sl: outcome = 'loss'
+                    if price >= pt.tp: outcome = 'win'
+                    elif price <= pt.sl: outcome = 'loss'
                 else:
-                    if current_price <= pt.tp: outcome = 'win'
-                    elif current_price >= pt.sl: outcome = 'loss'
+                    if price <= pt.tp: outcome = 'win'
+                    elif price >= pt.sl: outcome = 'loss'
                     
                 if outcome:
                     self.phantom_trades.remove(pt)
                     self.phantom_stats[f"{outcome}s"] += 1
-                    self.phantom_history.append({'symbol': pt.symbol, 'outcome': outcome, 'combo': pt.combo})
+                    self.phantom_history.append({
+                        'symbol': pt.symbol, 
+                        'outcome': outcome, 
+                        'combo': pt.combo
+                    })
                     
-                    # Notify Outcome
                     icon = "✅" if outcome == 'win' else "❌"
-                    await self.send_telegram(f"{icon} **PHANTOM {outcome.upper()}**\n{pt.symbol} {pt.side} ({pt.combo})")
+                    await self.send_telegram(f"{icon} PHANTOM {outcome.upper()}: `{pt.symbol}` {pt.side}")
                     
             except Exception as e:
                 logger.error(f"Phantom update error: {e}")
 
-    def display_dashboard(self):
-        """Print a cool terminal dashboard"""
-        # Clear screen
-        print("\033[H\033[J", end="")
-        
-        print("="*50)
-        print(f"   🤖 VWAP BOT DASHBOARD   ")
-        print("="*50)
-        
-        # Live Stats
-        print(f"\n📊 LIVE TRADING")
-        print(f"   Risk Mode: {self.risk_config['value']} {self.risk_config['type']}")
-        print(f"   Active Positions: {len(self.active_positions)}")
-        
-        # Phantom Stats
-        wins = self.phantom_stats['wins']
-        losses = self.phantom_stats['losses']
-        total = wins + losses
-        wr = (wins / total * 100) if total > 0 else 0.0
-        
-        print(f"\n👻 PHANTOM TRACKER")
-        print(f"   Active Phantoms: {len(self.phantom_trades)}")
-        print(f"   History: {wins}W - {losses}L (WR: {wr:.1f}%)")
-        
-        if self.phantom_trades:
-            print(f"\n   Running Phantoms:")
-            for pt in self.phantom_trades[-5:]: # Show last 5
-                print(f"   - {pt.symbol} {pt.side} ({pt.combo})")
-                
-        print("\n" + "="*50)
-
     async def execute_trade(self, sym, side, row, combo):
-        # Check if already in position
-        pos = self.broker.get_position(sym)
-        if pos and float(pos['size']) > 0:
-            logger.info(f"Skipping {sym}: Already in position")
-            return
+        try:
+            pos = self.broker.get_position(sym)
+            if pos and float(pos.get('size', 0)) > 0:
+                logger.info(f"Skip {sym}: Already in position")
+                return
 
-        # Dynamic Risk Calculation
-        balance = self.broker.get_balance() or 0
-        risk_val = self.risk_config['value']
-        risk_type = self.risk_config['type']
-        
-        if risk_type == 'percent':
-            risk_amt = balance * (risk_val / 100)
-        else: # usd
-            risk_amt = risk_val
+            balance = self.broker.get_balance() or 0
+            if balance <= 0:
+                logger.error("Balance is 0")
+                return
+                
+            risk_val = self.risk_config['value']
+            risk_type = self.risk_config['type']
             
-        # R:R 1:2
-        atr = row.atr
-        entry = row.close
-        
-        if side == 'long':
-            sl = entry - (2.0 * atr)
-            tp = entry + (4.0 * atr)
-            dist = entry - sl
-        else:
-            sl = entry + (2.0 * atr)
-            tp = entry - (4.0 * atr)
-            dist = sl - entry
+            risk_amt = balance * (risk_val / 100) if risk_type == 'percent' else risk_val
+                
+            atr = row.atr
+            entry = row.close
             
-        if dist == 0: return
-        
-        qty = risk_amt / dist
-        # Round qty (simple logic, ideally use instrument info)
-        # For now, just round to 0 decimals for simplicity or 3 sig figs?
-        # Bybit needs specific precision. 
-        # Let's try to be safe: use a simple rounding or fetch precision.
-        # To be safe/fast: just try to execute. If fail, log it.
-        # Better: use a helper to round.
-        
-        # Simple rounding based on price
-        if entry > 1000: qty = round(qty, 3)
-        elif entry > 1: qty = round(qty, 1)
-        else: qty = round(qty, 0)
-        
-        if qty <= 0: return
+            if side == 'long':
+                sl, tp = entry - (2.0 * atr), entry + (4.0 * atr)
+                dist = entry - sl
+            else:
+                sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
+                dist = sl - entry
+                
+            if dist <= 0: return
+            
+            qty = risk_amt / dist
+            
+            # Round based on price magnitude
+            if entry > 1000: qty = round(qty, 3)
+            elif entry > 10: qty = round(qty, 2)
+            elif entry > 1: qty = round(qty, 1)
+            else: qty = round(qty, 0)
+            
+            if qty <= 0: return
 
-        logger.info(f"Executing {side} on {sym}: Size {qty}, SL {sl}, TP {tp}")
-        
-        # Execute
-        # 1. Market Order
-        res = self.broker.place_market(sym, side, qty)
-        if res and res.get('retCode') == 0:
-            # 2. Set TP/SL
-            self.broker.set_tpsl(sym, tp, sl, qty)
+            logger.info(f"EXECUTE: {sym} {side} qty={qty} entry={entry}")
             
-            # 3. Notify
-            msg = (
-                f"🚀 **VWAP SNIPER ENTRY**\n"
-                f"Symbol: `{sym}`\n"
-                f"Side: **{side.upper()}**\n"
-                f"Combo: `{combo}`\n"
-                f"Price: {entry}\n"
-                f"Size: {qty}\n"
-                f"Risk: ${risk_amt:.2f} ({risk_type})\n"
-                f"TP: {tp:.4f} (4ATR)\n"
-                f"SL: {sl:.4f} (2ATR)"
-            )
-            await self.send_telegram(msg)
-        else:
-            logger.error(f"Order failed: {res}")
+            res = self.broker.place_market(sym, side, qty)
+            if res and res.get('retCode') == 0:
+                self.broker.set_tpsl(sym, tp, sl, qty)
+                self.trades_executed += 1
+                
+                await self.send_telegram(
+                    f"🚀 **ENTRY** `{sym}`\n"
+                    f"Side: **{side.upper()}**\n"
+                    f"Combo: `{combo}`\n"
+                    f"Size: {qty} @ {entry:.4f}\n"
+                    f"TP: {tp:.4f} | SL: {sl:.4f}\n"
+                    f"Risk: ${risk_amt:.2f}"
+                )
+            else:
+                logger.error(f"Order failed: {res}")
+                
+        except Exception as e:
+            logger.error(f"Execute error: {e}")
 
     async def run(self):
-        logger.info("🤖 VWAP Bot Started")
+        logger.info("🤖 VWAP Bot Starting...")
         
-        # Initialize Telegram App
-        token = self.cfg['telegram']['token']
-        self.tg_app = ApplicationBuilder().token(token).build()
+        # Initialize Telegram
+        try:
+            token = self.cfg['telegram']['token']
+            self.tg_app = ApplicationBuilder().token(token).build()
+            
+            self.tg_app.add_handler(CommandHandler("help", self.cmd_help))
+            self.tg_app.add_handler(CommandHandler("status", self.cmd_status))
+            self.tg_app.add_handler(CommandHandler("risk", self.cmd_risk))
+            self.tg_app.add_handler(CommandHandler("phantoms", self.cmd_phantoms))
+            
+            await self.tg_app.initialize()
+            await self.tg_app.start()
+            await self.tg_app.updater.start_polling()
+            logger.info("Telegram bot initialized")
+        except Exception as e:
+            logger.error(f"Telegram init failed: {e}")
+            self.tg_app = None
         
-        # Add Handlers
-        self.tg_app.add_handler(CommandHandler("help", self.cmd_help))
-        self.tg_app.add_handler(CommandHandler("status", self.cmd_status))
-        self.tg_app.add_handler(CommandHandler("risk", self.cmd_risk))
-        self.tg_app.add_handler(CommandHandler("phantoms", self.cmd_status)) # Alias
-        
-        await self.tg_app.initialize()
-        await self.tg_app.start()
-        await self.tg_app.updater.start_polling()
-        
-        await self.send_telegram("🤖 **VWAP Bot Started**\nCommands: /help, /status, /risk")
+        await self.send_telegram("🤖 **VWAP Bot Online**\nCommands: /help /status /risk /phantoms")
         
         # Load symbols
-        with open('symbols_400.yaml', 'r') as f:
-            symbols = yaml.safe_load(f)['symbols']
+        try:
+            with open('symbols_400.yaml', 'r') as f:
+                symbols = yaml.safe_load(f)['symbols']
+        except Exception as e:
+            logger.error(f"Failed to load symbols: {e}")
+            return
+            
+        logger.info(f"Loaded {len(symbols)} symbols")
             
         try:
             while True:
                 self.load_overrides()
+                self.loop_count += 1
                 
-                # Process Symbols
                 for sym in symbols:
                     await self.process_symbol(sym)
-                    await asyncio.sleep(0.1) # Rate limit protection
+                    await asyncio.sleep(0.1)
                 
-                # Update Phantoms
                 await self.update_phantoms()
                 
-                # Show Dashboard
-                self.display_dashboard()
+                # Log stats every 10 loops
+                if self.loop_count % 10 == 0:
+                    logger.info(f"Stats: Loop={self.loop_count} Signals={self.signals_detected} Trades={self.trades_executed} Phantoms={len(self.phantom_trades)}")
                     
-                logger.info("Loop complete. Sleeping...")
-                await asyncio.sleep(10) # 10s sleep between full loops
+                await asyncio.sleep(10)
+                
+        except KeyboardInterrupt:
+            logger.info("Shutting down...")
         except Exception as e:
-            logger.error(f"Fatal Loop Error: {e}")
+            logger.error(f"Fatal error: {e}")
         finally:
-            await self.tg_app.updater.stop()
-            await self.tg_app.stop()
+            if self.tg_app:
+                try:
+                    await self.tg_app.updater.stop()
+                    await self.tg_app.stop()
+                except:
+                    pass

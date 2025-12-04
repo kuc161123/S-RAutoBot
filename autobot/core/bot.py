@@ -5,7 +5,9 @@ import os
 import pandas as pd
 import pandas_ta as ta
 import aiohttp
+import time
 from datetime import datetime
+from dataclasses import dataclass
 from autobot.brokers.bybit import Bybit, BybitConfig
 
 # Setup Logging
@@ -19,12 +21,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger("VWAPBot")
 
+@dataclass
+class PhantomTrade:
+    symbol: str
+    side: str
+    entry: float
+    tp: float
+    sl: float
+    combo: str
+    start_time: float
+
 class VWAPBot:
     def __init__(self):
         self.load_config()
         self.setup_broker()
         self.vwap_combos = {}
         self.active_positions = {} # Cache to avoid API spam
+        
+        # Phantom Tracking
+        self.phantom_trades = []
+        self.phantom_stats = {'wins': 0, 'losses': 0, 'total': 0}
+        self.phantom_history = []
         
     def load_config(self):
         # Load .env manually
@@ -159,7 +176,13 @@ class VWAPBot:
         try:
             # 1. Check Overrides First (Optimization)
             if sym not in self.vwap_combos:
-                return
+                # Still process for Phantom Tracking? 
+                # If we want to track ALL phantoms, we should process.
+                # But to save API calls, maybe only process if we are tracking phantoms generally?
+                # User said "signals that get blocked get tracked".
+                # Blocked means: Signal detected -> Checked against list -> Rejected.
+                # So we MUST process every symbol to detect the signal first.
+                pass 
                 
             # 2. Fetch Data
             klines = self.broker.get_klines(sym, '3', limit=200)
@@ -198,18 +221,107 @@ class VWAPBot:
             if side:
                 combo = self.get_combo(last_candle)
                 
+                # Risk Params (needed for Phantom too)
+                atr = last_candle.atr
+                entry = last_candle.close
+                if side == 'long':
+                    sl = entry - (2.0 * atr)
+                    tp = entry + (4.0 * atr)
+                else:
+                    sl = entry + (2.0 * atr)
+                    tp = entry - (4.0 * atr)
+                
                 # Check if allowed
                 allowed = self.vwap_combos.get(sym, {}).get(side, [])
+                
                 if combo in allowed:
                     # VALID SIGNAL
                     logger.info(f"🚀 SIGNAL: {sym} {side} {combo}")
                     await self.execute_trade(sym, side, last_candle, combo)
                 else:
-                    # Phantom
-                    logger.info(f"👻 Phantom: {sym} {side} {combo} (Not in allowed list)")
+                    # Phantom / Blocked
+                    # Check if we already have a phantom for this symbol/side to avoid spam
+                    existing = [p for p in self.phantom_trades if p.symbol == sym]
+                    if not existing:
+                        logger.info(f"👻 Blocked (Phantom Started): {sym} {side} {combo}")
+                        
+                        # Create Phantom Trade
+                        pt = PhantomTrade(sym, side, entry, tp, sl, combo, time.time())
+                        self.phantom_trades.append(pt)
+                        self.phantom_stats['total'] += 1
+                        
+                        # Send Blocked Notification
+                        msg = (
+                            f"👻 **PHANTOM STARTED**\n"
+                            f"Symbol: `{sym}`\n"
+                            f"Side: {side.upper()}\n"
+                            f"Combo: `{combo}`\n"
+                            f"TP: `{tp:.4f}` | SL: `{sl:.4f}`\n"
+                            f"Reason: WR < 45%"
+                        )
+                        await self.send_telegram(msg)
                     
         except Exception as e:
             logger.error(f"Error processing {sym}: {e}")
+
+    async def update_phantoms(self):
+        """Check status of running phantom trades"""
+        for pt in self.phantom_trades[:]: # Copy to iterate
+            try:
+                # Fetch current price (lightweight)
+                ticker = self.broker.get_ticker(pt.symbol)
+                if not ticker: continue
+                current_price = float(ticker['lastPrice'])
+                
+                outcome = None
+                if pt.side == 'long':
+                    if current_price >= pt.tp: outcome = 'win'
+                    elif current_price <= pt.sl: outcome = 'loss'
+                else:
+                    if current_price <= pt.tp: outcome = 'win'
+                    elif current_price >= pt.sl: outcome = 'loss'
+                    
+                if outcome:
+                    self.phantom_trades.remove(pt)
+                    self.phantom_stats[f"{outcome}s"] += 1
+                    self.phantom_history.append({'symbol': pt.symbol, 'outcome': outcome, 'combo': pt.combo})
+                    
+                    # Notify Outcome
+                    icon = "✅" if outcome == 'win' else "❌"
+                    await self.send_telegram(f"{icon} **PHANTOM {outcome.upper()}**\n{pt.symbol} {pt.side} ({pt.combo})")
+                    
+            except Exception as e:
+                logger.error(f"Phantom update error: {e}")
+
+    def display_dashboard(self):
+        """Print a cool terminal dashboard"""
+        # Clear screen
+        print("\033[H\033[J", end="")
+        
+        print("="*50)
+        print(f"   🤖 VWAP BOT DASHBOARD   ")
+        print("="*50)
+        
+        # Live Stats
+        print(f"\n📊 LIVE TRADING")
+        print(f"   Active Positions: {len(self.active_positions)}")
+        
+        # Phantom Stats
+        wins = self.phantom_stats['wins']
+        losses = self.phantom_stats['losses']
+        total = wins + losses
+        wr = (wins / total * 100) if total > 0 else 0.0
+        
+        print(f"\n👻 PHANTOM TRACKER")
+        print(f"   Active Phantoms: {len(self.phantom_trades)}")
+        print(f"   History: {wins}W - {losses}L (WR: {wr:.1f}%)")
+        
+        if self.phantom_trades:
+            print(f"\n   Running Phantoms:")
+            for pt in self.phantom_trades[-5:]: # Show last 5
+                print(f"   - {pt.symbol} {pt.side} ({pt.combo})")
+                
+        print("\n" + "="*50)
 
     async def execute_trade(self, sym, side, row, combo):
         # Check if already in position
@@ -289,12 +401,16 @@ class VWAPBot:
         while True:
             self.load_overrides()
             
-            # Process in chunks to avoid blocking too long?
-            # Or just sequential await
+            # Process Symbols
             for sym in symbols:
                 await self.process_symbol(sym)
                 await asyncio.sleep(0.1) # Rate limit protection
+            
+            # Update Phantoms
+            await self.update_phantoms()
+            
+            # Show Dashboard
+            self.display_dashboard()
                 
             logger.info("Loop complete. Sleeping...")
-            await asyncio.sleep(10) # 10s sleep between full loops
-
+            await asyncio.sleep(10) # 10s sleep between full loops # 10s sleep between full loops

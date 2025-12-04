@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 SLIPPAGE = 0.001   # 0.1% (Conservative/Realistic)
 FEES = 0.0012      # 0.12% round trip (Standard Taker)
-MIN_WR = 40.0      # Min Win Rate to consider a combo valid
+MIN_WR = 45.0      # Min Win Rate to consider a combo valid
 MIN_TRADES = 10    # Min trades to consider a combo valid
 TRAIN_PCT = 0.7
 TIMEFRAME = '3'    # 3m Timeframe

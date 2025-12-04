@@ -53,39 +53,23 @@ def replace_env_vars(config):
         return os.getenv(var, config)
     return config
 
-def get_rsi_bin(rsi, prev_rsi):
-    """Get RSI bin with direction (rising/falling)"""
-    if rsi < 30: level = '<30'
-    elif rsi < 40: level = '30-40'
-    elif rsi < 60: level = '40-60'
-    elif rsi < 70: level = '60-70'
-    else: level = '70+'
-    
-    direction = 'up' if rsi > prev_rsi else 'dn'
-    return f"{level}_{direction}"
+def get_rsi_bin(rsi):
+    """Simplified RSI: 3 levels"""
+    if rsi < 40: return 'oversold'
+    if rsi > 60: return 'overbought'
+    return 'neutral'
 
-def get_macd_bin(macd, signal, hist, prev_hist):
-    """Get MACD bin with histogram acceleration"""
-    trend = 'bull' if macd > signal else 'bear'
-    
-    # Acceleration based on histogram direction
-    if hist > prev_hist:
-        accel = 'acc'  # Accelerating (histogram growing)
-    else:
-        accel = 'dec'  # Decelerating (histogram shrinking)
-    
-    return f"{trend}_{accel}"
+def get_macd_bin(macd, signal):
+    """Simplified MACD: 2 levels"""
+    return 'bull' if macd > signal else 'bear'
 
 def get_fib_bin(close, high_50, low_50):
-    if high_50 == low_50: return '0-23'
+    """Simplified Fib: 3 levels"""
+    if high_50 == low_50: return 'low'
     fib = (high_50 - close) / (high_50 - low_50) * 100
-    if fib < 23.6: return '0-23'
-    if fib < 38.2: return '23-38'
-    if fib < 50.0: return '38-50'
-    if fib < 61.8: return '50-61'
-    if fib < 78.6: return '61-78'
-    if fib < 100: return '78-100'
-    return '100+' # Should not happen if close within range
+    if fib < 38.2: return 'low'      # Near highs
+    if fib > 61.8: return 'high'     # Near lows
+    return 'mid'                      # Middle range # Should not happen if close within range
 
 def calculate_indicators(df):
     """Calculate VWAP, RSI, MACD, Fib, ATR with direction data"""
@@ -155,9 +139,9 @@ def run_backtest(df, side):
                 trigger = True
                 
         if trigger:
-            # Construct Combo Key with direction info
-            rsi_bin = get_rsi_bin(row.rsi, row.prev_rsi)
-            macd_bin = get_macd_bin(row.macd, row.macd_signal, row.macd_hist, row.prev_hist)
+            # Construct Combo Key (simplified: 18 combinations)
+            rsi_bin = get_rsi_bin(row.rsi)
+            macd_bin = get_macd_bin(row.macd, row.macd_signal)
             fib_bin = get_fib_bin(row.close, row.roll_high, row.roll_low)
             
             combo_key = f"RSI:{rsi_bin} MACD:{macd_bin} Fib:{fib_bin}"

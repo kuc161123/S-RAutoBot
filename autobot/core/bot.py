@@ -276,35 +276,25 @@ class VWAPBot:
         
         return df.dropna()
 
-    def get_combo(self, row, prev_row):
-        """Get combo with RSI direction and MACD acceleration"""
-        # RSI with direction
+    def get_combo(self, row):
+        """Simplified combo: 18 combinations (3 RSI x 2 MACD x 3 Fib)"""
+        # RSI: 3 levels
         rsi = row.rsi
-        if rsi < 30: r_level = '<30'
-        elif rsi < 40: r_level = '30-40'
-        elif rsi < 60: r_level = '40-60'
-        elif rsi < 70: r_level = '60-70'
-        else: r_level = '70+'
-        r_dir = 'up' if rsi > prev_row.rsi else 'dn'
-        r_bin = f"{r_level}_{r_dir}"
+        if rsi < 40: r_bin = 'oversold'
+        elif rsi > 60: r_bin = 'overbought'
+        else: r_bin = 'neutral'
         
-        # MACD with histogram acceleration
-        trend = 'bull' if row.macd > row.macd_signal else 'bear'
-        accel = 'acc' if row.macd_hist > prev_row.macd_hist else 'dec'
-        m_bin = f"{trend}_{accel}"
+        # MACD: 2 levels
+        m_bin = 'bull' if row.macd > row.macd_signal else 'bear'
         
-        # Fib (unchanged)
+        # Fib: 3 levels
         high, low, close = row.roll_high, row.roll_low, row.close
-        if high == low: f_bin = '0-23'
+        if high == low: f_bin = 'low'
         else:
             fib = (high - close) / (high - low) * 100
-            if fib < 23.6: f_bin = '0-23'
-            elif fib < 38.2: f_bin = '23-38'
-            elif fib < 50.0: f_bin = '38-50'
-            elif fib < 61.8: f_bin = '50-61'
-            elif fib < 78.6: f_bin = '61-78'
-            elif fib < 100: f_bin = '78-100'
-            else: f_bin = '100+'
+            if fib < 38.2: f_bin = 'low'
+            elif fib > 61.8: f_bin = 'high'
+            else: f_bin = 'mid'
             
         return f"RSI:{r_bin} MACD:{m_bin} Fib:{f_bin}"
 
@@ -322,10 +312,9 @@ class VWAPBot:
                 df[c] = df[c].astype(float)
             
             df = self.calculate_indicators(df)
-            if df.empty or len(df) < 4: return
+            if df.empty or len(df) < 3: return
             
             last_candle = df.iloc[-2]  # Last CLOSED candle
-            prev_candle = df.iloc[-3]  # Previous candle for direction
             
             # Check Signal
             side = None
@@ -336,7 +325,7 @@ class VWAPBot:
                 
             if side:
                 self.signals_detected += 1
-                combo = self.get_combo(last_candle, prev_candle)
+                combo = self.get_combo(last_candle)
                 
                 atr = last_candle.atr
                 entry = last_candle.close

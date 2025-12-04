@@ -43,3 +43,6 @@ BANANAUSDT:
 BBUSDT:
   short:
   - RSI:70+ MACD:bull Fib:0-23
+BLUAIUSDT:
+  long:
+  - RSI:30-40 MACD:bear Fib:78-100

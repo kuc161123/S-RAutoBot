@@ -19,3 +19,6 @@ AIAUSDT:
 AIXBTUSDT:
   short:
   - RSI:30-40 MACD:bear Fib:100+
+ALPINEUSDT:
+  short:
+  - RSI:30-40 MACD:bull Fib:78-100

@@ -1,7 +1,3 @@
-# VWAP Combo Results (40% Lower Bound Filter)
-# Only combos that NEVER dropped below 40% WR
-# Generated: 2025-12-04
-
 0GUSDT:
   long:
   - RSI:40-60 MACD:bear Fib:78-100
@@ -13,3 +9,6 @@
 4USDT:
   short:
   - RSI:<30 MACD:bear Fib:78-100
+ACEUSDT:
+  short:
+  - RSI:60-70 MACD:bull Fib:23-38

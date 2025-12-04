@@ -397,6 +397,9 @@ class VWAPBot:
     async def run(self):
         logger.info("🤖 VWAP Bot Starting...")
         
+        # Send starting notification
+        await self.send_telegram("⏳ **VWAP Bot Starting...**\nInitializing systems...")
+        
         # Initialize Telegram
         try:
             token = self.cfg['telegram']['token']
@@ -415,32 +418,41 @@ class VWAPBot:
             logger.error(f"Telegram init failed: {e}")
             self.tg_app = None
         
-        await self.send_telegram("🤖 **VWAP Bot Online**\nCommands: /help /status /risk /phantoms")
+        # Load symbols from backtest results ONLY
+        self.load_overrides()
+        symbols = list(self.vwap_combos.keys())
         
-        # Load symbols
-        try:
-            with open('symbols_400.yaml', 'r') as f:
-                symbols = yaml.safe_load(f)['symbols']
-        except Exception as e:
-            logger.error(f"Failed to load symbols: {e}")
+        if not symbols:
+            await self.send_telegram("⚠️ **No symbols found!**\nAdd combos to symbol_overrides_VWAP_Combo.yaml")
+            logger.error("No symbols in overrides file")
             return
-            
-        logger.info(f"Loaded {len(symbols)} symbols")
+        
+        # Send success notification
+        await self.send_telegram(
+            f"✅ **VWAP Bot Online!**\n\n"
+            f"📊 Scanning: **{len(symbols)}** symbols\n"
+            f"⚙️ Risk: {self.risk_config['value']} {self.risk_config['type']}\n\n"
+            f"Symbols: `{', '.join(symbols[:5])}{'...' if len(symbols) > 5 else ''}`\n\n"
+            f"Commands: /help /status /risk /phantoms"
+        )
+        
+        logger.info(f"Scanning {len(symbols)} symbols from backtest: {symbols}")
             
         try:
             while True:
-                self.load_overrides()
+                self.load_overrides()  # Reload to pick up new combos
+                symbols = list(self.vwap_combos.keys())  # Update symbol list
                 self.loop_count += 1
                 
                 for sym in symbols:
                     await self.process_symbol(sym)
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.2)
                 
                 await self.update_phantoms()
                 
                 # Log stats every 10 loops
                 if self.loop_count % 10 == 0:
-                    logger.info(f"Stats: Loop={self.loop_count} Signals={self.signals_detected} Trades={self.trades_executed} Phantoms={len(self.phantom_trades)}")
+                    logger.info(f"Stats: Loop={self.loop_count} Symbols={len(symbols)} Signals={self.signals_detected} Trades={self.trades_executed}")
                     
                 await asyncio.sleep(10)
                 
@@ -448,6 +460,7 @@ class VWAPBot:
             logger.info("Shutting down...")
         except Exception as e:
             logger.error(f"Fatal error: {e}")
+            await self.send_telegram(f"❌ **Bot Error**: {e}")
         finally:
             if self.tg_app:
                 try:

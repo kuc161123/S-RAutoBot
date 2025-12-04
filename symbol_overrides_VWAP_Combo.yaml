@@ -7,3 +7,6 @@
   short:
   - RSI:40-60 MACD:bull Fib:23-38
   - RSI:70+ MACD:bull Fib:0-23
+4USDT:
+  short:
+  - RSI:<30 MACD:bear Fib:78-100

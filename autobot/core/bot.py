@@ -166,6 +166,11 @@ class VWAPBot:
             if not klines: return
             
             df = pd.DataFrame(klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+            # Convert start to datetime and set index
+            df['start'] = pd.to_datetime(df['start'].astype(int), unit='ms')
+            df.set_index('start', inplace=True)
+            df.sort_index(inplace=True)
+            
             for c in ['open','high','low','close','volume']: df[c] = df[c].astype(float)
             
             df = self.calculate_indicators(df)

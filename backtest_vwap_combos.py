@@ -33,10 +33,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-SLIPPAGE = 0.0005  # 0.05%
-FEES = 0.0012      # 0.12% round trip
+SLIPPAGE = 0.001   # 0.1% (Conservative/Realistic)
+FEES = 0.0012      # 0.12% round trip (Standard Taker)
 MIN_WR = 40.0      # Min Win Rate to consider a combo valid
-MIN_TRADES = 5     # Min trades to consider a combo valid
+MIN_TRADES = 10    # Min trades to consider a combo valid
 TRAIN_PCT = 0.7
 TIMEFRAME = '3'    # 3m Timeframe
 
@@ -219,7 +219,7 @@ async def backtest_symbol(bybit, sym, idx, total):
         klines = []
         end_ts = None
         limit = 200
-        reqs = 50 # ~10k candles
+        reqs = 300 # ~60k candles (120 days)
         
         for _ in range(reqs):
             k = bybit.get_klines(sym, TIMEFRAME, limit=limit, end=end_ts)
@@ -278,20 +278,48 @@ async def backtest_symbol(bybit, sym, idx, total):
                             'train_wr': (best_stats['wins']/best_stats['total'])*100,
                             'test_wr': test_wr,
                             'train_pnl': best_stats['pnl'],
-                            'test_pnl': test_stats['pnl']
+                            'test_pnl': test_stats['pnl'],
+                            'total_trades': best_stats['total'] + test_stats['total']
                         }
         
         if best_res['long'] or best_res['short']:
             msg = []
             if best_res['long']: 
                 c = best_res['long']
-                msg.append(f"LONG: {c['combo']} (WR {c['test_wr']:.1f}%)")
+                msg.append(f"LONG: {c['combo']} (WR {c['test_wr']:.1f}% | N={c['total_trades']})")
             if best_res['short']: 
                 c = best_res['short']
-                msg.append(f"SHORT: {c['combo']} (WR {c['test_wr']:.1f}%)")
+                msg.append(f"SHORT: {c['combo']} (WR {c['test_wr']:.1f}% | N={c['total_trades']})")
             logger.info(f"[{idx}/{total}] {sym} ✅ {' | '.join(msg)}")
+            
+            # Incremental Save
+            try:
+                # Read existing
+                existing = {}
+                try:
+                    with open('symbol_overrides_VWAP_Combo.yaml', 'r') as f:
+                        existing = yaml.safe_load(f) or {}
+                except FileNotFoundError:
+                    pass
+                    
+                # Update
+                existing[sym] = {}
+                if best_res['long']:
+                    c = best_res['long']
+                    existing[sym]['long'] = [f"{c['combo']}"] # Store as list of strings
+                if best_res['short']:
+                    c = best_res['short']
+                    existing[sym]['short'] = [f"{c['combo']}"]
+                    
+                # Write back
+                with open('symbol_overrides_VWAP_Combo.yaml', 'w') as f:
+                    yaml.dump(existing, f)
+            except Exception as e:
+                logger.error(f"Failed to save incremental result: {e}")
+                
             return best_res
         else:
+            # Log max trades found to show "how close" it was
             logger.info(f"[{idx}/{total}] {sym} ⚠️ No valid combo")
             return None
 

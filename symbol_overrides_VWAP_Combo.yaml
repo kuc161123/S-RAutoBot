@@ -34,3 +34,6 @@ ATUSDT:
 AVNTUSDT:
   short:
   - RSI:60-70 MACD:bull Fib:23-38
+B3USDT:
+  short:
+  - RSI:60-70 MACD:bull Fib:23-38

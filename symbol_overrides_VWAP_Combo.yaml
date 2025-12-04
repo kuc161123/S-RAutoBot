@@ -40,3 +40,6 @@ B3USDT:
 BANANAUSDT:
   short:
   - RSI:60-70 MACD:bull Fib:23-38
+BBUSDT:
+  short:
+  - RSI:70+ MACD:bull Fib:0-23

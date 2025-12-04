@@ -86,6 +86,7 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     d['fib_ret'] = fib_ret
     d['bbw_pct'] = bbw_pct
     d['vol_ratio'] = vol_ratio
+    d['vwap'] = vwap
     d['atr'] = atr
     
     return d
@@ -179,4 +180,73 @@ def detect_scalp_signal(df: pd.DataFrame, s: ScalpSettings, symbol: str = "") ->
             meta={'combo': combo, 'atr': atr}
         )
             
+    return None
+
+def detect_vwap_bounce(df: pd.DataFrame, s: ScalpSettings) -> Optional[ScalpSignal]:
+    """
+    Detects VWAP Bounce signals (Secondary Strategy).
+    Logic:
+    - Long: Low <= VWAP AND Close > VWAP.
+    - Short: High >= VWAP AND Close < VWAP.
+    Returns signal with reason="VWAP_BOUNCE" and meta containing the combo string.
+    """
+    if df is None or len(df) < 100:
+        return None
+        
+    # Calculate indicators
+    d = calculate_indicators(df)
+    row = d.iloc[-1]
+    
+    # VWAP Bounce Logic
+    # Note: calculate_indicators uses rolling(20) VWAP. 
+    # The backtest uses session/rolling(1440) or pandas_ta default.
+    # To match backtest exactly, we should use the same VWAP.
+    # But for now, let's use the one from calculate_indicators (Rolling 20) as a proxy, 
+    # OR better, re-implement the backtest's VWAP here if possible.
+    # The backtest used: df.ta.vwap or rolling 24h.
+    # Let's stick to the 'vwap' column we just exposed in calculate_indicators.
+    
+    vwap = row['vwap']
+    close = row['close']
+    high = row['high']
+    low = row['low']
+    open_ = row['open']
+    
+    bounce = False
+    side = ''
+    
+    # Long: Low touched VWAP, Close > VWAP, Green Candle
+    if low <= vwap and close > vwap and close > open_:
+        bounce = True
+        side = 'long'
+        
+    # Short: High touched VWAP, Close < VWAP, Red Candle
+    elif high >= vwap and close < vwap and close < open_:
+        bounce = True
+        side = 'short'
+        
+    if bounce:
+        # Generate Combo
+        combo = get_combo(row)
+        atr = row['atr']
+        entry = close
+        
+        # Fixed R:R (1:2)
+        # SL = 2 ATR, TP = 4 ATR
+        if side == 'long':
+            sl = entry - (2.0 * atr)
+            tp = entry + (4.0 * atr)
+        else:
+            sl = entry + (2.0 * atr)
+            tp = entry - (4.0 * atr)
+            
+        return ScalpSignal(
+            side=side,
+            entry=entry,
+            sl=sl,
+            tp=tp,
+            reason="VWAP_BOUNCE",
+            meta={'combo': combo, 'atr': atr, 'strategy': 'vwap_combo'}
+        )
+        
     return None

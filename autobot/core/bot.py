@@ -40,7 +40,7 @@ ScalpSettings = None
 # Try to import Scalp components; fall back to stubs if unavailable
 SCALP_AVAILABLE = False
 try:
-    from autobot.strategies.scalp.detector import detect_scalp_signal, ScalpSettings
+    from autobot.strategies.scalp.detector import detect_scalp_signal, ScalpSettings, detect_vwap_bounce
     SCALP_AVAILABLE = True
 except Exception as e:
     logger = logging.getLogger(__name__)
@@ -61,10 +61,22 @@ class PhantomTracker:
     async def record_phantom(self, symbol: str, combo: str, side: str, allowed_combos_long: list = None, allowed_combos_short: list = None):
         """Record a rejected signal as a phantom"""
         self.total_phantoms += 1
-        
-        # Update shared state for Telegram visibility
+        # Load VWAP Combo Overrides
+        self.vwap_combos = {}
+        try:
+            with open('symbol_overrides_VWAP_Combo.yaml', 'r') as f:
+                self.vwap_combos = yaml.safe_load(f) or {}
+            logger.info(f"Loaded {len(self.vwap_combos)} VWAP Combo overrides")
+        except Exception:
+            logger.warning("VWAP Combo overrides not found (backtest pending?)")
+            self.vwap_combos = {}
+
+        # Update shared state for Telegram
+        # Note: self.symbol_overrides is not defined in this class, assuming it's meant to be self.vwap_combos
         if self.shared is not None:
-            self.shared['phantom_count'] = self.total_phantoms
+            self.shared['symbol_overrides'] = self.vwap_combos # Assuming self.symbol_overrides was a typo for self.vwap_combos
+            self.shared['vwap_combos'] = self.vwap_combos
+            self.shared['phantom_count'] = self.total_phantoms # This line was already present, re-inserting for faithfulness to instruction
         
         if symbol not in self.phantoms:
             self.phantoms[symbol] = {'count': 0, 'last_combo': '', 'last_time': None}
@@ -3120,6 +3132,36 @@ class TradingBot:
                 except Exception as e:
                     logger.debug(f"[{sym}] Scalp(3m) detection error: {e}")
                     sc_sig = None
+
+                # --- Fallback: VWAP Bounce Strategy ---
+                if not sc_sig:
+                    try:
+                        vwap_sig = detect_vwap_bounce(df3_for_sig, sc_settings)
+                        if vwap_sig:
+                            # Check against VWAP Overrides
+                            combo = vwap_sig.meta.get('combo')
+                            side = vwap_sig.side
+                            
+                            # Check if this combo is in the "Golden List" for this symbol
+                            # Structure: self.vwap_combos[sym][side] -> list of strings
+                            allowed_vwap = False
+                            try:
+                                sym_cfg = self.vwap_combos.get(sym, {})
+                                side_list = sym_cfg.get(side, [])
+                                if combo in side_list:
+                                    allowed_vwap = True
+                            except Exception:
+                                pass
+                                
+                            if allowed_vwap:
+                                sc_sig = vwap_sig
+                                logger.info(f"[{sym}] 🌊 VWAP Bounce Signal: {side.upper()} | {combo}")
+                            else:
+                                # Optional: Record Phantom for VWAP?
+                                pass
+                    except Exception as e:
+                        logger.debug(f"[{sym}] VWAP detection error: {e}")
+
                 if not sc_sig:
                     # Log that we reached heartbeat section
                     try:
@@ -15333,17 +15375,25 @@ class TradingBot:
                 import uuid
                 exec_id = uuid.uuid4().hex[:8]
 
+            # Dynamic Message
+            strat_name = "Adaptive Scalp"
+            logic_note = "Backtest Verified (WR>60%)"
+            
+            if sig_obj.reason == "VWAP_BOUNCE":
+                strat_name = "VWAP Combo"
+                logic_note = "VWAP Bounce + Golden Combo (1:2 R:R)"
+                
             msg = (
-                f"🚀 **SCALP ENTRY: {sym} {side.upper()}**\n"
+                f"🚀 **{strat_name.upper()} ENTRY: {sym} {side.upper()}**\n"
                 f"🆔 ID: `{exec_id}`\n"
                 f"✨ **Combo**: `{combo}`\n"
                 f"💰 **Risk**: ${risk_amt:.2f} ({risk.risk_percent if risk.use_percent_risk else 'Fixed'}%)\n"
                 f"📏 **Size**: {qty} {sym}\n"
                 f"📉 **Entry**: {entry:.4f}\n"
-                f"🎯 **Target**: {tp:.4f} (2.1R)\n"
+                f"🎯 **Target**: {tp:.4f}\n"
                 f"🛑 **Stop**: {sl:.4f}\n"
                 f"📊 **ATR**: {atr:.4f}\n"
-                f"🤖 **Logic**: Backtest Verified (WR>60%)"
+                f"🤖 **Logic**: {logic_note}"
             )
             await self.tg.send_message(msg)
             

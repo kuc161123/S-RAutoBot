@@ -252,57 +252,55 @@ async def backtest_symbol(bybit, sym, idx, total):
         train = df.iloc[:split]
         test = df.iloc[split:]
         
-        best_res = {'symbol': sym, 'long': None, 'short': None}
+        best_res = {'symbol': sym, 'long': [], 'short': []}
         
         for side in ['long', 'short']:
-            # 1. Train: Find best combo
+            # 1. Train: Find ALL combos that pass criteria
             train_results = run_backtest(train, side)
+            test_results = run_backtest(test, side)
             
-            best_combo = None
-            best_pnl = -999.0
-            best_stats = None
+            passing_combos = []
             
             for combo, stats in train_results.items():
                 if stats['total'] < MIN_TRADES: continue
                 if stats.get('lower_bound_violated', False): continue  # LOWER BOUND CHECK
                 wr = (stats['wins'] / stats['total']) * 100
                 if wr < MIN_WR: continue
+                if stats['pnl'] <= 0: continue  # Must be profitable in train
                 
-                if stats['pnl'] > best_pnl:
-                    best_pnl = stats['pnl']
-                    best_combo = combo
-                    best_stats = stats
+                # 2. Validate in Test
+                test_stats = test_results.get(combo)
+                if not test_stats: continue
+                if test_stats['total'] < 1: continue
+                if test_stats.get('lower_bound_violated', False): continue
+                
+                test_wr = (test_stats['wins'] / test_stats['total']) * 100
+                if test_wr < MIN_WR: continue
+                if test_stats['pnl'] <= 0: continue  # Must be profitable in test
+                
+                # Passed all checks!
+                passing_combos.append({
+                    'combo': combo,
+                    'train_wr': wr,
+                    'test_wr': test_wr,
+                    'train_pnl': stats['pnl'],
+                    'test_pnl': test_stats['pnl'],
+                    'total_trades': stats['total'] + test_stats['total']
+                })
             
-            if best_combo:
-                # 2. Validate: Check best combo in Test
-                test_results = run_backtest(test, side)
-                test_stats = test_results.get(best_combo)
-                
-                # Also check lower bound in test
-                if test_stats and test_stats['total'] >= 1 and not test_stats.get('lower_bound_violated', False):
-                    test_wr = (test_stats['wins'] / test_stats['total']) * 100
-                    if test_wr >= MIN_WR and test_stats['pnl'] > 0:
-                        # Validated!
-                        best_res[side] = {
-                            'combo': best_combo,
-                            'train_wr': (best_stats['wins']/best_stats['total'])*100,
-                            'test_wr': test_wr,
-                            'train_pnl': best_stats['pnl'],
-                            'test_pnl': test_stats['pnl'],
-                            'total_trades': best_stats['total'] + test_stats['total']
-                        }
+            # Sort by test_wr (highest first)
+            passing_combos.sort(key=lambda x: x['test_wr'], reverse=True)
+            best_res[side] = passing_combos
         
         if best_res['long'] or best_res['short']:
             msg = []
             if best_res['long']: 
-                c = best_res['long']
-                msg.append(f"LONG: {c['combo']} (WR {c['test_wr']:.1f}% | N={c['total_trades']})")
+                msg.append(f"LONG: {len(best_res['long'])} combos")
             if best_res['short']: 
-                c = best_res['short']
-                msg.append(f"SHORT: {c['combo']} (WR {c['test_wr']:.1f}% | N={c['total_trades']})")
+                msg.append(f"SHORT: {len(best_res['short'])} combos")
             logger.info(f"[{idx}/{total}] {sym} ✅ {' | '.join(msg)}")
             
-            # Incremental Save (WR >= 40% AND never dropped below 40%)
+            # Incremental Save (ALL combos that pass)
             try:
                 # Read existing
                 existing = {}
@@ -316,14 +314,12 @@ async def backtest_symbol(bybit, sym, idx, total):
                 updated = False
                 existing_sym = existing.get(sym, {})
                 
-                if best_res['long'] and best_res['long']['test_wr'] >= 40.0:
-                    c = best_res['long']
-                    existing_sym['long'] = [f"{c['combo']}"]
+                if best_res['long']:
+                    existing_sym['long'] = [c['combo'] for c in best_res['long']]
                     updated = True
                     
-                if best_res['short'] and best_res['short']['test_wr'] >= 40.0:
-                    c = best_res['short']
-                    existing_sym['short'] = [f"{c['combo']}"]
+                if best_res['short']:
+                    existing_sym['short'] = [c['combo'] for c in best_res['short']]
                     updated = True
                 
                 if updated:

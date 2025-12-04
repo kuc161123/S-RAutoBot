@@ -260,6 +260,9 @@ class VWAPBot:
         macd = df.ta.macd(close='close', fast=12, slow=26, signal=9)
         df['macd'] = macd['MACD_12_26_9']
         df['macd_signal'] = macd['MACDs_12_26_9']
+        df['macd_hist'] = macd['MACDh_12_26_9']
+        df['prev_hist'] = df['macd_hist'].shift(1)
+        df['prev_rsi'] = df['rsi'].shift(1)
         
         try:
             vwap = df.ta.vwap(high='high', low='low', close='close', volume='volume')
@@ -273,16 +276,24 @@ class VWAPBot:
         
         return df.dropna()
 
-    def get_combo(self, row):
+    def get_combo(self, row, prev_row):
+        """Get combo with RSI direction and MACD acceleration"""
+        # RSI with direction
         rsi = row.rsi
-        if rsi < 30: r_bin = '<30'
-        elif rsi < 40: r_bin = '30-40'
-        elif rsi < 60: r_bin = '40-60'
-        elif rsi < 70: r_bin = '60-70'
-        else: r_bin = '70+'
+        if rsi < 30: r_level = '<30'
+        elif rsi < 40: r_level = '30-40'
+        elif rsi < 60: r_level = '40-60'
+        elif rsi < 70: r_level = '60-70'
+        else: r_level = '70+'
+        r_dir = 'up' if rsi > prev_row.rsi else 'dn'
+        r_bin = f"{r_level}_{r_dir}"
         
-        m_bin = 'bull' if row.macd > row.macd_signal else 'bear'
+        # MACD with histogram acceleration
+        trend = 'bull' if row.macd > row.macd_signal else 'bear'
+        accel = 'acc' if row.macd_hist > prev_row.macd_hist else 'dec'
+        m_bin = f"{trend}_{accel}"
         
+        # Fib (unchanged)
         high, low, close = row.roll_high, row.roll_low, row.close
         if high == low: f_bin = '0-23'
         else:
@@ -311,9 +322,10 @@ class VWAPBot:
                 df[c] = df[c].astype(float)
             
             df = self.calculate_indicators(df)
-            if df.empty or len(df) < 3: return
+            if df.empty or len(df) < 4: return
             
             last_candle = df.iloc[-2]  # Last CLOSED candle
+            prev_candle = df.iloc[-3]  # Previous candle for direction
             
             # Check Signal
             side = None
@@ -324,7 +336,7 @@ class VWAPBot:
                 
             if side:
                 self.signals_detected += 1
-                combo = self.get_combo(last_candle)
+                combo = self.get_combo(last_candle, prev_candle)
                 
                 atr = last_candle.atr
                 entry = last_candle.close

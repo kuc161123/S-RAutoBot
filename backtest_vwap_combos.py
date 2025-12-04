@@ -53,15 +53,28 @@ def replace_env_vars(config):
         return os.getenv(var, config)
     return config
 
-def get_rsi_bin(rsi):
-    if rsi < 30: return '<30'
-    if rsi < 40: return '30-40'
-    if rsi < 60: return '40-60'
-    if rsi < 70: return '60-70'
-    return '70+'
+def get_rsi_bin(rsi, prev_rsi):
+    """Get RSI bin with direction (rising/falling)"""
+    if rsi < 30: level = '<30'
+    elif rsi < 40: level = '30-40'
+    elif rsi < 60: level = '40-60'
+    elif rsi < 70: level = '60-70'
+    else: level = '70+'
+    
+    direction = 'up' if rsi > prev_rsi else 'dn'
+    return f"{level}_{direction}"
 
-def get_macd_bin(macd, signal):
-    return 'bull' if macd > signal else 'bear'
+def get_macd_bin(macd, signal, hist, prev_hist):
+    """Get MACD bin with histogram acceleration"""
+    trend = 'bull' if macd > signal else 'bear'
+    
+    # Acceleration based on histogram direction
+    if hist > prev_hist:
+        accel = 'acc'  # Accelerating (histogram growing)
+    else:
+        accel = 'dec'  # Decelerating (histogram shrinking)
+    
+    return f"{trend}_{accel}"
 
 def get_fib_bin(close, high_50, low_50):
     if high_50 == low_50: return '0-23'
@@ -75,19 +88,22 @@ def get_fib_bin(close, high_50, low_50):
     return '100+' # Should not happen if close within range
 
 def calculate_indicators(df):
-    """Calculate VWAP, RSI, MACD, Fib, ATR"""
+    """Calculate VWAP, RSI, MACD, Fib, ATR with direction data"""
     if len(df) < 200: return df
     
     # ATR
     df['atr'] = df.ta.atr(length=ATR_PERIOD)
     
-    # RSI
+    # RSI + Previous RSI for direction
     df['rsi'] = df.ta.rsi(length=14)
+    df['prev_rsi'] = df['rsi'].shift(1)
     
-    # MACD
+    # MACD + Histogram + Previous Histogram for acceleration
     macd = df.ta.macd(close='close', fast=12, slow=26, signal=9)
     df['macd'] = macd['MACD_12_26_9']
     df['macd_signal'] = macd['MACDs_12_26_9']
+    df['macd_hist'] = macd['MACDh_12_26_9']
+    df['prev_hist'] = df['macd_hist'].shift(1)
     
     # VWAP
     try:
@@ -139,12 +155,11 @@ def run_backtest(df, side):
                 trigger = True
                 
         if trigger:
-            # Construct Combo Key
-            rsi_bin = get_rsi_bin(row.rsi)
-            macd_bin = get_macd_bin(row.macd, row.macd_signal)
+            # Construct Combo Key with direction info
+            rsi_bin = get_rsi_bin(row.rsi, row.prev_rsi)
+            macd_bin = get_macd_bin(row.macd, row.macd_signal, row.macd_hist, row.prev_hist)
             fib_bin = get_fib_bin(row.close, row.roll_high, row.roll_low)
             
-            # We can also add VWAP distance bin if needed, but let's stick to user request (RSI, MACD, Fib)
             combo_key = f"RSI:{rsi_bin} MACD:{macd_bin} Fib:{fib_bin}"
             
             # Calculate Outcome

@@ -1,57 +1,15 @@
+# VWAP Combo Results (40% Lower Bound Filter)
+# Only combos that NEVER dropped below 40% WR
+# Generated: 2025-12-04
+
 0GUSDT:
   long:
   - RSI:40-60 MACD:bear Fib:78-100
   short:
   - RSI:40-60 MACD:bear Fib:0-23
-1000000BABYDOGEUSDT:
-  long:
-  - RSI:40-60 MACD:bull Fib:0-23
-1000000MOGUSDT:
-  short:
-  - RSI:40-60 MACD:bear Fib:0-23
-10000QUBICUSDT:
-  short:
-  - RSI:60-70 MACD:bull Fib:23-38
-1000PEPEUSDT:
-  short:
-  - RSI:60-70 MACD:bull Fib:0-23
-1000XECUSDT:
-  short:
-  - RSI:30-40 MACD:bull Fib:78-100
 2ZUSDT:
   short:
   - RSI:70+ MACD:bull Fib:0-23
 4USDT:
-  long:
-  - RSI:60-70 MACD:bull Fib:0-23
   short:
   - RSI:<30 MACD:bear Fib:78-100
-AAVEUSDT:
-  short:
-  - RSI:40-60 MACD:bull Fib:50-61
-ACEUSDT:
-  short:
-  - RSI:60-70 MACD:bull Fib:23-38
-AIAUSDT:
-  short:
-  - RSI:40-60 MACD:bull Fib:0-23
-AIOZUSDT:
-  long:
-  - RSI:40-60 MACD:bull Fib:61-78
-  short:
-  - RSI:40-60 MACD:bull Fib:38-50
-AKEUSDT:
-  long:
-  - RSI:40-60 MACD:bear Fib:23-38
-AKTUSDT:
-  long:
-  - RSI:30-40 MACD:bear Fib:78-100
-ALPINEUSDT:
-  short:
-  - RSI:30-40 MACD:bull Fib:78-100
-ALUUSDT:
-  short:
-  - RSI:40-60 MACD:bear Fib:0-23
-API3USDT:
-  short:
-  - RSI:60-70 MACD:bull Fib:38-50

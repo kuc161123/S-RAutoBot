@@ -63,3 +63,6 @@ CATIUSDT:
 CCUSDT:
   short:
   - RSI:40-60 MACD:bear Fib:78-100
+CHILLGUYUSDT:
+  short:
+  - RSI:70+ MACD:bull Fib:0-23

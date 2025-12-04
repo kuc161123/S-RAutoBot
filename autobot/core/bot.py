@@ -314,7 +314,7 @@ class VWAPBot:
                             f"Side: {side.upper()}\n"
                             f"Combo: `{combo}`\n"
                             f"TP: `{tp:.4f}` | SL: `{sl:.4f}`\n"
-                            f"Reason: WR < 45%"
+                            f"Reason: WR < 40%"
                         )
                         await self.send_telegram(msg)
                     

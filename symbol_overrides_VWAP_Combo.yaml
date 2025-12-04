@@ -69,3 +69,6 @@ CHILLGUYUSDT:
 CLANKERUSDT:
   long:
   - RSI:60-70 MACD:bear Fib:0-23
+COMMONUSDT:
+  long:
+  - RSI:40-60 MACD:bear Fib:78-100

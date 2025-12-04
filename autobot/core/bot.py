@@ -277,24 +277,30 @@ class VWAPBot:
         return df.dropna()
 
     def get_combo(self, row):
-        """Simplified combo: 18 combinations (3 RSI x 2 MACD x 3 Fib)"""
-        # RSI: 3 levels
+        """Original combo: 70 combinations (5 RSI x 2 MACD x 7 Fib)"""
+        # RSI: 5 levels
         rsi = row.rsi
-        if rsi < 40: r_bin = 'oversold'
-        elif rsi > 60: r_bin = 'overbought'
-        else: r_bin = 'neutral'
+        if rsi < 30: r_bin = '<30'
+        elif rsi < 40: r_bin = '30-40'
+        elif rsi < 60: r_bin = '40-60'
+        elif rsi < 70: r_bin = '60-70'
+        else: r_bin = '70+'
         
         # MACD: 2 levels
         m_bin = 'bull' if row.macd > row.macd_signal else 'bear'
         
-        # Fib: 3 levels
+        # Fib: 7 levels
         high, low, close = row.roll_high, row.roll_low, row.close
-        if high == low: f_bin = 'low'
+        if high == low: f_bin = '0-23'
         else:
             fib = (high - close) / (high - low) * 100
-            if fib < 38.2: f_bin = 'low'
-            elif fib > 61.8: f_bin = 'high'
-            else: f_bin = 'mid'
+            if fib < 23.6: f_bin = '0-23'
+            elif fib < 38.2: f_bin = '23-38'
+            elif fib < 50.0: f_bin = '38-50'
+            elif fib < 61.8: f_bin = '50-61'
+            elif fib < 78.6: f_bin = '61-78'
+            elif fib < 100: f_bin = '78-100'
+            else: f_bin = '100+'
             
         return f"RSI:{r_bin} MACD:{m_bin} Fib:{f_bin}"
 

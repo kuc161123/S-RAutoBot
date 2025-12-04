@@ -54,22 +54,28 @@ def replace_env_vars(config):
     return config
 
 def get_rsi_bin(rsi):
-    """Simplified RSI: 3 levels"""
-    if rsi < 40: return 'oversold'
-    if rsi > 60: return 'overbought'
-    return 'neutral'
+    """Original RSI: 5 levels"""
+    if rsi < 30: return '<30'
+    if rsi < 40: return '30-40'
+    if rsi < 60: return '40-60'
+    if rsi < 70: return '60-70'
+    return '70+'
 
 def get_macd_bin(macd, signal):
-    """Simplified MACD: 2 levels"""
+    """Original MACD: 2 levels"""
     return 'bull' if macd > signal else 'bear'
 
 def get_fib_bin(close, high_50, low_50):
-    """Simplified Fib: 3 levels"""
-    if high_50 == low_50: return 'low'
+    """Original Fib: 7 levels"""
+    if high_50 == low_50: return '0-23'
     fib = (high_50 - close) / (high_50 - low_50) * 100
-    if fib < 38.2: return 'low'      # Near highs
-    if fib > 61.8: return 'high'     # Near lows
-    return 'mid'                      # Middle range # Should not happen if close within range
+    if fib < 23.6: return '0-23'
+    if fib < 38.2: return '23-38'
+    if fib < 50.0: return '38-50'
+    if fib < 61.8: return '50-61'
+    if fib < 78.6: return '61-78'
+    if fib < 100: return '78-100'
+    return '100+'                      # Middle range # Should not happen if close within range
 
 def calculate_indicators(df):
     """Calculate VWAP, RSI, MACD, Fib, ATR with direction data"""

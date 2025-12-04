@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 SLIPPAGE = 0.001   # 0.1% (Conservative/Realistic)
 FEES = 0.0012      # 0.12% round trip (Standard Taker)
-MIN_WR = 45.0      # Min Win Rate to consider a combo valid
+MIN_WR = 40.0      # Min Win Rate to consider a combo valid (Log everything > 40%)
 MIN_TRADES = 10    # Min trades to consider a combo valid
 TRAIN_PCT = 0.7
 TIMEFRAME = '3'    # 3m Timeframe
@@ -106,13 +106,13 @@ def calculate_indicators(df):
     
     return df.dropna()
 
-def backtest_combos(df, side):
+def run_backtest(df, side):
     """
-    Finds triggers and records outcome for EVERY combo.
-    Returns a dict of {combo_key: {'wins': x, 'total': y, 'pnl': z}}
+    Run backtest on a given dataframe for a given side.
+    Returns results with win rate that NEVER dropped below MIN_WR (lower bound).
+    If WR ever dips below 40%, that combo is invalidated.
     """
-    trades = [] # List of (entry_index, entry_price, sl, tp, combo_key)
-    results = defaultdict(lambda: {'wins': 0, 'total': 0, 'pnl': 0.0})
+    results = defaultdict(lambda: {'wins': 0, 'total': 0, 'pnl': 0.0, 'lower_bound_violated': False})
     
     # We iterate to find triggers
     # To simulate "holding", we skip candles while in trade? 
@@ -190,7 +190,7 @@ def backtest_combos(df, side):
                         outcome_pnl = (eff_entry - eff_exit) / eff_entry - FEES
                         break
                         
-                # Timeout? (Optional, e.g. 100 bars)
+                # Timeout (100 bars max)
                 if j - i > 100:
                     # Force close
                     exit_price = future.close
@@ -208,6 +208,14 @@ def backtest_combos(df, side):
             results[combo_key]['total'] += 1
             if outcome_pnl > 0: results[combo_key]['wins'] += 1
             results[combo_key]['pnl'] += outcome_pnl
+            
+            # Check ROLLING Win Rate (Lower Bound Check)
+            wins = results[combo_key]['wins']
+            total = results[combo_key]['total']
+            if total >= 3:  # Only check after 3 trades to avoid early noise
+                rolling_wr = (wins / total) * 100
+                if rolling_wr < MIN_WR:
+                    results[combo_key]['lower_bound_violated'] = True
             
     return results
 
@@ -248,7 +256,7 @@ async def backtest_symbol(bybit, sym, idx, total):
         
         for side in ['long', 'short']:
             # 1. Train: Find best combo
-            train_results = backtest_combos(train, side)
+            train_results = run_backtest(train, side)
             
             best_combo = None
             best_pnl = -999.0
@@ -256,6 +264,7 @@ async def backtest_symbol(bybit, sym, idx, total):
             
             for combo, stats in train_results.items():
                 if stats['total'] < MIN_TRADES: continue
+                if stats.get('lower_bound_violated', False): continue  # LOWER BOUND CHECK
                 wr = (stats['wins'] / stats['total']) * 100
                 if wr < MIN_WR: continue
                 
@@ -266,10 +275,11 @@ async def backtest_symbol(bybit, sym, idx, total):
             
             if best_combo:
                 # 2. Validate: Check best combo in Test
-                test_results = backtest_combos(test, side)
+                test_results = run_backtest(test, side)
                 test_stats = test_results.get(best_combo)
                 
-                if test_stats and test_stats['total'] >= 1: # At least 1 trade in test
+                # Also check lower bound in test
+                if test_stats and test_stats['total'] >= 1 and not test_stats.get('lower_bound_violated', False):
                     test_wr = (test_stats['wins'] / test_stats['total']) * 100
                     if test_wr >= MIN_WR and test_stats['pnl'] > 0:
                         # Validated!
@@ -292,7 +302,7 @@ async def backtest_symbol(bybit, sym, idx, total):
                 msg.append(f"SHORT: {c['combo']} (WR {c['test_wr']:.1f}% | N={c['total_trades']})")
             logger.info(f"[{idx}/{total}] {sym} ✅ {' | '.join(msg)}")
             
-            # Incremental Save
+            # Incremental Save (WR >= 40% AND never dropped below 40%)
             try:
                 # Read existing
                 existing = {}
@@ -303,17 +313,34 @@ async def backtest_symbol(bybit, sym, idx, total):
                     pass
                     
                 # Update
-                existing[sym] = {}
-                if best_res['long']:
+                updated = False
+                existing_sym = existing.get(sym, {})
+                
+                if best_res['long'] and best_res['long']['test_wr'] >= 40.0:
                     c = best_res['long']
-                    existing[sym]['long'] = [f"{c['combo']}"] # Store as list of strings
-                if best_res['short']:
-                    c = best_res['short']
-                    existing[sym]['short'] = [f"{c['combo']}"]
+                    existing_sym['long'] = [f"{c['combo']}"]
+                    updated = True
                     
-                # Write back
-                with open('symbol_overrides_VWAP_Combo.yaml', 'w') as f:
-                    yaml.dump(existing, f)
+                if best_res['short'] and best_res['short']['test_wr'] >= 40.0:
+                    c = best_res['short']
+                    existing_sym['short'] = [f"{c['combo']}"]
+                    updated = True
+                
+                if updated:
+                    existing[sym] = existing_sym
+                    # Write back
+                    with open('symbol_overrides_VWAP_Combo.yaml', 'w') as f:
+                        yaml.dump(existing, f)
+                    
+                    # Auto-push to git
+                    import subprocess
+                    try:
+                        subprocess.run(['git', 'add', 'symbol_overrides_VWAP_Combo.yaml'], check=True, capture_output=True)
+                        subprocess.run(['git', 'commit', '-m', f'Auto: New combo {sym}'], check=True, capture_output=True)
+                        subprocess.run(['git', 'push'], check=True, capture_output=True)
+                        logger.info(f"✅ Auto-pushed {sym} to git")
+                    except subprocess.CalledProcessError as e:
+                        logger.warning(f"Git push failed (may be no changes): {e}")
             except Exception as e:
                 logger.error(f"Failed to save incremental result: {e}")
                 

@@ -58,6 +58,17 @@ class VWAPBot:
         self.signals_detected = 0
         self.trades_executed = 0
         
+        # Position Tracking
+        self.trade_history = []  # List of {symbol, side, entry, exit, pnl, time}
+        self.daily_pnl = 0.0
+        self.total_pnl = 0.0
+        self.wins = 0
+        self.losses = 0
+        
+        # Daily Summary
+        self.last_daily_summary = time.time()
+        self.start_time = time.time()
+        
     def load_config(self):
         # Load .env manually
         try:
@@ -113,20 +124,35 @@ class VWAPBot:
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        wins = self.phantom_stats['wins']
-        losses = self.phantom_stats['losses']
-        total = wins + losses
-        wr = (wins / total * 100) if total > 0 else 0.0
+        # Phantom stats
+        p_wins = self.phantom_stats['wins']
+        p_losses = self.phantom_stats['losses']
+        p_total = p_wins + p_losses
+        p_wr = (p_wins / p_total * 100) if p_total > 0 else 0.0
+        
+        # Trade stats
+        t_total = self.wins + self.losses
+        t_wr = (self.wins / t_total * 100) if t_total > 0 else 0.0
+        
+        # Uptime
+        uptime_sec = int(time.time() - self.start_time)
+        uptime_hr = uptime_sec // 3600
+        uptime_min = (uptime_sec % 3600) // 60
         
         msg = (
             "📊 **BOT STATUS**\n\n"
+            f"⏱️ Uptime: {uptime_hr}h {uptime_min}m\n"
             f"⚙️ Risk: {self.risk_config['value']} {self.risk_config['type']}\n"
             f"📈 Signals: {self.signals_detected}\n"
-            f"💰 Trades: {self.trades_executed}\n"
             f"🔄 Loops: {self.loop_count}\n\n"
+            f"💰 **Trading**\n"
+            f"Trades: {self.trades_executed}\n"
+            f"WR: {t_wr:.1f}% ({self.wins}W/{self.losses}L)\n"
+            f"Daily PnL: ${self.daily_pnl:.2f}\n"
+            f"Total PnL: ${self.total_pnl:.2f}\n\n"
             f"👻 **Phantoms**\n"
             f"Active: {len(self.phantom_trades)}\n"
-            f"WR: {wr:.1f}% ({wins}W/{losses}L)\n\n"
+            f"WR: {p_wr:.1f}% ({p_wins}W/{p_losses}L)\n\n"
             f"📂 Combos: {len(self.vwap_combos)} symbols"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
@@ -189,6 +215,41 @@ class VWAPBot:
                         logger.error(f"Telegram failed: {resp.status}")
         except Exception as e:
             logger.error(f"Telegram error: {e}")
+
+    async def send_daily_summary(self):
+        """Send daily summary at midnight or every 24 hours"""
+        # Check if 24 hours have passed
+        if time.time() - self.last_daily_summary < 86400:  # 24 hours
+            return
+            
+        self.last_daily_summary = time.time()
+        
+        # Phantom stats
+        p_wins = self.phantom_stats['wins']
+        p_losses = self.phantom_stats['losses']
+        p_total = p_wins + p_losses
+        p_wr = (p_wins / p_total * 100) if p_total > 0 else 0.0
+        
+        # Trade stats
+        t_total = self.wins + self.losses
+        t_wr = (self.wins / t_total * 100) if t_total > 0 else 0.0
+        
+        msg = (
+            "📅 **DAILY SUMMARY**\n\n"
+            f"💰 **Trading**\n"
+            f"Trades: {self.trades_executed}\n"
+            f"WR: {t_wr:.1f}% ({self.wins}W/{self.losses}L)\n"
+            f"Daily PnL: ${self.daily_pnl:.2f}\n"
+            f"Total PnL: ${self.total_pnl:.2f}\n\n"
+            f"👻 **Phantoms**\n"
+            f"WR: {p_wr:.1f}% ({p_wins}W/{p_losses}L)\n\n"
+            f"📂 Active Combos: {len(self.vwap_combos)} symbols\n"
+            f"📈 Signals Detected: {self.signals_detected}"
+        )
+        await self.send_telegram(msg)
+        
+        # Reset daily stats
+        self.daily_pnl = 0.0
 
     def calculate_indicators(self, df):
         if len(df) < 50: return df
@@ -449,6 +510,9 @@ class VWAPBot:
                     await asyncio.sleep(0.2)
                 
                 await self.update_phantoms()
+                
+                # Daily summary (every 24 hours)
+                await self.send_daily_summary()
                 
                 # Log stats every 10 loops
                 if self.loop_count % 10 == 0:

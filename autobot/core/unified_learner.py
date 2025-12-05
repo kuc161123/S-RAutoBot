@@ -398,15 +398,36 @@ class UnifiedLearner:
         return True, f"✅ {regime} | BTC:{btc_trend} | {rr_exp}"
     
     # ========================================================================
-    # SIGNAL RECORDING
+    # SIGNAL RECORDING (Accuracy-focused)
     # ========================================================================
     
     def record_signal(self, symbol: str, side: str, combo: str,
-                     entry: float, atr: float, btc_price: float = 0) -> Tuple[float, float, str]:
+                     entry: float, atr: float, btc_price: float = 0,
+                     is_allowed: bool = False) -> Tuple[float, float, str]:
         """
         Record a signal with full context and return optimal TP/SL.
+        
+        ACCURACY MEASURES:
+        1. Strict input validation
+        2. Deduplication by symbol+side (different combos allowed)
+        3. Proper TP/SL calculation with validation
+        4. Full context capture at entry time
+        
         Returns (tp_price, sl_price, explanation)
         """
+        # === STRICT INPUT VALIDATION ===
+        if not symbol or not side or not combo:
+            return None, None, "Invalid input: missing symbol/side/combo"
+        
+        if entry <= 0:
+            return None, None, f"Invalid entry price: {entry}"
+        
+        if atr <= 0:
+            return None, None, f"Invalid ATR: {atr}"
+        
+        if side not in ['long', 'short']:
+            return None, None, f"Invalid side: {side}"
+        
         # Skip if blacklisted
         if self.is_blacklisted(symbol, side, combo):
             return None, None, "Blacklisted"
@@ -415,37 +436,46 @@ class UnifiedLearner:
         if btc_price > 0:
             self.update_btc_price(btc_price)
         
-        # Check for existing pending signal
-        existing = any(s.symbol == symbol and s.side == side and s.combo == combo 
+        # === DEDUPLICATION: Only one signal per symbol+side at a time ===
+        # (This prevents duplicate tracking of same trade)
+        existing = any(s.symbol == symbol and s.side == side 
                       for s in self.pending_signals)
         if existing:
-            return None, None, "Already tracking"
+            return None, None, "Already tracking this symbol+side"
         
-        # Cleanup old signals
+        # Cleanup old signals if too many
         if len(self.pending_signals) > self.MAX_PENDING:
             self._cleanup_old_signals()
         
-        # Get context
+        # === CAPTURE CONTEXT AT ENTRY TIME ===
         now = datetime.utcnow()
+        entry_timestamp = time.time()
         hour_utc = now.hour
         session = self.get_session(hour_utc)
-        atr_percent = (atr / entry) * 100 if entry > 0 else 1.0
+        atr_percent = (atr / entry) * 100
         regime = self.get_volatility_regime(atr_percent)
         btc_change = self.get_btc_change_1h()
         btc_trend = self.get_btc_trend(btc_change)
         
-        # Get optimal R:R
+        # === GET OPTIMAL R:R ===
         optimal_rr, rr_explanation = self.get_optimal_rr(symbol, side, combo)
         
-        # Calculate TP/SL with optimal R:R (using 1 ATR SL)
+        # === CALCULATE TP/SL WITH VALIDATION ===
+        # Using 1 ATR for SL, optimal_rr * ATR for TP
         if side == 'long':
             sl = entry - atr
             tp = entry + (optimal_rr * atr)
+            # Validate: SL must be below entry, TP must be above entry
+            if sl >= entry or tp <= entry:
+                return None, None, f"Invalid TP/SL calculation for long"
         else:
             sl = entry + atr
             tp = entry - (optimal_rr * atr)
+            # Validate: SL must be above entry, TP must be below entry
+            if sl <= entry or tp >= entry:
+                return None, None, f"Invalid TP/SL calculation for short"
         
-        # Create signal
+        # === CREATE SIGNAL WITH FULL CONTEXT ===
         signal = LearningSignal(
             symbol=symbol,
             side=side,
@@ -453,21 +483,30 @@ class UnifiedLearner:
             entry_price=entry,
             tp_price=tp,
             sl_price=sl,
-            start_time=time.time(),
+            start_time=entry_timestamp,
+            is_phantom=not is_allowed,
+            is_allowed_combo=is_allowed,
             atr_percent=atr_percent,
             volatility_regime=regime,
             btc_trend=btc_trend,
             btc_change_1h=btc_change,
             session=session,
             hour_utc=hour_utc,
-            rr_ratio=optimal_rr
+            rr_ratio=optimal_rr,
+            max_high=entry,    # Initialize with entry
+            min_low=entry      # Initialize with entry
         )
         
         self.pending_signals.append(signal)
         self.total_signals += 1
         
-        explanation = f"R:R={optimal_rr}:1 | {regime} | BTC:{btc_trend}"
+        # Log for debugging
+        logger.debug(
+            f"📝 RECORDED: {symbol} {side} | Entry:{entry:.4f} TP:{tp:.4f} SL:{sl:.4f} | "
+            f"R:R={optimal_rr}:1 | {regime} | BTC:{btc_trend}"
+        )
         
+        explanation = f"R:R={optimal_rr}:1 | {regime} | BTC:{btc_trend}"
         return tp, sl, explanation
     
     def _cleanup_old_signals(self):
@@ -491,8 +530,12 @@ class UnifiedLearner:
         This uses the same accurate method as the phantom system:
         - Longs: SL hit if low <= SL, TP hit if high >= TP
         - Shorts: SL hit if high >= SL, TP hit if low <= TP
+        
+        CRITICAL: SL is checked BEFORE TP (if both hit in same candle, it's a loss)
         """
         now = time.time()
+        resolved_count = 0
+        timeout_count = 0
         
         for signal in self.pending_signals[:]:
             if signal.outcome is not None:
@@ -505,52 +548,76 @@ class UnifiedLearner:
             high = candle.get('high', 0)
             low = candle.get('low', 0)
             
-            if high == 0 or low == 0:
+            # === STRICT VALIDATION ===
+            if high <= 0 or low <= 0:
+                continue
+            if high < low:  # Invalid candle data
+                logger.warning(f"Invalid candle for {signal.symbol}: high={high} < low={low}")
                 continue
             
-            # Initialize max_high/min_low on first update
-            if signal.max_high == 0:
-                signal.max_high = high
-                signal.min_low = low
+            # === UPDATE MAX/MIN TRACKING ===
+            # Use entry price as initial reference if not set
+            if signal.max_high == signal.entry_price and signal.min_low == signal.entry_price:
+                signal.max_high = max(signal.entry_price, high)
+                signal.min_low = min(signal.entry_price, low)
             else:
                 signal.max_high = max(signal.max_high, high)
                 signal.min_low = min(signal.min_low, low)
             
-            # Track max favorable/adverse
+            # === TRACK MAX FAVORABLE/ADVERSE MOVES ===
             if signal.side == 'long':
-                signal.max_favorable = max(signal.max_favorable, 
-                    (high - signal.entry_price) / signal.entry_price * 100)
-                signal.max_adverse = max(signal.max_adverse,
-                    (signal.entry_price - low) / signal.entry_price * 100)
+                # Favorable = price went up (high above entry)
+                favorable_pct = max(0, (signal.max_high - signal.entry_price) / signal.entry_price * 100)
+                # Adverse = price went down (low below entry)
+                adverse_pct = max(0, (signal.entry_price - signal.min_low) / signal.entry_price * 100)
             else:
-                signal.max_favorable = max(signal.max_favorable,
-                    (signal.entry_price - low) / signal.entry_price * 100)
-                signal.max_adverse = max(signal.max_adverse,
-                    (high - signal.entry_price) / signal.entry_price * 100)
+                # Favorable = price went down (low below entry)
+                favorable_pct = max(0, (signal.entry_price - signal.min_low) / signal.entry_price * 100)
+                # Adverse = price went up (high above entry)
+                adverse_pct = max(0, (signal.max_high - signal.entry_price) / signal.entry_price * 100)
             
-            # Check timeout
-            if now - signal.start_time > self.SIGNAL_TIMEOUT:
+            signal.max_favorable = max(signal.max_favorable, favorable_pct)
+            signal.max_adverse = max(signal.max_adverse, adverse_pct)
+            
+            # === CHECK TIMEOUT (4 hours) ===
+            age_hours = (now - signal.start_time) / 3600
+            if age_hours > 4:
+                timeout_count += 1
                 self.pending_signals.remove(signal)
+                logger.debug(f"⏰ TIMEOUT: {signal.symbol} {signal.side} after {age_hours:.1f}h")
                 continue
             
-            # Check outcome using HIGH/LOW (accurate like phantom system)
+            # === CHECK OUTCOME USING HIGH/LOW ===
+            # CRITICAL: Check SL FIRST - if both SL and TP hit in same candle, it's a LOSS
             outcome = None
+            
             if signal.side == 'long':
-                # Long: SL hit if low touched SL, TP hit if high touched TP
-                if low <= signal.sl_price:
-                    outcome = 'loss'
-                elif high >= signal.tp_price:
+                # Long trade: SL is below entry, TP is above entry
+                sl_hit = low <= signal.sl_price
+                tp_hit = high >= signal.tp_price
+                
+                if sl_hit:
+                    outcome = 'loss'  # SL hit (even if TP also hit)
+                elif tp_hit:
                     outcome = 'win'
-            else:
-                # Short: SL hit if high touched SL, TP hit if low touched TP
-                if high >= signal.sl_price:
-                    outcome = 'loss'
-                elif low <= signal.tp_price:
+                    
+            else:  # short
+                # Short trade: SL is above entry, TP is below entry
+                sl_hit = high >= signal.sl_price
+                tp_hit = low <= signal.tp_price
+                
+                if sl_hit:
+                    outcome = 'loss'  # SL hit (even if TP also hit)
+                elif tp_hit:
                     outcome = 'win'
             
             if outcome:
+                resolved_count += 1
                 self._resolve_signal(signal, outcome)
                 self.pending_signals.remove(signal)
+        
+        if resolved_count > 0 or timeout_count > 0:
+            logger.info(f"📊 Update: Resolved={resolved_count} Timeout={timeout_count} Pending={len(self.pending_signals)}")
     
     def _resolve_signal(self, signal: LearningSignal, outcome: str):
         """Resolve signal and update all stats"""

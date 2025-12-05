@@ -896,19 +896,35 @@ class VWAPBot:
                 
                 await self.update_phantoms()
                 
-                # Update learner with current prices for ALL symbols
+                # Update learner with candle data (high/low) for accurate resolution
                 try:
-                    prices = {}
+                    candle_data = {}
                     for sym in self.all_symbols:
-                        ticker = self.broker.get_ticker(sym)
-                        if ticker:
-                            prices[sym] = float(ticker.get('lastPrice', 0))
+                        klines = self.broker.get_klines(sym, '3', limit=1)
+                        if klines and len(klines) > 0:
+                            candle = klines[0]
+                            candle_data[sym] = {
+                                'high': float(candle[2]),
+                                'low': float(candle[3]),
+                                'close': float(candle[4])
+                            }
                     
-                    # Update unified learner
-                    self.learner.update_signals(prices)
+                    # Update unified learner with accurate high/low
+                    self.learner.update_signals(candle_data)
+                    
+                    # Send Telegram notifications for resolved signals
+                    if hasattr(self.learner, 'last_resolved') and self.learner.last_resolved:
+                        for r in self.learner.last_resolved:
+                            icon = "✅" if r['outcome'] == 'win' else "❌"
+                            await self.send_telegram(
+                                f"{icon} `{r['symbol']}` {r['side'].upper()} {r['outcome'].upper()}\n"
+                                f"⏱️ {r['time_mins']:.0f}m | DD: {r['max_dd']:.1f}%"
+                            )
+                        self.learner.last_resolved = []  # Clear after sending
                     
                     # Update BTC price for context tracking
-                    btc_price = prices.get('BTCUSDT', 0)
+                    btc_candle = candle_data.get('BTCUSDT', {})
+                    btc_price = btc_candle.get('close', 0)
                     if btc_price > 0:
                         self.learner.update_btc_price(btc_price)
                         

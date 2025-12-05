@@ -62,6 +62,10 @@ class LearningSignal:
     sl_price: float
     start_time: float
     
+    # Is this a phantom (not in allowed combos) or active trade?
+    is_phantom: bool = True
+    is_allowed_combo: bool = False
+    
     # Market context
     atr_percent: float = 0.0          # ATR as % of price
     volatility_regime: str = "medium"  # 'high', 'medium', 'low'
@@ -73,9 +77,11 @@ class LearningSignal:
     # R:R used
     rr_ratio: float = 2.0
     
-    # Tracking
-    max_favorable: float = 0.0        # Max move towards TP
-    max_adverse: float = 0.0          # Max drawdown
+    # Accurate tracking (like phantom system - uses candle high/low)
+    max_high: float = 0.0             # Max high seen since entry
+    min_low: float = 0.0              # Min low seen since entry
+    max_favorable: float = 0.0        # Max move towards TP (%)
+    max_adverse: float = 0.0          # Max drawdown (%)
     
     # Outcome
     outcome: Optional[str] = None
@@ -129,7 +135,15 @@ class UnifiedLearner:
     MIN_TRADES_FOR_RR = 15
     MIN_TRADES_FOR_REGIME = 10
     
-    def __init__(self):
+    def __init__(self, on_resolve_callback=None):
+        """
+        Initialize learner.
+        
+        on_resolve_callback: Optional async function(signal, outcome, time_mins, max_dd) 
+                            called when a signal resolves - use for Telegram notifications
+        """
+        self.on_resolve_callback = on_resolve_callback
+        
         # Combo stats: symbol -> side -> combo -> stats
         self.combo_stats: Dict = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: {
             'total': 0,
@@ -465,48 +479,73 @@ class UnifiedLearner:
         ]
     
     # ========================================================================
-    # SIGNAL RESOLUTION
+    # SIGNAL RESOLUTION (Accurate like phantom system)
     # ========================================================================
     
-    def update_signals(self, prices: Dict[str, float]):
-        """Update pending signals with current prices"""
+    def update_signals(self, candle_data: Dict[str, Dict]):
+        """
+        Update pending signals with candle data (high/low) for accurate resolution.
+        
+        candle_data format: {symbol: {'high': float, 'low': float, 'close': float}}
+        
+        This uses the same accurate method as the phantom system:
+        - Longs: SL hit if low <= SL, TP hit if high >= TP
+        - Shorts: SL hit if high >= SL, TP hit if low <= TP
+        """
         now = time.time()
         
         for signal in self.pending_signals[:]:
             if signal.outcome is not None:
                 continue
             
-            price = prices.get(signal.symbol)
-            if not price:
+            candle = candle_data.get(signal.symbol)
+            if not candle:
                 continue
+            
+            high = candle.get('high', 0)
+            low = candle.get('low', 0)
+            
+            if high == 0 or low == 0:
+                continue
+            
+            # Initialize max_high/min_low on first update
+            if signal.max_high == 0:
+                signal.max_high = high
+                signal.min_low = low
+            else:
+                signal.max_high = max(signal.max_high, high)
+                signal.min_low = min(signal.min_low, low)
             
             # Track max favorable/adverse
             if signal.side == 'long':
-                favorable = (price - signal.entry_price) / signal.entry_price * 100
-                adverse = (signal.entry_price - price) / signal.entry_price * 100
+                signal.max_favorable = max(signal.max_favorable, 
+                    (high - signal.entry_price) / signal.entry_price * 100)
+                signal.max_adverse = max(signal.max_adverse,
+                    (signal.entry_price - low) / signal.entry_price * 100)
             else:
-                favorable = (signal.entry_price - price) / signal.entry_price * 100
-                adverse = (price - signal.entry_price) / signal.entry_price * 100
-            
-            signal.max_favorable = max(signal.max_favorable, favorable)
-            signal.max_adverse = max(signal.max_adverse, adverse)
+                signal.max_favorable = max(signal.max_favorable,
+                    (signal.entry_price - low) / signal.entry_price * 100)
+                signal.max_adverse = max(signal.max_adverse,
+                    (high - signal.entry_price) / signal.entry_price * 100)
             
             # Check timeout
             if now - signal.start_time > self.SIGNAL_TIMEOUT:
                 self.pending_signals.remove(signal)
                 continue
             
-            # Check outcome
+            # Check outcome using HIGH/LOW (accurate like phantom system)
             outcome = None
             if signal.side == 'long':
-                if price <= signal.sl_price:
+                # Long: SL hit if low touched SL, TP hit if high touched TP
+                if low <= signal.sl_price:
                     outcome = 'loss'
-                elif price >= signal.tp_price:
+                elif high >= signal.tp_price:
                     outcome = 'win'
             else:
-                if price >= signal.sl_price:
+                # Short: SL hit if high touched SL, TP hit if low touched TP
+                if high >= signal.sl_price:
                     outcome = 'loss'
-                elif price <= signal.tp_price:
+                elif low <= signal.tp_price:
                     outcome = 'win'
             
             if outcome:
@@ -562,9 +601,26 @@ class UnifiedLearner:
         self._check_promote(signal.symbol, signal.side, signal.combo)
         self._check_blacklist(signal.symbol, signal.side, signal.combo)
         
+        # Store resolved signal data for notification
+        time_mins = signal.time_to_result / 60
+        max_dd = signal.max_adverse
+        
+        # Add to last_resolved (caller can use for notifications)
+        if not hasattr(self, 'last_resolved'):
+            self.last_resolved = []
+        self.last_resolved.append({
+            'symbol': signal.symbol,
+            'side': signal.side,
+            'combo': signal.combo,
+            'outcome': outcome,
+            'time_mins': round(time_mins, 1),
+            'max_dd': round(max_dd, 2),
+            'is_phantom': signal.is_phantom
+        })
+        
         logger.info(
             f"📊 {signal.symbol} {signal.side} {outcome.upper()} | "
-            f"{signal.volatility_regime} | BTC:{signal.btc_trend} | R:R:{signal.rr_ratio}"
+            f"{time_mins:.0f}m | DD:{max_dd:.1f}%"
         )
     
     # ========================================================================

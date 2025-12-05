@@ -272,63 +272,96 @@ class VWAPBot:
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     async def cmd_dashboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show combo dashboard summary via Telegram"""
-        from collections import Counter
-        
-        # Count combos
-        total_symbols = len(self.vwap_combos)
-        long_combos = 0
-        short_combos = 0
-        rsi_counter = Counter()
-        macd_counter = Counter()
-        
-        for symbol, data in self.vwap_combos.items():
-            longs = data.get('long', [])
-            shorts = data.get('short', [])
-            long_combos += len(longs)
-            short_combos += len(shorts)
+        """Show comprehensive bot dashboard"""
+        try:
+            from autobot.core.combo_learner import wilson_lower_bound
             
-            # Parse combos for analytics
-            for combo in longs + shorts:
-                parts = combo.split()
-                for part in parts:
-                    if part.startswith('RSI:'):
-                        rsi_counter[part.replace('RSI:', '')] += 1
-                    elif part.startswith('MACD:'):
-                        macd_counter[part.replace('MACD:', '')] += 1
-        
-        # Top RSI levels
-        top_rsi = rsi_counter.most_common(3)
-        rsi_str = ', '.join([f"{r[0]}({r[1]})" for r in top_rsi]) if top_rsi else "None"
-        
-        # Phantom stats
-        phantom_wins = self.phantom_stats.get('wins', 0)
-        phantom_losses = self.phantom_stats.get('losses', 0)
-        phantom_total = phantom_wins + phantom_losses
-        phantom_wr = (phantom_wins / phantom_total * 100) if phantom_total > 0 else 0
-        active_phantoms = len(self.phantom_trades)
-        
-        # Learning stats
-        learning_signals = self.combo_learner.total_signals_tracked
-        learning_combos = len(self.combo_learner.get_all_combos())
-        
-        msg = (
-            "📊 **COMBO DASHBOARD**\n\n"
-            f"🎰 **Active Combos**\n"
-            f"Symbols: {total_symbols}\n"
-            f"🟢 Long: {long_combos} | 🔴 Short: {short_combos}\n\n"
-            f"👻 **PHANTOM TRADES**\n"
-            f"Active: {active_phantoms}\n"
-            f"Completed: {phantom_total} ({phantom_wins}W/{phantom_losses}L)\n"
-            f"WR: {phantom_wr:.0f}%\n\n"
-            f"📚 **LEARNING**\n"
-            f"Signals tracked: {learning_signals}\n"
-            f"Combos learned: {learning_combos}\n\n"
-            f"📈 **MACD Trend**\n"
-            f"Bull: {macd_counter.get('bull', 0)} | Bear: {macd_counter.get('bear', 0)}\n\n"
-            f"🎯 **Top RSI**: {rsi_str}"
-        )
-        await update.message.reply_text(msg, parse_mode='Markdown')
+            # === SYSTEM STATUS ===
+            uptime_hrs = (time.time() - self.combo_learner.started_at) / 3600
+            
+            # === TRADING SYMBOLS ===
+            total_symbols = len(self.vwap_combos)
+            learning_symbols = len(getattr(self, 'all_symbols', []))
+            long_combos = sum(len(d.get('long', [])) for d in self.vwap_combos.values())
+            short_combos = sum(len(d.get('short', [])) for d in self.vwap_combos.values())
+            
+            # === PHANTOM PERFORMANCE ===
+            phantom_wins = self.phantom_stats.get('wins', 0)
+            phantom_losses = self.phantom_stats.get('losses', 0)
+            phantom_total = phantom_wins + phantom_losses
+            phantom_wr = (phantom_wins / phantom_total * 100) if phantom_total > 0 else 0
+            phantom_lb_wr = wilson_lower_bound(phantom_wins, phantom_total)
+            active_phantoms = len(self.phantom_trades)
+            
+            # === LEARNING STATS ===
+            learning = self.combo_learner
+            total_signals = learning.total_signals_tracked
+            total_wins = learning.total_wins
+            total_losses = learning.total_losses
+            learning_total = total_wins + total_losses
+            learning_wr = (total_wins / learning_total * 100) if learning_total > 0 else 0
+            lower_wr = wilson_lower_bound(total_wins, learning_total)
+            
+            unique_combos = len(learning.get_all_combos())
+            promoted = len(learning.promoted)
+            blacklisted = len(learning.blacklist)
+            pending = len(learning.pending_signals)
+            
+            # Top performers
+            top_combos = learning.get_top_combos(min_trades=3, min_lower_wr=40)[:3]
+            
+            # Recent phantom activity
+            recent_phantoms = self.phantom_history[-3:] if self.phantom_history else []
+            
+            # === BUILD MESSAGE ===
+            msg = (
+                "📊 **VWAP BOT DASHBOARD**\n"
+                "━━━━━━━━━━━━━━━━━━━━\n\n"
+                
+                f"⚙️ **SYSTEM**\n"
+                f"├ Uptime: {uptime_hrs:.1f}h | Loops: {self.loop_count}\n"
+                f"└ Risk: {self.risk_config['value']} {self.risk_config['type']}\n\n"
+                
+                f"🎯 **TRADING**\n"
+                f"├ Symbols: {total_symbols} active\n"
+                f"├ Combos: 🟢{long_combos} / 🔴{short_combos}\n"
+                f"└ Signals: {self.signals_detected} detected\n\n"
+                
+                f"👻 **PHANTOMS**\n"
+                f"├ Active: {active_phantoms} tracking\n"
+                f"├ Done: {phantom_total} ({phantom_wins}W/{phantom_losses}L)\n"
+                f"└ WR: {phantom_wr:.0f}% (LB: **{phantom_lb_wr:.0f}%**)\n\n"
+                
+                f"📚 **LEARNING** ({learning_symbols} symbols)\n"
+                f"├ Signals: {total_signals} | Pending: {pending}\n"
+                f"├ Resolved: {learning_total} ({total_wins}W/{total_losses}L)\n"
+                f"├ WR: {learning_wr:.0f}% (LB: **{lower_wr:.0f}%**)\n"
+                f"├ Combos: {unique_combos} learned\n"
+                f"├ 🚀 Promoted: {promoted}\n"
+                f"└ 🚫 Blacklisted: {blacklisted}\n"
+            )
+            
+            # Add top performers if any
+            if top_combos:
+                msg += "\n🏆 **TOP PERFORMERS**\n"
+                for c in top_combos:
+                    msg += f"├ `{c['symbol']}` {c['side'][0].upper()}: {c['lower_wr']:.0f}%\n"
+            
+            # Add recent phantom activity
+            if recent_phantoms:
+                msg += "\n📈 **RECENT**\n"
+                for p in reversed(recent_phantoms):
+                    icon = "✅" if p['outcome'] == 'win' else "❌"
+                    msg += f"├ {icon} `{p['symbol']}`\n"
+            
+            msg += "\n━━━━━━━━━━━━━━━━━━━━\n"
+            msg += "💡 /learn /sessions /phantoms"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Dashboard error: {e}")
+            logger.error(f"Dashboard error: {e}")
 
     async def cmd_learn(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show learning system report"""

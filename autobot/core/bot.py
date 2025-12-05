@@ -319,8 +319,12 @@ class VWAPBot:
 
     async def cmd_learn(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show learning system report"""
-        report = self.combo_learner.generate_report()
-        await update.message.reply_text(report, parse_mode='Markdown')
+        try:
+            report = self.combo_learner.generate_report()
+            await update.message.reply_text(report, parse_mode='Markdown')
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"cmd_learn error: {e}")
 
     async def cmd_promote(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show combos that could be promoted to active trading"""
@@ -349,26 +353,34 @@ class VWAPBot:
 
     async def cmd_sessions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show session performance report"""
-        report = self.combo_learner.get_session_report()
-        await update.message.reply_text(report, parse_mode='Markdown')
+        try:
+            report = self.combo_learner.get_session_report()
+            await update.message.reply_text(report, parse_mode='Markdown')
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"cmd_sessions error: {e}")
 
     async def cmd_blacklist(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show blacklisted combos"""
-        blacklist = self.combo_learner.blacklist
-        if not blacklist:
-            await update.message.reply_text("🚫 No blacklisted combos yet.", parse_mode='Markdown')
-            return
-        
-        msg = f"🚫 **BLACKLISTED COMBOS** ({len(blacklist)})\n\n"
-        for item in list(blacklist)[:15]:
-            parts = item.split(':')
-            if len(parts) >= 3:
-                msg += f"• `{parts[0]}` {parts[1]}\n"
-        
-        if len(blacklist) > 15:
-            msg += f"\n... and {len(blacklist) - 15} more"
-        
-        await update.message.reply_text(msg, parse_mode='Markdown')
+        try:
+            blacklist = self.combo_learner.blacklist
+            if not blacklist:
+                await update.message.reply_text("🚫 No blacklisted combos yet.", parse_mode='Markdown')
+                return
+            
+            msg = f"🚫 **BLACKLISTED COMBOS** ({len(blacklist)})\n\n"
+            for item in list(blacklist)[:15]:
+                parts = item.split(':')
+                if len(parts) >= 3:
+                    msg += f"• `{parts[0]}` {parts[1]}\n"
+            
+            if len(blacklist) > 15:
+                msg += f"\n... and {len(blacklist) - 15} more"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"cmd_blacklist error: {e}")
 
     async def cmd_risk(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
@@ -732,9 +744,16 @@ class VWAPBot:
             self.tg_app.add_handler(CommandHandler("sessions", self.cmd_sessions))
             self.tg_app.add_handler(CommandHandler("blacklist", self.cmd_blacklist))
             
+            # Global error handler
+            async def error_handler(update, context):
+                logger.error(f"Telegram error: {context.error}")
+                if update and update.message:
+                    await update.message.reply_text(f"❌ Command error: {context.error}")
+            self.tg_app.add_error_handler(error_handler)
+            
             await self.tg_app.initialize()
             await self.tg_app.start()
-            await self.tg_app.updater.start_polling()
+            await self.tg_app.updater.start_polling(drop_pending_updates=True)
             logger.info("Telegram bot initialized")
         except Exception as e:
             logger.error(f"Telegram init failed: {e}")

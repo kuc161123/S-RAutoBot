@@ -9,8 +9,7 @@ import time
 from datetime import datetime
 from dataclasses import dataclass
 from autobot.brokers.bybit import Bybit, BybitConfig
-from autobot.core.combo_learner import ComboLearner
-from autobot.core.smart_learner import SmartLearner
+from autobot.core.unified_learner import UnifiedLearner, wilson_lower_bound
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 
@@ -75,11 +74,8 @@ class VWAPBot:
         self.last_daily_summary = time.time()
         self.start_time = time.time()
         
-        # Combo Learning System (silent background tracker)
-        self.combo_learner = ComboLearner()
-        
-        # Smart Learning System (adaptive R:R, volatility, BTC context)
-        self.smart_learner = SmartLearner()
+        # Unified Learning System (all learning features in one)
+        self.learner = UnifiedLearner()
         
     def load_config(self):
         # Load .env manually
@@ -278,10 +274,8 @@ class VWAPBot:
     async def cmd_dashboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show comprehensive bot dashboard"""
         try:
-            from autobot.core.combo_learner import wilson_lower_bound
-            
             # === SYSTEM STATUS ===
-            uptime_hrs = (time.time() - self.combo_learner.started_at) / 3600
+            uptime_hrs = (time.time() - self.learner.started_at) / 3600
             
             # === TRADING SYMBOLS ===
             total_symbols = len(self.vwap_combos)
@@ -298,8 +292,8 @@ class VWAPBot:
             active_phantoms = len(self.phantom_trades)
             
             # === LEARNING STATS ===
-            learning = self.combo_learner
-            total_signals = learning.total_signals_tracked
+            learning = self.learner
+            total_signals = learning.total_signals
             total_wins = learning.total_wins
             total_losses = learning.total_losses
             learning_total = total_wins + total_losses
@@ -370,7 +364,7 @@ class VWAPBot:
     async def cmd_learn(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show learning system report"""
         try:
-            report = self.combo_learner.generate_report()
+            report = self.learner.generate_report()
             await update.message.reply_text(report, parse_mode='Markdown')
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
@@ -378,7 +372,7 @@ class VWAPBot:
 
     async def cmd_promote(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show combos that could be promoted to active trading"""
-        candidates = self.combo_learner.get_promote_candidates()
+        candidates = self.learner.get_promote_candidates()
         
         if not candidates:
             await update.message.reply_text(
@@ -404,7 +398,7 @@ class VWAPBot:
     async def cmd_sessions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show session performance report"""
         try:
-            report = self.combo_learner.get_session_report()
+            report = self.learner.get_session_report()
             await update.message.reply_text(report, parse_mode='Markdown')
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
@@ -413,7 +407,7 @@ class VWAPBot:
     async def cmd_blacklist(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show blacklisted combos"""
         try:
-            blacklist = self.combo_learner.blacklist
+            blacklist = self.learner.blacklist
             if not blacklist:
                 await update.message.reply_text("🚫 No blacklisted combos yet.", parse_mode='Markdown')
                 return
@@ -435,46 +429,8 @@ class VWAPBot:
     async def cmd_smart(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show smart learning report with adaptive parameters"""
         try:
-            smart = self.smart_learner
-            
-            # Basic stats
-            uptime = (time.time() - smart.started_at) / 3600
-            total = smart.total_wins + smart.total_losses
-            wr = (smart.total_wins / total * 100) if total > 0 else 0
-            
-            from autobot.core.smart_learner import wilson_lower_bound
-            lb_wr = wilson_lower_bound(smart.total_wins, total)
-            
-            btc_change = smart.get_btc_change_1h()
-            btc_trend = smart.get_btc_trend(btc_change)
-            
-            msg = (
-                "🧠 **SMART LEARNING**\n"
-                "━━━━━━━━━━━━━━━━━━━━\n\n"
-                f"⏱️ Running: {uptime:.1f}h\n"
-                f"📊 Signals: {smart.total_signals}\n"
-                f"📈 Resolved: {total} ({smart.total_wins}W/{smart.total_losses}L)\n"
-                f"🎯 WR: {wr:.0f}% (LB: **{lb_wr:.0f}%**)\n"
-                f"⏳ Pending: {len(smart.pending_signals)}\n\n"
-                f"₿ **BTC Context**\n"
-                f"├ Trend: {btc_trend}\n"
-                f"└ 1h Change: {btc_change:+.2f}%\n\n"
-            )
-            
-            # Recent auto-adjustments
-            if smart.adjustments_made:
-                msg += "🔧 **AUTO-ADJUSTMENTS**\n"
-                for adj in smart.adjustments_made[-5:]:
-                    msg += f"├ `{adj['symbol']}` {adj['side']}\n"
-                    msg += f"│  {adj['type']}: {adj['old']}→{adj['new']}\n"
-                msg += "\n"
-            else:
-                msg += "🔧 No adjustments yet (need more data)\n\n"
-            
-            msg += "━━━━━━━━━━━━━━━━━━━━\n"
-            msg += "💡 Bot self-adjusts R:R & filters"
-            
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            report = self.learner.get_smart_report()
+            await update.message.reply_text(report, parse_mode='Markdown')
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
             logger.error(f"cmd_smart error: {e}")
@@ -657,9 +613,9 @@ class VWAPBot:
                 except:
                     pass
                 
-                # SMART LEARNING: Record signal with full context
-                # This also returns optimized TP/SL based on learned R:R
-                smart_tp, smart_sl, smart_explanation = self.smart_learner.record_signal(
+                # UNIFIED LEARNING: Record signal with full context
+                # Returns optimized TP/SL based on learned R:R
+                smart_tp, smart_sl, smart_explanation = self.learner.record_signal(
                     sym, side, combo, entry, atr, btc_price
                 )
                 
@@ -672,16 +628,13 @@ class VWAPBot:
                     else:
                         sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
                 
-                # BASIC LEARNING: Also record to combo_learner
-                self.combo_learner.record_signal(sym, side, combo, entry, tp, sl)
-                
                 # Check if allowed to trade
                 allowed = self.vwap_combos.get(sym, {}).get(side, [])
                 
                 if combo in allowed:
                     # SMART FILTER: Check if smart learner recommends taking this
-                    btc_change = self.smart_learner.get_btc_change_1h()
-                    should_take, smart_reason = self.smart_learner.should_take_signal(
+                    btc_change = self.learner.get_btc_change_1h()
+                    should_take, smart_reason = self.learner.should_take_signal(
                         sym, side, combo, atr_percent, btc_change
                     )
                     
@@ -817,7 +770,7 @@ class VWAPBot:
             entry = row.close
             
             # Get optimal R:R from smart learner
-            optimal_rr, rr_reason = self.smart_learner.get_optimal_rr(sym, side, combo)
+            optimal_rr, rr_reason = self.learner.get_optimal_rr(sym, side, combo)
             
             # Calculate TP/SL with optimal R:R
             # Using 1 ATR for SL (1R), RR*ATR for TP
@@ -943,7 +896,7 @@ class VWAPBot:
                 
                 await self.update_phantoms()
                 
-                # Update combo learner with current prices for ALL symbols
+                # Update learner with current prices for ALL symbols
                 try:
                     prices = {}
                     for sym in self.all_symbols:
@@ -951,14 +904,13 @@ class VWAPBot:
                         if ticker:
                             prices[sym] = float(ticker.get('lastPrice', 0))
                     
-                    # Update both learners
-                    self.combo_learner.update_signals(prices)
-                    self.smart_learner.update_signals(prices)
+                    # Update unified learner
+                    self.learner.update_signals(prices)
                     
-                    # Update BTC price for smart learner
+                    # Update BTC price for context tracking
                     btc_price = prices.get('BTCUSDT', 0)
                     if btc_price > 0:
-                        self.smart_learner.update_btc_price(btc_price)
+                        self.learner.update_btc_price(btc_price)
                         
                 except Exception as e:
                     logger.debug(f"Learner update error: {e}")
@@ -969,27 +921,23 @@ class VWAPBot:
                 # Log stats and save state every 10 loops
                 if self.loop_count % 10 == 0:
                     logger.info(f"Stats: Loop={self.loop_count} Trading={len(trading_symbols)} Learning={len(self.all_symbols)} Signals={self.signals_detected}")
-                    self.save_state()  # Periodic state save
-                    self.combo_learner.save()  # Save learning data
-                    self.smart_learner.save()  # Save smart learning
+                    self.save_state()
+                    self.learner.save()
                     
                 await asyncio.sleep(10)
                 
         except KeyboardInterrupt:
             logger.info("Shutting down...")
             self.save_state()
-            self.combo_learner.save()
-            self.smart_learner.save()
+            self.learner.save()
         except Exception as e:
             logger.error(f"Fatal error: {e}")
             self.save_state()
-            self.combo_learner.save()
-            self.smart_learner.save()
+            self.learner.save()
             await self.send_telegram(f"❌ **Bot Error**: {e}")
         finally:
             self.save_state()
-            self.combo_learner.save()
-            self.smart_learner.save()
+            self.learner.save()
             if self.tg_app:
                 try:
                     await self.tg_app.updater.stop()

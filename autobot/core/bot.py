@@ -631,22 +631,31 @@ class VWAPBot:
             logger.error(f"Telegram init failed: {e}")
             self.tg_app = None
         
-        # Load symbols from backtest results ONLY
+        # Load symbols from backtest results (for TRADING)
         self.load_overrides()
         self.load_state()  # Restore previous session data
-        symbols = list(self.vwap_combos.keys())
+        trading_symbols = list(self.vwap_combos.keys())
         
-        if not symbols:
-            await self.send_telegram("⚠️ **No symbols found!**\nAdd combos to symbol_overrides_VWAP_Combo.yaml")
-            logger.error("No symbols in overrides file")
-            return
+        # Load ALL 400 symbols for LEARNING
+        try:
+            with open('symbols_400.yaml', 'r') as f:
+                all_symbols_data = yaml.safe_load(f)
+                self.all_symbols = all_symbols_data.get('symbols', trading_symbols)
+            logger.info(f"📚 Learning mode: scanning {len(self.all_symbols)} symbols")
+        except FileNotFoundError:
+            self.all_symbols = trading_symbols
+            logger.warning("symbols_400.yaml not found, using trading symbols only")
+        
+        if not trading_symbols:
+            await self.send_telegram("⚠️ **No trading symbols!**\nLearning will still run on all 400 symbols.")
+            logger.warning("No trading symbols, learning only mode")
         
         # Send success notification
         await self.send_telegram(
             f"✅ **VWAP Bot Online!**\n\n"
-            f"📊 Scanning: **{len(symbols)}** symbols\n"
+            f"📊 Trading: **{len(trading_symbols)}** symbols\n"
+            f"📚 Learning: **{len(self.all_symbols)}** symbols\n"
             f"⚙️ Risk: {self.risk_config['value']} {self.risk_config['type']}\n\n"
-            f"Symbols: `{', '.join(symbols[:5])}{'...' if len(symbols) > 5 else ''}`\n\n"
             f"Commands: /help /status /risk /phantoms"
         )
         
@@ -655,19 +664,20 @@ class VWAPBot:
         try:
             while True:
                 self.load_overrides()  # Reload to pick up new combos
-                symbols = list(self.vwap_combos.keys())  # Update symbol list
+                trading_symbols = list(self.vwap_combos.keys())
                 self.loop_count += 1
                 
-                for sym in symbols:
+                # Scan ALL symbols for learning, but only trade allowed ones
+                for sym in self.all_symbols:
                     await self.process_symbol(sym)
-                    await asyncio.sleep(0.2)
+                    await asyncio.sleep(0.1)  # Faster for learning
                 
                 await self.update_phantoms()
                 
-                # Update combo learner with current prices
+                # Update combo learner with current prices for ALL symbols
                 try:
                     prices = {}
-                    for sym in symbols:
+                    for sym in self.all_symbols:
                         ticker = self.broker.get_ticker(sym)
                         if ticker:
                             prices[sym] = float(ticker.get('lastPrice', 0))
@@ -680,7 +690,7 @@ class VWAPBot:
                 
                 # Log stats and save state every 10 loops
                 if self.loop_count % 10 == 0:
-                    logger.info(f"Stats: Loop={self.loop_count} Symbols={len(symbols)} Signals={self.signals_detected} Trades={self.trades_executed}")
+                    logger.info(f"Stats: Loop={self.loop_count} Trading={len(trading_symbols)} Learning={len(self.all_symbols)} Signals={self.signals_detected}")
                     self.save_state()  # Periodic state save
                     self.combo_learner.save()  # Save learning data
                     

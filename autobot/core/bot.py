@@ -301,19 +301,32 @@ class VWAPBot:
         top_rsi = rsi_counter.most_common(3)
         rsi_str = ', '.join([f"{r[0]}({r[1]})" for r in top_rsi]) if top_rsi else "None"
         
+        # Phantom stats
+        phantom_wins = self.phantom_stats.get('wins', 0)
+        phantom_losses = self.phantom_stats.get('losses', 0)
+        phantom_total = phantom_wins + phantom_losses
+        phantom_wr = (phantom_wins / phantom_total * 100) if phantom_total > 0 else 0
+        active_phantoms = len(self.phantom_trades)
+        
+        # Learning stats
+        learning_signals = self.combo_learner.total_signals_tracked
+        learning_combos = len(self.combo_learner.get_all_combos())
+        
         msg = (
             "📊 **COMBO DASHBOARD**\n\n"
-            f"🎰 **Overview**\n"
-            f"Active Symbols: {total_symbols}\n"
-            f"Total Combos: {long_combos + short_combos}\n"
-            f"🟢 Long: {long_combos}\n"
-            f"🔴 Short: {short_combos}\n\n"
+            f"🎰 **Active Combos**\n"
+            f"Symbols: {total_symbols}\n"
+            f"🟢 Long: {long_combos} | 🔴 Short: {short_combos}\n\n"
+            f"👻 **PHANTOM TRADES**\n"
+            f"Active: {active_phantoms}\n"
+            f"Completed: {phantom_total} ({phantom_wins}W/{phantom_losses}L)\n"
+            f"WR: {phantom_wr:.0f}%\n\n"
+            f"📚 **LEARNING**\n"
+            f"Signals tracked: {learning_signals}\n"
+            f"Combos learned: {learning_combos}\n\n"
             f"📈 **MACD Trend**\n"
-            f"Bullish: {macd_counter.get('bull', 0)}\n"
-            f"Bearish: {macd_counter.get('bear', 0)}\n\n"
-            f"🎯 **Top RSI Zones**\n"
-            f"{rsi_str}\n\n"
-            f"🌐 Web: http://localhost:8888"
+            f"Bull: {macd_counter.get('bull', 0)} | Bear: {macd_counter.get('bear', 0)}\n\n"
+            f"🎯 **Top RSI**: {rsi_str}"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 

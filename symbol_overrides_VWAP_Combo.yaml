@@ -119,3 +119,6 @@ GIGGLEUSDT:
 ICNTUSDT:
   short:
   - RSI:40-60 MACD:bear Fib:0-23
+ILVUSDT:
+  long:
+  - RSI:40-60 MACD:bull Fib:78-100

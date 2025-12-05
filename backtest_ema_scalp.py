@@ -24,9 +24,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # === CONFIGURATION ===
-LOOKBACK_DAYS = 120
-MIN_TRADES = 10
-MIN_WR = 40.0
+LOOKBACK_DAYS = 60  # Reduced for faster testing
+MIN_TRADES = 5      # Lower threshold to find more setups
+MIN_WR = 35.0       # Lower WR threshold for discovery
 ATR_PERIOD = 14
 ATR_SL_MULT = 1.0   # Tighter for scalping
 ATR_TP_MULT = 1.5   # 1:1.5 R:R
@@ -207,7 +207,7 @@ def backtest_symbol(sym, idx, total, broker):
             # Must have enough trades
             if train_stats['total'] < MIN_TRADES:
                 continue
-            if test_stats['total'] < 3:
+            if test_stats['total'] < 2:
                 continue
                 
             # Calculate WR

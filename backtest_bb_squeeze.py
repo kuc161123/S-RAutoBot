@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 # === CONFIGURATION ===
 LOOKBACK_DAYS = 120
-MIN_TRADES = 10
-MIN_WR = 40.0
+MIN_TRADES = 5       # Lowered from 10
+MIN_WR = 35.0        # Lowered from 40%
 ATR_PERIOD = 14
 ATR_SL_MULT = 1.0
 ATR_TP_MULT = 1.5
@@ -58,18 +58,17 @@ def calculate_indicators(df):
     # BB Width (for squeeze detection)
     df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['bb_middle']
     
-    # Rolling percentile of BB width (squeeze = narrow bands)
-    df['bb_width_percentile'] = df['bb_width'].rolling(100).apply(
-        lambda x: (x.iloc[-1] <= x.quantile(SQUEEZE_PERCENTILE/100)) * 1.0
-    )
+    # Simple squeeze: width below 20-period average
+    df['bb_width_avg'] = df['bb_width'].rolling(20).mean()
+    df['is_squeeze'] = (df['bb_width'] < df['bb_width_avg'] * 0.8).astype(float)
+    
+    # Was in squeeze recently (last 3 candles)
+    df['recent_squeeze'] = df['is_squeeze'].rolling(3).max()
     
     # Previous values for breakout detection
     df['prev_close'] = df['close'].shift(1)
     df['prev_bb_upper'] = df['bb_upper'].shift(1)
     df['prev_bb_lower'] = df['bb_lower'].shift(1)
-    
-    # Was in squeeze recently (last 5 candles)
-    df['recent_squeeze'] = df['bb_width_percentile'].rolling(5).max()
     
     return df.dropna()
 
@@ -191,7 +190,7 @@ def backtest_symbol(sym, idx, total, broker):
             
             if train_stats['total'] < MIN_TRADES:
                 continue
-            if test_stats['total'] < 3:
+            if test_stats['total'] < 2:  # Lowered from 3
                 continue
                 
             train_wr = (train_stats['wins'] / train_stats['total']) * 100 if train_stats['total'] > 0 else 0

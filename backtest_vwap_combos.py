@@ -33,9 +33,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
+LOOKBACK_DAYS = 60   # 60 days - balanced
 SLIPPAGE = 0.001   # 0.1% (Conservative/Realistic)
 FEES = 0.0012      # 0.12% round trip (Standard Taker)
-MIN_WR = 40.0      # Min Win Rate to consider a combo valid (Log everything > 40%)
+MIN_WR = 40.0      # Min Win Rate to consider a combo valid
 MIN_TRADES = 10    # Min trades to consider a combo valid
 TRAIN_PCT = 0.7
 TIMEFRAME = '3'    # 3m Timeframe
@@ -365,6 +366,16 @@ async def run():
         print("❌ symbols_400.yaml not found")
         return
 
+    # Load already processed symbols (for resume)
+    processed_symbols = set()
+    try:
+        with open('symbol_overrides_VWAP_Combo.yaml', 'r') as f:
+            existing = yaml.safe_load(f) or {}
+            processed_symbols = set(existing.keys())
+        print(f"📂 Found {len(processed_symbols)} already processed symbols")
+    except FileNotFoundError:
+        pass
+
     # Load config
     with open('config.yaml', 'r') as f:
         cfg = yaml.safe_load(f)
@@ -386,12 +397,20 @@ async def run():
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*80}\n")
     
+    # Filter out already processed symbols (resume mode)
+    remaining_symbols = [s for s in symbols if s not in processed_symbols]
+    if processed_symbols:
+        print(f"⏭️ Skipping {len(processed_symbols)} already processed, {len(remaining_symbols)} remaining\n")
+    
     results = []
     BATCH_SIZE = 1 
+    total = len(symbols)
+    start_idx = len(processed_symbols)
     
-    for batch_start in range(0, len(symbols), BATCH_SIZE):
-        batch_symbols = symbols[batch_start:batch_start + BATCH_SIZE]
-        tasks = [backtest_symbol(bybit, sym, batch_start + i + 1, len(symbols)) for i, sym in enumerate(batch_symbols)]
+    for batch_start in range(0, len(remaining_symbols), BATCH_SIZE):
+        batch_symbols = remaining_symbols[batch_start:batch_start + BATCH_SIZE]
+        current_idx = start_idx + batch_start + 1
+        tasks = [backtest_symbol(bybit, sym, current_idx, total) for i, sym in enumerate(batch_symbols)]
         batch_results = await asyncio.gather(*tasks, return_exceptions=True)
         
         for r in batch_results:
@@ -413,15 +432,13 @@ async def run():
     for r in results:
         yaml_lines.append(f"{r['symbol']}:")
         if r['long']:
-            c = r['long']
             yaml_lines.append(f"  long:")
-            yaml_lines.append(f"    - \"{c['combo']}\"")
-            yaml_lines.append(f"      # TrainWR={c['train_wr']:.1f}%, TestWR={c['test_wr']:.1f}%")
+            for c in r['long']:  # Iterate through list
+                yaml_lines.append(f"  - {c['combo']}")
         if r['short']:
-            c = r['short']
             yaml_lines.append(f"  short:")
-            yaml_lines.append(f"    - \"{c['combo']}\"")
-            yaml_lines.append(f"      # TrainWR={c['train_wr']:.1f}%, TestWR={c['test_wr']:.1f}%")
+            for c in r['short']:  # Iterate through list
+                yaml_lines.append(f"  - {c['combo']}")
         yaml_lines.append("")
         
     with open('symbol_overrides_VWAP_Combo.yaml', 'w') as f:

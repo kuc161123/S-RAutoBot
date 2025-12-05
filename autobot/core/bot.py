@@ -24,19 +24,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("VWAPBot")
 
-PHANTOM_TIMEOUT = 14400  # 4 hours same as learning
-
-@dataclass
-class PhantomTrade:
-    symbol: str
-    side: str
-    entry: float
-    tp: float
-    sl: float
-    combo: str
-    start_time: float
-    max_price: float = 0.0   # Highest price seen
-    min_price: float = 0.0   # Lowest price seen
+# Phantom tracking now handled by UnifiedLearner for accuracy
 
 class VWAPBot:
     def __init__(self):
@@ -52,11 +40,8 @@ class VWAPBot:
             'value': self.cfg.get('risk', {}).get('risk_percent', 0.5)
         }
         
-        # Phantom Tracking
-        self.phantom_trades = []
-        self.phantom_stats = {'wins': 0, 'losses': 0, 'total': 0}
-        self.phantom_history = []
-        self.last_phantom_notify = {}  # Cooldown tracker
+        # Phantom tracking now in unified learner
+        self.last_phantom_notify = {}  # Cooldown tracker for notifications
         
         # Stats
         self.loop_count = 0
@@ -122,27 +107,9 @@ class VWAPBot:
     def save_state(self):
         """Save bot state to persist across restarts"""
         import json
-        from dataclasses import asdict
         
-        # Convert phantom trades to serializable format
-        phantom_trades_data = []
-        for pt in self.phantom_trades:
-            phantom_trades_data.append({
-                'symbol': pt.symbol,
-                'side': pt.side,
-                'entry': pt.entry,
-                'tp': pt.tp,
-                'sl': pt.sl,
-                'combo': pt.combo,
-                'start_time': pt.start_time,
-                'max_price': pt.max_price,
-                'min_price': pt.min_price
-            })
-        
+        # Phantoms now tracked by learner (learner.save() handles its own state)
         state = {
-            'phantom_trades': phantom_trades_data,  # Active phantoms!
-            'phantom_stats': self.phantom_stats,
-            'phantom_history': self.phantom_history[-100:],
             'trade_history': self.trade_history[-100:],
             'daily_pnl': self.daily_pnl,
             'total_pnl': self.total_pnl,
@@ -157,7 +124,8 @@ class VWAPBot:
         try:
             with open('bot_state.json', 'w') as f:
                 json.dump(state, f, indent=2)
-            logger.info(f"💾 State saved ({len(phantom_trades_data)} active phantoms)")
+            pending = len(self.learner.pending_signals)
+            logger.info(f"💾 State saved (learner tracking {pending} signals)")
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
 
@@ -168,27 +136,7 @@ class VWAPBot:
             with open('bot_state.json', 'r') as f:
                 state = json.load(f)
             
-            # Restore active phantom trades
-            self.phantom_trades = []
-            for pt_data in state.get('phantom_trades', []):
-                try:
-                    pt = PhantomTrade(
-                        symbol=pt_data['symbol'],
-                        side=pt_data['side'],
-                        entry=pt_data['entry'],
-                        tp=pt_data['tp'],
-                        sl=pt_data['sl'],
-                        combo=pt_data['combo'],
-                        start_time=pt_data['start_time'],
-                        max_price=pt_data.get('max_price', 0.0),
-                        min_price=pt_data.get('min_price', 0.0)
-                    )
-                    self.phantom_trades.append(pt)
-                except:
-                    pass
-            
-            self.phantom_stats = state.get('phantom_stats', {'wins': 0, 'losses': 0, 'total': 0})
-            self.phantom_history = state.get('phantom_history', [])
+            # Phantoms now loaded by learner.load()
             self.trade_history = state.get('trade_history', [])
             self.daily_pnl = state.get('daily_pnl', 0.0)
             self.total_pnl = state.get('total_pnl', 0.0)
@@ -201,8 +149,9 @@ class VWAPBot:
             
             saved_at = state.get('saved_at', 0)
             age_hrs = (time.time() - saved_at) / 3600
+            pending = len(self.learner.pending_signals)
             logger.info(f"📂 State loaded (saved {age_hrs:.1f}h ago)")
-            logger.info(f"   Stats: {self.wins}W/{self.losses}L, Phantoms: {len(self.phantom_trades)} active")
+            logger.info(f"   Stats: {self.wins}W/{self.losses}L | Learner: {pending} pending")
         except FileNotFoundError:
             logger.info("📂 No previous state found, starting fresh")
         except Exception as e:
@@ -227,11 +176,13 @@ class VWAPBot:
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        # Phantom stats
-        p_wins = self.phantom_stats['wins']
-        p_losses = self.phantom_stats['losses']
+        # Unified learner stats (replaces separate phantom tracking)
+        learning = self.learner
+        p_wins = learning.total_wins
+        p_losses = learning.total_losses
         p_total = p_wins + p_losses
         p_wr = (p_wins / p_total * 100) if p_total > 0 else 0.0
+        pending = len(learning.pending_signals)
         
         # Trade stats
         t_total = self.wins + self.losses
@@ -253,26 +204,35 @@ class VWAPBot:
             f"WR: {t_wr:.1f}% ({self.wins}W/{self.losses}L)\n"
             f"Daily PnL: ${self.daily_pnl:.2f}\n"
             f"Total PnL: ${self.total_pnl:.2f}\n\n"
-            f"👻 **Phantoms**\n"
-            f"Active: {len(self.phantom_trades)}\n"
-            f"WR: {p_wr:.1f}% ({p_wins}W/{p_losses}L)\n\n"
+            f"📚 **Unified Tracker**\n"
+            f"Pending: {pending}\n"
+            f"Resolved: {p_total} ({p_wins}W/{p_losses}L)\n"
+            f"WR: {p_wr:.1f}%\n\n"
             f"📂 Combos: {len(self.vwap_combos)} symbols"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     async def cmd_phantoms(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not self.phantom_trades:
-            await update.message.reply_text("👻 No active phantom trades.")
+        """Show pending signals being tracked by the learner"""
+        pending = self.learner.pending_signals
+        if not pending:
+            await update.message.reply_text("👻 No pending signals being tracked.")
             return
-            
-        msg = "👻 **ACTIVE PHANTOMS**\n\n"
-        for pt in self.phantom_trades[-10:]:
-            elapsed = int((time.time() - pt.start_time) / 60)
-            msg += f"• `{pt.symbol}` {pt.side.upper()} ({elapsed}m)\n"
+        
+        msg = "👻 **PENDING SIGNALS** (Unified Learner)\n\n"
+        for sig in pending[-10:]:
+            elapsed = int((time.time() - sig.start_time) / 60)
+            icon = "🟢" if sig.is_allowed_combo else "🔴"
+            msg += f"{icon} `{sig.symbol}` {sig.side.upper()} ({elapsed}m)\n"
+        
+        total = len(pending)
+        if total > 10:
+            msg += f"\n... and {total - 10} more"
+        
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     async def cmd_dashboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show comprehensive bot dashboard"""
+        """Show comprehensive bot dashboard - UNIFIED stats (phantoms merged into learner)"""
         try:
             # === SYSTEM STATUS ===
             uptime_hrs = (time.time() - self.learner.started_at) / 3600
@@ -283,15 +243,7 @@ class VWAPBot:
             long_combos = sum(len(d.get('long', [])) for d in self.vwap_combos.values())
             short_combos = sum(len(d.get('short', [])) for d in self.vwap_combos.values())
             
-            # === PHANTOM PERFORMANCE ===
-            phantom_wins = self.phantom_stats.get('wins', 0)
-            phantom_losses = self.phantom_stats.get('losses', 0)
-            phantom_total = phantom_wins + phantom_losses
-            phantom_wr = (phantom_wins / phantom_total * 100) if phantom_total > 0 else 0
-            phantom_lb_wr = wilson_lower_bound(phantom_wins, phantom_total)
-            active_phantoms = len(self.phantom_trades)
-            
-            # === LEARNING STATS ===
+            # === UNIFIED LEARNING STATS (replaces separate phantom tracking) ===
             learning = self.learner
             total_signals = learning.total_signals
             total_wins = learning.total_wins
@@ -308,8 +260,8 @@ class VWAPBot:
             # Top performers
             top_combos = learning.get_top_combos(min_trades=3, min_lower_wr=40)[:3]
             
-            # Recent phantom activity
-            recent_phantoms = self.phantom_history[-3:] if self.phantom_history else []
+            # Recent activity from learner
+            recent = getattr(learning, 'last_resolved', [])[-3:] if hasattr(learning, 'last_resolved') else []
             
             # === BUILD MESSAGE ===
             msg = (
@@ -325,12 +277,7 @@ class VWAPBot:
                 f"├ Combos: 🟢{long_combos} / 🔴{short_combos}\n"
                 f"└ Signals: {self.signals_detected} detected\n\n"
                 
-                f"👻 **PHANTOMS**\n"
-                f"├ Active: {active_phantoms} tracking\n"
-                f"├ Done: {phantom_total} ({phantom_wins}W/{phantom_losses}L)\n"
-                f"└ WR: {phantom_wr:.0f}% (LB: **{phantom_lb_wr:.0f}%**)\n\n"
-                
-                f"📚 **LEARNING** ({learning_symbols} symbols)\n"
+                f"📚 **UNIFIED TRACKER** ({learning_symbols} symbols)\n"
                 f"├ Signals: {total_signals} | Pending: {pending}\n"
                 f"├ Resolved: {learning_total} ({total_wins}W/{total_losses}L)\n"
                 f"├ WR: {learning_wr:.0f}% (LB: **{lower_wr:.0f}%**)\n"
@@ -345,12 +292,12 @@ class VWAPBot:
                 for c in top_combos:
                     msg += f"├ `{c['symbol']}` {c['side'][0].upper()}: {c['lower_wr']:.0f}%\n"
             
-            # Add recent phantom activity
-            if recent_phantoms:
+            # Add recent activity from learner
+            if recent:
                 msg += "\n📈 **RECENT**\n"
-                for p in reversed(recent_phantoms):
-                    icon = "✅" if p['outcome'] == 'win' else "❌"
-                    msg += f"├ {icon} `{p['symbol']}`\n"
+                for p in reversed(recent):
+                    icon = "✅" if p.get('outcome') == 'win' else "❌"
+                    msg += f"├ {icon} `{p.get('symbol', 'N/A')}`\n"
             
             msg += "\n━━━━━━━━━━━━━━━━━━━━\n"
             msg += "💡 /learn /sessions /phantoms"
@@ -615,8 +562,10 @@ class VWAPBot:
                 
                 # UNIFIED LEARNING: Record signal with full context
                 # Returns optimized TP/SL based on learned R:R
+                # The learner now handles ALL signal tracking (both allowed and phantom)
+                is_allowed = combo in allowed
                 smart_tp, smart_sl, smart_explanation = self.learner.record_signal(
-                    sym, side, combo, entry, atr, btc_price
+                    sym, side, combo, entry, atr, btc_price, is_allowed=is_allowed
                 )
                 
                 # Use smart R:R if available, otherwise default
@@ -643,23 +592,15 @@ class VWAPBot:
                         await self.execute_trade(sym, side, last_candle, combo)
                     else:
                         logger.info(f"🛑 SMART BLOCK: {sym} {side} | {smart_reason}")
-                        # Still track as phantom to verify if smart filter was right
-                        existing = [p for p in self.phantom_trades if p.symbol == sym]
-                        if not existing:
-                            pt = PhantomTrade(sym, side, entry, tp, sl, combo, time.time())
-                            self.phantom_trades.append(pt)
+                        # Learner already tracks this signal (recorded above)
                 else:
-                    # Phantom - with cooldown (1 notification per symbol per 30 min)
-                    existing = [p for p in self.phantom_trades if p.symbol == sym]
+                    # Phantom signal - learner already tracks it (recorded above)
+                    # Only send notification with cooldown (1 per symbol per 30 min)
                     cooldown_key = f"{sym}_{side}"
                     last_notify = self.last_phantom_notify.get(cooldown_key, 0)
                     
-                    if not existing and (time.time() - last_notify) > 1800:  # 30 min cooldown
+                    if (time.time() - last_notify) > 1800:  # 30 min cooldown
                         logger.info(f"👻 PHANTOM: {sym} {side} {combo}")
-                        
-                        pt = PhantomTrade(sym, side, entry, tp, sl, combo, time.time())
-                        self.phantom_trades.append(pt)
-                        self.phantom_stats['total'] += 1
                         self.last_phantom_notify[cooldown_key] = time.time()
                         
                         # Show allowed combos for this symbol/side
@@ -676,78 +617,8 @@ class VWAPBot:
         except Exception as e:
             logger.error(f"Error {sym}: {e}")
 
-    async def update_phantoms(self):
-        """Check phantom trade outcomes with high/low accuracy"""
-        for pt in self.phantom_trades[:]:
-            try:
-                # Check timeout first
-                if time.time() - pt.start_time > PHANTOM_TIMEOUT:
-                    self.phantom_trades.remove(pt)
-                    logger.info(f"⏰ Phantom timeout: {pt.symbol}")
-                    continue
-                
-                # Get recent candle for high/low
-                klines = self.broker.get_klines(pt.symbol, '3', limit=1)
-                if not klines:
-                    continue
-                
-                candle = klines[0]
-                high = float(candle[2])
-                low = float(candle[3])
-                current = float(candle[4])
-                
-                # Track max/min prices seen
-                if pt.max_price == 0:
-                    pt.max_price = high
-                    pt.min_price = low
-                else:
-                    pt.max_price = max(pt.max_price, high)
-                    pt.min_price = min(pt.min_price, low)
-                
-                outcome = None
-                
-                if pt.side == 'long':
-                    # Check if SL was hit first (using low)
-                    if low <= pt.sl:
-                        outcome = 'loss'
-                    # Check if TP was hit (using high)
-                    elif high >= pt.tp:
-                        outcome = 'win'
-                else:  # short
-                    # Check if SL was hit first (using high)
-                    if high >= pt.sl:
-                        outcome = 'loss'
-                    # Check if TP was hit (using low)
-                    elif low <= pt.tp:
-                        outcome = 'win'
-                
-                if outcome:
-                    self.phantom_trades.remove(pt)
-                    self.phantom_stats[f"{outcome}s"] += 1
-                    
-                    # Calculate time and drawdown
-                    time_mins = (time.time() - pt.start_time) / 60
-                    if pt.side == 'long':
-                        max_dd = (pt.entry - pt.min_price) / pt.entry * 100
-                    else:
-                        max_dd = (pt.max_price - pt.entry) / pt.entry * 100
-                    
-                    self.phantom_history.append({
-                        'symbol': pt.symbol, 
-                        'outcome': outcome, 
-                        'combo': pt.combo,
-                        'time_mins': round(time_mins, 1),
-                        'max_drawdown': round(max_dd, 2)
-                    })
-                    
-                    icon = "✅" if outcome == 'win' else "❌"
-                    await self.send_telegram(
-                        f"{icon} PHANTOM {outcome.upper()}: `{pt.symbol}` {pt.side}\n"
-                        f"⏱️ {time_mins:.0f}m | DD: {max_dd:.1f}%"
-                    )
-                    
-            except Exception as e:
-                logger.debug(f"Phantom update error: {e}")
+    # NOTE: update_phantoms() removed - phantom tracking now handled by learner.update_signals()
+
 
     async def execute_trade(self, sym, side, row, combo):
         try:
@@ -894,7 +765,7 @@ class VWAPBot:
                     await self.process_symbol(sym)
                     await asyncio.sleep(0.1)  # Faster for learning
                 
-                await self.update_phantoms()
+                # Phantom tracking now handled by learner.update_signals() below
                 
                 # Update learner with candle data (high/low) for accurate resolution
                 try:

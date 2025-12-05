@@ -98,3 +98,6 @@ EPICUSDT:
 ESPORTSUSDT:
   long:
   - RSI:<30 MACD:bear Fib:78-100
+EULUSDT:
+  short:
+  - RSI:40-60 MACD:bull Fib:78-100

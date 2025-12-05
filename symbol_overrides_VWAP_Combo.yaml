@@ -128,3 +128,6 @@ INUSDT:
 JCTUSDT:
   long:
   - RSI:40-60 MACD:bull Fib:61-78
+KERNELUSDT:
+  short:
+  - RSI:30-40 MACD:bear Fib:100+

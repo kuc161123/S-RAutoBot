@@ -176,8 +176,10 @@ class VWAPBot:
             "  Example: `/risk 1 %` or `/risk 10 $`\n"
             "/phantoms - Show phantom trades\n\n"
             "📚 **LEARNING SYSTEM**\n"
-            "/learn - View learning report\n"
-            "/promote - Show promotion candidates"
+            "/learn - Learning report (lower bound WR)\n"
+            "/promote - Show promotion candidates\n"
+            "/sessions - Session performance\n"
+            "/blacklist - Show blacklisted combos"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 
@@ -285,7 +287,7 @@ class VWAPBot:
             await update.message.reply_text(
                 "📊 **NO PROMOTION CANDIDATES YET**\n\n"
                 "Need combos with:\n"
-                "• WR ≥ 45%\n"
+                "• Lower Bound WR ≥ 40%\n"
                 "• N ≥ 10 trades\n"
                 "• Positive EV\n\n"
                 "Keep running to collect more data!",
@@ -294,12 +296,34 @@ class VWAPBot:
             return
         
         msg = "🚀 **PROMOTION CANDIDATES**\n\n"
-        msg += "These combos could be added to active trading:\n\n"
         
         for c in candidates[:10]:
             msg += f"**{c['symbol']}** {c['side'].upper()}\n"
             msg += f"`{c['combo']}`\n"
-            msg += f"WR: {c['win_rate']:.0f}% ({c['wins']}W/{c['losses']}L) EV: {c['expected_value']:.2f}R\n\n"
+            msg += f"LB_WR: {c['lower_wr']:.0f}% (N={c['total']}) EV: {c['ev']:.2f}R\n\n"
+        
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+    async def cmd_sessions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show session performance report"""
+        report = self.combo_learner.get_session_report()
+        await update.message.reply_text(report, parse_mode='Markdown')
+
+    async def cmd_blacklist(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show blacklisted combos"""
+        blacklist = self.combo_learner.blacklist
+        if not blacklist:
+            await update.message.reply_text("🚫 No blacklisted combos yet.", parse_mode='Markdown')
+            return
+        
+        msg = f"🚫 **BLACKLISTED COMBOS** ({len(blacklist)})\n\n"
+        for item in list(blacklist)[:15]:
+            parts = item.split(':')
+            if len(parts) >= 3:
+                msg += f"• `{parts[0]}` {parts[1]}\n"
+        
+        if len(blacklist) > 15:
+            msg += f"\n... and {len(blacklist) - 15} more"
         
         await update.message.reply_text(msg, parse_mode='Markdown')
 
@@ -622,6 +646,8 @@ class VWAPBot:
             self.tg_app.add_handler(CommandHandler("dashboard", self.cmd_dashboard))
             self.tg_app.add_handler(CommandHandler("learn", self.cmd_learn))
             self.tg_app.add_handler(CommandHandler("promote", self.cmd_promote))
+            self.tg_app.add_handler(CommandHandler("sessions", self.cmd_sessions))
+            self.tg_app.add_handler(CommandHandler("blacklist", self.cmd_blacklist))
             
             await self.tg_app.initialize()
             await self.tg_app.start()

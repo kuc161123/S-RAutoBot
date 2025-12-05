@@ -168,6 +168,52 @@ class VWAPBot:
             msg += f"• `{pt.symbol}` {pt.side.upper()} ({elapsed}m)\n"
         await update.message.reply_text(msg, parse_mode='Markdown')
 
+    async def cmd_dashboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show combo dashboard summary via Telegram"""
+        from collections import Counter
+        
+        # Count combos
+        total_symbols = len(self.vwap_combos)
+        long_combos = 0
+        short_combos = 0
+        rsi_counter = Counter()
+        macd_counter = Counter()
+        
+        for symbol, data in self.vwap_combos.items():
+            longs = data.get('long', [])
+            shorts = data.get('short', [])
+            long_combos += len(longs)
+            short_combos += len(shorts)
+            
+            # Parse combos for analytics
+            for combo in longs + shorts:
+                parts = combo.split()
+                for part in parts:
+                    if part.startswith('RSI:'):
+                        rsi_counter[part.replace('RSI:', '')] += 1
+                    elif part.startswith('MACD:'):
+                        macd_counter[part.replace('MACD:', '')] += 1
+        
+        # Top RSI levels
+        top_rsi = rsi_counter.most_common(3)
+        rsi_str = ', '.join([f"{r[0]}({r[1]})" for r in top_rsi]) if top_rsi else "None"
+        
+        msg = (
+            "📊 **COMBO DASHBOARD**\n\n"
+            f"🎰 **Overview**\n"
+            f"Active Symbols: {total_symbols}\n"
+            f"Total Combos: {long_combos + short_combos}\n"
+            f"🟢 Long: {long_combos}\n"
+            f"🔴 Short: {short_combos}\n\n"
+            f"📈 **MACD Trend**\n"
+            f"Bullish: {macd_counter.get('bull', 0)}\n"
+            f"Bearish: {macd_counter.get('bear', 0)}\n\n"
+            f"🎯 **Top RSI Zones**\n"
+            f"{rsi_str}\n\n"
+            f"🌐 Web: http://localhost:8888"
+        )
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
     async def cmd_risk(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             args = context.args
@@ -477,6 +523,7 @@ class VWAPBot:
             self.tg_app.add_handler(CommandHandler("status", self.cmd_status))
             self.tg_app.add_handler(CommandHandler("risk", self.cmd_risk))
             self.tg_app.add_handler(CommandHandler("phantoms", self.cmd_phantoms))
+            self.tg_app.add_handler(CommandHandler("dashboard", self.cmd_dashboard))
             
             await self.tg_app.initialize()
             await self.tg_app.start()

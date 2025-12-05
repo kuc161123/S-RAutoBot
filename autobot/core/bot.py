@@ -800,7 +800,7 @@ class VWAPBot:
             f"Commands: /help /status /risk /phantoms"
         )
         
-        logger.info(f"Scanning {len(symbols)} symbols from backtest: {symbols}")
+        logger.info(f"Trading {len(trading_symbols)} symbols, Learning {len(self.all_symbols)} symbols")
             
         try:
             while True:

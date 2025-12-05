@@ -43,8 +43,8 @@ class ComboLearner:
     """
     
     SAVE_FILE = 'combo_learning.json'
-    MAX_PENDING_SIGNALS = 500  # Max pending signals to track
-    SIGNAL_TIMEOUT = 3600  # 1 hour max to determine outcome
+    MAX_PENDING_SIGNALS = 1000  # Increased for 400 symbols
+    SIGNAL_TIMEOUT = 14400  # 4 hours for scalps to resolve
     
     def __init__(self):
         # Performance database: {symbol: {side: {combo: {wins, losses, total}}}}
@@ -122,10 +122,10 @@ class ComboLearner:
     def record_signal(self, symbol: str, side: str, combo: str, 
                      entry: float, tp: float, sl: float):
         """Record a new signal for learning (called on every VWAP touch)"""
-        # Don't duplicate - check if we're already tracking this
+        # Don't duplicate - check if we're already tracking this exact combo
         for sig in self.pending_signals:
-            if sig.symbol == symbol and sig.side == side and sig.outcome is None:
-                return  # Already tracking
+            if sig.symbol == symbol and sig.side == side and sig.combo == combo and sig.outcome is None:
+                return  # Already tracking this exact combo
         
         signal = LearningSignal(
             symbol=symbol,
@@ -180,9 +180,13 @@ class ComboLearner:
                     signal.end_time = time.time()
                     self._record_outcome(signal, 'win')
         
-        # Clean up resolved signals (keep last 100 for history)
-        self.pending_signals = [s for s in self.pending_signals if s.outcome is None][-100:] + \
-                               [s for s in self.pending_signals if s.outcome is None]
+        # Clean up resolved signals properly
+        pending_only = [s for s in self.pending_signals if s.outcome is None]
+        self.pending_signals = pending_only
+        
+        # Trim if too many
+        if len(self.pending_signals) > self.MAX_PENDING_SIGNALS:
+            self.pending_signals = self.pending_signals[-self.MAX_PENDING_SIGNALS:]
         
         # Auto-save every 5 minutes
         if time.time() - self.last_save > 300:

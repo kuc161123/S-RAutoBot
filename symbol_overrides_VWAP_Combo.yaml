@@ -86,3 +86,6 @@ DEGENUSDT:
 DOLOUSDT:
   long:
   - RSI:60-70 MACD:bull Fib:38-50
+EDENUSDT:
+  short:
+  - RSI:60-70 MACD:bull Fib:23-38

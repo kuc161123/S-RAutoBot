@@ -24,6 +24,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("VWAPBot")
 
+PHANTOM_TIMEOUT = 14400  # 4 hours same as learning
+
 @dataclass
 class PhantomTrade:
     symbol: str
@@ -33,6 +35,8 @@ class PhantomTrade:
     sl: float
     combo: str
     start_time: float
+    max_price: float = 0.0   # Highest price seen
+    min_price: float = 0.0   # Lowest price seen
 
 class VWAPBot:
     def __init__(self):
@@ -536,37 +540,77 @@ class VWAPBot:
             logger.error(f"Error {sym}: {e}")
 
     async def update_phantoms(self):
-        """Check phantom trade outcomes"""
+        """Check phantom trade outcomes with high/low accuracy"""
         for pt in self.phantom_trades[:]:
             try:
-                ticker = self.broker.get_ticker(pt.symbol)
-                if not ticker: continue
+                # Check timeout first
+                if time.time() - pt.start_time > PHANTOM_TIMEOUT:
+                    self.phantom_trades.remove(pt)
+                    logger.info(f"⏰ Phantom timeout: {pt.symbol}")
+                    continue
                 
-                price = float(ticker.get('lastPrice', 0))
-                if price == 0: continue
+                # Get recent candle for high/low
+                klines = self.broker.get_klines(pt.symbol, '3', limit=1)
+                if not klines:
+                    continue
+                
+                candle = klines[0]
+                high = float(candle[2])
+                low = float(candle[3])
+                current = float(candle[4])
+                
+                # Track max/min prices seen
+                if pt.max_price == 0:
+                    pt.max_price = high
+                    pt.min_price = low
+                else:
+                    pt.max_price = max(pt.max_price, high)
+                    pt.min_price = min(pt.min_price, low)
                 
                 outcome = None
+                
                 if pt.side == 'long':
-                    if price >= pt.tp: outcome = 'win'
-                    elif price <= pt.sl: outcome = 'loss'
-                else:
-                    if price <= pt.tp: outcome = 'win'
-                    elif price >= pt.sl: outcome = 'loss'
-                    
+                    # Check if SL was hit first (using low)
+                    if low <= pt.sl:
+                        outcome = 'loss'
+                    # Check if TP was hit (using high)
+                    elif high >= pt.tp:
+                        outcome = 'win'
+                else:  # short
+                    # Check if SL was hit first (using high)
+                    if high >= pt.sl:
+                        outcome = 'loss'
+                    # Check if TP was hit (using low)
+                    elif low <= pt.tp:
+                        outcome = 'win'
+                
                 if outcome:
                     self.phantom_trades.remove(pt)
                     self.phantom_stats[f"{outcome}s"] += 1
+                    
+                    # Calculate time and drawdown
+                    time_mins = (time.time() - pt.start_time) / 60
+                    if pt.side == 'long':
+                        max_dd = (pt.entry - pt.min_price) / pt.entry * 100
+                    else:
+                        max_dd = (pt.max_price - pt.entry) / pt.entry * 100
+                    
                     self.phantom_history.append({
                         'symbol': pt.symbol, 
                         'outcome': outcome, 
-                        'combo': pt.combo
+                        'combo': pt.combo,
+                        'time_mins': round(time_mins, 1),
+                        'max_drawdown': round(max_dd, 2)
                     })
                     
                     icon = "✅" if outcome == 'win' else "❌"
-                    await self.send_telegram(f"{icon} PHANTOM {outcome.upper()}: `{pt.symbol}` {pt.side}")
+                    await self.send_telegram(
+                        f"{icon} PHANTOM {outcome.upper()}: `{pt.symbol}` {pt.side}\n"
+                        f"⏱️ {time_mins:.0f}m | DD: {max_dd:.1f}%"
+                    )
                     
             except Exception as e:
-                logger.error(f"Phantom update error: {e}")
+                logger.debug(f"Phantom update error: {e}")
 
     async def execute_trade(self, sym, side, row, combo):
         try:

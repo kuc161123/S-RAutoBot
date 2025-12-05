@@ -9,6 +9,7 @@ import time
 from datetime import datetime
 from dataclasses import dataclass
 from autobot.brokers.bybit import Bybit, BybitConfig
+from autobot.core.combo_learner import ComboLearner
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 
@@ -68,6 +69,9 @@ class VWAPBot:
         # Daily Summary
         self.last_daily_summary = time.time()
         self.start_time = time.time()
+        
+        # Combo Learning System (silent background tracker)
+        self.combo_learner = ComboLearner()
         
     def load_config(self):
         # Load .env manually
@@ -167,9 +171,13 @@ class VWAPBot:
             "🤖 **VWAP BOT COMMANDS**\n\n"
             "/help - Show this message\n"
             "/status - Show bot status & stats\n"
+            "/dashboard - Show combo overview\n"
             "/risk <value> <type> - Set risk\n"
             "  Example: `/risk 1 %` or `/risk 10 $`\n"
-            "/phantoms - Show phantom trades"
+            "/phantoms - Show phantom trades\n\n"
+            "📚 **LEARNING SYSTEM**\n"
+            "/learn - View learning report\n"
+            "/promote - Show promotion candidates"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 
@@ -262,6 +270,37 @@ class VWAPBot:
             f"{rsi_str}\n\n"
             f"🌐 Web: http://localhost:8888"
         )
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
+    async def cmd_learn(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show learning system report"""
+        report = self.combo_learner.generate_report()
+        await update.message.reply_text(report, parse_mode='Markdown')
+
+    async def cmd_promote(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show combos that could be promoted to active trading"""
+        candidates = self.combo_learner.get_promote_candidates()
+        
+        if not candidates:
+            await update.message.reply_text(
+                "📊 **NO PROMOTION CANDIDATES YET**\n\n"
+                "Need combos with:\n"
+                "• WR ≥ 45%\n"
+                "• N ≥ 10 trades\n"
+                "• Positive EV\n\n"
+                "Keep running to collect more data!",
+                parse_mode='Markdown'
+            )
+            return
+        
+        msg = "🚀 **PROMOTION CANDIDATES**\n\n"
+        msg += "These combos could be added to active trading:\n\n"
+        
+        for c in candidates[:10]:
+            msg += f"**{c['symbol']}** {c['side'].upper()}\n"
+            msg += f"`{c['combo']}`\n"
+            msg += f"WR: {c['win_rate']:.0f}% ({c['wins']}W/{c['losses']}L) EV: {c['expected_value']:.2f}R\n\n"
+        
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     async def cmd_risk(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -436,6 +475,9 @@ class VWAPBot:
                 else:
                     sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
                 
+                # LEARNING: Record ALL signals (silently, for learning)
+                self.combo_learner.record_signal(sym, side, combo, entry, tp, sl)
+                
                 allowed = self.vwap_combos.get(sym, {}).get(side, [])
                 
                 if combo in allowed:
@@ -578,6 +620,8 @@ class VWAPBot:
             self.tg_app.add_handler(CommandHandler("risk", self.cmd_risk))
             self.tg_app.add_handler(CommandHandler("phantoms", self.cmd_phantoms))
             self.tg_app.add_handler(CommandHandler("dashboard", self.cmd_dashboard))
+            self.tg_app.add_handler(CommandHandler("learn", self.cmd_learn))
+            self.tg_app.add_handler(CommandHandler("promote", self.cmd_promote))
             
             await self.tg_app.initialize()
             await self.tg_app.start()
@@ -620,6 +664,17 @@ class VWAPBot:
                 
                 await self.update_phantoms()
                 
+                # Update combo learner with current prices
+                try:
+                    prices = {}
+                    for sym in symbols:
+                        ticker = self.broker.get_ticker(sym)
+                        if ticker:
+                            prices[sym] = float(ticker.get('lastPrice', 0))
+                    self.combo_learner.update_signals(prices)
+                except Exception as e:
+                    logger.debug(f"Learner update error: {e}")
+                
                 # Daily summary (every 24 hours)
                 await self.send_daily_summary()
                 
@@ -627,6 +682,7 @@ class VWAPBot:
                 if self.loop_count % 10 == 0:
                     logger.info(f"Stats: Loop={self.loop_count} Symbols={len(symbols)} Signals={self.signals_detected} Trades={self.trades_executed}")
                     self.save_state()  # Periodic state save
+                    self.combo_learner.save()  # Save learning data
                     
                 await asyncio.sleep(10)
                 

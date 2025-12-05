@@ -109,3 +109,6 @@ FFUSDT:
   - RSI:40-60 MACD:bull Fib:78-100
   short:
   - RSI:30-40 MACD:bear Fib:50-61
+FUSDT:
+  short:
+  - RSI:40-60 MACD:bear Fib:0-23

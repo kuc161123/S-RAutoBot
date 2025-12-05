@@ -646,19 +646,55 @@ class VWAPBot:
                 
                 atr = last_candle.atr
                 entry = last_candle.close
-                if side == 'long':
-                    sl, tp = entry - (2.0 * atr), entry + (4.0 * atr)
-                else:
-                    sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
+                atr_percent = (atr / entry) * 100 if entry > 0 else 1.0
                 
-                # LEARNING: Record ALL signals (silently, for learning)
+                # Get BTC price for context
+                btc_price = 0
+                try:
+                    btc_ticker = self.broker.get_ticker('BTCUSDT')
+                    if btc_ticker:
+                        btc_price = float(btc_ticker.get('lastPrice', 0))
+                except:
+                    pass
+                
+                # SMART LEARNING: Record signal with full context
+                # This also returns optimized TP/SL based on learned R:R
+                smart_tp, smart_sl, smart_explanation = self.smart_learner.record_signal(
+                    sym, side, combo, entry, atr, btc_price
+                )
+                
+                # Use smart R:R if available, otherwise default
+                if smart_tp and smart_sl:
+                    tp, sl = smart_tp, smart_sl
+                else:
+                    if side == 'long':
+                        sl, tp = entry - (2.0 * atr), entry + (4.0 * atr)
+                    else:
+                        sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
+                
+                # BASIC LEARNING: Also record to combo_learner
                 self.combo_learner.record_signal(sym, side, combo, entry, tp, sl)
                 
+                # Check if allowed to trade
                 allowed = self.vwap_combos.get(sym, {}).get(side, [])
                 
                 if combo in allowed:
-                    logger.info(f"🚀 VALID SIGNAL: {sym} {side} {combo}")
-                    await self.execute_trade(sym, side, last_candle, combo)
+                    # SMART FILTER: Check if smart learner recommends taking this
+                    btc_change = self.smart_learner.get_btc_change_1h()
+                    should_take, smart_reason = self.smart_learner.should_take_signal(
+                        sym, side, combo, atr_percent, btc_change
+                    )
+                    
+                    if should_take:
+                        logger.info(f"🚀 SIGNAL: {sym} {side} | {smart_explanation}")
+                        await self.execute_trade(sym, side, last_candle, combo)
+                    else:
+                        logger.info(f"🛑 SMART BLOCK: {sym} {side} | {smart_reason}")
+                        # Still track as phantom to verify if smart filter was right
+                        existing = [p for p in self.phantom_trades if p.symbol == sym]
+                        if not existing:
+                            pt = PhantomTrade(sym, side, entry, tp, sl, combo, time.time())
+                            self.phantom_trades.append(pt)
                 else:
                     # Phantom - with cooldown (1 notification per symbol per 30 min)
                     existing = [p for p in self.phantom_trades if p.symbol == sym]
@@ -676,12 +712,12 @@ class VWAPBot:
                         # Show allowed combos for this symbol/side
                         allowed_str = '\n'.join([f"  • `{c}`" for c in allowed[:3]]) if allowed else "  None"
                         
-                        # Notification with allowed combos
+                        # Notification with context
                         await self.send_telegram(
                             f"👻 `{sym}` {side.upper()}\n"
                             f"❌ Combo: `{combo}`\n"
-                            f"TP: {tp:.4f} | SL: {sl:.4f}\n\n"
-                            f"✅ Allowed combos:\n{allowed_str}"
+                            f"📊 {smart_explanation}\n\n"
+                            f"✅ Allowed:\n{allowed_str}"
                         )
                     
         except Exception as e:
@@ -780,11 +816,18 @@ class VWAPBot:
             atr = row.atr
             entry = row.close
             
+            # Get optimal R:R from smart learner
+            optimal_rr, rr_reason = self.smart_learner.get_optimal_rr(sym, side, combo)
+            
+            # Calculate TP/SL with optimal R:R
+            # Using 1 ATR for SL (1R), RR*ATR for TP
             if side == 'long':
-                sl, tp = entry - (2.0 * atr), entry + (4.0 * atr)
+                sl = entry - (1.0 * atr)  # 1 ATR stop
+                tp = entry + (optimal_rr * atr)  # R:R * ATR profit
                 dist = entry - sl
             else:
-                sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
+                sl = entry + (1.0 * atr)  
+                tp = entry - (optimal_rr * atr)
                 dist = sl - entry
                 
             if dist <= 0: return
@@ -799,7 +842,7 @@ class VWAPBot:
             
             if qty <= 0: return
 
-            logger.info(f"EXECUTE: {sym} {side} qty={qty} entry={entry}")
+            logger.info(f"EXECUTE: {sym} {side} qty={qty} R:R={optimal_rr}:1")
             
             res = self.broker.place_market(sym, side, qty)
             if res and res.get('retCode') == 0:
@@ -812,7 +855,7 @@ class VWAPBot:
                     f"Combo: `{combo}`\n"
                     f"Size: {qty} @ {entry:.4f}\n"
                     f"TP: {tp:.4f} | SL: {sl:.4f}\n"
-                    f"Risk: ${risk_amt:.2f}"
+                    f"R:R: **{optimal_rr}:1** | Risk: ${risk_amt:.2f}"
                 )
             else:
                 logger.error(f"Order failed: {res}")
@@ -934,13 +977,19 @@ class VWAPBot:
                 
         except KeyboardInterrupt:
             logger.info("Shutting down...")
-            self.save_state()  # Save on shutdown
+            self.save_state()
+            self.combo_learner.save()
+            self.smart_learner.save()
         except Exception as e:
             logger.error(f"Fatal error: {e}")
-            self.save_state()  # Save on error
+            self.save_state()
+            self.combo_learner.save()
+            self.smart_learner.save()
             await self.send_telegram(f"❌ **Bot Error**: {e}")
         finally:
-            self.save_state()  # Final save
+            self.save_state()
+            self.combo_learner.save()
+            self.smart_learner.save()
             if self.tg_app:
                 try:
                     await self.tg_app.updater.stop()

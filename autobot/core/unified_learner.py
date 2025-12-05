@@ -978,7 +978,7 @@ class UnifiedLearner:
     # ========================================================================
     
     def save(self):
-        """Save all learning data"""
+        """Save all learning data including pending signals for restart survival"""
         try:
             # Convert combo_stats to serializable format
             stats_data = {}
@@ -991,13 +991,42 @@ class UnifiedLearner:
                         by_rr = {str(k): v for k, v in data.get('by_rr', {}).items()}
                         stats_data[symbol][side][combo] = {**data, 'by_rr': by_rr}
             
+            # Convert pending signals to serializable format (CRITICAL for restart survival)
+            pending_data = []
+            for sig in self.pending_signals:
+                pending_data.append({
+                    'symbol': sig.symbol,
+                    'side': sig.side,
+                    'combo': sig.combo,
+                    'entry_price': sig.entry_price,
+                    'tp_price': sig.tp_price,
+                    'sl_price': sig.sl_price,
+                    'start_time': sig.start_time,
+                    'is_phantom': sig.is_phantom,
+                    'is_allowed_combo': sig.is_allowed_combo,
+                    'atr_percent': sig.atr_percent,
+                    'volatility_regime': sig.volatility_regime,
+                    'btc_trend': sig.btc_trend,
+                    'btc_change_1h': sig.btc_change_1h,
+                    'session': sig.session,
+                    'hour_utc': sig.hour_utc,
+                    'rr_ratio': sig.rr_ratio,
+                    'max_high': sig.max_high,
+                    'min_low': sig.min_low,
+                    'max_favorable': sig.max_favorable,
+                    'max_adverse': sig.max_adverse
+                })
+            
             data = {
                 'combo_stats': stats_data,
+                'pending_signals': pending_data,  # CRITICAL: Save pending for restart
                 'promoted': list(self.promoted),
+                'blacklist': list(self.blacklist),  # Also save blacklist
                 'total_signals': self.total_signals,
                 'total_wins': self.total_wins,
                 'total_losses': self.total_losses,
                 'btc_price_1h_ago': self.btc_price_1h_ago,
+                'btc_current': self.btc_current,
                 'started_at': self.started_at,
                 'adjustments': self.adjustments[-100:],
                 'saved_at': time.time()
@@ -1006,13 +1035,13 @@ class UnifiedLearner:
             with open(self.SAVE_FILE, 'w') as f:
                 json.dump(data, f, indent=2)
             
-            logger.info(f"💾 Learning saved: {self.total_signals} signals, {len(self.get_all_combos())} combos")
+            logger.info(f"💾 Learning saved: {len(pending_data)} pending, {self.total_signals} total signals")
             
         except Exception as e:
             logger.error(f"Failed to save learning: {e}")
     
     def load(self):
-        """Load learning data"""
+        """Load learning data including pending signals for restart survival"""
         try:
             with open(self.SAVE_FILE, 'r') as f:
                 data = json.load(f)
@@ -1026,17 +1055,57 @@ class UnifiedLearner:
                             stats['by_rr'] = {float(k): v for k, v in stats['by_rr'].items()}
                         self.combo_stats[symbol][side][combo] = stats
             
+            # Load pending signals (CRITICAL for restart survival)
+            self.pending_signals = []
+            for sig_data in data.get('pending_signals', []):
+                try:
+                    # Skip signals older than 4 hours (SIGNAL_TIMEOUT)
+                    if time.time() - sig_data.get('start_time', 0) > self.SIGNAL_TIMEOUT:
+                        continue
+                    
+                    signal = LearningSignal(
+                        symbol=sig_data['symbol'],
+                        side=sig_data['side'],
+                        combo=sig_data['combo'],
+                        entry_price=sig_data['entry_price'],
+                        tp_price=sig_data['tp_price'],
+                        sl_price=sig_data['sl_price'],
+                        start_time=sig_data['start_time'],
+                        is_phantom=sig_data.get('is_phantom', True),
+                        is_allowed_combo=sig_data.get('is_allowed_combo', False),
+                        atr_percent=sig_data.get('atr_percent', 0.0),
+                        volatility_regime=sig_data.get('volatility_regime', 'medium'),
+                        btc_trend=sig_data.get('btc_trend', 'neutral'),
+                        btc_change_1h=sig_data.get('btc_change_1h', 0.0),
+                        session=sig_data.get('session', 'london'),
+                        hour_utc=sig_data.get('hour_utc', 0),
+                        rr_ratio=sig_data.get('rr_ratio', 2.0),
+                        max_high=sig_data.get('max_high', sig_data['entry_price']),
+                        min_low=sig_data.get('min_low', sig_data['entry_price']),
+                        max_favorable=sig_data.get('max_favorable', 0.0),
+                        max_adverse=sig_data.get('max_adverse', 0.0)
+                    )
+                    self.pending_signals.append(signal)
+                except Exception as e:
+                    logger.debug(f"Failed to restore signal: {e}")
+                    continue
+            
             self.promoted = set(data.get('promoted', []))
+            self.blacklist = set(data.get('blacklist', []))  # Also load blacklist
             self.total_signals = data.get('total_signals', 0)
             self.total_wins = data.get('total_wins', 0)
             self.total_losses = data.get('total_losses', 0)
             self.btc_price_1h_ago = data.get('btc_price_1h_ago', 0)
+            self.btc_current = data.get('btc_current', 0)
             self.started_at = data.get('started_at', time.time())
             self.adjustments = data.get('adjustments', [])
             
-            logger.info(f"📂 Learning loaded: {self.total_signals} signals")
+            saved_at = data.get('saved_at', 0)
+            age_mins = (time.time() - saved_at) / 60 if saved_at else 0
+            logger.info(f"📂 Learning loaded: {len(self.pending_signals)} pending, {self.total_signals} total (saved {age_mins:.0f}m ago)")
             
         except FileNotFoundError:
             logger.info("📂 Starting fresh learning database")
         except Exception as e:
             logger.error(f"Failed to load learning: {e}")
+

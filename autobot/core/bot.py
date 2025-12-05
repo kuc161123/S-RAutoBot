@@ -560,6 +560,9 @@ class VWAPBot:
                 except:
                     pass
                 
+                # Check if allowed to trade
+                allowed = self.vwap_combos.get(sym, {}).get(side, [])
+                
                 # UNIFIED LEARNING: Record signal with full context
                 # Returns optimized TP/SL based on learned R:R
                 # The learner now handles ALL signal tracking (both allowed and phantom)
@@ -576,9 +579,6 @@ class VWAPBot:
                         sl, tp = entry - (2.0 * atr), entry + (4.0 * atr)
                     else:
                         sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
-                
-                # Check if allowed to trade
-                allowed = self.vwap_combos.get(sym, {}).get(side, [])
                 
                 if combo in allowed:
                     # SMART FILTER: Check if smart learner recommends taking this

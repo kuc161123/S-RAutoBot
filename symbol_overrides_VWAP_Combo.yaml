@@ -101,3 +101,6 @@ ESPORTSUSDT:
 EULUSDT:
   short:
   - RSI:40-60 MACD:bull Fib:78-100
+EVAAUSDT:
+  long:
+  - RSI:40-60 MACD:bear Fib:78-100

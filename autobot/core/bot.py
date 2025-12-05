@@ -111,6 +111,56 @@ class VWAPBot:
         except FileNotFoundError:
             self.vwap_combos = {}
 
+    def save_state(self):
+        """Save bot state to persist across restarts"""
+        import json
+        state = {
+            'phantom_stats': self.phantom_stats,
+            'phantom_history': self.phantom_history[-100:],  # Keep last 100
+            'trade_history': self.trade_history[-100:],  # Keep last 100
+            'daily_pnl': self.daily_pnl,
+            'total_pnl': self.total_pnl,
+            'wins': self.wins,
+            'losses': self.losses,
+            'signals_detected': self.signals_detected,
+            'trades_executed': self.trades_executed,
+            'last_daily_summary': self.last_daily_summary,
+            'saved_at': time.time()
+        }
+        try:
+            with open('bot_state.json', 'w') as f:
+                json.dump(state, f, indent=2)
+            logger.info("💾 State saved")
+        except Exception as e:
+            logger.error(f"Failed to save state: {e}")
+
+    def load_state(self):
+        """Load bot state from previous session"""
+        import json
+        try:
+            with open('bot_state.json', 'r') as f:
+                state = json.load(f)
+            
+            self.phantom_stats = state.get('phantom_stats', {'wins': 0, 'losses': 0, 'total': 0})
+            self.phantom_history = state.get('phantom_history', [])
+            self.trade_history = state.get('trade_history', [])
+            self.daily_pnl = state.get('daily_pnl', 0.0)
+            self.total_pnl = state.get('total_pnl', 0.0)
+            self.wins = state.get('wins', 0)
+            self.losses = state.get('losses', 0)
+            self.signals_detected = state.get('signals_detected', 0)
+            self.trades_executed = state.get('trades_executed', 0)
+            self.last_daily_summary = state.get('last_daily_summary', time.time())
+            
+            saved_at = state.get('saved_at', 0)
+            age_hrs = (time.time() - saved_at) / 3600
+            logger.info(f"📂 State loaded (saved {age_hrs:.1f}h ago)")
+            logger.info(f"   Stats: {self.wins}W/{self.losses}L, PnL: ${self.total_pnl:.2f}")
+        except FileNotFoundError:
+            logger.info("📂 No previous state found, starting fresh")
+        except Exception as e:
+            logger.error(f"Failed to load state: {e}")
+
     # --- Telegram Commands ---
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
@@ -405,11 +455,15 @@ class VWAPBot:
                         self.phantom_stats['total'] += 1
                         self.last_phantom_notify[cooldown_key] = time.time()
                         
-                        # Simplified notification
+                        # Show allowed combos for this symbol/side
+                        allowed_str = '\n'.join([f"  • `{c}`" for c in allowed[:3]]) if allowed else "  None"
+                        
+                        # Notification with allowed combos
                         await self.send_telegram(
                             f"👻 `{sym}` {side.upper()}\n"
-                            f"Combo: `{combo}`\n"
-                            f"TP: {tp:.4f} | SL: {sl:.4f}"
+                            f"❌ Combo: `{combo}`\n"
+                            f"TP: {tp:.4f} | SL: {sl:.4f}\n\n"
+                            f"✅ Allowed combos:\n{allowed_str}"
                         )
                     
         except Exception as e:
@@ -535,6 +589,7 @@ class VWAPBot:
         
         # Load symbols from backtest results ONLY
         self.load_overrides()
+        self.load_state()  # Restore previous session data
         symbols = list(self.vwap_combos.keys())
         
         if not symbols:
@@ -568,18 +623,22 @@ class VWAPBot:
                 # Daily summary (every 24 hours)
                 await self.send_daily_summary()
                 
-                # Log stats every 10 loops
+                # Log stats and save state every 10 loops
                 if self.loop_count % 10 == 0:
                     logger.info(f"Stats: Loop={self.loop_count} Symbols={len(symbols)} Signals={self.signals_detected} Trades={self.trades_executed}")
+                    self.save_state()  # Periodic state save
                     
                 await asyncio.sleep(10)
                 
         except KeyboardInterrupt:
             logger.info("Shutting down...")
+            self.save_state()  # Save on shutdown
         except Exception as e:
             logger.error(f"Fatal error: {e}")
+            self.save_state()  # Save on error
             await self.send_telegram(f"❌ **Bot Error**: {e}")
         finally:
+            self.save_state()  # Final save
             if self.tg_app:
                 try:
                     await self.tg_app.updater.stop()

@@ -122,10 +122,28 @@ class VWAPBot:
     def save_state(self):
         """Save bot state to persist across restarts"""
         import json
+        from dataclasses import asdict
+        
+        # Convert phantom trades to serializable format
+        phantom_trades_data = []
+        for pt in self.phantom_trades:
+            phantom_trades_data.append({
+                'symbol': pt.symbol,
+                'side': pt.side,
+                'entry': pt.entry,
+                'tp': pt.tp,
+                'sl': pt.sl,
+                'combo': pt.combo,
+                'start_time': pt.start_time,
+                'max_price': pt.max_price,
+                'min_price': pt.min_price
+            })
+        
         state = {
+            'phantom_trades': phantom_trades_data,  # Active phantoms!
             'phantom_stats': self.phantom_stats,
-            'phantom_history': self.phantom_history[-100:],  # Keep last 100
-            'trade_history': self.trade_history[-100:],  # Keep last 100
+            'phantom_history': self.phantom_history[-100:],
+            'trade_history': self.trade_history[-100:],
             'daily_pnl': self.daily_pnl,
             'total_pnl': self.total_pnl,
             'wins': self.wins,
@@ -133,12 +151,13 @@ class VWAPBot:
             'signals_detected': self.signals_detected,
             'trades_executed': self.trades_executed,
             'last_daily_summary': self.last_daily_summary,
+            'last_phantom_notify': self.last_phantom_notify,
             'saved_at': time.time()
         }
         try:
             with open('bot_state.json', 'w') as f:
                 json.dump(state, f, indent=2)
-            logger.info("💾 State saved")
+            logger.info(f"💾 State saved ({len(phantom_trades_data)} active phantoms)")
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
 
@@ -148,6 +167,25 @@ class VWAPBot:
         try:
             with open('bot_state.json', 'r') as f:
                 state = json.load(f)
+            
+            # Restore active phantom trades
+            self.phantom_trades = []
+            for pt_data in state.get('phantom_trades', []):
+                try:
+                    pt = PhantomTrade(
+                        symbol=pt_data['symbol'],
+                        side=pt_data['side'],
+                        entry=pt_data['entry'],
+                        tp=pt_data['tp'],
+                        sl=pt_data['sl'],
+                        combo=pt_data['combo'],
+                        start_time=pt_data['start_time'],
+                        max_price=pt_data.get('max_price', 0.0),
+                        min_price=pt_data.get('min_price', 0.0)
+                    )
+                    self.phantom_trades.append(pt)
+                except:
+                    pass
             
             self.phantom_stats = state.get('phantom_stats', {'wins': 0, 'losses': 0, 'total': 0})
             self.phantom_history = state.get('phantom_history', [])
@@ -159,11 +197,12 @@ class VWAPBot:
             self.signals_detected = state.get('signals_detected', 0)
             self.trades_executed = state.get('trades_executed', 0)
             self.last_daily_summary = state.get('last_daily_summary', time.time())
+            self.last_phantom_notify = state.get('last_phantom_notify', {})
             
             saved_at = state.get('saved_at', 0)
             age_hrs = (time.time() - saved_at) / 3600
             logger.info(f"📂 State loaded (saved {age_hrs:.1f}h ago)")
-            logger.info(f"   Stats: {self.wins}W/{self.losses}L, PnL: ${self.total_pnl:.2f}")
+            logger.info(f"   Stats: {self.wins}W/{self.losses}L, Phantoms: {len(self.phantom_trades)} active")
         except FileNotFoundError:
             logger.info("📂 No previous state found, starting fresh")
         except Exception as e:

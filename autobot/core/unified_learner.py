@@ -246,7 +246,11 @@ class UnifiedLearner:
         """Initialize Redis and Postgres connections"""
         # Redis for pending signals (fast, ephemeral)
         redis_url = os.getenv('REDIS_URL')
-        if redis and redis_url:
+        if not redis:
+            logger.warning("⚠️ Redis module not found. Install 'redis' package.")
+        elif not redis_url:
+            logger.warning("⚠️ REDIS_URL env var not set. Redis persistence disabled.")
+        else:
             try:
                 self.redis_client = redis.from_url(redis_url, decode_responses=True)
                 self.redis_client.ping()
@@ -256,7 +260,11 @@ class UnifiedLearner:
         
         # Postgres for historical stats (robust, queryable)
         pg_url = os.getenv('DATABASE_URL')
-        if psycopg2 and pg_url:
+        if not psycopg2:
+            logger.warning("⚠️ psycopg2 module not found. Install 'psycopg2-binary'.")
+        elif not pg_url:
+            logger.warning("⚠️ DATABASE_URL env var not set. Postgres persistence disabled.")
+        else:
             try:
                 self.pg_conn = psycopg2.connect(pg_url)
                 self.pg_conn.autocommit = True

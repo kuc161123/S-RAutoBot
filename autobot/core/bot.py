@@ -176,6 +176,9 @@ class VWAPBot:
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show bot status & stats"""
+        uptime = (time.time() - self.start_time) / 3600
+        
         # Unified learner stats (replaces separate phantom tracking)
         learning = self.learner
         p_wins = learning.total_wins
@@ -184,24 +187,19 @@ class VWAPBot:
         p_wr = (p_wins / p_total * 100) if p_total > 0 else 0.0
         pending = len(learning.pending_signals)
         
-        # Trade stats
-        t_total = self.wins + self.losses
-        t_wr = (self.wins / t_total * 100) if t_total > 0 else 0.0
-        
-        # Uptime
-        uptime_sec = int(time.time() - self.start_time)
-        uptime_hr = uptime_sec // 3600
-        uptime_min = (uptime_sec % 3600) // 60
+        # Persistence Status
+        redis_status = "🟢" if learning.redis_client else "🔴"
+        pg_status = "🟢" if learning.pg_conn else "🔴"
         
         msg = (
-            "📊 **BOT STATUS**\n\n"
-            f"⏱️ Uptime: {uptime_hr}h {uptime_min}m\n"
+            f"🤖 **VWAP BOT STATUS**\n"
+            f"⏱️ Uptime: {uptime:.1f}h\n"
+            f"💾 Persistence: Redis {redis_status} | DB {pg_status}\n\n"
+            f"💰 PnL: ${self.total_pnl:.2f} (Daily: ${self.daily_pnl:.2f})\n"
+            f"📊 Trades: {self.wins}W / {self.losses}L\n"
             f"⚙️ Risk: {self.risk_config['value']} {self.risk_config['type']}\n"
             f"📈 Signals: {self.signals_detected}\n"
             f"🔄 Loops: {self.loop_count}\n\n"
-            f"💰 **Trading**\n"
-            f"Trades: {self.trades_executed}\n"
-            f"WR: {t_wr:.1f}% ({self.wins}W/{self.losses}L)\n"
             f"Daily PnL: ${self.daily_pnl:.2f}\n"
             f"Total PnL: ${self.total_pnl:.2f}\n\n"
             f"📚 **Unified Tracker**\n"

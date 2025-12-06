@@ -107,8 +107,20 @@ class UnifiedLearner:
     - Provides session breakdown
     """
     
-    SAVE_FILE = 'unified_learning.json'
-    BLACKLIST_FILE = 'combo_blacklist.json'
+    # Data directory: Use /data if exists (Railway), otherwise current dir
+    DATA_DIR = '/data' if os.path.isdir('/data') else (
+        '/app/data' if os.path.isdir('/app/data') else '.'
+    )
+    
+    # Create data dir if needed (for local dev)
+    if DATA_DIR not in ['/', '.'] and not os.path.exists(DATA_DIR):
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+        except:
+            DATA_DIR = '.'
+    
+    SAVE_FILE = f'{DATA_DIR}/unified_learning.json'
+    BLACKLIST_FILE = f'{DATA_DIR}/combo_blacklist.json'
     OVERRIDE_FILE = 'symbol_overrides_VWAP_Combo.yaml'
     
     # Thresholds
@@ -203,6 +215,10 @@ class UnifiedLearner:
         
         # Decision log (last 50)
         self.decision_log: List[Dict] = []
+        
+        # Log data directory for debugging
+        logger.info(f"📁 Data directory: {self.DATA_DIR}")
+        logger.info(f"📁 Save file: {self.SAVE_FILE}")
         
         # Load saved data
         self.load()

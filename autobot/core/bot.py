@@ -382,6 +382,7 @@ class VWAPBot:
                 f"├ 📈 Near Promote: {approaching_promote}\n"
                 f"├ 📉 Near Blacklist: {approaching_blacklist}\n"
                 f"├ 🚀 Promoted: {promoted}\n"
+                f"├ 🔽 Demoted: {getattr(self, 'demoted_count', 0)}\n"
                 f"└ 🚫 Blacklisted: {blacklisted}\n\n"
                 
                 f"📊 **SESSION BREAKDOWN**\n"
@@ -1169,6 +1170,10 @@ class VWAPBot:
                                             if combo in current_yaml[sym][side]:
                                                 current_yaml[sym][side].remove(combo)
                                                 demoted.append(item)
+                                                # Track demoted count for dashboard
+                                                if not hasattr(self, 'demoted_count'):
+                                                    self.demoted_count = 0
+                                                self.demoted_count += 1
                                                 logger.info(f"🔽 Demoted {sym} {side} {combo} (LB WR: {item['lb_wr']:.0f}%)")
                                                 
                                                 # Clean up empty entries

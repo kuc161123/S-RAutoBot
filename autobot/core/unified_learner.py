@@ -813,6 +813,11 @@ class UnifiedLearner:
             
             max_r_reached = max_profit / risk
             
+            # Handle nan/inf values that could cause SQL errors
+            import math
+            if math.isnan(max_r_reached) or math.isinf(max_r_reached):
+                max_r_reached = 0.0
+            
             for rr_opt in [1.5, 2.0, 2.5, 3.0]:
                 # Initialize if missing
                 if rr_opt not in stats['by_rr']:
@@ -847,7 +852,8 @@ class UnifiedLearner:
                         VALUES (%s, %s, %s, %s, %s, %s)
                     """, (
                         signal.symbol, signal.side, signal.combo, outcome,
-                        signal.time_to_result, max_r_reached
+                        float(signal.time_to_result) if signal.time_to_result else 0.0,
+                        float(max_r_reached) if max_r_reached else 0.0
                     ))
             except Exception as e:
                 logger.error(f"Failed to save trade history: {e}")

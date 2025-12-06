@@ -1107,6 +1107,42 @@ class UnifiedLearner:
             return True
         return False
     
+    def get_combo_stats(self, symbol: str, side: str, combo: str) -> Optional[Dict]:
+        """Get performance stats for a specific combo from trade_history."""
+        if not self.pg_conn:
+            return None
+            
+        try:
+            with self.pg_conn.cursor() as cur:
+                cur.execute("""
+                    SELECT COUNT(*) as total,
+                           COALESCE(SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END), 0) as wins
+                    FROM trade_history
+                    WHERE symbol = %s AND side = %s AND combo = %s
+                      AND created_at > NOW() - INTERVAL '30 days'
+                """, (symbol, side, combo))
+                
+                row = cur.fetchone()
+                if row:
+                    total, wins = row
+                    total = total or 0
+                    wins = wins or 0
+                    
+                    if total >= 5:
+                        lb_wr = wilson_lower_bound(wins, total)
+                        raw_wr = (wins / total * 100) if total > 0 else 0
+                        
+                        return {
+                            'total': total,
+                            'wins': wins,
+                            'wr': raw_wr,
+                            'lower_wr': lb_wr
+                        }
+        except Exception as e:
+            logger.error(f"get_combo_stats error: {e}")
+            
+        return None
+    
     def generate_report(self) -> str:
         """Generate comprehensive Telegram report"""
         uptime = (time.time() - self.started_at) / 3600

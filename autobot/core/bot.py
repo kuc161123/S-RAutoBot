@@ -1119,6 +1119,84 @@ class VWAPBot:
                             await self.send_telegram(msg)  # ENABLED - auto-promote notifications
                             logger.info(f"Auto-promoted {len(new_promotions)} combos")
                     
+                    # === AUTO-DEMOTION: Remove poor performers from YAML ===
+                    # Check every 5 loops (less frequent than promotion)
+                    if self.loop_count % 5 == 0:
+                        demoted = []
+                        
+                        try:
+                            # Load current YAML
+                            with open('symbol_overrides_VWAP_Combo.yaml', 'r') as f:
+                                current_yaml = yaml.safe_load(f) or {}
+                            
+                            # Check each combo in YAML against analytics
+                            combos_to_remove = []
+                            
+                            for sym, sides in list(current_yaml.items()):
+                                if not isinstance(sides, dict):
+                                    continue
+                                    
+                                for side in ['long', 'short']:
+                                    combos = sides.get(side, [])
+                                    if not isinstance(combos, list):
+                                        continue
+                                        
+                                    for combo in list(combos):
+                                        # Get performance from trade_history
+                                        stats = self.learner.get_combo_stats(sym, side, combo)
+                                        
+                                        if stats and stats.get('total', 0) >= 5:
+                                            lb_wr = stats.get('lower_wr', 100)
+                                            
+                                            if lb_wr < 40:  # Below threshold
+                                                combos_to_remove.append({
+                                                    'symbol': sym,
+                                                    'side': side,
+                                                    'combo': combo,
+                                                    'lb_wr': lb_wr,
+                                                    'total': stats['total']
+                                                })
+                            
+                            # Remove poor performers from YAML
+                            if combos_to_remove:
+                                for item in combos_to_remove:
+                                    sym = item['symbol']
+                                    side = item['side']
+                                    combo = item['combo']
+                                    
+                                    try:
+                                        if sym in current_yaml and side in current_yaml[sym]:
+                                            if combo in current_yaml[sym][side]:
+                                                current_yaml[sym][side].remove(combo)
+                                                demoted.append(item)
+                                                logger.info(f"🔽 Demoted {sym} {side} {combo} (LB WR: {item['lb_wr']:.0f}%)")
+                                                
+                                                # Clean up empty entries
+                                                if not current_yaml[sym]['long'] and not current_yaml[sym]['short']:
+                                                    del current_yaml[sym]
+                                    except Exception as e:
+                                        logger.error(f"Failed to demote {sym}: {e}")
+                                
+                                # Write updated YAML
+                                with open('symbol_overrides_VWAP_Combo.yaml', 'w') as f:
+                                    yaml.dump(current_yaml, f, default_flow_style=False)
+                                
+                                # Notify user
+                                if demoted:
+                                    msg = "🔽 **AUTO-DEMOTED COMBOS**\n(LB WR < 40%)\n\n"
+                                    for d in demoted[:10]:  # Limit to 10
+                                        msg += (
+                                            f"❌ `{d['symbol']}` {d['side'].upper()}\n"
+                                            f"Combo: `{d['combo']}`\n"
+                                            f"LB WR: {d['lb_wr']:.0f}% | N={d['total']}\n\n"
+                                        )
+                                    if len(demoted) > 10:
+                                        msg += f"... and {len(demoted) - 10} more"
+                                    await self.send_telegram(msg)
+                                    
+                        except Exception as e:
+                            logger.error(f"Auto-demotion error: {e}")
+                
                 await asyncio.sleep(10)
                 
         except KeyboardInterrupt:

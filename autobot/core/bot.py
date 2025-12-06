@@ -305,6 +305,28 @@ class VWAPBot:
             long_wr = (long_stats['w'] / long_total * 100) if long_total > 0 else 0
             short_wr = (short_stats['w'] / short_total * 100) if short_total > 0 else 0
             
+            # === R:R PERFORMANCE ===
+            rr_stats = {1.5: {'w': 0, 'l': 0}, 2.0: {'w': 0, 'l': 0}, 2.5: {'w': 0, 'l': 0}, 3.0: {'w': 0, 'l': 0}}
+            
+            for symbol, sides in learning.combo_stats.items():
+                for side, combos in sides.items():
+                    for combo, stats in combos.items():
+                        for rr, data in stats.get('by_rr', {}).items():
+                            rr_float = float(rr)
+                            if rr_float in rr_stats:
+                                rr_stats[rr_float]['w'] += data.get('w', 0)
+                                rr_stats[rr_float]['l'] += data.get('l', 0)
+            
+            # Build R:R message part
+            rr_msg = ""
+            for rr in [1.5, 2.0, 2.5, 3.0]:
+                data = rr_stats.get(rr, {'w': 0, 'l': 0})
+                total = data['w'] + data['l']
+                if total > 0:
+                    wr = (data['w'] / total * 100)
+                    ev = (data['w']/total * rr) - (data['l']/total * 1.0)
+                    rr_msg += f"├ {rr}:1 → {wr:.0f}% ({ev:+.2f}R)\n"
+            
             # Top performers
             top_combos = learning.get_top_combos(min_trades=3, min_lower_wr=40)[:3]
             
@@ -348,6 +370,9 @@ class VWAPBot:
                 f"📈 **SIDE PERFORMANCE**\n"
                 f"├ 🟢 Long:  {long_wr:.0f}% ({long_stats['w']}/{long_total})\n"
                 f"└ 🔴 Short: {short_wr:.0f}% ({short_stats['w']}/{short_total})\n\n"
+                
+                f"💹 **BEST R:R PERFORMANCE**\n"
+                f"{rr_msg}\n"
                 
                 f"₿ **BTC**: {btc_trend} ({btc_change:+.1f}%)\n"
             )

@@ -865,23 +865,68 @@ class VWAPBot:
             logger.info(f"EXECUTE: {sym} {side} qty={qty} R:R={optimal_rr}:1")
             
             res = self.broker.place_market(sym, side, qty)
+            
             if res and res.get('retCode') == 0:
-                self.broker.set_tpsl(sym, tp, sl, qty)
+                # Extract order details from response
+                result = res.get('result', {})
+                order_id = result.get('orderId', 'N/A')
+                
+                # Set TP/SL and capture result
+                tpsl_res = self.broker.set_tpsl(sym, tp, sl, qty)
+                tpsl_ok = tpsl_res and tpsl_res.get('retCode') == 0 if tpsl_res else False
+                tpsl_status = "✅ SET" if tpsl_ok else "⚠️ FAILED"
+                
                 self.trades_executed += 1
                 
+                # Calculate actual values for notification
+                sl_pct = abs(entry - sl) / entry * 100
+                tp_pct = abs(tp - entry) / entry * 100
+                position_value = qty * entry
+                
                 await self.send_telegram(
-                    f"🚀 **ENTRY** `{sym}`\n"
-                    f"Side: **{side.upper()}**\n"
-                    f"Combo: `{combo}`\n"
-                    f"Size: {qty} @ {entry:.4f}\n"
-                    f"TP: {tp:.4f} | SL: {sl:.4f}\n"
-                    f"R:R: **{optimal_rr}:1** | Risk: ${risk_amt:.2f}"
+                    f"🚀 **TRADE EXECUTED**\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 Symbol: `{sym}`\n"
+                    f"📈 Side: **{side.upper()}**\n"
+                    f"🎯 Combo: `{combo}`\n\n"
+                    f"💰 **ORDER DETAILS**\n"
+                    f"├ Order ID: `{order_id}`\n"
+                    f"├ Quantity: {qty}\n"
+                    f"├ Entry: ${entry:.4f}\n"
+                    f"├ Position Value: ${position_value:.2f}\n"
+                    f"└ Risk: ${risk_amt:.2f} ({self.risk_config['value']}{self.risk_config['type']})\n\n"
+                    f"🎯 **RISK MANAGEMENT** {tpsl_status}\n"
+                    f"├ Take Profit: ${tp:.4f} (+{tp_pct:.2f}%)\n"
+                    f"├ Stop Loss: ${sl:.4f} (-{sl_pct:.2f}%)\n"
+                    f"├ R:R Ratio: **{optimal_rr}:1**\n"
+                    f"└ ATR: {atr:.4f}\n\n"
+                    f"💵 Balance: ${balance:.2f}"
                 )
             else:
+                # Order failed - notify with details
+                error_msg = res.get('retMsg', 'Unknown error') if res else 'No response'
+                error_code = res.get('retCode', 'N/A') if res else 'N/A'
+                
+                await self.send_telegram(
+                    f"❌ **ORDER FAILED**\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 Symbol: `{sym}`\n"
+                    f"📈 Side: **{side.upper()}**\n"
+                    f"🎯 Combo: `{combo}`\n\n"
+                    f"⚠️ Error Code: `{error_code}`\n"
+                    f"📝 Message: {error_msg}\n\n"
+                    f"Attempted: qty={qty} @ ${entry:.4f}"
+                )
                 logger.error(f"Order failed: {res}")
                 
         except Exception as e:
             logger.error(f"Execute error: {e}")
+            # Notify about execution error
+            await self.send_telegram(
+                f"❌ **EXECUTION ERROR**\n"
+                f"Symbol: `{sym}` {side.upper()}\n"
+                f"Error: `{str(e)[:100]}`"
+            )
 
     async def run(self):
         logger.info("🤖 VWAP Bot Starting...")

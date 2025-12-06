@@ -233,14 +233,14 @@ class UnifiedLearner:
         logger.info(f"📁 Data directory: {self.DATA_DIR}")
         logger.info(f"📁 Save file: {self.SAVE_FILE}")
         
-        # Load saved data
-        self.load()
-        self.load_blacklist()
-        
         # Initialize Dual Persistence (Redis + Postgres)
         self.redis_client = None
         self.pg_conn = None
         self._init_persistence()
+        
+        # Load saved data
+        self.load()
+        self.load_blacklist()
     
     def _init_persistence(self):
         """Initialize Redis and Postgres connections"""

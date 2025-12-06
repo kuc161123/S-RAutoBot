@@ -258,6 +258,11 @@ DASHBOARD_HTML = """
             <span class="status-dot"></span>
             <span>VWAP Combo Strategy</span>
         </div>
+        <div style="margin-top: 20px;">
+            <a href="/analytics" style="display: inline-block; padding: 10px 20px; background: rgba(0, 212, 255, 0.1); border: 1px solid rgba(0, 212, 255, 0.3); border-radius: 20px; color: #00d4ff; text-decoration: none; transition: all 0.3s;">
+                📊 View Analytics
+            </a>
+        </div>
     </div>
     
     <div class="grid">
@@ -439,6 +444,208 @@ def analyze_combos(combos):
         'fib': fib_sorted,
         'max_fib': max(fib_sorted.values()) if fib_sorted.values() else 1
     }
+
+# Analytics HTML Template
+ANALYTICS_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoBot Analytics</title>
+    <style>
+        /* Reuse main dashboard styles */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        .header { text-align: center; padding: 30px 0; margin-bottom: 30px; }
+        .header h1 {
+            font-size: 2.5em;
+            background: linear-gradient(90deg, #ff00cc, #333399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        .nav-btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            color: white;
+            text-decoration: none;
+            margin-top: 10px;
+            transition: background 0.3s;
+        }
+        .nav-btn:hover { background: rgba(255, 255, 255, 0.2); }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+        }
+        .card-title { font-size: 1.2em; color: #ff00cc; margin-bottom: 20px; }
+        .full-width { grid-column: 1 / -1; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+        th { color: #ff00cc; }
+        
+        .bar-container { display: flex; align-items: center; gap: 10px; }
+        .bar { height: 8px; background: #333399; border-radius: 4px; flex-grow: 1; }
+        .bar-fill { height: 100%; background: linear-gradient(90deg, #ff00cc, #333399); border-radius: 4px; }
+        
+        .win { color: #00ff88; }
+        .loss { color: #ff6b6b; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Performance Analytics</h1>
+        <a href="/" class="nav-btn">← Back to Dashboard</a>
+    </div>
+    
+    <div class="grid">
+        <!-- Overview -->
+        <div class="card">
+            <div class="card-title">📈 Overview (Last {{ days }} Days)</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; text-align: center;">
+                <div>
+                    <div style="font-size: 2.5em; color: {{ 'white' if wr >= 50 else '#ff6b6b' }}">{{ wr|round(1) }}%</div>
+                    <div style="color: #888">Win Rate</div>
+                </div>
+                <div>
+                    <div style="font-size: 2.5em;">{{ total }}</div>
+                    <div style="color: #888">Total Trades</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Day Performance -->
+        <div class="card">
+            <div class="card-title">📅 Best Days</div>
+            <table>
+                <tr><th>Day</th><th>WR</th><th>Trades</th></tr>
+                {% for day in days_stats %}
+                <tr>
+                    <td>{{ day.key }}</td>
+                    <td class="{{ 'win' if day.wr >= 50 else 'loss' }}">{{ day.wr|round(0) }}%</td>
+                    <td>{{ day.total }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        
+        <!-- Hour Performance -->
+        <div class="card">
+            <div class="card-title">⏰ Best Hours (UTC)</div>
+            <table>
+                <tr><th>Hour</th><th>WR</th><th>Trades</th></tr>
+                {% for hour in hours_stats %}
+                {% if hour.total >= 3 %}
+                <tr>
+                    <td>{{ hour.key }}</td>
+                    <td class="{{ 'win' if hour.wr >= 50 else 'loss' }}">{{ hour.wr|round(0) }}%</td>
+                    <td>{{ hour.total }}</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </table>
+        </div>
+        
+        <!-- R:R Performance -->
+        <div class="card">
+            <div class="card-title">🎯 Optimal R:R</div>
+            <table>
+                <tr><th>Target</th><th>WR</th><th>EV</th></tr>
+                {% for rr in rr_stats %}
+                <tr>
+                    <td>{{ rr.rr }}R</td>
+                    <td>{{ rr.wr|round(0) }}%</td>
+                    <td class="{{ 'win' if rr.ev > 0 else 'loss' }}">{{ rr.ev|round(2) }}R</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        
+        <!-- Winning Patterns -->
+        <div class="card full-width">
+            <div class="card-title">🏆 Top Winning Patterns</div>
+            <table>
+                <tr><th>Symbol</th><th>Side</th><th>Combo</th><th>WR</th><th>Trades</th></tr>
+                {% for p in winners %}
+                <tr>
+                    <td>{{ p.symbol }}</td>
+                    <td>{{ p.side|upper }}</td>
+                    <td style="font-family: monospace; font-size: 0.9em;">{{ p.combo }}</td>
+                    <td class="win">{{ p.wr|round(0) }}%</td>
+                    <td>{{ p.total }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+        
+        <!-- Losing Patterns -->
+        <div class="card full-width">
+            <div class="card-title">🚫 Worst Losing Patterns</div>
+            <table>
+                <tr><th>Symbol</th><th>Side</th><th>Combo</th><th>WR</th><th>Trades</th></tr>
+                {% for p in losers %}
+                <tr>
+                    <td>{{ p.symbol }}</td>
+                    <td>{{ p.side|upper }}</td>
+                    <td style="font-family: monospace; font-size: 0.9em;">{{ p.combo }}</td>
+                    <td class="loss">{{ p.wr|round(0) }}%</td>
+                    <td>{{ p.total }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+@app.route('/analytics')
+def analytics_view():
+    try:
+        from analytics import get_db_connection, fetch_trade_history, analyze_by_day, analyze_by_hour, analyze_rr_performance, find_winning_patterns, find_losing_patterns
+        
+        conn = get_db_connection()
+        trades = fetch_trade_history(conn, days=30)
+        conn.close()
+        
+        total = len(trades)
+        wins = sum(1 for t in trades if t['outcome'] == 'win')
+        wr = (wins / total * 100) if total > 0 else 0
+        
+        return render_template_string(
+            ANALYTICS_HTML,
+            days=30,
+            total=total,
+            wr=wr,
+            days_stats=analyze_by_day(trades),
+            hours_stats=analyze_by_hour(trades),
+            rr_stats=analyze_rr_performance(trades),
+            winners=find_winning_patterns(trades, min_trades=3),
+            losers=find_losing_patterns(trades, min_trades=3)
+        )
+    except Exception as e:
+        return f"<h1>Analytics Error</h1><p>{e}</p><p>Make sure DATABASE_URL is set and analytics.py is present.</p>"
 
 @app.route('/')
 def dashboard():

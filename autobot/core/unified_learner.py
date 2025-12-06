@@ -761,10 +761,36 @@ class UnifiedLearner:
         if btc in stats['by_btc']:
             stats['by_btc'][btc]['w' if outcome == 'win' else 'l'] += 1
         
-        # Update R:R stats
-        rr = signal.rr_ratio
-        if rr in stats['by_rr']:
-            stats['by_rr'][rr]['w' if outcome == 'win' else 'l'] += 1
+        # Update R:R stats (Counterfactual Analysis)
+        # We calculate "what if" for all R:R options based on max favorable excursion
+        entry = signal.entry_price
+        sl = signal.sl_price
+        risk = abs(entry - sl)
+        
+        if risk > 0:
+            # Calculate max profit distance reached before resolution
+            if signal.side == 'long':
+                max_profit = signal.max_high - entry
+            else:
+                max_profit = entry - signal.min_low
+            
+            max_r_reached = max_profit / risk
+            
+            for rr_opt in [1.5, 2.0, 2.5, 3.0]:
+                # Initialize if missing
+                if rr_opt not in stats['by_rr']:
+                    stats['by_rr'][rr_opt] = {'w': 0, 'l': 0}
+                
+                # Logic:
+                # 1. If we reached the target R, it's a WIN
+                # 2. If we didn't reach it AND the trade is resolved (hit SL or lower TP), it's a LOSS
+                #    (Note: If we won at 2R, we don't strictly know if 3R would win, but 
+                #     we assume LOSS for conservative stats unless max_r_reached >= 3.0)
+                
+                if max_r_reached >= rr_opt:
+                    stats['by_rr'][rr_opt]['w'] += 1
+                else:
+                    stats['by_rr'][rr_opt]['l'] += 1
         
         # Check for auto-promote and blacklist
         self._check_promote(signal.symbol, signal.side, signal.combo)

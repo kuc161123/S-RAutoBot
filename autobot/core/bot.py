@@ -104,6 +104,14 @@ class VWAPBot:
         except FileNotFoundError:
             self.vwap_combos = {}
 
+    def _get_data_dir(self):
+        """Get persistent data directory"""
+        if os.path.isdir('/data'):
+            return '/data'
+        if os.path.isdir('/app/data'):
+            return '/app/data'
+        return '.'
+
     def save_state(self):
         """Save bot state to persist across restarts"""
         import json
@@ -121,19 +129,27 @@ class VWAPBot:
             'last_phantom_notify': self.last_phantom_notify,
             'saved_at': time.time()
         }
+        
+        data_dir = self._get_data_dir()
+        file_path = os.path.join(data_dir, 'bot_state.json')
+        
         try:
-            with open('bot_state.json', 'w') as f:
+            with open(file_path, 'w') as f:
                 json.dump(state, f, indent=2)
             pending = len(self.learner.pending_signals)
-            logger.info(f"💾 State saved (learner tracking {pending} signals)")
+            logger.info(f"💾 State saved to {file_path} (learner tracking {pending} signals)")
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
 
     def load_state(self):
         """Load bot state from previous session"""
         import json
+        
+        data_dir = self._get_data_dir()
+        file_path = os.path.join(data_dir, 'bot_state.json')
+        
         try:
-            with open('bot_state.json', 'r') as f:
+            with open(file_path, 'r') as f:
                 state = json.load(f)
             
             # Phantoms now loaded by learner.load()
@@ -150,7 +166,7 @@ class VWAPBot:
             saved_at = state.get('saved_at', 0)
             age_hrs = (time.time() - saved_at) / 3600
             pending = len(self.learner.pending_signals)
-            logger.info(f"📂 State loaded (saved {age_hrs:.1f}h ago)")
+            logger.info(f"📂 State loaded from {file_path} (saved {age_hrs:.1f}h ago)")
             logger.info(f"   Stats: {self.wins}W/{self.losses}L | Learner: {pending} pending")
         except FileNotFoundError:
             logger.info("📂 No previous state found, starting fresh")

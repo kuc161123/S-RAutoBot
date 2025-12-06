@@ -715,8 +715,23 @@ class VWAPBot:
                 # Returns optimized TP/SL based on learned R:R
                 # The learner now handles ALL signal tracking (both allowed and phantom)
                 is_allowed = combo in allowed
+                
+                # Rate limit phantom notifications (max 1 per symbol per 30 min)
+                should_notify = True
+                if not is_allowed:
+                    cooldown_key = f"{sym}_{side}"
+                    now = time.time()
+                    if not hasattr(self, 'last_phantom_notify_times'):
+                        self.last_phantom_notify_times = {}
+                    
+                    last_notify = self.last_phantom_notify_times.get(cooldown_key, 0)
+                    if now - last_notify < 1800: # 30 min cooldown
+                        should_notify = False
+                    else:
+                        self.last_phantom_notify_times[cooldown_key] = now
+
                 smart_tp, smart_sl, smart_explanation = self.learner.record_signal(
-                    sym, side, combo, entry, atr, btc_price, is_allowed=is_allowed
+                    sym, side, combo, entry, atr, btc_price, is_allowed=is_allowed, notify=should_notify
                 )
                 
                 # Use smart R:R if available, otherwise default

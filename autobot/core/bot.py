@@ -656,7 +656,7 @@ class VWAPBot:
             f"📂 Active Combos: {len(self.vwap_combos)} symbols\n"
             f"📈 Signals Detected: {self.signals_detected}"
         )
-        await self.send_telegram(msg)
+        # await self.send_telegram(msg)  # MUTED to prevent flood
         
         # Reset daily stats
         self.daily_pnl = 0.0
@@ -932,7 +932,7 @@ class VWAPBot:
         logger.info("🤖 VWAP Bot Starting...")
         
         # Send starting notification
-        await self.send_telegram("⏳ **VWAP Bot Starting...**\nInitializing systems...")
+        # await self.send_telegram("⏳ **VWAP Bot Starting...**\nInitializing systems...")  # MUTED
         
         # Initialize Telegram
         try:
@@ -982,27 +982,19 @@ class VWAPBot:
             logger.warning("symbols_400.yaml not found, using trading symbols only")
         
         if not trading_symbols:
-            await self.send_telegram("⚠️ **No trading symbols!**\nLearning will still run on all 400 symbols.")
+            # await self.send_telegram("⚠️ **No trading symbols!**\nLearning will still run on all 400 symbols.")  # MUTED
             logger.warning("No trading symbols, learning only mode")
         
         # Check connections
         redis_ok = "🟢" if self.learner.redis_client else "🔴"
         pg_ok = "🟢" if self.learner.pg_conn else "🔴"
 
-        # Send success notification
-        await self.send_telegram(
-            f"✅ **VWAP Bot Online!**\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"📊 Trading: **{len(trading_symbols)}** symbols\n"
-            f"📚 Learning: **{len(self.all_symbols)}** symbols\n"
-            f"⚙️ Risk: {self.risk_config['value']} {self.risk_config['type']}\n"
-            f"🚀 Auto-Promote: **>40% LB WR**\n\n"
-            f"💾 System Health:\n"
-            f"• Redis: {redis_ok}\n"
-            f"• Postgres: {pg_ok}\n\n"
-            f"🖥️ **Dashboard**: `http://localhost:8888`\n"
-            f"Commands: /help /status /analytics"
-        )
+        # MUTED to prevent flood - startup notification disabled
+        # await self.send_telegram(
+        #     f"✅ **VWAP Bot Online!**\n"
+        #     ...
+        # )
+        logger.info(f"✅ VWAP Bot Online - {len(trading_symbols)} trading, {len(self.all_symbols)} learning")
         
         logger.info(f"Trading {len(trading_symbols)} symbols, Learning {len(self.all_symbols)} symbols")
             
@@ -1035,15 +1027,12 @@ class VWAPBot:
                     # Update unified learner with accurate high/low
                     self.learner.update_signals(candle_data)
                     
-                    # Send Telegram notifications for resolved signals
-                    if hasattr(self.learner, 'last_resolved') and self.learner.last_resolved:
-                        for r in self.learner.last_resolved:
-                            icon = "✅" if r['outcome'] == 'win' else "❌"
-                            await self.send_telegram(
-                                f"{icon} `{r['symbol']}` {r['side'].upper()} {r['outcome'].upper()}\n"
-                                f"⏱️ {r['time_mins']:.0f}m | DD: {r['max_dd']:.1f}%"
-                            )
-                        self.learner.last_resolved = []  # Clear after sending
+                    # MUTED to prevent flood - resolved signal notifications disabled
+                    # if hasattr(self.learner, 'last_resolved') and self.learner.last_resolved:
+                    #     for r in self.learner.last_resolved:
+                    #         ...
+                    if hasattr(self.learner, 'last_resolved'):
+                        self.learner.last_resolved = []  # Just clear, don't notify
                     
                     # Update BTC price for context tracking
                     btc_candle = candle_data.get('BTCUSDT', {})
@@ -1118,7 +1107,8 @@ class VWAPBot:
                                     f"Combo: `{p['combo']}`\n"
                                     f"WR: {p['wr']:.0f}% (LB: {p['lower_wr']:.0f}%) | N={p['total']}\n\n"
                                 )
-                            await self.send_telegram(msg)
+                            # await self.send_telegram(msg)  # MUTED to prevent flood
+                            logger.info(f"Auto-promoted {len(new_promotions)} combos")
                     
                 await asyncio.sleep(10)
                 
@@ -1130,7 +1120,7 @@ class VWAPBot:
             logger.error(f"Fatal error: {e}")
             self.save_state()
             self.learner.save()
-            await self.send_telegram(f"❌ **Bot Error**: {e}")
+            # await self.send_telegram(f"❌ **Bot Error**: {e}")  # MUTED to prevent flood
         finally:
             self.save_state()
             self.learner.save()

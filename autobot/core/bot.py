@@ -1035,8 +1035,12 @@ class VWAPBot:
                     
                     # === AUTO-ACTIVATION ===
                     # Check for high-performing combos to auto-promote
+                    logger.info("🔍 Checking for auto-promote candidates...")
                     candidates = self.learner.get_auto_activate_candidates(min_wr=40.0, min_trades=5)
+                    logger.info(f"🔍 Found {len(candidates)} candidates")
+                    
                     if candidates:
+                        logger.info(f"🔍 Top candidate: {candidates[0]}")
                         new_promotions = []
                         for c in candidates:
                             if self.learner.activate_combo(c['symbol'], c['side'], c['combo']):

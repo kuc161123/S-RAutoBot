@@ -178,51 +178,35 @@ class VWAPBot:
         msg = (
             "🤖 **VWAP BOT COMMANDS**\n\n"
             "/help - Show this message\n"
-            "/status - Show bot status & stats\n"
-            "/dashboard - Comprehensive overview\n"
-            "/risk <value> <type> - Set risk\n"
-            "/phantoms - Show phantom trades\n\n"
-            "📚 **LEARNING SYSTEM**\n"
-            "/learn - Learning report\n"
-            "/smart - Smart learning (adaptive R:R)\n"
-            "/promote - Promotion candidates\n"
-            "/sessions - Session performance\n"
-            "/blacklist - Blacklisted combos"
+            "/status - System health & connections\n"
+            "/dashboard - Live trading stats\n"
+            "/analytics - Deep pattern analysis (30d)\n"
+            "/learn - Learning system report\n"
+            "/promote - Show promotion candidates\n"
+            "/sessions - Session win rates\n"
+            "/blacklist - Show blacklisted combos\n"
+            "/smart - Smart filter status\n"
+            "/risk - Current risk settings"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     async def cmd_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show bot status & stats"""
+        """Show system status"""
         uptime = (time.time() - self.start_time) / 3600
         
-        # Unified learner stats (replaces separate phantom tracking)
-        learning = self.learner
-        p_wins = learning.total_wins
-        p_losses = learning.total_losses
-        p_total = p_wins + p_losses
-        p_wr = (p_wins / p_total * 100) if p_total > 0 else 0.0
-        pending = len(learning.pending_signals)
-        
-        # Persistence Status
-        redis_status = "🟢" if learning.redis_client else "🔴"
-        pg_status = "🟢" if learning.pg_conn else "🔴"
+        # Check connections
+        redis_ok = "🟢" if self.learner.redis_client else "🔴"
+        pg_ok = "🟢" if self.learner.pg_conn else "🔴"
         
         msg = (
-            f"🤖 **VWAP BOT STATUS**\n"
-            f"⏱️ Uptime: {uptime:.1f}h\n"
-            f"💾 Persistence: Redis {redis_status} | DB {pg_status}\n\n"
-            f"💰 PnL: ${self.total_pnl:.2f} (Daily: ${self.daily_pnl:.2f})\n"
-            f"📊 Trades: {self.wins}W / {self.losses}L\n"
-            f"⚙️ Risk: {self.risk_config['value']} {self.risk_config['type']}\n"
-            f"📈 Signals: {self.signals_detected}\n"
-            f"🔄 Loops: {self.loop_count}\n\n"
-            f"Daily PnL: ${self.daily_pnl:.2f}\n"
-            f"Total PnL: ${self.total_pnl:.2f}\n\n"
-            f"📚 **Unified Tracker**\n"
-            f"Pending: {pending}\n"
-            f"Resolved: {p_total} ({p_wins}W/{p_losses}L)\n"
-            f"WR: {p_wr:.1f}%\n\n"
-            f"📂 Combos: {len(self.vwap_combos)} symbols"
+            f"🤖 **SYSTEM STATUS**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"⏱️ Uptime: {uptime:.1f} hours\n"
+            f"💾 Persistence: Redis {redis_ok} | DB {pg_ok}\n"
+            f"🔄 Loops: {self.loop_count}\n"
+            f"📡 Active Symbols: {len(self.active_symbols)}\n"
+            f"🧠 Learning: {len(self.learning_symbols)} symbols\n"
+            f"⚡ Risk: {self.risk_config['value']} {self.risk_config['type']}"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 
@@ -464,6 +448,67 @@ class VWAPBot:
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
             logger.error(f"cmd_learn error: {e}")
+
+    async def cmd_analytics(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show deep analytics (Day/Hour/Patterns)"""
+        try:
+            # We can reuse the learner's DB connection to get analytics
+            if not self.learner.pg_conn:
+                await update.message.reply_text("❌ Analytics requires PostgreSQL connection.")
+                return
+
+            # Import analytics logic dynamically to avoid circular imports
+            from analytics import fetch_trade_history, analyze_by_day, analyze_by_hour, find_winning_patterns
+            
+            # Fetch last 30 days
+            with self.learner.pg_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute("SELECT * FROM trade_history WHERE created_at > NOW() - INTERVAL '30 days'")
+                trades = cur.fetchall()
+            
+            if not trades:
+                await update.message.reply_text("📉 No trades recorded in history yet.")
+                return
+                
+            # Generate Report
+            total = len(trades)
+            wins = sum(1 for t in trades if t['outcome'] == 'win')
+            wr = (wins / total * 100)
+            
+            msg = (
+                f"📊 **DEEP ANALYTICS** (30d)\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"Total: {total} | WR: {wr:.1f}%\n\n"
+            )
+            
+            # Best Days
+            days = analyze_by_day(trades)[:3]
+            msg += "📅 **BEST DAYS**\n"
+            for d in days:
+                msg += f"├ {d['key']}: {d['wr']:.0f}% ({d['wins']}/{d['total']})\n"
+            msg += "\n"
+            
+            # Best Hours
+            hours = [h for h in analyze_by_hour(trades) if h['total'] >= 3][:3]
+            if hours:
+                msg += "⏰ **BEST HOURS** (UTC)\n"
+                for h in hours:
+                    msg += f"├ {h['key']}: {h['wr']:.0f}% ({h['wins']}/{h['total']})\n"
+                msg += "\n"
+            
+            # Top Patterns
+            patterns = find_winning_patterns(trades, min_trades=3)[:3]
+            if patterns:
+                msg += "🏆 **TOP PATTERNS**\n"
+                for p in patterns:
+                    combo_short = p['combo'][:15] + '..' if len(p['combo']) > 17 else p['combo']
+                    msg += f"├ {p['symbol']} {p['side'][0].upper()} {combo_short}\n"
+                    msg += f"│  WR:{p['wr']:.0f}% (N={p['total']})\n"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Analytics error: {e}")
+            logger.error(f"cmd_analytics error: {e}")
 
     async def cmd_promote(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show combos that could be promoted to active trading"""
@@ -866,6 +911,7 @@ class VWAPBot:
             self.tg_app.add_handler(CommandHandler("risk", self.cmd_risk))
             self.tg_app.add_handler(CommandHandler("phantoms", self.cmd_phantoms))
             self.tg_app.add_handler(CommandHandler("dashboard", self.cmd_dashboard))
+            self.tg_app.add_handler(CommandHandler("analytics", self.cmd_analytics))
             self.tg_app.add_handler(CommandHandler("learn", self.cmd_learn))
             self.tg_app.add_handler(CommandHandler("promote", self.cmd_promote))
             self.tg_app.add_handler(CommandHandler("sessions", self.cmd_sessions))

@@ -1103,7 +1103,7 @@ class VWAPBot:
 
                         # Notify user
                         if new_promotions:
-                            msg = "🚀 **AUTO-PROMOTED COMBOS**\n(LB WR > 60%)\n\n"
+                            msg = "🚀 **AUTO-PROMOTED COMBOS**\n(LB WR > 40%)\n\n"
                             for p in new_promotions:
                                 msg += (
                                     f"✅ `{p['symbol']}` {p['side'].upper()}\n"

@@ -1089,6 +1089,14 @@ class VWAPBot:
                                     
                                     if sym not in current_yaml:
                                         current_yaml[sym] = {'long': [], 'short': []}
+                                    # Ensure proper structure even if symbol exists
+                                    elif not isinstance(current_yaml[sym], dict):
+                                        current_yaml[sym] = {'long': [], 'short': []}
+                                    else:
+                                        if 'long' not in current_yaml[sym]:
+                                            current_yaml[sym]['long'] = []
+                                        if 'short' not in current_yaml[sym]:
+                                            current_yaml[sym]['short'] = []
                                     
                                     if combo not in current_yaml[sym][side]:
                                         current_yaml[sym][side].append(combo)

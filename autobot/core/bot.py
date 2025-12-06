@@ -204,8 +204,8 @@ class VWAPBot:
             f"⏱️ Uptime: {uptime:.1f} hours\n"
             f"💾 Persistence: Redis {redis_ok} | DB {pg_ok}\n"
             f"🔄 Loops: {self.loop_count}\n"
-            f"📡 Active Symbols: {len(self.active_symbols)}\n"
-            f"🧠 Learning: {len(self.learning_symbols)} symbols\n"
+            f"📡 Trading: {len(self.vwap_combos)} symbols\n"
+            f"🧠 Learning: {len(self.all_symbols)} symbols\n"
             f"⚡ Risk: {self.risk_config['value']} {self.risk_config['type']}"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')

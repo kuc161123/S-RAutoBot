@@ -370,6 +370,7 @@ class VWAPBot:
                 f"🎯 **TRADING**\n"
                 f"├ Symbols: {total_symbols} active\n"
                 f"├ Combos: 🟢{long_combos} / 🔴{short_combos}\n"
+                f"├ 🚀 Auto-Promoted: {len(self.learner.promoted)}\n"
                 f"└ Signals: {self.signals_detected} detected\n\n"
                 
                 f"📚 **UNIFIED TRACKER** ({learning_symbols} symbols)\n"

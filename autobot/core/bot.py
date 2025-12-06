@@ -398,6 +398,13 @@ class VWAPBot:
                 f"├ 🟢 Long:  {long_wr:.0f}% ({long_stats['w']}/{long_total})\n"
                 f"└ 🔴 Short: {short_wr:.0f}% ({short_stats['w']}/{short_total})\n\n"
                 
+                f"💰 **EXECUTED TRADES** (Real Positions)\n"
+                f"├ 📊 Total: {self.trades_executed}\n"
+                f"├ 🟢 Open: {len(self.active_trades)}\n"
+                f"├ ✅ Won: {self.wins}\n"
+                f"├ ❌ Lost: {self.losses}\n"
+                f"└ 📈 WR: {(self.wins / (self.wins + self.losses) * 100) if (self.wins + self.losses) > 0 else 0:.0f}%\n\n"
+                
                 f"📅 **DAY BREAKDOWN**\n"
                 f"{day_msg}\n"
                 

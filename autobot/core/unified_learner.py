@@ -307,6 +307,20 @@ class UnifiedLearner:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
+                
+                # Trade History Table (for time-based relevance)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS trade_history (
+                        id SERIAL PRIMARY KEY,
+                        symbol VARCHAR(20),
+                        side VARCHAR(10),
+                        combo VARCHAR(50),
+                        outcome VARCHAR(10),
+                        time_to_result FLOAT,
+                        max_r_reached FLOAT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
         except Exception as e:
             logger.error(f"Failed to init DB tables: {e}")
     
@@ -800,6 +814,21 @@ class UnifiedLearner:
         time_mins = signal.time_to_result / 60
         max_dd = signal.max_adverse
         
+        # Save to Postgres History (for time-based relevance)
+        if self.pg_conn:
+            try:
+                with self.pg_conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO trade_history 
+                        (symbol, side, combo, outcome, time_to_result, max_r_reached)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (
+                        signal.symbol, signal.side, signal.combo, outcome,
+                        signal.time_to_result, max_r_reached
+                    ))
+            except Exception as e:
+                logger.error(f"Failed to save trade history: {e}")
+        
         # Add to last_resolved (caller can use for notifications)
         if not hasattr(self, 'last_resolved'):
             self.last_resolved = []
@@ -823,12 +852,14 @@ class UnifiedLearner:
     # ========================================================================
     
     def _check_promote(self, symbol: str, side: str, combo: str):
-        """Check if combo should be auto-promoted"""
+        """Check if combo should be auto-promoted (using last 30 days)"""
         key = f"{symbol}:{side}:{combo}"
         if key in self.promoted:
             return
         
-        stats = self.combo_stats[symbol][side][combo]
+        # Use RECENT stats (last 30 days) for promotion
+        stats = self.get_recent_stats(symbol, side, combo, days=30)
+        
         if stats['total'] < self.PROMOTE_MIN_TRADES:
             return
         
@@ -847,19 +878,7 @@ class UnifiedLearner:
         # Auto-promote!
         self._promote_combo(symbol, side, combo)
         self.promoted.add(key)
-        
-        self.adjustments.append({
-            'time': time.time(),
-            'type': 'PROMOTE',
-            'symbol': symbol,
-            'side': side,
-            'combo': combo,
-            'lb_wr': lb_wr,
-            'ev': ev,
-            'trades': stats['total']
-        })
-        
-        logger.info(f"🚀 AUTO-PROMOTE: {symbol} {side} | LB_WR={lb_wr:.0f}% EV={ev:.2f}R")
+        logger.info(f"🚀 PROMOTED {key} based on 30d stats: {stats['wins']}W/{stats['losses']}L")
     
     def _promote_combo(self, symbol: str, side: str, combo: str):
         """Add combo to override YAML"""
@@ -1180,6 +1199,35 @@ class UnifiedLearner:
             
         except Exception as e:
             logger.error(f"Failed to save learning: {e}")
+
+    def get_recent_stats(self, symbol: str, side: str, combo: str, days: int = 30) -> Dict:
+        """Get stats for a specific combo over the last X days"""
+        if not self.pg_conn:
+            return {'wins': 0, 'losses': 0, 'total': 0}
+            
+        try:
+            with self.pg_conn.cursor() as cur:
+                cur.execute("""
+                    SELECT outcome, count(*)
+                    FROM trade_history
+                    WHERE symbol = %s AND side = %s AND combo = %s
+                    AND created_at > NOW() - INTERVAL '%s days'
+                    GROUP BY outcome
+                """, (symbol, side, combo, days))
+                
+                rows = cur.fetchall()
+                stats = {'wins': 0, 'losses': 0}
+                for outcome, count in rows:
+                    if outcome == 'win':
+                        stats['wins'] = count
+                    else:
+                        stats['losses'] = count
+                
+                stats['total'] = stats['wins'] + stats['losses']
+                return stats
+        except Exception as e:
+            logger.error(f"Failed to get recent stats: {e}")
+            return {'wins': 0, 'losses': 0, 'total': 0}
 
     def _save_to_redis(self, pending_data: List[Dict]):
         """Save pending signals to Redis"""

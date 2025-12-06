@@ -1035,15 +1035,13 @@ class VWAPBot:
                     # Update unified learner with accurate high/low
                     self.learner.update_signals(candle_data)
                     
-                    # Send Telegram notifications for resolved signals
-                    if hasattr(self.learner, 'last_resolved') and self.learner.last_resolved:
-                        for r in self.learner.last_resolved:
-                            icon = "✅" if r['outcome'] == 'win' else "❌"
-                            await self.send_telegram(
-                                f"{icon} `{r['symbol']}` {r['side'].upper()} {r['outcome'].upper()}\n"
-                                f"⏱️ {r['time_mins']:.0f}m | DD: {r['max_dd']:.1f}%"
-                            )
-                        self.learner.last_resolved = []  # Clear after sending
+                    # Send Telegram notifications for resolved signals - MUTED
+                    # if hasattr(self.learner, 'last_resolved') and self.learner.last_resolved:
+                    #     for r in self.learner.last_resolved:
+                    #         icon = "✅" if r['outcome'] == 'win' else "❌"
+                    #         await self.send_telegram(...)
+                    if hasattr(self.learner, 'last_resolved'):
+                        self.learner.last_resolved = []  # Just clear, don't notify
                     
                     # Update BTC price for context tracking
                     btc_candle = candle_data.get('BTCUSDT', {})

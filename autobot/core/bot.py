@@ -395,7 +395,21 @@ class VWAPBot:
             if top_combos:
                 msg += "\n🏆 **TOP PERFORMERS**\n"
                 for c in top_combos:
-                    msg += f"├ `{c['symbol']}` {c['side'][0].upper()}: {c['lower_wr']:.0f}% (N={c['total']})\n"
+                    # Find best session
+                    sessions = c.get('sessions', {})
+                    best_session = 'N/A'
+                    best_session_wr = 0
+                    for s, data in sessions.items():
+                        total = data.get('w', 0) + data.get('l', 0)
+                        if total > 0:
+                            wr = data['w'] / total * 100
+                            if wr > best_session_wr:
+                                best_session_wr = wr
+                                best_session = {'asian': '🌏', 'london': '🌍', 'newyork': '🌎'}.get(s, s)
+                    
+                    side_icon = "🟢" if c['side'] == 'long' else "🔴"
+                    ev_str = f"{c['ev']:+.2f}R" if c['ev'] != 0 else "0R"
+                    msg += f"├ {side_icon} `{c['symbol']}` | WR:{c['lower_wr']:.0f}% | EV:{ev_str} | R:R:{c['optimal_rr']}:1 | {best_session} (N={c['total']})\n"
             
             # Add recent activity from learner
             if recent:

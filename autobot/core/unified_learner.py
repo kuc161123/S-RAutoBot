@@ -1042,14 +1042,55 @@ class UnifiedLearner:
             and f"{c['symbol']}:{c['side']}:{c['combo']}" not in self.promoted
         ]
 
-    def get_auto_activate_candidates(self, min_wr: float = 60.0, min_trades: int = 10) -> List[Dict]:
-        """Get combos that meet strict criteria for auto-activation"""
-        all_combos = self.get_all_combos()
-        return [
-            c for c in all_combos 
-            if c['total'] >= min_trades and c['lower_wr'] >= min_wr
-            and f"{c['symbol']}:{c['side']}:{c['combo']}" not in self.promoted
-        ]
+    def get_auto_activate_candidates(self, min_wr: float = 40.0, min_trades: int = 5, days: int = 30) -> List[Dict]:
+        """Get combos that meet strict criteria for auto-activation.
+        
+        NOW QUERIES trade_history DIRECTLY (same source as /analytics).
+        """
+        candidates = []
+        
+        if not self.pg_conn:
+            logger.warning("No Postgres connection for auto-activate")
+            return candidates
+        
+        try:
+            with self.pg_conn.cursor() as cur:
+                # Query aggregated stats from trade_history (last N days)
+                cur.execute("""
+                    SELECT symbol, side, combo,
+                           COUNT(*) as total,
+                           SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END) as wins
+                    FROM trade_history
+                    WHERE created_at > NOW() - INTERVAL '%s days'
+                    GROUP BY symbol, side, combo
+                    HAVING COUNT(*) >= %s
+                """, (days, min_trades))
+                
+                rows = cur.fetchall()
+                
+                for symbol, side, combo, total, wins in rows:
+                    # Calculate Lower Bound WR (Wilson score)
+                    lb_wr = wilson_lower_bound(wins, total)
+                    raw_wr = (wins / total * 100) if total > 0 else 0
+                    
+                    # Check if meets threshold and not already promoted
+                    key = f"{symbol}:{side}:{combo}"
+                    if lb_wr >= min_wr and key not in self.promoted:
+                        candidates.append({
+                            'symbol': symbol,
+                            'side': side,
+                            'combo': combo,
+                            'total': total,
+                            'wins': wins,
+                            'wr': raw_wr,
+                            'lower_wr': lb_wr
+                        })
+                        
+        except Exception as e:
+            logger.error(f"Auto-activate query failed: {e}")
+        
+        # Sort by lower_wr descending
+        return sorted(candidates, key=lambda x: x['lower_wr'], reverse=True)
 
     def activate_combo(self, symbol: str, side: str, combo: str):
         """Mark a combo as promoted/active"""

@@ -1077,7 +1077,9 @@ class UnifiedLearner:
                 
                 side_icon = "🟢" if c['side'] == 'long' else "🔴"
                 ev_str = f"{c['ev']:+.2f}R" if c['ev'] != 0 else "0R"
-                report += f"├ {side_icon} `{c['symbol']}` | WR:{c['lower_wr']:.0f}% | EV:{ev_str} | R:R:{c['optimal_rr']}:1 | {best_session} (N={c['total']})\n"
+                combo_short = c['combo'][:15] + '..' if len(c['combo']) > 17 else c['combo']
+                report += f"├ {side_icon} `{c['symbol']}` {combo_short}\n"
+                report += f"│  WR:{c['lower_wr']:.0f}% | EV:{ev_str} | {c['optimal_rr']}:1 | {best_session} (N={c['total']})\n"
             report += "\n"
         
         # BTC context

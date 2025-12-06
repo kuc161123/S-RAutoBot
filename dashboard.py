@@ -286,6 +286,10 @@ DASHBOARD_HTML = """
                     <div class="stat-value">{{ stats.short_combos }}</div>
                     <div class="stat-label">Short Combos</div>
                 </div>
+                <div class="stat-box">
+                    <div class="stat-value" style="color: #00ff88;">{{ stats.promoted_count }}</div>
+                    <div class="stat-label">🚀 Auto-Promoted</div>
+                </div>
             </div>
         </div>
         
@@ -434,11 +438,22 @@ def calculate_stats(combos):
     long_combos = sum(len(data.get('long', [])) for data in combos.values())
     short_combos = sum(len(data.get('short', [])) for data in combos.values())
     
+    # Try to get promoted count from learner state
+    promoted_count = 0
+    try:
+        if os.path.exists('unified_learning.json'):
+            with open('unified_learning.json', 'r') as f:
+                data = json.load(f)
+                promoted_count = len(data.get('promoted', []))
+    except Exception:
+        pass
+
     return {
         'total_symbols': total_symbols,
         'total_combos': long_combos + short_combos,
         'long_combos': long_combos,
-        'short_combos': short_combos
+        'short_combos': short_combos,
+        'promoted_count': promoted_count
     }
 
 def analyze_combos(combos):

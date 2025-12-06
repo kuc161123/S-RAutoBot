@@ -1022,6 +1022,51 @@ class VWAPBot:
                     self.save_state()
                     self.learner.save()
                     
+                    # === AUTO-ACTIVATION ===
+                    # Check for high-performing combos to auto-promote
+                    candidates = self.learner.get_auto_activate_candidates(min_wr=60.0, min_trades=10)
+                    if candidates:
+                        new_promotions = []
+                        for c in candidates:
+                            if self.learner.activate_combo(c['symbol'], c['side'], c['combo']):
+                                new_promotions.append(c)
+                                
+                                # Add to active trading config (YAML)
+                                try:
+                                    # Read current YAML
+                                    with open('symbol_overrides_VWAP_Combo.yaml', 'r') as f:
+                                        current_yaml = yaml.safe_load(f) or {}
+                                    
+                                    # Update structure
+                                    sym = c['symbol']
+                                    side = c['side']
+                                    combo = c['combo']
+                                    
+                                    if sym not in current_yaml:
+                                        current_yaml[sym] = {'long': [], 'short': []}
+                                    
+                                    if combo not in current_yaml[sym][side]:
+                                        current_yaml[sym][side].append(combo)
+                                        
+                                        # Write back to file
+                                        with open('symbol_overrides_VWAP_Combo.yaml', 'w') as f:
+                                            yaml.dump(current_yaml, f, default_flow_style=False)
+                                            
+                                        logger.info(f"💾 Added {sym} {side} {combo} to overrides")
+                                except Exception as e:
+                                    logger.error(f"Failed to update YAML for {c['symbol']}: {e}")
+
+                        # Notify user
+                        if new_promotions:
+                            msg = "🚀 **AUTO-PROMOTED COMBOS**\n(LB WR > 60%)\n\n"
+                            for p in new_promotions:
+                                msg += (
+                                    f"✅ `{p['symbol']}` {p['side'].upper()}\n"
+                                    f"Combo: `{p['combo']}`\n"
+                                    f"WR: {p['wr']:.0f}% (LB: {p['lower_wr']:.0f}%) | N={p['total']}\n\n"
+                                )
+                            await self.send_telegram(msg)
+                    
                 await asyncio.sleep(10)
                 
         except KeyboardInterrupt:

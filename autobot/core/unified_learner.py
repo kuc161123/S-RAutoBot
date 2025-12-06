@@ -1041,6 +1041,24 @@ class UnifiedLearner:
             if c['total'] >= 10 and c['lower_wr'] >= 40 and c['ev'] > 0
             and f"{c['symbol']}:{c['side']}:{c['combo']}" not in self.promoted
         ]
+
+    def get_auto_activate_candidates(self, min_wr: float = 60.0, min_trades: int = 10) -> List[Dict]:
+        """Get combos that meet strict criteria for auto-activation"""
+        all_combos = self.get_all_combos()
+        return [
+            c for c in all_combos 
+            if c['total'] >= min_trades and c['lower_wr'] >= min_wr
+            and f"{c['symbol']}:{c['side']}:{c['combo']}" not in self.promoted
+        ]
+
+    def activate_combo(self, symbol: str, side: str, combo: str):
+        """Mark a combo as promoted/active"""
+        key = f"{symbol}:{side}:{combo}"
+        if key not in self.promoted:
+            self.promoted.add(key)
+            self.save()
+            return True
+        return False
     
     def generate_report(self) -> str:
         """Generate comprehensive Telegram report"""

@@ -806,24 +806,9 @@ class VWAPBot:
                         # Learner already tracks this signal (recorded above)
                 else:
                     # Phantom signal - learner already tracks it (recorded above)
-                    # Only send notification with cooldown (1 per symbol per 30 min)
-                    cooldown_key = f"{sym}_{side}"
-                    last_notify = self.last_phantom_notify.get(cooldown_key, 0)
-                    
-                    if (time.time() - last_notify) > 1800:  # 30 min cooldown
-                        logger.info(f"👻 PHANTOM: {sym} {side} {combo}")
-                        self.last_phantom_notify[cooldown_key] = time.time()
-                        
-                        # Show allowed combos for this symbol/side
-                        allowed_str = '\n'.join([f"  • `{c}`" for c in allowed[:3]]) if allowed else "  None"
-                        
-                        # Notification with context
-                        await self.send_telegram(
-                            f"👻 `{sym}` {side.upper()}\n"
-                            f"❌ Combo: `{combo}`\n"
-                            f"📊 {smart_explanation}\n\n"
-                            f"✅ Allowed:\n{allowed_str}"
-                        )
+                    # Telegram notifications DISABLED to prevent 429 errors
+                    # Just log locally
+                    logger.debug(f"👻 PHANTOM: {sym} {side} {combo}")
                     
         except Exception as e:
             logger.error(f"Error {sym}: {e}")

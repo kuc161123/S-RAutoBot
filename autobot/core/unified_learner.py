@@ -624,9 +624,8 @@ class UnifiedLearner:
         )
         
         # === NOTIFICATION ===
-        # Send Telegram notification (if allowed by rate limiter)
-        if notify:
-            self._notify_new_signal(signal)
+        # Phantom notifications disabled to prevent Telegram 429 errors
+        # Only executed trades will be notified (in bot.py execute_trade)
         
         self.pending_signals.append(signal)
         self.total_signals += 1

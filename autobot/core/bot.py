@@ -177,6 +177,57 @@ class VWAPBot:
         except Exception as e:
             logger.error(f"Failed to load state: {e}")
 
+    def _sync_promoted_to_yaml(self):
+        """Ensure all promoted combos are in the YAML file.
+        
+        This handles the case where promoted set has combos but YAML was cleared.
+        """
+        if not self.learner.promoted:
+            logger.info("📂 No promoted combos to sync")
+            return
+            
+        try:
+            # Load current YAML
+            with open('symbol_overrides_VWAP_Combo.yaml', 'r') as f:
+                current_yaml = yaml.safe_load(f) or {}
+            
+            synced_count = 0
+            
+            for key in self.learner.promoted:
+                # Parse key: "SYMBOL:side:combo"
+                parts = key.split(':', 2)
+                if len(parts) != 3:
+                    continue
+                    
+                sym, side, combo = parts
+                
+                # Ensure symbol structure exists
+                if sym not in current_yaml:
+                    current_yaml[sym] = {'long': [], 'short': []}
+                elif not isinstance(current_yaml[sym], dict):
+                    current_yaml[sym] = {'long': [], 'short': []}
+                else:
+                    if 'long' not in current_yaml[sym]:
+                        current_yaml[sym]['long'] = []
+                    if 'short' not in current_yaml[sym]:
+                        current_yaml[sym]['short'] = []
+                
+                # Add combo if not already there
+                if combo not in current_yaml[sym][side]:
+                    current_yaml[sym][side].append(combo)
+                    synced_count += 1
+            
+            if synced_count > 0:
+                # Write back to file
+                with open('symbol_overrides_VWAP_Combo.yaml', 'w') as f:
+                    yaml.dump(current_yaml, f, default_flow_style=False)
+                logger.info(f"📂 Synced {synced_count} promoted combos to YAML")
+            else:
+                logger.info("📂 All promoted combos already in YAML")
+                
+        except Exception as e:
+            logger.error(f"Failed to sync promoted combos: {e}")
+
     # --- Telegram Commands ---
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
@@ -1019,6 +1070,11 @@ class VWAPBot:
         except FileNotFoundError:
             self.all_symbols = trading_symbols
             logger.warning("symbols_400.yaml not found, using trading symbols only")
+        
+        # Sync promoted combos to YAML (ensures YAML matches promoted set)
+        self._sync_promoted_to_yaml()
+        self.load_overrides()  # Reload after sync
+        trading_symbols = list(self.vwap_combos.keys())
         
         if not trading_symbols:
             await self.send_telegram("⚠️ **No trading symbols!**\nLearning will still run on all 400 symbols.")

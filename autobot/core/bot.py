@@ -144,6 +144,21 @@ class VWAPBot:
             logger.info(f"💾 State saved to {file_path} (learner tracking {pending} signals)")
         except Exception as e:
             logger.error(f"Failed to save state: {e}")
+        
+        # Also save executed trades to Redis (survives container restarts)
+        if self.learner.redis_client:
+            try:
+                trade_stats = {
+                    'wins': self.wins,
+                    'losses': self.losses,
+                    'trades_executed': self.trades_executed,
+                    'daily_pnl': self.daily_pnl,
+                    'total_pnl': self.total_pnl,
+                    'signals_detected': self.signals_detected
+                }
+                self.learner.redis_client.set('vwap_bot:executed_trades', json.dumps(trade_stats))
+            except Exception as e:
+                logger.debug(f"Failed to save trades to Redis: {e}")
 
     def load_state(self):
         """Load bot state from previous session"""
@@ -176,6 +191,22 @@ class VWAPBot:
             logger.info("📂 No previous state found, starting fresh")
         except Exception as e:
             logger.error(f"Failed to load state: {e}")
+        
+        # Load executed trades from Redis (survives container restarts)
+        if self.learner.redis_client:
+            try:
+                data = self.learner.redis_client.get('vwap_bot:executed_trades')
+                if data:
+                    trade_stats = json.loads(data)
+                    self.wins = trade_stats.get('wins', self.wins)
+                    self.losses = trade_stats.get('losses', self.losses)
+                    self.trades_executed = trade_stats.get('trades_executed', self.trades_executed)
+                    self.daily_pnl = trade_stats.get('daily_pnl', self.daily_pnl)
+                    self.total_pnl = trade_stats.get('total_pnl', self.total_pnl)
+                    self.signals_detected = trade_stats.get('signals_detected', self.signals_detected)
+                    logger.info(f"📂 Loaded trade stats from Redis: {self.wins}W/{self.losses}L/{self.trades_executed} trades")
+            except Exception as e:
+                logger.debug(f"Failed to load trades from Redis: {e}")
 
     def _sync_promoted_to_yaml(self):
         """Ensure all promoted combos are in the YAML file.

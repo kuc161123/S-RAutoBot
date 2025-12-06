@@ -1107,7 +1107,7 @@ class VWAPBot:
                                     f"Combo: `{p['combo']}`\n"
                                     f"WR: {p['wr']:.0f}% (LB: {p['lower_wr']:.0f}%) | N={p['total']}\n\n"
                                 )
-                            # await self.send_telegram(msg)  # MUTED to prevent flood
+                            await self.send_telegram(msg)  # ENABLED - auto-promote notifications
                             logger.info(f"Auto-promoted {len(new_promotions)} combos")
                     
                 await asyncio.sleep(10)

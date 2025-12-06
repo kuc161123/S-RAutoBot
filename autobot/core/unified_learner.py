@@ -1056,19 +1056,23 @@ class UnifiedLearner:
         try:
             with self.pg_conn.cursor() as cur:
                 # Query aggregated stats from trade_history (last N days)
-                cur.execute("""
+                query = f"""
                     SELECT symbol, side, combo,
                            COUNT(*) as total,
-                           SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END) as wins
+                           COALESCE(SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END), 0) as wins
                     FROM trade_history
-                    WHERE created_at > NOW() - INTERVAL '%s days'
+                    WHERE created_at > NOW() - INTERVAL '{days} days'
                     GROUP BY symbol, side, combo
-                    HAVING COUNT(*) >= %s
-                """, (days, min_trades))
+                    HAVING COUNT(*) >= {min_trades}
+                """
+                logger.info(f"🔍 Auto-activate query: min_wr={min_wr}, min_trades={min_trades}, days={days}")
+                cur.execute(query)
                 
                 rows = cur.fetchall()
+                logger.info(f"🔍 Query returned {len(rows)} combos with >= {min_trades} trades")
                 
                 for symbol, side, combo, total, wins in rows:
+                    wins = wins or 0  # Handle None
                     # Calculate Lower Bound WR (Wilson score)
                     lb_wr = wilson_lower_bound(wins, total)
                     raw_wr = (wins / total * 100) if total > 0 else 0
@@ -1085,9 +1089,12 @@ class UnifiedLearner:
                             'wr': raw_wr,
                             'lower_wr': lb_wr
                         })
+                        logger.info(f"🔍 Candidate found: {symbol} {side} WR={raw_wr:.0f}% LB={lb_wr:.0f}% N={total}")
                         
         except Exception as e:
             logger.error(f"Auto-activate query failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
         
         # Sort by lower_wr descending
         return sorted(candidates, key=lambda x: x['lower_wr'], reverse=True)

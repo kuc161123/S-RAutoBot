@@ -249,10 +249,13 @@ class Bybit:
     
     def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False) -> Dict[str, Any]:
         """Place market order"""
+        # Convert 'long'/'short' to Bybit's 'Buy'/'Sell'
+        bybit_side = "Buy" if side.lower() == "long" else "Sell"
+        
         data = {
             "category": "linear",
             "symbol": symbol,
-            "side": side.capitalize(),   # "Buy" or "Sell"
+            "side": bybit_side,
             "orderType": "Market",
             "qty": str(qty),
             "timeInForce": "IOC",

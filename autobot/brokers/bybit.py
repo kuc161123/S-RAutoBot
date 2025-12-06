@@ -205,19 +205,35 @@ class Bybit:
             logger.error(f"Failed to get balance: {e}")
             return None
 
-    def set_leverage(self, symbol:str, leverage:int) -> Dict[str, Any] | None:
+    def get_max_leverage(self, symbol: str) -> int:
+        """Get maximum allowed leverage for a symbol from Bybit API."""
+        try:
+            info = self.get_instruments_info(symbol=symbol)
+            if info and len(info) > 0:
+                leverage_filter = info[0].get('leverageFilter', {})
+                max_lev = leverage_filter.get('maxLeverage', '50')
+                return int(float(max_lev))
+        except Exception as e:
+            logger.warning(f"Failed to get max leverage for {symbol}: {e}")
+        return 50  # Safe default
+
+    def set_leverage(self, symbol:str, leverage:int=None) -> Dict[str, Any] | None:
         """Set leverage for a symbol with graceful fallback.
 
-        Attempts requested leverage; on failure due to risk limit, retries with 20x then 10x.
+        If leverage is None, fetches max allowed leverage from Bybit API.
+        Attempts requested leverage; on failure due to risk limit, retries with lower values.
         Treats "leverage not modified" as success.
         """
-        # Cap leverage to reasonable max (most coins max at 25-100x)
-        leverage = min(int(leverage), 100)
+        # If no leverage specified, get max from API
+        if leverage is None:
+            leverage = self.get_max_leverage(symbol)
+            logger.info(f"{symbol}: Using max leverage {leverage}x from API")
         
-        candidates = [leverage]
-        # Common safe fallbacks
-        for alt in (50, 20, 10):
-            if alt not in candidates:
+        # Build fallback candidates
+        candidates = [int(leverage)]
+        # Add percentage-based fallbacks + common safe fallbacks
+        for alt in (int(leverage * 0.75), int(leverage * 0.5), 50, 25, 10):
+            if alt > 0 and alt not in candidates:
                 candidates.append(alt)
         last_err = None
         for lev in candidates:

@@ -252,16 +252,32 @@ class VWAPBot:
             learning_wr = (total_wins / learning_total * 100) if learning_total > 0 else 0
             lower_wr = wilson_lower_bound(total_wins, learning_total)
             
+            # Calculate overall EV at 2:1 R:R
+            if learning_total > 0:
+                wr_decimal = total_wins / learning_total
+                ev = (wr_decimal * 2.0) - ((1 - wr_decimal) * 1.0)
+            else:
+                ev = 0
+            
             unique_combos = len(learning.get_all_combos())
             promoted = len(learning.promoted)
             blacklisted = len(learning.blacklist)
             pending = len(learning.pending_signals)
+            
+            # Count combos approaching thresholds
+            all_combos = learning.get_all_combos()
+            approaching_promote = len([c for c in all_combos if c['total'] >= 10 and c['lower_wr'] >= 40])
+            approaching_blacklist = len([c for c in all_combos if c['total'] >= 5 and c['lower_wr'] <= 35])
             
             # Top performers
             top_combos = learning.get_top_combos(min_trades=3, min_lower_wr=40)[:3]
             
             # Recent activity from learner
             recent = getattr(learning, 'last_resolved', [])[-3:] if hasattr(learning, 'last_resolved') else []
+            
+            # BTC context
+            btc_trend = learning.get_btc_trend()
+            btc_change = learning.get_btc_change_1h()
             
             # === BUILD MESSAGE ===
             msg = (
@@ -281,16 +297,21 @@ class VWAPBot:
                 f"├ Signals: {total_signals} | Pending: {pending}\n"
                 f"├ Resolved: {learning_total} ({total_wins}W/{total_losses}L)\n"
                 f"├ WR: {learning_wr:.0f}% (LB: **{lower_wr:.0f}%**)\n"
+                f"├ EV: **{ev:+.2f}R** at 2:1 R:R\n"
                 f"├ Combos: {unique_combos} learned\n"
+                f"├ 📈 Approaching Promote: {approaching_promote}\n"
+                f"├ 📉 Approaching Blacklist: {approaching_blacklist}\n"
                 f"├ 🚀 Promoted: {promoted}\n"
-                f"└ 🚫 Blacklisted: {blacklisted}\n"
+                f"└ 🚫 Blacklisted: {blacklisted}\n\n"
+                
+                f"₿ **BTC**: {btc_trend} ({btc_change:+.1f}%)\n"
             )
             
             # Add top performers if any
             if top_combos:
                 msg += "\n🏆 **TOP PERFORMERS**\n"
                 for c in top_combos:
-                    msg += f"├ `{c['symbol']}` {c['side'][0].upper()}: {c['lower_wr']:.0f}%\n"
+                    msg += f"├ `{c['symbol']}` {c['side'][0].upper()}: {c['lower_wr']:.0f}% (N={c['total']})\n"
             
             # Add recent activity from learner
             if recent:
@@ -300,13 +321,14 @@ class VWAPBot:
                     msg += f"├ {icon} `{p.get('symbol', 'N/A')}`\n"
             
             msg += "\n━━━━━━━━━━━━━━━━━━━━\n"
-            msg += "💡 /learn /sessions /phantoms"
+            msg += "💡 /learn /smart /promote"
             
             await update.message.reply_text(msg, parse_mode='Markdown')
             
         except Exception as e:
             await update.message.reply_text(f"❌ Dashboard error: {e}")
             logger.error(f"Dashboard error: {e}")
+
 
     async def cmd_learn(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show learning system report"""

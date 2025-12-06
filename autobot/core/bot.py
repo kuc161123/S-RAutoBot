@@ -59,6 +59,10 @@ class VWAPBot:
         self.last_daily_summary = time.time()
         self.start_time = time.time()
         
+        # Track active trades for close monitoring
+        # Format: {symbol: {side, combo, entry, order_id, open_time}}
+        self.active_trades = {}
+        
         # Unified Learning System (all learning features in one)
         self.learner = UnifiedLearner()
         
@@ -884,12 +888,26 @@ class VWAPBot:
                 tp_pct = abs(tp - entry) / entry * 100
                 position_value = qty * entry
                 
+                # Determine if from backtest or auto-promote
+                combo_key = f"{sym}:{side}:{combo}"
+                is_auto_promoted = combo_key in self.learner.promoted
+                source = "🚀 Auto-Promoted" if is_auto_promoted else "📊 Backtest"
+                
+                # Get current WR and N for this combo
+                combo_stats = self.learner.get_combo_stats(sym, side, combo)
+                if combo_stats:
+                    wr_info = f"WR: {combo_stats['wr']:.0f}% (LB: {combo_stats['lower_wr']:.0f}%) | N={combo_stats['total']}"
+                else:
+                    wr_info = "WR: N/A (new combo)"
+                
                 await self.send_telegram(
                     f"🚀 **TRADE EXECUTED**\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"📊 Symbol: `{sym}`\n"
                     f"📈 Side: **{side.upper()}**\n"
-                    f"🎯 Combo: `{combo}`\n\n"
+                    f"🎯 Combo: `{combo}`\n"
+                    f"📁 Source: **{source}**\n"
+                    f"📈 {wr_info}\n\n"
                     f"💰 **ORDER DETAILS**\n"
                     f"├ Order ID: `{order_id}`\n"
                     f"├ Quantity: {qty}\n"
@@ -903,6 +921,19 @@ class VWAPBot:
                     f"└ ATR: {atr:.4f}\n\n"
                     f"💵 Balance: ${balance:.2f}"
                 )
+                
+                # Track this trade for close monitoring
+                self.active_trades[sym] = {
+                    'side': side,
+                    'combo': combo,
+                    'entry': entry,
+                    'order_id': order_id,
+                    'qty': qty,
+                    'tp': tp,
+                    'sl': sl,
+                    'open_time': time.time(),
+                    'is_auto_promoted': is_auto_promoted
+                }
             else:
                 # Order failed - notify with details
                 error_msg = res.get('retMsg', 'Unknown error') if res else 'No response'
@@ -1036,13 +1067,77 @@ class VWAPBot:
                     # Update unified learner with accurate high/low
                     self.learner.update_signals(candle_data)
                     
-                    # Send Telegram notifications for resolved signals - MUTED
-                    # if hasattr(self.learner, 'last_resolved') and self.learner.last_resolved:
-                    #     for r in self.learner.last_resolved:
-                    #         icon = "✅" if r['outcome'] == 'win' else "❌"
-                    #         await self.send_telegram(...)
+                    # Check for closed trades and send notifications
+                    for sym in list(self.active_trades.keys()):
+                        try:
+                            pos = self.broker.get_position(sym)
+                            has_position = pos and float(pos.get('size', 0)) > 0
+                            
+                            if not has_position:
+                                # Trade closed - determine outcome
+                                trade_info = self.active_trades.pop(sym)
+                                
+                                # Get current price to estimate P/L
+                                current_price = candle_data.get(sym, {}).get('close', 0)
+                                entry = trade_info['entry']
+                                side = trade_info['side']
+                                combo = trade_info['combo']
+                                
+                                if current_price and entry:
+                                    if side == 'long':
+                                        pnl_pct = ((current_price - entry) / entry) * 100
+                                    else:
+                                        pnl_pct = ((entry - current_price) / entry) * 100
+                                    
+                                    # Determine if win or loss based on which target was hit
+                                    tp_hit = (side == 'long' and current_price >= trade_info['tp']) or \
+                                             (side == 'short' and current_price <= trade_info['tp'])
+                                    sl_hit = (side == 'long' and current_price <= trade_info['sl']) or \
+                                             (side == 'short' and current_price >= trade_info['sl'])
+                                    
+                                    if tp_hit:
+                                        outcome = "✅ WIN (TP HIT)"
+                                        self.wins += 1
+                                    elif sl_hit:
+                                        outcome = "❌ LOSS (SL HIT)"
+                                        self.losses += 1
+                                    else:
+                                        outcome = "⚪ CLOSED (Unknown)"
+                                    
+                                    # Get updated WR/N from analytics
+                                    updated_stats = self.learner.get_combo_stats(sym, side, combo)
+                                    if updated_stats:
+                                        wr_info = f"WR: {updated_stats['wr']:.0f}% (LB: {updated_stats['lower_wr']:.0f}%) | N={updated_stats['total']}"
+                                    else:
+                                        wr_info = "WR: Updating..."
+                                    
+                                    # Source
+                                    source = "🚀 Auto-Promoted" if trade_info.get('is_auto_promoted') else "📊 Backtest"
+                                    
+                                    # Duration
+                                    duration_mins = (time.time() - trade_info['open_time']) / 60
+                                    
+                                    await self.send_telegram(
+                                        f"📝 **TRADE CLOSED**\n"
+                                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                                        f"📊 Symbol: `{sym}`\n"
+                                        f"📈 Side: **{side.upper()}**\n"
+                                        f"🎯 Combo: `{combo}`\n"
+                                        f"📁 Source: **{source}**\n\n"
+                                        f"💰 **RESULT**: {outcome}\n"
+                                        f"├ P/L: **{pnl_pct:+.2f}%**\n"
+                                        f"├ Entry: ${entry:.4f}\n"
+                                        f"├ Exit: ${current_price:.4f}\n"
+                                        f"└ Duration: {duration_mins:.0f}m\n\n"
+                                        f"📊 **UPDATED ANALYTICS**\n"
+                                        f"└ {wr_info}"
+                                    )
+                        except Exception as e:
+                            logger.debug(f"Trade close check error for {sym}: {e}")
+                    
+                    # Clear learner's last_resolved (we handle our own close notifications now)
                     if hasattr(self.learner, 'last_resolved'):
-                        self.learner.last_resolved = []  # Just clear, don't notify
+                        self.learner.last_resolved = []
                     
                     # Update BTC price for context tracking
                     btc_candle = candle_data.get('BTCUSDT', {})

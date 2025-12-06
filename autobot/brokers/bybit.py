@@ -217,24 +217,18 @@ class Bybit:
             logger.warning(f"Failed to get max leverage for {symbol}: {e}")
         return 50  # Safe default
 
-    def set_leverage(self, symbol:str, leverage:int=None) -> Dict[str, Any] | None:
+    def set_leverage(self, symbol:str, leverage:int=10) -> Dict[str, Any] | None:
         """Set leverage for a symbol with graceful fallback.
 
-        If leverage is None, fetches max allowed leverage from Bybit API.
+        Default is 10x leverage for safety.
         Attempts requested leverage; on failure due to risk limit, retries with lower values.
         Treats "leverage not modified" as success.
         """
-        # If no leverage specified, get max from API
-        if leverage is None:
-            leverage = self.get_max_leverage(symbol)
-            logger.info(f"{symbol}: Using max leverage {leverage}x from API")
+        # Use fixed 10x leverage for safety
+        leverage = 10
         
         # Build fallback candidates
-        candidates = [int(leverage)]
-        # Add percentage-based fallbacks + common safe fallbacks
-        for alt in (int(leverage * 0.75), int(leverage * 0.5), 50, 25, 10):
-            if alt > 0 and alt not in candidates:
-                candidates.append(alt)
+        candidates = [leverage, 5, 3, 2]
         last_err = None
         for lev in candidates:
             try:

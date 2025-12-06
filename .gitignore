@@ -6,3 +6,4 @@ __pycache__/
 bot_output.log
 vwap_bot.log
 backtest_vwap_combos.log
+dashboard.log

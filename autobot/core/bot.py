@@ -459,6 +459,8 @@ class VWAPBot:
 
             # Import analytics logic dynamically to avoid circular imports
             from analytics import fetch_trade_history, analyze_by_day, analyze_by_hour, find_winning_patterns
+            import psycopg2
+            import psycopg2.extras
             
             # Fetch last 30 days
             with self.learner.pg_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:

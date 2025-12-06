@@ -199,6 +199,16 @@ class UnifiedLearner:
                 2.5: {'w': 0, 'l': 0},
                 3.0: {'w': 0, 'l': 0}
             },
+            # Day of week performance
+            'by_day': {
+                'monday': {'w': 0, 'l': 0},
+                'tuesday': {'w': 0, 'l': 0},
+                'wednesday': {'w': 0, 'l': 0},
+                'thursday': {'w': 0, 'l': 0},
+                'friday': {'w': 0, 'l': 0},
+                'saturday': {'w': 0, 'l': 0},
+                'sunday': {'w': 0, 'l': 0}
+            },
             # Time tracking
             'total_time_wins': 0,
             'total_time_losses': 0,
@@ -774,6 +784,15 @@ class UnifiedLearner:
         btc = signal.btc_trend
         if btc in stats['by_btc']:
             stats['by_btc'][btc]['w' if outcome == 'win' else 'l'] += 1
+        
+        # Update day-of-week stats
+        from datetime import datetime
+        day_names = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        day = day_names[datetime.now().weekday()]
+        if 'by_day' not in stats:
+            stats['by_day'] = {d: {'w': 0, 'l': 0} for d in day_names}
+        if day in stats['by_day']:
+            stats['by_day'][day]['w' if outcome == 'win' else 'l'] += 1
         
         # Update R:R stats (Counterfactual Analysis)
         # We calculate "what if" for all R:R options based on max favorable excursion

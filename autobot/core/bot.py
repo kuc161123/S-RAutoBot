@@ -351,6 +351,29 @@ class VWAPBot:
             btc_trend = learning.get_btc_trend()
             btc_change = learning.get_btc_change_1h()
             
+            # Day-of-week aggregation
+            days = {'monday': {'w': 0, 'l': 0}, 'tuesday': {'w': 0, 'l': 0}, 
+                    'wednesday': {'w': 0, 'l': 0}, 'thursday': {'w': 0, 'l': 0},
+                    'friday': {'w': 0, 'l': 0}, 'saturday': {'w': 0, 'l': 0}, 'sunday': {'w': 0, 'l': 0}}
+            
+            for symbol, sides in learning.combo_stats.items():
+                for side, combos in sides.items():
+                    for combo, stats in combos.items():
+                        for day, data in stats.get('by_day', {}).items():
+                            if day in days:
+                                days[day]['w'] += data.get('w', 0)
+                                days[day]['l'] += data.get('l', 0)
+            
+            # Build day performance string (only weekdays with data)
+            day_msg = ""
+            day_icons = {'monday': 'Mon', 'tuesday': 'Tue', 'wednesday': 'Wed', 
+                         'thursday': 'Thu', 'friday': 'Fri', 'saturday': 'Sat', 'sunday': 'Sun'}
+            for d in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']:
+                total = days[d]['w'] + days[d]['l']
+                if total > 0:
+                    wr = days[d]['w'] / total * 100
+                    day_msg += f"├ {day_icons[d]}: {wr:.0f}% ({days[d]['w']}/{total})\n"
+            
             # === BUILD MESSAGE ===
             msg = (
                 "📊 **VWAP BOT DASHBOARD**\n"
@@ -384,6 +407,9 @@ class VWAPBot:
                 f"📈 **SIDE PERFORMANCE**\n"
                 f"├ 🟢 Long:  {long_wr:.0f}% ({long_stats['w']}/{long_total})\n"
                 f"└ 🔴 Short: {short_wr:.0f}% ({short_stats['w']}/{short_total})\n\n"
+                
+                f"📅 **DAY BREAKDOWN**\n"
+                f"{day_msg}\n"
                 
                 f"💹 **BEST R:R PERFORMANCE**\n"
                 f"{rr_msg}\n"

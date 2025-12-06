@@ -20,10 +20,23 @@ import time
 import math
 import logging
 import subprocess
+import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Set
 from collections import defaultdict
 from datetime import datetime
+
+# Persistence imports
+try:
+    import redis
+except ImportError:
+    redis = None
+
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor, Json
+except ImportError:
+    psycopg2 = None
 
 logger = logging.getLogger(__name__)
 
@@ -223,6 +236,71 @@ class UnifiedLearner:
         # Load saved data
         self.load()
         self.load_blacklist()
+        
+        # Initialize Dual Persistence (Redis + Postgres)
+        self.redis_client = None
+        self.pg_conn = None
+        self._init_persistence()
+    
+    def _init_persistence(self):
+        """Initialize Redis and Postgres connections"""
+        # Redis for pending signals (fast, ephemeral)
+        redis_url = os.getenv('REDIS_URL')
+        if redis and redis_url:
+            try:
+                self.redis_client = redis.from_url(redis_url, decode_responses=True)
+                self.redis_client.ping()
+                logger.info("✅ Redis connected for pending signals")
+            except Exception as e:
+                logger.error(f"❌ Redis connection failed: {e}")
+        
+        # Postgres for historical stats (robust, queryable)
+        pg_url = os.getenv('DATABASE_URL')
+        if psycopg2 and pg_url:
+            try:
+                self.pg_conn = psycopg2.connect(pg_url)
+                self.pg_conn.autocommit = True
+                self._init_db_tables()
+                logger.info("✅ PostgreSQL connected for historical stats")
+            except Exception as e:
+                logger.error(f"❌ PostgreSQL connection failed: {e}")
+
+    def _init_db_tables(self):
+        """Create necessary tables in Postgres"""
+        if not self.pg_conn:
+            return
+            
+        try:
+            with self.pg_conn.cursor() as cur:
+                # Combo Stats Table
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS combo_stats (
+                        symbol VARCHAR(20),
+                        side VARCHAR(10),
+                        combo VARCHAR(50),
+                        total INT DEFAULT 0,
+                        wins INT DEFAULT 0,
+                        losses INT DEFAULT 0,
+                        data JSONB,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (symbol, side, combo)
+                    );
+                """)
+                
+                # Adjustments Log Table
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS adjustments (
+                        id SERIAL PRIMARY KEY,
+                        type VARCHAR(20),
+                        symbol VARCHAR(20),
+                        side VARCHAR(10),
+                        combo VARCHAR(50),
+                        details JSONB,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+        except Exception as e:
+            logger.error(f"Failed to init DB tables: {e}")
     
     # ========================================================================
     # CONTEXT HELPERS
@@ -994,20 +1072,18 @@ class UnifiedLearner:
     # ========================================================================
     
     def save(self):
-        """Save all learning data including pending signals for restart survival"""
+        """Save all learning data using dual persistence (Redis + Postgres) with JSON fallback"""
         try:
-            # Convert combo_stats to serializable format
+            # 1. Prepare Data
             stats_data = {}
             for symbol, sides in self.combo_stats.items():
                 stats_data[symbol] = {}
                 for side, combos in sides.items():
                     stats_data[symbol][side] = {}
                     for combo, data in combos.items():
-                        # Convert float keys to strings for JSON
                         by_rr = {str(k): v for k, v in data.get('by_rr', {}).items()}
                         stats_data[symbol][side][combo] = {**data, 'by_rr': by_rr}
             
-            # Convert pending signals to serializable format (CRITICAL for restart survival)
             pending_data = []
             for sig in self.pending_signals:
                 pending_data.append({
@@ -1032,12 +1108,27 @@ class UnifiedLearner:
                     'max_favorable': sig.max_favorable,
                     'max_adverse': sig.max_adverse
                 })
+
+            # 2. Try Redis (Pending Signals)
+            if self.redis_client:
+                try:
+                    self._save_to_redis(pending_data)
+                except Exception as e:
+                    logger.error(f"Redis save failed: {e}")
             
+            # 3. Try Postgres (Historical Stats)
+            if self.pg_conn:
+                try:
+                    self._save_to_postgres(stats_data)
+                except Exception as e:
+                    logger.error(f"Postgres save failed: {e}")
+
+            # 4. Always save to JSON as backup/fallback
             data = {
                 'combo_stats': stats_data,
-                'pending_signals': pending_data,  # CRITICAL: Save pending for restart
+                'pending_signals': pending_data,
                 'promoted': list(self.promoted),
-                'blacklist': list(self.blacklist),  # Also save blacklist
+                'blacklist': list(self.blacklist),
                 'total_signals': self.total_signals,
                 'total_wins': self.total_wins,
                 'total_losses': self.total_losses,
@@ -1055,73 +1146,162 @@ class UnifiedLearner:
             
         except Exception as e:
             logger.error(f"Failed to save learning: {e}")
-    
-    def load(self):
-        """Load learning data including pending signals for restart survival"""
-        try:
-            with open(self.SAVE_FILE, 'r') as f:
-                data = json.load(f)
+
+    def _save_to_redis(self, pending_data: List[Dict]):
+        """Save pending signals to Redis"""
+        self.redis_client.set('vwap_bot:pending_signals', json.dumps(pending_data))
+        # Also save lightweight stats for quick dashboard access
+        stats = {
+            'total_signals': self.total_signals,
+            'total_wins': self.total_wins,
+            'total_losses': self.total_losses,
+            'updated_at': time.time()
+        }
+        self.redis_client.set('vwap_bot:stats_summary', json.dumps(stats))
+
+    def _save_to_postgres(self, stats_data: Dict):
+        """Save combo stats to Postgres"""
+        if not self.pg_conn:
+            return
             
-            # Load combo stats
-            for symbol, sides in data.get('combo_stats', {}).items():
+        with self.pg_conn.cursor() as cur:
+            for symbol, sides in stats_data.items():
                 for side, combos in sides.items():
-                    for combo, stats in combos.items():
-                        # Convert string keys back to floats for by_rr
-                        if 'by_rr' in stats:
-                            stats['by_rr'] = {float(k): v for k, v in stats['by_rr'].items()}
-                        self.combo_stats[symbol][side][combo] = stats
+                    for combo, data in combos.items():
+                        cur.execute("""
+                            INSERT INTO combo_stats (symbol, side, combo, total, wins, losses, data, updated_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+                            ON CONFLICT (symbol, side, combo) 
+                            DO UPDATE SET 
+                                total = EXCLUDED.total,
+                                wins = EXCLUDED.wins,
+                                losses = EXCLUDED.losses,
+                                data = EXCLUDED.data,
+                                updated_at = NOW();
+                        """, (
+                            symbol, side, combo,
+                            data.get('total', 0),
+                            data.get('wins', 0),
+                            data.get('losses', 0),
+                            Json(data)
+                        ))
+
+    def load(self):
+        """Load learning data from Redis/Postgres with JSON fallback"""
+        loaded_from_db = False
+        
+        # 1. Try Load from DBs
+        if self.redis_client and self.pg_conn:
+            try:
+                self._load_from_redis()
+                self._load_from_postgres()
+                loaded_from_db = True
+                logger.info("📂 Loaded data from Redis & Postgres")
+            except Exception as e:
+                logger.error(f"DB Load failed, falling back to JSON: {e}")
+        
+        # 2. Fallback to JSON if DB load failed or not configured
+        if not loaded_from_db:
+            try:
+                with open(self.SAVE_FILE, 'r') as f:
+                    data = json.load(f)
+                
+                # Load combo stats
+                for symbol, sides in data.get('combo_stats', {}).items():
+                    for side, combos in sides.items():
+                        for combo, stats in combos.items():
+                            if 'by_rr' in stats:
+                                stats['by_rr'] = {float(k): v for k, v in stats['by_rr'].items()}
+                            self.combo_stats[symbol][side][combo] = stats
+                
+                # Load pending signals
+                self._restore_pending_signals(data.get('pending_signals', []))
+                
+                self.promoted = set(data.get('promoted', []))
+                self.blacklist = set(data.get('blacklist', []))
+                self.total_signals = data.get('total_signals', 0)
+                self.total_wins = data.get('total_wins', 0)
+                self.total_losses = data.get('total_losses', 0)
+                self.btc_price_1h_ago = data.get('btc_price_1h_ago', 0)
+                self.btc_current = data.get('btc_current', 0)
+                self.started_at = data.get('started_at', time.time())
+                self.adjustments = data.get('adjustments', [])
+                
+                logger.info(f"📂 Loaded data from JSON file")
+                
+            except FileNotFoundError:
+                logger.info("📂 No JSON file found, starting fresh")
+            except Exception as e:
+                logger.error(f"Failed to load JSON: {e}")
+
+    def _load_from_redis(self):
+        """Load pending signals from Redis"""
+        data = self.redis_client.get('vwap_bot:pending_signals')
+        if data:
+            pending_data = json.loads(data)
+            self._restore_pending_signals(pending_data)
             
-            # Load pending signals (CRITICAL for restart survival)
-            self.pending_signals = []
-            for sig_data in data.get('pending_signals', []):
-                try:
-                    # Skip signals older than 4 hours (SIGNAL_TIMEOUT)
-                    if time.time() - sig_data.get('start_time', 0) > self.SIGNAL_TIMEOUT:
-                        continue
-                    
-                    signal = LearningSignal(
-                        symbol=sig_data['symbol'],
-                        side=sig_data['side'],
-                        combo=sig_data['combo'],
-                        entry_price=sig_data['entry_price'],
-                        tp_price=sig_data['tp_price'],
-                        sl_price=sig_data['sl_price'],
-                        start_time=sig_data['start_time'],
-                        is_phantom=sig_data.get('is_phantom', True),
-                        is_allowed_combo=sig_data.get('is_allowed_combo', False),
-                        atr_percent=sig_data.get('atr_percent', 0.0),
-                        volatility_regime=sig_data.get('volatility_regime', 'medium'),
-                        btc_trend=sig_data.get('btc_trend', 'neutral'),
-                        btc_change_1h=sig_data.get('btc_change_1h', 0.0),
-                        session=sig_data.get('session', 'london'),
-                        hour_utc=sig_data.get('hour_utc', 0),
-                        rr_ratio=sig_data.get('rr_ratio', 2.0),
-                        max_high=sig_data.get('max_high', sig_data['entry_price']),
-                        min_low=sig_data.get('min_low', sig_data['entry_price']),
-                        max_favorable=sig_data.get('max_favorable', 0.0),
-                        max_adverse=sig_data.get('max_adverse', 0.0)
-                    )
-                    self.pending_signals.append(signal)
-                except Exception as e:
-                    logger.debug(f"Failed to restore signal: {e}")
+        # Load summary stats
+        stats_data = self.redis_client.get('vwap_bot:stats_summary')
+        if stats_data:
+            stats = json.loads(stats_data)
+            self.total_signals = stats.get('total_signals', 0)
+            self.total_wins = stats.get('total_wins', 0)
+            self.total_losses = stats.get('total_losses', 0)
+
+    def _load_from_postgres(self):
+        """Load combo stats from Postgres"""
+        if not self.pg_conn:
+            return
+            
+        with self.pg_conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM combo_stats")
+            rows = cur.fetchall()
+            
+            for row in rows:
+                symbol = row['symbol']
+                side = row['side']
+                combo = row['combo']
+                data = row['data']
+                
+                # Restore float keys in by_rr
+                if 'by_rr' in data:
+                    data['by_rr'] = {float(k): v for k, v in data['by_rr'].items()}
+                
+                self.combo_stats[symbol][side][combo] = data
+
+    def _restore_pending_signals(self, pending_data: List[Dict]):
+        """Helper to restore pending signals from list of dicts"""
+        self.pending_signals = []
+        for sig_data in pending_data:
+            try:
+                if time.time() - sig_data.get('start_time', 0) > self.SIGNAL_TIMEOUT:
                     continue
-            
-            self.promoted = set(data.get('promoted', []))
-            self.blacklist = set(data.get('blacklist', []))  # Also load blacklist
-            self.total_signals = data.get('total_signals', 0)
-            self.total_wins = data.get('total_wins', 0)
-            self.total_losses = data.get('total_losses', 0)
-            self.btc_price_1h_ago = data.get('btc_price_1h_ago', 0)
-            self.btc_current = data.get('btc_current', 0)
-            self.started_at = data.get('started_at', time.time())
-            self.adjustments = data.get('adjustments', [])
-            
-            saved_at = data.get('saved_at', 0)
-            age_mins = (time.time() - saved_at) / 60 if saved_at else 0
-            logger.info(f"📂 Learning loaded: {len(self.pending_signals)} pending, {self.total_signals} total (saved {age_mins:.0f}m ago)")
-            
-        except FileNotFoundError:
-            logger.info("📂 Starting fresh learning database")
-        except Exception as e:
-            logger.error(f"Failed to load learning: {e}")
+                
+                signal = LearningSignal(
+                    symbol=sig_data['symbol'],
+                    side=sig_data['side'],
+                    combo=sig_data['combo'],
+                    entry_price=sig_data['entry_price'],
+                    tp_price=sig_data['tp_price'],
+                    sl_price=sig_data['sl_price'],
+                    start_time=sig_data['start_time'],
+                    is_phantom=sig_data.get('is_phantom', True),
+                    is_allowed_combo=sig_data.get('is_allowed_combo', False),
+                    atr_percent=sig_data.get('atr_percent', 0.0),
+                    volatility_regime=sig_data.get('volatility_regime', 'medium'),
+                    btc_trend=sig_data.get('btc_trend', 'neutral'),
+                    btc_change_1h=sig_data.get('btc_change_1h', 0.0),
+                    session=sig_data.get('session', 'london'),
+                    hour_utc=sig_data.get('hour_utc', 0),
+                    rr_ratio=sig_data.get('rr_ratio', 2.0),
+                    max_high=sig_data.get('max_high', sig_data['entry_price']),
+                    min_low=sig_data.get('min_low', sig_data['entry_price']),
+                    max_favorable=sig_data.get('max_favorable', 0.0),
+                    max_adverse=sig_data.get('max_adverse', 0.0)
+                )
+                self.pending_signals.append(signal)
+            except Exception as e:
+                logger.debug(f"Failed to restore signal: {e}")
+                continue
 

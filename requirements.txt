@@ -8,3 +8,5 @@ ta
 pandas_ta
 aiohttp
 python-telegram-bot
+redis
+psycopg2-binary

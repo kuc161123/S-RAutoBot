@@ -529,7 +529,7 @@ class UnifiedLearner:
     
     def record_signal(self, symbol: str, side: str, combo: str,
                      entry: float, atr: float, btc_price: float = 0,
-                     is_allowed: bool = False) -> Tuple[float, float, str]:
+                     is_allowed: bool = False, notify: bool = True) -> Tuple[float, float, str]:
         """
         Record a signal with full context and return optimal TP/SL.
         
@@ -543,7 +543,7 @@ class UnifiedLearner:
         """
         # === STRICT INPUT VALIDATION ===
         if not symbol or not side or not combo:
-            return None, None, "Invalid input: missing symbol/side/combo"
+            return None, None, "Missing required fields"
         
         if entry <= 0:
             return None, None, f"Invalid entry price: {entry}"
@@ -589,16 +589,16 @@ class UnifiedLearner:
         # === CALCULATE TP/SL WITH VALIDATION ===
         # Using 1 ATR for SL, optimal_rr * ATR for TP
         if side == 'long':
-            sl = entry - atr
-            tp = entry + (optimal_rr * atr)
+            sl_price = entry - atr
+            tp_price = entry + (optimal_rr * atr)
             # Validate: SL must be below entry, TP must be above entry
-            if sl >= entry or tp <= entry:
+            if sl_price <= 0 or tp_price <= 0:
                 return None, None, f"Invalid TP/SL calculation for long"
         else:
-            sl = entry + atr
-            tp = entry - (optimal_rr * atr)
+            sl_price = entry + atr
+            tp_price = entry - (optimal_rr * atr)
             # Validate: SL must be above entry, TP must be below entry
-            if sl <= entry or tp >= entry:
+            if sl_price <= 0 or tp_price <= 0:
                 return None, None, f"Invalid TP/SL calculation for short"
         
         # === CREATE SIGNAL WITH FULL CONTEXT ===
@@ -607,8 +607,8 @@ class UnifiedLearner:
             side=side,
             combo=combo,
             entry_price=entry,
-            tp_price=tp,
-            sl_price=sl,
+            tp_price=tp_price,
+            sl_price=sl_price,
             start_time=entry_timestamp,
             is_phantom=not is_allowed,
             is_allowed_combo=is_allowed,
@@ -623,17 +623,22 @@ class UnifiedLearner:
             min_low=entry      # Initialize with entry
         )
         
+        # === NOTIFICATION ===
+        # Send Telegram notification (if allowed by rate limiter)
+        if notify:
+            self._notify_new_signal(signal)
+        
         self.pending_signals.append(signal)
         self.total_signals += 1
         
         # Log for debugging
         logger.debug(
-            f"📝 RECORDED: {symbol} {side} | Entry:{entry:.4f} TP:{tp:.4f} SL:{sl:.4f} | "
+            f"📝 RECORDED: {symbol} {side} | Entry:{entry:.4f} TP:{tp_price:.4f} SL:{sl_price:.4f} | "
             f"R:R={optimal_rr}:1 | {regime} | BTC:{btc_trend}"
         )
         
         explanation = f"R:R={optimal_rr}:1 | {regime} | BTC:{btc_trend}"
-        return tp, sl, explanation
+        return tp_price, sl_price, explanation
     
     def _cleanup_old_signals(self):
         """Remove timed-out signals"""

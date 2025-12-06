@@ -1034,7 +1034,7 @@ class VWAPBot:
                     
                     # === AUTO-ACTIVATION ===
                     # Check for high-performing combos to auto-promote
-                    candidates = self.learner.get_auto_activate_candidates(min_wr=40.0, min_trades=10)
+                    candidates = self.learner.get_auto_activate_candidates(min_wr=40.0, min_trades=5)
                     if candidates:
                         new_promotions = []
                         for c in candidates:

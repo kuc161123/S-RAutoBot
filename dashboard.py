@@ -330,6 +330,41 @@ DASHBOARD_HTML = """
             </div>
         </div>
         
+        <!-- Top Performers -->
+        <div class="card full-width">
+            <div class="card-title"><span class="icon">🏆</span> Top Performers (30d)</div>
+            <table class="combo-table">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Side</th>
+                        <th>Combo</th>
+                        <th>WR</th>
+                        <th>EV</th>
+                        <th>Trades</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in top_performers %}
+                    <tr>
+                        <td><strong>{{ p.symbol }}</strong></td>
+                        <td>
+                            <span class="badge {{ 'badge-long' if p.side == 'long' else 'badge-short' }}">
+                                {{ p.side|upper }}
+                            </span>
+                        </td>
+                        <td><span class="combo-tag">{{ p.combo }}</span></td>
+                        <td style="color: #00ff88; font-weight: bold;">{{ p.wr|round(0) }}%</td>
+                        <td>{{ p.ev|default(0)|round(2) }}R</td>
+                        <td>{{ p.total }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" style="text-align: center; color: #666;">No trade data yet</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
         <!-- Active Combos Table -->
         <div class="card full-width">
             <div class="card-title"><span class="icon">🎰</span> Active Combos by Symbol</div>
@@ -653,11 +688,36 @@ def dashboard():
     stats = calculate_stats(combos)
     analytics = analyze_combos(combos)
     
+    # Fetch top performers from DB
+    top_performers = []
+    try:
+        from analytics import get_db_connection, fetch_trade_history, find_winning_patterns
+        conn = get_db_connection()
+        trades = fetch_trade_history(conn, days=30)
+        conn.close()
+        
+        # Get top 5 winners with at least 3 trades
+        winners = find_winning_patterns(trades, min_trades=3)
+        top_performers = winners[:5]
+        
+        # Calculate EV for display (simplified)
+        for p in top_performers:
+            # Assuming 2:1 RR for now as default, or we could calculate actual EV if we had it
+            # analytics.py find_winning_patterns returns 'wr' and 'total'
+            # Let's estimate EV based on 2:1 RR for display purposes if not present
+            if 'ev' not in p:
+                wr_dec = p['wr'] / 100
+                p['ev'] = (wr_dec * 2.0) - ((1 - wr_dec) * 1.0)
+                
+    except Exception as e:
+        print(f"Failed to fetch top performers: {e}")
+    
     return render_template_string(
         DASHBOARD_HTML,
         combos=combos,
         stats=stats,
         analytics=analytics,
+        top_performers=top_performers,
         last_update=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     )
 

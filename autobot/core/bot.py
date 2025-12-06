@@ -291,10 +291,19 @@ class VWAPBot:
             uptime_hrs = (time.time() - self.learner.started_at) / 3600
             
             # === TRADING SYMBOLS ===
-            total_symbols = len(self.vwap_combos)
+            # Use max of YAML-loaded combos and promoted set (handles ephemeral file systems)
+            yaml_symbols = len(self.vwap_combos)
+            promoted_symbols = len(set(k.split(':')[0] for k in self.learner.promoted))
+            total_symbols = max(yaml_symbols, promoted_symbols)
+            
             learning_symbols = len(getattr(self, 'all_symbols', []))
             long_combos = sum(len(d.get('long', [])) for d in self.vwap_combos.values())
             short_combos = sum(len(d.get('short', [])) for d in self.vwap_combos.values())
+            
+            # If YAML is empty but promoted set has combos, count from promoted
+            if long_combos == 0 and short_combos == 0 and self.learner.promoted:
+                long_combos = sum(1 for k in self.learner.promoted if ':long:' in k)
+                short_combos = sum(1 for k in self.learner.promoted if ':short:' in k)
             
             # === UNIFIED LEARNING STATS ===
             learning = self.learner

@@ -954,13 +954,23 @@ class VWAPBot:
             await self.send_telegram("⚠️ **No trading symbols!**\nLearning will still run on all 400 symbols.")
             logger.warning("No trading symbols, learning only mode")
         
+        # Check connections
+        redis_ok = "🟢" if self.learner.redis_client else "🔴"
+        pg_ok = "🟢" if self.learner.pg_conn else "🔴"
+
         # Send success notification
         await self.send_telegram(
-            f"✅ **VWAP Bot Online!**\n\n"
+            f"✅ **VWAP Bot Online!**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📊 Trading: **{len(trading_symbols)}** symbols\n"
             f"📚 Learning: **{len(self.all_symbols)}** symbols\n"
-            f"⚙️ Risk: {self.risk_config['value']} {self.risk_config['type']}\n\n"
-            f"Commands: /help /status /risk /phantoms"
+            f"⚙️ Risk: {self.risk_config['value']} {self.risk_config['type']}\n"
+            f"🚀 Auto-Promote: **>40% LB WR**\n\n"
+            f"💾 System Health:\n"
+            f"• Redis: {redis_ok}\n"
+            f"• Postgres: {pg_ok}\n\n"
+            f"🖥️ **Dashboard**: `http://localhost:8888`\n"
+            f"Commands: /help /status /analytics"
         )
         
         logger.info(f"Trading {len(trading_symbols)} symbols, Learning {len(self.all_symbols)} symbols")

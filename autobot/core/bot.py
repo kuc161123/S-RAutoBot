@@ -1027,8 +1027,8 @@ class VWAPBot:
                 # Daily summary (every 24 hours)
                 await self.send_daily_summary()
                 
-                # Log stats and save state every 10 loops
-                if self.loop_count % 10 == 0:
+                # Log stats and save state every loop (for faster auto-promote)
+                if self.loop_count % 1 == 0:
                     logger.info(f"Stats: Loop={self.loop_count} Trading={len(trading_symbols)} Learning={len(self.all_symbols)} Signals={self.signals_detected}")
                     self.save_state()
                     self.learner.save()

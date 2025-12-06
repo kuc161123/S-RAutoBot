@@ -243,7 +243,7 @@ class VWAPBot:
             long_combos = sum(len(d.get('long', [])) for d in self.vwap_combos.values())
             short_combos = sum(len(d.get('short', [])) for d in self.vwap_combos.values())
             
-            # === UNIFIED LEARNING STATS (replaces separate phantom tracking) ===
+            # === UNIFIED LEARNING STATS ===
             learning = self.learner
             total_signals = learning.total_signals
             total_wins = learning.total_wins
@@ -268,6 +268,42 @@ class VWAPBot:
             all_combos = learning.get_all_combos()
             approaching_promote = len([c for c in all_combos if c['total'] >= 10 and c['lower_wr'] >= 40])
             approaching_blacklist = len([c for c in all_combos if c['total'] >= 5 and c['lower_wr'] <= 35])
+            
+            # === SESSION BREAKDOWN ===
+            sessions = {'asian': {'w': 0, 'l': 0}, 'london': {'w': 0, 'l': 0}, 'newyork': {'w': 0, 'l': 0}}
+            long_stats = {'w': 0, 'l': 0}
+            short_stats = {'w': 0, 'l': 0}
+            
+            for symbol, sides in learning.combo_stats.items():
+                for side, combos in sides.items():
+                    for combo, stats in combos.items():
+                        # Aggregate session stats
+                        for session, data in stats.get('sessions', {}).items():
+                            if session in sessions:
+                                sessions[session]['w'] += data.get('w', 0)
+                                sessions[session]['l'] += data.get('l', 0)
+                        
+                        # Aggregate side stats
+                        if side == 'long':
+                            long_stats['w'] += stats.get('wins', 0)
+                            long_stats['l'] += stats.get('losses', 0)
+                        else:
+                            short_stats['w'] += stats.get('wins', 0)
+                            short_stats['l'] += stats.get('losses', 0)
+            
+            # Calculate session WRs
+            asian_total = sessions['asian']['w'] + sessions['asian']['l']
+            london_total = sessions['london']['w'] + sessions['london']['l']
+            ny_total = sessions['newyork']['w'] + sessions['newyork']['l']
+            asian_wr = (sessions['asian']['w'] / asian_total * 100) if asian_total > 0 else 0
+            london_wr = (sessions['london']['w'] / london_total * 100) if london_total > 0 else 0
+            ny_wr = (sessions['newyork']['w'] / ny_total * 100) if ny_total > 0 else 0
+            
+            # Calculate side WRs
+            long_total = long_stats['w'] + long_stats['l']
+            short_total = short_stats['w'] + short_stats['l']
+            long_wr = (long_stats['w'] / long_total * 100) if long_total > 0 else 0
+            short_wr = (short_stats['w'] / short_total * 100) if short_total > 0 else 0
             
             # Top performers
             top_combos = learning.get_top_combos(min_trades=3, min_lower_wr=40)[:3]
@@ -299,10 +335,19 @@ class VWAPBot:
                 f"├ WR: {learning_wr:.0f}% (LB: **{lower_wr:.0f}%**)\n"
                 f"├ EV: **{ev:+.2f}R** at 2:1 R:R\n"
                 f"├ Combos: {unique_combos} learned\n"
-                f"├ 📈 Approaching Promote: {approaching_promote}\n"
-                f"├ 📉 Approaching Blacklist: {approaching_blacklist}\n"
+                f"├ 📈 Near Promote: {approaching_promote}\n"
+                f"├ 📉 Near Blacklist: {approaching_blacklist}\n"
                 f"├ 🚀 Promoted: {promoted}\n"
                 f"└ 🚫 Blacklisted: {blacklisted}\n\n"
+                
+                f"📊 **SESSION BREAKDOWN**\n"
+                f"├ 🌏 Asian:  {asian_wr:.0f}% ({sessions['asian']['w']}/{asian_total})\n"
+                f"├ 🌍 London: {london_wr:.0f}% ({sessions['london']['w']}/{london_total})\n"
+                f"└ 🌎 NY:     {ny_wr:.0f}% ({sessions['newyork']['w']}/{ny_total})\n\n"
+                
+                f"📈 **SIDE PERFORMANCE**\n"
+                f"├ 🟢 Long:  {long_wr:.0f}% ({long_stats['w']}/{long_total})\n"
+                f"└ 🔴 Short: {short_wr:.0f}% ({short_stats['w']}/{short_total})\n\n"
                 
                 f"₿ **BTC**: {btc_trend} ({btc_change:+.1f}%)\n"
             )

@@ -211,9 +211,12 @@ class Bybit:
         Attempts requested leverage; on failure due to risk limit, retries with 20x then 10x.
         Treats "leverage not modified" as success.
         """
-        candidates = [int(leverage)]
+        # Cap leverage to reasonable max (most coins max at 25-100x)
+        leverage = min(int(leverage), 100)
+        
+        candidates = [leverage]
         # Common safe fallbacks
-        for alt in (20, 10):
+        for alt in (50, 20, 10):
             if alt not in candidates:
                 candidates.append(alt)
         last_err = None

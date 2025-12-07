@@ -876,6 +876,10 @@ class UnifiedLearner:
                 from datetime import datetime
                 day_of_week = datetime.utcnow().weekday()
                 
+                # Convert numpy types to Python native types for PostgreSQL
+                btc_change = float(signal.btc_change_1h) if signal.btc_change_1h else 0.0
+                atr_pct = float(signal.atr_percent) if signal.atr_percent else 0.0
+                
                 with self.pg_conn.cursor() as cur:
                     cur.execute("""
                         INSERT INTO trade_history 
@@ -888,12 +892,12 @@ class UnifiedLearner:
                         float(signal.time_to_result) if signal.time_to_result else 0.0,
                         float(max_r_reached) if max_r_reached else 0.0,
                         signal.session,
-                        signal.hour_utc,
+                        int(signal.hour_utc) if signal.hour_utc else 0,
                         day_of_week,
                         signal.volatility_regime,
                         signal.btc_trend,
-                        signal.btc_change_1h,
-                        signal.atr_percent,
+                        btc_change,
+                        atr_pct,
                         not signal.is_phantom  # is_executed = True if NOT phantom
                     ))
             except Exception as e:

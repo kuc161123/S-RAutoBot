@@ -1059,10 +1059,16 @@ class VWAPBot:
                 result = res.get('result', {})
                 order_id = result.get('orderId', 'N/A')
                 
+                # Log exactly what TP/SL we're sending
+                logger.info(f"📍 TP/SL for {sym}: Entry={entry:.6f} TP={tp:.6f} SL={sl:.6f} ATR={atr:.6f}")
+                
                 # Set TP/SL and capture result
                 tpsl_res = self.broker.set_tpsl(sym, tp, sl, qty)
                 tpsl_ok = tpsl_res and tpsl_res.get('retCode') == 0 if tpsl_res else False
                 tpsl_status = "✅ SET" if tpsl_ok else "⚠️ FAILED"
+                
+                if tpsl_res:
+                    logger.info(f"📍 TP/SL Response: {tpsl_res}")
                 
                 self.trades_executed += 1
                 

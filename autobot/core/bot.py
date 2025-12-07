@@ -1045,6 +1045,13 @@ class VWAPBot:
 
             logger.info(f"EXECUTE: {sym} {side} qty={qty} R:R={optimal_rr}:1")
             
+            # ALWAYS set leverage to 10x before executing trade
+            lev_res = self.broker.set_leverage(sym, 10)
+            if lev_res:
+                logger.info(f"✅ Leverage set to 10x for {sym}")
+            else:
+                logger.warning(f"⚠️ Could not set leverage for {sym}, proceeding anyway")
+            
             res = self.broker.place_market(sym, side, qty)
             
             if res and res.get('retCode') == 0:

@@ -266,6 +266,7 @@ class VWAPBot:
             "/help - Show this message\n"
             "/status - System health & connections\n"
             "/dashboard - Live trading stats\n"
+            "/top - Top performing combos\n"
             "/analytics - Deep pattern analysis (30d)\n"
             "/learn - Learning system report\n"
             "/promote - Show promotion candidates\n"
@@ -703,6 +704,74 @@ class VWAPBot:
         except ValueError:
             await update.message.reply_text("Invalid value.")
 
+    async def cmd_top(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show top performing combos"""
+        try:
+            # Get optional limit from args (default 10)
+            limit = 10
+            if context.args and context.args[0].isdigit():
+                limit = min(int(context.args[0]), 20)  # Max 20
+            
+            # Get top combos from learner
+            top_combos = self.learner.get_top_combos(min_trades=3, min_lower_wr=35)[:limit]
+            
+            if not top_combos:
+                await update.message.reply_text(
+                    "🏆 **NO TOP PERFORMERS YET**\n\n"
+                    "Need combos with:\n"
+                    "• N ≥ 3 trades\n"
+                    "• Lower Bound WR ≥ 35%\n\n"
+                    "Keep running to collect more data!",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            msg = f"🏆 **TOP PERFORMERS** (Top {len(top_combos)})\n"
+            msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
+            
+            for c in top_combos:
+                # Side icon
+                side_icon = "🟢" if c['side'] == 'long' else "🔴"
+                
+                # Find best session
+                sessions = c.get('sessions', {})
+                best_session = '🌐'
+                best_session_wr = 0
+                session_icons = {'asian': '🌏', 'london': '🌍', 'newyork': '🌎'}
+                
+                for s, data in sessions.items():
+                    total = data.get('w', 0) + data.get('l', 0)
+                    if total >= 2:
+                        wr = data['w'] / total * 100
+                        if wr > best_session_wr:
+                            best_session_wr = wr
+                            best_session = session_icons.get(s, '🌐')
+                
+                # Truncate combo for display
+                combo_short = c['combo'][:20] + '..' if len(c['combo']) > 22 else c['combo']
+                
+                # EV string
+                ev_str = f"{c['ev']:+.2f}R" if c['ev'] != 0 else "0R"
+                
+                msg += f"├ {side_icon} **{c['symbol']}**\n"
+                msg += f"│  `{combo_short}`\n"
+                msg += f"│  WR:{c['lower_wr']:.0f}% | EV:{ev_str} | {c['optimal_rr']}:1 | {best_session} (N={c['total']})\n"
+                msg += f"│\n"
+            
+            # Summary
+            total_trades = sum(c['total'] for c in top_combos)
+            avg_wr = sum(c['lower_wr'] for c in top_combos) / len(top_combos) if top_combos else 0
+            
+            msg += f"━━━━━━━━━━━━━━━━━━━━\n"
+            msg += f"📊 Avg LB WR: {avg_wr:.0f}% | Total N: {total_trades}\n"
+            msg += f"💡 Use `/top 20` for more results"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"cmd_top error: {e}")
+
     async def send_telegram(self, msg):
         """Send Telegram notification"""
         try:
@@ -1080,6 +1149,7 @@ class VWAPBot:
             self.tg_app.add_handler(CommandHandler("sessions", self.cmd_sessions))
             self.tg_app.add_handler(CommandHandler("blacklist", self.cmd_blacklist))
             self.tg_app.add_handler(CommandHandler("smart", self.cmd_smart))
+            self.tg_app.add_handler(CommandHandler("top", self.cmd_top))
             
             # Global error handler
             async def error_handler(update, context):

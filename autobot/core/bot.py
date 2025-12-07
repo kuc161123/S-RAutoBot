@@ -1094,9 +1094,33 @@ class VWAPBot:
                     )
                     continue
                 
-                # CASE 2: Order cancelled/rejected externally
+                # CASE 2: Order cancelled/rejected externally (by Bybit)
                 if order_status in ['Cancelled', 'Rejected', 'Expired', 'Deactivated']:
-                    logger.info(f"Order for {sym} was {order_status}")
+                    logger.info(f"Order for {sym} was {order_status} by Bybit")
+                    
+                    # Record to analytics as 'no_fill' (we don't know why Bybit cancelled)
+                    combo = order_info.get('combo', 'EXTERNAL_CANCEL')
+                    try:
+                        self.learner.resolve_executed_trade(
+                            sym, side, 'no_fill',
+                            exit_price=current_price,
+                            max_high=0,
+                            min_low=0
+                        )
+                        logger.info(f"📊 Recorded externally cancelled order: {sym} {side} → no_fill")
+                    except Exception as e:
+                        logger.warning(f"Could not record cancelled order to analytics: {e}")
+                    
+                    # Send notification
+                    await self.send_telegram(
+                        f"⚠️ **ORDER CANCELLED BY BYBIT**\n"
+                        f"Symbol: `{sym}` {side.upper()}\n"
+                        f"Entry: ${order_info['entry_price']:.4f}\n"
+                        f"Status: {order_status}\n\n"
+                        f"⏱️ **Recorded as**: NO_FILL\n"
+                        f"(Signal data saved for analytics)"
+                    )
+                    
                     del self.pending_limit_orders[sym]
                     continue
                 

@@ -1115,10 +1115,76 @@ class UnifiedLearner:
         
         return sorted(result, key=lambda x: x['lower_wr'], reverse=True)
     
-    def get_top_combos(self, min_trades: int = 5, min_lower_wr: float = 40) -> List[Dict]:
-        """Get top performing combos"""
-        all_combos = self.get_all_combos()
-        return [c for c in all_combos if c['total'] >= min_trades and c['lower_wr'] >= min_lower_wr]
+    def get_top_combos(self, min_trades: int = 3, min_lower_wr: float = 35, days: int = 30) -> List[Dict]:
+        """Get top performing combos from PostgreSQL trade_history (same source as /analytics)"""
+        result = []
+        
+        if not self.pg_conn:
+            logger.warning("No Postgres connection for get_top_combos, falling back to in-memory")
+            all_combos = self.get_all_combos()
+            return [c for c in all_combos if c['total'] >= min_trades and c['lower_wr'] >= min_lower_wr]
+        
+        try:
+            with self.pg_conn.cursor() as cur:
+                # Query aggregated stats from trade_history (last N days)
+                query = f"""
+                    SELECT symbol, side, combo,
+                           COUNT(*) as total,
+                           COALESCE(SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END), 0) as wins
+                    FROM trade_history
+                    WHERE created_at > NOW() - INTERVAL '{days} days'
+                    GROUP BY symbol, side, combo
+                    HAVING COUNT(*) >= {min_trades}
+                    ORDER BY COUNT(*) DESC
+                """
+                cur.execute(query)
+                rows = cur.fetchall()
+                
+                for symbol, side, combo, total, wins in rows:
+                    wins = wins or 0
+                    losses = total - wins
+                    
+                    # Calculate Lower Bound WR (Wilson score)
+                    lb_wr = wilson_lower_bound(wins, total)
+                    raw_wr = (wins / total * 100) if total > 0 else 0
+                    
+                    # Skip if below threshold
+                    if lb_wr < min_lower_wr:
+                        continue
+                    
+                    # Get optimal R:R
+                    optimal_rr, _ = self.get_optimal_rr(symbol, side, combo)
+                    
+                    # Calculate EV
+                    ev = (wins/total * optimal_rr) - (losses/total * 1) if total > 0 else 0
+                    
+                    # Get session stats from in-memory (for best session display)
+                    sessions = {}
+                    if symbol in self.combo_stats and side in self.combo_stats[symbol]:
+                        if combo in self.combo_stats[symbol][side]:
+                            sessions = self.combo_stats[symbol][side][combo].get('sessions', {})
+                    
+                    result.append({
+                        'symbol': symbol,
+                        'side': side,
+                        'combo': combo,
+                        'total': total,
+                        'wins': wins,
+                        'losses': losses,
+                        'raw_wr': raw_wr,
+                        'lower_wr': lb_wr,
+                        'optimal_rr': optimal_rr,
+                        'ev': ev,
+                        'sessions': sessions
+                    })
+                    
+        except Exception as e:
+            logger.error(f"get_top_combos query failed: {e}")
+            # Fallback to in-memory
+            all_combos = self.get_all_combos()
+            return [c for c in all_combos if c['total'] >= min_trades and c['lower_wr'] >= min_lower_wr]
+        
+        return sorted(result, key=lambda x: x['lower_wr'], reverse=True)
     
     def get_promote_candidates(self) -> List[Dict]:
         """Get combos ready for promotion"""

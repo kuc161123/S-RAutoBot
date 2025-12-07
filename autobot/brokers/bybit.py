@@ -205,14 +205,53 @@ class Bybit:
             logger.error(f"Failed to get balance: {e}")
             return None
 
-    def set_leverage(self, symbol: str, leverage: int = 10) -> Dict[str, Any] | None:
-        """Set leverage for a symbol - FIXED 10x only."""
+    def get_max_leverage(self, symbol: str) -> int:
+        """Get maximum allowed leverage for a symbol from Bybit.
+        
+        Queries the instruments info API to get the leverageFilter.maxLeverage.
+        Falls back to 25x if unable to fetch.
+        
+        Args:
+            symbol: Trading pair (e.g., 'BTCUSDT')
+            
+        Returns:
+            Maximum leverage as integer (e.g., 100, 50, 25)
+        """
         try:
+            instruments = self.get_instruments_info(symbol=symbol)
+            if instruments:
+                for inst in instruments:
+                    if inst.get('symbol') == symbol:
+                        leverage_filter = inst.get('leverageFilter', {})
+                        max_lev = leverage_filter.get('maxLeverage', '25')
+                        result = int(float(max_lev))
+                        logger.debug(f"Max leverage for {symbol}: {result}x")
+                        return result
+            # Fallback if not found
+            logger.warning(f"Could not get max leverage for {symbol}, using 25x")
+            return 25
+        except Exception as e:
+            logger.warning(f"Error getting max leverage for {symbol}: {e}, using 25x")
+            return 25
+
+    def set_leverage(self, symbol: str, leverage: int = None) -> Dict[str, Any] | None:
+        """Set leverage for a symbol. If leverage is None, uses max allowed.
+        
+        Args:
+            symbol: Trading pair
+            leverage: Desired leverage. If None, fetches and uses max allowed.
+        """
+        try:
+            # If no leverage specified, use maximum allowed
+            if leverage is None:
+                leverage = self.get_max_leverage(symbol)
+                logger.info(f"🔧 Using MAX leverage for {symbol}: {leverage}x")
+            
             data = {
                 "category": "linear",
                 "symbol": symbol,
-                "buyLeverage": "10",
-                "sellLeverage": "10"
+                "buyLeverage": str(leverage),
+                "sellLeverage": str(leverage)
             }
             resp = self._request("POST", "/v5/position/set-leverage", data)
             return resp

@@ -1265,12 +1265,14 @@ class VWAPBot:
 
             logger.info(f"EXECUTE: {sym} {side} qty={qty} R:R={optimal_rr}:1 (LIMIT ORDER)")
             
-            # ALWAYS set leverage to 10x before executing trade
-            lev_res = self.broker.set_leverage(sym, 10)
+            # Set leverage to maximum allowed for this symbol (reduces margin requirement)
+            max_lev = self.broker.get_max_leverage(sym)
+            lev_res = self.broker.set_leverage(sym, max_lev)
             if lev_res:
-                logger.info(f"✅ Leverage set to 10x for {sym}")
+                logger.info(f"✅ Leverage set to MAX ({max_lev}x) for {sym}")
             else:
                 logger.warning(f"⚠️ Could not set leverage for {sym}, proceeding anyway")
+                max_lev = 10  # Fallback display value
             
             # Log the order details we're placing
             logger.info(f"📍 BRACKET ORDER: {sym} Entry={entry:.6f} TP={tp:.6f} SL={sl:.6f} ATR={atr:.6f}")
@@ -1359,7 +1361,7 @@ class VWAPBot:
                     f"📁 Source: **{source}**\n"
                     f"📈 {wr_info}\n\n"
                     f"📋 **EXECUTION STEPS**\n"
-                    f"├ {lev_status} Leverage set to 10x\n"
+                    f"├ {lev_status} Leverage set to {max_lev}x (MAX)\n"
                     f"├ {order_status} Limit order placed\n"
                     f"├ {tpsl_status} TP/SL set with order\n"
                     f"└ {track_status} Order tracking started\n\n"

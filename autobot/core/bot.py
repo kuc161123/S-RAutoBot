@@ -1182,6 +1182,8 @@ class VWAPBot:
                                 
                                 # Get current price to estimate P/L
                                 current_price = candle_data.get(sym, {}).get('close', 0)
+                                candle_high = candle_data.get(sym, {}).get('high', 0)
+                                candle_low = candle_data.get(sym, {}).get('low', 0)
                                 entry = trade_info['entry']
                                 side = trade_info['side']
                                 combo = trade_info['combo']
@@ -1192,15 +1194,28 @@ class VWAPBot:
                                     else:
                                         pnl_pct = ((entry - current_price) / entry) * 100
                                     
-                                    # Simply use P/L to determine outcome (more reliable than TP/SL check)
+                                    # Determine outcome based on P/L
                                     if pnl_pct > 0:
-                                        outcome = "✅ WIN"
+                                        outcome = "win"
+                                        outcome_display = "✅ WIN"
                                         self.wins += 1
                                     else:
-                                        outcome = "❌ LOSS"
+                                        outcome = "loss"
+                                        outcome_display = "❌ LOSS"
                                         self.losses += 1
                                     
-                                    # Get updated WR/N from analytics
+                                    # *** CRITICAL FIX: Update learner analytics ***
+                                    # This ensures combo stats are updated for executed trades
+                                    resolved = self.learner.resolve_executed_trade(
+                                        sym, side, outcome, 
+                                        exit_price=current_price,
+                                        max_high=candle_high,
+                                        min_low=candle_low
+                                    )
+                                    if not resolved:
+                                        logger.warning(f"Could not resolve trade in learner: {sym} {side}")
+                                    
+                                    # Get updated WR/N from analytics (now includes this trade)
                                     updated_stats = self.learner.get_combo_stats(sym, side, combo)
                                     if updated_stats:
                                         wr_info = f"WR: {updated_stats['wr']:.0f}% (LB: {updated_stats['lower_wr']:.0f}%) | N={updated_stats['total']}"
@@ -1220,7 +1235,7 @@ class VWAPBot:
                                         f"📈 Side: **{side.upper()}**\n"
                                         f"🎯 Combo: `{combo}`\n"
                                         f"📁 Source: **{source}**\n\n"
-                                        f"💰 **RESULT**: {outcome}\n"
+                                        f"💰 **RESULT**: {outcome_display}\n"
                                         f"├ P/L: **{pnl_pct:+.2f}%**\n"
                                         f"├ Entry: ${entry:.4f}\n"
                                         f"├ Exit: ${current_price:.4f}\n"

@@ -876,6 +876,60 @@ class UnifiedLearner:
             f"{time_mins:.0f}m | DD:{max_dd:.1f}%"
         )
     
+    def resolve_executed_trade(self, symbol: str, side: str, outcome: str, 
+                                exit_price: float = 0, max_high: float = 0, 
+                                min_low: float = 0) -> bool:
+        """
+        Manually resolve a pending signal for an executed trade.
+        
+        Called by bot.py when a real trade closes (detected via position check).
+        This ensures the learner's combo stats are updated for executed trades,
+        not just phantom signals.
+        
+        Args:
+            symbol: Trading symbol (e.g., 'BTCUSDT')
+            side: 'long' or 'short'
+            outcome: 'win' or 'loss'
+            exit_price: Optional exit price for max high/low calculation
+            max_high: Optional max high reached during trade
+            min_low: Optional min low reached during trade
+            
+        Returns:
+            True if signal was found and resolved, False otherwise
+        """
+        # Find the pending signal for this symbol+side
+        matching_signal = None
+        for signal in self.pending_signals:
+            if signal.symbol == symbol and signal.side == side and signal.outcome is None:
+                matching_signal = signal
+                break
+        
+        if not matching_signal:
+            logger.warning(f"resolve_executed_trade: No pending signal found for {symbol} {side}")
+            return False
+        
+        # Update max high/low if provided
+        if max_high > 0:
+            matching_signal.max_high = max(matching_signal.max_high, max_high)
+        if min_low > 0 and min_low < matching_signal.min_low:
+            matching_signal.min_low = min_low
+        
+        # Calculate max favorable/adverse based on exit price if provided
+        if exit_price > 0:
+            if side == 'long':
+                matching_signal.max_high = max(matching_signal.max_high, exit_price)
+                matching_signal.min_low = min(matching_signal.min_low, exit_price)
+            else:
+                matching_signal.max_high = max(matching_signal.max_high, exit_price)
+                matching_signal.min_low = min(matching_signal.min_low, exit_price)
+        
+        # Resolve the signal
+        self._resolve_signal(matching_signal, outcome)
+        self.pending_signals.remove(matching_signal)
+        
+        logger.info(f"✅ Resolved executed trade: {symbol} {side} -> {outcome.upper()}")
+        return True
+    
     # ========================================================================
     # AUTO-PROMOTE
     # ========================================================================

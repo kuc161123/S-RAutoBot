@@ -1073,7 +1073,11 @@ class VWAPBot:
                     tp_pct = abs(tp - avg_price) / avg_price * 100
                     position_value = filled_qty * avg_price
                     
-                    # Notify user
+                    # Build step status
+                    fill_status = "✅"  # Just confirmed
+                    track_status = "✅"  # Just added to tracking
+                    
+                    # Notify user with step-by-step status
                     source = "🚀 Auto-Promoted" if order_info.get('is_auto_promoted') else "📊 Backtest"
                     await self.send_telegram(
                         f"✅ **LIMIT ORDER FILLED**\n"
@@ -1082,11 +1086,15 @@ class VWAPBot:
                         f"📈 Side: **{side.upper()}**\n"
                         f"🎯 Combo: `{order_info['combo']}`\n"
                         f"📁 Source: **{source}**\n\n"
-                        f"💰 **FILLED DETAILS**\n"
+                        f"📋 **COMPLETION STEPS**\n"
+                        f"├ {fill_status} Order filled @ ${avg_price:.4f}\n"
+                        f"├ {tpsl_status} TP/SL set on position\n"
+                        f"└ {track_status} Position tracking started\n\n"
+                        f"💰 **POSITION DETAILS**\n"
                         f"├ Quantity: {filled_qty}\n"
                         f"├ Fill Price: ${avg_price:.4f}\n"
                         f"└ Position Value: ${position_value:.2f}\n\n"
-                        f"🎯 **TP/SL** {tpsl_status}\n"
+                        f"🎯 **TP/SL**\n"
                         f"├ Take Profit: ${tp:.4f} (+{tp_pct:.2f}%)\n"
                         f"├ Stop Loss: ${sl:.4f} (-{sl_pct:.2f}%)\n"
                         f"└ R:R: **{order_info['optimal_rr']}:1**"
@@ -1288,7 +1296,12 @@ class VWAPBot:
                     'risk_amt': risk_amt
                 }
                 
-                # Send notification (pending fill)
+                # Build step status for notification
+                lev_status = "✅" if lev_res else "⚠️"
+                order_status = "✅"  # Already confirmed success at this point
+                track_status = "✅"  # Just added to tracking
+                
+                # Send notification with step-by-step status
                 await self.send_telegram(
                     f"⏳ **LIMIT ORDER PLACED**\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1297,6 +1310,10 @@ class VWAPBot:
                     f"🎯 Combo: `{combo}`\n"
                     f"📁 Source: **{source}**\n"
                     f"📈 {wr_info}\n\n"
+                    f"📋 **EXECUTION STEPS**\n"
+                    f"├ {lev_status} Leverage set to 10x\n"
+                    f"├ {order_status} Limit order placed\n"
+                    f"└ {track_status} Order tracking started\n\n"
                     f"💰 **ORDER DETAILS**\n"
                     f"├ Order ID: `{order_id[:16]}...`\n"
                     f"├ Quantity: {qty}\n"
@@ -1307,7 +1324,7 @@ class VWAPBot:
                     f"├ Take Profit: ${tp:.4f} (+{tp_pct:.2f}%)\n"
                     f"├ Stop Loss: ${sl:.4f} (-{sl_pct:.2f}%)\n"
                     f"└ R:R Ratio: **{optimal_rr}:1**\n\n"
-                    f"⏳ Waiting for fill... (5m timeout)"
+                    f"⏳ Monitoring for fill... (5m timeout)"
                 )
                 
                 logger.info(f"✅ Limit order placed: {sym} {side} @ {entry} (ID: {order_id[:16]})")

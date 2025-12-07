@@ -561,6 +561,11 @@ class VWAPBot:
             if not self.learner.pg_conn:
                 await update.message.reply_text("❌ Analytics requires PostgreSQL connection.")
                 return
+            
+            # Get optional pattern count from args (default 3)
+            pattern_count = 3
+            if context.args and context.args[0].isdigit():
+                pattern_count = min(int(context.args[0]), 20)  # Max 20
 
             # Import analytics logic dynamically to avoid circular imports
             from analytics import fetch_trade_history, analyze_by_day, analyze_by_hour, find_winning_patterns
@@ -602,14 +607,18 @@ class VWAPBot:
                     msg += f"├ {h['key']}: {h['wr']:.0f}% ({h['wins']}/{h['total']})\n"
                 msg += "\n"
             
-            # Top Patterns
-            patterns = find_winning_patterns(trades, min_trades=3)[:3]
+            # Top Patterns (now configurable)
+            patterns = find_winning_patterns(trades, min_trades=3)[:pattern_count]
             if patterns:
-                msg += "🏆 **TOP PATTERNS**\n"
+                msg += f"🏆 **TOP PATTERNS** (Top {len(patterns)})\n"
                 for p in patterns:
                     combo_short = p['combo'][:15] + '..' if len(p['combo']) > 17 else p['combo']
                     msg += f"├ {p['symbol']} {p['side'][0].upper()} {combo_short}\n"
                     msg += f"│  WR:{p['wr']:.0f}% (N={p['total']})\n"
+                
+                # Add usage hint if showing default count
+                if pattern_count == 3:
+                    msg += f"\n💡 Use `/analytics 10` for more patterns"
             
             await update.message.reply_text(msg, parse_mode='Markdown')
             

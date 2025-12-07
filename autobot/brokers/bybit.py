@@ -276,7 +276,7 @@ class Bybit:
             "positionIdx": 0  # One-way mode
         }
         
-        logger.info(f"📤 Placing limit order: {symbol} {side} qty={qty} price={price}")
+        logger.info(f"📤 Placing {time_in_force} limit order: {symbol} {side} qty={qty} price={price}")
         response = self._request("POST", "/v5/order/create", data)
         
         # Immediately verify order status (PostOnly orders can be instantly cancelled)

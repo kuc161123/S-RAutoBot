@@ -1254,8 +1254,8 @@ class VWAPBot:
             # Log the order details we're placing
             logger.info(f"📍 LIMIT ORDER: {sym} Entry={entry:.6f} TP={tp:.6f} SL={sl:.6f} ATR={atr:.6f}")
             
-            # Place LIMIT order instead of MARKET order
-            res = self.broker.place_limit(sym, side, qty, entry, post_only=True)
+            # Place GTC LIMIT order (not PostOnly - higher fill rate)
+            res = self.broker.place_limit(sym, side, qty, entry, post_only=False)
             
             if res and res.get('retCode') == 0:
                 # DEBUG: Log full response to diagnose missing orders

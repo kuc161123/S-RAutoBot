@@ -328,9 +328,34 @@ class UnifiedLearner:
                         outcome VARCHAR(10),
                         time_to_result FLOAT,
                         max_r_reached FLOAT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        -- Context columns for future ML
+                        session VARCHAR(10),
+                        hour_utc INT,
+                        day_of_week INT,
+                        volatility_regime VARCHAR(10),
+                        btc_trend VARCHAR(10),
+                        btc_change_1h FLOAT,
+                        atr_percent FLOAT,
+                        is_executed BOOLEAN DEFAULT FALSE
                     );
                 """)
+                
+                # Add columns to existing tables (for backward compatibility)
+                # These will silently fail if columns already exist
+                try:
+                    cur.execute("ALTER TABLE trade_history ADD COLUMN IF NOT EXISTS session VARCHAR(10);")
+                    cur.execute("ALTER TABLE trade_history ADD COLUMN IF NOT EXISTS hour_utc INT;")
+                    cur.execute("ALTER TABLE trade_history ADD COLUMN IF NOT EXISTS day_of_week INT;")
+                    cur.execute("ALTER TABLE trade_history ADD COLUMN IF NOT EXISTS volatility_regime VARCHAR(10);")
+                    cur.execute("ALTER TABLE trade_history ADD COLUMN IF NOT EXISTS btc_trend VARCHAR(10);")
+                    cur.execute("ALTER TABLE trade_history ADD COLUMN IF NOT EXISTS btc_change_1h FLOAT;")
+                    cur.execute("ALTER TABLE trade_history ADD COLUMN IF NOT EXISTS atr_percent FLOAT;")
+                    cur.execute("ALTER TABLE trade_history ADD COLUMN IF NOT EXISTS is_executed BOOLEAN DEFAULT FALSE;")
+                    logger.info("✅ trade_history ML columns verified/added")
+                except Exception as col_err:
+                    logger.debug(f"Column add note: {col_err}")
+                    
         except Exception as e:
             logger.error(f"Failed to init DB tables: {e}")
     
@@ -845,18 +870,31 @@ class UnifiedLearner:
         time_mins = signal.time_to_result / 60
         max_dd = signal.max_adverse
         
-        # Save to Postgres History (for time-based relevance)
+        # Save to Postgres History with full context for future ML
         if self.pg_conn:
             try:
+                from datetime import datetime
+                day_of_week = datetime.utcnow().weekday()
+                
                 with self.pg_conn.cursor() as cur:
                     cur.execute("""
                         INSERT INTO trade_history 
-                        (symbol, side, combo, outcome, time_to_result, max_r_reached)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                        (symbol, side, combo, outcome, time_to_result, max_r_reached,
+                         session, hour_utc, day_of_week, volatility_regime, 
+                         btc_trend, btc_change_1h, atr_percent, is_executed)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         signal.symbol, signal.side, signal.combo, outcome,
                         float(signal.time_to_result) if signal.time_to_result else 0.0,
-                        float(max_r_reached) if max_r_reached else 0.0
+                        float(max_r_reached) if max_r_reached else 0.0,
+                        signal.session,
+                        signal.hour_utc,
+                        day_of_week,
+                        signal.volatility_regime,
+                        signal.btc_trend,
+                        signal.btc_change_1h,
+                        signal.atr_percent,
+                        not signal.is_phantom  # is_executed = True if NOT phantom
                     ))
             except Exception as e:
                 logger.error(f"Failed to save trade history: {e}")
@@ -914,12 +952,21 @@ class UnifiedLearner:
             
             if self.pg_conn:
                 try:
+                    from datetime import datetime
+                    now = datetime.utcnow()
+                    hour_utc = now.hour
+                    day_of_week = now.weekday()
+                    session = self.get_session(hour_utc)
+                    btc_trend = self.get_btc_trend(self.get_btc_change_1h())
+                    
                     with self.pg_conn.cursor() as cur:
                         cur.execute("""
                             INSERT INTO trade_history 
-                            (symbol, side, combo, outcome, time_to_result, max_r_reached)
-                            VALUES (%s, %s, %s, %s, %s, %s)
-                        """, (symbol, side, 'EXECUTED_NO_SIGNAL', outcome, 0.0, 0.0))
+                            (symbol, side, combo, outcome, time_to_result, max_r_reached,
+                             session, hour_utc, day_of_week, btc_trend, is_executed)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (symbol, side, 'EXECUTED_NO_SIGNAL', outcome, 0.0, 0.0,
+                              session, hour_utc, day_of_week, btc_trend, True))
                     logger.info(f"✅ Recorded executed trade directly: {symbol} {side} -> {outcome.upper()}")
                     
                     # Update global counters

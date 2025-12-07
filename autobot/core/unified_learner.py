@@ -713,8 +713,11 @@ class UnifiedLearner:
             age_hours = (now - signal.start_time) / 3600
             if age_hours > 4:
                 timeout_count += 1
+                # CRITICAL FIX: Record timeout as a loss (signal didn't hit TP in time)
+                # This ensures analytics accurately reflect all signals
+                self._resolve_signal(signal, 'loss')  # Count as loss for accuracy
                 self.pending_signals.remove(signal)
-                logger.debug(f"⏰ TIMEOUT: {signal.symbol} {signal.side} after {age_hours:.1f}h")
+                logger.info(f"⏰ TIMEOUT: {signal.symbol} {signal.side} after {age_hours:.1f}h (recorded as loss)")
                 continue
             
             # === CHECK OUTCOME USING HIGH/LOW ===
@@ -905,8 +908,33 @@ class UnifiedLearner:
                 break
         
         if not matching_signal:
-            logger.warning(f"resolve_executed_trade: No pending signal found for {symbol} {side}")
-            return False
+            # CRITICAL FIX: Even without a pending signal, record the trade to analytics
+            # This handles cases like bot restart where pending signals were lost
+            logger.warning(f"resolve_executed_trade: No pending signal found for {symbol} {side}, recording directly to DB")
+            
+            if self.pg_conn:
+                try:
+                    with self.pg_conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO trade_history 
+                            (symbol, side, combo, outcome, time_to_result, max_r_reached)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """, (symbol, side, 'EXECUTED_NO_SIGNAL', outcome, 0.0, 0.0))
+                    logger.info(f"✅ Recorded executed trade directly: {symbol} {side} -> {outcome.upper()}")
+                    
+                    # Update global counters
+                    if outcome == 'win':
+                        self.total_wins += 1
+                    else:
+                        self.total_losses += 1
+                    
+                    return True
+                except Exception as e:
+                    logger.error(f"Failed to save trade history directly: {e}")
+                    return False
+            else:
+                logger.error("No PostgreSQL connection to record trade")
+                return False
         
         # Update max high/low if provided
         if max_high > 0:

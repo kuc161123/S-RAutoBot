@@ -1258,6 +1258,9 @@ class VWAPBot:
             res = self.broker.place_limit(sym, side, qty, entry, post_only=True)
             
             if res and res.get('retCode') == 0:
+                # DEBUG: Log full response to diagnose missing orders
+                logger.info(f"📋 LIMIT ORDER RESPONSE: {res}")
+                
                 # Extract order details from response
                 result = res.get('result', {})
                 order_id = result.get('orderId', 'N/A')

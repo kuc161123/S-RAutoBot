@@ -1136,6 +1136,30 @@ class VWAPBot:
                     logger.info(f"❌ Cancelling {sym} order: {reason}")
                     self.broker.cancel_order(sym, order_id)
                     
+                    # Determine theoretical outcome for analytics
+                    # SL breach = would have been a loss
+                    # TP breach = would have been a win (missed opportunity)
+                    # Timeout = uncertain, record as 'no_fill'
+                    if 'SL breached' in reason:
+                        theoretical_outcome = 'loss'
+                    elif 'TP breached' in reason:
+                        theoretical_outcome = 'win'  # Signal was correct, just didn't fill
+                    else:
+                        theoretical_outcome = 'no_fill'  # Timeout or other
+                    
+                    # Record to analytics (preserves signal data for learning)
+                    combo = order_info.get('combo', 'LIMIT_ORDER_CANCELLED')
+                    try:
+                        self.learner.resolve_executed_trade(
+                            sym, side, theoretical_outcome,
+                            exit_price=current_price,
+                            max_high=current_price if side == 'short' else 0,
+                            min_low=current_price if side == 'long' else 0
+                        )
+                        logger.info(f"📊 Recorded cancelled order outcome: {sym} {side} → {theoretical_outcome}")
+                    except Exception as e:
+                        logger.warning(f"Could not record cancelled order to analytics: {e}")
+                    
                     # Handle partial fills - protect filled portion
                     if filled_qty > 0 and order_status == 'PartiallyFilled':
                         logger.info(f"Partial fill {filled_qty} on {sym}, setting TP/SL for filled portion")
@@ -1164,11 +1188,15 @@ class VWAPBot:
                             f"TP/SL set for filled portion"
                         )
                     else:
+                        # Show outcome in notification
+                        outcome_emoji = "📈" if theoretical_outcome == 'win' else "📉" if theoretical_outcome == 'loss' else "⏱️"
                         await self.send_telegram(
                             f"❌ **ORDER CANCELLED**\n"
                             f"Symbol: `{sym}` {side.upper()}\n"
                             f"Entry: ${entry_price:.4f}\n"
-                            f"Reason: {reason}"
+                            f"Reason: {reason}\n\n"
+                            f"{outcome_emoji} **Recorded as**: {theoretical_outcome.upper()}\n"
+                            f"(Signal data saved for analytics)"
                         )
                     
                     del self.pending_limit_orders[sym]

@@ -1261,6 +1261,23 @@ class VWAPBot:
                 # DEBUG: Log full response to diagnose missing orders
                 logger.info(f"📋 LIMIT ORDER RESPONSE: {res}")
                 
+                # Check if order was immediately cancelled (PostOnly crossed spread)
+                if res.get('_immediately_cancelled'):
+                    cancel_reason = res.get('_cancel_reason', 'Unknown')
+                    await self.send_telegram(
+                        f"⚠️ **LIMIT ORDER INSTANTLY CANCELLED**\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📊 Symbol: `{sym}`\n"
+                        f"📈 Side: **{side.upper()}**\n"
+                        f"🎯 Combo: `{combo}`\n\n"
+                        f"❌ **Reason**: {cancel_reason}\n"
+                        f"💡 PostOnly order was rejected because price\n"
+                        f"   already crossed the limit price level.\n\n"
+                        f"Entry was: ${entry:.4f}"
+                    )
+                    logger.warning(f"Order immediately cancelled for {sym} - PostOnly crossed spread")
+                    return
+                
                 # Extract order details from response
                 result = res.get('result', {})
                 order_id = result.get('orderId', 'N/A')

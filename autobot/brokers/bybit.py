@@ -277,7 +277,25 @@ class Bybit:
         }
         
         logger.info(f"📤 Placing limit order: {symbol} {side} qty={qty} price={price}")
-        return self._request("POST", "/v5/order/create", data)
+        response = self._request("POST", "/v5/order/create", data)
+        
+        # Immediately verify order status (PostOnly orders can be instantly cancelled)
+        if response and response.get('retCode') == 0:
+            order_id = response.get('result', {}).get('orderId')
+            if order_id:
+                import time as time_module
+                time_module.sleep(0.3)  # Brief delay for Bybit to process
+                status = self.get_order_status(symbol, order_id)
+                if status:
+                    order_status = status.get('orderStatus', 'Unknown')
+                    logger.info(f"📋 Order {order_id[:16]} status immediately after placement: {order_status}")
+                    if order_status in ['Cancelled', 'Rejected', 'Deactivated']:
+                        logger.warning(f"⚠️ Order was immediately {order_status}! PostOnly may have crossed spread.")
+                        # Return a modified response indicating failure
+                        response['_immediately_cancelled'] = True
+                        response['_cancel_reason'] = order_status
+        
+        return response
     
     def get_order_status(self, symbol: str, order_id: str) -> Optional[Dict[str, Any]]:
         """Get status of a specific order.

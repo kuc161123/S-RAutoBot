@@ -63,6 +63,10 @@ class VWAPBot:
         # Format: {symbol: {side, combo, entry, order_id, open_time}}
         self.active_trades = {}
         
+        # Track pending limit orders waiting to be filled
+        # Format: {symbol: {order_id, side, combo, entry_price, tp, sl, qty, created_at}}
+        self.pending_limit_orders = {}
+        
         # Unified Learning System (all learning features in one)
         self.learner = UnifiedLearner()
         
@@ -994,14 +998,201 @@ class VWAPBot:
         except Exception as e:
             logger.error(f"Error {sym}: {e}")
 
+    async def monitor_pending_limit_orders(self, candle_data: dict):
+        """
+        Monitor pending limit orders for:
+        1. Fills (then set TP/SL and move to active_trades)
+        2. Invalidation (SL/TP breached before fill → cancel)
+        3. Timeout (5 minutes → cancel)
+        4. Partial fills (cancel remainder, protect filled portion)
+        """
+        if not self.pending_limit_orders:
+            return
+        
+        TIMEOUT_SECONDS = 300  # 5 minutes
+        
+        for sym in list(self.pending_limit_orders.keys()):
+            try:
+                order_info = self.pending_limit_orders[sym]
+                order_id = order_info['order_id']
+                side = order_info['side']
+                tp = order_info['tp']
+                sl = order_info['sl']
+                entry_price = order_info['entry_price']
+                created_at = order_info['created_at']
+                
+                # Get current price from candle data
+                current_price = candle_data.get(sym, {}).get('close', 0)
+                if current_price <= 0:
+                    continue
+                
+                # Get order status from Bybit
+                status = self.broker.get_order_status(sym, order_id)
+                
+                if not status:
+                    # Order not found - might have been cancelled/filled externally
+                    logger.warning(f"Order {order_id[:16]} for {sym} not found, removing from tracking")
+                    del self.pending_limit_orders[sym]
+                    continue
+                
+                order_status = status.get('orderStatus', '')
+                filled_qty = float(status.get('cumExecQty', 0) or 0)
+                avg_price = float(status.get('avgPrice', entry_price) or entry_price)
+                
+                logger.debug(f"📊 {sym} order status: {order_status}, filled: {filled_qty}")
+                
+                # CASE 1: Order fully filled
+                if order_status == 'Filled':
+                    logger.info(f"✅ LIMIT ORDER FILLED: {sym} {side} @ {avg_price}")
+                    
+                    # Set TP/SL for the position
+                    tpsl_res = self.broker.set_tpsl(sym, tp, sl, filled_qty)
+                    tpsl_ok = tpsl_res and tpsl_res.get('retCode') == 0 if tpsl_res else False
+                    tpsl_status = "✅ SET" if tpsl_ok else "⚠️ FAILED"
+                    
+                    logger.info(f"📍 TP/SL {tpsl_status} for {sym}: TP={tp:.6f} SL={sl:.6f}")
+                    
+                    # Move to active_trades
+                    self.active_trades[sym] = {
+                        'side': side,
+                        'combo': order_info['combo'],
+                        'entry': avg_price,
+                        'order_id': order_id,
+                        'qty': filled_qty,
+                        'tp': tp,
+                        'sl': sl,
+                        'open_time': created_at,
+                        'is_auto_promoted': order_info.get('is_auto_promoted', False)
+                    }
+                    
+                    self.trades_executed += 1
+                    del self.pending_limit_orders[sym]
+                    
+                    # Calculate values for notification
+                    sl_pct = abs(avg_price - sl) / avg_price * 100
+                    tp_pct = abs(tp - avg_price) / avg_price * 100
+                    position_value = filled_qty * avg_price
+                    
+                    # Notify user
+                    source = "🚀 Auto-Promoted" if order_info.get('is_auto_promoted') else "📊 Backtest"
+                    await self.send_telegram(
+                        f"✅ **LIMIT ORDER FILLED**\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📊 Symbol: `{sym}`\n"
+                        f"📈 Side: **{side.upper()}**\n"
+                        f"🎯 Combo: `{order_info['combo']}`\n"
+                        f"📁 Source: **{source}**\n\n"
+                        f"💰 **FILLED DETAILS**\n"
+                        f"├ Quantity: {filled_qty}\n"
+                        f"├ Fill Price: ${avg_price:.4f}\n"
+                        f"└ Position Value: ${position_value:.2f}\n\n"
+                        f"🎯 **TP/SL** {tpsl_status}\n"
+                        f"├ Take Profit: ${tp:.4f} (+{tp_pct:.2f}%)\n"
+                        f"├ Stop Loss: ${sl:.4f} (-{sl_pct:.2f}%)\n"
+                        f"└ R:R: **{order_info['optimal_rr']}:1**"
+                    )
+                    continue
+                
+                # CASE 2: Order cancelled/rejected externally
+                if order_status in ['Cancelled', 'Rejected', 'Expired', 'Deactivated']:
+                    logger.info(f"Order for {sym} was {order_status}")
+                    del self.pending_limit_orders[sym]
+                    continue
+                
+                # CASE 3: Check for invalidation (still pending or partially filled)
+                should_cancel = False
+                reason = ""
+                
+                if side == 'long':
+                    if current_price <= sl:
+                        should_cancel = True
+                        reason = f"SL breached ({current_price:.4f} ≤ {sl:.4f})"
+                    elif current_price >= tp:
+                        should_cancel = True
+                        reason = f"TP breached ({current_price:.4f} ≥ {tp:.4f}) - missed entry"
+                else:  # short
+                    if current_price >= sl:
+                        should_cancel = True
+                        reason = f"SL breached ({current_price:.4f} ≥ {sl:.4f})"
+                    elif current_price <= tp:
+                        should_cancel = True
+                        reason = f"TP breached ({current_price:.4f} ≤ {tp:.4f}) - missed entry"
+                
+                # CASE 4: Timeout check
+                age = time.time() - created_at
+                if age > TIMEOUT_SECONDS:
+                    should_cancel = True
+                    reason = f"Timeout ({age/60:.1f} min)"
+                
+                if should_cancel:
+                    logger.info(f"❌ Cancelling {sym} order: {reason}")
+                    self.broker.cancel_order(sym, order_id)
+                    
+                    # Handle partial fills - protect filled portion
+                    if filled_qty > 0 and order_status == 'PartiallyFilled':
+                        logger.info(f"Partial fill {filled_qty} on {sym}, setting TP/SL for filled portion")
+                        self.broker.set_tpsl(sym, tp, sl, filled_qty)
+                        
+                        # Track as active position
+                        self.active_trades[sym] = {
+                            'side': side,
+                            'combo': order_info['combo'],
+                            'entry': avg_price,
+                            'order_id': order_id,
+                            'qty': filled_qty,
+                            'tp': tp,
+                            'sl': sl,
+                            'open_time': created_at,
+                            'is_auto_promoted': order_info.get('is_auto_promoted', False)
+                        }
+                        
+                        self.trades_executed += 1
+                        
+                        await self.send_telegram(
+                            f"⚠️ **PARTIAL FILL - REMAINDER CANCELLED**\n"
+                            f"Symbol: `{sym}` {side.upper()}\n"
+                            f"Filled: {filled_qty} @ ${avg_price:.4f}\n"
+                            f"Reason: {reason}\n"
+                            f"TP/SL set for filled portion"
+                        )
+                    else:
+                        await self.send_telegram(
+                            f"❌ **ORDER CANCELLED**\n"
+                            f"Symbol: `{sym}` {side.upper()}\n"
+                            f"Entry: ${entry_price:.4f}\n"
+                            f"Reason: {reason}"
+                        )
+                    
+                    del self.pending_limit_orders[sym]
+                    continue
+                
+                # Still pending - log status periodically
+                age_mins = age / 60
+                logger.debug(f"⏳ {sym} pending: {order_status}, price={current_price:.4f}, age={age_mins:.1f}m")
+                
+            except Exception as e:
+                logger.error(f"Error monitoring {sym} order: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+
     # NOTE: update_phantoms() removed - phantom tracking now handled by learner.update_signals()
 
 
     async def execute_trade(self, sym, side, row, combo):
+        """Execute trade using LIMIT ORDER (not market) for precise entry."""
         try:
+            # Check if already in position or have pending order
             pos = self.broker.get_position(sym)
             if pos and float(pos.get('size', 0)) > 0:
                 logger.info(f"Skip {sym}: Already in position")
+                return
+            
+            if sym in self.pending_limit_orders:
+                logger.info(f"Skip {sym}: Already have pending limit order")
+                return
+            
+            if sym in self.active_trades:
+                logger.info(f"Skip {sym}: Already tracking active trade")
                 return
 
             balance = self.broker.get_balance() or 0
@@ -1043,7 +1234,7 @@ class VWAPBot:
             
             if qty <= 0: return
 
-            logger.info(f"EXECUTE: {sym} {side} qty={qty} R:R={optimal_rr}:1")
+            logger.info(f"EXECUTE: {sym} {side} qty={qty} R:R={optimal_rr}:1 (LIMIT ORDER)")
             
             # ALWAYS set leverage to 10x before executing trade
             lev_res = self.broker.set_leverage(sym, 10)
@@ -1052,30 +1243,16 @@ class VWAPBot:
             else:
                 logger.warning(f"⚠️ Could not set leverage for {sym}, proceeding anyway")
             
-            res = self.broker.place_market(sym, side, qty)
+            # Log the order details we're placing
+            logger.info(f"📍 LIMIT ORDER: {sym} Entry={entry:.6f} TP={tp:.6f} SL={sl:.6f} ATR={atr:.6f}")
+            
+            # Place LIMIT order instead of MARKET order
+            res = self.broker.place_limit(sym, side, qty, entry, post_only=True)
             
             if res and res.get('retCode') == 0:
                 # Extract order details from response
                 result = res.get('result', {})
                 order_id = result.get('orderId', 'N/A')
-                
-                # Log exactly what TP/SL we're sending
-                logger.info(f"📍 TP/SL for {sym}: Entry={entry:.6f} TP={tp:.6f} SL={sl:.6f} ATR={atr:.6f}")
-                
-                # Set TP/SL and capture result
-                tpsl_res = self.broker.set_tpsl(sym, tp, sl, qty)
-                tpsl_ok = tpsl_res and tpsl_res.get('retCode') == 0 if tpsl_res else False
-                tpsl_status = "✅ SET" if tpsl_ok else "⚠️ FAILED"
-                
-                if tpsl_res:
-                    logger.info(f"📍 TP/SL Response: {tpsl_res}")
-                
-                self.trades_executed += 1
-                
-                # Calculate actual values for notification
-                sl_pct = abs(entry - sl) / entry * 100
-                tp_pct = abs(tp - entry) / entry * 100
-                position_value = qty * entry
                 
                 # Determine if from backtest or auto-promote
                 combo_key = f"{sym}:{side}:{combo}"
@@ -1089,8 +1266,31 @@ class VWAPBot:
                 else:
                     wr_info = "WR: N/A (new combo)"
                 
+                # Calculate values for notification
+                sl_pct = abs(entry - sl) / entry * 100
+                tp_pct = abs(tp - entry) / entry * 100
+                position_value = qty * entry
+                
+                # Track as PENDING limit order (not active trade yet)
+                self.pending_limit_orders[sym] = {
+                    'order_id': order_id,
+                    'side': side,
+                    'combo': combo,
+                    'entry_price': entry,
+                    'tp': tp,
+                    'sl': sl,
+                    'qty': qty,
+                    'atr': atr,
+                    'optimal_rr': optimal_rr,
+                    'created_at': time.time(),
+                    'is_auto_promoted': is_auto_promoted,
+                    'balance': balance,
+                    'risk_amt': risk_amt
+                }
+                
+                # Send notification (pending fill)
                 await self.send_telegram(
-                    f"🚀 **TRADE EXECUTED**\n"
+                    f"⏳ **LIMIT ORDER PLACED**\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"📊 Symbol: `{sym}`\n"
                     f"📈 Side: **{side.upper()}**\n"
@@ -1098,50 +1298,51 @@ class VWAPBot:
                     f"📁 Source: **{source}**\n"
                     f"📈 {wr_info}\n\n"
                     f"💰 **ORDER DETAILS**\n"
-                    f"├ Order ID: `{order_id}`\n"
+                    f"├ Order ID: `{order_id[:16]}...`\n"
                     f"├ Quantity: {qty}\n"
-                    f"├ Entry: ${entry:.4f}\n"
+                    f"├ Limit Price: ${entry:.4f}\n"
                     f"├ Position Value: ${position_value:.2f}\n"
-                    f"└ Risk: ${risk_amt:.2f} ({self.risk_config['value']}{self.risk_config['type']})\n\n"
-                    f"🎯 **RISK MANAGEMENT** {tpsl_status}\n"
+                    f"└ Risk: ${risk_amt:.2f}\n\n"
+                    f"🎯 **PLANNED TP/SL** (after fill)\n"
                     f"├ Take Profit: ${tp:.4f} (+{tp_pct:.2f}%)\n"
                     f"├ Stop Loss: ${sl:.4f} (-{sl_pct:.2f}%)\n"
-                    f"├ R:R Ratio: **{optimal_rr}:1**\n"
-                    f"└ ATR: {atr:.4f}\n\n"
-                    f"💵 Balance: ${balance:.2f}"
+                    f"└ R:R Ratio: **{optimal_rr}:1**\n\n"
+                    f"⏳ Waiting for fill... (5m timeout)"
                 )
                 
-                # Track this trade for close monitoring
-                self.active_trades[sym] = {
-                    'side': side,
-                    'combo': combo,
-                    'entry': entry,
-                    'order_id': order_id,
-                    'qty': qty,
-                    'tp': tp,
-                    'sl': sl,
-                    'open_time': time.time(),
-                    'is_auto_promoted': is_auto_promoted
-                }
+                logger.info(f"✅ Limit order placed: {sym} {side} @ {entry} (ID: {order_id[:16]})")
+                
             else:
                 # Order failed - notify with details
                 error_msg = res.get('retMsg', 'Unknown error') if res else 'No response'
                 error_code = res.get('retCode', 'N/A') if res else 'N/A'
                 
-                await self.send_telegram(
-                    f"❌ **ORDER FAILED**\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"📊 Symbol: `{sym}`\n"
-                    f"📈 Side: **{side.upper()}**\n"
-                    f"🎯 Combo: `{combo}`\n\n"
-                    f"⚠️ Error Code: `{error_code}`\n"
-                    f"📝 Message: {error_msg}\n\n"
-                    f"Attempted: qty={qty} @ ${entry:.4f}"
-                )
+                # Check if PostOnly rejection (price crossed)
+                if 'post only' in str(error_msg).lower() or 'price worse' in str(error_msg).lower():
+                    logger.warning(f"PostOnly rejected for {sym}: price already crossed entry")
+                    await self.send_telegram(
+                        f"⚠️ **LIMIT ORDER REJECTED**\n"
+                        f"Symbol: `{sym}` {side.upper()}\n"
+                        f"Reason: Price already crossed entry level\n"
+                        f"Entry was: ${entry:.4f}"
+                    )
+                else:
+                    await self.send_telegram(
+                        f"❌ **ORDER FAILED**\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📊 Symbol: `{sym}`\n"
+                        f"📈 Side: **{side.upper()}**\n"
+                        f"🎯 Combo: `{combo}`\n\n"
+                        f"⚠️ Error Code: `{error_code}`\n"
+                        f"📝 Message: {error_msg}\n\n"
+                        f"Attempted: qty={qty} @ ${entry:.4f}"
+                    )
                 logger.error(f"Order failed: {res}")
                 
         except Exception as e:
             logger.error(f"Execute error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             # Notify about execution error
             await self.send_telegram(
                 f"❌ **EXECUTION ERROR**\n"
@@ -1261,6 +1462,9 @@ class VWAPBot:
                     
                     # Update unified learner with accurate high/low
                     self.learner.update_signals(candle_data)
+                    
+                    # Monitor pending limit orders (check for fills, invalidation, timeout)
+                    await self.monitor_pending_limit_orders(candle_data)
                     
                     # Check for closed trades and send notifications
                     for sym in list(self.active_trades.keys()):

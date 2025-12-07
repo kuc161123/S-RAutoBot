@@ -243,6 +243,108 @@ class Bybit:
             "positionIdx": 0  # One-way mode
         }
         return self._request("POST", "/v5/order/create", data)
+    
+    def place_limit(self, symbol: str, side: str, qty: float, price: float, 
+                    post_only: bool = True) -> Dict[str, Any]:
+        """Place a limit order for entry (NOT reduce-only).
+        
+        Uses PostOnly to ensure maker fees and prevent accidental market fills.
+        If PostOnly is rejected (price already crossed), order is not placed.
+        
+        Args:
+            symbol: Trading pair (e.g., 'BTCUSDT')
+            side: 'long' or 'short'
+            qty: Order quantity
+            price: Limit price
+            post_only: If True, use PostOnly (maker only). If False, use GTC.
+            
+        Returns:
+            API response dict with orderId if successful
+        """
+        bybit_side = "Buy" if side.lower() == "long" else "Sell"
+        time_in_force = "PostOnly" if post_only else "GTC"
+        
+        data = {
+            "category": "linear",
+            "symbol": symbol,
+            "side": bybit_side,
+            "orderType": "Limit",
+            "qty": str(qty),
+            "price": str(price),
+            "timeInForce": time_in_force,
+            "reduceOnly": False,  # Entry order, not reduce-only
+            "positionIdx": 0  # One-way mode
+        }
+        
+        logger.info(f"📤 Placing limit order: {symbol} {side} qty={qty} price={price}")
+        return self._request("POST", "/v5/order/create", data)
+    
+    def get_order_status(self, symbol: str, order_id: str) -> Optional[Dict[str, Any]]:
+        """Get status of a specific order.
+        
+        Returns order info including:
+        - orderStatus: 'New', 'PartiallyFilled', 'Filled', 'Cancelled', 'Rejected'
+        - cumExecQty: Filled quantity
+        - avgPrice: Average fill price
+        
+        Returns None if order not found.
+        """
+        try:
+            resp = self._request("GET", "/v5/order/realtime", {
+                "category": "linear",
+                "symbol": symbol,
+                "orderId": order_id
+            })
+            
+            if resp and resp.get("result"):
+                orders = resp["result"].get("list", [])
+                if orders:
+                    return orders[0]
+            
+            # Order might be in history if already filled/cancelled
+            resp = self._request("GET", "/v5/order/history", {
+                "category": "linear",
+                "symbol": symbol,
+                "orderId": order_id
+            })
+            
+            if resp and resp.get("result"):
+                orders = resp["result"].get("list", [])
+                if orders:
+                    return orders[0]
+                    
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get order status for {symbol}/{order_id}: {e}")
+            return None
+    
+    def cancel_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel a specific order.
+        
+        Returns True if cancelled successfully or already cancelled.
+        """
+        try:
+            data = {
+                "category": "linear",
+                "symbol": symbol,
+                "orderId": order_id
+            }
+            resp = self._request("POST", "/v5/order/cancel", data)
+            
+            if resp and resp.get("retCode") == 0:
+                logger.info(f"✅ Cancelled order {order_id} for {symbol}")
+                return True
+            else:
+                # Check if already cancelled/filled
+                ret_msg = str(resp.get("retMsg", "")).lower() if resp else ""
+                if "not exist" in ret_msg or "already" in ret_msg or "cancelled" in ret_msg:
+                    logger.info(f"Order {order_id} already cancelled/filled")
+                    return True
+                logger.warning(f"Cancel order failed: {resp}")
+                return False
+        except Exception as e:
+            logger.error(f"Failed to cancel order {order_id}: {e}")
+            return False
 
     def get_executions(self, symbol: str, limit: int = 50, start_time: Optional[int] = None) -> list:
         """Fetch recent execution fills for a symbol (used to confirm position closes).

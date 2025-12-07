@@ -245,18 +245,21 @@ class Bybit:
         return self._request("POST", "/v5/order/create", data)
     
     def place_limit(self, symbol: str, side: str, qty: float, price: float, 
-                    post_only: bool = True) -> Dict[str, Any]:
-        """Place a limit order for entry (NOT reduce-only).
+                    take_profit: float = None, stop_loss: float = None,
+                    post_only: bool = False) -> Dict[str, Any]:
+        """Place a limit order with optional TP/SL (bracket order).
         
-        Uses PostOnly to ensure maker fees and prevent accidental market fills.
-        If PostOnly is rejected (price already crossed), order is not placed.
+        When TP/SL are provided, they are set atomically with the order.
+        This means the position is protected from the instant it opens.
         
         Args:
             symbol: Trading pair (e.g., 'BTCUSDT')
             side: 'long' or 'short'
             qty: Order quantity
             price: Limit price
-            post_only: If True, use PostOnly (maker only). If False, use GTC.
+            take_profit: Optional TP price (set at order creation for instant protection)
+            stop_loss: Optional SL price (set at order creation for instant protection)
+            post_only: If True, use PostOnly. If False, use GTC (recommended).
             
         Returns:
             API response dict with orderId if successful
@@ -276,10 +279,23 @@ class Bybit:
             "positionIdx": 0  # One-way mode
         }
         
-        logger.info(f"📤 Placing {time_in_force} limit order: {symbol} {side} qty={qty} price={price}")
+        # Add TP/SL as bracket order for instant protection
+        if take_profit is not None:
+            data["takeProfit"] = str(take_profit)
+            data["tpTriggerBy"] = "LastPrice"
+        
+        if stop_loss is not None:
+            data["stopLoss"] = str(stop_loss)
+            data["slTriggerBy"] = "LastPrice"
+        
+        bracket_status = ""
+        if take_profit or stop_loss:
+            bracket_status = f" [BRACKET: TP={take_profit} SL={stop_loss}]"
+        
+        logger.info(f"📤 Placing {time_in_force} limit order: {symbol} {side} qty={qty} price={price}{bracket_status}")
         response = self._request("POST", "/v5/order/create", data)
         
-        # Immediately verify order status (PostOnly orders can be instantly cancelled)
+        # Verify order status after placement
         if response and response.get('retCode') == 0:
             order_id = response.get('result', {}).get('orderId')
             if order_id:
@@ -290,8 +306,7 @@ class Bybit:
                     order_status = status.get('orderStatus', 'Unknown')
                     logger.info(f"📋 Order {order_id[:16]} status immediately after placement: {order_status}")
                     if order_status in ['Cancelled', 'Rejected', 'Deactivated']:
-                        logger.warning(f"⚠️ Order was immediately {order_status}! PostOnly may have crossed spread.")
-                        # Return a modified response indicating failure
+                        logger.warning(f"⚠️ Order was immediately {order_status}!")
                         response['_immediately_cancelled'] = True
                         response['_cancel_reason'] = order_status
         

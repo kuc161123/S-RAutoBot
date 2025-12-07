@@ -1043,14 +1043,11 @@ class VWAPBot:
                 
                 # CASE 1: Order fully filled
                 if order_status == 'Filled':
-                    logger.info(f"✅ LIMIT ORDER FILLED: {sym} {side} @ {avg_price}")
+                    logger.info(f"✅ BRACKET ORDER FILLED: {sym} {side} @ {avg_price}")
                     
-                    # Set TP/SL for the position
-                    tpsl_res = self.broker.set_tpsl(sym, tp, sl, filled_qty)
-                    tpsl_ok = tpsl_res and tpsl_res.get('retCode') == 0 if tpsl_res else False
-                    tpsl_status = "✅ SET" if tpsl_ok else "⚠️ FAILED"
-                    
-                    logger.info(f"📍 TP/SL {tpsl_status} for {sym}: TP={tp:.6f} SL={sl:.6f}")
+                    # TP/SL already set via bracket order - no need to call set_tpsl()
+                    # Just log confirmation
+                    logger.info(f"🛡️ TP/SL already active (bracket order): TP={tp:.6f} SL={sl:.6f}")
                     
                     # Move to active_trades
                     self.active_trades[sym] = {
@@ -1073,28 +1070,24 @@ class VWAPBot:
                     tp_pct = abs(tp - avg_price) / avg_price * 100
                     position_value = filled_qty * avg_price
                     
-                    # Build step status
-                    fill_status = "✅"  # Just confirmed
-                    track_status = "✅"  # Just added to tracking
-                    
                     # Notify user with step-by-step status
                     source = "🚀 Auto-Promoted" if order_info.get('is_auto_promoted') else "📊 Backtest"
                     await self.send_telegram(
-                        f"✅ **LIMIT ORDER FILLED**\n"
+                        f"✅ **BRACKET ORDER FILLED**\n"
                         f"━━━━━━━━━━━━━━━━━━━━\n"
                         f"📊 Symbol: `{sym}`\n"
                         f"📈 Side: **{side.upper()}**\n"
                         f"🎯 Combo: `{order_info['combo']}`\n"
                         f"📁 Source: **{source}**\n\n"
                         f"📋 **COMPLETION STEPS**\n"
-                        f"├ {fill_status} Order filled @ ${avg_price:.4f}\n"
-                        f"├ {tpsl_status} TP/SL set on position\n"
-                        f"└ {track_status} Position tracking started\n\n"
+                        f"├ ✅ Order filled @ ${avg_price:.4f}\n"
+                        f"├ ✅ TP/SL already active (bracket)\n"
+                        f"└ ✅ Position tracking started\n\n"
                         f"💰 **POSITION DETAILS**\n"
                         f"├ Quantity: {filled_qty}\n"
                         f"├ Fill Price: ${avg_price:.4f}\n"
                         f"└ Position Value: ${position_value:.2f}\n\n"
-                        f"🎯 **TP/SL**\n"
+                        f"🛡️ **TP/SL PROTECTION**\n"
                         f"├ Take Profit: ${tp:.4f} (+{tp_pct:.2f}%)\n"
                         f"├ Stop Loss: ${sl:.4f} (-{sl_pct:.2f}%)\n"
                         f"└ R:R: **{order_info['optimal_rr']}:1**"
@@ -1280,10 +1273,16 @@ class VWAPBot:
                 logger.warning(f"⚠️ Could not set leverage for {sym}, proceeding anyway")
             
             # Log the order details we're placing
-            logger.info(f"📍 LIMIT ORDER: {sym} Entry={entry:.6f} TP={tp:.6f} SL={sl:.6f} ATR={atr:.6f}")
+            logger.info(f"📍 BRACKET ORDER: {sym} Entry={entry:.6f} TP={tp:.6f} SL={sl:.6f} ATR={atr:.6f}")
             
-            # Place GTC LIMIT order (not PostOnly - higher fill rate)
-            res = self.broker.place_limit(sym, side, qty, entry, post_only=False)
+            # Place BRACKET LIMIT order with TP/SL included
+            # TP/SL are set atomically - position protected from instant it opens
+            res = self.broker.place_limit(
+                sym, side, qty, entry,
+                take_profit=tp,
+                stop_loss=sl,
+                post_only=False
+            )
             
             if res and res.get('retCode') == 0:
                 # DEBUG: Log full response to diagnose missing orders
@@ -1347,11 +1346,12 @@ class VWAPBot:
                 # Build step status for notification
                 lev_status = "✅" if lev_res else "⚠️"
                 order_status = "✅"  # Already confirmed success at this point
+                tpsl_status = "✅"   # Bracket order - TP/SL set with order
                 track_status = "✅"  # Just added to tracking
                 
                 # Send notification with step-by-step status
                 await self.send_telegram(
-                    f"⏳ **LIMIT ORDER PLACED**\n"
+                    f"⏳ **BRACKET ORDER PLACED**\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"📊 Symbol: `{sym}`\n"
                     f"📈 Side: **{side.upper()}**\n"
@@ -1361,6 +1361,7 @@ class VWAPBot:
                     f"📋 **EXECUTION STEPS**\n"
                     f"├ {lev_status} Leverage set to 10x\n"
                     f"├ {order_status} Limit order placed\n"
+                    f"├ {tpsl_status} TP/SL set with order\n"
                     f"└ {track_status} Order tracking started\n\n"
                     f"💰 **ORDER DETAILS**\n"
                     f"├ Order ID: `{order_id[:16]}...`\n"
@@ -1368,7 +1369,7 @@ class VWAPBot:
                     f"├ Limit Price: ${entry:.4f}\n"
                     f"├ Position Value: ${position_value:.2f}\n"
                     f"└ Risk: ${risk_amt:.2f}\n\n"
-                    f"🎯 **PLANNED TP/SL** (after fill)\n"
+                    f"🛡️ **TP/SL PROTECTION** (Active on fill)\n"
                     f"├ Take Profit: ${tp:.4f} (+{tp_pct:.2f}%)\n"
                     f"├ Stop Loss: ${sl:.4f} (-{sl_pct:.2f}%)\n"
                     f"└ R:R Ratio: **{optimal_rr}:1**\n\n"

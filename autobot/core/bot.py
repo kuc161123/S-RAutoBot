@@ -1192,20 +1192,13 @@ class VWAPBot:
                                     else:
                                         pnl_pct = ((entry - current_price) / entry) * 100
                                     
-                                    # Determine if win or loss based on which target was hit
-                                    tp_hit = (side == 'long' and current_price >= trade_info['tp']) or \
-                                             (side == 'short' and current_price <= trade_info['tp'])
-                                    sl_hit = (side == 'long' and current_price <= trade_info['sl']) or \
-                                             (side == 'short' and current_price >= trade_info['sl'])
-                                    
-                                    if tp_hit:
-                                        outcome = "✅ WIN (TP HIT)"
+                                    # Simply use P/L to determine outcome (more reliable than TP/SL check)
+                                    if pnl_pct > 0:
+                                        outcome = "✅ WIN"
                                         self.wins += 1
-                                    elif sl_hit:
-                                        outcome = "❌ LOSS (SL HIT)"
-                                        self.losses += 1
                                     else:
-                                        outcome = "⚪ CLOSED (Unknown)"
+                                        outcome = "❌ LOSS"
+                                        self.losses += 1
                                     
                                     # Get updated WR/N from analytics
                                     updated_stats = self.learner.get_combo_stats(sym, side, combo)

@@ -1355,52 +1355,33 @@ class VWAPBot:
             
             # Calculate TP/SL with optimal R:R
             # Using 1 ATR for SL (1R), RR*ATR for TP
-            if side == 'long':
-                sl = entry - (1.0 * atr)  # 1 ATR stop
-                tp = entry + (optimal_rr * atr)  # R:R * ATR profit
-                dist = entry - sl
-            else:
-                sl = entry + (1.0 * atr)  
-                tp = entry - (optimal_rr * atr)
-                dist = sl - entry
-                
-            if dist <= 0: return
-            
-            # === MINIMUM TP/SL DISTANCE VALIDATION ===
-            # Prevents trades where TP/SL are too close to entry (precision issues)
-            sl_distance_pct = abs(entry - sl) / entry * 100
-            tp_distance_pct = abs(tp - entry) / entry * 100
-            
             MIN_SL_PCT = 0.5  # Minimum 0.5% distance for SL
             MIN_TP_PCT = 1.0  # Minimum 1.0% distance for TP
             
-            if sl_distance_pct < MIN_SL_PCT:
-                logger.warning(f"⚠️ Skip {sym}: SL too close to entry ({sl_distance_pct:.2f}% < {MIN_SL_PCT}%)")
-                # Record as phantom for analytics
-                self.learner.record_signal(sym, side, combo, entry, atr, is_allowed=False)
-                # Send notification
-                await self.send_telegram(
-                    f"⚠️ **TRADE SKIPPED**\n"
-                    f"Symbol: `{sym}` {side.upper()}\n"
-                    f"Combo: `{combo}`\n"
-                    f"Reason: SL too close ({sl_distance_pct:.2f}% < {MIN_SL_PCT}%)\n"
-                    f"📊 Recorded as phantom for learning"
-                )
-                return
+            # Calculate minimum distances based on percentage
+            min_sl_dist = entry * (MIN_SL_PCT / 100)
+            min_tp_dist = entry * (MIN_TP_PCT / 100)
+            
+            # Use the LARGER of ATR-based or minimum distance (force minimum)
+            sl_dist = max(1.0 * atr, min_sl_dist)
+            tp_dist = max(optimal_rr * atr, min_tp_dist)
+            
+            if side == 'long':
+                sl = entry - sl_dist
+                tp = entry + tp_dist
+                dist = sl_dist
+            else:
+                sl = entry + sl_dist
+                tp = entry - tp_dist
+                dist = sl_dist
                 
-            if tp_distance_pct < MIN_TP_PCT:
-                logger.warning(f"⚠️ Skip {sym}: TP too close to entry ({tp_distance_pct:.2f}% < {MIN_TP_PCT}%)")
-                # Record as phantom for analytics
-                self.learner.record_signal(sym, side, combo, entry, atr, is_allowed=False)
-                # Send notification
-                await self.send_telegram(
-                    f"⚠️ **TRADE SKIPPED**\n"
-                    f"Symbol: `{sym}` {side.upper()}\n"
-                    f"Combo: `{combo}`\n"
-                    f"Reason: TP too close ({tp_distance_pct:.2f}% < {MIN_TP_PCT}%)\n"
-                    f"📊 Recorded as phantom for learning"
-                )
-                return
+            if dist <= 0: return
+            
+            # Log if we used minimum distance instead of ATR
+            atr_sl_pct = (atr / entry) * 100
+            if atr_sl_pct < MIN_SL_PCT:
+                logger.info(f"📐 {sym}: Using minimum SL distance (ATR={atr_sl_pct:.2f}% < {MIN_SL_PCT}%)")
+
             
             qty = risk_amt / dist
             

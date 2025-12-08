@@ -1531,6 +1531,108 @@ class VWAPBot:
                 f"Error: `{str(e)[:100]}`"
             )
 
+    async def _startup_promote_demote_scan(self):
+        """Run immediate promote/demote scan on bot startup.
+        
+        Checks all combos against thresholds and promotes/demotes immediately
+        rather than waiting for periodic checks.
+        """
+        logger.info("🔄 Running startup promote/demote scan...")
+        promoted_count = 0
+        demoted_count = 0
+        
+        try:
+            import yaml
+            yaml_file = 'symbol_overrides_VWAP_Combo.yaml'
+            
+            # Load current YAML
+            try:
+                with open(yaml_file, 'r') as f:
+                    current_yaml = yaml.safe_load(f) or {}
+            except FileNotFoundError:
+                current_yaml = {}
+            
+            # Get all combos from learner that could be promoted (LB WR >= 42%)
+            promote_candidates = self.learner.get_top_combos(min_trades=5, min_lower_wr=42)
+            
+            for candidate in promote_candidates:
+                sym = candidate['symbol']
+                side = candidate['side']
+                combo = candidate['combo']
+                
+                # Check if already in YAML
+                if sym not in current_yaml:
+                    current_yaml[sym] = {'long': [], 'short': []}
+                if not isinstance(current_yaml[sym], dict):
+                    current_yaml[sym] = {'long': [], 'short': []}
+                if side not in current_yaml[sym]:
+                    current_yaml[sym][side] = []
+                
+                if combo not in current_yaml[sym][side]:
+                    current_yaml[sym][side].append(combo)
+                    promoted_count += 1
+                    logger.info(f"🚀 STARTUP PROMOTE: {sym} {side} {combo} (LB WR: {candidate['lower_wr']:.0f}%)")
+            
+            # Check current YAML combos for demotion (LB WR < 40%)
+            combos_to_remove = []
+            for sym, sides in list(current_yaml.items()):
+                if not isinstance(sides, dict):
+                    continue
+                for side in ['long', 'short']:
+                    combos = sides.get(side, [])
+                    if not isinstance(combos, list):
+                        continue
+                    for combo in list(combos):
+                        stats = self.learner.get_combo_stats(sym, side, combo)
+                        if stats and stats.get('total', 0) >= 5:
+                            lb_wr = stats.get('lower_wr', 100)
+                            if lb_wr < 40:
+                                combos_to_remove.append({
+                                    'symbol': sym, 'side': side, 'combo': combo,
+                                    'lb_wr': lb_wr
+                                })
+            
+            # Remove demoted combos
+            for item in combos_to_remove:
+                sym = item['symbol']
+                side = item['side']
+                combo = item['combo']
+                
+                if sym in current_yaml and side in current_yaml[sym]:
+                    if combo in current_yaml[sym][side]:
+                        current_yaml[sym][side].remove(combo)
+                        demoted_count += 1
+                        
+                        # Add to blacklist
+                        self.learner.blacklist.add(f"{sym}:{side}:{combo}")
+                        
+                        logger.info(f"🔽 STARTUP DEMOTE: {sym} {side} {combo} (LB WR: {item['lb_wr']:.0f}%)")
+                        
+                        # Clean up empty entries
+                        if not current_yaml[sym].get('long') and not current_yaml[sym].get('short'):
+                            del current_yaml[sym]
+            
+            # Save updated YAML
+            with open(yaml_file, 'w') as f:
+                yaml.dump(current_yaml, f, default_flow_style=False)
+            
+            # Save blacklist
+            self.learner.save_blacklist()
+            
+            logger.info(f"✅ Startup scan complete: {promoted_count} promoted, {demoted_count} demoted")
+            
+            if promoted_count > 0 or demoted_count > 0:
+                await self.send_telegram(
+                    f"🔄 **STARTUP SCAN COMPLETE**\n"
+                    f"🚀 Promoted: {promoted_count} combos\n"
+                    f"🔽 Demoted: {demoted_count} combos"
+                )
+                
+        except Exception as e:
+            logger.error(f"Startup scan error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
     async def run(self):
         logger.info("🤖 VWAP Bot Starting...")
         
@@ -1587,7 +1689,11 @@ class VWAPBot:
         
         # Sync promoted combos to YAML (ensures YAML matches promoted set)
         self._sync_promoted_to_yaml()
-        self.load_overrides()  # Reload after sync
+        
+        # Run immediate promote/demote scan on startup
+        await self._startup_promote_demote_scan()
+        
+        self.load_overrides()  # Reload after sync and startup scan
         trading_symbols = list(self.vwap_combos.keys())
         
         if not trading_symbols:

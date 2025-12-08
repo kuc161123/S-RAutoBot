@@ -1376,10 +1376,30 @@ class VWAPBot:
             
             if sl_distance_pct < MIN_SL_PCT:
                 logger.warning(f"⚠️ Skip {sym}: SL too close to entry ({sl_distance_pct:.2f}% < {MIN_SL_PCT}%)")
+                # Record as phantom for analytics
+                self.learner.record_signal(sym, side, combo, entry, atr, is_allowed=False)
+                # Send notification
+                await self.send_telegram(
+                    f"⚠️ **TRADE SKIPPED**\n"
+                    f"Symbol: `{sym}` {side.upper()}\n"
+                    f"Combo: `{combo}`\n"
+                    f"Reason: SL too close ({sl_distance_pct:.2f}% < {MIN_SL_PCT}%)\n"
+                    f"📊 Recorded as phantom for learning"
+                )
                 return
                 
             if tp_distance_pct < MIN_TP_PCT:
                 logger.warning(f"⚠️ Skip {sym}: TP too close to entry ({tp_distance_pct:.2f}% < {MIN_TP_PCT}%)")
+                # Record as phantom for analytics
+                self.learner.record_signal(sym, side, combo, entry, atr, is_allowed=False)
+                # Send notification
+                await self.send_telegram(
+                    f"⚠️ **TRADE SKIPPED**\n"
+                    f"Symbol: `{sym}` {side.upper()}\n"
+                    f"Combo: `{combo}`\n"
+                    f"Reason: TP too close ({tp_distance_pct:.2f}% < {MIN_TP_PCT}%)\n"
+                    f"📊 Recorded as phantom for learning"
+                )
                 return
             
             qty = risk_amt / dist

@@ -1048,7 +1048,8 @@ class VWAPBot:
                             sym, side, 'no_fill',
                             exit_price=current_price,
                             max_high=0,
-                            min_low=0
+                            min_low=0,
+                            combo=order_info.get('combo', 'UNKNOWN')
                         )
                         logger.info(f"📊 Recorded order not found: {sym} {side} → no_fill")
                     except Exception as e:
@@ -1137,7 +1138,8 @@ class VWAPBot:
                             sym, side, 'no_fill',
                             exit_price=current_price,
                             max_high=0,
-                            min_low=0
+                            min_low=0,
+                            combo=combo
                         )
                         logger.info(f"📊 Recorded externally cancelled order: {sym} {side} → no_fill")
                     except Exception as e:
@@ -1203,7 +1205,8 @@ class VWAPBot:
                             sym, side, theoretical_outcome,
                             exit_price=current_price,
                             max_high=current_price if side == 'short' else 0,
-                            min_low=current_price if side == 'long' else 0
+                            min_low=current_price if side == 'long' else 0,
+                            combo=combo
                         )
                         logger.info(f"📊 Recorded cancelled order outcome: {sym} {side} → {theoretical_outcome}")
                     except Exception as e:
@@ -1630,7 +1633,8 @@ class VWAPBot:
                                         sym, side, outcome, 
                                         exit_price=current_price,
                                         max_high=candle_high,
-                                        min_low=candle_low
+                                        min_low=candle_low,
+                                        combo=combo
                                     )
                                     if not resolved:
                                         logger.warning(f"Could not resolve trade in learner: {sym} {side}")

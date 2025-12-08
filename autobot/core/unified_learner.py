@@ -923,7 +923,7 @@ class UnifiedLearner:
     
     def resolve_executed_trade(self, symbol: str, side: str, outcome: str, 
                                 exit_price: float = 0, max_high: float = 0, 
-                                min_low: float = 0) -> bool:
+                                min_low: float = 0, combo: str = None) -> bool:
         """
         Manually resolve a pending signal for an executed trade.
         
@@ -938,6 +938,7 @@ class UnifiedLearner:
             exit_price: Optional exit price for max high/low calculation
             max_high: Optional max high reached during trade
             min_low: Optional min low reached during trade
+            combo: The combo name (e.g., 'RSI:40-60 MACD:bull') - REQUIRED for correct analytics
             
         Returns:
             True if signal was found and resolved, False otherwise
@@ -964,12 +965,14 @@ class UnifiedLearner:
                     btc_trend = self.get_btc_trend(self.get_btc_change_1h())
                     
                     with self.pg_conn.cursor() as cur:
+                        # Use provided combo or fallback
+                        combo_name = combo if combo else 'EXECUTED_NO_SIGNAL'
                         cur.execute("""
                             INSERT INTO trade_history 
                             (symbol, side, combo, outcome, time_to_result, max_r_reached,
                              session, hour_utc, day_of_week, btc_trend, is_executed)
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (symbol, side, 'EXECUTED_NO_SIGNAL', outcome, 0.0, 0.0,
+                        """, (symbol, side, combo_name, outcome, 0.0, 0.0,
                               session, hour_utc, day_of_week, btc_trend, True))
                     logger.info(f"✅ Recorded executed trade directly: {symbol} {side} -> {outcome.upper()}")
                     

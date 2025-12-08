@@ -135,8 +135,9 @@ class VWAPBot:
             'trades_executed': self.trades_executed,
             'last_daily_summary': self.last_daily_summary,
             'last_phantom_notify': self.last_phantom_notify,
-            'pending_limit_orders': self.pending_limit_orders,  # Persist pending orders
-            'active_trades': self.active_trades,  # Persist active trades too
+            'pending_limit_orders': self.pending_limit_orders,
+            'active_trades': self.active_trades,
+            'demoted_count': getattr(self, 'demoted_count', 0),  # Persist demotion count
             'saved_at': time.time()
         }
         
@@ -191,6 +192,7 @@ class VWAPBot:
             # Load pending orders and active trades
             self.pending_limit_orders = state.get('pending_limit_orders', {})
             self.active_trades = state.get('active_trades', {})
+            self.demoted_count = state.get('demoted_count', 0)
             
             saved_at = state.get('saved_at', 0)
             age_hrs = (time.time() - saved_at) / 3600
@@ -1007,6 +1009,58 @@ class VWAPBot:
         except Exception as e:
             logger.error(f"Error {sym}: {e}")
 
+    async def _immediate_demote(self, symbol: str, side: str, combo: str, lb_wr: float, total: int):
+        """Immediately demote a combo from YAML after a trade loss drops WR below threshold.
+        
+        This ensures poor-performing combos are removed right away, not waiting for periodic check.
+        """
+        try:
+            import yaml
+            yaml_file = 'symbol_overrides_VWAP_Combo.yaml'
+            
+            with open(yaml_file, 'r') as f:
+                current_yaml = yaml.safe_load(f) or {}
+            
+            # Check if combo exists in YAML
+            if symbol in current_yaml and isinstance(current_yaml[symbol], dict):
+                if side in current_yaml[symbol] and isinstance(current_yaml[symbol][side], list):
+                    if combo in current_yaml[symbol][side]:
+                        # Remove the combo
+                        current_yaml[symbol][side].remove(combo)
+                        
+                        # Track demotion
+                        if not hasattr(self, 'demoted_count'):
+                            self.demoted_count = 0
+                        self.demoted_count += 1
+                        
+                        # Add to blacklist for this session
+                        self.learner.blacklist.add(f"{symbol}:{side}:{combo}")
+                        self.learner.save_blacklist()
+                        
+                        # Clean up empty entries
+                        if not current_yaml[symbol]['long'] and not current_yaml[symbol]['short']:
+                            del current_yaml[symbol]
+                        elif not current_yaml[symbol][side]:
+                            del current_yaml[symbol][side]
+                        
+                        # Save YAML
+                        with open(yaml_file, 'w') as f:
+                            yaml.dump(current_yaml, f, default_flow_style=False)
+                        
+                        logger.info(f"🔽 IMMEDIATE DEMOTE: {symbol} {side} {combo} (LB WR: {lb_wr:.0f}%, N={total})")
+                        
+                        await self.send_telegram(
+                            f"🔽 **COMBO DEMOTED**\n"
+                            f"Symbol: `{symbol}` {side.upper()}\n"
+                            f"Combo: `{combo}`\n"
+                            f"Reason: LB WR dropped to {lb_wr:.0f}% (below 40%)\n"
+                            f"Trades: {total}"
+                        )
+        except FileNotFoundError:
+            logger.debug("YAML file not found for demotion check")
+        except Exception as e:
+            logger.error(f"Immediate demotion error: {e}")
+
     async def monitor_pending_limit_orders(self, candle_data: dict):
         """
         Monitor pending limit orders for:
@@ -1603,27 +1657,67 @@ class VWAPBot:
                                 # Trade closed - determine outcome
                                 trade_info = self.active_trades.pop(sym)
                                 
-                                # Get current price to estimate P/L
+                                # Get price data
                                 current_price = candle_data.get(sym, {}).get('close', 0)
                                 candle_high = candle_data.get(sym, {}).get('high', 0)
                                 candle_low = candle_data.get(sym, {}).get('low', 0)
                                 entry = trade_info['entry']
                                 side = trade_info['side']
                                 combo = trade_info['combo']
+                                tp = trade_info.get('tp', 0)
+                                sl = trade_info.get('sl', 0)
                                 
-                                if current_price and entry:
+                                # Determine outcome based on which level was hit (TP or SL)
+                                # Not candle close - actual exit is at TP or SL level
+                                if entry and tp and sl:
                                     if side == 'long':
-                                        pnl_pct = ((current_price - entry) / entry) * 100
+                                        # Long: Won if high reached TP, Lost if low reached SL
+                                        # Check which was hit first (use candle extremes)
+                                        hit_tp = candle_high >= tp
+                                        hit_sl = candle_low <= sl
+                                        
+                                        if hit_tp and not hit_sl:
+                                            outcome = "win"
+                                            exit_price = tp
+                                        elif hit_sl and not hit_tp:
+                                            outcome = "loss"
+                                            exit_price = sl
+                                        elif hit_tp and hit_sl:
+                                            # Both hit - use current price to guess
+                                            outcome = "win" if current_price >= entry else "loss"
+                                            exit_price = tp if outcome == "win" else sl
+                                        else:
+                                            # Neither? Use current price comparison
+                                            outcome = "win" if current_price >= entry else "loss"
+                                            exit_price = current_price
                                     else:
-                                        pnl_pct = ((entry - current_price) / entry) * 100
+                                        # Short: Won if low reached TP, Lost if high reached SL
+                                        hit_tp = candle_low <= tp
+                                        hit_sl = candle_high >= sl
+                                        
+                                        if hit_tp and not hit_sl:
+                                            outcome = "win"
+                                            exit_price = tp
+                                        elif hit_sl and not hit_tp:
+                                            outcome = "loss"
+                                            exit_price = sl
+                                        elif hit_tp and hit_sl:
+                                            outcome = "win" if current_price <= entry else "loss"
+                                            exit_price = tp if outcome == "win" else sl
+                                        else:
+                                            outcome = "win" if current_price <= entry else "loss"
+                                            exit_price = current_price
                                     
-                                    # Determine outcome based on P/L
-                                    if pnl_pct > 0:
-                                        outcome = "win"
+                                    # Calculate P/L percentage
+                                    if side == 'long':
+                                        pnl_pct = ((exit_price - entry) / entry) * 100
+                                    else:
+                                        pnl_pct = ((entry - exit_price) / entry) * 100
+                                    
+                                    if outcome == "win":
                                         outcome_display = "✅ WIN"
                                         self.wins += 1
                                     else:
-                                        outcome = "loss"
                                         outcome_display = "❌ LOSS"
                                         self.losses += 1
                                     
@@ -1631,7 +1725,7 @@ class VWAPBot:
                                     # This ensures combo stats are updated for executed trades
                                     resolved = self.learner.resolve_executed_trade(
                                         sym, side, outcome, 
-                                        exit_price=current_price,
+                                        exit_price=exit_price,
                                         max_high=candle_high,
                                         min_low=candle_low,
                                         combo=combo
@@ -1662,11 +1756,18 @@ class VWAPBot:
                                         f"💰 **RESULT**: {outcome_display}\n"
                                         f"├ P/L: **{pnl_pct:+.2f}%**\n"
                                         f"├ Entry: ${entry:.4f}\n"
-                                        f"├ Exit: ${current_price:.4f}\n"
+                                        f"├ Exit: ${exit_price:.4f}\n"
                                         f"└ Duration: {duration_mins:.0f}m\n\n"
                                         f"📊 **UPDATED ANALYTICS**\n"
                                         f"└ {wr_info}"
                                     )
+                                    
+                                    # IMMEDIATE DEMOTION CHECK after a loss
+                                    if outcome == 'loss' and updated_stats:
+                                        lb_wr = updated_stats.get('lower_wr', 100)
+                                        if lb_wr < 40 and updated_stats.get('total', 0) >= 5:
+                                            # Demote immediately - remove from YAML
+                                            await self._immediate_demote(sym, side, combo, lb_wr, updated_stats['total'])
                         except Exception as e:
                             logger.debug(f"Trade close check error for {sym}: {e}")
                     

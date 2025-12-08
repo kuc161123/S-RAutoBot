@@ -154,7 +154,7 @@ class UnifiedLearner:
     
     # Blacklist thresholds
     BLACKLIST_MIN_TRADES = 10
-    BLACKLIST_MAX_LOWER_WR = 30.0
+    BLACKLIST_MAX_LOWER_WR = 40.0  # Aligned with demotion threshold
     
     # Minimum data for adaptive decisions
     MIN_TRADES_FOR_RR = 15

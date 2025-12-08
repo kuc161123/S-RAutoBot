@@ -1,56 +1,166 @@
 # Backtest-Validated Golden Combos
-# Generated from 60-day walk-forward backtest on 15 top symbols
-# Only combos that passed BOTH train (≥45% WR) AND test (≥40% WR) are included
-# Last updated: 2025-12-08
+# Generated: 2025-12-08T18:46:11.076527
+# Symbols tested: 100
+# Combos found: 46
+# Criteria: Train WR >= 50%, Test WR >= 50%, Min N >= 10
 
-# Feature Filters Applied:
-# - Session: London (08:00-16:00 UTC) or New York (16:00-24:00 UTC)
-# - Volatility: Medium or High regimes preferred
-# - Best Hours: 13:00-16:00 UTC
-
-ETHUSDT:
+1000FLOKIUSDT:
   allowed_combos_long:
-    - "RSI:40-60 MACD:bull Fib:23-38"
-    - "RSI:60-70 MACD:bull Fib:0-23"
-  allowed_combos_short: []
-
-XRPUSDT:
-  allowed_combos_long:
-    - "RSI:40-60 MACD:bull Fib:61-78"
+  - RSI:40-60 MACD:bear Fib:78-100
   allowed_combos_short:
-    - "RSI:40-60 MACD:bear Fib:0-23"
-
-SUIUSDT:
-  allowed_combos_long:
-    - "RSI:40-60 MACD:bull Fib:23-38"
-  allowed_combos_short: []
-
-ARBUSDT:
-  allowed_combos_long:
-    - "RSI:60-70 MACD:bull Fib:23-38"
-  allowed_combos_short: []
-
-NEARUSDT:
-  allowed_combos_long:
-    - "RSI:60-70 MACD:bull Fib:0-23"
-  allowed_combos_short:
-    - "RSI:<30 MACD:bear Fib:78-100"
-
-SOLUSDT:
+  - RSI:40-60 MACD:bear Fib:50-61
+AAVEUSDT:
   allowed_combos_long: []
   allowed_combos_short:
-    - "RSI:60-70 MACD:bull Fib:0-23"
-    - "RSI:<30 MACD:bear Fib:78-100"
-
-DOGEUSDT:
-  allowed_combos_long:
-    - "RSI:70+ MACD:bull Fib:0-23"
+  - RSI:60-70 MACD:bull Fib:38-50
+APTUSDT:
+  allowed_combos_long: []
   allowed_combos_short:
-    - "RSI:<30 MACD:bear Fib:78-100"
-
-ADAUSDT:
+  - RSI:30-40 MACD:bear Fib:38-50
+ARBUSDT:
   allowed_combos_long:
-    - "RSI:60-70 MACD:bull Fib:0-23"
+  - RSI:40-60 MACD:bear Fib:61-78
+  allowed_combos_short: []
+ASTERUSDT:
+  allowed_combos_long: []
   allowed_combos_short:
-    - "RSI:<30 MACD:bear Fib:78-100"
-    - "RSI:60-70 MACD:bull Fib:23-38"
+  - RSI:40-60 MACD:bear Fib:38-50
+ATOMUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:30-40 MACD:bull Fib:78-100
+BTCUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:23-38
+CCUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:0-23
+DASHUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:38-50
+EIGENUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:60-70 MACD:bull Fib:0-23
+  - RSI:<30 MACD:bear Fib:61-78
+ENAUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bear Fib:61-78
+ETHUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:38-50
+FILUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:50-61
+GALAUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:30-40 MACD:bear Fib:50-61
+HYPEUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:30-40 MACD:bear Fib:50-61
+KASUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bear Fib:78-100
+LDOUSDT:
+  allowed_combos_long:
+  - RSI:60-70 MACD:bull Fib:23-38
+  allowed_combos_short: []
+METUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:60-70 MACD:bull Fib:23-38
+MNTUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:0-23
+MONUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:60-70 MACD:bull Fib:0-23
+MOODENGUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bull Fib:0-23
+  allowed_combos_short: []
+NEARUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bull Fib:23-38
+  allowed_combos_short: []
+ONDOUSDT:
+  allowed_combos_long:
+  - RSI:60-70 MACD:bull Fib:50-61
+  allowed_combos_short:
+  - RSI:60-70 MACD:bull Fib:38-50
+PENGUUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bull Fib:50-61
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:61-78
+PIEVERSEUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:50-61
+POPCATUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:0-23
+RDNTUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:30-40 MACD:bull Fib:78-100
+STABLEUSDT:
+  allowed_combos_long:
+  - RSI:60-70 MACD:bull Fib:23-38
+  - RSI:40-60 MACD:bear Fib:78-100
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:61-78
+STBLUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:38-50
+STRKUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:61-78
+TIAUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:23-38
+  allowed_combos_short: []
+TNSRUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:60-70 MACD:bull Fib:61-78
+TRUMPUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:0-23
+  - RSI:40-60 MACD:bear Fib:78-100
+WLDUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:38-50
+WLFIUSDT:
+  allowed_combos_long:
+  - RSI:30-40 MACD:bull Fib:78-100
+  allowed_combos_short:
+  - RSI:60-70 MACD:bull Fib:38-50
+XPLUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:0-23
+XRPUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bear Fib:50-61
+ZEUSUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:61-78

@@ -135,6 +135,8 @@ class VWAPBot:
             'trades_executed': self.trades_executed,
             'last_daily_summary': self.last_daily_summary,
             'last_phantom_notify': self.last_phantom_notify,
+            'pending_limit_orders': self.pending_limit_orders,  # Persist pending orders
+            'active_trades': self.active_trades,  # Persist active trades too
             'saved_at': time.time()
         }
         
@@ -186,11 +188,18 @@ class VWAPBot:
             self.last_daily_summary = state.get('last_daily_summary', time.time())
             self.last_phantom_notify = state.get('last_phantom_notify', {})
             
+            # Load pending orders and active trades
+            self.pending_limit_orders = state.get('pending_limit_orders', {})
+            self.active_trades = state.get('active_trades', {})
+            
             saved_at = state.get('saved_at', 0)
             age_hrs = (time.time() - saved_at) / 3600
             pending = len(self.learner.pending_signals)
+            pending_orders = len(self.pending_limit_orders)
+            active = len(self.active_trades)
             logger.info(f"📂 State loaded from {file_path} (saved {age_hrs:.1f}h ago)")
             logger.info(f"   Stats: {self.wins}W/{self.losses}L | Learner: {pending} pending")
+            logger.info(f"   Orders: {pending_orders} pending, {active} active trades")
         except FileNotFoundError:
             logger.info("📂 No previous state found, starting fresh")
         except Exception as e:
@@ -1031,7 +1040,30 @@ class VWAPBot:
                 
                 if not status:
                     # Order not found - might have been cancelled/filled externally
-                    logger.warning(f"Order {order_id[:16]} for {sym} not found, removing from tracking")
+                    logger.warning(f"Order {order_id[:16]} for {sym} not found on Bybit, removing from tracking")
+                    
+                    # Record to analytics
+                    try:
+                        self.learner.resolve_executed_trade(
+                            sym, side, 'no_fill',
+                            exit_price=current_price,
+                            max_high=0,
+                            min_low=0
+                        )
+                        logger.info(f"📊 Recorded order not found: {sym} {side} → no_fill")
+                    except Exception as e:
+                        logger.warning(f"Could not record to analytics: {e}")
+                    
+                    # Send notification
+                    await self.send_telegram(
+                        f"⚠️ **ORDER NOT FOUND ON BYBIT**\n"
+                        f"Symbol: `{sym}` {side.upper()}\n"
+                        f"Entry: ${entry_price:.4f}\n"
+                        f"Order ID: `{order_id[:16]}...`\n\n"
+                        f"Order may have expired or been cancelled.\n"
+                        f"⏱️ **Recorded as**: NO_FILL"
+                    )
+                    
                     del self.pending_limit_orders[sym]
                     continue
                 

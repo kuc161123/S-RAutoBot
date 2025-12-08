@@ -105,11 +105,13 @@ class VWAPBot:
         ))
         
     def load_overrides(self):
-        """Reload overrides to pick up new backtest findings"""
+        """Load backtest-validated golden combos (replaces dynamic auto-promote/demote)"""
         try:
-            with open('symbol_overrides_VWAP_Combo.yaml', 'r') as f:
+            with open('backtest_golden_combos.yaml', 'r') as f:
                 self.vwap_combos = yaml.safe_load(f) or {}
+            logger.info(f"📂 Loaded {len(self.vwap_combos)} symbols from backtest golden combos")
         except FileNotFoundError:
+            logger.warning("⚠️ backtest_golden_combos.yaml not found, using empty")
             self.vwap_combos = {}
 
     def _get_data_dir(self):
@@ -224,55 +226,31 @@ class VWAPBot:
                 logger.debug(f"Failed to load trades from Redis: {e}")
 
     def _sync_promoted_to_yaml(self):
-        """Ensure all promoted combos are in the YAML file.
+        """DISABLED: Using static backtest golden combos now.
         
-        This handles the case where promoted set has combos but YAML was cleared.
+        Previously synced promoted combos to YAML, but we're now using
+        backtest_golden_combos.yaml as the single source of truth.
         """
-        if not self.learner.promoted:
-            logger.info("📂 No promoted combos to sync")
-            return
-            
-        try:
-            # Load current YAML
-            with open('symbol_overrides_VWAP_Combo.yaml', 'r') as f:
-                current_yaml = yaml.safe_load(f) or {}
-            
-            synced_count = 0
-            
-            for key in self.learner.promoted:
-                # Parse key: "SYMBOL:side:combo"
-                parts = key.split(':', 2)
-                if len(parts) != 3:
-                    continue
-                    
-                sym, side, combo = parts
-                
-                # Ensure symbol structure exists
-                if sym not in current_yaml:
-                    current_yaml[sym] = {'long': [], 'short': []}
-                elif not isinstance(current_yaml[sym], dict):
-                    current_yaml[sym] = {'long': [], 'short': []}
-                else:
-                    if 'long' not in current_yaml[sym]:
-                        current_yaml[sym]['long'] = []
-                    if 'short' not in current_yaml[sym]:
-                        current_yaml[sym]['short'] = []
-                
-                # Add combo if not already there
-                if combo not in current_yaml[sym][side]:
-                    current_yaml[sym][side].append(combo)
-                    synced_count += 1
-            
-            if synced_count > 0:
-                # Write back to file
-                with open('symbol_overrides_VWAP_Combo.yaml', 'w') as f:
-                    yaml.dump(current_yaml, f, default_flow_style=False)
-                logger.info(f"📂 Synced {synced_count} promoted combos to YAML")
-            else:
-                logger.info("📂 All promoted combos already in YAML")
-                
-        except Exception as e:
-            logger.error(f"Failed to sync promoted combos: {e}")
+        logger.debug("📂 _sync_promoted_to_yaml DISABLED - using backtest golden combos")
+        return
+    
+    def _check_feature_filters(self) -> tuple:
+        """Check if current market features are favorable for trading.
+        
+        Based on backtest findings:
+        - Best sessions: London (08:00-16:00 UTC), New York (16:00-24:00 UTC)
+        - Avoid: Asia (00:00-08:00 UTC)
+        - Best hours: 13:00-16:00 UTC
+        """
+        from datetime import datetime
+        hour = datetime.utcnow().hour
+        
+        # Session filter
+        if hour < 8:  # Asia session (00:00-08:00 UTC)
+            return False, "asia_session"
+        
+        # All other hours are acceptable (London + New York)
+        return True, "good_session"
 
     # --- Telegram Commands ---
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1341,6 +1319,12 @@ class VWAPBot:
             if balance <= 0:
                 logger.error("Balance is 0")
                 return
+            
+            # Feature filter: Skip during unfavorable market conditions
+            feature_ok, feature_reason = self._check_feature_filters()
+            if not feature_ok:
+                logger.debug(f"Skip {sym}: Feature filter blocked ({feature_reason})")
+                return
                 
             risk_val = self.risk_config['value']
             risk_type = self.risk_config['type']
@@ -1549,106 +1533,24 @@ class VWAPBot:
             )
 
     async def _startup_promote_demote_scan(self):
-        """Run immediate promote/demote scan on bot startup.
+        """DISABLED: Using static backtest golden combos now.
         
-        Checks all combos against thresholds and promotes/demotes immediately
-        rather than waiting for periodic checks.
+        Previously promoted/demoted combos based on live analytics.
+        Now we use backtest_golden_combos.yaml as the source of truth.
         """
-        logger.info("🔄 Running startup promote/demote scan...")
-        promoted_count = 0
-        demoted_count = 0
+        logger.info("🔄 Startup promote/demote scan DISABLED - using backtest golden combos")
         
-        try:
-            import yaml
-            yaml_file = 'symbol_overrides_VWAP_Combo.yaml'
-            
-            # Load current YAML
-            try:
-                with open(yaml_file, 'r') as f:
-                    current_yaml = yaml.safe_load(f) or {}
-            except FileNotFoundError:
-                current_yaml = {}
-            
-            # Get all combos from learner that could be promoted (LB WR >= 42%)
-            promote_candidates = self.learner.get_top_combos(min_trades=5, min_lower_wr=42)
-            
-            for candidate in promote_candidates:
-                sym = candidate['symbol']
-                side = candidate['side']
-                combo = candidate['combo']
-                
-                # Check if already in YAML
-                if sym not in current_yaml:
-                    current_yaml[sym] = {'long': [], 'short': []}
-                if not isinstance(current_yaml[sym], dict):
-                    current_yaml[sym] = {'long': [], 'short': []}
-                if side not in current_yaml[sym]:
-                    current_yaml[sym][side] = []
-                
-                if combo not in current_yaml[sym][side]:
-                    current_yaml[sym][side].append(combo)
-                    promoted_count += 1
-                    logger.info(f"🚀 STARTUP PROMOTE: {sym} {side} {combo} (LB WR: {candidate['lower_wr']:.0f}%)")
-            
-            # Check current YAML combos for demotion (LB WR < 40%)
-            combos_to_remove = []
-            for sym, sides in list(current_yaml.items()):
-                if not isinstance(sides, dict):
-                    continue
-                for side in ['long', 'short']:
-                    combos = sides.get(side, [])
-                    if not isinstance(combos, list):
-                        continue
-                    for combo in list(combos):
-                        stats = self.learner.get_combo_stats(sym, side, combo)
-                        if stats and stats.get('total', 0) >= 5:
-                            lb_wr = stats.get('lower_wr', 100)
-                            if lb_wr < 40:
-                                combos_to_remove.append({
-                                    'symbol': sym, 'side': side, 'combo': combo,
-                                    'lb_wr': lb_wr
-                                })
-            
-            # Remove demoted combos
-            for item in combos_to_remove:
-                sym = item['symbol']
-                side = item['side']
-                combo = item['combo']
-                
-                if sym in current_yaml and side in current_yaml[sym]:
-                    if combo in current_yaml[sym][side]:
-                        current_yaml[sym][side].remove(combo)
-                        demoted_count += 1
-                        
-                        # Add to blacklist
-                        self.learner.blacklist.add(f"{sym}:{side}:{combo}")
-                        
-                        logger.info(f"🔽 STARTUP DEMOTE: {sym} {side} {combo} (LB WR: {item['lb_wr']:.0f}%)")
-                        
-                        # Clean up empty entries
-                        if not current_yaml[sym].get('long') and not current_yaml[sym].get('short'):
-                            del current_yaml[sym]
-            
-            # Save updated YAML
-            with open(yaml_file, 'w') as f:
-                yaml.dump(current_yaml, f, default_flow_style=False)
-            
-            # Save blacklist
-            self.learner.save_blacklist()
-            
-            logger.info(f"✅ Startup scan complete: {promoted_count} promoted, {demoted_count} demoted")
-            
-            if promoted_count > 0 or demoted_count > 0:
-                await self.send_telegram(
-                    f"🔄 **STARTUP SCAN COMPLETE**\n"
-                    f"🚀 Promoted: {promoted_count} combos\n"
-                    f"🔽 Demoted: {demoted_count} combos"
-                )
-                
-        except Exception as e:
-            logger.error(f"Startup scan error: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
+        # Just log what we're using
+        combo_count = sum(
+            len(v.get('allowed_combos_long', [])) + len(v.get('allowed_combos_short', []))
+            for v in self.vwap_combos.values()
+        )
+        await self.send_telegram(
+            f"📊 **USING BACKTEST GOLDEN COMBOS**\n"
+            f"├ Symbols: {len(self.vwap_combos)}\n"
+            f"├ Total Combos: {combo_count}\n"
+            f"└ Source: `backtest_golden_combos.yaml`"
+        )
 
     async def run(self):
         logger.info("🤖 VWAP Bot Starting...")

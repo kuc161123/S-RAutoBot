@@ -1366,6 +1366,22 @@ class VWAPBot:
                 
             if dist <= 0: return
             
+            # === MINIMUM TP/SL DISTANCE VALIDATION ===
+            # Prevents trades where TP/SL are too close to entry (precision issues)
+            sl_distance_pct = abs(entry - sl) / entry * 100
+            tp_distance_pct = abs(tp - entry) / entry * 100
+            
+            MIN_SL_PCT = 0.5  # Minimum 0.5% distance for SL
+            MIN_TP_PCT = 1.0  # Minimum 1.0% distance for TP
+            
+            if sl_distance_pct < MIN_SL_PCT:
+                logger.warning(f"⚠️ Skip {sym}: SL too close to entry ({sl_distance_pct:.2f}% < {MIN_SL_PCT}%)")
+                return
+                
+            if tp_distance_pct < MIN_TP_PCT:
+                logger.warning(f"⚠️ Skip {sym}: TP too close to entry ({tp_distance_pct:.2f}% < {MIN_TP_PCT}%)")
+                return
+            
             qty = risk_amt / dist
             
             # Round based on price magnitude

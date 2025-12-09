@@ -1334,11 +1334,12 @@ class VWAPBot:
             atr = row.atr
             entry = row.close
             
-            # Get optimal R:R from smart learner
-            optimal_rr, rr_reason = self.learner.get_optimal_rr(sym, side, combo)
+            # Fixed 2:1 R:R to match backtest validation
+            # Backtest validated combos at 2:1, so we use the same for consistency
+            optimal_rr = 2.0
             
-            # Calculate TP/SL with optimal R:R
-            # Using 1 ATR for SL (1R), RR*ATR for TP
+            # Calculate TP/SL with fixed 2:1 R:R
+            # Using 1 ATR for SL (1R), 2*ATR for TP (2R)
             MIN_SL_PCT = 0.5  # Minimum 0.5% distance for SL
             MIN_TP_PCT = 1.0  # Minimum 1.0% distance for TP
             

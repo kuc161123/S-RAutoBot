@@ -1,0 +1,101 @@
+🔬 400-Symbol Comprehensive Backtest
+======================================================================
+
+📋 Fetching top 400 symbols...
+   Found 400 symbols
+
+📥 Fetching 60-day data...
+   [1/400] BTCUSDT...
+   [20/400] WIFUSDT...
+   [40/400] DOTUSDT...
+   [60/400] CRVUSDT...
+   [80/400] MERLUSDT...
+   [100/400] TNSRUSDT...
+   [120/400] GRASSUSDT...
+   [140/400] BIOUSDT...
+   [160/400] JELLYJELLYUSDT...
+   [180/400] 1000000MOGUSDT...
+   [200/400] 1000TOSHIUSDT...
+   [220/400] ARCUSDT...
+   [240/400] EVAAUSDT...
+   [260/400] SQDUSDT...
+   [280/400] VVVUSDT...
+   [300/400] XPINUSDT...
+   [320/400] TAIKOUSDT...
+   [340/400] HFTUSDT...
+   [360/400] OPENUSDT...
+   [380/400] ZRXUSDT...
+   [400/400] BANUSDT...
+
+✅ Loaded data for 400 symbols
+
+📊 Walk-Forward Validation (Train: 60%, Test: 40%)
+
+======================================================================
+🏆 WINNING COMBOS (Train WR ≥ 50% AND Test WR ≥ 50%)
+======================================================================
+
+Found 173 reliable combos
+ 1. FIDAUSDT short RSI:<30 MACD:bear Fib:100+
+    Train: 58.3% (N=12) | Test: 100.0% (N=3)
+ 2. ERAUSDT short RSI:30-40 MACD:bull Fib:61-78
+    Train: 50.0% (N=10) | Test: 100.0% (N=3)
+ 3. NILUSDT short RSI:60-70 MACD:bear Fib:0-23
+    Train: 50.0% (N=10) | Test: 100.0% (N=4)
+ 4. HYPERUSDT short RSI:70+ MACD:bull Fib:23-38
+    Train: 53.3% (N=15) | Test: 85.7% (N=7)
+ 5. MUBARAKUSDT short RSI:60-70 MACD:bull Fib:38-50
+    Train: 50.0% (N=16) | Test: 85.7% (N=7)
+ 6. BMTUSDT short RSI:70+ MACD:bull Fib:23-38
+    Train: 69.2% (N=13) | Test: 80.0% (N=5)
+ 7. CLOUDUSDT long RSI:60-70 MACD:bull Fib:50-61
+    Train: 66.7% (N=15) | Test: 80.0% (N=5)
+ 8. APEXUSDT short RSI:60-70 MACD:bull Fib:61-78
+    Train: 54.5% (N=11) | Test: 80.0% (N=5)
+ 9. MLNUSDT long RSI:30-40 MACD:bear Fib:38-50
+    Train: 50.0% (N=10) | Test: 80.0% (N=5)
+10. ETCUSDT short RSI:60-70 MACD:bull Fib:50-61
+    Train: 50.0% (N=14) | Test: 75.0% (N=8)
+11. PYTHUSDT short RSI:<30 MACD:bear Fib:100+
+    Train: 50.0% (N=10) | Test: 75.0% (N=4)
+12. VVVUSDT long RSI:30-40 MACD:bull Fib:78-100
+    Train: 50.0% (N=14) | Test: 75.0% (N=4)
+13. KAITOUSDT short RSI:40-60 MACD:bull Fib:0-23
+    Train: 50.0% (N=16) | Test: 72.7% (N=11)
+14. IPUSDT short RSI:70+ MACD:bull Fib:23-38
+    Train: 50.0% (N=12) | Test: 71.4% (N=7)
+15. HOLOUSDT long RSI:30-40 MACD:bear Fib:50-61
+    Train: 50.0% (N=12) | Test: 71.4% (N=7)
+16. RAREUSDT short RSI:60-70 MACD:bear Fib:0-23
+    Train: 64.7% (N=17) | Test: 66.7% (N=3)
+17. ORDERUSDT short RSI:60-70 MACD:bull Fib:50-61
+    Train: 63.6% (N=11) | Test: 66.7% (N=12)
+18. CAKEUSDT long RSI:30-40 MACD:bear Fib:38-50
+    Train: 60.0% (N=15) | Test: 66.7% (N=3)
+19. MANAUSDT short RSI:70+ MACD:bull Fib:23-38
+    Train: 60.0% (N=10) | Test: 66.7% (N=9)
+20. LABUSDT long RSI:40-60 MACD:bear Fib:78-100
+    Train: 58.8% (N=17) | Test: 66.7% (N=6)
+21. GIGAUSDT short RSI:70+ MACD:bull Fib:38-50
+    Train: 58.3% (N=12) | Test: 66.7% (N=3)
+22. XLMUSDT short RSI:<30 MACD:bear Fib:61-78
+    Train: 57.9% (N=19) | Test: 66.7% (N=9)
+23. HYPEUSDT short RSI:30-40 MACD:bull Fib:61-78
+    Train: 54.5% (N=11) | Test: 66.7% (N=3)
+24. HEMIUSDT short RSI:30-40 MACD:bear Fib:23-38
+    Train: 54.5% (N=11) | Test: 66.7% (N=6)
+25. ERAUSDT short RSI:30-40 MACD:bear Fib:23-38
+    Train: 54.5% (N=11) | Test: 66.7% (N=6)
+26. PEOPLEUSDT short RSI:70+ MACD:bull Fib:23-38
+    Train: 54.5% (N=11) | Test: 66.7% (N=6)
+27. ORDERUSDT short RSI:60-70 MACD:bull Fib:61-78
+    Train: 54.5% (N=11) | Test: 66.7% (N=3)
+28. ZEREBROUSDT short RSI:60-70 MACD:bear Fib:0-23
+    Train: 53.8% (N=13) | Test: 66.7% (N=6)
+29. ZBTUSDT short RSI:30-40 MACD:bear Fib:50-61
+    Train: 53.8% (N=13) | Test: 66.7% (N=6)
+30. INUSDT long RSI:40-60 MACD:bull Fib:0-23
+    Train: 53.8% (N=13) | Test: 66.7% (N=9)
+
+✅ Exported 139 symbols to backtest_golden_combos.yaml
+   Total combos: 173

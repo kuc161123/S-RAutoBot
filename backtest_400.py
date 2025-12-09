@@ -309,5 +309,6 @@ def run_backtest(num_symbols=100, days=30, train_pct=0.6):
     return winning_combos
 
 if __name__ == "__main__":
-    # Run with 100 symbols first (faster), increase to 400 for full run
-    run_backtest(num_symbols=100, days=30, train_pct=0.6)
+    # Full 400-symbol overnight backtest with 60 days of data
+    # 50%+ WR threshold on both train and test
+    run_backtest(num_symbols=400, days=60, train_pct=0.6)

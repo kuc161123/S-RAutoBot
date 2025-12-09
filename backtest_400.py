@@ -304,18 +304,22 @@ def run_backtest(num_symbols=100, days=30, train_pct=0.6):
             if combo not in yaml_output[sym]['allowed_combos_short']:
                 yaml_output[sym]['allowed_combos_short'].append(combo)
     
-    # Save to file
-    output_file = 'backtest_golden_combos.yaml'
+    # Save to PENDING file (not the active bot file)
+    output_file = 'backtest_golden_combos_PENDING.yaml'
     with open(output_file, 'w') as f:
-        f.write("# Backtest-Validated Golden Combos\n")
+        f.write("# Backtest-Validated Golden Combos (PENDING REVIEW)\n")
         f.write(f"# Generated: {datetime.utcnow().isoformat()}\n")
         f.write(f"# Symbols tested: {len(symbol_data)}\n")
         f.write(f"# Combos found: {len(winning_combos)}\n")
-        f.write(f"# Criteria: Train WR >= {MIN_TRAIN_WR}%, Test WR >= {MIN_TEST_WR}%, Min N >= {MIN_TRAIN_TRADES}\n\n")
+        f.write(f"# Criteria: Train WR >= {MIN_TRAIN_WR}%, Test WR >= {MIN_TEST_WR}%, Min N >= {MIN_TRAIN_TRADES}\n")
+        f.write("# \n")
+        f.write("# To apply: cp backtest_golden_combos_PENDING.yaml backtest_golden_combos.yaml\n\n")
         yaml.dump(yaml_output, f, default_flow_style=False)
     
     print(f"\n✅ Exported {len(yaml_output)} symbols to {output_file}")
     print(f"   Total combos: {len(winning_combos)}")
+    print(f"\n📌 To apply these results to the bot:")
+    print(f"   cp {output_file} backtest_golden_combos.yaml")
     
     return winning_combos
 

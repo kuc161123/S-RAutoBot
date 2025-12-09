@@ -995,30 +995,20 @@ class VWAPBot:
                         allowed_long = self.vwap_combos[sym].get('allowed_combos_long', [])
                         allowed_short = self.vwap_combos[sym].get('allowed_combos_short', [])
                         
-                        # Rate limit near-miss notifications (max 1 per symbol per 30 min)
-                        near_miss_key = f"near_miss_{sym}"
-                        now = time.time()
-                        if not hasattr(self, 'last_near_miss_notify'):
-                            self.last_near_miss_notify = {}
+                        # Format allowed combos for display
+                        long_list = "\n".join([f"  • `{c}`" for c in allowed_long]) if allowed_long else "  • None"
+                        short_list = "\n".join([f"  • `{c}`" for c in allowed_short]) if allowed_short else "  • None"
                         
-                        last_notify = self.last_near_miss_notify.get(near_miss_key, 0)
-                        if now - last_notify >= 1800:  # 30 min cooldown
-                            self.last_near_miss_notify[near_miss_key] = now
-                            
-                            # Format allowed combos for display
-                            long_list = "\n".join([f"  • `{c}`" for c in allowed_long]) if allowed_long else "  • None"
-                            short_list = "\n".join([f"  • `{c}`" for c in allowed_short]) if allowed_short else "  • None"
-                            
-                            await self.send_telegram(
-                                f"🔍 **NEAR MISS** (Golden Combo Symbol)\n"
-                                f"━━━━━━━━━━━━━━━━━━━━\n"
-                                f"📊 Symbol: `{sym}`\n"
-                                f"📈 Side: **{side.upper()}**\n"
-                                f"🎯 Detected: `{combo}`\n\n"
-                                f"✅ **Allowed Long Combos:**\n{long_list}\n\n"
-                                f"✅ **Allowed Short Combos:**\n{short_list}\n\n"
-                                f"⏳ Waiting for exact match..."
-                            )
+                        await self.send_telegram(
+                            f"🔍 **NEAR MISS** (Golden Combo Symbol)\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"📊 Symbol: `{sym}`\n"
+                            f"📈 Side: **{side.upper()}**\n"
+                            f"🎯 Detected: `{combo}`\n\n"
+                            f"✅ **Allowed Long Combos:**\n{long_list}\n\n"
+                            f"✅ **Allowed Short Combos:**\n{short_list}\n\n"
+                            f"⏳ Waiting for exact match..."
+                        )
                     
         except Exception as e:
             logger.error(f"Error {sym}: {e}")

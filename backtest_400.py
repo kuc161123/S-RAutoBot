@@ -62,6 +62,8 @@ def fetch_klines(symbol: str, interval: str = '3', days: int = 30) -> pd.DataFra
     
     url = f"{BYBIT_BASE}/v5/market/kline"
     current_end = end_time
+    retries = 0
+    max_retries = 3
     
     while current_end > start_time:
         params = {
@@ -73,11 +75,15 @@ def fetch_klines(symbol: str, interval: str = '3', days: int = 30) -> pd.DataFra
         }
         
         try:
-            resp = requests.get(url, params=params, timeout=10)
+            resp = requests.get(url, params=params, timeout=30)
             data = resp.json()
             
             if data.get('retCode') != 0 or not data.get('result', {}).get('list'):
-                break
+                retries += 1
+                if retries >= max_retries:
+                    break
+                time.sleep(0.5)
+                continue
                 
             klines = data['result']['list']
             all_data.extend(klines)
@@ -85,9 +91,14 @@ def fetch_klines(symbol: str, interval: str = '3', days: int = 30) -> pd.DataFra
             if earliest <= start_time:
                 break
             current_end = earliest - 1
-            time.sleep(0.03)
-        except:
-            break
+            retries = 0
+            time.sleep(0.05)
+        except Exception as e:
+            retries += 1
+            if retries >= max_retries:
+                print(f"Failed to fetch {symbol}: {e}", flush=True)
+                break
+            time.sleep(1)
     
     if not all_data:
         return pd.DataFrame()
@@ -309,6 +320,6 @@ def run_backtest(num_symbols=100, days=30, train_pct=0.6):
     return winning_combos
 
 if __name__ == "__main__":
-    # Full 400-symbol backtest with MAXIMUM data (180 days = 6 months)
+    # Full 400-symbol backtest with 120 days of data
     # 50%+ WR threshold on both train and test
-    run_backtest(num_symbols=400, days=180, train_pct=0.6)
+    run_backtest(num_symbols=400, days=120, train_pct=0.6)

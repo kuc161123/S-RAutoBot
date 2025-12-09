@@ -1,0 +1,30 @@
+🔬 20-Symbol Comprehensive Backtest
+======================================================================
+
+📋 Fetching top 20 symbols...
+   Found 20 symbols
+
+📥 Fetching 120-day data...
+   [1/20] BTCUSDT...
+   [20/20] BNBUSDT...
+
+✅ Loaded data for 20 symbols
+
+📊 Walk-Forward Validation (Train: 60%, Test: 40%)
+
+======================================================================
+🏆 WINNING COMBOS (Train WR ≥ 50% AND Test WR ≥ 50%)
+======================================================================
+
+Found 4 reliable combos
+ 1. HYPEUSDT short RSI:<30 MACD:bear Fib:50-61
+    Train: 63.6% (N=11) | Test: 83.3% (N=6)
+ 2. STABLEUSDT long RSI:30-40 MACD:bear Fib:61-78
+    Train: 54.5% (N=11) | Test: 57.1% (N=7)
+ 3. PIEVERSEUSDT long RSI:40-60 MACD:bear Fib:0-23
+    Train: 60.0% (N=10) | Test: 50.0% (N=4)
+ 4. STABLEUSDT long RSI:40-60 MACD:bull Fib:38-50
+    Train: 57.1% (N=14) | Test: 50.0% (N=10)
+
+✅ Exported 3 symbols to backtest_golden_combos.yaml
+   Total combos: 4

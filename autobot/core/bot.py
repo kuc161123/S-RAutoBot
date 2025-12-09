@@ -322,8 +322,8 @@ class VWAPBot:
             total_symbols = max(yaml_symbols, promoted_symbols)
             
             learning_symbols = len(getattr(self, 'all_symbols', []))
-            long_combos = sum(len(d.get('long', [])) for d in self.vwap_combos.values())
-            short_combos = sum(len(d.get('short', [])) for d in self.vwap_combos.values())
+            long_combos = sum(len(d.get('allowed_combos_long', [])) for d in self.vwap_combos.values())
+            short_combos = sum(len(d.get('allowed_combos_short', [])) for d in self.vwap_combos.values())
             
             # If YAML is empty but promoted set has combos, count from promoted
             if long_combos == 0 and short_combos == 0 and self.learner.promoted:
@@ -931,7 +931,9 @@ class VWAPBot:
                     pass
                 
                 # Check if allowed to trade
-                allowed = self.vwap_combos.get(sym, {}).get(side, [])
+                # YAML uses: allowed_combos_long / allowed_combos_short
+                yaml_key = f"allowed_combos_{side}"
+                allowed = self.vwap_combos.get(sym, {}).get(yaml_key, [])
                 
                 # UNIFIED LEARNING: Record signal with full context
                 # Returns optimized TP/SL based on learned R:R

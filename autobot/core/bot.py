@@ -977,7 +977,8 @@ class VWAPBot:
                     # Phantom signal - learner already tracks it (recorded above)
                     # Telegram notifications DISABLED to prevent 429 errors
                     # Just log locally
-                    logger.debug(f"👻 PHANTOM: {sym} {side} {combo}")
+                    # Just log locally (changed to INFO for user visibility)
+                    logger.info(f"👻 SIGNAL DETECTED: {sym} {side} {combo} (Phantom)")
                     
         except Exception as e:
             logger.error(f"Error {sym}: {e}")

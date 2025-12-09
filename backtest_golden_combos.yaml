@@ -1,9 +1,13 @@
 # Backtest-Validated Golden Combos (LIVE)
-# Updated: 2025-12-09T07:39:06.358229
-# Progress: 214/400 symbols
-# Total combos: 78
+# Updated: 2025-12-09T07:42:18.542766
+# Progress: 218/400 symbols
+# Total combos: 79
 # Criteria: 60 days, every candle, 50%+ WR train & test
 
+1000TOSHIUSDT:
+  allowed_combos_long:
+  - RSI:30-40 MACD:bull Fib:38-50
+  allowed_combos_short: []
 1INCHUSDT:
   allowed_combos_long:
   - RSI:<30 MACD:bear Fib:38-50

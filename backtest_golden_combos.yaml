@@ -1,7 +1,7 @@
 # Backtest-Validated Golden Combos (LIVE)
-# Updated: 2025-12-09T09:21:56.047246
-# Progress: 319/400 symbols
-# Total combos: 129
+# Updated: 2025-12-09T09:23:52.567534
+# Progress: 321/400 symbols
+# Total combos: 130
 # Criteria: 60 days, every candle, 50%+ WR train & test
 
 10000SATSUSDT:
@@ -381,6 +381,10 @@ TAIKOUSDT:
   allowed_combos_short:
   - RSI:60-70 MACD:bull Fib:78-100
 THETAUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:61-78
+THEUSDT:
   allowed_combos_long: []
   allowed_combos_short:
   - RSI:70+ MACD:bull Fib:61-78

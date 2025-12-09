@@ -1,5 +1,10 @@
-# Backtest-Validated Golden Combos
-# Live backtest - auto-updated as combos are discovered
-# Started: 2025-12-09
-# Status: Running...
+# Backtest-Validated Golden Combos (LIVE)
+# Updated: 2025-12-09T04:18:02.129406
+# Progress: 2/400 symbols
+# Total combos: 1
+# Criteria: 60 days, every candle, 50%+ WR train & test
 
+ETHUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:60-70 MACD:bear Fib:50-61

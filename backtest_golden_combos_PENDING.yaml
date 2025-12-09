@@ -1,0 +1,22 @@
+# Backtest-Validated Golden Combos (PENDING REVIEW)
+# Generated: 2025-12-09T03:52:03.636542
+# Progress: 20/400 symbols
+# Combos found so far: 5
+
+BEATUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bear Fib:50-61
+  allowed_combos_short: []
+LINKUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:38-50
+STABLEUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bull Fib:78-100
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:0-23
+XRPUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:50-61

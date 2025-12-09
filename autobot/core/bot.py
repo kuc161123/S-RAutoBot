@@ -916,6 +916,17 @@ class VWAPBot:
                 self.signals_detected += 1
                 combo = self.get_combo(last_candle)
                 
+                # Check for "Heartbeat" / Proof of Life logging
+                # This logs ANY cross, even if not matched, so user knows bot is scanning
+                yaml_key = f"allowed_combos_{side}"
+                allowed = self.vwap_combos.get(sym, {}).get(yaml_key, [])
+                is_allowed = combo in allowed
+
+                if not is_allowed:
+                     # Log mismatch at INFO level for "Proof of Life"
+                     # Rate limit this slightly if needed, but for now user wants VISIBILITY
+                     logger.info(f"👀 SCAN: {sym} {side} {combo} (Not in Golden Combos)")
+
                 atr = last_candle.atr
                 entry = last_candle.close
                 atr_percent = (atr / entry) * 100 if entry > 0 else 1.0
@@ -975,10 +986,39 @@ class VWAPBot:
                     await self.execute_trade(sym, side, last_candle, combo)
                 else:
                     # Phantom signal - learner already tracks it (recorded above)
-                    # Telegram notifications DISABLED to prevent 429 errors
-                    # Just log locally
-                    # Just log locally (changed to INFO for user visibility)
                     logger.info(f"👻 SIGNAL DETECTED: {sym} {side} {combo} (Phantom)")
+                    
+                    # NEAR-MISS NOTIFICATION: Only for symbols in Golden Combos file
+                    # This helps user see when their tracked symbols are active but combo doesn't match
+                    if sym in self.vwap_combos:
+                        # Get allowed combos for this symbol
+                        allowed_long = self.vwap_combos[sym].get('allowed_combos_long', [])
+                        allowed_short = self.vwap_combos[sym].get('allowed_combos_short', [])
+                        
+                        # Rate limit near-miss notifications (max 1 per symbol per 30 min)
+                        near_miss_key = f"near_miss_{sym}"
+                        now = time.time()
+                        if not hasattr(self, 'last_near_miss_notify'):
+                            self.last_near_miss_notify = {}
+                        
+                        last_notify = self.last_near_miss_notify.get(near_miss_key, 0)
+                        if now - last_notify >= 1800:  # 30 min cooldown
+                            self.last_near_miss_notify[near_miss_key] = now
+                            
+                            # Format allowed combos for display
+                            long_list = "\n".join([f"  • `{c}`" for c in allowed_long]) if allowed_long else "  • None"
+                            short_list = "\n".join([f"  • `{c}`" for c in allowed_short]) if allowed_short else "  • None"
+                            
+                            await self.send_telegram(
+                                f"🔍 **NEAR MISS** (Golden Combo Symbol)\n"
+                                f"━━━━━━━━━━━━━━━━━━━━\n"
+                                f"📊 Symbol: `{sym}`\n"
+                                f"📈 Side: **{side.upper()}**\n"
+                                f"🎯 Detected: `{combo}`\n\n"
+                                f"✅ **Allowed Long Combos:**\n{long_list}\n\n"
+                                f"✅ **Allowed Short Combos:**\n{short_list}\n\n"
+                                f"⏳ Waiting for exact match..."
+                            )
                     
         except Exception as e:
             logger.error(f"Error {sym}: {e}")
@@ -1762,8 +1802,10 @@ class VWAPBot:
                                     else:
                                         wr_info = "WR: Updating..."
                                     
-                                    # Source
-                                    source = "🚀 Auto-Promoted" if trade_info.get('is_auto_promoted') else "📊 Backtest"
+                                    # Source - Explicitly trust Backtest Golden Combos
+                                    source = "🟢 Backtest Golden Combo"
+                                    if trade_info.get('is_auto_promoted'):
+                                        source = "🚀 Auto-Promoted"
                                     
                                     # Duration
                                     duration_mins = (time.time() - trade_info['open_time']) / 60

@@ -235,22 +235,21 @@ class VWAPBot:
         return
     
     def _check_feature_filters(self) -> tuple:
-        """Check if current market features are favorable for trading.
+        """Check market feature filters before executing trade.
         
-        Based on backtest findings:
-        - Best sessions: London (08:00-16:00 UTC), New York (16:00-24:00 UTC)
-        - Avoid: Asia (00:00-08:00 UTC)
-        - Best hours: 13:00-16:00 UTC
+        DISABLED: Backtest validated combos at ALL hours, not filtered by session.
+        To match backtest exactly, we allow trading at all hours.
+        
+        If you want to add session filtering later, uncomment the code below.
         """
-        from datetime import datetime
-        hour = datetime.utcnow().hour
+        # # Session filter (DISABLED - backtest didn't use this)
+        # from datetime import datetime
+        # hour = datetime.utcnow().hour
+        # if hour < 8:  # Asia session
+        #     return False, "asia_session"
         
-        # Session filter
-        if hour < 8:  # Asia session (00:00-08:00 UTC)
-            return False, "asia_session"
-        
-        # All other hours are acceptable (London + New York)
-        return True, "good_session"
+        # All hours allowed to match backtest behavior
+        return True, "all_hours_allowed"
 
     # --- Telegram Commands ---
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -968,18 +967,12 @@ class VWAPBot:
                         sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
                 
                 if combo in allowed:
-                    # SMART FILTER: Check if smart learner recommends taking this
-                    btc_change = self.learner.get_btc_change_1h()
-                    should_take, smart_reason = self.learner.should_take_signal(
-                        sym, side, combo, atr_percent, btc_change
-                    )
-                    
-                    if should_take:
-                        logger.info(f"🚀 SIGNAL: {sym} {side} | {smart_explanation}")
-                        await self.execute_trade(sym, side, last_candle, combo)
-                    else:
-                        logger.info(f"🛑 SMART BLOCK: {sym} {side} | {smart_reason}")
-                        # Learner already tracks this signal (recorded above)
+                    # GOLDEN COMBO FOUND - Execute directly!
+                    # These combos were validated by walk-forward backtest (50%+ WR)
+                    # We trust the backtest validation, so bypass smart filters
+                    # (smart filters weren't used in backtest, so shouldn't be used here)
+                    logger.info(f"🚀 GOLDEN COMBO: {sym} {side} {combo}")
+                    await self.execute_trade(sym, side, last_candle, combo)
                 else:
                     # Phantom signal - learner already tracks it (recorded above)
                     # Telegram notifications DISABLED to prevent 429 errors

@@ -1611,23 +1611,35 @@ class VWAPBot:
             )
 
     async def _startup_promote_demote_scan(self):
-        """DISABLED: Using static backtest golden combos now.
+        """Show auto-promote system status on startup.
         
-        Previously promoted/demoted combos based on live analytics.
-        Now we use backtest_golden_combos.yaml as the source of truth.
+        We're in AUTO-PROMOTE ONLY mode - no static backtest combos.
+        Only learner.promoted combos will be used for trading.
         """
-        logger.info("🔄 Startup promote/demote scan DISABLED - using backtest golden combos")
+        logger.info("🚀 Auto-Promote system initialized")
         
-        # Just log what we're using
-        combo_count = sum(
-            len(v.get('allowed_combos_long', [])) + len(v.get('allowed_combos_short', []))
-            for v in self.vwap_combos.values()
-        )
+        # Get stats for startup message
+        all_combos = self.learner.get_all_combos()
+        PROMOTE_TRADES = getattr(self.learner, 'PROMOTE_MIN_TRADES', 20)
+        PROMOTE_WR = getattr(self.learner, 'PROMOTE_MIN_LOWER_WR', 45.0)
+        
+        promoted_count = len(self.learner.promoted)
+        blacklisted_count = len(self.learner.blacklist)
+        near_promote = len([c for c in all_combos if c['total'] >= 5 and c['lower_wr'] >= 35
+                           and f"{c['symbol']}:{c['side']}:{c['combo']}" not in self.learner.promoted])
+        total_combos_tracked = len(all_combos)
+        
         await self.send_telegram(
-            f"📊 **USING BACKTEST GOLDEN COMBOS**\n"
-            f"├ Symbols: {len(self.vwap_combos)}\n"
-            f"├ Total Combos: {combo_count}\n"
-            f"└ Source: `backtest_golden_combos.yaml`"
+            f"🚀 **AUTO-PROMOTE MODE**\n"
+            f"├ No static backtest combos\n"
+            f"├ Live learning only\n"
+            f"└ Source: `{self.learner.OVERRIDE_FILE}`\n\n"
+            f"📊 **Current Status**\n"
+            f"├ 🟢 Promoted: **{promoted_count}** (trading)\n"
+            f"├ 📈 Near Promotion: **{near_promote}**\n"
+            f"├ 🚫 Blacklisted: **{blacklisted_count}**\n"
+            f"└ 📚 Total Tracked: **{total_combos_tracked}** combos\n\n"
+            f"📏 **Thresholds**: N≥{PROMOTE_TRADES}, WR≥{PROMOTE_WR:.0f}%"
         )
 
     async def run(self):
@@ -1701,14 +1713,24 @@ class VWAPBot:
         redis_ok = "🟢" if self.learner.redis_client else "🔴"
         pg_ok = "🟢" if self.learner.pg_conn else "🔴"
 
+        # Get near-promotion stats for startup message
+        all_combos = self.learner.get_all_combos()
+        PROMOTE_TRADES = getattr(self.learner, 'PROMOTE_MIN_TRADES', 20)
+        PROMOTE_WR = getattr(self.learner, 'PROMOTE_MIN_LOWER_WR', 45.0)
+        near_promote = len([c for c in all_combos if c['total'] >= 5 and c['lower_wr'] >= 35
+                           and f"{c['symbol']}:{c['side']}:{c['combo']}" not in self.learner.promoted])
+
         # Send success notification
         await self.send_telegram(
             f"✅ **VWAP Bot Online!**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📊 Trading: **{len(trading_symbols)}** symbols\n"
             f"📚 Learning: **{len(self.all_symbols)}** symbols\n"
-            f"⚙️ Risk: {self.risk_config['value']} {self.risk_config['type']}\n"
-            f"🚀 Auto-Promote: **>40% LB WR**\n\n"
+            f"⚙️ Risk: {self.risk_config['value']} {self.risk_config['type']}\n\n"
+            f"🚀 **Auto-Promote**: N≥{PROMOTE_TRADES}, WR≥{PROMOTE_WR:.0f}%\n"
+            f"├ 🟢 Promoted: **{len(self.learner.promoted)}**\n"
+            f"├ 📈 Near Promotion: **{near_promote}**\n"
+            f"└ 🚫 Blacklisted: **{len(self.learner.blacklist)}**\n\n"
             f"💾 System Health:\n"
             f"• Redis: {redis_ok}\n"
             f"• Postgres: {pg_ok}\n\n"

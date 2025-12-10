@@ -1011,16 +1011,17 @@ class VWAPBot:
                     if is_tracked and required_mult:
                         # Symbol is tracked but volume too low - show BLOCKED notification
                         stats = config.get(f'stats_{tracked_side}', {})
-                        logger.info(f"🚫 BLOCKED: {sym} {side} Vol={volume_ratio:.1f}x < {required_mult}x required")
+                        current_vol = vol_ratio if vol_ratio else volume_ratio
+                        logger.info(f"🚫 BLOCKED: {sym} {side} Vol={current_vol:.1f}x < {required_mult}x required")
                         
-                        # Rate limit blocked notifications (1 per 30 min per symbol/side)
+                        # Rate limit blocked notifications (1 per 5 min per symbol/side)
                         cooldown_key = f"{sym}_{side}_blocked"
                         now = time.time()
                         if not hasattr(self, 'last_blocked_notify'):
                             self.last_blocked_notify = {}
                         
                         last_notify = self.last_blocked_notify.get(cooldown_key, 0)
-                        if now - last_notify >= 1800:  # 30 min cooldown
+                        if now - last_notify >= 300:  # 5 min cooldown (was 30 min)
                             self.last_blocked_notify[cooldown_key] = now
                             
                             await self.send_telegram(
@@ -1029,13 +1030,13 @@ class VWAPBot:
                                 f"📊 Symbol: `{sym}`\n"
                                 f"📈 Side: **{side.upper()}**\n\n"
                                 f"🔊 **VOLUME CHECK FAILED**\n"
-                                f"├ Current: **{volume_ratio:.1f}x** avg\n"
+                                f"├ Current: **{current_vol:.1f}x** avg\n"
                                 f"├ Required: ≥ **{required_mult}x**\n"
                                 f"└ Status: ❌ BLOCKED\n\n"
                                 f"📊 **Config Stats**\n"
                                 f"├ Train: WR={stats.get('train_wr', 0)}% (N={stats.get('train_n', 0)})\n"
                                 f"└ Test: WR={stats.get('test_wr', 0)}% (N={stats.get('test_n', 0)})\n\n"
-                                f"💡 Signal detected but volume too low"
+                                f"💡 VWAP signal detected but volume too low"
                             )
                     else:
                         # Symbol not in volume config at all - just log

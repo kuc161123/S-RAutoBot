@@ -1,5 +1,5 @@
 # Volume Filter Golden Combos - AUTO-GENERATED
-# Last Updated: 2025-12-10T05:14:28.863910
+# Last Updated: 2025-12-10T05:17:24.841869
 
 _metadata:
   generated: '2025-12-10T04:42:00Z'
@@ -86,3 +86,11 @@ ZENUSDT:
     train_n: 17
     test_wr: 38.5
     test_n: 13
+WLDUSDT:
+  allowed_short: true
+  volume_mult_short: 2.0
+  stats_short:
+    train_wr: 45.0
+    train_n: 20
+    test_wr: 0
+    test_n: 0

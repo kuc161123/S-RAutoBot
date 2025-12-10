@@ -1,5 +1,5 @@
 # Volume Filter Golden Combos - AUTO-GENERATED
-# Last Updated: 2025-12-10T04:51:58.424052
+# Last Updated: 2025-12-10T04:52:00.216344
 
 _metadata:
   generated: '2025-12-10T04:42:00Z'
@@ -29,5 +29,12 @@ PIPPINUSDT:
   stats_long:
     train_wr: 45.0
     train_n: 20
+    test_wr: 37.5
+    test_n: 8
+  allowed_short: true
+  volume_mult_short: 2.0
+  stats_short:
+    train_wr: 41.4
+    train_n: 29
     test_wr: 37.5
     test_n: 8

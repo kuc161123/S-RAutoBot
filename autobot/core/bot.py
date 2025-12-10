@@ -395,13 +395,14 @@ class VWAPBot:
             total_signals_rate = learning.total_signals / uptime_hours if uptime_hours > 0 else 0
             
             # Find top promotion candidates (need both N progress and good WR)
-            # Score = weighted combination of closeness to N=20 and WR above threshold
+            # Only consider combos with reasonable WR (at least 30% LB WR)
             promotion_candidates = []
             for c in all_combos:
                 key = f"{c['symbol']}:{c['side']}:{c['combo']}"
                 if key in learning.promoted or key in learning.blacklist:
                     continue
-                if c['total'] >= 5:  # Minimum data
+                # ONLY consider combos with minimum 30% LB WR (realistic promotion path)
+                if c['total'] >= 5 and c['lower_wr'] >= 30:
                     trades_needed = max(0, PROMOTE_TRADES - c['total'])
                     wr_margin = c['lower_wr'] - PROMOTE_WR  # Positive if above threshold
                     
@@ -412,11 +413,17 @@ class VWAPBot:
                     elif c['lower_wr'] >= PROMOTE_WR - 10:
                         prob = max(30, 50 + wr_margin * 2)  # Close to threshold
                     else:
-                        prob = max(5, 20 + wr_margin)  # Far from threshold
+                        prob = max(15, 25 + wr_margin)  # Far from threshold
                     
                     # ETA calculation: assume ~2 signals per combo per hour on average
                     signals_per_combo_per_hour = max(0.5, total_signals_rate / max(1, len(all_combos)))
                     eta_hours = trades_needed / signals_per_combo_per_hour if signals_per_combo_per_hour > 0 else 999
+                    
+                    # Score: PRIORITIZE WR (70%) over N count (30%)
+                    # This ensures high-WR combos rank above high-N/low-WR combos
+                    wr_score = min(100, c['lower_wr'] * 1.8)  # Scale WR to 0-100 (55% -> 99)
+                    n_score = min(100, (c['total'] / PROMOTE_TRADES) * 100)  # N progress 0-100
+                    combined_score = wr_score * 0.7 + n_score * 0.3
                     
                     promotion_candidates.append({
                         'symbol': c['symbol'],
@@ -427,10 +434,10 @@ class VWAPBot:
                         'trades_needed': trades_needed,
                         'prob': prob,
                         'eta_hours': eta_hours,
-                        'score': (100 - trades_needed) * 0.6 + prob * 0.4  # Combined score
+                        'score': combined_score
                     })
             
-            # Sort by score descending (closest to promotion)
+            # Sort by score descending (best candidates = high WR + high N)
             promotion_candidates.sort(key=lambda x: x['score'], reverse=True)
             top_candidates = promotion_candidates[:3]
             

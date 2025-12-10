@@ -1,0 +1,44 @@
+# 15-MINUTE VWAP FILTER Backtest Results
+# Generated: 2025-12-10T05:54:10.383082
+# R:R Ratio: 2.0:1 (original)
+# Filter: Price must be ABOVE 15m VWAP for long, BELOW for short
+# Criteria: Train WR >= 40%, Test WR >= 40%
+#
+# NOTE: This file is for COMPARISON ONLY - Does NOT affect bot.
+
+_metadata:
+  rr_ratio: 2.0:1
+  filter_type: 15m_VWAP_DIRECTION
+  description: Long if price > 15m VWAP, Short if price < 15m VWAP
+  generated: '2025-12-10T05:54:10.382399'
+  symbols_tested: 400
+  symbols_with_configs: 2
+  total_configs: 2
+  long_configs: 2
+  short_configs: 0
+  criteria:
+    train_wr: '>= 40%'
+    test_wr: '>= 40%'
+    min_train_n: 15
+    min_test_n: 5
+  note: COMPARISON ONLY - Does NOT affect live bot
+XMRUSDT:
+  long:
+    filter: 15m_VWAP
+    train_wr: 54.8
+    train_lb: 39.9
+    train_n: 42
+    test_wr: 45.2
+    test_lb: 29.2
+    test_n: 31
+  short: null
+DYMUSDT:
+  long:
+    filter: 15m_VWAP
+    train_wr: 50.0
+    train_lb: 37.7
+    train_n: 60
+    test_wr: 47.6
+    test_lb: 28.3
+    test_n: 21
+  short: null

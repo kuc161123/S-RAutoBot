@@ -105,14 +105,16 @@ class VWAPBot:
         ))
         
     def load_overrides(self):
-        """Load backtest-validated golden combos (replaces dynamic auto-promote/demote)"""
-        try:
-            with open('backtest_golden_combos.yaml', 'r') as f:
-                self.vwap_combos = yaml.safe_load(f) or {}
-            logger.info(f"📂 Loaded {len(self.vwap_combos)} symbols from backtest golden combos")
-        except FileNotFoundError:
-            logger.warning("⚠️ backtest_golden_combos.yaml not found, using empty")
-            self.vwap_combos = {}
+        """Load combos - AUTO-PROMOTE/DEMOTE ONLY MODE
+        
+        Backtest golden combos are DISABLED.
+        Only learner.promoted combos will be used for trading.
+        """
+        # DISABLED: Backtest golden combos
+        # Previously loaded from backtest_golden_combos.yaml
+        # Now using ONLY auto-promoted combos from live learning
+        self.vwap_combos = {}  # Empty - no backtest combos
+        logger.info("📂 AUTO-PROMOTE MODE: No backtest combos loaded (live learning only)")
 
     def _get_data_dir(self):
         """Get persistent data directory"""
@@ -984,12 +986,14 @@ class VWAPBot:
                     else:
                         sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
                 
-                if combo in allowed:
-                    # GOLDEN COMBO FOUND - Execute directly!
-                    # These combos were validated by walk-forward backtest (50%+ WR)
-                    # We trust the backtest validation, so bypass smart filters
-                    # (smart filters weren't used in backtest, so shouldn't be used here)
-                    logger.info(f"🚀 GOLDEN COMBO: {sym} {side} {combo}")
+                # Check if COMBO is in learner.promoted (auto-promoted from live stats)
+                combo_key = f"{sym}:{side}:{combo}"
+                is_auto_promoted = combo_key in self.learner.promoted
+                
+                if is_auto_promoted:
+                    # AUTO-PROMOTED COMBO - Execute!
+                    # This combo was promoted based on live learning stats (>40% LB WR)
+                    logger.info(f"🚀 AUTO-PROMOTED: {sym} {side} {combo}")
                     await self.execute_trade(sym, side, last_candle, combo)
                 else:
                     # Phantom signal - learner already tracks it (recorded above)

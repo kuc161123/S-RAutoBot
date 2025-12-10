@@ -1,0 +1,83 @@
+# VOLUME FILTER Backtest Results
+# Generated: 2025-12-10T07:04:46.705472
+# R:R Ratio: 2.0:1
+# Volume Multipliers Tested: [1.0, 1.5, 2.0, 2.5, 3.0]
+# Criteria: Train WR >= 40%, Test WR >= 40%
+#
+# NOTE: This file is for COMPARISON ONLY - Does NOT affect bot.
+
+_metadata:
+  rr_ratio: 2.0:1
+  filter_type: VOLUME
+  volume_multipliers_tested:
+  - 1.0
+  - 1.5
+  - 2.0
+  - 2.5
+  - 3.0
+  generated: '2025-12-10T07:04:46.704925'
+  symbols_tested: 400
+  symbols_with_configs: 4
+  total_configs: 6
+  criteria:
+    train_wr: '>= 40%'
+    test_wr: '>= 40%'
+    min_train_n: 15
+    min_test_n: 3
+  note: COMPARISON ONLY - Does NOT affect live bot
+OLUSDT:
+  configs:
+  - side: short
+    volume_mult: 2.0
+    train_wr: 47.1
+    train_lb: 26.2
+    train_n: 17
+    test_wr: 57.1
+    test_lb: 25.0
+    test_n: 7
+  - side: short
+    volume_mult: 1.0
+    train_wr: 42.9
+    train_lb: 26.5
+    train_n: 28
+    test_wr: 50.0
+    test_lb: 28.0
+    test_n: 16
+  - side: short
+    volume_mult: 1.5
+    train_wr: 40.9
+    train_lb: 23.3
+    train_n: 22
+    test_wr: 50.0
+    test_lb: 23.7
+    test_n: 10
+AIAUSDT:
+  configs:
+  - side: short
+    volume_mult: 2.5
+    train_wr: 45.8
+    train_lb: 27.9
+    train_n: 24
+    test_wr: 66.7
+    test_lb: 20.8
+    test_n: 3
+PIPPINUSDT:
+  configs:
+  - side: long
+    volume_mult: 1.5
+    train_wr: 43.5
+    train_lb: 25.6
+    train_n: 23
+    test_wr: 45.5
+    test_lb: 21.3
+    test_n: 11
+ICPUSDT:
+  configs:
+  - side: short
+    volume_mult: 1.5
+    train_wr: 41.2
+    train_lb: 21.6
+    train_n: 17
+    test_wr: 40.0
+    test_lb: 19.8
+    test_n: 15

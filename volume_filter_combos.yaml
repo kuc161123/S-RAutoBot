@@ -1,5 +1,5 @@
 # Volume Filter Golden Combos - AUTO-GENERATED
-# Last Updated: 2025-12-10T05:27:24.699766
+# Last Updated: 2025-12-10T05:31:30.084508
 
 _metadata:
   generated: '2025-12-10T04:42:00Z'
@@ -118,3 +118,11 @@ USTCUSDT:
     train_n: 16
     test_wr: 20.0
     test_n: 5
+ICPUSDT:
+  allowed_short: true
+  volume_mult_short: 1.5
+  stats_short:
+    train_wr: 41.2
+    train_n: 17
+    test_wr: 40.0
+    test_n: 15

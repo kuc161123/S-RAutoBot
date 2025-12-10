@@ -105,23 +105,11 @@ class VWAPBot:
         ))
         
     def load_overrides(self):
-        """Load backtest-validated configs (supports both volume filter and legacy combo system)"""
-        # NEW: Load volume filter combos (prioritized)
-        self.volume_combos = {}
-        try:
-            with open('volume_filter_combos.yaml', 'r') as f:
-                loaded = yaml.safe_load(f) or {}
-                # Filter out metadata
-                self.volume_combos = {k: v for k, v in loaded.items() if not k.startswith('_')}
-            logger.info(f"📂 Loaded {len(self.volume_combos)} symbols from volume_filter_combos.yaml")
-        except FileNotFoundError:
-            logger.info("📂 No volume_filter_combos.yaml found, using legacy combo system")
-        
-        # LEGACY: Load indicator combos (fallback)
+        """Load backtest-validated golden combos (replaces dynamic auto-promote/demote)"""
         try:
             with open('backtest_golden_combos.yaml', 'r') as f:
                 self.vwap_combos = yaml.safe_load(f) or {}
-            logger.info(f"📂 Loaded {len(self.vwap_combos)} symbols from backtest golden combos (legacy)")
+            logger.info(f"📂 Loaded {len(self.vwap_combos)} symbols from backtest golden combos")
         except FileNotFoundError:
             logger.warning("⚠️ backtest_golden_combos.yaml not found, using empty")
             self.vwap_combos = {}
@@ -326,15 +314,20 @@ class VWAPBot:
             # === SYSTEM STATUS ===
             uptime_hrs = (time.time() - self.learner.started_at) / 3600
             
-            # === TRADING SYMBOLS (VOLUME FILTER) ===
-            vol_symbols = len(self.volume_combos)
-            vol_long = sum(1 for v in self.volume_combos.values() if v.get('allowed_long'))
-            vol_short = sum(1 for v in self.volume_combos.values() if v.get('allowed_short'))
-            total_vol_configs = vol_long + vol_short
+            # === TRADING SYMBOLS ===
+            # Use max of YAML-loaded combos and promoted set (handles ephemeral file systems)
+            yaml_symbols = len(self.vwap_combos)
+            promoted_symbols = len(set(k.split(':')[0] for k in self.learner.promoted))
+            total_symbols = max(yaml_symbols, promoted_symbols)
             
-            # Legacy combo count (for reference)
-            legacy_symbols = len(self.vwap_combos)
             learning_symbols = len(getattr(self, 'all_symbols', []))
+            long_combos = sum(len(d.get('allowed_combos_long', [])) for d in self.vwap_combos.values())
+            short_combos = sum(len(d.get('allowed_combos_short', [])) for d in self.vwap_combos.values())
+            
+            # If YAML is empty but promoted set has combos, count from promoted
+            if long_combos == 0 and short_combos == 0 and self.learner.promoted:
+                long_combos = sum(1 for k in self.learner.promoted if ':long:' in k)
+                short_combos = sum(1 for k in self.learner.promoted if ':short:' in k)
             
             # === UNIFIED LEARNING STATS ===
             learning = self.learner
@@ -462,10 +455,10 @@ class VWAPBot:
                 f"├ Uptime: {uptime_hrs:.1f}h | Loops: {self.loop_count}\n"
                 f"└ Risk: {self.risk_config['value']} {self.risk_config['type']}\n\n"
                 
-                f"🔊 **VOLUME FILTER**\n"
-                f"├ Symbols: {vol_symbols} active\n"
-                f"├ Configs: 🟢{vol_long} long / 🔴{vol_short} short\n"
-                f"├ Total: {total_vol_configs} configs\n"
+                f"🎯 **TRADING**\n"
+                f"├ Symbols: {total_symbols} active\n"
+                f"├ Combos: 🟢{long_combos} / 🔴{short_combos}\n"
+                f"├ 🚀 Auto-Promoted: {len(self.learner.promoted)}\n"
                 f"└ Signals: {self.signals_detected} detected\n\n"
                 
                 f"📚 **UNIFIED TRACKER** ({learning_symbols} symbols)\n"
@@ -864,17 +857,10 @@ class VWAPBot:
         df['roll_high'] = df['high'].rolling(50).max()
         df['roll_low'] = df['low'].rolling(50).min()
         
-        # VOLUME FILTER: Calculate rolling average volume and ratio
-        df['avg_volume'] = df['volume'].rolling(20).mean()
-        df['volume_ratio'] = df['volume'] / df['avg_volume']
-        
         return df.dropna()
 
-    def get_combo_legacy(self, row):
+    def get_combo(self, row):
         """
-        LEGACY combo system - kept for backwards compatibility.
-        Use check_volume_filter() for new volume-based filtering.
-        
         SIMPLIFIED combo: 18 combinations (3 RSI x 2 MACD x 3 Fib)
         Updated to match backtest_simplified_2to1.py results.
         
@@ -908,48 +894,6 @@ class VWAPBot:
         
         return f"RSI:{r_bin} MACD:{m_bin} Fib:{f_bin}"
 
-    def get_combo(self, row):
-        """Wrapper for backwards compatibility - calls legacy combo function"""
-        return self.get_combo_legacy(row)
-    
-    def check_volume_filter(self, row, side: str, symbol: str):
-        """
-        NEW VOLUME-BASED FILTER SYSTEM
-        Check if current candle passes volume filter for execution.
-        
-        Returns:
-            (is_allowed, stats_dict, volume_mult, volume_ratio)
-        """
-        # Check if symbol has volume filter config
-        config = self.volume_combos.get(symbol, {})
-        
-        if not config:
-            return False, {}, None, None
-        
-        # Check side-specific config
-        if side == 'long':
-            if not config.get('allowed_long', False):
-                return False, {}, None, None
-            required_mult = config.get('volume_mult_long', 1.5)
-            stats = config.get('stats_long', {})
-        else:
-            if not config.get('allowed_short', False):
-                return False, {}, None, None
-            required_mult = config.get('volume_mult_short', 1.5)
-            stats = config.get('stats_short', {})
-        
-        # Calculate volume ratio
-        volume_ratio = row.get('volume_ratio', 1.0)
-        if hasattr(row, 'volume_ratio'):
-            volume_ratio = row.volume_ratio
-        
-        # Check if volume meets threshold
-        if volume_ratio >= required_mult:
-            return True, stats, required_mult, volume_ratio
-        
-        return False, stats, required_mult, volume_ratio
-
-
     async def process_symbol(self, sym):
         try:
             klines = self.broker.get_klines(sym, '3', limit=200)
@@ -977,70 +921,101 @@ class VWAPBot:
                 
             if side:
                 self.signals_detected += 1
+                combo = self.get_combo(last_candle)
                 
-                # Get ATR and entry for TP/SL calculation
+                # Check for "Heartbeat" / Proof of Life logging
+                # This logs ANY cross, even if not matched, so user knows bot is scanning
+                yaml_key = f"allowed_combos_{side}"
+                allowed = self.vwap_combos.get(sym, {}).get(yaml_key, [])
+                is_allowed = combo in allowed
+
+                if not is_allowed:
+                     # Log mismatch at INFO level for "Proof of Life"
+                     # Rate limit this slightly if needed, but for now user wants VISIBILITY
+                     logger.info(f"👀 SCAN: {sym} {side} {combo} (Not in Golden Combos)")
+
                 atr = last_candle.atr
                 entry = last_candle.close
+                atr_percent = (atr / entry) * 100 if entry > 0 else 1.0
                 
-                # Get volume ratio for display
-                volume_ratio = last_candle.volume_ratio if hasattr(last_candle, 'volume_ratio') else 1.0
+                # Get BTC price for context
+                btc_price = 0
+                try:
+                    btc_ticker = self.broker.get_ticker('BTCUSDT')
+                    if btc_ticker:
+                        btc_price = float(btc_ticker.get('lastPrice', 0))
+                except:
+                    pass
                 
-                # === VOLUME FILTER ONLY SYSTEM ===
-                vol_allowed, vol_stats, vol_mult, vol_ratio = self.check_volume_filter(last_candle, side, sym)
+                # Check if allowed to trade
+                # YAML uses: allowed_combos_long / allowed_combos_short
+                yaml_key = f"allowed_combos_{side}"
+                allowed = self.vwap_combos.get(sym, {}).get(yaml_key, [])
                 
-                if vol_allowed:
-                    # Volume filter passed! Execute trade
-                    logger.info(f"🔊 VOLUME FILTER: {sym} {side} Vol={vol_ratio:.1f}x >= {vol_mult}x | Train WR={vol_stats.get('train_wr', 0)}%")
-                    await self.execute_trade_volume(sym, side, last_candle, vol_mult, vol_ratio, vol_stats)
-                else:
-                    # Check if this symbol is in our volume config (to show blocked notification)
-                    config = self.volume_combos.get(sym, {})
-                    is_tracked = False
-                    required_mult = None
-                    tracked_side = None
+                # UNIFIED LEARNING: Record signal with full context
+                # Returns optimized TP/SL based on learned R:R
+                # The learner now handles ALL signal tracking (both allowed and phantom)
+                is_allowed = combo in allowed
+                
+                # Rate limit phantom notifications (max 1 per symbol per 30 min)
+                should_notify = True
+                if not is_allowed:
+                    cooldown_key = f"{sym}_{side}"
+                    now = time.time()
+                    if not hasattr(self, 'last_phantom_notify_times'):
+                        self.last_phantom_notify_times = {}
                     
-                    if side == 'long' and config.get('allowed_long'):
-                        is_tracked = True
-                        required_mult = config.get('volume_mult_long', 1.5)
-                        tracked_side = 'long'
-                    elif side == 'short' and config.get('allowed_short'):
-                        is_tracked = True
-                        required_mult = config.get('volume_mult_short', 1.5)
-                        tracked_side = 'short'
-                    
-                    if is_tracked and required_mult:
-                        # Symbol is tracked but volume too low - show BLOCKED notification
-                        stats = config.get(f'stats_{tracked_side}', {})
-                        current_vol = vol_ratio if vol_ratio else volume_ratio
-                        logger.info(f"🚫 BLOCKED: {sym} {side} Vol={current_vol:.1f}x < {required_mult}x required")
-                        
-                        # Rate limit blocked notifications (1 per 5 min per symbol/side)
-                        cooldown_key = f"{sym}_{side}_blocked"
-                        now = time.time()
-                        if not hasattr(self, 'last_blocked_notify'):
-                            self.last_blocked_notify = {}
-                        
-                        last_notify = self.last_blocked_notify.get(cooldown_key, 0)
-                        if now - last_notify >= 300:  # 5 min cooldown (was 30 min)
-                            self.last_blocked_notify[cooldown_key] = now
-                            
-                            await self.send_telegram(
-                                f"🚫 **VOLUME FILTER BLOCKED**\n"
-                                f"━━━━━━━━━━━━━━━━━━━━\n"
-                                f"📊 Symbol: `{sym}`\n"
-                                f"📈 Side: **{side.upper()}**\n\n"
-                                f"🔊 **VOLUME CHECK FAILED**\n"
-                                f"├ Current: **{current_vol:.1f}x** avg\n"
-                                f"├ Required: ≥ **{required_mult}x**\n"
-                                f"└ Status: ❌ BLOCKED\n\n"
-                                f"📊 **Config Stats**\n"
-                                f"├ Train: WR={stats.get('train_wr', 0)}% (N={stats.get('train_n', 0)})\n"
-                                f"└ Test: WR={stats.get('test_wr', 0)}% (N={stats.get('test_n', 0)})\n\n"
-                                f"💡 VWAP signal detected but volume too low"
-                            )
+                    last_notify = self.last_phantom_notify_times.get(cooldown_key, 0)
+                    if now - last_notify < 1800: # 30 min cooldown
+                        should_notify = False
                     else:
-                        # Symbol not in volume config at all - just log
-                        logger.info(f"👀 SCAN: {sym} {side} Vol={volume_ratio:.1f}x (Not in volume config)")
+                        self.last_phantom_notify_times[cooldown_key] = now
+
+                smart_tp, smart_sl, smart_explanation = self.learner.record_signal(
+                    sym, side, combo, entry, atr, btc_price, is_allowed=is_allowed, notify=should_notify
+                )
+                
+                # Use smart R:R if available, otherwise default
+                if smart_tp and smart_sl:
+                    tp, sl = smart_tp, smart_sl
+                else:
+                    if side == 'long':
+                        sl, tp = entry - (2.0 * atr), entry + (4.0 * atr)
+                    else:
+                        sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
+                
+                if combo in allowed:
+                    # GOLDEN COMBO FOUND - Execute directly!
+                    # These combos were validated by walk-forward backtest (50%+ WR)
+                    # We trust the backtest validation, so bypass smart filters
+                    # (smart filters weren't used in backtest, so shouldn't be used here)
+                    logger.info(f"🚀 GOLDEN COMBO: {sym} {side} {combo}")
+                    await self.execute_trade(sym, side, last_candle, combo)
+                else:
+                    # Phantom signal - learner already tracks it (recorded above)
+                    logger.info(f"👻 SIGNAL DETECTED: {sym} {side} {combo} (Phantom)")
+                    
+                    # NEAR-MISS NOTIFICATION: Only for symbols in Golden Combos file
+                    # This helps user see when their tracked symbols are active but combo doesn't match
+                    if sym in self.vwap_combos:
+                        # Get allowed combos for this symbol
+                        allowed_long = self.vwap_combos[sym].get('allowed_combos_long', [])
+                        allowed_short = self.vwap_combos[sym].get('allowed_combos_short', [])
+                        
+                        # Format allowed combos for display
+                        long_list = "\n".join([f"  • `{c}`" for c in allowed_long]) if allowed_long else "  • None"
+                        short_list = "\n".join([f"  • `{c}`" for c in allowed_short]) if allowed_short else "  • None"
+                        
+                        await self.send_telegram(
+                            f"🔍 **NEAR MISS** (Golden Combo Symbol)\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"📊 Symbol: `{sym}`\n"
+                            f"📈 Side: **{side.upper()}**\n"
+                            f"🎯 Detected: `{combo}`\n\n"
+                            f"✅ **Allowed Long Combos:**\n{long_list}\n\n"
+                            f"✅ **Allowed Short Combos:**\n{short_list}\n\n"
+                            f"⏳ Waiting for exact match..."
+                        )
                     
         except Exception as e:
             logger.error(f"Error {sym}: {e}")
@@ -1591,203 +1566,24 @@ class VWAPBot:
                 f"Error: `{str(e)[:100]}`"
             )
 
-    async def execute_trade_volume(self, sym, side, row, vol_mult, vol_ratio, vol_stats):
-        """
-        Execute trade based on VOLUME FILTER (not combo).
-        Enhanced notifications with volume stats and backtest WR/N.
-        """
-        try:
-            # Check if already in position or have pending order
-            pos = self.broker.get_position(sym)
-            if pos and float(pos.get('size', 0)) > 0:
-                logger.info(f"Skip {sym}: Already in position")
-                return
-            
-            if sym in self.pending_limit_orders:
-                logger.info(f"Skip {sym}: Already have pending limit order")
-                return
-            
-            if sym in self.active_trades:
-                logger.info(f"Skip {sym}: Already tracking active trade")
-                return
-
-            balance = self.broker.get_balance() or 0
-            if balance <= 0:
-                logger.error("Balance is 0")
-                return
-            
-            # Feature filter: Skip during unfavorable market conditions
-            feature_ok, feature_reason = self._check_feature_filters()
-            if not feature_ok:
-                logger.debug(f"Skip {sym}: Feature filter blocked ({feature_reason})")
-                return
-                
-            risk_val = self.risk_config['value']
-            risk_type = self.risk_config['type']
-            
-            risk_amt = balance * (risk_val / 100) if risk_type == 'percent' else risk_val
-                
-            atr = row.atr
-            entry = row.close
-            
-            # Fixed 2:1 R:R to match backtest validation
-            optimal_rr = 2.0
-            
-            # Calculate TP/SL with fixed 2:1 R:R
-            MIN_SL_PCT = 0.5
-            MIN_TP_PCT = 1.0
-            
-            min_sl_dist = entry * (MIN_SL_PCT / 100)
-            min_tp_dist = entry * (MIN_TP_PCT / 100)
-            
-            sl_dist = max(1.0 * atr, min_sl_dist)
-            tp_dist = max(optimal_rr * atr, min_tp_dist)
-            
-            if side == 'long':
-                sl = entry - sl_dist
-                tp = entry + tp_dist
-                dist = sl_dist
-            else:
-                sl = entry + sl_dist
-                tp = entry - tp_dist
-                dist = sl_dist
-                
-            if dist <= 0: return
-            
-            qty = risk_amt / dist
-            
-            # Round based on price magnitude
-            if entry > 1000: qty = round(qty, 3)
-            elif entry > 10: qty = round(qty, 2)
-            elif entry > 1: qty = round(qty, 1)
-            else: qty = round(qty, 0)
-            
-            if qty <= 0: return
-
-            logger.info(f"EXECUTE VOLUME: {sym} {side} qty={qty} R:R={optimal_rr}:1 Vol={vol_ratio:.1f}x")
-            
-            # Set leverage to maximum allowed
-            max_lev = self.broker.get_max_leverage(sym)
-            lev_res = self.broker.set_leverage(sym, max_lev)
-            if lev_res:
-                logger.info(f"✅ Leverage set to MAX ({max_lev}x) for {sym}")
-            else:
-                max_lev = 10
-            
-            # Place BRACKET LIMIT order with TP/SL included
-            res = self.broker.place_limit(
-                sym, side, qty, entry,
-                take_profit=tp,
-                stop_loss=sl,
-                post_only=False
-            )
-            
-            if res and res.get('retCode') == 0:
-                result = res.get('result', {})
-                order_id = result.get('orderId', 'N/A')
-                
-                # Get stats from vol_stats
-                train_wr = vol_stats.get('train_wr', 0)
-                train_n = vol_stats.get('train_n', 0)
-                test_wr = vol_stats.get('test_wr', 0)
-                test_n = vol_stats.get('test_n', 0)
-                
-                # Calculate values for notification
-                sl_pct = abs(entry - sl) / entry * 100
-                tp_pct = abs(tp - entry) / entry * 100
-                position_value = qty * entry
-                
-                # Track as PENDING limit order
-                self.pending_limit_orders[sym] = {
-                    'order_id': order_id,
-                    'side': side,
-                    'combo': f"VOLUME_{vol_mult}x",
-                    'entry_price': entry,
-                    'tp': tp,
-                    'sl': sl,
-                    'qty': qty,
-                    'atr': atr,
-                    'optimal_rr': optimal_rr,
-                    'created_at': time.time(),
-                    'is_volume_filter': True,
-                    'vol_mult': vol_mult,
-                    'vol_ratio': vol_ratio,
-                    'vol_stats': vol_stats,
-                    'balance': balance,
-                    'risk_amt': risk_amt
-                }
-                
-                # Send enhanced notification with VOLUME FILTER stats
-                await self.send_telegram(
-                    f"🔊 **VOLUME FILTER TRADE**\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"📊 Symbol: `{sym}`\n"
-                    f"📈 Side: **{side.upper()}**\n"
-                    f"🔊 Filter: **Volume ≥ {vol_mult}x avg**\n\n"
-                    f"📈 **VOLUME STATS**\n"
-                    f"├ Current: **{vol_ratio:.1f}x** average\n"
-                    f"├ Required: ≥ {vol_mult}x\n"
-                    f"└ Status: ✅ PASSED\n\n"
-                    f"📊 **BACKTEST VALIDATION**\n"
-                    f"├ Train: WR={train_wr}% (N={train_n})\n"
-                    f"└ Test: WR={test_wr}% (N={test_n})\n\n"
-                    f"💰 **ORDER DETAILS**\n"
-                    f"├ Order ID: `{order_id[:16]}...`\n"
-                    f"├ Quantity: {qty}\n"
-                    f"├ Entry: ${entry:.4f}\n"
-                    f"├ Risk: ${risk_amt:.2f}\n"
-                    f"└ Leverage: {max_lev}x\n\n"
-                    f"🛡️ **TP/SL PROTECTION**\n"
-                    f"├ TP: ${tp:.4f} (+{tp_pct:.2f}%)\n"
-                    f"├ SL: ${sl:.4f} (-{sl_pct:.2f}%)\n"
-                    f"└ R:R: **{optimal_rr}:1**\n\n"
-                    f"⏳ Monitoring for fill..."
-                )
-                
-                self.trades_executed += 1
-                logger.info(f"✅ Volume filter order placed: {sym} {side} @ {entry}")
-                
-            else:
-                error_msg = res.get('retMsg', 'Unknown error') if res else 'No response'
-                await self.send_telegram(
-                    f"❌ **VOLUME TRADE FAILED**\n"
-                    f"Symbol: `{sym}` {side.upper()}\n"
-                    f"Error: {error_msg}"
-                )
-                logger.error(f"Volume order failed: {res}")
-                
-        except Exception as e:
-            logger.error(f"Execute volume error: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-
     async def _startup_promote_demote_scan(self):
         """DISABLED: Using static backtest golden combos now.
         
         Previously promoted/demoted combos based on live analytics.
         Now we use backtest_golden_combos.yaml as the source of truth.
         """
-        logger.info("🔄 Startup - loading config sources")
+        logger.info("🔄 Startup promote/demote scan DISABLED - using backtest golden combos")
         
-        # Count volume filter configs
-        vol_long = sum(1 for v in self.volume_combos.values() if v.get('allowed_long'))
-        vol_short = sum(1 for v in self.volume_combos.values() if v.get('allowed_short'))
-        
-        # Count legacy combos
+        # Just log what we're using
         combo_count = sum(
             len(v.get('allowed_combos_long', [])) + len(v.get('allowed_combos_short', []))
             for v in self.vwap_combos.values()
         )
-        
         await self.send_telegram(
-            f"📊 **TRADING CONFIG LOADED**\n\n"
-            f"🔊 **VOLUME FILTER** (ACTIVE)\n"
-            f"├ Symbols: {len(self.volume_combos)}\n"
-            f"├ Configs: 🟢{vol_long} long / 🔴{vol_short} short\n"
-            f"└ Source: `volume_filter_combos.yaml`\n\n"
-            f"📈 **LEGACY COMBOS** (disabled)\n"
+            f"📊 **USING BACKTEST GOLDEN COMBOS**\n"
             f"├ Symbols: {len(self.vwap_combos)}\n"
-            f"└ Status: ❌ Not used (volume filter only)"
+            f"├ Total Combos: {combo_count}\n"
+            f"└ Source: `backtest_golden_combos.yaml`"
         )
 
     async def run(self):

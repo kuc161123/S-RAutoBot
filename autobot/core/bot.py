@@ -815,6 +815,102 @@ class VWAPBot:
             await update.message.reply_text(f"❌ Error: {e}")
             logger.error(f"cmd_top error: {e}")
 
+    async def cmd_ladder(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show combo ladder/leaderboard - all combos ranked by progress"""
+        try:
+            # Get optional page number from args (default 1)
+            page = 1
+            if context.args and context.args[0].isdigit():
+                page = max(1, int(context.args[0]))
+            
+            per_page = 10
+            
+            # Get promotion thresholds
+            PROMOTE_TRADES = getattr(self.learner, 'PROMOTE_MIN_TRADES', 20)
+            PROMOTE_WR = getattr(self.learner, 'PROMOTE_MIN_LOWER_WR', 45.0)
+            
+            # Get all combos
+            all_combos = self.learner.get_all_combos()
+            
+            if not all_combos:
+                await update.message.reply_text(
+                    "📊 **NO COMBOS TRACKED YET**\n\n"
+                    "Run the bot to detect signals and build stats!",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # Calculate progress for each combo
+            for c in all_combos:
+                key = f"{c['symbol']}:{c['side']}:{c['combo']}"
+                c['is_promoted'] = key in self.learner.promoted
+                c['is_blacklisted'] = key in self.learner.blacklist
+                
+                # Progress scores
+                n_progress = min(100, (c['total'] / PROMOTE_TRADES) * 100)
+                wr_progress = min(100, (c['lower_wr'] / PROMOTE_WR) * 100) if PROMOTE_WR > 0 else 100
+                c['n_progress'] = n_progress
+                c['wr_progress'] = wr_progress
+                c['overall_progress'] = (n_progress + wr_progress) / 2
+            
+            # Sort by: promoted first, then by overall progress
+            all_combos.sort(key=lambda x: (x['is_promoted'], x['overall_progress']), reverse=True)
+            
+            # Pagination
+            total_pages = (len(all_combos) + per_page - 1) // per_page
+            page = min(page, total_pages)
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            page_combos = all_combos[start_idx:end_idx]
+            
+            # Build message
+            msg = f"📊 **COMBO LADDER** (Page {page}/{total_pages})\n"
+            msg += f"━━━━━━━━━━━━━━━━━━━━\n"
+            msg += f"📏 Thresholds: N≥{PROMOTE_TRADES}, WR≥{PROMOTE_WR:.0f}%\n\n"
+            
+            for i, c in enumerate(page_combos, start=start_idx + 1):
+                # Status icon
+                if c['is_promoted']:
+                    status = "🏆"  # Promoted
+                elif c['is_blacklisted']:
+                    status = "🚫"  # Blacklisted
+                elif c['overall_progress'] >= 90:
+                    status = "🔥"  # Almost there
+                elif c['overall_progress'] >= 70:
+                    status = "📈"  # Good progress
+                elif c['overall_progress'] >= 50:
+                    status = "📊"  # Moderate
+                else:
+                    status = "📉"  # Low
+                
+                side_icon = "🟢" if c['side'] == 'long' else "🔴"
+                
+                # Mini progress bar (5 chars)
+                bars_filled = int(c['overall_progress'] / 20)
+                bar = "█" * bars_filled + "░" * (5 - bars_filled)
+                
+                # Truncate symbol for display
+                sym = c['symbol'][:8]
+                
+                msg += f"{i}. {status} {side_icon} `{sym}`\n"
+                msg += f"   [{bar}] {c['overall_progress']:.0f}% | N:{c['total']}/{PROMOTE_TRADES} WR:{c['lower_wr']:.0f}%\n"
+            
+            # Summary
+            promoted_count = sum(1 for c in all_combos if c['is_promoted'])
+            near_count = sum(1 for c in all_combos if not c['is_promoted'] and c['overall_progress'] >= 70)
+            
+            msg += f"\n━━━━━━━━━━━━━━━━━━━━\n"
+            msg += f"🏆 Promoted: {promoted_count} | 📈 Near: {near_count} | 📚 Total: {len(all_combos)}\n"
+            
+            if total_pages > 1:
+                msg += f"💡 Use `/ladder {page + 1}` for next page"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"cmd_ladder error: {e}")
+
     async def send_telegram(self, msg):
         """Send Telegram notification"""
         try:
@@ -1665,6 +1761,7 @@ class VWAPBot:
             self.tg_app.add_handler(CommandHandler("blacklist", self.cmd_blacklist))
             self.tg_app.add_handler(CommandHandler("smart", self.cmd_smart))
             self.tg_app.add_handler(CommandHandler("top", self.cmd_top))
+            self.tg_app.add_handler(CommandHandler("ladder", self.cmd_ladder))
             
             # Global error handler
             async def error_handler(update, context):

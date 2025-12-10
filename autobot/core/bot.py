@@ -352,10 +352,35 @@ class VWAPBot:
             blacklisted = len(learning.blacklist)
             pending = len(learning.pending_signals)
             
-            # Count combos approaching thresholds
+            # Count combos approaching thresholds (use actual promotion criteria)
             all_combos = learning.get_all_combos()
-            approaching_promote = len([c for c in all_combos if c['total'] >= 10 and c['lower_wr'] >= 40])
-            approaching_blacklist = len([c for c in all_combos if c['total'] >= 5 and c['lower_wr'] <= 35])
+            PROMOTE_TRADES = getattr(learning, 'PROMOTE_MIN_TRADES', 20)
+            PROMOTE_WR = getattr(learning, 'PROMOTE_MIN_LOWER_WR', 45.0)
+            
+            # Near promotion: combos with at least 5 trades, WR >= 35%, progressing toward threshold
+            # Filter out already promoted combos
+            near_promote_candidates = []
+            for c in all_combos:
+                key = f"{c['symbol']}:{c['side']}:{c['combo']}"
+                if key in learning.promoted:
+                    continue  # Already promoted
+                if c['total'] >= 5 and c['lower_wr'] >= 35:
+                    # Calculate progress: N progress + WR progress
+                    n_progress = min(100, (c['total'] / PROMOTE_TRADES) * 100)
+                    wr_progress = min(100, (c['lower_wr'] / PROMOTE_WR) * 100) if PROMOTE_WR > 0 else 100
+                    overall_progress = (n_progress + wr_progress) / 2
+                    c['n_progress'] = n_progress
+                    c['wr_progress'] = wr_progress
+                    c['overall_progress'] = overall_progress
+                    near_promote_candidates.append(c)
+            
+            # Sort by overall progress descending
+            near_promote_candidates.sort(key=lambda x: x['overall_progress'], reverse=True)
+            approaching_promote = len(near_promote_candidates)
+            
+            # Near blacklist: combos with at least 5 trades and WR <= 35%
+            approaching_blacklist = len([c for c in all_combos if c['total'] >= 5 and c['lower_wr'] <= 30 
+                                          and f"{c['symbol']}:{c['side']}:{c['combo']}" not in learning.blacklist])
             
             # === SESSION BREAKDOWN ===
             sessions = {'asian': {'w': 0, 'l': 0}, 'london': {'w': 0, 'l': 0}, 'newyork': {'w': 0, 'l': 0}}
@@ -521,6 +546,21 @@ class VWAPBot:
                     combo_short = c['combo'][:15] + '..' if len(c['combo']) > 17 else c['combo']
                     msg += f"├ {side_icon} `{c['symbol']}` {combo_short}\n"
                     msg += f"│  WR:{c['lower_wr']:.0f}% | EV:{ev_str} | {c['optimal_rr']}:1 | {best_session} (N={c['total']})\n"
+            
+            # Add NEAR PROMOTION section - show top candidates approaching threshold
+            if near_promote_candidates:
+                msg += f"\n🚀 **NEAR PROMOTION** (top 5 of {len(near_promote_candidates)})\n"
+                msg += f"├ _Requires: N≥{PROMOTE_TRADES}, LB WR≥{PROMOTE_WR:.0f}%_\n"
+                for c in near_promote_candidates[:5]:
+                    side_icon = "🟢" if c['side'] == 'long' else "🔴"
+                    # Progress bar: ▓▓▓▓▓▒▒▒▒▒ (5 filled out of 10)
+                    n_bars = int(c['n_progress'] / 10)
+                    wr_bars = int(c['wr_progress'] / 10)
+                    n_bar_str = "▓" * n_bars + "▒" * (10 - n_bars)
+                    wr_bar_str = "▓" * wr_bars + "▒" * (10 - wr_bars)
+                    msg += f"├ {side_icon} `{c['symbol'][:10]}`\n"
+                    msg += f"│  N: {n_bar_str} {c['total']}/{PROMOTE_TRADES}\n"
+                    msg += f"│  WR: {wr_bar_str} {c['lower_wr']:.0f}%/{PROMOTE_WR:.0f}%\n"
             
             # Add recent activity from learner
             if recent:

@@ -251,6 +251,10 @@ class UnifiedLearner:
         # Load saved data
         self.load()
         self.load_blacklist()
+        
+        # CRITICAL: Sync promoted combos from YAML file
+        # This ensures we use YAML as source of truth for promoted combos
+        self._sync_promoted_from_yaml()
     
     def _init_persistence(self):
         """Initialize Redis and Postgres connections"""
@@ -1736,3 +1740,45 @@ class UnifiedLearner:
                 logger.debug(f"Failed to restore signal: {e}")
                 continue
 
+    def _sync_promoted_from_yaml(self):
+        """
+        Sync promoted combos from YAML file on startup.
+        
+        This ensures that symbol_overrides_VWAP_Combo.yaml is the source of truth
+        for which combos are promoted. Any combos in the YAML file will be added
+        to the promoted set.
+        """
+        import yaml
+        
+        try:
+            with open(self.OVERRIDE_FILE, 'r') as f:
+                overrides = yaml.safe_load(f) or {}
+        except FileNotFoundError:
+            logger.info(f"📂 No {self.OVERRIDE_FILE} found - starting with empty promoted set")
+            return
+        except Exception as e:
+            logger.error(f"Failed to read {self.OVERRIDE_FILE}: {e}")
+            return
+        
+        synced_count = 0
+        for symbol, sides in overrides.items():
+            if symbol.startswith('_'):  # Skip metadata keys like _metadata
+                continue
+            if not isinstance(sides, dict):
+                continue
+                
+            for side, combos in sides.items():
+                if side not in ['long', 'short']:
+                    continue
+                if not isinstance(combos, list):
+                    continue
+                    
+                for combo in combos:
+                    key = f"{symbol}:{side}:{combo}"
+                    if key not in self.promoted:
+                        self.promoted.add(key)
+                        synced_count += 1
+        
+        if synced_count > 0:
+            logger.info(f"✅ Synced {synced_count} combos from {self.OVERRIDE_FILE}")
+        logger.info(f"📂 Total promoted combos: {len(self.promoted)}")

@@ -1,5 +1,5 @@
 # Volume Filter Golden Combos - AUTO-GENERATED
-# Last Updated: 2025-12-10T05:32:57.463458
+# Last Updated: 2025-12-10T05:36:37.820555
 
 _metadata:
   generated: '2025-12-10T04:42:00Z'
@@ -134,3 +134,11 @@ DYDXUSDT:
     train_n: 34
     test_wr: 0
     test_n: 0
+HUSDT:
+  allowed_long: true
+  volume_mult_long: 1.0
+  stats_long:
+    train_wr: 47.1
+    train_n: 17
+    test_wr: 25.0
+    test_n: 4

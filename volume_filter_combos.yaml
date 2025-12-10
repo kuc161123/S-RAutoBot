@@ -1,5 +1,5 @@
 # Volume Filter Golden Combos - AUTO-GENERATED
-# Last Updated: 2025-12-10T04:51:55.239337
+# Last Updated: 2025-12-10T04:51:56.800070
 
 _metadata:
   generated: '2025-12-10T04:42:00Z'
@@ -25,9 +25,9 @@ FARTCOINUSDT:
     test_n: 0
 PIPPINUSDT:
   allowed_long: true
-  volume_mult_long: 1.0
+  volume_mult_long: 1.5
   stats_long:
-    train_wr: 44.1
-    train_n: 34
-    test_wr: 36.8
-    test_n: 19
+    train_wr: 43.5
+    train_n: 23
+    test_wr: 45.5
+    test_n: 11

@@ -326,20 +326,15 @@ class VWAPBot:
             # === SYSTEM STATUS ===
             uptime_hrs = (time.time() - self.learner.started_at) / 3600
             
-            # === TRADING SYMBOLS ===
-            # Use max of YAML-loaded combos and promoted set (handles ephemeral file systems)
-            yaml_symbols = len(self.vwap_combos)
-            promoted_symbols = len(set(k.split(':')[0] for k in self.learner.promoted))
-            total_symbols = max(yaml_symbols, promoted_symbols)
+            # === TRADING SYMBOLS (VOLUME FILTER) ===
+            vol_symbols = len(self.volume_combos)
+            vol_long = sum(1 for v in self.volume_combos.values() if v.get('allowed_long'))
+            vol_short = sum(1 for v in self.volume_combos.values() if v.get('allowed_short'))
+            total_vol_configs = vol_long + vol_short
             
+            # Legacy combo count (for reference)
+            legacy_symbols = len(self.vwap_combos)
             learning_symbols = len(getattr(self, 'all_symbols', []))
-            long_combos = sum(len(d.get('allowed_combos_long', [])) for d in self.vwap_combos.values())
-            short_combos = sum(len(d.get('allowed_combos_short', [])) for d in self.vwap_combos.values())
-            
-            # If YAML is empty but promoted set has combos, count from promoted
-            if long_combos == 0 and short_combos == 0 and self.learner.promoted:
-                long_combos = sum(1 for k in self.learner.promoted if ':long:' in k)
-                short_combos = sum(1 for k in self.learner.promoted if ':short:' in k)
             
             # === UNIFIED LEARNING STATS ===
             learning = self.learner
@@ -467,10 +462,10 @@ class VWAPBot:
                 f"├ Uptime: {uptime_hrs:.1f}h | Loops: {self.loop_count}\n"
                 f"└ Risk: {self.risk_config['value']} {self.risk_config['type']}\n\n"
                 
-                f"🎯 **TRADING**\n"
-                f"├ Symbols: {total_symbols} active\n"
-                f"├ Combos: 🟢{long_combos} / 🔴{short_combos}\n"
-                f"├ 🚀 Auto-Promoted: {len(self.learner.promoted)}\n"
+                f"🔊 **VOLUME FILTER**\n"
+                f"├ Symbols: {vol_symbols} active\n"
+                f"├ Configs: 🟢{vol_long} long / 🔴{vol_short} short\n"
+                f"├ Total: {total_vol_configs} configs\n"
                 f"└ Signals: {self.signals_detected} detected\n\n"
                 
                 f"📚 **UNIFIED TRACKER** ({learning_symbols} symbols)\n"

@@ -866,7 +866,7 @@ class VWAPBot:
             # Build message
             msg = f"📊 **COMBO LADDER** (Page {page}/{total_pages})\n"
             msg += f"━━━━━━━━━━━━━━━━━━━━\n"
-            msg += f"📏 Thresholds: N≥{PROMOTE_TRADES}, WR≥{PROMOTE_WR:.0f}%\n\n"
+            msg += f"📏 Thresholds: N≥{PROMOTE_TRADES}, LB WR≥{PROMOTE_WR:.0f}%\n\n"
             
             for i, c in enumerate(page_combos, start=start_idx + 1):
                 # Status icon

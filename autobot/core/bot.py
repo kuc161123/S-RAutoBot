@@ -1780,15 +1780,13 @@ class VWAPBot:
         
         await self.send_telegram(
             f"📊 **TRADING CONFIG LOADED**\n\n"
-            f"🔊 **VOLUME FILTER** (priority)\n"
+            f"🔊 **VOLUME FILTER** (ACTIVE)\n"
             f"├ Symbols: {len(self.volume_combos)}\n"
-            f"├ Long configs: {vol_long}\n"
-            f"├ Short configs: {vol_short}\n"
+            f"├ Configs: 🟢{vol_long} long / 🔴{vol_short} short\n"
             f"└ Source: `volume_filter_combos.yaml`\n\n"
-            f"📈 **LEGACY COMBOS** (fallback)\n"
+            f"📈 **LEGACY COMBOS** (disabled)\n"
             f"├ Symbols: {len(self.vwap_combos)}\n"
-            f"├ Total Combos: {combo_count}\n"
-            f"└ Source: `backtest_golden_combos.yaml`"
+            f"└ Status: ❌ Not used (volume filter only)"
         )
 
     async def run(self):

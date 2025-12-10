@@ -1,5 +1,5 @@
 # Volume Filter Golden Combos - AUTO-GENERATED
-# Last Updated: 2025-12-10T05:17:26.502245
+# Last Updated: 2025-12-10T05:21:22.498503
 
 _metadata:
   generated: '2025-12-10T04:42:00Z'
@@ -92,5 +92,13 @@ WLDUSDT:
   stats_short:
     train_wr: 50.0
     train_n: 18
+    test_wr: 0
+    test_n: 0
+ONDOUSDT:
+  allowed_short: true
+  volume_mult_short: 1.5
+  stats_short:
+    train_wr: 40.0
+    train_n: 30
     test_wr: 0
     test_n: 0

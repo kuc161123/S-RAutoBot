@@ -389,6 +389,56 @@ class VWAPBot:
             maturity_mature = len([c for c in all_combos if 15 <= c['total'] < PROMOTE_TRADES])
             maturity_ready = len([c for c in all_combos if c['total'] >= PROMOTE_TRADES])
             
+            # === PROMOTION FORECAST ===
+            # Calculate uptime and signal rate
+            uptime_hours = max(0.1, uptime_hrs)  # Avoid division by zero
+            total_signals_rate = learning.total_signals / uptime_hours if uptime_hours > 0 else 0
+            
+            # Find top promotion candidates (need both N progress and good WR)
+            # Score = weighted combination of closeness to N=20 and WR above threshold
+            promotion_candidates = []
+            for c in all_combos:
+                key = f"{c['symbol']}:{c['side']}:{c['combo']}"
+                if key in learning.promoted or key in learning.blacklist:
+                    continue
+                if c['total'] >= 5:  # Minimum data
+                    trades_needed = max(0, PROMOTE_TRADES - c['total'])
+                    wr_margin = c['lower_wr'] - PROMOTE_WR  # Positive if above threshold
+                    
+                    # Probability estimation based on current WR
+                    # If WR is already above threshold, high prob; if below, lower
+                    if c['lower_wr'] >= PROMOTE_WR:
+                        prob = 90 if trades_needed == 0 else min(85, 70 + (c['lower_wr'] - PROMOTE_WR))
+                    elif c['lower_wr'] >= PROMOTE_WR - 10:
+                        prob = max(30, 50 + wr_margin * 2)  # Close to threshold
+                    else:
+                        prob = max(5, 20 + wr_margin)  # Far from threshold
+                    
+                    # ETA calculation: assume ~2 signals per combo per hour on average
+                    signals_per_combo_per_hour = max(0.5, total_signals_rate / max(1, len(all_combos)))
+                    eta_hours = trades_needed / signals_per_combo_per_hour if signals_per_combo_per_hour > 0 else 999
+                    
+                    promotion_candidates.append({
+                        'symbol': c['symbol'],
+                        'side': c['side'],
+                        'total': c['total'],
+                        'lower_wr': c['lower_wr'],
+                        'wins': c.get('wins', 0),
+                        'trades_needed': trades_needed,
+                        'prob': prob,
+                        'eta_hours': eta_hours,
+                        'score': (100 - trades_needed) * 0.6 + prob * 0.4  # Combined score
+                    })
+            
+            # Sort by score descending (closest to promotion)
+            promotion_candidates.sort(key=lambda x: x['score'], reverse=True)
+            top_candidates = promotion_candidates[:3]
+            
+            # Probability distribution
+            prob_high = len([c for c in promotion_candidates if c['prob'] >= 70])
+            prob_medium = len([c for c in promotion_candidates if 40 <= c['prob'] < 70])
+            prob_low = len([c for c in promotion_candidates if c['prob'] < 40])
+            
             # === SESSION BREAKDOWN ===
             sessions = {'asian': {'w': 0, 'l': 0}, 'london': {'w': 0, 'l': 0}, 'newyork': {'w': 0, 'l': 0}}
             long_stats = {'w': 0, 'l': 0}
@@ -515,6 +565,26 @@ class VWAPBot:
                 f"├ 🏆 Promoted:       {promoted}\n"
                 f"└ 🚫 Blacklisted:    {blacklisted}\n\n"
                 
+                f"🔮 **PROMOTION FORECAST**\n"
+                f"├ 📊 Signal Rate: {total_signals_rate:.0f}/hr\n"
+                f"├ 🎲 High Prob (>70%): {prob_high}\n"
+                f"├ 🎲 Med Prob (40-70%): {prob_medium}\n"
+                f"└ 🎲 Low Prob (<40%): {prob_low}\n"
+            )
+            
+            # Add top candidates if any
+            if top_candidates:
+                msg += "\n🎯 **TOP CANDIDATES**\n"
+                for i, cand in enumerate(top_candidates, 1):
+                    side_icon = "🟢" if cand['side'] == 'long' else "🔴"
+                    sym = cand['symbol'][:8]
+                    eta_str = f"{cand['eta_hours']:.1f}h" if cand['eta_hours'] < 100 else "∞"
+                    msg += f"├ {i}. {side_icon} `{sym}` N:{cand['total']}/{PROMOTE_TRADES} LB:{cand['lower_wr']:.0f}%\n"
+                    msg += f"│   ETA: {eta_str} | Prob: {cand['prob']:.0f}%\n"
+            
+            msg += "\n"
+                
+            msg += (
                 f"📊 **SESSION BREAKDOWN**\n"
                 f"├ 🌏 Asian:  {asian_wr:.0f}% ({sessions['asian']['w']}/{asian_total})\n"
                 f"├ 🌍 London: {london_wr:.0f}% ({sessions['london']['w']}/{london_total})\n"

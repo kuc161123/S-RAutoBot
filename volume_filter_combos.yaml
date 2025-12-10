@@ -1,5 +1,5 @@
 # Volume Filter Golden Combos - AUTO-GENERATED
-# Last Updated: 2025-12-10T06:04:36.416893
+# Last Updated: 2025-12-10T06:06:08.026393
 
 _metadata:
   generated: '2025-12-10T04:42:00Z'
@@ -238,3 +238,11 @@ GIGGLEUSDT:
     train_n: 25
     test_wr: 33.3
     test_n: 9
+4USDT:
+  allowed_short: true
+  volume_mult_short: 1.0
+  stats_short:
+    train_wr: 41.7
+    train_n: 36
+    test_wr: 0
+    test_n: 0

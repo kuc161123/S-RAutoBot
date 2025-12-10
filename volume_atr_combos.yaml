@@ -1,5 +1,5 @@
 # Volume + ATR Filter Combos - AUTO-GENERATED
-# Last Updated: 2025-12-10T14:10:12.276192
+# Last Updated: 2025-12-10T14:10:14.273853
 # R:R Ratio: 1.0:1
 
 _metadata:
@@ -15,5 +15,13 @@ ETHUSDT:
   stats_long:
     train_wr: 60.0
     train_n: 20
+    test_wr: 0
+    test_n: 0
+  allowed_short: true
+  volume_mult_short: 1.0
+  atr_min_short: 0.3
+  stats_short:
+    train_wr: 60.7
+    train_n: 28
     test_wr: 0
     test_n: 0

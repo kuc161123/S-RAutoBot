@@ -1,0 +1,1211 @@
+# 1:1 R:R Backtest Results (COMPARISON ONLY)
+# Generated: 2025-12-09T16:01:59.636925
+# R:R Ratio: 1:1
+# Symbols tested: 398
+# Total signals: 101304
+# Winning combos: 114
+# Criteria: Train WR >= 50%, Test WR >= 50%, Min N >= 10
+#
+# NOTE: This file is for COMPARISON ONLY.
+# The live bot uses backtest_golden_combos.yaml with 2:1 R:R.
+
+_metadata:
+  rr_ratio: '1:1'
+  generated: '2025-12-09T16:01:59.625354'
+  symbols_tested: 398
+  total_signals: 101304
+  winning_combos: 114
+  criteria: Train WR >= 50%, Test WR >= 50%, Min N >= 10
+  note: COMPARISON ONLY - Does not affect live bot
+FLOWUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:78-100
+  stats_long: {}
+  stats_short:
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 92.3
+      train_lb: 66.7
+      train_n: 13
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+SIGNUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:78-100
+  stats_long: {}
+  stats_short:
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 83.3
+      train_lb: 55.2
+      train_n: 12
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+ACTUSDT:
+  allowed_combos_long:
+  - RSI:60-70 MACD:bull Fib:0-23
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:38-50
+  - RSI:60-70 MACD:bull Fib:0-23
+  - RSI:<30 MACD:bear Fib:78-100
+  - RSI:40-60 MACD:bull Fib:50-61
+  stats_long:
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 50.0
+      train_lb: 28.0
+      train_n: 16
+      test_wr: 71.4
+      test_lb: 35.9
+      test_n: 7
+  stats_short:
+    RSI:40-60 MACD:bull Fib:38-50:
+      train_wr: 81.2
+      train_lb: 57.0
+      train_n: 16
+      test_wr: 100.0
+      test_lb: 34.2
+      test_n: 2
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 66.7
+      test_lb: 20.8
+      test_n: 3
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 70.0
+      train_lb: 39.7
+      train_n: 10
+      test_wr: 50.0
+      test_lb: 28.0
+      test_n: 16
+    RSI:40-60 MACD:bull Fib:50-61:
+      train_wr: 60.0
+      train_lb: 38.7
+      train_n: 20
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+UNIUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  - RSI:40-60 MACD:bear Fib:38-50
+  - RSI:<30 MACD:bear Fib:78-100
+  allowed_combos_short: []
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 78.9
+      train_lb: 56.7
+      train_n: 19
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:40-60 MACD:bear Fib:38-50:
+      train_wr: 60.0
+      train_lb: 31.3
+      train_n: 10
+      test_wr: 100.0
+      test_lb: 43.8
+      test_n: 3
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 55.0
+      train_lb: 34.2
+      train_n: 20
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+  stats_short: {}
+KMNOUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bull Fib:0-23
+  - RSI:60-70 MACD:bull Fib:23-38
+  allowed_combos_short: []
+  stats_long:
+    RSI:40-60 MACD:bull Fib:0-23:
+      train_wr: 72.7
+      train_lb: 43.4
+      train_n: 11
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:60-70 MACD:bull Fib:23-38:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+  stats_short: {}
+TRUTHUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bear Fib:50-61
+  - RSI:40-60 MACD:bull Fib:23-38
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:78-100
+  - RSI:30-40 MACD:bear Fib:78-100
+  - RSI:40-60 MACD:bear Fib:23-38
+  stats_long:
+    RSI:40-60 MACD:bear Fib:50-61:
+      train_wr: 70.0
+      train_lb: 39.7
+      train_n: 10
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:40-60 MACD:bull Fib:23-38:
+      train_wr: 54.5
+      train_lb: 28.0
+      train_n: 11
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 50.0
+      train_lb: 31.4
+      train_n: 24
+      test_wr: 50.0
+      test_lb: 15.0
+      test_n: 4
+  stats_short:
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 64.7
+      train_lb: 41.3
+      train_n: 17
+      test_wr: 100.0
+      test_lb: 51.0
+      test_n: 4
+    RSI:30-40 MACD:bear Fib:78-100:
+      train_wr: 62.5
+      train_lb: 38.6
+      train_n: 16
+      test_wr: 100.0
+      test_lb: 43.8
+      test_n: 3
+    RSI:40-60 MACD:bear Fib:23-38:
+      train_wr: 60.0
+      train_lb: 31.3
+      train_n: 10
+      test_wr: 100.0
+      test_lb: 43.8
+      test_n: 3
+FWOGUSDT:
+  allowed_combos_long:
+  - RSI:<30 MACD:bear Fib:78-100
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:0-23
+  stats_long:
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 70.0
+      train_lb: 39.7
+      train_n: 10
+      test_wr: 100.0
+      test_lb: 51.0
+      test_n: 4
+  stats_short:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 57.1
+      train_lb: 32.6
+      train_n: 14
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+MOODENGUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bull Fib:61-78
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:61-78
+  - RSI:<30 MACD:bear Fib:61-78
+  stats_long:
+    RSI:40-60 MACD:bull Fib:61-78:
+      train_wr: 50.0
+      train_lb: 26.8
+      train_n: 14
+      test_wr: 75.0
+      test_lb: 30.1
+      test_n: 4
+  stats_short:
+    RSI:40-60 MACD:bull Fib:61-78:
+      train_wr: 69.2
+      train_lb: 42.4
+      train_n: 13
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:<30 MACD:bear Fib:61-78:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 100.0
+      test_lb: 61.0
+      test_n: 6
+BATUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  - RSI:<30 MACD:bear Fib:78-100
+  allowed_combos_short: []
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 66.7
+      train_lb: 45.4
+      train_n: 21
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 50.0
+      train_lb: 25.4
+      train_n: 12
+      test_wr: 100.0
+      test_lb: 34.2
+      test_n: 2
+  stats_short: {}
+ORCAUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:0-23
+  - RSI:60-70 MACD:bull Fib:0-23
+  stats_long: {}
+  stats_short:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 66.7
+      train_lb: 39.1
+      train_n: 12
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 60.0
+      train_lb: 31.3
+      train_n: 10
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+HUMAUSDT:
+  allowed_combos_long:
+  - RSI:60-70 MACD:bull Fib:0-23
+  allowed_combos_short: []
+  stats_long:
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 66.7
+      train_lb: 39.1
+      train_n: 12
+      test_wr: 100.0
+      test_lb: 43.8
+      test_n: 3
+  stats_short: {}
+YBUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bull Fib:0-23
+  - RSI:60-70 MACD:bull Fib:0-23
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:0-23
+  stats_long:
+    RSI:40-60 MACD:bull Fib:0-23:
+      train_wr: 64.3
+      train_lb: 38.8
+      train_n: 14
+      test_wr: 100.0
+      test_lb: 34.2
+      test_n: 2
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 60.0
+      train_lb: 35.7
+      train_n: 15
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 61.1
+      train_lb: 38.6
+      train_n: 18
+      test_wr: 83.3
+      test_lb: 43.6
+      test_n: 6
+  stats_short:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 86.7
+      train_lb: 62.1
+      train_n: 15
+      test_wr: 50.0
+      test_lb: 15.0
+      test_n: 4
+LIGHTUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bull Fib:23-38
+  allowed_combos_short: []
+  stats_long:
+    RSI:40-60 MACD:bull Fib:23-38:
+      train_wr: 63.6
+      train_lb: 35.4
+      train_n: 11
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+  stats_short: {}
+0GUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short: []
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 63.6
+      train_lb: 35.4
+      train_n: 11
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+  stats_short: {}
+CHZUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:78-100
+  stats_long: {}
+  stats_short:
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 62.5
+      train_lb: 38.6
+      train_n: 16
+      test_wr: 100.0
+      test_lb: 34.2
+      test_n: 2
+HYPEUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bear Fib:23-38
+  stats_long: {}
+  stats_short:
+    RSI:40-60 MACD:bear Fib:23-38:
+      train_wr: 60.0
+      train_lb: 35.7
+      train_n: 15
+      test_wr: 100.0
+      test_lb: 51.0
+      test_n: 4
+KITEUSDT:
+  allowed_combos_long:
+  - RSI:60-70 MACD:bull Fib:0-23
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:78-100
+  stats_long:
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 60.0
+      train_lb: 38.7
+      train_n: 20
+      test_wr: 100.0
+      test_lb: 34.2
+      test_n: 2
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 57.1
+      train_lb: 39.1
+      train_n: 28
+      test_wr: 100.0
+      test_lb: 43.8
+      test_n: 3
+  stats_short:
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 66.7
+      train_lb: 39.1
+      train_n: 12
+      test_wr: 50.0
+      test_lb: 15.0
+      test_n: 4
+CVCUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:0-23
+  stats_long: {}
+  stats_short:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 60.0
+      train_lb: 31.3
+      train_n: 10
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+ALCHUSDT:
+  allowed_combos_long:
+  - RSI:<30 MACD:bear Fib:78-100
+  allowed_combos_short: []
+  stats_long:
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 58.8
+      train_lb: 36.0
+      train_n: 17
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+  stats_short: {}
+FFUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bear Fib:38-50
+  - RSI:40-60 MACD:bear Fib:23-38
+  - RSI:70+ MACD:bull Fib:0-23
+  stats_long: {}
+  stats_short:
+    RSI:40-60 MACD:bear Fib:38-50:
+      train_wr: 58.3
+      train_lb: 32.0
+      train_n: 12
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:40-60 MACD:bear Fib:23-38:
+      train_wr: 50.0
+      train_lb: 28.0
+      train_n: 16
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 100.0
+      test_lb: 43.8
+      test_n: 3
+MELANIAUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bear Fib:23-38
+  stats_long: {}
+  stats_short:
+    RSI:40-60 MACD:bear Fib:23-38:
+      train_wr: 58.3
+      train_lb: 32.0
+      train_n: 12
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+GIGGLEUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bull Fib:61-78
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:61-78
+  - RSI:60-70 MACD:bull Fib:0-23
+  - RSI:40-60 MACD:bear Fib:23-38
+  - RSI:40-60 MACD:bull Fib:78-100
+  stats_long:
+    RSI:40-60 MACD:bull Fib:61-78:
+      train_wr: 72.7
+      train_lb: 43.4
+      train_n: 11
+      test_wr: 66.7
+      test_lb: 20.8
+      test_n: 3
+  stats_short:
+    RSI:40-60 MACD:bull Fib:61-78:
+      train_wr: 57.9
+      train_lb: 36.3
+      train_n: 19
+      test_wr: 100.0
+      test_lb: 56.6
+      test_n: 5
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 54.5
+      train_lb: 28.0
+      train_n: 11
+      test_wr: 100.0
+      test_lb: 34.2
+      test_n: 2
+    RSI:40-60 MACD:bear Fib:23-38:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 66.7
+      test_lb: 30.0
+      test_n: 6
+    RSI:40-60 MACD:bull Fib:78-100:
+      train_wr: 53.3
+      train_lb: 30.1
+      train_n: 15
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+ATOMUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  - RSI:40-60 MACD:bear Fib:23-38
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:78-100
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 57.1
+      train_lb: 36.5
+      train_n: 21
+      test_wr: 100.0
+      test_lb: 51.0
+      test_n: 4
+    RSI:40-60 MACD:bear Fib:23-38:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+  stats_short:
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 86.4
+      train_lb: 66.7
+      train_n: 22
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+XIONUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:30-40 MACD:bear Fib:78-100
+  stats_long: {}
+  stats_short:
+    RSI:30-40 MACD:bear Fib:78-100:
+      train_wr: 57.1
+      train_lb: 32.6
+      train_n: 14
+      test_wr: 100.0
+      test_lb: 43.8
+      test_n: 3
+AVAAIUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:78-100
+  - RSI:40-60 MACD:bear Fib:23-38
+  - RSI:70+ MACD:bull Fib:0-23
+  - RSI:60-70 MACD:bull Fib:0-23
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 62.1
+      train_lb: 44.0
+      train_n: 29
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+  stats_short:
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 57.1
+      train_lb: 39.1
+      train_n: 28
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:40-60 MACD:bear Fib:23-38:
+      train_wr: 55.6
+      train_lb: 33.7
+      train_n: 18
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 56.2
+      train_lb: 33.2
+      train_n: 16
+      test_wr: 66.7
+      test_lb: 20.8
+      test_n: 3
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+VANAUSDT:
+  allowed_combos_long:
+  - RSI:30-40 MACD:bear Fib:78-100
+  - RSI:40-60 MACD:bull Fib:0-23
+  allowed_combos_short: []
+  stats_long:
+    RSI:30-40 MACD:bear Fib:78-100:
+      train_wr: 54.5
+      train_lb: 28.0
+      train_n: 11
+      test_wr: 100.0
+      test_lb: 34.2
+      test_n: 2
+    RSI:40-60 MACD:bull Fib:0-23:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 66.7
+      test_lb: 20.8
+      test_n: 3
+  stats_short: {}
+VELOUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short: []
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 53.3
+      train_lb: 30.1
+      train_n: 15
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+  stats_short: {}
+XANUSDT:
+  allowed_combos_long:
+  - RSI:60-70 MACD:bull Fib:0-23
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:0-23
+  stats_long:
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 50.0
+      train_lb: 25.4
+      train_n: 12
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 64.7
+      train_lb: 41.3
+      train_n: 17
+      test_wr: 60.0
+      test_lb: 23.1
+      test_n: 5
+  stats_short:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 52.9
+      train_lb: 31.0
+      train_n: 17
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+SWARMSUSDT:
+  allowed_combos_long:
+  - RSI:60-70 MACD:bull Fib:0-23
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short: []
+  stats_long:
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 50.0
+      train_lb: 29.9
+      train_n: 20
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 55.0
+      train_lb: 34.2
+      train_n: 20
+      test_wr: 50.0
+      test_lb: 15.0
+      test_n: 4
+  stats_short: {}
+HFTUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short: []
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+  stats_short: {}
+USUALUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:78-100
+  stats_long: {}
+  stats_short:
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 50.0
+      train_lb: 28.0
+      train_n: 16
+      test_wr: 100.0
+      test_lb: 34.2
+      test_n: 2
+MANTAUSDT:
+  allowed_combos_long:
+  - RSI:30-40 MACD:bear Fib:78-100
+  allowed_combos_short: []
+  stats_long:
+    RSI:30-40 MACD:bear Fib:78-100:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+  stats_short: {}
+1INCHUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bear Fib:23-38
+  stats_long: {}
+  stats_short:
+    RSI:40-60 MACD:bear Fib:23-38:
+      train_wr: 87.5
+      train_lb: 64.0
+      train_n: 16
+      test_wr: 87.5
+      test_lb: 52.9
+      test_n: 8
+WLFIUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  - RSI:<30 MACD:bear Fib:78-100
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:61-78
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 64.7
+      train_lb: 41.3
+      train_n: 17
+      test_wr: 80.0
+      test_lb: 37.6
+      test_n: 5
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 75.0
+      train_lb: 46.8
+      train_n: 12
+      test_wr: 66.7
+      test_lb: 35.4
+      test_n: 9
+  stats_short:
+    RSI:<30 MACD:bear Fib:61-78:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 66.7
+      test_lb: 20.8
+      test_n: 3
+MYXUSDT:
+  allowed_combos_long:
+  - RSI:60-70 MACD:bull Fib:0-23
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:0-23
+  stats_long:
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 50.0
+      train_lb: 25.4
+      train_n: 12
+      test_wr: 55.6
+      test_lb: 26.7
+      test_n: 9
+  stats_short:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 64.3
+      train_lb: 38.8
+      train_n: 14
+      test_wr: 80.0
+      test_lb: 37.6
+      test_n: 5
+ROAMUSDT:
+  allowed_combos_long:
+  - RSI:<30 MACD:bear Fib:78-100
+  allowed_combos_short: []
+  stats_long:
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 61.5
+      train_lb: 35.5
+      train_n: 13
+      test_wr: 80.0
+      test_lb: 37.6
+      test_n: 5
+  stats_short: {}
+ICNTUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bear Fib:61-78
+  - RSI:30-40 MACD:bear Fib:78-100
+  - RSI:<30 MACD:bear Fib:78-100
+  allowed_combos_short: []
+  stats_long:
+    RSI:40-60 MACD:bear Fib:61-78:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 80.0
+      test_lb: 37.6
+      test_n: 5
+    RSI:30-40 MACD:bear Fib:78-100:
+      train_wr: 63.6
+      train_lb: 35.4
+      train_n: 11
+      test_wr: 66.7
+      test_lb: 20.8
+      test_n: 3
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 58.3
+      train_lb: 32.0
+      train_n: 12
+      test_wr: 55.6
+      test_lb: 26.7
+      test_n: 9
+  stats_short: {}
+WCTUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bear Fib:0-23
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short: []
+  stats_long:
+    RSI:40-60 MACD:bear Fib:0-23:
+      train_wr: 100.0
+      train_lb: 72.2
+      train_n: 10
+      test_wr: 75.0
+      test_lb: 30.1
+      test_n: 4
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 61.5
+      train_lb: 35.5
+      train_n: 13
+      test_wr: 50.0
+      test_lb: 21.5
+      test_n: 8
+  stats_short: {}
+SAHARAUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bear Fib:50-61
+  - RSI:70+ MACD:bull Fib:0-23
+  - RSI:40-60 MACD:bear Fib:38-50
+  - RSI:40-60 MACD:bull Fib:23-38
+  - RSI:40-60 MACD:bull Fib:61-78
+  allowed_combos_short: []
+  stats_long:
+    RSI:40-60 MACD:bear Fib:50-61:
+      train_wr: 66.7
+      train_lb: 41.7
+      train_n: 15
+      test_wr: 75.0
+      test_lb: 30.1
+      test_n: 4
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 57.1
+      train_lb: 32.6
+      train_n: 14
+      test_wr: 75.0
+      test_lb: 30.1
+      test_n: 4
+    RSI:40-60 MACD:bear Fib:38-50:
+      train_wr: 64.3
+      train_lb: 38.8
+      train_n: 14
+      test_wr: 71.4
+      test_lb: 35.9
+      test_n: 7
+    RSI:40-60 MACD:bull Fib:23-38:
+      train_wr: 66.7
+      train_lb: 39.1
+      train_n: 12
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+    RSI:40-60 MACD:bull Fib:61-78:
+      train_wr: 54.5
+      train_lb: 28.0
+      train_n: 11
+      test_wr: 50.0
+      test_lb: 18.8
+      test_n: 6
+  stats_short: {}
+SKYUSDT:
+  allowed_combos_long:
+  - RSI:30-40 MACD:bear Fib:61-78
+  allowed_combos_short:
+  - RSI:60-70 MACD:bull Fib:0-23
+  stats_long:
+    RSI:30-40 MACD:bear Fib:61-78:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 75.0
+      test_lb: 30.1
+      test_n: 4
+  stats_short:
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 58.3
+      train_lb: 32.0
+      train_n: 12
+      test_wr: 75.0
+      test_lb: 30.1
+      test_n: 4
+COMPUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short: []
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 55.6
+      train_lb: 33.7
+      train_n: 18
+      test_wr: 71.4
+      test_lb: 35.9
+      test_n: 7
+  stats_short: {}
+LQTYUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:40-60 MACD:bear Fib:61-78
+  stats_long: {}
+  stats_short:
+    RSI:40-60 MACD:bear Fib:61-78:
+      train_wr: 85.7
+      train_lb: 60.1
+      train_n: 14
+      test_wr: 66.7
+      test_lb: 20.8
+      test_n: 3
+GRIFFAINUSDT:
+  allowed_combos_long:
+  - RSI:60-70 MACD:bull Fib:0-23
+  allowed_combos_short: []
+  stats_long:
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 70.0
+      train_lb: 39.7
+      train_n: 10
+      test_wr: 66.7
+      test_lb: 35.4
+      test_n: 9
+  stats_short: {}
+AVLUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:30-40 MACD:bear Fib:78-100
+  stats_long: {}
+  stats_short:
+    RSI:30-40 MACD:bear Fib:78-100:
+      train_wr: 63.6
+      train_lb: 35.4
+      train_n: 11
+      test_wr: 66.7
+      test_lb: 20.8
+      test_n: 3
+MERLUSDT:
+  allowed_combos_long:
+  - RSI:60-70 MACD:bull Fib:0-23
+  allowed_combos_short:
+  - RSI:60-70 MACD:bull Fib:23-38
+  stats_long:
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 61.1
+      train_lb: 38.6
+      train_n: 18
+      test_wr: 66.7
+      test_lb: 39.1
+      test_n: 12
+  stats_short:
+    RSI:60-70 MACD:bull Fib:23-38:
+      train_wr: 60.0
+      train_lb: 31.3
+      train_n: 10
+      test_wr: 60.0
+      test_lb: 23.1
+      test_n: 5
+DASHUSDT:
+  allowed_combos_long:
+  - RSI:40-60 MACD:bull Fib:61-78
+  - RSI:60-70 MACD:bull Fib:0-23
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:0-23
+  - RSI:40-60 MACD:bull Fib:61-78
+  stats_long:
+    RSI:40-60 MACD:bull Fib:61-78:
+      train_wr: 68.4
+      train_lb: 46.0
+      train_n: 19
+      test_wr: 60.0
+      test_lb: 23.1
+      test_n: 5
+    RSI:60-70 MACD:bull Fib:0-23:
+      train_wr: 73.3
+      train_lb: 48.0
+      train_n: 15
+      test_wr: 50.0
+      test_lb: 18.8
+      test_n: 6
+  stats_short:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 68.2
+      train_lb: 47.3
+      train_n: 22
+      test_wr: 62.5
+      test_lb: 30.6
+      test_n: 8
+    RSI:40-60 MACD:bull Fib:61-78:
+      train_wr: 72.7
+      train_lb: 43.4
+      train_n: 11
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+USTCUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:30-40 MACD:bear Fib:78-100
+  - RSI:<30 MACD:bear Fib:78-100
+  stats_long: {}
+  stats_short:
+    RSI:30-40 MACD:bear Fib:78-100:
+      train_wr: 63.6
+      train_lb: 35.4
+      train_n: 11
+      test_wr: 60.0
+      test_lb: 23.1
+      test_n: 5
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 72.7
+      train_lb: 43.4
+      train_n: 11
+      test_wr: 50.0
+      test_lb: 18.8
+      test_n: 6
+PARTIUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short: []
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 58.8
+      train_lb: 36.0
+      train_n: 17
+      test_wr: 60.0
+      test_lb: 23.1
+      test_n: 5
+  stats_short: {}
+ASTERUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short: []
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 54.5
+      train_lb: 28.0
+      train_n: 11
+      test_wr: 60.0
+      test_lb: 31.3
+      test_n: 10
+  stats_short: {}
+QNTUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  - RSI:40-60 MACD:bull Fib:61-78
+  - RSI:40-60 MACD:bear Fib:61-78
+  allowed_combos_short:
+  - RSI:40-60 MACD:bull Fib:61-78
+  - RSI:60-70 MACD:bull Fib:23-38
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 50.0
+      train_lb: 31.4
+      train_n: 24
+      test_wr: 57.1
+      test_lb: 25.0
+      test_n: 7
+    RSI:40-60 MACD:bull Fib:61-78:
+      train_wr: 62.5
+      train_lb: 38.6
+      train_n: 16
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+    RSI:40-60 MACD:bear Fib:61-78:
+      train_wr: 56.2
+      train_lb: 33.2
+      train_n: 16
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+  stats_short:
+    RSI:40-60 MACD:bull Fib:61-78:
+      train_wr: 72.2
+      train_lb: 49.1
+      train_n: 18
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+    RSI:60-70 MACD:bull Fib:23-38:
+      train_wr: 66.7
+      train_lb: 39.1
+      train_n: 12
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+ZENUSDT:
+  allowed_combos_long:
+  - RSI:70+ MACD:bull Fib:0-23
+  allowed_combos_short: []
+  stats_long:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 81.8
+      train_lb: 52.3
+      train_n: 11
+      test_wr: 50.0
+      test_lb: 18.8
+      test_n: 6
+  stats_short: {}
+CHILLGUYUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:0-23
+  stats_long: {}
+  stats_short:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 78.6
+      train_lb: 52.4
+      train_n: 14
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+BCHUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:0-23
+  stats_long: {}
+  stats_short:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 60.0
+      train_lb: 31.3
+      train_n: 10
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+EDUUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:<30 MACD:bear Fib:78-100
+  stats_long: {}
+  stats_short:
+    RSI:<30 MACD:bear Fib:78-100:
+      train_wr: 60.0
+      train_lb: 31.3
+      train_n: 10
+      test_wr: 50.0
+      test_lb: 23.7
+      test_n: 10
+BSUUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:70+ MACD:bull Fib:0-23
+  stats_long: {}
+  stats_short:
+    RSI:70+ MACD:bull Fib:0-23:
+      train_wr: 50.0
+      train_lb: 29.0
+      train_n: 18
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+GRASSUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:30-40 MACD:bear Fib:78-100
+  stats_long: {}
+  stats_short:
+    RSI:30-40 MACD:bear Fib:78-100:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2

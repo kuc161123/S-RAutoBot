@@ -1,0 +1,42 @@
+_metadata:
+  generated: '2025-12-09T17:27:30.254813'
+  symbols_tested: 49
+  bins: simplified (3 RSI, 2 MACD, 3 Fib)
+  note: COMPARISON ONLY - Does not affect live bot
+comparison:
+  1_to_1:
+    total_signals: 13314
+    valid_combos: 34
+    avg_train_wr: !!python/object/apply:numpy.core.multiarray.scalar
+    - &id001 !!python/object/apply:numpy.dtype
+      args:
+      - f8
+      - false
+      - true
+      state: !!python/tuple
+      - 3
+      - <
+      - null
+      - null
+      - null
+      - -1
+      - -1
+      - 0
+    - !!binary |
+      zczMzMyMTkA=
+    expected_value_r: !!python/object/apply:numpy.core.multiarray.scalar
+    - *id001
+    - !!binary |
+      0SLb+X5qzD8=
+  2_to_1:
+    total_signals: 13314
+    valid_combos: 10
+    avg_train_wr: !!python/object/apply:numpy.core.multiarray.scalar
+    - *id001
+    - !!binary |
+      AAAAAADASkA=
+    expected_value_r: !!python/object/apply:numpy.core.multiarray.scalar
+    - *id001
+    - !!binary |
+      XI/C9Shc4z8=
+  winner: '2:1'

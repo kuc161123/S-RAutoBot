@@ -1,0 +1,75 @@
+# SIMPLIFIED Golden Combos - 18-Combo System
+# Updated: 2025-12-10T05:00:00
+# From: backtest_simplified_2to1_RESULTS.yaml
+# Total combos: 13
+# Indicator Bins: 3 RSI x 2 MACD x 3 Fib = 18 possible combos
+# R:R Ratio: 2:1 (same as original)
+#
+# ORIGINAL BACKUP: backtest_golden_combos_BACKUP_20251210.yaml
+# To revert: cp backtest_golden_combos_BACKUP_20251210.yaml backtest_golden_combos.yaml
+#            and restore original get_combo() in bot.py
+
+MORPHOUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:overbought MACD:bull Fib:low
+
+FWOGUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:overbought MACD:bull Fib:low
+
+CHZUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:neutral MACD:bear Fib:mid
+
+ROSEUSDT:
+  allowed_combos_long:
+  - RSI:overbought MACD:bull Fib:low
+  allowed_combos_short: []
+
+ZECUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:neutral MACD:bear Fib:mid
+
+STRKUSDT:
+  allowed_combos_long:
+  - RSI:neutral MACD:bear Fib:low
+  allowed_combos_short: []
+
+ERAUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:overbought MACD:bull Fib:low
+
+BSUUSDT:
+  allowed_combos_long:
+  - RSI:neutral MACD:bear Fib:low
+  allowed_combos_short: []
+
+XANUSDT:
+  allowed_combos_long:
+  - RSI:neutral MACD:bull Fib:high
+  allowed_combos_short: []
+
+ATOMUSDT:
+  allowed_combos_long:
+  - RSI:neutral MACD:bull Fib:mid
+  allowed_combos_short: []
+
+UAIUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:neutral MACD:bull Fib:high
+
+AVAAIUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:neutral MACD:bear Fib:low
+
+GLMUSDT:
+  allowed_combos_long:
+  - RSI:neutral MACD:bear Fib:low
+  allowed_combos_short: []

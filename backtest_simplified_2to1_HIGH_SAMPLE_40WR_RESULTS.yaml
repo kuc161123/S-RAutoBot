@@ -1,0 +1,127 @@
+# SIMPLIFIED 2:1 R:R Backtest Results (HIGH SAMPLE COUNT, 40% WR)
+# Generated: 2025-12-10T04:47:07.933591
+# R:R Ratio: 2:1 (same as current bot)
+# Indicator Bins: SIMPLIFIED (3 RSI x 2 MACD x 3 Fib = 18 combos)
+# Symbols tested: 400
+# Total costs: 0.14% (fees + spread + slippage)
+# Criteria: Train WR >= 40%, Test WR >= 40%
+# Min Samples: Train N >= 20, Test N >= 5
+#
+# NOTE: This file is for COMPARISON ONLY - Does NOT affect bot.
+
+_metadata:
+  rr_ratio: '2:1'
+  indicator_bins: SIMPLIFIED (3x2x3 = 18 combos)
+  generated: '2025-12-10T04:47:07.932335'
+  symbols_tested: 400
+  symbols_with_combos: 7
+  total_combos: 7
+  criteria:
+    train_wr: '>= 40%'
+    test_wr: '>= 40%'
+    min_train_n: 20
+    min_test_n: 5
+  execution_costs:
+    fees_pct: 0.11
+    spread_pct: 0.01
+    slippage_pct: 0.02
+    total_pct: 0.13999999999999999
+  note: COMPARISON ONLY - Does NOT affect live bot
+GRIFFAINUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:overbought MACD:bull Fib:low
+  stats_long: {}
+  stats_short:
+    RSI:overbought MACD:bull Fib:low:
+      train_wr: 60.0
+      train_lb: 38.7
+      train_n: 20
+      test_wr: 42.9
+      test_lb: 21.4
+      test_n: 14
+      avg_hold_candles: 12
+HUMAUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:overbought MACD:bull Fib:low
+  stats_long: {}
+  stats_short:
+    RSI:overbought MACD:bull Fib:low:
+      train_wr: 50.0
+      train_lb: 32.6
+      train_n: 28
+      test_wr: 55.0
+      test_lb: 34.2
+      test_n: 20
+      avg_hold_candles: 10
+CHILLGUYUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:overbought MACD:bull Fib:low
+  stats_long: {}
+  stats_short:
+    RSI:overbought MACD:bull Fib:low:
+      train_wr: 45.2
+      train_lb: 29.2
+      train_n: 31
+      test_wr: 40.0
+      test_lb: 11.8
+      test_n: 5
+      avg_hold_candles: 10
+XANUSDT:
+  allowed_combos_long:
+  - RSI:overbought MACD:bull Fib:low
+  allowed_combos_short: []
+  stats_long:
+    RSI:overbought MACD:bull Fib:low:
+      train_wr: 43.3
+      train_lb: 27.4
+      train_n: 30
+      test_wr: 50.0
+      test_lb: 21.5
+      test_n: 8
+      avg_hold_candles: 4
+  stats_short: {}
+ICPUSDT:
+  allowed_combos_long:
+  - RSI:overbought MACD:bull Fib:low
+  allowed_combos_short: []
+  stats_long:
+    RSI:overbought MACD:bull Fib:low:
+      train_wr: 42.3
+      train_lb: 25.5
+      train_n: 26
+      test_wr: 77.8
+      test_lb: 45.3
+      test_n: 9
+      avg_hold_candles: 12
+  stats_short: {}
+ZEREBROUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:overbought MACD:bull Fib:low
+  stats_long: {}
+  stats_short:
+    RSI:overbought MACD:bull Fib:low:
+      train_wr: 41.7
+      train_lb: 24.5
+      train_n: 24
+      test_wr: 50.0
+      test_lb: 18.8
+      test_n: 6
+      avg_hold_candles: 9
+YBUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:overbought MACD:bull Fib:low
+  stats_long: {}
+  stats_short:
+    RSI:overbought MACD:bull Fib:low:
+      train_wr: 40.0
+      train_lb: 23.4
+      train_n: 25
+      test_wr: 50.0
+      test_lb: 18.8
+      test_n: 6
+      avg_hold_candles: 10

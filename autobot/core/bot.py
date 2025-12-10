@@ -986,94 +986,65 @@ class VWAPBot:
                 # Get ATR and entry for TP/SL calculation
                 atr = last_candle.atr
                 entry = last_candle.close
-                atr_percent = (atr / entry) * 100 if entry > 0 else 1.0
                 
-                # Get BTC price for context
-                btc_price = 0
-                try:
-                    btc_ticker = self.broker.get_ticker('BTCUSDT')
-                    if btc_ticker:
-                        btc_price = float(btc_ticker.get('lastPrice', 0))
-                except:
-                    pass
+                # Get volume ratio for display
+                volume_ratio = last_candle.volume_ratio if hasattr(last_candle, 'volume_ratio') else 1.0
                 
-                # === NEW VOLUME FILTER SYSTEM (PRIORITY) ===
+                # === VOLUME FILTER ONLY SYSTEM ===
                 vol_allowed, vol_stats, vol_mult, vol_ratio = self.check_volume_filter(last_candle, side, sym)
                 
                 if vol_allowed:
-                    # Volume filter passed! Execute trade with volume stats
+                    # Volume filter passed! Execute trade
                     logger.info(f"🔊 VOLUME FILTER: {sym} {side} Vol={vol_ratio:.1f}x >= {vol_mult}x | Train WR={vol_stats.get('train_wr', 0)}%")
                     await self.execute_trade_volume(sym, side, last_candle, vol_mult, vol_ratio, vol_stats)
-                    return  # Early return - volume filter takes priority
-                
-                # === LEGACY COMBO SYSTEM (FALLBACK) ===
-                combo = self.get_combo(last_candle)
-                
-                # Check for "Heartbeat" / Proof of Life logging
-                yaml_key = f"allowed_combos_{side}"
-                allowed = self.vwap_combos.get(sym, {}).get(yaml_key, [])
-                is_allowed = combo in allowed
-
-                if not is_allowed:
-                    # Log mismatch at INFO level for "Proof of Life"
-                    logger.info(f"👀 SCAN: {sym} {side} {combo} (Not in Golden Combos)")
-                
-                # Rate limit phantom notifications (max 1 per symbol per 30 min)
-                should_notify = True
-                if not is_allowed:
-                    cooldown_key = f"{sym}_{side}"
-                    now = time.time()
-                    if not hasattr(self, 'last_phantom_notify_times'):
-                        self.last_phantom_notify_times = {}
-                    
-                    last_notify = self.last_phantom_notify_times.get(cooldown_key, 0)
-                    if now - last_notify < 1800: # 30 min cooldown
-                        should_notify = False
-                    else:
-                        self.last_phantom_notify_times[cooldown_key] = now
-
-                smart_tp, smart_sl, smart_explanation = self.learner.record_signal(
-                    sym, side, combo, entry, atr, btc_price, is_allowed=is_allowed, notify=should_notify
-                )
-                
-                # Use smart R:R if available, otherwise default
-                if smart_tp and smart_sl:
-                    tp, sl = smart_tp, smart_sl
                 else:
-                    if side == 'long':
-                        sl, tp = entry - (2.0 * atr), entry + (4.0 * atr)
-                    else:
-                        sl, tp = entry + (2.0 * atr), entry - (4.0 * atr)
-                
-                if combo in allowed:
-                    # GOLDEN COMBO FOUND - Execute directly!
-                    logger.info(f"🚀 GOLDEN COMBO: {sym} {side} {combo}")
-                    await self.execute_trade(sym, side, last_candle, combo)
-                else:
-                    # Phantom signal - learner already tracks it (recorded above)
-                    logger.info(f"👻 SIGNAL DETECTED: {sym} {side} {combo} (Phantom)")
+                    # Check if this symbol is in our volume config (to show blocked notification)
+                    config = self.volume_combos.get(sym, {})
+                    is_tracked = False
+                    required_mult = None
+                    tracked_side = None
                     
-                    # NEAR-MISS NOTIFICATION: Only for symbols in Golden Combos file
-                    # This helps user see when their tracked symbols are active but combo doesn't match
-                    if sym in self.vwap_combos:
-                        # Get allowed combos for this symbol
-                        allowed_long = self.vwap_combos[sym].get('allowed_combos_long', [])
-                        allowed_short = self.vwap_combos[sym].get('allowed_combos_short', [])
+                    if side == 'long' and config.get('allowed_long'):
+                        is_tracked = True
+                        required_mult = config.get('volume_mult_long', 1.5)
+                        tracked_side = 'long'
+                    elif side == 'short' and config.get('allowed_short'):
+                        is_tracked = True
+                        required_mult = config.get('volume_mult_short', 1.5)
+                        tracked_side = 'short'
+                    
+                    if is_tracked and required_mult:
+                        # Symbol is tracked but volume too low - show BLOCKED notification
+                        stats = config.get(f'stats_{tracked_side}', {})
+                        logger.info(f"🚫 BLOCKED: {sym} {side} Vol={volume_ratio:.1f}x < {required_mult}x required")
                         
-                        # Format allowed combos for display
-                        long_list = "\n".join([f"  • `{c}`" for c in allowed_long]) if allowed_long else "  • None"
-                        short_list = "\n".join([f"  • `{c}`" for c in allowed_short]) if allowed_short else "  • None"
+                        # Rate limit blocked notifications (1 per 30 min per symbol/side)
+                        cooldown_key = f"{sym}_{side}_blocked"
+                        now = time.time()
+                        if not hasattr(self, 'last_blocked_notify'):
+                            self.last_blocked_notify = {}
                         
-                        await self.send_telegram(
-                            f"🔍 **NEAR MISS** (Golden Combo Symbol)\n"
-                            f"━━━━━━━━━━━━━━━━━━━━\n"
-                            f"📊 Symbol: `{sym}`\n"
-                            f"📈 Side: **{side.upper()}**\n"
-                            f"🎯 Detected: `{combo}`\n\n"
-                            f"✅ **Allowed Long Combos:**\n{long_list}\n\n"
-                            f"✅ **Allowed Short Combos:**\n{short_list}\n\n"
-                            f"⏳ Waiting for exact match..."
-                        )
+                        last_notify = self.last_blocked_notify.get(cooldown_key, 0)
+                        if now - last_notify >= 1800:  # 30 min cooldown
+                            self.last_blocked_notify[cooldown_key] = now
+                            
+                            await self.send_telegram(
+                                f"🚫 **VOLUME FILTER BLOCKED**\n"
+                                f"━━━━━━━━━━━━━━━━━━━━\n"
+                                f"📊 Symbol: `{sym}`\n"
+                                f"📈 Side: **{side.upper()}**\n\n"
+                                f"🔊 **VOLUME CHECK FAILED**\n"
+                                f"├ Current: **{volume_ratio:.1f}x** avg\n"
+                                f"├ Required: ≥ **{required_mult}x**\n"
+                                f"└ Status: ❌ BLOCKED\n\n"
+                                f"📊 **Config Stats**\n"
+                                f"├ Train: WR={stats.get('train_wr', 0)}% (N={stats.get('train_n', 0)})\n"
+                                f"└ Test: WR={stats.get('test_wr', 0)}% (N={stats.get('test_n', 0)})\n\n"
+                                f"💡 Signal detected but volume too low"
+                            )
+                    else:
+                        # Symbol not in volume config at all - just log
+                        logger.info(f"👀 SCAN: {sym} {side} Vol={volume_ratio:.1f}x (Not in volume config)")
                     
         except Exception as e:
             logger.error(f"Error {sym}: {e}")

@@ -1,0 +1,206 @@
+# SIMPLIFIED 2:1 R:R Backtest Results
+# Generated: 2025-12-10T01:55:17.517468
+# R:R Ratio: 2:1 (same as original)
+# Indicator Bins: SIMPLIFIED (3 RSI x 2 MACD x 3 Fib = 18 combos)
+# Symbols tested: 400
+# Total costs: 0.14% (fees + spread + slippage)
+# Criteria: Train WR >= 50%, Test WR >= 50%
+#
+# NOTE: This file is for COMPARISON ONLY.
+
+_metadata:
+  rr_ratio: '2:1'
+  indicator_bins: SIMPLIFIED (3x2x3 = 18 combos)
+  generated: '2025-12-10T01:55:17.514307'
+  symbols_tested: 400
+  symbols_with_combos: 13
+  total_combos: 13
+  criteria: Train WR >= 50%, Test WR >= 50%, Min N >= 10
+  execution_costs:
+    fees_pct: 0.11
+    spread_pct: 0.01
+    slippage_pct: 0.02
+    total_pct: 0.13999999999999999
+  note: COMPARISON ONLY - Does not affect live bot
+MORPHOUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:overbought MACD:bull Fib:low
+  stats_long: {}
+  stats_short:
+    RSI:overbought MACD:bull Fib:low:
+      train_wr: 63.6
+      train_lb: 35.4
+      train_n: 11
+      test_wr: 50.0
+      test_lb: 9.5
+      test_n: 2
+      avg_hold_candles: 10
+FWOGUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:overbought MACD:bull Fib:low
+  stats_long: {}
+  stats_short:
+    RSI:overbought MACD:bull Fib:low:
+      train_wr: 61.1
+      train_lb: 38.6
+      train_n: 18
+      test_wr: 50.0
+      test_lb: 18.8
+      test_n: 6
+      avg_hold_candles: 10
+CHZUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:neutral MACD:bear Fib:mid
+  stats_long: {}
+  stats_short:
+    RSI:neutral MACD:bear Fib:mid:
+      train_wr: 60.0
+      train_lb: 35.7
+      train_n: 15
+      test_wr: 100.0
+      test_lb: 34.2
+      test_n: 2
+      avg_hold_candles: 29
+ROSEUSDT:
+  allowed_combos_long:
+  - RSI:overbought MACD:bull Fib:low
+  allowed_combos_short: []
+  stats_long:
+    RSI:overbought MACD:bull Fib:low:
+      train_wr: 60.0
+      train_lb: 31.3
+      train_n: 10
+      test_wr: 54.5
+      test_lb: 28.0
+      test_n: 11
+      avg_hold_candles: 3
+  stats_short: {}
+ZECUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:neutral MACD:bear Fib:mid
+  stats_long: {}
+  stats_short:
+    RSI:neutral MACD:bear Fib:mid:
+      train_wr: 54.5
+      train_lb: 28.0
+      train_n: 11
+      test_wr: 100.0
+      test_lb: 34.2
+      test_n: 2
+      avg_hold_candles: 8
+STRKUSDT:
+  allowed_combos_long:
+  - RSI:neutral MACD:bear Fib:low
+  allowed_combos_short: []
+  stats_long:
+    RSI:neutral MACD:bear Fib:low:
+      train_wr: 54.5
+      train_lb: 28.0
+      train_n: 11
+      test_wr: 100.0
+      test_lb: 43.8
+      test_n: 3
+      avg_hold_candles: 9
+  stats_short: {}
+ERAUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:overbought MACD:bull Fib:low
+  stats_long: {}
+  stats_short:
+    RSI:overbought MACD:bull Fib:low:
+      train_wr: 54.5
+      train_lb: 28.0
+      train_n: 11
+      test_wr: 53.3
+      test_lb: 30.1
+      test_n: 15
+      avg_hold_candles: 14
+BSUUSDT:
+  allowed_combos_long:
+  - RSI:neutral MACD:bear Fib:low
+  allowed_combos_short: []
+  stats_long:
+    RSI:neutral MACD:bear Fib:low:
+      train_wr: 53.8
+      train_lb: 29.1
+      train_n: 13
+      test_wr: 66.7
+      test_lb: 30.0
+      test_n: 6
+      avg_hold_candles: 17
+  stats_short: {}
+XANUSDT:
+  allowed_combos_long:
+  - RSI:neutral MACD:bull Fib:high
+  allowed_combos_short: []
+  stats_long:
+    RSI:neutral MACD:bull Fib:high:
+      train_wr: 52.9
+      train_lb: 31.0
+      train_n: 17
+      test_wr: 100.0
+      test_lb: 34.2
+      test_n: 2
+      avg_hold_candles: 4
+  stats_short: {}
+ATOMUSDT:
+  allowed_combos_long:
+  - RSI:neutral MACD:bull Fib:mid
+  allowed_combos_short: []
+  stats_long:
+    RSI:neutral MACD:bull Fib:mid:
+      train_wr: 50.0
+      train_lb: 25.4
+      train_n: 12
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+      avg_hold_candles: 8
+  stats_short: {}
+UAIUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:neutral MACD:bull Fib:high
+  stats_long: {}
+  stats_short:
+    RSI:neutral MACD:bull Fib:high:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 100.0
+      test_lb: 34.2
+      test_n: 2
+      avg_hold_candles: 6
+AVAAIUSDT:
+  allowed_combos_long: []
+  allowed_combos_short:
+  - RSI:neutral MACD:bear Fib:low
+  stats_long: {}
+  stats_short:
+    RSI:neutral MACD:bear Fib:low:
+      train_wr: 50.0
+      train_lb: 32.1
+      train_n: 26
+      test_wr: 100.0
+      test_lb: 20.7
+      test_n: 1
+      avg_hold_candles: 10
+GLMUSDT:
+  allowed_combos_long:
+  - RSI:neutral MACD:bear Fib:low
+  allowed_combos_short: []
+  stats_long:
+    RSI:neutral MACD:bear Fib:low:
+      train_wr: 50.0
+      train_lb: 23.7
+      train_n: 10
+      test_wr: 75.0
+      test_lb: 40.9
+      test_n: 8
+      avg_hold_candles: 16
+  stats_short: {}

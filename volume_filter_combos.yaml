@@ -1,5 +1,5 @@
 # Volume Filter Golden Combos - AUTO-GENERATED
-# Last Updated: 2025-12-10T05:38:53.775528
+# Last Updated: 2025-12-10T05:38:55.538030
 
 _metadata:
   generated: '2025-12-10T04:42:00Z'
@@ -144,9 +144,9 @@ HUSDT:
     test_n: 4
 INJUSDT:
   allowed_long: true
-  volume_mult_long: 2.0
+  volume_mult_long: 2.5
   stats_long:
-    train_wr: 41.7
-    train_n: 24
+    train_wr: 43.8
+    train_n: 16
     test_wr: 0
     test_n: 0

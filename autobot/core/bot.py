@@ -892,8 +892,11 @@ class VWAPBot:
                 # Truncate symbol for display
                 sym = c['symbol'][:8]
                 
+                # Calculate raw WR
+                raw_wr = (c.get('wins', 0) / c['total'] * 100) if c['total'] > 0 else 0
+                
                 msg += f"{i}. {status} {side_icon} `{sym}`\n"
-                msg += f"   [{bar}] {c['overall_progress']:.0f}% | N:{c['total']}/{PROMOTE_TRADES} WR:{c['lower_wr']:.0f}%\n"
+                msg += f"   [{bar}] {c['overall_progress']:.0f}% | N:{c['total']}/{PROMOTE_TRADES} | WR:{raw_wr:.0f}% (LB:{c['lower_wr']:.0f}%)\n"
             
             # Summary
             promoted_count = sum(1 for c in all_combos if c['is_promoted'])

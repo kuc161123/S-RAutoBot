@@ -382,6 +382,13 @@ class VWAPBot:
             approaching_blacklist = len([c for c in all_combos if c['total'] >= 5 and c['lower_wr'] <= 30 
                                           and f"{c['symbol']}:{c['side']}:{c['combo']}" not in learning.blacklist])
             
+            # === COMBO MATURITY DISTRIBUTION ===
+            # New: N < 5, Growing: 5-15, Mature: 15-20, Ready: 20+
+            maturity_new = len([c for c in all_combos if c['total'] < 5])
+            maturity_growing = len([c for c in all_combos if 5 <= c['total'] < 15])
+            maturity_mature = len([c for c in all_combos if 15 <= c['total'] < PROMOTE_TRADES])
+            maturity_ready = len([c for c in all_combos if c['total'] >= PROMOTE_TRADES])
+            
             # === SESSION BREAKDOWN ===
             sessions = {'asian': {'w': 0, 'l': 0}, 'london': {'w': 0, 'l': 0}, 'newyork': {'w': 0, 'l': 0}}
             long_stats = {'w': 0, 'l': 0}
@@ -499,6 +506,14 @@ class VWAPBot:
                 f"├ 🚀 Promoted: {promoted}\n"
                 f"├ 🔽 Demoted: {getattr(self, 'demoted_count', 0)}\n"
                 f"└ 🚫 Blacklisted: {blacklisted}\n\n"
+                
+                f"🌱 **COMBO MATURITY**\n"
+                f"├ 🌱 New (N<5):      {maturity_new}\n"
+                f"├ 🌿 Growing (5-15): {maturity_growing}\n"
+                f"├ 🌳 Mature (15-20): {maturity_mature}\n"
+                f"├ 🎯 Ready (N≥20):   {maturity_ready}\n"
+                f"├ 🏆 Promoted:       {promoted}\n"
+                f"└ 🚫 Blacklisted:    {blacklisted}\n\n"
                 
                 f"📊 **SESSION BREAKDOWN**\n"
                 f"├ 🌏 Asian:  {asian_wr:.0f}% ({sessions['asian']['w']}/{asian_total})\n"

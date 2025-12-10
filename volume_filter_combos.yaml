@@ -1,5 +1,5 @@
 # Volume Filter Golden Combos - AUTO-GENERATED
-# Last Updated: 2025-12-10T05:42:12.490936
+# Last Updated: 2025-12-10T05:42:59.838486
 
 _metadata:
   generated: '2025-12-10T04:42:00Z'
@@ -158,3 +158,11 @@ ALLOUSDT:
     train_n: 22
     test_wr: 0.0
     test_n: 7
+NMRUSDT:
+  allowed_short: true
+  volume_mult_short: 1.0
+  stats_short:
+    train_wr: 40.6
+    train_n: 64
+    test_wr: 0
+    test_n: 0

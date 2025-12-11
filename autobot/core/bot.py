@@ -340,10 +340,10 @@ class VWAPBot:
             learning_wr = (total_wins / learning_total * 100) if learning_total > 0 else 0
             lower_wr = wilson_lower_bound(total_wins, learning_total)
             
-            # Calculate overall EV at 1:1 R:R (net after fees)
+            # Calculate overall EV at 2:1 R:R
             if learning_total > 0:
                 wr_decimal = total_wins / learning_total
-                ev = (wr_decimal * 1.0) - ((1 - wr_decimal) * 1.0)  # 1:1 R:R
+                ev = (wr_decimal * 2.0) - ((1 - wr_decimal) * 1.0)  # 2:1 R:R
             else:
                 ev = 0
             
@@ -556,7 +556,7 @@ class VWAPBot:
                 f"├ Signals: {total_signals} | Pending: {pending}\n"
                 f"├ Resolved: {learning_total} ({total_wins}W/{total_losses}L)\n"
                 f"├ WR: {learning_wr:.0f}% (LB: **{lower_wr:.0f}%**)\n"
-                f"├ EV: **{ev:+.2f}R** at 1:1 R:R\n"
+                f"├ EV: **{ev:+.2f}R** at 2:1 R:R\n"
                 f"├ Combos: {unique_combos} learned\n"
                 f"├ 📈 Near Promote: {approaching_promote}\n"
                 f"├ 📉 Near Blacklist: {approaching_blacklist}\n"
@@ -987,7 +987,7 @@ class VWAPBot:
                 # Calculate raw WR and EV
                 raw_wr = (c.get('wins', 0) / c['total'] * 100) if c['total'] > 0 else 0
                 wr_decimal = raw_wr / 100
-                ev = (wr_decimal * 1.0) - ((1 - wr_decimal) * 1.0)  # EV at 1:1 R:R
+                ev = (wr_decimal * 2.0) - ((1 - wr_decimal) * 1.0)  # EV at 2:1 R:R
                 ev_str = f"{ev:+.2f}R"
                 
                 msg += f"{i}. {status} {side_icon} `{sym}`\n"
@@ -1211,21 +1211,17 @@ class VWAPBot:
                     sym, side, combo, entry, atr, btc_price, is_allowed=is_allowed, notify=should_notify
                 )
                 
-                # Use smart R:R if available, otherwise default 1:1 R:R
-                # TP has 5% buffer (1.05x) to account for:
-                # - Bybit taker fees: 0.055% x 2 = 0.11% round-trip
-                # - Slippage on market TP: ~0.05-0.1%
-                # This ensures NET 1:1 R:R after all costs
+                # Use smart R:R if available, otherwise default 2:1 R:R
                 if smart_tp and smart_sl:
                     tp, sl = smart_tp, smart_sl
                 else:
-                    # 1:1 R:R with fee buffer: SL = 1 ATR, TP = 1.05 ATR (net ~1R after fees)
+                    # 2:1 R:R: SL = 1 ATR (1R), TP = 2 ATR (2R)
                     if side == 'long':
                         sl = entry - (1.0 * atr)
-                        tp = entry + (1.05 * atr)  # 5% buffer for fees/slippage
+                        tp = entry + (2.0 * atr)
                     else:
                         sl = entry + (1.0 * atr)
-                        tp = entry - (1.05 * atr)  # 5% buffer for fees/slippage
+                        tp = entry - (2.0 * atr)
                 
                 # Check if COMBO is in learner.promoted (auto-promoted from live stats)
                 combo_key = f"{sym}:{side}:{combo}"
@@ -1612,17 +1608,14 @@ class VWAPBot:
             atr = row.atr
             entry = row.close
             
-            # 1:1 R:R with fee/slippage buffer
-            # TP has 5% buffer to account for:
-            # - Bybit taker fees: 0.055% x 2 = 0.11% round-trip
-            # - Slippage on market TP: ~0.05-0.1%
-            # This ensures NET 1:1 R:R after all costs
-            optimal_rr = 1.05  # Gross 1.05:1 = Net ~1:1 after fees
+            # 2:1 R:R for trading
+            # SL = 1 ATR (1R), TP = 2 ATR (2R)
+            optimal_rr = 2.0
             
-            # Calculate TP/SL with 1:1 R:R (+ fee buffer)
-            # Using 1 ATR for SL (1R), 1.05*ATR for TP (net ~1R after fees)
+            # Calculate TP/SL with 2:1 R:R
+            # Using 1 ATR for SL (1R), 2*ATR for TP (2R)
             MIN_SL_PCT = 0.5  # Minimum 0.5% distance for SL
-            MIN_TP_PCT = 0.5  # Minimum 0.5% distance for TP (same as SL for 1:1)
+            MIN_TP_PCT = 1.0  # Minimum 1.0% distance for TP
             
             # Calculate minimum distances based on percentage
             min_sl_dist = entry * (MIN_SL_PCT / 100)

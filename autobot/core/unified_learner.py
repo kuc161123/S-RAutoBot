@@ -145,17 +145,17 @@ class UnifiedLearner:
     VOL_LOW = 0.5
     
     # R:R options (keeping for counterfactual analysis)
-    RR_OPTIONS = [1.0, 1.5, 2.0, 2.5, 3.0]
+    RR_OPTIONS = [1.5, 2.0, 2.5, 3.0]
     
-    # Auto-promote thresholds for 1:1 R:R
-    # Break-even at 1:1 is 50%, so we require higher WR
+    # Auto-promote thresholds for 2:1 R:R
+    # Break-even at 2:1 is 33%, so we require higher WR
     PROMOTE_MIN_TRADES = 20
-    PROMOTE_MIN_LOWER_WR = 55.0  # Higher than 50% break-even for 1:1 R:R
-    PROMOTE_MIN_EV = 0.05  # At 55% WR with 1:1 R:R: (0.55*1) - (0.45*1) = 0.10
+    PROMOTE_MIN_LOWER_WR = 45.0  # Higher than 33% break-even for 2:1 R:R
+    PROMOTE_MIN_EV = 0.3  # At 45% WR with 2:1 R:R: (0.45*2) - (0.55*1) = 0.35
     
     # Blacklist thresholds
     BLACKLIST_MIN_TRADES = 10
-    BLACKLIST_MAX_LOWER_WR = 45.0  # Below break-even for 1:1 R:R
+    BLACKLIST_MAX_LOWER_WR = 35.0  # Below break-even for 2:1 R:R
     
     # Minimum data for adaptive decisions
     MIN_TRADES_FOR_RR = 15
@@ -1037,9 +1037,9 @@ class UnifiedLearner:
         if lb_wr < self.PROMOTE_MIN_LOWER_WR:
             return
         
-        # Calculate EV at 1:1 R:R
+        # Calculate EV at 2:1 R:R
         raw_wr = stats['wins'] / stats['total']
-        ev = (raw_wr * 1.0) - ((1 - raw_wr) * 1.0)  # 1:1 R:R
+        ev = (raw_wr * 2.0) - ((1 - raw_wr) * 1.0)  # 2:1 R:R
         
         if ev < self.PROMOTE_MIN_EV:
             return

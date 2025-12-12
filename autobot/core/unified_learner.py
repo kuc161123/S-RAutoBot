@@ -1719,6 +1719,33 @@ class UnifiedLearner:
                     data['by_rr'] = {float(k): v for k, v in data['by_rr'].items()}
                 
                 self.combo_stats[symbol][side][combo] = data
+        
+        # Scan for combos that should be blacklisted (based on loaded stats)
+        self._scan_for_blacklist()
+    
+    def _scan_for_blacklist(self):
+        """Scan all combos and blacklist any that meet criteria.
+        Called on startup after loading stats from Postgres.
+        """
+        blacklist_count = 0
+        for symbol, sides in self.combo_stats.items():
+            for side, combos in sides.items():
+                for combo, stats in combos.items():
+                    key = f"{symbol}:{side}:{combo}"
+                    if key in self.blacklist:
+                        continue
+                    
+                    if stats['total'] < self.BLACKLIST_MIN_TRADES:
+                        continue
+                    
+                    lb_wr = wilson_lower_bound(stats['wins'], stats['total'])
+                    if lb_wr <= self.BLACKLIST_MAX_LOWER_WR:
+                        self.blacklist.add(key)
+                        blacklist_count += 1
+        
+        if blacklist_count > 0:
+            self.save_blacklist()
+            logger.info(f"🚫 Blacklist scan: Added {blacklist_count} combos (N>={self.BLACKLIST_MIN_TRADES}, LB WR<={self.BLACKLIST_MAX_LOWER_WR}%)")
 
     def _restore_pending_signals(self, pending_data: List[Dict]):
         """Helper to restore pending signals from list of dicts"""

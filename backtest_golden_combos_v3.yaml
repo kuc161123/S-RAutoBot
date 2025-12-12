@@ -1,0 +1,139 @@
+global_rules:
+  enabled: true
+  side: short_only
+premium_setups:
+- combo: RSI:oversold MACD:bull Fib:mid
+  ev: 0.95
+  expected_wr: 65
+  hours:
+  - 22
+  sample: 20
+- combo: RSI:overbought MACD:bull Fib:high
+  ev: 0.8
+  expected_wr: 60
+  hours:
+  - 9
+  sample: 20
+- combo: RSI:oversold MACD:bull Fib:high
+  ev: 0.75
+  expected_wr: 58
+  hours:
+  - 8
+  sample: 48
+- combo: RSI:overbought MACD:bull Fib:mid
+  ev: 0.65
+  expected_wr: 55
+  hours:
+  - 22
+  sample: 151
+- combo: RSI:oversold MACD:bear Fib:low
+  ev: 0.61
+  expected_wr: 54
+  hours:
+  - 16
+  sample: 54
+- combo: RSI:overbought MACD:bull Fib:mid
+  ev: 0.58
+  expected_wr: 53
+  hours:
+  - 0
+  sample: 129
+- combo: RSI:neutral MACD:bull Fib:mid
+  ev: 0.54
+  expected_wr: 51
+  hours:
+  - 22
+  sample: 479
+- combo: RSI:neutral MACD:bull Fib:low
+  ev: 0.48
+  expected_wr: 49
+  hours:
+  - 14
+  sample: 174
+- combo: RSI:oversold MACD:bull Fib:high
+  ev: 0.47
+  expected_wr: 49
+  hours:
+  - 5
+  sample: 98
+- combo: RSI:overbought MACD:bear Fib:low
+  ev: 0.46
+  expected_wr: 49
+  hours:
+  - 7
+  sample: 35
+- combo: RSI:overbought MACD:bear Fib:low
+  ev: 0.45
+  expected_wr: 48
+  hours:
+  - 3
+  sample: 31
+- combo: RSI:neutral MACD:bull Fib:mid
+  ev: 0.44
+  expected_wr: 48
+  hours:
+  - 5
+  sample: 154
+- combo: RSI:overbought MACD:bear Fib:low
+  ev: 0.44
+  expected_wr: 48
+  hours:
+  - 22
+  sample: 25
+- combo: RSI:oversold MACD:bull Fib:high
+  ev: 0.42
+  expected_wr: 47
+  hours:
+  - 4
+  sample: 99
+- combo: RSI:overbought MACD:bear Fib:low
+  ev: 0.42
+  expected_wr: 47
+  hours:
+  - 14
+  sample: 36
+time_filter:
+  best_hours:
+  - 3
+  - 22
+  note: From 400-symbol backtest
+verified_symbols:
+  1000RATSUSDT:
+    ev: 0.8
+    lb_wr: 40.7
+  2ZUSDT:
+    ev: 1.18
+    lb_wr: 43.4
+  BEAMUSDT:
+    ev: 1.1
+    lb_wr: 39.7
+  BERAUSDT:
+    ev: 1.18
+    lb_wr: 43.4
+  DYDXUSDT:
+    ev: 0.91
+    lb_wr: 43.0
+  GMTUSDT:
+    ev: 1.1
+    lb_wr: 39.7
+  GRIFFAINUSDT:
+    ev: 1.45
+    lb_wr: 52.3
+  MANAUSDT:
+    ev: 0.83
+    lb_wr: 40.8
+  PUMPFUNUSDT:
+    ev: 1.1
+    lb_wr: 39.7
+  SHIB1000USDT:
+    ev: 1.25
+    lb_wr: 50.5
+  SOLAYERUSDT:
+    ev: 1.45
+    lb_wr: 52.3
+  SWARMSUSDT:
+    ev: 0.94
+    lb_wr: 41.3
+  WIFUSDT:
+    ev: 1.08
+    lb_wr: 42.4

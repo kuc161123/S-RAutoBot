@@ -1,0 +1,91 @@
+# =============================================================================
+# OPTIMIZED VWAP STRATEGY CONFIGURATION
+# Generated: 2025-12-12 by Autonomous Backtest System
+# =============================================================================
+# 
+# STRATEGY: Stacked Edge Filters
+# Based on 200 symbols, 60 days of 3M data with walk-forward validation
+#
+# RESULTS:
+#   - Base shorts: 31.1% WR, -0.07R EV
+#   - Stacked filters: 42.6% WR, +0.28R EV
+#   - Improvement: +11.5% WR
+#
+# EXPECTED PERFORMANCE:
+#   - Win Rate: 42-52% (depending on hour/combo)
+#   - EV: +0.28R to +0.58R at 2:1 R:R
+# =============================================================================
+
+# Trading Rules
+trading_rules:
+  side: short_only  # Longs significantly underperform
+  risk_reward: "2:1"
+  
+# Time Filters (UTC hours)
+time_filter:
+  enabled: true
+  best_hours: [3, 5, 8, 22]  # Peak performance hours
+  good_hours: [9, 11, 13, 19]  # Above average
+  avoid_hours: [1, 6, 7, 17, 18]  # Worst performance
+
+# Combo Filters (for shorts)
+combo_filter:
+  enabled: true
+  tier_1_combos:  # 50%+ WR at peak hours
+    - "RSI:oversold MACD:bull Fib:high"     # 61% WR @ 05:00
+    - "RSI:oversold MACD:bear Fib:low"      # 60% WR @ 03:00
+  tier_2_combos:  # 45%+ WR
+    - "RSI:overbought MACD:bull Fib:mid"    # 54% WR @ 22:00
+    - "RSI:neutral MACD:bull Fib:low"       # 56% WR @ 22:00
+    - "RSI:neutral MACD:bull Fib:mid"       # 52% WR @ 22:00
+  tier_3_combos:  # 40%+ WR
+    - "RSI:overbought MACD:bear Fib:low"    # 57% WR @ 13:00
+    - "RSI:neutral MACD:bear Fib:low"       # 53% WR @ 09:00
+
+# Best Combo+Hour Combinations (Ranked by EV)
+premium_setups:
+  - combo: "RSI:oversold MACD:bull Fib:high"
+    hour: 5
+    win_rate: 61.0
+    ev: 0.83
+    sample: 41
+    
+  - combo: "RSI:oversold MACD:bear Fib:low"  
+    hour: 3
+    win_rate: 60.9
+    ev: 0.83
+    sample: 23
+    
+  - combo: "RSI:oversold MACD:bull Fib:high"
+    hour: 8
+    win_rate: 59.1
+    ev: 0.77
+    sample: 22
+    
+  - combo: "RSI:neutral MACD:bull Fib:low"
+    hour: 22
+    win_rate: 56.6
+    ev: 0.70
+    sample: 53
+    
+  - combo: "RSI:overbought MACD:bull Fib:mid"
+    hour: 22
+    win_rate: 54.5
+    ev: 0.64
+    sample: 66
+    
+  - combo: "RSI:neutral MACD:bull Fib:mid"
+    hour: 22
+    win_rate: 52.7
+    ev: 0.58
+    sample: 224
+
+# Discovered Winners from V1 (symbol-specific)
+verified_symbols:
+  STRKUSDT:
+    lb_wr: 46.6
+    ev: 0.91
+    
+  BATUSDT:
+    lb_wr: 41.9
+    ev: 0.62

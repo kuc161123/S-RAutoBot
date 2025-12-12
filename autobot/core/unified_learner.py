@@ -1090,12 +1090,14 @@ class UnifiedLearner:
     # ========================================================================
     
     def _check_blacklist(self, symbol: str, side: str, combo: str):
-        """Check if combo should be blacklisted"""
+        """Check if combo should be blacklisted (using last 30 days)"""
         key = f"{symbol}:{side}:{combo}"
         if key in self.blacklist:
             return
         
-        stats = self.combo_stats[symbol][side][combo]
+        # Use RECENT stats (last 30 days) for blacklisting - matches promote logic
+        stats = self.get_recent_stats(symbol, side, combo, days=30)
+        
         if stats['total'] < self.BLACKLIST_MIN_TRADES:
             return
         
@@ -1114,7 +1116,7 @@ class UnifiedLearner:
                 'trades': stats['total']
             })
             
-            logger.info(f"🚫 BLACKLIST: {symbol} {side} | LB_WR={lb_wr:.0f}%")
+            logger.info(f"🚫 BLACKLIST: {symbol} {side} | LB_WR={lb_wr:.0f}% (30d stats)")
     
     def save_blacklist(self):
         """Save blacklist to file"""
@@ -1725,27 +1727,47 @@ class UnifiedLearner:
     
     def _scan_for_blacklist(self):
         """Scan all combos and blacklist any that meet criteria.
+        Uses 30-day rolling window from PostgreSQL trade_history.
         Called on startup after loading stats from Postgres.
         """
+        if not self.pg_conn:
+            logger.warning("No Postgres connection - skipping blacklist scan")
+            return
+        
         blacklist_count = 0
-        for symbol, sides in self.combo_stats.items():
-            for side, combos in sides.items():
-                for combo, stats in combos.items():
+        try:
+            with self.pg_conn.cursor() as cur:
+                # Query 30-day stats for all combos
+                query = """
+                    SELECT symbol, side, combo,
+                           COUNT(*) as total,
+                           COALESCE(SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END), 0) as wins
+                    FROM trade_history
+                    WHERE created_at > NOW() - INTERVAL '30 days'
+                    GROUP BY symbol, side, combo
+                    HAVING COUNT(*) >= %s
+                """
+                cur.execute(query, (self.BLACKLIST_MIN_TRADES,))
+                rows = cur.fetchall()
+                
+                for row in rows:
+                    symbol, side, combo, total, wins = row
                     key = f"{symbol}:{side}:{combo}"
+                    
                     if key in self.blacklist:
                         continue
                     
-                    if stats['total'] < self.BLACKLIST_MIN_TRADES:
-                        continue
-                    
-                    lb_wr = wilson_lower_bound(stats['wins'], stats['total'])
+                    lb_wr = wilson_lower_bound(wins, total)
                     if lb_wr <= self.BLACKLIST_MAX_LOWER_WR:
                         self.blacklist.add(key)
                         blacklist_count += 1
+                        
+        except Exception as e:
+            logger.error(f"Blacklist scan error: {e}")
         
         if blacklist_count > 0:
             self.save_blacklist()
-            logger.info(f"🚫 Blacklist scan: Added {blacklist_count} combos (N>={self.BLACKLIST_MIN_TRADES}, LB WR<={self.BLACKLIST_MAX_LOWER_WR}%)")
+            logger.info(f"🚫 Blacklist scan (30d): Added {blacklist_count} combos (N>={self.BLACKLIST_MIN_TRADES}, LB WR<={self.BLACKLIST_MAX_LOWER_WR}%)")
 
     def _restore_pending_signals(self, pending_data: List[Dict]):
         """Helper to restore pending signals from list of dicts"""

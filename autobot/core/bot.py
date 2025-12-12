@@ -105,29 +105,18 @@ class VWAPBot:
         ))
         
     def load_overrides(self):
-        """Load combos - HYBRID MODE
+        """Load combos - AUTO-PROMOTE ONLY MODE
         
-        Tier 1: Backtest golden combos (execute immediately when matched)
-        Tier 2: Auto-promoted combos (from live learning)
-        Tier 3: Phantom (record for learning only)
+        Backtest golden combos DISABLED - not performing well in live.
+        Only auto-promoted combos (from live learning) will execute.
         """
         self.vwap_combos = {}  # Legacy system (deprecated)
         
-        # Load backtest golden combos v2 (new Tier 1 system)
+        # DISABLED: Backtest golden combos
+        # Live testing showed 0% WR - reverting to pure auto-promote learning
         self.backtest_golden = {}
-        try:
-            with open('backtest_golden_combos_v3.yaml', 'r') as f:
-                self.backtest_golden = yaml.safe_load(f) or {}
-            
-            setups = self.backtest_golden.get('premium_setups', [])
-            best_hours = self.backtest_golden.get('time_filter', {}).get('best_hours', [])
-            logger.info(f"📂 HYBRID MODE: Loaded {len(setups)} backtest golden combos")
-            logger.info(f"   Best hours: {best_hours}")
-            logger.info(f"   + Auto-promote learning continues")
-        except FileNotFoundError:
-            logger.info("📂 AUTO-PROMOTE MODE: No backtest golden combos (learning only)")
-        except Exception as e:
-            logger.error(f"Failed to load backtest golden combos: {e}")
+        logger.info("📂 AUTO-PROMOTE ONLY MODE: Backtest combos DISABLED")
+        logger.info("   Only auto-promoted combos from live learning will execute")
     
     def is_backtest_golden(self, side: str, combo: str, hour_utc: int) -> tuple:
         """Check if signal matches backtest-validated premium setup.

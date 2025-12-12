@@ -987,6 +987,19 @@ class UnifiedLearner:
                     else:
                         self.total_losses += 1
                     
+                    # CRITICAL: Also update in-memory combo_stats so WR/N reflects immediately
+                    if combo:
+                        stats = self.combo_stats[symbol][side][combo]
+                        stats['total'] += 1
+                        if outcome == 'win':
+                            stats['wins'] += 1
+                        else:
+                            stats['losses'] += 1
+                        
+                        # Check for promotion/blacklist based on updated stats
+                        self._check_promote(symbol, side, combo)
+                        self._check_blacklist(symbol, side, combo)
+                    
                     return True
                 except Exception as e:
                     logger.error(f"Failed to save trade history directly: {e}")

@@ -1747,6 +1747,7 @@ class VWAPBot:
                 position_value = qty * entry
                 
                 # Track as PENDING limit order (not active trade yet)
+                is_auto_promoted = (source == 'auto_promoted')  # Derive from source param
                 self.pending_limit_orders[sym] = {
                     'order_id': order_id,
                     'side': side,
@@ -1759,6 +1760,7 @@ class VWAPBot:
                     'optimal_rr': optimal_rr,
                     'created_at': time.time(),
                     'is_auto_promoted': is_auto_promoted,
+                    'source': source,  # Also store source for reference
                     'balance': balance,
                     'risk_amt': risk_amt
                 }

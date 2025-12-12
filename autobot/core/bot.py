@@ -380,8 +380,8 @@ class VWAPBot:
             
             # Count combos approaching thresholds (use actual promotion criteria)
             all_combos = learning.get_all_combos()
-            PROMOTE_TRADES = getattr(learning, 'PROMOTE_MIN_TRADES', 20)
-            PROMOTE_WR = getattr(learning, 'PROMOTE_MIN_LOWER_WR', 45.0)
+            PROMOTE_TRADES = getattr(learning, 'PROMOTE_MIN_TRADES', 15)
+            PROMOTE_WR = getattr(learning, 'PROMOTE_MIN_LOWER_WR', 38.0)
             
             # Near promotion: combos with at least 5 trades, WR >= 35%, progressing toward threshold
             # Filter out already promoted combos
@@ -409,10 +409,10 @@ class VWAPBot:
                                           and f"{c['symbol']}:{c['side']}:{c['combo']}" not in learning.blacklist])
             
             # === COMBO MATURITY DISTRIBUTION ===
-            # New: N < 5, Growing: 5-15, Mature: 15-20, Ready: 20+
+            # New: N < 5, Growing: 5-10, Mature: 10-15, Ready: 15+ (matches PROMOTE_TRADES)
             maturity_new = len([c for c in all_combos if c['total'] < 5])
-            maturity_growing = len([c for c in all_combos if 5 <= c['total'] < 15])
-            maturity_mature = len([c for c in all_combos if 15 <= c['total'] < PROMOTE_TRADES])
+            maturity_growing = len([c for c in all_combos if 5 <= c['total'] < 10])
+            maturity_mature = len([c for c in all_combos if 10 <= c['total'] < PROMOTE_TRADES])
             maturity_ready = len([c for c in all_combos if c['total'] >= PROMOTE_TRADES])
             
             # === PROMOTION FORECAST ===
@@ -592,9 +592,9 @@ class VWAPBot:
                 
                 f"🌱 **COMBO MATURITY**\n"
                 f"├ 🌱 New (N<5):      {maturity_new}\n"
-                f"├ 🌿 Growing (5-15): {maturity_growing}\n"
-                f"├ 🌳 Mature (15-20): {maturity_mature}\n"
-                f"├ 🎯 Ready (N≥20):   {maturity_ready}\n"
+                f"├ 🌿 Growing (5-10): {maturity_growing}\n"
+                f"├ 🌳 Mature (10-15): {maturity_mature}\n"
+                f"├ 🎯 Ready (N≥15):   {maturity_ready}\n"
                 f"├ 🏆 Promoted:       {promoted}\n"
                 f"└ 🚫 Blacklisted:    {blacklisted}\n\n"
                 
@@ -944,8 +944,8 @@ class VWAPBot:
             per_page = 10
             
             # Get promotion thresholds
-            PROMOTE_TRADES = getattr(self.learner, 'PROMOTE_MIN_TRADES', 20)
-            PROMOTE_WR = getattr(self.learner, 'PROMOTE_MIN_LOWER_WR', 45.0)
+            PROMOTE_TRADES = getattr(self.learner, 'PROMOTE_MIN_TRADES', 15)
+            PROMOTE_WR = getattr(self.learner, 'PROMOTE_MIN_LOWER_WR', 38.0)
             
             # Get all combos
             all_combos = self.learner.get_all_combos()
@@ -1824,8 +1824,8 @@ class VWAPBot:
         
         # Get stats for startup message
         all_combos = self.learner.get_all_combos()
-        PROMOTE_TRADES = getattr(self.learner, 'PROMOTE_MIN_TRADES', 20)
-        PROMOTE_WR = getattr(self.learner, 'PROMOTE_MIN_LOWER_WR', 45.0)
+        PROMOTE_TRADES = getattr(self.learner, 'PROMOTE_MIN_TRADES', 15)
+        PROMOTE_WR = getattr(self.learner, 'PROMOTE_MIN_LOWER_WR', 38.0)
         
         promoted_count = len(self.learner.promoted)
         blacklisted_count = len(self.learner.blacklist)
@@ -1920,8 +1920,8 @@ class VWAPBot:
 
         # Get near-promotion stats for startup message
         all_combos = self.learner.get_all_combos()
-        PROMOTE_TRADES = getattr(self.learner, 'PROMOTE_MIN_TRADES', 20)
-        PROMOTE_WR = getattr(self.learner, 'PROMOTE_MIN_LOWER_WR', 45.0)
+        PROMOTE_TRADES = getattr(self.learner, 'PROMOTE_MIN_TRADES', 15)
+        PROMOTE_WR = getattr(self.learner, 'PROMOTE_MIN_LOWER_WR', 38.0)
         near_promote = len([c for c in all_combos if c['total'] >= 5 and c['lower_wr'] >= 35
                            and f"{c['symbol']}:{c['side']}:{c['combo']}" not in self.learner.promoted])
 

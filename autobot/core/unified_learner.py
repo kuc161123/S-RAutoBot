@@ -149,9 +149,9 @@ class UnifiedLearner:
     
     # Auto-promote thresholds for 2:1 R:R
     # Break-even at 2:1 is 33%, so we require higher WR
-    PROMOTE_MIN_TRADES = 20
-    PROMOTE_MIN_LOWER_WR = 45.0  # Higher than 33% break-even for 2:1 R:R
-    PROMOTE_MIN_EV = 0.3  # At 45% WR with 2:1 R:R: (0.45*2) - (0.55*1) = 0.35
+    PROMOTE_MIN_TRADES = 15  # Reduced from 20 for faster learning
+    PROMOTE_MIN_LOWER_WR = 38.0  # Reduced from 45% (still above 33% breakeven)
+    PROMOTE_MIN_EV = 0.14  # At 38% WR with 2:1 R:R: (0.38*2) - (0.62*1) = 0.14
     
     # Blacklist thresholds
     BLACKLIST_MIN_TRADES = 10

@@ -252,12 +252,14 @@ class VWAPBot:
                 logger.debug(f"Failed to load trades from Redis: {e}")
 
     def _sync_promoted_to_yaml(self):
-        """DISABLED: Using static backtest golden combos now.
+        """Sync promoted combos to YAML file.
         
-        Previously synced promoted combos to YAML, but we're now using
-        backtest_golden_combos.yaml as the single source of truth.
+        Auto-promoted combos are written to symbol_overrides_VWAP_Combo.yaml
+        for persistence across restarts.
         """
-        logger.debug("📂 _sync_promoted_to_yaml DISABLED - using backtest golden combos")
+        # Syncing now handled by Redis persistence in UnifiedLearner
+        # This function is deprecated but kept for backwards compatibility
+        logger.debug("📂 _sync_promoted_to_yaml - handled by Redis persistence now")
         return
     
     def _check_feature_filters(self) -> tuple:
@@ -1247,28 +1249,17 @@ class VWAPBot:
                         sl = entry + (1.0 * atr)
                         tp = entry - (2.0 * atr)
                 
-                # Get current hour (UTC) for time filter
-                current_hour = datetime.utcnow().hour
+                # Check if auto-promoted from live stats (N>=20, LB WR>=45%)
+                combo_key = f"{sym}:{side}:{combo}"
+                is_auto_promoted = combo_key in self.learner.promoted
                 
-                # TIER 1: Check if backtest-validated golden combo (hour + combo)
-                is_golden, golden_tier, expected_wr = self.is_backtest_golden(side, combo, current_hour)
-                
-                if is_golden:
-                    # BACKTEST GOLDEN - Execute immediately!
-                    logger.info(f"🏆 BACKTEST GOLDEN (T{golden_tier}): {sym} {side} {combo} @{current_hour:02d}:00 (EWR:{expected_wr}%)")
-                    await self.execute_trade(sym, side, last_candle, combo, source='backtest_golden')
+                if is_auto_promoted:
+                    # AUTO-PROMOTED COMBO - Execute!
+                    logger.info(f"🚀 AUTO-PROMOTED: {sym} {side} {combo}")
+                    await self.execute_trade(sym, side, last_candle, combo, source='auto_promoted')
                 else:
-                    # TIER 2: Check if auto-promoted from live stats
-                    combo_key = f"{sym}:{side}:{combo}"
-                    is_auto_promoted = combo_key in self.learner.promoted
-                    
-                    if is_auto_promoted:
-                        # AUTO-PROMOTED COMBO - Execute!
-                        logger.info(f"🚀 AUTO-PROMOTED: {sym} {side} {combo}")
-                        await self.execute_trade(sym, side, last_candle, combo, source='auto_promoted')
-                    else:
-                        # TIER 3: Phantom signal - learner already tracks it (recorded above)
-                        logger.info(f"👻 SIGNAL DETECTED: {sym} {side} {combo} (Phantom)")
+                    # Phantom signal - learner tracks it for potential future promotion
+                    logger.info(f"👻 SIGNAL: {sym} {side} {combo} (Learning)")
                     
         except Exception as e:
             logger.error(f"Error {sym}: {e}")
@@ -1716,12 +1707,8 @@ class VWAPBot:
                 order_id = result.get('orderId', 'N/A')
                 
                 # Determine source for notification display
-                if source == 'backtest_golden':
-                    source_display = "🏆 Backtest Golden"
-                elif source == 'auto_promoted':
-                    source_display = "🚀 Auto-Promoted"
-                else:
-                    source_display = "📊 Manual"
+                # Only auto-promoted combos execute now (backtest golden disabled)
+                source_display = "🚀 Auto-Promoted"
                 
                 # Get current WR and N for this combo
                 combo_stats = self.learner.get_combo_stats(sym, side, combo)
@@ -2083,10 +2070,8 @@ class VWAPBot:
                                     else:
                                         wr_info = "WR: Updating..."
                                     
-                                    # Source - Explicitly trust Backtest Golden Combos
-                                    source = "🟢 Backtest Golden Combo"
-                                    if trade_info.get('is_auto_promoted'):
-                                        source = "🚀 Auto-Promoted"
+                                    # Source - only auto-promoted combos execute now
+                                    source = "🚀 Auto-Promoted"
                                     
                                     # Duration
                                     duration_mins = (time.time() - trade_info['open_time']) / 60
@@ -2139,9 +2124,9 @@ class VWAPBot:
                     self.learner.save()
                     
                     # === AUTO-ACTIVATION DISABLED ===
-                    # Now using static backtest_golden_combos.yaml
-                    # Auto-promote/demote has been replaced with walk-forward validated combos
-                    logger.debug("Auto-promote/demote DISABLED - using backtest golden combos")
+                    # Using only auto-promoted combos from live learning
+                    # Backtest golden combos have been disabled
+                    logger.debug("Auto-promote/demote ACTIVE - combos promoted based on live performance")
                 
                 await asyncio.sleep(10)
                 

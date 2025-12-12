@@ -1726,10 +1726,13 @@ class VWAPBot:
                 result = res.get('result', {})
                 order_id = result.get('orderId', 'N/A')
                 
-                # Determine if from backtest or auto-promote
-                combo_key = f"{sym}:{side}:{combo}"
-                is_auto_promoted = combo_key in self.learner.promoted
-                source = "🚀 Auto-Promoted" if is_auto_promoted else "📊 Backtest"
+                # Determine source for notification display
+                if source == 'backtest_golden':
+                    source_display = "🏆 Backtest Golden"
+                elif source == 'auto_promoted':
+                    source_display = "🚀 Auto-Promoted"
+                else:
+                    source_display = "📊 Manual"
                 
                 # Get current WR and N for this combo
                 combo_stats = self.learner.get_combo_stats(sym, side, combo)
@@ -1773,7 +1776,7 @@ class VWAPBot:
                     f"📊 Symbol: `{sym}`\n"
                     f"📈 Side: **{side.upper()}**\n"
                     f"🎯 Combo: `{combo}`\n"
-                    f"📁 Source: **{source}**\n"
+                    f"📁 Source: **{source_display}**\n"
                     f"📈 {wr_info}\n\n"
                     f"📋 **EXECUTION STEPS**\n"
                     f"├ {lev_status} Leverage set to {max_lev}x (MAX)\n"

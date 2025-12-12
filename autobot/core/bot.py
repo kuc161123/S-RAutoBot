@@ -873,6 +873,68 @@ class VWAPBot:
         
         await update.message.reply_text(msg, parse_mode='Markdown')
 
+    async def cmd_promoted(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show currently promoted (active trading) combos with their stats"""
+        promoted_set = self.learner.promoted
+        
+        if not promoted_set:
+            await update.message.reply_text(
+                "📊 **NO PROMOTED COMBOS YET**\n\n"
+                "Combos need:\n"
+                "• N ≥ 10 trades\n"
+                "• LB WR ≥ 38%\n"
+                "• EV ≥ 0.14\n\n"
+                "Keep running to collect more data!",
+                parse_mode='Markdown'
+            )
+            return
+        
+        msg = f"🚀 **PROMOTED COMBOS ({len(promoted_set)})**\n"
+        msg += f"These combos EXECUTE real trades\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        # Get stats for each promoted combo
+        promoted_list = []
+        for key in promoted_set:
+            parts = key.split(':')
+            if len(parts) >= 3:
+                symbol = parts[0]
+                side = parts[1]
+                combo = ':'.join(parts[2:])
+                
+                stats = self.learner.get_recent_stats(symbol, side, combo, days=30)
+                if stats and stats.get('total', 0) > 0:
+                    from autobot.core.unified_learner import wilson_lower_bound
+                    lb_wr = wilson_lower_bound(stats['wins'], stats['total'])
+                    raw_wr = stats['wins'] / stats['total'] * 100
+                    ev = (stats['wins']/stats['total'] * 2) - ((stats['total']-stats['wins'])/stats['total'] * 1)
+                    
+                    promoted_list.append({
+                        'symbol': symbol,
+                        'side': side,
+                        'combo': combo,
+                        'wins': stats['wins'],
+                        'total': stats['total'],
+                        'raw_wr': raw_wr,
+                        'lb_wr': lb_wr,
+                        'ev': ev
+                    })
+        
+        # Sort by EV descending
+        promoted_list.sort(key=lambda x: x['ev'], reverse=True)
+        
+        for p in promoted_list[:15]:  # Show top 15
+            side_icon = "🟢" if p['side'] == 'long' else "🔴"
+            msg += f"{side_icon} **{p['symbol']}**\n"
+            msg += f"   `{p['combo'][:30]}`\n"
+            msg += f"   N={p['total']} | WR={p['raw_wr']:.0f}% (LB:{p['lb_wr']:.0f}%) | EV={p['ev']:+.2f}R\n"
+            msg += f"   Record: {p['wins']}W/{p['total']-p['wins']}L\n\n"
+        
+        if len(promoted_list) > 15:
+            msg += f"_...and {len(promoted_list) - 15} more_"
+        
+        await update.message.reply_text(msg, parse_mode='Markdown')
+
     async def cmd_sessions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show session performance report"""
         try:
@@ -1940,6 +2002,7 @@ class VWAPBot:
             self.tg_app.add_handler(CommandHandler("smart", self.cmd_smart))
             self.tg_app.add_handler(CommandHandler("top", self.cmd_top))
             self.tg_app.add_handler(CommandHandler("ladder", self.cmd_ladder))
+            self.tg_app.add_handler(CommandHandler("promoted", self.cmd_promoted))
             
             # Global error handler
             async def error_handler(update, context):

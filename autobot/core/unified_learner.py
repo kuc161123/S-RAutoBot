@@ -1583,7 +1583,7 @@ class UnifiedLearner:
             return {'wins': 0, 'losses': 0, 'total': 0}
 
     def _save_to_redis(self, pending_data: List[Dict]):
-        """Save pending signals to Redis"""
+        """Save pending signals and critical state to Redis"""
         self.redis_client.set('vwap_bot:pending_signals', json.dumps(pending_data))
         # Also save lightweight stats for quick dashboard access
         stats = {
@@ -1593,6 +1593,10 @@ class UnifiedLearner:
             'updated_at': time.time()
         }
         self.redis_client.set('vwap_bot:stats_summary', json.dumps(stats))
+        
+        # CRITICAL: Save blacklist and promoted sets (persist across restarts)
+        self.redis_client.set('vwap_bot:blacklist', json.dumps(list(self.blacklist)))
+        self.redis_client.set('vwap_bot:promoted', json.dumps(list(self.promoted)))
 
     def _save_to_postgres(self, stats_data: Dict):
         """Save combo stats to Postgres"""
@@ -1670,7 +1674,7 @@ class UnifiedLearner:
                 logger.error(f"Failed to load JSON: {e}")
 
     def _load_from_redis(self):
-        """Load pending signals from Redis"""
+        """Load pending signals and critical state from Redis"""
         data = self.redis_client.get('vwap_bot:pending_signals')
         if data:
             pending_data = json.loads(data)
@@ -1683,6 +1687,17 @@ class UnifiedLearner:
             self.total_signals = stats.get('total_signals', 0)
             self.total_wins = stats.get('total_wins', 0)
             self.total_losses = stats.get('total_losses', 0)
+        
+        # CRITICAL: Load blacklist and promoted sets (persist across restarts)
+        blacklist_data = self.redis_client.get('vwap_bot:blacklist')
+        if blacklist_data:
+            self.blacklist = set(json.loads(blacklist_data))
+            logger.info(f"🚫 Loaded {len(self.blacklist)} blacklisted combos from Redis")
+        
+        promoted_data = self.redis_client.get('vwap_bot:promoted')
+        if promoted_data:
+            self.promoted = set(json.loads(promoted_data))
+            logger.info(f"🚀 Loaded {len(self.promoted)} promoted combos from Redis")
 
     def _load_from_postgres(self):
         """Load combo stats from Postgres"""

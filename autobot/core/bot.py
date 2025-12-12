@@ -68,7 +68,10 @@ class VWAPBot:
         self.pending_limit_orders = {}
         
         # Unified Learning System (all learning features in one)
-        self.learner = UnifiedLearner()
+        self.learner = UnifiedLearner(
+            on_promote_callback=self._on_combo_promoted,
+            on_demote_callback=self._on_combo_demoted
+        )
         
     def load_config(self):
         # Load .env manually
@@ -278,6 +281,73 @@ class VWAPBot:
         
         # All hours allowed to match backtest behavior
         return True, "all_hours_allowed"
+    
+    async def _on_combo_promoted(self, symbol: str, side: str, combo: str, stats: dict):
+        """Callback when a combo is auto-promoted - sends Telegram notification"""
+        try:
+            wins = stats.get('wins', 0)
+            total = stats.get('total', 0)
+            lb_wr = stats.get('lower_wr', 0)
+            if not lb_wr and total > 0:
+                from autobot.core.unified_learner import wilson_lower_bound
+                lb_wr = wilson_lower_bound(wins, total)
+            
+            raw_wr = (wins / total * 100) if total > 0 else 0
+            ev = (wins/total * 2) - ((total-wins)/total * 1) if total > 0 else 0
+            
+            side_icon = "🟢" if side == 'long' else "🔴"
+            
+            await self.send_telegram(
+                f"🚀 **COMBO PROMOTED!**\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"📊 Symbol: `{symbol}`\n"
+                f"📈 Side: **{side_icon} {side.upper()}**\n"
+                f"🎯 Combo: `{combo}`\n\n"
+                f"📊 **STATS (30d)**\n"
+                f"├ N: {total} trades\n"
+                f"├ WR: {raw_wr:.0f}% (LB: {lb_wr:.0f}%)\n"
+                f"├ EV: {ev:+.2f}R\n"
+                f"└ Record: {wins}W/{total-wins}L\n\n"
+                f"✅ **This combo will now EXECUTE real trades!**"
+            )
+        except Exception as e:
+            logger.error(f"Promotion notification error: {e}")
+    
+    async def _on_combo_demoted(self, symbol: str, side: str, combo: str, reason: str, stats: dict):
+        """Callback when a combo is demoted/blacklisted - sends Telegram notification"""
+        try:
+            wins = stats.get('wins', 0)
+            total = stats.get('total', 0)
+            lb_wr = stats.get('lower_wr', 0)
+            if not lb_wr and total > 0:
+                from autobot.core.unified_learner import wilson_lower_bound
+                lb_wr = wilson_lower_bound(wins, total)
+            
+            raw_wr = (wins / total * 100) if total > 0 else 0
+            
+            side_icon = "🟢" if side == 'long' else "🔴"
+            
+            if reason == "demoted_and_blacklisted":
+                title = "🔽 **COMBO DEMOTED & BLACKLISTED!**"
+                footer = "❌ **Removed from promoted + added to blacklist!**"
+            else:
+                title = "🚫 **COMBO BLACKLISTED!**"
+                footer = "❌ **This combo will NOT execute trades!**"
+            
+            await self.send_telegram(
+                f"{title}\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"📊 Symbol: `{symbol}`\n"
+                f"📈 Side: **{side_icon} {side.upper()}**\n"
+                f"🎯 Combo: `{combo}`\n\n"
+                f"📊 **STATS (30d)**\n"
+                f"├ N: {total} trades\n"
+                f"├ WR: {raw_wr:.0f}% (LB: {lb_wr:.0f}%)\n"
+                f"└ Record: {wins}W/{total-wins}L\n\n"
+                f"{footer}"
+            )
+        except Exception as e:
+            logger.error(f"Demotion notification error: {e}")
 
     # --- Telegram Commands ---
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1890,6 +1960,21 @@ class VWAPBot:
         self.load_overrides()
         self.load_state()  # Restore previous session data
         trading_symbols = list(self.vwap_combos.keys())
+        
+        # === STARTUP PROMOTION SCAN ===
+        # Check if any combos should be promoted based on 30-day PostgreSQL data
+        startup_promoted = self.learner._scan_for_promote()
+        if startup_promoted:
+            promo_msg = f"🚀 **STARTUP PROMOTION SCAN**\n"
+            promo_msg += f"Found **{len(startup_promoted)}** combos to promote!\n\n"
+            for p in startup_promoted[:5]:  # Show top 5
+                side_icon = "🟢" if p['side'] == 'long' else "🔴"
+                promo_msg += f"{side_icon} `{p['symbol']}` | {p['combo'][:20]}...\n"
+                promo_msg += f"   N={p['total']} | WR={p['wins']/p['total']*100:.0f}% | EV={p['ev']:+.2f}R\n"
+            if len(startup_promoted) > 5:
+                promo_msg += f"\n...and {len(startup_promoted) - 5} more"
+            await self.send_telegram(promo_msg)
+            logger.info(f"🚀 Startup: Promoted {len(startup_promoted)} combos")
         
         # Load ALL 400 symbols for LEARNING
         try:

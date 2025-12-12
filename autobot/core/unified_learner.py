@@ -161,14 +161,20 @@ class UnifiedLearner:
     MIN_TRADES_FOR_RR = 15
     MIN_TRADES_FOR_REGIME = 10
     
-    def __init__(self, on_resolve_callback=None):
+    def __init__(self, on_resolve_callback=None, on_promote_callback=None, on_demote_callback=None):
         """
         Initialize learner.
         
         on_resolve_callback: Optional async function(signal, outcome, time_mins, max_dd) 
                             called when a signal resolves - use for Telegram notifications
+        on_promote_callback: Optional async function(symbol, side, combo, stats)
+                            called when a combo is promoted
+        on_demote_callback: Optional async function(symbol, side, combo, reason, stats)
+                           called when a combo is demoted or blacklisted
         """
         self.on_resolve_callback = on_resolve_callback
+        self.on_promote_callback = on_promote_callback
+        self.on_demote_callback = on_demote_callback
         
         # Combo stats: symbol -> side -> combo -> stats
         self.combo_stats: Dict = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: {
@@ -1061,6 +1067,18 @@ class UnifiedLearner:
         self._promote_combo(symbol, side, combo)
         self.promoted.add(key)
         logger.info(f"🚀 PROMOTED {key} based on 30d stats: {stats['wins']}W/{stats['losses']}L")
+        
+        # Invoke callback for notification
+        if self.on_promote_callback:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self.on_promote_callback(symbol, side, combo, stats))
+                else:
+                    loop.run_until_complete(self.on_promote_callback(symbol, side, combo, stats))
+            except Exception as e:
+                logger.error(f"Promote callback error: {e}")
     
     def _promote_combo(self, symbol: str, side: str, combo: str):
         """Add combo to override YAML"""
@@ -1119,6 +1137,12 @@ class UnifiedLearner:
             self.blacklist.add(key)
             self.save_blacklist()
             
+            # CRITICAL: Remove from promoted set if it was promoted
+            was_promoted = key in self.promoted
+            if was_promoted:
+                self.promoted.discard(key)
+                logger.info(f"🔽 DEMOTED {key} from promoted set (now blacklisted)")
+            
             self.adjustments.append({
                 'time': time.time(),
                 'type': 'BLACKLIST',
@@ -1130,6 +1154,19 @@ class UnifiedLearner:
             })
             
             logger.info(f"🚫 BLACKLIST: {symbol} {side} | LB_WR={lb_wr:.0f}% (30d stats)")
+            
+            # Invoke callback for notification
+            if self.on_demote_callback:
+                import asyncio
+                reason = "blacklisted" if not was_promoted else "demoted_and_blacklisted"
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        asyncio.create_task(self.on_demote_callback(symbol, side, combo, reason, stats))
+                    else:
+                        loop.run_until_complete(self.on_demote_callback(symbol, side, combo, reason, stats))
+                except Exception as e:
+                    logger.error(f"Demote callback error: {e}")
     
     def save_blacklist(self):
         """Save blacklist to file"""
@@ -1781,6 +1818,66 @@ class UnifiedLearner:
         if blacklist_count > 0:
             self.save_blacklist()
             logger.info(f"🚫 Blacklist scan (30d): Added {blacklist_count} combos (N>={self.BLACKLIST_MIN_TRADES}, LB WR<={self.BLACKLIST_MAX_LOWER_WR}%)")
+    
+    def _scan_for_promote(self):
+        """Scan all combos and promote any that meet criteria.
+        Uses 30-day rolling window from PostgreSQL trade_history.
+        Called on startup after loading stats from Postgres.
+        Returns list of promoted combos for notification.
+        """
+        if not self.pg_conn:
+            logger.warning("No Postgres connection - skipping promotion scan")
+            return []
+        
+        promoted_list = []
+        try:
+            with self.pg_conn.cursor() as cur:
+                # Query 30-day stats for all combos
+                query = """
+                    SELECT symbol, side, combo,
+                           COUNT(*) as total,
+                           COALESCE(SUM(CASE WHEN outcome = 'win' THEN 1 ELSE 0 END), 0) as wins
+                    FROM trade_history
+                    WHERE created_at > NOW() - INTERVAL '30 days'
+                    GROUP BY symbol, side, combo
+                    HAVING COUNT(*) >= %s
+                """
+                cur.execute(query, (self.PROMOTE_MIN_TRADES,))
+                rows = cur.fetchall()
+                
+                for row in rows:
+                    symbol, side, combo, total, wins = row
+                    key = f"{symbol}:{side}:{combo}"
+                    
+                    # Skip if already promoted or blacklisted
+                    if key in self.promoted or key in self.blacklist:
+                        continue
+                    
+                    lb_wr = wilson_lower_bound(wins, total)
+                    if lb_wr >= self.PROMOTE_MIN_LOWER_WR:
+                        # Calculate EV
+                        raw_wr = wins / total if total > 0 else 0
+                        ev = (raw_wr * 2.0) - ((1 - raw_wr) * 1.0)
+                        
+                        if ev >= self.PROMOTE_MIN_EV:
+                            self.promoted.add(key)
+                            promoted_list.append({
+                                'symbol': symbol,
+                                'side': side,
+                                'combo': combo,
+                                'wins': wins,
+                                'total': total,
+                                'lb_wr': lb_wr,
+                                'ev': ev
+                            })
+                        
+        except Exception as e:
+            logger.error(f"Promotion scan error: {e}")
+        
+        if len(promoted_list) > 0:
+            logger.info(f"🚀 Promotion scan (30d): Found {len(promoted_list)} combos to promote (N>={self.PROMOTE_MIN_TRADES}, LB WR>={self.PROMOTE_MIN_LOWER_WR}%)")
+        
+        return promoted_list
 
     def _restore_pending_signals(self, pending_data: List[Dict]):
         """Helper to restore pending signals from list of dicts"""

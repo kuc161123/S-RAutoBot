@@ -116,7 +116,7 @@ class VWAPBot:
         # Load backtest golden combos v2 (new Tier 1 system)
         self.backtest_golden = {}
         try:
-            with open('backtest_golden_combos_v2.yaml', 'r') as f:
+            with open('backtest_golden_combos_v3.yaml', 'r') as f:
                 self.backtest_golden = yaml.safe_load(f) or {}
             
             setups = self.backtest_golden.get('premium_setups', [])

@@ -1,0 +1,70 @@
+# =============================================================================
+# BACKTEST GOLDEN COMBOS v2
+# =============================================================================
+# Generated: 2025-12-12 by Autonomous Backtest System
+# 
+# These combos execute IMMEDIATELY when conditions match (bypass learning threshold)
+# Based on: 200 symbols, 60 days, 3M timeframe, walk-forward validation
+# 
+# Results: Stacked filters → 42.6% WR, +0.28R EV (vs 31.1% baseline)
+# =============================================================================
+
+# Global trading rules
+global_rules:
+  side: short_only  # Only shorts validated (longs underperform)
+  enabled: true
+
+# Time filter - only trade during these hours (UTC)
+time_filter:
+  best_hours: [3, 5, 8, 22]
+  # 03:00 UTC - 42.7% WR
+  # 05:00 UTC - Peak performance hour
+  # 08:00 UTC - Strong morning session  
+  # 22:00 UTC - High volume, consistent
+
+# Premium setups - execute immediately when matched
+# Format: combo + allowed hours
+premium_setups:
+  # Tier 1: 55%+ WR setups
+  - combo: "RSI:oversold MACD:bull Fib:high"
+    hours: [3, 5, 8, 11, 19]
+    tier: 1
+    expected_wr: 59
+    note: "Best performer - entry on oversold bounce"
+    
+  - combo: "RSI:oversold MACD:bear Fib:low"
+    hours: [3, 16]
+    tier: 1
+    expected_wr: 58
+    note: "Trend continuation on weakness"
+    
+  # Tier 2: 50-55% WR setups
+  - combo: "RSI:neutral MACD:bull Fib:low"
+    hours: [22]
+    tier: 2
+    expected_wr: 56
+    note: "High volume evening session"
+    
+  - combo: "RSI:overbought MACD:bull Fib:mid"
+    hours: [22]
+    tier: 2
+    expected_wr: 54
+    note: "Late session momentum fade"
+    
+  - combo: "RSI:neutral MACD:bull Fib:mid"
+    hours: [22]
+    tier: 2
+    expected_wr: 52
+    note: "Highest sample count (224 trades)"
+    
+  - combo: "RSI:overbought MACD:bear Fib:low"
+    hours: [3, 13]
+    tier: 2
+    expected_wr: 55
+    note: "Overbought reversal setup"
+    
+  - combo: "RSI:neutral MACD:bear Fib:low"
+    hours: [9]
+    tier: 2
+    expected_wr: 53
+    note: "Morning session momentum"

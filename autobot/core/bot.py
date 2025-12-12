@@ -105,16 +105,51 @@ class VWAPBot:
         ))
         
     def load_overrides(self):
-        """Load combos - AUTO-PROMOTE/DEMOTE ONLY MODE
+        """Load combos - HYBRID MODE
         
-        Backtest golden combos are DISABLED.
-        Only learner.promoted combos will be used for trading.
+        Tier 1: Backtest golden combos (execute immediately when matched)
+        Tier 2: Auto-promoted combos (from live learning)
+        Tier 3: Phantom (record for learning only)
         """
-        # DISABLED: Backtest golden combos
-        # Previously loaded from backtest_golden_combos.yaml
-        # Now using ONLY auto-promoted combos from live learning
-        self.vwap_combos = {}  # Empty - no backtest combos
-        logger.info("📂 AUTO-PROMOTE MODE: No backtest combos loaded (live learning only)")
+        self.vwap_combos = {}  # Legacy system (deprecated)
+        
+        # Load backtest golden combos v2 (new Tier 1 system)
+        self.backtest_golden = {}
+        try:
+            with open('backtest_golden_combos_v2.yaml', 'r') as f:
+                self.backtest_golden = yaml.safe_load(f) or {}
+            
+            setups = self.backtest_golden.get('premium_setups', [])
+            best_hours = self.backtest_golden.get('time_filter', {}).get('best_hours', [])
+            logger.info(f"📂 HYBRID MODE: Loaded {len(setups)} backtest golden combos")
+            logger.info(f"   Best hours: {best_hours}")
+            logger.info(f"   + Auto-promote learning continues")
+        except FileNotFoundError:
+            logger.info("📂 AUTO-PROMOTE MODE: No backtest golden combos (learning only)")
+        except Exception as e:
+            logger.error(f"Failed to load backtest golden combos: {e}")
+    
+    def is_backtest_golden(self, side: str, combo: str, hour_utc: int) -> tuple:
+        """Check if signal matches backtest-validated premium setup.
+        
+        Returns: (is_golden, tier, expected_wr) or (False, 0, 0)
+        """
+        # Check global rules - only shorts validated
+        global_rules = self.backtest_golden.get('global_rules', {})
+        if global_rules.get('side') == 'short_only' and side != 'short':
+            return (False, 0, 0)
+        
+        if not global_rules.get('enabled', True):
+            return (False, 0, 0)
+        
+        # Check premium setups
+        for setup in self.backtest_golden.get('premium_setups', []):
+            if setup['combo'] == combo and hour_utc in setup.get('hours', []):
+                tier = setup.get('tier', 1)
+                expected_wr = setup.get('expected_wr', 50)
+                return (True, tier, expected_wr)
+        
+        return (False, 0, 0)
 
     def _get_data_dir(self):
         """Get persistent data directory"""
@@ -1223,40 +1258,28 @@ class VWAPBot:
                         sl = entry + (1.0 * atr)
                         tp = entry - (2.0 * atr)
                 
-                # Check if COMBO is in learner.promoted (auto-promoted from live stats)
-                combo_key = f"{sym}:{side}:{combo}"
-                is_auto_promoted = combo_key in self.learner.promoted
+                # Get current hour (UTC) for time filter
+                current_hour = datetime.utcnow().hour
                 
-                if is_auto_promoted:
-                    # AUTO-PROMOTED COMBO - Execute!
-                    # This combo was promoted based on live learning stats (>40% LB WR)
-                    logger.info(f"🚀 AUTO-PROMOTED: {sym} {side} {combo}")
-                    await self.execute_trade(sym, side, last_candle, combo)
+                # TIER 1: Check if backtest-validated golden combo (hour + combo)
+                is_golden, golden_tier, expected_wr = self.is_backtest_golden(side, combo, current_hour)
+                
+                if is_golden:
+                    # BACKTEST GOLDEN - Execute immediately!
+                    logger.info(f"🏆 BACKTEST GOLDEN (T{golden_tier}): {sym} {side} {combo} @{current_hour:02d}:00 (EWR:{expected_wr}%)")
+                    await self.execute_trade(sym, side, last_candle, combo, source='backtest_golden')
                 else:
-                    # Phantom signal - learner already tracks it (recorded above)
-                    logger.info(f"👻 SIGNAL DETECTED: {sym} {side} {combo} (Phantom)")
+                    # TIER 2: Check if auto-promoted from live stats
+                    combo_key = f"{sym}:{side}:{combo}"
+                    is_auto_promoted = combo_key in self.learner.promoted
                     
-                    # NEAR-MISS NOTIFICATION: Only for symbols in Golden Combos file
-                    # This helps user see when their tracked symbols are active but combo doesn't match
-                    if sym in self.vwap_combos:
-                        # Get allowed combos for this symbol
-                        allowed_long = self.vwap_combos[sym].get('allowed_combos_long', [])
-                        allowed_short = self.vwap_combos[sym].get('allowed_combos_short', [])
-                        
-                        # Format allowed combos for display
-                        long_list = "\n".join([f"  • `{c}`" for c in allowed_long]) if allowed_long else "  • None"
-                        short_list = "\n".join([f"  • `{c}`" for c in allowed_short]) if allowed_short else "  • None"
-                        
-                        await self.send_telegram(
-                            f"🔍 **NEAR MISS** (Golden Combo Symbol)\n"
-                            f"━━━━━━━━━━━━━━━━━━━━\n"
-                            f"📊 Symbol: `{sym}`\n"
-                            f"📈 Side: **{side.upper()}**\n"
-                            f"🎯 Detected: `{combo}`\n\n"
-                            f"✅ **Allowed Long Combos:**\n{long_list}\n\n"
-                            f"✅ **Allowed Short Combos:**\n{short_list}\n\n"
-                            f"⏳ Waiting for exact match..."
-                        )
+                    if is_auto_promoted:
+                        # AUTO-PROMOTED COMBO - Execute!
+                        logger.info(f"🚀 AUTO-PROMOTED: {sym} {side} {combo}")
+                        await self.execute_trade(sym, side, last_candle, combo, source='auto_promoted')
+                    else:
+                        # TIER 3: Phantom signal - learner already tracks it (recorded above)
+                        logger.info(f"👻 SIGNAL DETECTED: {sym} {side} {combo} (Phantom)")
                     
         except Exception as e:
             logger.error(f"Error {sym}: {e}")
@@ -1572,8 +1595,11 @@ class VWAPBot:
     # NOTE: update_phantoms() removed - phantom tracking now handled by learner.update_signals()
 
 
-    async def execute_trade(self, sym, side, row, combo):
-        """Execute trade using LIMIT ORDER (not market) for precise entry."""
+    async def execute_trade(self, sym, side, row, combo, source='manual'):
+        """Execute trade using LIMIT ORDER (not market) for precise entry.
+        
+        source: 'backtest_golden', 'auto_promoted', or 'manual'
+        """
         try:
             # Check if already in position or have pending order
             pos = self.broker.get_position(sym)

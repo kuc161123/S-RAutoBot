@@ -2121,15 +2121,19 @@ class DivergenceBot:
             await self.send_telegram(promo_msg)
             logger.info(f"🚀 Startup: Promoted {len(startup_promoted)} combos")
         
-        # Load ALL 400 symbols for LEARNING
+        # Fetch TOP 200 symbols by 24h volume (SAME AS BACKTEST)
         try:
-            with open('symbols_400.yaml', 'r') as f:
-                all_symbols_data = yaml.safe_load(f)
-                self.all_symbols = all_symbols_data.get('symbols', trading_symbols)
-            logger.info(f"📚 Learning mode: scanning {len(self.all_symbols)} symbols")
-        except FileNotFoundError:
-            self.all_symbols = trading_symbols
-            logger.warning("symbols_400.yaml not found, using trading symbols only")
+            import requests
+            url = "https://api.bybit.com/v5/market/tickers?category=linear"
+            resp = requests.get(url, timeout=10)
+            tickers = resp.json().get('result', {}).get('list', [])
+            usdt_pairs = [t for t in tickers if t['symbol'].endswith('USDT')]
+            usdt_pairs.sort(key=lambda x: float(x.get('turnover24h', 0)), reverse=True)
+            self.all_symbols = [t['symbol'] for t in usdt_pairs[:200]]
+            logger.info(f"📚 Fetched TOP 200 symbols by volume (same as backtest)")
+        except Exception as e:
+            logger.error(f"Failed to fetch symbols: {e}, falling back to config")
+            self.all_symbols = self.cfg.get('trade', {}).get('symbols', [])
         
         # Sync promoted combos to YAML (ensures YAML matches promoted set)
         self._sync_promoted_to_yaml()

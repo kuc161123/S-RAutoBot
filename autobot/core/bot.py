@@ -1468,18 +1468,17 @@ class DivergenceBot:
             except Exception as e:
                 logger.warning(f"Failed to set leverage for {sym}: {e}")
             
-            # Execute trade using market order
-            order_side = 'Buy' if side == 'long' else 'Sell'
-            order = self.broker.place_market(sym, order_side, qty)
+            # Execute trade with BRACKET ORDER (TP/SL included for instant protection)
+            order_side = side  # place_market handles long/short conversion
+            order = self.broker.place_market(sym, order_side, qty, take_profit=tp, stop_loss=sl)
             
-            if not order:
-                logger.error(f"Failed to place order for {sym}")
+            if not order or order.get('retCode') != 0:
+                error_msg = order.get('retMsg', 'Unknown error') if order else 'No response'
+                logger.error(f"Failed to place bracket order for {sym}: {error_msg}")
                 return
             
             self.trades_executed += 1
-            
-            # Set TP/SL using correct method name
-            self.broker.set_tpsl(sym, tp, sl, qty)
+            order_id = order.get('result', {}).get('orderId', 'N/A')
             
             # Track trade
             self.active_trades[sym] = {
@@ -1490,6 +1489,7 @@ class DivergenceBot:
                 'tp': tp,
                 'sl': sl,
                 'qty': qty,
+                'order_id': order_id,
                 'open_time': time.time()
             }
             
@@ -1498,7 +1498,6 @@ class DivergenceBot:
             stats = self.learner.get_recent_stats(sym, side, combo, days=30)
             wr = (stats['wins'] / stats['total'] * 100) if stats and stats['total'] > 0 else 0
             total = stats['total'] if stats else 0
-            lb_wr = wilson_lower_bound(stats['wins'], stats['total']) * 100 if stats and stats['total'] > 0 else 0
             
             # Signal type emoji
             type_emoji = {
@@ -1508,6 +1507,10 @@ class DivergenceBot:
                 'hidden_bearish': '🔽 Hidden Bearish'
             }.get(signal_type, signal_type)
             
+            # Calculate expected profit/loss
+            profit_target = qty * abs(tp - entry)
+            loss_risk = qty * abs(sl - entry)
+            
             # Send Telegram notification
             side_emoji = '🟢 LONG' if side == 'long' else '🔴 SHORT'
             msg = (
@@ -1516,14 +1519,13 @@ class DivergenceBot:
                 f"📊 Symbol: `{sym}`\n"
                 f"📈 Side: **{side_emoji}**\n"
                 f"💎 Type: **{type_emoji}**\n\n"
-                f"💰 Entry: ${entry:.4f}\n"
-                f"🎯 TP: ${tp:.4f} (+2R)\n"
-                f"🛑 SL: ${sl:.4f} (-1R)\n"
+                f"💰 **Entry**: ${entry:.4f}\n"
+                f"🎯 **TP**: ${tp:.4f} (+${profit_target:.2f})\n"
+                f"🛑 **SL**: ${sl:.4f} (-${loss_risk:.2f})\n"
                 f"📊 RSI: {rsi:.1f}\n\n"
-                f"📈 **Combo Stats (30d)**\n"
-                f"├ N: {total} trades\n"
-                f"├ WR: {wr:.0f}% (LB: {lb_wr:.0f}%)\n"
-                f"└ Reason: Auto-Promoted\n\n"
+                f"🔐 **Protection**: ✅ BRACKET ORDER\n"
+                f"├ TP/SL set at entry\n"
+                f"└ Instant protection\n\n"
                 f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
             )
             await self.send_telegram(msg)

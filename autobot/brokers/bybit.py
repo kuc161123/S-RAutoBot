@@ -266,10 +266,15 @@ class Bybit:
             return None
         return None
     
-    def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False) -> Dict[str, Any]:
-        """Place market order"""
+    def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False,
+                      take_profit:float=None, stop_loss:float=None) -> Dict[str, Any]:
+        """Place market order with optional TP/SL (bracket order).
+        
+        When TP/SL are provided, they are set atomically with the order.
+        This means the position is protected from the instant it opens.
+        """
         # Convert 'long'/'short' to Bybit's 'Buy'/'Sell'
-        bybit_side = "Buy" if side.lower() == "long" else "Sell"
+        bybit_side = "Buy" if side.lower() in ["long", "buy"] else "Sell"
         
         data = {
             "category": "linear",
@@ -281,6 +286,21 @@ class Bybit:
             "reduceOnly": reduce_only,
             "positionIdx": 0  # One-way mode
         }
+        
+        # Add TP/SL as bracket order for instant protection
+        if take_profit is not None:
+            data["takeProfit"] = str(take_profit)
+            data["tpTriggerBy"] = "LastPrice"
+        
+        if stop_loss is not None:
+            data["stopLoss"] = str(stop_loss)
+            data["slTriggerBy"] = "LastPrice"
+        
+        bracket_status = ""
+        if take_profit or stop_loss:
+            bracket_status = f" [BRACKET: TP={take_profit} SL={stop_loss}]"
+        
+        logger.info(f"📤 Market order: {symbol} {side} qty={qty}{bracket_status}")
         return self._request("POST", "/v5/order/create", data)
     
     def place_limit(self, symbol: str, side: str, qty: float, price: float, 

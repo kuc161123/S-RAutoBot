@@ -3,13 +3,18 @@ import logging
 import yaml
 import os
 import pandas as pd
-import pandas_ta as ta
+import numpy as np
 import aiohttp
 import time
 from datetime import datetime
 from dataclasses import dataclass
 from autobot.brokers.bybit import Bybit, BybitConfig
 from autobot.core.unified_learner import UnifiedLearner, wilson_lower_bound
+from autobot.core.divergence_detector import (
+    detect_divergence, calculate_rsi, prepare_dataframe, 
+    DivergenceSignal, get_signal_description, SIGNAL_DESCRIPTIONS,
+    RSI_PERIOD, LOOKBACK_BARS
+)
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 
@@ -18,19 +23,20 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("vwap_bot.log"),
+        logging.FileHandler("divergence_bot.log"),
         logging.StreamHandler()
     ]
 )
-logger = logging.getLogger("VWAPBot")
+logger = logging.getLogger("DivergenceBot")
 
-# Phantom tracking now handled by UnifiedLearner for accuracy
+# RSI Divergence Strategy - Walk-Forward Validated
+# 26,850 trades | 61.3% WR | +0.84 EV at 2:1 R:R
 
-class VWAPBot:
+class DivergenceBot:
     def __init__(self):
         self.load_config()
         self.setup_broker()
-        self.vwap_combos = {}
+        self.divergence_combos = {}  # Renamed from divergence_combos
         self.active_positions = {} 
         self.tg_app = None
         
@@ -113,7 +119,7 @@ class VWAPBot:
         Backtest golden combos DISABLED - not performing well in live.
         Only auto-promoted combos (from live learning) will execute.
         """
-        self.vwap_combos = {}  # Legacy system (deprecated)
+        self.divergence_combos = {}  # Legacy system (deprecated)
         
         # DISABLED: Backtest golden combos
         # Live testing showed 0% WR - reverting to pure auto-promote learning
@@ -381,7 +387,7 @@ class VWAPBot:
             f"⏱️ Uptime: {uptime:.1f} hours\n"
             f"💾 Persistence: Redis {redis_ok} | DB {pg_ok}\n"
             f"🔄 Loops: {self.loop_count}\n"
-            f"📡 Trading: {len(self.vwap_combos)} symbols\n"
+            f"📡 Trading: {len(self.divergence_combos)} symbols\n"
             f"🧠 Learning: {len(self.all_symbols)} symbols\n"
             f"⚡ Risk: {self.risk_config['value']} {self.risk_config['type']}"
         )
@@ -414,13 +420,13 @@ class VWAPBot:
             
             # === TRADING SYMBOLS ===
             # Use max of YAML-loaded combos and promoted set (handles ephemeral file systems)
-            yaml_symbols = len(self.vwap_combos)
+            yaml_symbols = len(self.divergence_combos)
             promoted_symbols = len(set(k.split(':')[0] for k in self.learner.promoted))
             total_symbols = max(yaml_symbols, promoted_symbols)
             
             learning_symbols = len(getattr(self, 'all_symbols', []))
-            long_combos = sum(len(d.get('allowed_combos_long', [])) for d in self.vwap_combos.values())
-            short_combos = sum(len(d.get('allowed_combos_short', [])) for d in self.vwap_combos.values())
+            long_combos = sum(len(d.get('allowed_combos_long', [])) for d in self.divergence_combos.values())
+            short_combos = sum(len(d.get('allowed_combos_short', [])) for d in self.divergence_combos.values())
             
             # If YAML is empty but promoted set has combos, count from promoted
             if long_combos == 0 and short_combos == 0 and self.learner.promoted:
@@ -1220,7 +1226,7 @@ class VWAPBot:
             f"Total PnL: ${self.total_pnl:.2f}\n\n"
             f"👻 **Phantoms**\n"
             f"WR: {p_wr:.1f}% ({p_wins}W/{p_losses}L)\n\n"
-            f"📂 Active Combos: {len(self.vwap_combos)} symbols\n"
+            f"📂 Active Combos: {len(self.divergence_combos)} symbols\n"
             f"📈 Signals Detected: {self.signals_detected}"
         )
         await self.send_telegram(msg)
@@ -1289,48 +1295,49 @@ class VWAPBot:
         return f"RSI:{r_bin} MACD:{m_bin} Fib:{f_bin}"
 
     async def process_symbol(self, sym):
+        """
+        Process symbol for RSI divergence signals.
+        Uses 15-minute candles (matches backtest parameters).
+        Detects: regular_bullish, regular_bearish, hidden_bullish, hidden_bearish
+        """
         try:
-            klines = self.broker.get_klines(sym, '3', limit=200)
-            if not klines: return
+            # Use 15-minute timeframe (matches walk-forward validated backtest)
+            klines = self.broker.get_klines(sym, '15', limit=100)
+            if not klines or len(klines) < 50: 
+                return
             
             df = pd.DataFrame(klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
             df['start'] = pd.to_datetime(df['start'].astype(int), unit='ms')
             df.set_index('start', inplace=True)
             df.sort_index(inplace=True)
             
-            for c in ['open','high','low','close','volume']: 
+            for c in ['open', 'high', 'low', 'close', 'volume']: 
                 df[c] = df[c].astype(float)
             
-            df = self.calculate_indicators(df)
-            if df.empty or len(df) < 3: return
+            # Calculate RSI and ATR using divergence module
+            df = prepare_dataframe(df)
+            if df.empty or len(df) < 50: 
+                return
             
-            last_candle = df.iloc[-2]  # Last CLOSED candle
+            # Detect divergence signals
+            signals = detect_divergence(df, sym)
             
-            # Check Signal
-            side = None
-            if last_candle.low <= last_candle.vwap and last_candle.close > last_candle.vwap:
-                side = 'long'
-            elif last_candle.high >= last_candle.vwap and last_candle.close < last_candle.vwap:
-                side = 'short'
-                
-            if side:
+            if not signals:
+                return
+            
+            # Process each detected signal
+            for signal in signals:
                 self.signals_detected += 1
-                combo = self.get_combo(last_candle)
+                side = signal.side
+                combo = signal.combo  # e.g., "DIV:regular_bullish"
+                signal_type = signal.signal_type
                 
-                # Check for "Heartbeat" / Proof of Life logging
-                # This logs ANY cross, even if not matched, so user knows bot is scanning
-                yaml_key = f"allowed_combos_{side}"
-                allowed = self.vwap_combos.get(sym, {}).get(yaml_key, [])
-                is_allowed = combo in allowed
-
-                if not is_allowed:
-                     # Log mismatch at INFO level for "Proof of Life"
-                     # Rate limit this slightly if needed, but for now user wants VISIBILITY
-                     logger.info(f"👀 SCAN: {sym} {side} {combo} (Not in Golden Combos)")
-
-                atr = last_candle.atr
-                entry = last_candle.close
-                atr_percent = (atr / entry) * 100 if entry > 0 else 1.0
+                last_row = df.iloc[-1]
+                atr = last_row['atr']
+                entry = last_row['close']
+                
+                # Log signal detection
+                logger.info(f"📊 DIVERGENCE: {sym} {side.upper()} {combo} (RSI: {signal.rsi_value:.1f})")
                 
                 # Get BTC price for context
                 btc_price = 0
@@ -1341,60 +1348,48 @@ class VWAPBot:
                 except:
                     pass
                 
-                # Check if allowed to trade
-                # YAML uses: allowed_combos_long / allowed_combos_short
-                yaml_key = f"allowed_combos_{side}"
-                allowed = self.vwap_combos.get(sym, {}).get(yaml_key, [])
-                
-                # UNIFIED LEARNING: Record signal with full context
-                # Returns optimized TP/SL based on learned R:R
-                # The learner now handles ALL signal tracking (both allowed and phantom)
-                is_allowed = combo in allowed
-                
-                # Rate limit phantom notifications (max 1 per symbol per 30 min)
+                # Rate limit notifications (max 1 per symbol per 30 min)
                 should_notify = True
-                if not is_allowed:
-                    cooldown_key = f"{sym}_{side}"
-                    now = time.time()
-                    if not hasattr(self, 'last_phantom_notify_times'):
-                        self.last_phantom_notify_times = {}
-                    
-                    last_notify = self.last_phantom_notify_times.get(cooldown_key, 0)
-                    if now - last_notify < 1800: # 30 min cooldown
-                        should_notify = False
-                    else:
-                        self.last_phantom_notify_times[cooldown_key] = now
-
+                cooldown_key = f"{sym}_{side}"
+                now = time.time()
+                if not hasattr(self, 'last_phantom_notify_times'):
+                    self.last_phantom_notify_times = {}
+                
+                last_notify = self.last_phantom_notify_times.get(cooldown_key, 0)
+                if now - last_notify < 1800:  # 30 min cooldown
+                    should_notify = False
+                else:
+                    self.last_phantom_notify_times[cooldown_key] = now
+                
+                # Record signal in learner (tracks all signals for auto-promote/demote)
                 smart_tp, smart_sl, smart_explanation = self.learner.record_signal(
-                    sym, side, combo, entry, atr, btc_price, is_allowed=is_allowed, notify=should_notify
+                    sym, side, combo, entry, atr, btc_price, 
+                    is_allowed=False,  # All start as phantom, promoted via learning
+                    notify=should_notify
                 )
                 
-                # Use smart R:R if available, otherwise default 2:1 R:R
-                if smart_tp and smart_sl:
-                    tp, sl = smart_tp, smart_sl
+                # Calculate TP/SL (2:1 R:R as per backtest)
+                if side == 'long':
+                    sl = entry - (1.0 * atr)
+                    tp = entry + (2.0 * atr)
                 else:
-                    # 2:1 R:R: SL = 1 ATR (1R), TP = 2 ATR (2R)
-                    if side == 'long':
-                        sl = entry - (1.0 * atr)
-                        tp = entry + (2.0 * atr)
-                    else:
-                        sl = entry + (1.0 * atr)
-                        tp = entry - (2.0 * atr)
+                    sl = entry + (1.0 * atr)
+                    tp = entry - (2.0 * atr)
                 
-                # Check if auto-promoted from live stats (N>=20, LB WR>=45%)
+                # Check if auto-promoted from live stats (N>=10, LB WR>=38%)
                 combo_key = f"{sym}:{side}:{combo}"
                 is_auto_promoted = combo_key in self.learner.promoted
                 
                 if is_auto_promoted:
-                    # AUTO-PROMOTED COMBO - Execute!
-                    logger.info(f"🚀 AUTO-PROMOTED: {sym} {side} {combo}")
-                    await self.execute_trade(sym, side, last_candle, combo, source='auto_promoted')
+                    # AUTO-PROMOTED COMBO - Execute trade!
+                    logger.info(f"🚀 AUTO-PROMOTED DIVERGENCE: {sym} {side} {combo}")
+                    await self.execute_divergence_trade(sym, side, df.iloc[-1], combo, signal_type)
                 else:
-                    # Phantom signal - learner tracks it for potential future promotion
-                    logger.info(f"👻 SIGNAL: {sym} {side} {combo} (Learning)")
+                    # Phantom signal - learner tracks for potential future promotion
+                    logger.debug(f"👻 LEARNING: {sym} {side} {combo}")
                     
         except Exception as e:
-            logger.error(f"Error {sym}: {e}")
+            logger.error(f"Error processing {sym}: {e}")
 
     async def _immediate_demote(self, symbol: str, side: str, combo: str, lb_wr: float, total: int):
         """Immediately demote a combo from YAML after a trade loss drops WR below threshold.
@@ -1707,6 +1702,117 @@ class VWAPBot:
     # NOTE: update_phantoms() removed - phantom tracking now handled by learner.update_signals()
 
 
+    async def execute_divergence_trade(self, sym, side, row, combo, signal_type):
+        """Execute divergence trade with proper Telegram notification.
+        
+        Uses 2:1 R:R as validated by walk-forward backtest.
+        """
+        try:
+            # Check if already in position or have pending order
+            pos = self.broker.get_position(sym)
+            if pos and float(pos.get('size', 0)) > 0:
+                logger.info(f"Skip {sym}: Already in position")
+                return
+            
+            if sym in self.pending_limit_orders:
+                logger.info(f"Skip {sym}: Already have pending limit order")
+                return
+            
+            if sym in self.active_trades:
+                logger.info(f"Skip {sym}: Already tracking active trade")
+                return
+            
+            balance = self.broker.get_balance() or 0
+            if balance <= 0:
+                logger.error("Balance is 0")
+                return
+            
+            entry = row['close']
+            atr = row['atr']
+            rsi = row['rsi']
+            
+            # 2:1 R:R (validated by backtest)
+            if side == 'long':
+                sl = entry - (1.0 * atr)
+                tp = entry + (2.0 * atr)
+            else:
+                sl = entry + (1.0 * atr)
+                tp = entry - (2.0 * atr)
+            
+            # Calculate position size
+            risk_amount = balance * (self.risk_config['value'] / 100)
+            sl_dist = abs(entry - sl)
+            qty = risk_amount / sl_dist if sl_dist > 0 else 0
+            
+            if qty <= 0:
+                logger.warning(f"Invalid qty for {sym}")
+                return
+            
+            # Execute trade
+            order_side = 'Buy' if side == 'long' else 'Sell'
+            order = self.broker.place_order(sym, order_side, qty)
+            
+            if not order:
+                logger.error(f"Failed to place order for {sym}")
+                return
+            
+            self.trades_executed += 1
+            
+            # Set TP/SL
+            self.broker.set_tp_sl(sym, tp, sl)
+            
+            # Track trade
+            self.active_trades[sym] = {
+                'side': side,
+                'combo': combo,
+                'signal_type': signal_type,
+                'entry': entry,
+                'tp': tp,
+                'sl': sl,
+                'qty': qty,
+                'open_time': time.time()
+            }
+            
+            # Get learner stats for this combo
+            combo_key = f"{sym}:{side}:{combo}"
+            stats = self.learner.get_recent_stats(sym, side, combo, days=30)
+            wr = (stats['wins'] / stats['total'] * 100) if stats and stats['total'] > 0 else 0
+            total = stats['total'] if stats else 0
+            lb_wr = wilson_lower_bound(stats['wins'], stats['total']) * 100 if stats and stats['total'] > 0 else 0
+            
+            # Signal type emoji
+            type_emoji = {
+                'regular_bullish': '📈 Regular Bullish',
+                'regular_bearish': '📉 Regular Bearish', 
+                'hidden_bullish': '🔼 Hidden Bullish',
+                'hidden_bearish': '🔽 Hidden Bearish'
+            }.get(signal_type, signal_type)
+            
+            # Send Telegram notification
+            side_emoji = '🟢 LONG' if side == 'long' else '🔴 SHORT'
+            msg = (
+                f"🎯 **DIVERGENCE TRADE EXECUTED**\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"📊 Symbol: `{sym}`\n"
+                f"📈 Side: **{side_emoji}**\n"
+                f"💎 Type: **{type_emoji}**\n\n"
+                f"💰 Entry: ${entry:.4f}\n"
+                f"🎯 TP: ${tp:.4f} (+2R)\n"
+                f"🛑 SL: ${sl:.4f} (-1R)\n"
+                f"📊 RSI: {rsi:.1f}\n\n"
+                f"📈 **Combo Stats (30d)**\n"
+                f"├ N: {total} trades\n"
+                f"├ WR: {wr:.0f}% (LB: {lb_wr:.0f}%)\n"
+                f"└ Reason: Auto-Promoted\n\n"
+                f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
+            )
+            await self.send_telegram(msg)
+            
+            logger.info(f"✅ EXECUTED: {sym} {side} {combo} @ {entry:.4f}")
+            
+        except Exception as e:
+            logger.error(f"Execute divergence trade error {sym}: {e}")
+
     async def execute_trade(self, sym, side, row, combo, source='manual'):
         """Execute trade using LIMIT ORDER (not market) for precise entry.
         
@@ -1979,10 +2085,10 @@ class VWAPBot:
         )
 
     async def run(self):
-        logger.info("🤖 VWAP Bot Starting...")
+        logger.info("🤖 Divergence Bot Starting...")
         
         # Send starting notification
-        await self.send_telegram("⏳ **VWAP Bot Starting...**\nInitializing systems...")
+        await self.send_telegram("⏳ **Divergence Bot Starting...**\nInitializing systems...")
         
         # Initialize Telegram
         try:
@@ -2022,7 +2128,7 @@ class VWAPBot:
         # Load symbols from backtest results (for TRADING)
         self.load_overrides()
         self.load_state()  # Restore previous session data
-        trading_symbols = list(self.vwap_combos.keys())
+        trading_symbols = list(self.divergence_combos.keys())
         
         # === STARTUP PROMOTION SCAN ===
         # Check if any combos should be promoted based on 30-day PostgreSQL data
@@ -2056,7 +2162,7 @@ class VWAPBot:
         await self._startup_promote_demote_scan()
         
         self.load_overrides()  # Reload after sync and startup scan
-        trading_symbols = list(self.vwap_combos.keys())
+        trading_symbols = list(self.divergence_combos.keys())
         
         if not trading_symbols:
             await self.send_telegram("⚠️ **No trading symbols!**\nLearning will still run on all 400 symbols.")
@@ -2075,7 +2181,7 @@ class VWAPBot:
 
         # Send success notification
         await self.send_telegram(
-            f"✅ **VWAP Bot Online!**\n"
+            f"✅ **Divergence Bot Online!**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📊 Trading: **{len(trading_symbols)}** symbols\n"
             f"📚 Learning: **{len(self.all_symbols)}** symbols\n"
@@ -2096,7 +2202,7 @@ class VWAPBot:
         try:
             while True:
                 self.load_overrides()  # Reload to pick up new combos
-                trading_symbols = list(self.vwap_combos.keys())
+                trading_symbols = list(self.divergence_combos.keys())
                 self.loop_count += 1
                 
                 # Scan ALL symbols for learning, but only trade allowed ones

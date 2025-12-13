@@ -1504,8 +1504,12 @@ class DivergenceBot:
             risk_amount = balance * (self.risk_config['value'] / 100)
             qty = risk_amount / sl_distance_estimate if sl_distance_estimate > 0 else 0
             
-            # Round qty to lot size
+            # Round qty to lot size (fix floating point precision)
             qty = (qty // qty_step) * qty_step
+            # Fix floating point precision (e.g., 1236.1000000000001 -> 1236.1)
+            decimals = len(str(qty_step).split('.')[-1]) if '.' in str(qty_step) else 0
+            qty = round(qty, decimals)
+            
             if qty < min_qty:
                 logger.warning(f"Qty {qty} below min {min_qty} for {sym}")
                 return

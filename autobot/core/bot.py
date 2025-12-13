@@ -1442,9 +1442,9 @@ class DivergenceBot:
                 logger.warning(f"Invalid qty for {sym}")
                 return
             
-            # Execute trade
+            # Execute trade using market order
             order_side = 'Buy' if side == 'long' else 'Sell'
-            order = self.broker.place_order(sym, order_side, qty)
+            order = self.broker.place_market(sym, order_side, qty)
             
             if not order:
                 logger.error(f"Failed to place order for {sym}")
@@ -1452,8 +1452,8 @@ class DivergenceBot:
             
             self.trades_executed += 1
             
-            # Set TP/SL
-            self.broker.set_tp_sl(sym, tp, sl)
+            # Set TP/SL using correct method name
+            self.broker.set_tpsl(sym, tp, sl, qty)
             
             # Track trade
             self.active_trades[sym] = {

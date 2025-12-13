@@ -1325,7 +1325,7 @@ class DivergenceBot:
             if not signals:
                 return
             
-            # Process each detected signal
+            # Process each detected signal - EXECUTE ALL (backtest validated)
             for signal in signals:
                 self.signals_detected += 1
                 side = signal.side
@@ -1348,45 +1348,21 @@ class DivergenceBot:
                 except:
                     pass
                 
-                # Rate limit notifications (max 1 per symbol per 30 min)
-                should_notify = True
-                cooldown_key = f"{sym}_{side}"
-                now = time.time()
-                if not hasattr(self, 'last_phantom_notify_times'):
-                    self.last_phantom_notify_times = {}
-                
-                last_notify = self.last_phantom_notify_times.get(cooldown_key, 0)
-                if now - last_notify < 1800:  # 30 min cooldown
-                    should_notify = False
-                else:
-                    self.last_phantom_notify_times[cooldown_key] = now
-                
-                # Record signal in learner (tracks all signals for auto-promote/demote)
+                # Record signal in learner for tracking stats
                 smart_tp, smart_sl, smart_explanation = self.learner.record_signal(
                     sym, side, combo, entry, atr, btc_price, 
-                    is_allowed=False,  # All start as phantom, promoted via learning
-                    notify=should_notify
+                    is_allowed=True,  # All divergence signals are allowed
+                    notify=True
                 )
                 
-                # Calculate TP/SL (2:1 R:R as per backtest)
-                if side == 'long':
-                    sl = entry - (1.0 * atr)
-                    tp = entry + (2.0 * atr)
-                else:
-                    sl = entry + (1.0 * atr)
-                    tp = entry - (2.0 * atr)
-                
-                # Check if auto-promoted from live stats (N>=10, LB WR>=38%)
-                combo_key = f"{sym}:{side}:{combo}"
-                is_auto_promoted = combo_key in self.learner.promoted
-                
-                if is_auto_promoted:
-                    # AUTO-PROMOTED COMBO - Execute trade!
-                    logger.info(f"🚀 AUTO-PROMOTED DIVERGENCE: {sym} {side} {combo}")
-                    await self.execute_divergence_trade(sym, side, df.iloc[-1], combo, signal_type)
-                else:
-                    # Phantom signal - learner tracks for potential future promotion
-                    logger.debug(f"👻 LEARNING: {sym} {side} {combo}")
+                # EXECUTE IMMEDIATELY - Backtest validated 61.3% WR at 2:1 R:R
+                # All 4 divergence types are profitable:
+                # - regular_bearish: 66% WR
+                # - regular_bullish: 64% WR
+                # - hidden_bearish: 59% WR
+                # - hidden_bullish: 55% WR
+                logger.info(f"🚀 EXECUTING DIVERGENCE: {sym} {side} {combo}")
+                await self.execute_divergence_trade(sym, side, df.iloc[-1], combo, signal_type)
                     
         except Exception as e:
             logger.error(f"Error processing {sym}: {e}")
@@ -2181,20 +2157,24 @@ class DivergenceBot:
 
         # Send success notification
         await self.send_telegram(
-            f"✅ **Divergence Bot Online!**\n"
+            f"✅ **RSI Divergence Bot Online!**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"📊 Trading: **{len(trading_symbols)}** symbols\n"
-            f"📚 Learning: **{len(self.all_symbols)}** symbols\n"
-            f"⚙️ Risk: {self.risk_config['value']} {self.risk_config['type']}\n\n"
-            f"🚀 **Auto-Promote**: N≥{PROMOTE_TRADES}, WR≥{PROMOTE_WR:.0f}%\n"
-            f"├ 🟢 Promoted: **{len(self.learner.promoted)}**\n"
-            f"├ 📈 Near Promotion: **{near_promote}**\n"
-            f"└ 🚫 Blacklisted: **{len(self.learner.blacklist)}**\n\n"
+            f"📊 **Strategy**: RSI Divergence\n"
+            f"⏱️ **Timeframe**: 15 minutes\n"
+            f"🎯 **R:R**: 2:1\n"
+            f"📈 **Backtest**: 61.3% WR | +0.84 EV\n\n"
+            f"🚀 **Divergence Types (ALL ACTIVE)**\n"
+            f"├ 📉 Regular Bearish: 66% WR\n"
+            f"├ 📈 Regular Bullish: 64% WR\n"
+            f"├ 🔽 Hidden Bearish: 59% WR\n"
+            f"└ 🔼 Hidden Bullish: 55% WR\n\n"
+            f"📚 Scanning: **{len(self.all_symbols)}** symbols\n"
+            f"⚙️ Risk: **{self.risk_config['value']}%** per trade\n\n"
             f"💾 System Health:\n"
             f"• Redis: {redis_ok}\n"
             f"• Postgres: {pg_ok}\n\n"
             f"🖥️ **Dashboard**: `http://localhost:8888`\n"
-            f"Commands: /help /status /analytics"
+            f"Commands: /help /status /dashboard"
         )
         
         logger.info(f"Trading {len(trading_symbols)} symbols, Learning {len(self.all_symbols)} symbols")

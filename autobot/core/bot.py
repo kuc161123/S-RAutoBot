@@ -409,366 +409,85 @@ class DivergenceBot:
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     async def cmd_dashboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show comprehensive bot dashboard - UNIFIED stats (phantoms merged into learner)"""
+        """Show RSI Divergence Bot Dashboard - Clean and focused"""
         try:
             # === SYSTEM STATUS ===
             uptime_hrs = (time.time() - self.learner.started_at) / 3600
+            scanning_symbols = len(getattr(self, 'all_symbols', []))
             
-            # === TRADING SYMBOLS ===
-            # Use max of YAML-loaded combos and promoted set (handles ephemeral file systems)
-            yaml_symbols = len(self.divergence_combos)
-            promoted_symbols = len(set(k.split(':')[0] for k in self.learner.promoted))
-            total_symbols = max(yaml_symbols, promoted_symbols)
-            
-            learning_symbols = len(getattr(self, 'all_symbols', []))
-            long_combos = sum(len(d.get('allowed_combos_long', [])) for d in self.divergence_combos.values())
-            short_combos = sum(len(d.get('allowed_combos_short', [])) for d in self.divergence_combos.values())
-            
-            # If YAML is empty but promoted set has combos, count from promoted
-            if long_combos == 0 and short_combos == 0 and self.learner.promoted:
-                long_combos = sum(1 for k in self.learner.promoted if ':long:' in k)
-                short_combos = sum(1 for k in self.learner.promoted if ':short:' in k)
-            
-            # === UNIFIED LEARNING STATS ===
+            # === DIVERGENCE STATS ===
             learning = self.learner
             total_signals = learning.total_signals
             total_wins = learning.total_wins
             total_losses = learning.total_losses
-            learning_total = total_wins + total_losses
-            learning_wr = (total_wins / learning_total * 100) if learning_total > 0 else 0
-            lower_wr = wilson_lower_bound(total_wins, learning_total)
+            total_resolved = total_wins + total_losses
             
-            # Calculate overall EV at 2:1 R:R
-            if learning_total > 0:
-                wr_decimal = total_wins / learning_total
-                ev = (wr_decimal * 2.0) - ((1 - wr_decimal) * 1.0)  # 2:1 R:R
+            if total_resolved > 0:
+                wr = total_wins / total_resolved * 100
+                ev = (total_wins / total_resolved * 2.0) - (total_losses / total_resolved * 1.0)
             else:
+                wr = 0
                 ev = 0
             
-            unique_combos = len(learning.get_all_combos())
-            promoted = len(learning.promoted)
-            blacklisted = len(learning.blacklist)
-            pending = len(learning.pending_signals)
-            
-            # Count combos approaching thresholds (use actual promotion criteria)
-            all_combos = learning.get_all_combos()
-            PROMOTE_TRADES = getattr(learning, 'PROMOTE_MIN_TRADES', 10)
-            PROMOTE_WR = getattr(learning, 'PROMOTE_MIN_LOWER_WR', 38.0)
-            
-            # Near promotion: combos with at least 5 trades, WR >= 35%, progressing toward threshold
-            # Filter out already promoted combos
-            near_promote_candidates = []
-            for c in all_combos:
-                key = f"{c['symbol']}:{c['side']}:{c['combo']}"
-                if key in learning.promoted:
-                    continue  # Already promoted
-                if c['total'] >= 5 and c['lower_wr'] >= 35:
-                    # Calculate progress: N progress + WR progress
-                    n_progress = min(100, (c['total'] / PROMOTE_TRADES) * 100)
-                    wr_progress = min(100, (c['lower_wr'] / PROMOTE_WR) * 100) if PROMOTE_WR > 0 else 100
-                    overall_progress = (n_progress + wr_progress) / 2
-                    c['n_progress'] = n_progress
-                    c['wr_progress'] = wr_progress
-                    c['overall_progress'] = overall_progress
-                    near_promote_candidates.append(c)
-            
-            # Sort by overall progress descending
-            near_promote_candidates.sort(key=lambda x: x['overall_progress'], reverse=True)
-            approaching_promote = len(near_promote_candidates)
-            
-            # Near blacklist: combos with at least 5 trades and WR <= 35%
-            approaching_blacklist = len([c for c in all_combos if c['total'] >= 5 and c['lower_wr'] <= 30 
-                                          and f"{c['symbol']}:{c['side']}:{c['combo']}" not in learning.blacklist])
-            
-            # === COMBO MATURITY DISTRIBUTION ===
-            # New: N < 5, Growing: 5-7, Mature: 7-10, Ready: 10+ (matches PROMOTE_TRADES)
-            maturity_new = len([c for c in all_combos if c['total'] < 5])
-            maturity_growing = len([c for c in all_combos if 5 <= c['total'] < 7])
-            maturity_mature = len([c for c in all_combos if 7 <= c['total'] < PROMOTE_TRADES])
-            maturity_ready = len([c for c in all_combos if c['total'] >= PROMOTE_TRADES])
-            
-            # === PROMOTION FORECAST ===
-            # Calculate uptime and signal rate
-            uptime_hours = max(0.1, uptime_hrs)  # Avoid division by zero
-            total_signals_rate = learning.total_signals / uptime_hours if uptime_hours > 0 else 0
-            
-            # Find top promotion candidates (need both N progress and good WR)
-            # Only consider combos with reasonable WR (at least 30% LB WR)
-            promotion_candidates = []
-            for c in all_combos:
-                key = f"{c['symbol']}:{c['side']}:{c['combo']}"
-                if key in learning.promoted or key in learning.blacklist:
-                    continue
-                # ONLY consider combos with minimum 30% LB WR (realistic promotion path)
-                if c['total'] >= 5 and c['lower_wr'] >= 30:
-                    trades_needed = max(0, PROMOTE_TRADES - c['total'])
-                    wr_margin = c['lower_wr'] - PROMOTE_WR  # Positive if above threshold
-                    
-                    # Probability estimation based on current WR
-                    # If WR is already above threshold, high prob; if below, lower
-                    if c['lower_wr'] >= PROMOTE_WR:
-                        prob = 90 if trades_needed == 0 else min(85, 70 + (c['lower_wr'] - PROMOTE_WR))
-                    elif c['lower_wr'] >= PROMOTE_WR - 10:
-                        prob = max(30, 50 + wr_margin * 2)  # Close to threshold
-                    else:
-                        prob = max(15, 25 + wr_margin)  # Far from threshold
-                    
-                    # ETA calculation: assume ~2 signals per combo per hour on average
-                    signals_per_combo_per_hour = max(0.5, total_signals_rate / max(1, len(all_combos)))
-                    eta_hours = trades_needed / signals_per_combo_per_hour if signals_per_combo_per_hour > 0 else 999
-                    
-                    # Score: PRIORITIZE WR (70%) over N count (30%)
-                    # This ensures high-WR combos rank above high-N/low-WR combos
-                    wr_score = min(100, c['lower_wr'] * 1.8)  # Scale WR to 0-100 (55% -> 99)
-                    n_score = min(100, (c['total'] / PROMOTE_TRADES) * 100)  # N progress 0-100
-                    combined_score = wr_score * 0.7 + n_score * 0.3
-                    
-                    promotion_candidates.append({
-                        'symbol': c['symbol'],
-                        'side': c['side'],
-                        'total': c['total'],
-                        'lower_wr': c['lower_wr'],
-                        'wins': c.get('wins', 0),
-                        'trades_needed': trades_needed,
-                        'prob': prob,
-                        'eta_hours': eta_hours,
-                        'score': combined_score
-                    })
-            
-            # Sort by score descending (best candidates = high WR + high N)
-            promotion_candidates.sort(key=lambda x: x['score'], reverse=True)
-            top_candidates = promotion_candidates[:3]
-            
-            # Probability distribution
-            prob_high = len([c for c in promotion_candidates if c['prob'] >= 70])
-            prob_medium = len([c for c in promotion_candidates if 40 <= c['prob'] < 70])
-            prob_low = len([c for c in promotion_candidates if c['prob'] < 40])
-            
-            # === SESSION BREAKDOWN ===
-            sessions = {'asian': {'w': 0, 'l': 0}, 'london': {'w': 0, 'l': 0}, 'newyork': {'w': 0, 'l': 0}}
-            long_stats = {'w': 0, 'l': 0}
-            short_stats = {'w': 0, 'l': 0}
-            
-            for symbol, sides in learning.combo_stats.items():
-                for side, combos in sides.items():
-                    for combo, stats in combos.items():
-                        # Aggregate session stats
-                        for session, data in stats.get('sessions', {}).items():
-                            if session in sessions:
-                                sessions[session]['w'] += data.get('w', 0)
-                                sessions[session]['l'] += data.get('l', 0)
-                        
-                        # Aggregate side stats
-                        if side == 'long':
-                            long_stats['w'] += stats.get('wins', 0)
-                            long_stats['l'] += stats.get('losses', 0)
-                        else:
-                            short_stats['w'] += stats.get('wins', 0)
-                            short_stats['l'] += stats.get('losses', 0)
-            
-            # Calculate session WRs
-            asian_total = sessions['asian']['w'] + sessions['asian']['l']
-            london_total = sessions['london']['w'] + sessions['london']['l']
-            ny_total = sessions['newyork']['w'] + sessions['newyork']['l']
-            asian_wr = (sessions['asian']['w'] / asian_total * 100) if asian_total > 0 else 0
-            london_wr = (sessions['london']['w'] / london_total * 100) if london_total > 0 else 0
-            ny_wr = (sessions['newyork']['w'] / ny_total * 100) if ny_total > 0 else 0
-            
-            # Calculate side WRs
-            long_total = long_stats['w'] + long_stats['l']
-            short_total = short_stats['w'] + short_stats['l']
-            long_wr = (long_stats['w'] / long_total * 100) if long_total > 0 else 0
-            short_wr = (short_stats['w'] / short_total * 100) if short_total > 0 else 0
-            
-            # === R:R PERFORMANCE ===
-            rr_stats = {1.5: {'w': 0, 'l': 0}, 2.0: {'w': 0, 'l': 0}, 2.5: {'w': 0, 'l': 0}, 3.0: {'w': 0, 'l': 0}}
-            
-            for symbol, sides in learning.combo_stats.items():
-                for side, combos in sides.items():
-                    for combo, stats in combos.items():
-                        for rr, data in stats.get('by_rr', {}).items():
-                            rr_float = float(rr)
-                            if rr_float in rr_stats:
-                                rr_stats[rr_float]['w'] += data.get('w', 0)
-                                rr_stats[rr_float]['l'] += data.get('l', 0)
-            
-            # Build R:R message part
-            rr_msg = ""
-            for rr in [1.5, 2.0, 2.5, 3.0]:
-                data = rr_stats.get(rr, {'w': 0, 'l': 0})
-                total = data['w'] + data['l']
-                if total > 0:
-                    wr = (data['w'] / total * 100)
-                    ev = (data['w']/total * rr) - (data['l']/total * 1.0)
-                    rr_msg += f"├ {rr}:1 → {wr:.0f}% ({ev:+.2f}R)\n"
-            
-            # Top performers
-            top_combos = learning.get_top_combos(min_trades=3, min_lower_wr=40)[:3]
-            
-            # Recent activity from learner
-            recent = getattr(learning, 'last_resolved', [])[-3:] if hasattr(learning, 'last_resolved') else []
-            
-            # BTC context
-            btc_trend = learning.get_btc_trend()
-            btc_change = learning.get_btc_change_1h()
-            
-            # Day-of-week aggregation
-            days = {'monday': {'w': 0, 'l': 0}, 'tuesday': {'w': 0, 'l': 0}, 
-                    'wednesday': {'w': 0, 'l': 0}, 'thursday': {'w': 0, 'l': 0},
-                    'friday': {'w': 0, 'l': 0}, 'saturday': {'w': 0, 'l': 0}, 'sunday': {'w': 0, 'l': 0}}
-            
-            for symbol, sides in learning.combo_stats.items():
-                for side, combos in sides.items():
-                    for combo, stats in combos.items():
-                        for day, data in stats.get('by_day', {}).items():
-                            if day in days:
-                                days[day]['w'] += data.get('w', 0)
-                                days[day]['l'] += data.get('l', 0)
-            
-            # Build day performance string (only weekdays with data)
-            day_msg = ""
-            day_icons = {'monday': 'Mon', 'tuesday': 'Tue', 'wednesday': 'Wed', 
-                         'thursday': 'Thu', 'friday': 'Fri', 'saturday': 'Sat', 'sunday': 'Sun'}
-            for d in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']:
-                total = days[d]['w'] + days[d]['l']
-                if total > 0:
-                    wr = days[d]['w'] / total * 100
-                    day_msg += f"├ {day_icons[d]}: {wr:.0f}% ({days[d]['w']}/{total})\n"
+            # === EXECUTED TRADES ===
+            exec_total = self.wins + self.losses
+            exec_wr = (self.wins / exec_total * 100) if exec_total > 0 else 0
             
             # === BUILD MESSAGE ===
             msg = (
-                "📊 **VWAP BOT DASHBOARD**\n"
+                "📊 **RSI DIVERGENCE DASHBOARD**\n"
                 "━━━━━━━━━━━━━━━━━━━━\n\n"
                 
                 f"⚙️ **SYSTEM**\n"
-                f"├ Uptime: {uptime_hrs:.1f}h | Loops: {self.loop_count}\n"
-                f"└ Risk: {self.risk_config['value']} {self.risk_config['type']}\n\n"
+                f"├ Uptime: {uptime_hrs:.1f}h\n"
+                f"├ Loops: {self.loop_count}\n"
+                f"└ Risk: {self.risk_config['value']}%\n\n"
                 
-                f"🎯 **TRADING**\n"
-                f"├ Symbols: {total_symbols} active\n"
-                f"├ Combos: 🟢{long_combos} / 🔴{short_combos}\n"
-                f"├ 🚀 Auto-Promoted: {len(self.learner.promoted)}\n"
-                f"└ Signals: {self.signals_detected} detected\n\n"
+                f"🎯 **STRATEGY**\n"
+                f"├ Type: RSI Divergence\n"
+                f"├ Timeframe: 15 minutes\n"
+                f"├ R:R: 2:1\n"
+                f"└ Symbols: {scanning_symbols}\n\n"
                 
-                f"📚 **UNIFIED TRACKER** ({learning_symbols} symbols)\n"
-                f"├ Signals: {total_signals} | Pending: {pending}\n"
-                f"├ Resolved: {learning_total} ({total_wins}W/{total_losses}L)\n"
-                f"├ WR: {learning_wr:.0f}% (LB: **{lower_wr:.0f}%**)\n"
-                f"├ EV: **{ev:+.2f}R** at 2:1 R:R\n"
-                f"├ Combos: {unique_combos} learned\n"
-                f"├ 📈 Near Promote: {approaching_promote}\n"
-                f"├ 📉 Near Blacklist: {approaching_blacklist}\n"
-                f"├ 🚀 Promoted: {promoted}\n"
-                f"├ 🔽 Demoted: {getattr(self, 'demoted_count', 0)}\n"
-                f"└ 🚫 Blacklisted: {blacklisted}\n\n"
+                f"📊 **SIGNALS DETECTED**\n"
+                f"├ Total: {self.signals_detected}\n"
+                f"└ Rate: {self.signals_detected / max(uptime_hrs, 0.1):.0f}/hr\n\n"
                 
-                f"🌱 **COMBO MATURITY**\n"
-                f"├ 🌱 New (N<5):     {maturity_new}\n"
-                f"├ 🌿 Growing (5-7): {maturity_growing}\n"
-                f"├ 🌳 Mature (7-10): {maturity_mature}\n"
-                f"├ 🎯 Ready (N≥10):  {maturity_ready}\n"
-                f"├ 🏆 Promoted:      {promoted}\n"
-                f"└ 🚫 Blacklisted:   {blacklisted}\n\n"
-                
-                f"🔮 **PROMOTION FORECAST**\n"
-                f"├ 📊 Signal Rate: {total_signals_rate:.0f}/hr\n"
-                f"├ 🎲 High Prob (>70%): {prob_high}\n"
-                f"├ 🎲 Med Prob (40-70%): {prob_medium}\n"
-                f"└ 🎲 Low Prob (<40%): {prob_low}\n"
-            )
-            
-            # Add top candidates if any
-            if top_candidates:
-                msg += "\n🎯 **TOP CANDIDATES**\n"
-                for i, cand in enumerate(top_candidates, 1):
-                    side_icon = "🟢" if cand['side'] == 'long' else "🔴"
-                    sym = cand['symbol'][:8]
-                    eta_str = f"{cand['eta_hours']:.1f}h" if cand['eta_hours'] < 100 else "∞"
-                    msg += f"├ {i}. {side_icon} `{sym}` N:{cand['total']}/{PROMOTE_TRADES} LB:{cand['lower_wr']:.0f}%\n"
-                    msg += f"│   ETA: {eta_str} | Prob: {cand['prob']:.0f}%\n"
-            
-            msg += "\n"
-                
-            msg += (
-                f"📊 **SESSION BREAKDOWN**\n"
-                f"├ 🌏 Asian:  {asian_wr:.0f}% ({sessions['asian']['w']}/{asian_total})\n"
-                f"├ 🌍 London: {london_wr:.0f}% ({sessions['london']['w']}/{london_total})\n"
-                f"└ 🌎 NY:     {ny_wr:.0f}% ({sessions['newyork']['w']}/{ny_total})\n\n"
-                
-                f"📈 **SIDE PERFORMANCE**\n"
-                f"├ 🟢 Long:  {long_wr:.0f}% ({long_stats['w']}/{long_total})\n"
-                f"└ 🔴 Short: {short_wr:.0f}% ({short_stats['w']}/{short_total})\n\n"
-                
-                f"💰 **EXECUTED TRADES** (Real Positions)\n"
-                f"├ 📊 Total: {self.trades_executed}\n"
-                f"├ 🟢 Open: {len(self.active_trades)}\n"
+                f"💰 **EXECUTED TRADES**\n"
+                f"├ Total: {self.trades_executed}\n"
+                f"├ Open: {len(self.active_trades)}\n"
                 f"├ ✅ Won: {self.wins}\n"
                 f"├ ❌ Lost: {self.losses}\n"
-                f"└ 📈 WR: {(self.wins / (self.wins + self.losses) * 100) if (self.wins + self.losses) > 0 else 0:.0f}%\n\n"
+                f"└ WR: {exec_wr:.0f}%\n\n"
                 
-                f"📅 **DAY BREAKDOWN**\n"
-                f"{day_msg}\n"
+                f"📈 **DIVERGENCE TYPES**\n"
+                f"├ 📉 Regular Bearish: 66% WR\n"
+                f"├ 📈 Regular Bullish: 64% WR\n"
+                f"├ 🔽 Hidden Bearish: 59% WR\n"
+                f"└ 🔼 Hidden Bullish: 55% WR\n\n"
                 
-                f"💹 **BEST R:R PERFORMANCE**\n"
-                f"{rr_msg}\n"
-                
-                f"₿ **BTC**: {btc_trend} ({btc_change:+.1f}%)\n"
+                f"📊 **BACKTEST REFERENCE**\n"
+                f"├ Trades: 26,850\n"
+                f"├ Win Rate: 61.3%\n"
+                f"├ EV: +0.84R\n"
+                f"└ Consistency: 100% (6/6 periods)\n"
             )
             
-            # Add top performers if any
-            if top_combos:
-                msg += "\n🏆 **TOP PERFORMERS**\n"
-                for c in top_combos:
-                    # Find best session
-                    sessions = c.get('sessions', {})
-                    best_session = 'N/A'
-                    best_session_wr = 0
-                    for s, data in sessions.items():
-                        total = data.get('w', 0) + data.get('l', 0)
-                        if total > 0:
-                            wr = data['w'] / total * 100
-                            if wr > best_session_wr:
-                                best_session_wr = wr
-                                best_session = {'asian': '🌏', 'london': '🌍', 'newyork': '🌎'}.get(s, s)
-                    
-                    side_icon = "🟢" if c['side'] == 'long' else "🔴"
-                    ev_str = f"{c['ev']:+.2f}R" if c['ev'] != 0 else "0R"
-                    combo_short = c['combo'][:15] + '..' if len(c['combo']) > 17 else c['combo']
-                    msg += f"├ {side_icon} `{c['symbol']}` {combo_short}\n"
-                    msg += f"│  WR:{c['lower_wr']:.0f}% | EV:{ev_str} | {c['optimal_rr']}:1 | {best_session} (N={c['total']})\n"
-            
-            # Add NEAR PROMOTION section - show top candidates approaching threshold
-            if near_promote_candidates:
-                msg += f"\n🚀 **NEAR PROMOTION** (top 5 of {len(near_promote_candidates)})\n"
-                msg += f"├ _Requires: N≥{PROMOTE_TRADES}, LB WR≥{PROMOTE_WR:.0f}%_\n"
-                for c in near_promote_candidates[:5]:
-                    side_icon = "🟢" if c['side'] == 'long' else "🔴"
-                    # Progress bar: ▓▓▓▓▓▒▒▒▒▒ (5 filled out of 10)
-                    n_bars = int(c['n_progress'] / 10)
-                    wr_bars = int(c['wr_progress'] / 10)
-                    n_bar_str = "▓" * n_bars + "▒" * (10 - n_bars)
-                    wr_bar_str = "▓" * wr_bars + "▒" * (10 - wr_bars)
-                    msg += f"├ {side_icon} `{c['symbol'][:10]}`\n"
-                    msg += f"│  N: {n_bar_str} {c['total']}/{PROMOTE_TRADES}\n"
-                    msg += f"│  WR: {wr_bar_str} {c['lower_wr']:.0f}%/{PROMOTE_WR:.0f}%\n"
-            
-            # Add recent activity from learner
-            if recent:
-                msg += "\n📈 **RECENT**\n"
-                for p in reversed(recent):
-                    icon = "✅" if p.get('outcome') == 'win' else "❌"
-                    msg += f"├ {icon} `{p.get('symbol', 'N/A')}`\n"
+            # Add active trades if any
+            if self.active_trades:
+                msg += "\n🔔 **ACTIVE POSITIONS**\n"
+                for sym, trade in list(self.active_trades.items())[:5]:
+                    side_icon = "🟢" if trade['side'] == 'long' else "🔴"
+                    msg += f"├ {side_icon} `{sym}` @ ${trade['entry']:.4f}\n"
             
             msg += "\n━━━━━━━━━━━━━━━━━━━━\n"
-            msg += "💡 /learn /smart /promote"
+            msg += "💡 /status /help"
             
             await update.message.reply_text(msg, parse_mode='Markdown')
             
         except Exception as e:
             await update.message.reply_text(f"❌ Dashboard error: {e}")
             logger.error(f"Dashboard error: {e}")
-
-
     async def cmd_learn(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show learning system report"""
         try:

@@ -1462,6 +1462,12 @@ class DivergenceBot:
                 logger.warning(f"Failed to get lot size for {sym}: {e}, using 3 decimals")
                 qty = round(qty, 3)
             
+            # Set maximum leverage for this symbol (fetches max from Bybit)
+            try:
+                self.broker.set_leverage(sym, leverage=None)  # None = use max allowed
+            except Exception as e:
+                logger.warning(f"Failed to set leverage for {sym}: {e}")
+            
             # Execute trade using market order
             order_side = 'Buy' if side == 'long' else 'Sell'
             order = self.broker.place_market(sym, order_side, qty)

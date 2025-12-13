@@ -1442,6 +1442,25 @@ class DivergenceBot:
                 logger.warning(f"Invalid qty for {sym}")
                 return
             
+            # Get lot size from instrument info and round qty properly
+            try:
+                inst_info = self.broker.get_instruments_info(symbol=sym)
+                if inst_info:
+                    lot_size_filter = inst_info.get('lotSizeFilter', {})
+                    qty_step = float(lot_size_filter.get('qtyStep', 0.001))
+                    min_qty = float(lot_size_filter.get('minOrderQty', 0.001))
+                    
+                    # Round down to nearest qty step
+                    qty = (qty // qty_step) * qty_step
+                    
+                    # Ensure qty meets minimum
+                    if qty < min_qty:
+                        logger.warning(f"Qty {qty} below min {min_qty} for {sym}")
+                        return
+            except Exception as e:
+                logger.warning(f"Failed to get lot size for {sym}: {e}, using 3 decimals")
+                qty = round(qty, 3)
+            
             # Execute trade using market order
             order_side = 'Buy' if side == 'long' else 'Sell'
             order = self.broker.place_market(sym, order_side, qty)

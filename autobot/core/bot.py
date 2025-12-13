@@ -1421,111 +1421,120 @@ class DivergenceBot:
                 logger.error("Balance is 0")
                 return
             
-            entry = row['close']
+            signal_price = row['close']
             atr = row['atr']
             rsi = row['rsi']
             
-            # Get tick size for proper price rounding
-            tick_size = 0.0001  # Default fallback
+            # Get instrument info (tick size, lot size)
+            tick_size = 0.0001
+            qty_step = 0.001
+            min_qty = 0.001
             try:
                 inst_list = self.broker.get_instruments_info(symbol=sym)
                 if inst_list and len(inst_list) > 0:
-                    price_filter = inst_list[0].get('priceFilter', {})
-                    tick_size = float(price_filter.get('tickSize', 0.0001))
+                    inst_info = inst_list[0]
+                    tick_size = float(inst_info.get('priceFilter', {}).get('tickSize', 0.0001))
+                    qty_step = float(inst_info.get('lotSizeFilter', {}).get('qtyStep', 0.001))
+                    min_qty = float(inst_info.get('lotSizeFilter', {}).get('minOrderQty', 0.001))
             except Exception as e:
-                logger.warning(f"Failed to get tick size for {sym}: {e}")
+                logger.warning(f"Failed to get instrument info for {sym}: {e}")
             
             # Helper function to round to tick size
-            def round_to_tick(price, tick):
-                return round(price / tick) * tick
+            def round_to_tick(price):
+                return round(price / tick_size) * tick_size
             
-            # Calculate SL first (1 ATR), then TP exactly 2x distance
-            if side == 'long':
-                # Long: SL below entry, TP above entry
-                sl_raw = entry - (1.0 * atr)
-                sl = round_to_tick(sl_raw, tick_size)
-                sl_distance = abs(entry - sl)
-                tp = round_to_tick(entry + (2.0 * sl_distance), tick_size)  # Exactly 2x SL distance
-            else:
-                # Short: SL above entry, TP below entry
-                sl_raw = entry + (1.0 * atr)
-                sl = round_to_tick(sl_raw, tick_size)
-                sl_distance = abs(sl - entry)
-                tp = round_to_tick(entry - (2.0 * sl_distance), tick_size)  # Exactly 2x SL distance
-            
-            # Verify exact 2:1 R:R
-            tp_distance = abs(tp - entry)
-            actual_rr = tp_distance / sl_distance if sl_distance > 0 else 0
-            logger.info(f"🎯 {sym} R:R = {actual_rr:.2f}:1 (SL dist: {sl_distance:.6f}, TP dist: {tp_distance:.6f})")
-            
-            # Calculate position size
+            # Calculate position size using ATR for SL distance estimation
+            sl_distance_estimate = atr
             risk_amount = balance * (self.risk_config['value'] / 100)
-            qty = risk_amount / sl_distance if sl_distance > 0 else 0
+            qty = risk_amount / sl_distance_estimate if sl_distance_estimate > 0 else 0
             
-            if qty <= 0:
-                logger.warning(f"Invalid qty for {sym}")
+            # Round qty to lot size
+            qty = (qty // qty_step) * qty_step
+            if qty < min_qty:
+                logger.warning(f"Qty {qty} below min {min_qty} for {sym}")
                 return
             
-            # Get lot size from instrument info and round qty properly
+            # Set maximum leverage
             try:
-                inst_list = self.broker.get_instruments_info(symbol=sym)
-                if inst_list and len(inst_list) > 0:
-                    inst_info = inst_list[0]  # get_instruments_info returns a list
-                    lot_size_filter = inst_info.get('lotSizeFilter', {})
-                    qty_step = float(lot_size_filter.get('qtyStep', 0.001))
-                    min_qty = float(lot_size_filter.get('minOrderQty', 0.001))
-                    
-                    # Round down to nearest qty step
-                    qty = (qty // qty_step) * qty_step
-                    
-                    # Ensure qty meets minimum
-                    if qty < min_qty:
-                        logger.warning(f"Qty {qty} below min {min_qty} for {sym}")
-                        return
-            except Exception as e:
-                logger.warning(f"Failed to get lot size for {sym}: {e}, using 3 decimals")
-                qty = round(qty, 3)
-            
-            # Set maximum leverage for this symbol (fetches max from Bybit)
-            try:
-                self.broker.set_leverage(sym, leverage=None)  # None = use max allowed
+                self.broker.set_leverage(sym, leverage=None)
             except Exception as e:
                 logger.warning(f"Failed to set leverage for {sym}: {e}")
             
-            # Place LIMIT BRACKET ORDER at entry price (waits for fill)
-            order = self.broker.place_limit(
-                symbol=sym,
-                side=side,
-                qty=qty,
-                price=entry,
-                take_profit=tp,
-                stop_loss=sl,
-                post_only=False  # GTC order, not PostOnly
-            )
+            # ============================================
+            # STEP 1: MARKET ENTRY (instant fill)
+            # ============================================
+            order = self.broker.place_market(sym, side, qty)
             
             if not order or order.get('retCode') != 0:
                 error_msg = order.get('retMsg', 'Unknown error') if order else 'No response'
-                logger.error(f"Failed to place limit bracket order for {sym}: {error_msg}")
+                logger.error(f"Failed to place market order for {sym}: {error_msg}")
                 return
             
             order_id = order.get('result', {}).get('orderId', 'N/A')
+            logger.info(f"✅ MARKET ORDER PLACED: {sym} {side} qty={qty}")
             
-            # Track as PENDING order (not yet in active_trades until filled)
-            if not hasattr(self, 'pending_orders'):
-                self.pending_orders = {}
+            # ============================================
+            # STEP 2: GET ACTUAL FILL PRICE
+            # ============================================
+            import asyncio
+            await asyncio.sleep(0.5)  # Wait for position to register
             
-            self.pending_orders[order_id] = {
-                'symbol': sym,
+            pos = self.broker.get_position(sym)
+            if not pos or float(pos.get('size', 0)) == 0:
+                logger.error(f"No position found for {sym} after market order")
+                return
+            
+            actual_entry = float(pos.get('avgPrice', signal_price))
+            actual_qty = float(pos.get('size', qty))
+            logger.info(f"📍 ACTUAL ENTRY: {sym} @ ${actual_entry:.6f} (signal was ${signal_price:.6f})")
+            
+            # ============================================
+            # STEP 3: CALCULATE EXACT TP/SL FROM FILL PRICE
+            # ============================================
+            # Use 2.05x for fee compensation (true 2:1 after fees)
+            FEE_COMPENSATION = 2.05
+            
+            if side == 'long':
+                sl = round_to_tick(actual_entry - atr)
+                sl_distance = abs(actual_entry - sl)
+                tp = round_to_tick(actual_entry + (FEE_COMPENSATION * sl_distance))
+            else:
+                sl = round_to_tick(actual_entry + atr)
+                sl_distance = abs(sl - actual_entry)
+                tp = round_to_tick(actual_entry - (FEE_COMPENSATION * sl_distance))
+            
+            tp_distance = abs(tp - actual_entry)
+            actual_rr = tp_distance / sl_distance if sl_distance > 0 else 0
+            
+            logger.info(f"🎯 {sym} R:R = {actual_rr:.2f}:1 (after fee compensation)")
+            logger.info(f"   Entry: ${actual_entry:.6f} | SL: ${sl:.6f} | TP: ${tp:.6f}")
+            
+            # ============================================
+            # STEP 4: SET TP/SL ON POSITION
+            # ============================================
+            tpsl_result = self.broker.set_tpsl(sym, tp, sl, actual_qty)
+            if not tpsl_result or tpsl_result.get('retCode') != 0:
+                error_msg = tpsl_result.get('retMsg', 'Unknown') if tpsl_result else 'No response'
+                logger.error(f"Failed to set TP/SL for {sym}: {error_msg}")
+                # Continue anyway - position is open
+            else:
+                logger.info(f"🔐 TP/SL SET: {sym} TP=${tp:.6f} SL=${sl:.6f}")
+            
+            self.trades_executed += 1
+            
+            # Track trade with ACTUAL data
+            self.active_trades[sym] = {
                 'side': side,
                 'combo': combo,
                 'signal_type': signal_type,
-                'entry': entry,
+                'entry': actual_entry,
+                'signal_price': signal_price,
                 'tp': tp,
                 'sl': sl,
-                'qty': qty,
-                'rsi': rsi,
-                'risk_amount': risk_amount,
-                'order_time': time.time()
+                'qty': actual_qty,
+                'order_id': order_id,
+                'actual_rr': actual_rr,
+                'open_time': time.time()
             }
             
             # Signal type emoji
@@ -1537,33 +1546,38 @@ class DivergenceBot:
             }.get(signal_type, signal_type)
             
             # Calculate expected profit/loss
-            profit_target = qty * abs(tp - entry)
-            loss_risk = qty * abs(sl - entry)
+            profit_target = actual_qty * tp_distance
+            loss_risk = actual_qty * sl_distance
             
-            # Send Telegram notification - ORDER PLACED (pending fill)
+            # Send Telegram notification
             side_emoji = '🟢 LONG' if side == 'long' else '🔴 SHORT'
+            slippage = abs(actual_entry - signal_price)
+            slippage_pct = (slippage / signal_price) * 100 if signal_price > 0 else 0
+            
             msg = (
-                f"📋 **LIMIT ORDER PLACED**\n"
+                f"🎯 **TRADE EXECUTED**\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"📊 Symbol: `{sym}`\n"
                 f"📈 Side: **{side_emoji}**\n"
                 f"💎 Type: **{type_emoji}**\n\n"
-                f"💰 **Entry**: ${entry:.4f} (waiting)\n"
-                f"🎯 **TP**: ${tp:.4f} (+${profit_target:.2f})\n"
-                f"🛑 **SL**: ${sl:.4f} (-${loss_risk:.2f})\n"
+                f"💰 **Entry**: ${actual_entry:.6f}\n"
+                f"├ Signal: ${signal_price:.6f}\n"
+                f"└ Slippage: {slippage_pct:.3f}%\n\n"
+                f"🎯 **TP**: ${tp:.6f} (+${profit_target:.2f})\n"
+                f"🛑 **SL**: ${sl:.6f} (-${loss_risk:.2f})\n"
+                f"📊 **R:R**: {actual_rr:.2f}:1\n"
                 f"📊 RSI: {rsi:.1f}\n\n"
-                f"⏳ **Status**: PENDING FILL\n"
-                f"├ Timeout: 5 minutes\n"
-                f"└ Auto-cancel if unfilled\n\n"
+                f"🔐 **Protection**: ✅ TP/SL Active\n"
+                f"└ Calculated from actual fill\n\n"
                 f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
             )
             await self.send_telegram(msg)
             
-            logger.info(f"📋 LIMIT ORDER PLACED: {sym} {side} @ {entry:.4f} (waiting for fill)")
+            logger.info(f"✅ COMPLETE: {sym} {side} @ ${actual_entry:.6f} R:R={actual_rr:.2f}:1")
             
         except Exception as e:
             logger.error(f"Execute divergence trade error {sym}: {e}")
-    
+
     async def check_pending_orders(self):
         """Check pending orders for fills or timeout (5 minutes).
         

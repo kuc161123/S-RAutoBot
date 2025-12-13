@@ -1045,6 +1045,7 @@ class DivergenceBot:
             
             if last_processed is not None and current_candle_time <= last_processed:
                 # Same candle as before - skip (backtest only processed each candle once)
+                # Note: Only log at debug to avoid spam (200 symbols x every loop)
                 return
             
             # Mark this candle as processed
@@ -1082,6 +1083,8 @@ class DivergenceBot:
                 
                 if current_time - last_signal_time < (COOLDOWN_MINUTES * 60):
                     # Still in cooldown - skip (matches backtest: one signal per candle)
+                    remaining = int((COOLDOWN_MINUTES * 60) - (current_time - last_signal_time))
+                    logger.info(f"⏳ COOLDOWN: {sym} {side} {signal_type} - {remaining}s remaining")
                     continue
                 
                 # Update cooldown
@@ -1097,7 +1100,9 @@ class DivergenceBot:
                 # VOLUME FILTER: Match backtest (vol > 50% of 20MA)
                 # ====================================================
                 if 'vol_ok' in last_row and not last_row['vol_ok']:
-                    logger.debug(f"Skip {sym}: Volume too low (below 50% of vol_ma)")
+                    vol = last_row.get('volume', 0)
+                    vol_ma = last_row.get('vol_ma', 0)
+                    logger.info(f"📉 VOLUME SKIP: {sym} {side} - vol={vol:.0f} < 50% of vol_ma={vol_ma:.0f}")
                     continue
                 
                 # Log signal detection

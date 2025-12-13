@@ -5,11 +5,11 @@ import os
 import sys
 import signal
 import subprocess
-from autobot.core.bot import VWAPBot
+from autobot.core.bot import DivergenceBot
 from dashboard import app
 
 # PID file location
-PID_FILE = "/tmp/vwap_bot.pid"
+PID_FILE = "/tmp/divergence_bot.pid"
 
 def kill_existing_instances():
     """Kill any other running instances of this bot - AGGRESSIVE"""
@@ -52,7 +52,7 @@ def kill_existing_instances():
     kill_patterns = [
         "python.*main.py",
         "python3.*main.py",
-        "VWAPBot",
+        "DivergenceBot",
     ]
     
     for pattern in kill_patterns:
@@ -128,7 +128,7 @@ if __name__ == "__main__":
         dash_thread.start()
         
         # Start main bot
-        bot = VWAPBot()
+        bot = DivergenceBot()
         asyncio.run(bot.run())
     except KeyboardInterrupt:
         print("Bot stopped by user")

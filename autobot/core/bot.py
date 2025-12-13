@@ -1017,6 +1017,8 @@ class DivergenceBot:
         Process symbol for RSI divergence signals.
         Uses 15-minute candles (matches backtest parameters).
         Detects: regular_bullish, regular_bearish, hidden_bullish, hidden_bearish
+        
+        BACKTEST MATCHED: Only detects on NEW candle close + signal cooldown
         """
         try:
             # Use 15-minute timeframe (matches walk-forward validated backtest)
@@ -1032,6 +1034,22 @@ class DivergenceBot:
             for c in ['open', 'high', 'low', 'close', 'volume']: 
                 df[c] = df[c].astype(float)
             
+            # ====================================================
+            # BACKTEST MATCH: Only process when NEW candle closes
+            # ====================================================
+            if not hasattr(self, 'last_candle_processed'):
+                self.last_candle_processed = {}
+            
+            current_candle_time = df.index[-1]
+            last_processed = self.last_candle_processed.get(sym)
+            
+            if last_processed is not None and current_candle_time <= last_processed:
+                # Same candle as before - skip (backtest only processed each candle once)
+                return
+            
+            # Mark this candle as processed
+            self.last_candle_processed[sym] = current_candle_time
+            
             # Calculate RSI and ATR using divergence module
             df = prepare_dataframe(df)
             if df.empty or len(df) < 50: 
@@ -1043,12 +1061,33 @@ class DivergenceBot:
             if not signals:
                 return
             
+            # ====================================================
+            # SIGNAL COOLDOWN: Prevent duplicate detections
+            # ====================================================
+            if not hasattr(self, 'signal_cooldowns'):
+                self.signal_cooldowns = {}
+            
+            COOLDOWN_MINUTES = 15  # Match 15-min candle period
+            
             # Process each detected signal - EXECUTE ALL (backtest validated)
             for signal in signals:
-                self.signals_detected += 1
                 side = signal.side
                 combo = signal.combo  # e.g., "DIV:regular_bullish"
                 signal_type = signal.signal_type
+                
+                # Check cooldown
+                cooldown_key = f"{sym}:{side}:{signal_type}"
+                last_signal_time = self.signal_cooldowns.get(cooldown_key, 0)
+                current_time = time.time()
+                
+                if current_time - last_signal_time < (COOLDOWN_MINUTES * 60):
+                    # Still in cooldown - skip (matches backtest: one signal per candle)
+                    continue
+                
+                # Update cooldown
+                self.signal_cooldowns[cooldown_key] = current_time
+                
+                self.signals_detected += 1
                 
                 last_row = df.iloc[-1]
                 atr = last_row['atr']

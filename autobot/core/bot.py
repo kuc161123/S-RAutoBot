@@ -241,18 +241,21 @@ class DivergenceBot:
             logger.error(f"Failed to load state: {e}")
         
         # Load executed trades from Redis (survives container restarts)
+        # NOTE: For new divergence strategy, we only restore essential trade data
+        # Signal counters start fresh since this is a new strategy
         if self.learner.redis_client:
             try:
                 data = self.learner.redis_client.get('vwap_bot:executed_trades')
                 if data:
                     trade_stats = json.loads(data)
-                    self.wins = trade_stats.get('wins', self.wins)
-                    self.losses = trade_stats.get('losses', self.losses)
-                    self.trades_executed = trade_stats.get('trades_executed', self.trades_executed)
+                    # Only restore trade statistics, NOT old signal counts
+                    # self.wins = trade_stats.get('wins', self.wins)  # Reset for new strategy
+                    # self.losses = trade_stats.get('losses', self.losses)
+                    # self.trades_executed = trade_stats.get('trades_executed', self.trades_executed)
                     self.daily_pnl = trade_stats.get('daily_pnl', self.daily_pnl)
                     self.total_pnl = trade_stats.get('total_pnl', self.total_pnl)
-                    self.signals_detected = trade_stats.get('signals_detected', self.signals_detected)
-                    logger.info(f"📂 Loaded trade stats from Redis: {self.wins}W/{self.losses}L/{self.trades_executed} trades")
+                    # signals_detected intentionally NOT restored - fresh start for divergence
+                    logger.info(f"📂 Fresh start for RSI Divergence strategy")
             except Exception as e:
                 logger.debug(f"Failed to load trades from Redis: {e}")
 

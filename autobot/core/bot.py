@@ -1471,6 +1471,11 @@ class DivergenceBot:
             atr = row['atr']
             rsi = row['rsi']
             
+            # ATR validation (matches backtest: if pd.isna(atr) or atr <= 0: continue)
+            if pd.isna(atr) or atr <= 0:
+                logger.warning(f"Skip {sym}: Invalid ATR ({atr})")
+                return
+            
             # Get instrument info (tick size, lot size)
             tick_size = 0.0001
             qty_step = 0.001

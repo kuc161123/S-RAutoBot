@@ -1444,8 +1444,9 @@ class DivergenceBot:
             
             # Get lot size from instrument info and round qty properly
             try:
-                inst_info = self.broker.get_instruments_info(symbol=sym)
-                if inst_info:
+                inst_list = self.broker.get_instruments_info(symbol=sym)
+                if inst_list and len(inst_list) > 0:
+                    inst_info = inst_list[0]  # get_instruments_info returns a list
                     lot_size_filter = inst_info.get('lotSizeFilter', {})
                     qty_step = float(lot_size_filter.get('qtyStep', 0.001))
                     min_qty = float(lot_size_filter.get('minOrderQty', 0.001))

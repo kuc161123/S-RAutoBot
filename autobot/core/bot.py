@@ -1425,18 +1425,42 @@ class DivergenceBot:
             atr = row['atr']
             rsi = row['rsi']
             
-            # 2:1 R:R (validated by backtest)
+            # Get tick size for proper price rounding
+            tick_size = 0.0001  # Default fallback
+            try:
+                inst_list = self.broker.get_instruments_info(symbol=sym)
+                if inst_list and len(inst_list) > 0:
+                    price_filter = inst_list[0].get('priceFilter', {})
+                    tick_size = float(price_filter.get('tickSize', 0.0001))
+            except Exception as e:
+                logger.warning(f"Failed to get tick size for {sym}: {e}")
+            
+            # Helper function to round to tick size
+            def round_to_tick(price, tick):
+                return round(price / tick) * tick
+            
+            # Calculate SL first (1 ATR), then TP exactly 2x distance
             if side == 'long':
-                sl = entry - (1.0 * atr)
-                tp = entry + (2.0 * atr)
+                # Long: SL below entry, TP above entry
+                sl_raw = entry - (1.0 * atr)
+                sl = round_to_tick(sl_raw, tick_size)
+                sl_distance = abs(entry - sl)
+                tp = round_to_tick(entry + (2.0 * sl_distance), tick_size)  # Exactly 2x SL distance
             else:
-                sl = entry + (1.0 * atr)
-                tp = entry - (2.0 * atr)
+                # Short: SL above entry, TP below entry
+                sl_raw = entry + (1.0 * atr)
+                sl = round_to_tick(sl_raw, tick_size)
+                sl_distance = abs(sl - entry)
+                tp = round_to_tick(entry - (2.0 * sl_distance), tick_size)  # Exactly 2x SL distance
+            
+            # Verify exact 2:1 R:R
+            tp_distance = abs(tp - entry)
+            actual_rr = tp_distance / sl_distance if sl_distance > 0 else 0
+            logger.info(f"🎯 {sym} R:R = {actual_rr:.2f}:1 (SL dist: {sl_distance:.6f}, TP dist: {tp_distance:.6f})")
             
             # Calculate position size
             risk_amount = balance * (self.risk_config['value'] / 100)
-            sl_dist = abs(entry - sl)
-            qty = risk_amount / sl_dist if sl_dist > 0 else 0
+            qty = risk_amount / sl_distance if sl_distance > 0 else 0
             
             if qty <= 0:
                 logger.warning(f"Invalid qty for {sym}")

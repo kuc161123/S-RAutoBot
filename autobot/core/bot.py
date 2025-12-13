@@ -1468,20 +1468,30 @@ class DivergenceBot:
             except Exception as e:
                 logger.warning(f"Failed to set leverage for {sym}: {e}")
             
-            # Execute trade with BRACKET ORDER (TP/SL included for instant protection)
-            order_side = side  # place_market handles long/short conversion
-            order = self.broker.place_market(sym, order_side, qty, take_profit=tp, stop_loss=sl)
+            # Place LIMIT BRACKET ORDER at entry price (waits for fill)
+            order = self.broker.place_limit(
+                symbol=sym,
+                side=side,
+                qty=qty,
+                price=entry,
+                take_profit=tp,
+                stop_loss=sl,
+                post_only=False  # GTC order, not PostOnly
+            )
             
             if not order or order.get('retCode') != 0:
                 error_msg = order.get('retMsg', 'Unknown error') if order else 'No response'
-                logger.error(f"Failed to place bracket order for {sym}: {error_msg}")
+                logger.error(f"Failed to place limit bracket order for {sym}: {error_msg}")
                 return
             
-            self.trades_executed += 1
             order_id = order.get('result', {}).get('orderId', 'N/A')
             
-            # Track trade
-            self.active_trades[sym] = {
+            # Track as PENDING order (not yet in active_trades until filled)
+            if not hasattr(self, 'pending_orders'):
+                self.pending_orders = {}
+            
+            self.pending_orders[order_id] = {
+                'symbol': sym,
                 'side': side,
                 'combo': combo,
                 'signal_type': signal_type,
@@ -1489,15 +1499,10 @@ class DivergenceBot:
                 'tp': tp,
                 'sl': sl,
                 'qty': qty,
-                'order_id': order_id,
-                'open_time': time.time()
+                'rsi': rsi,
+                'risk_amount': risk_amount,
+                'order_time': time.time()
             }
-            
-            # Get learner stats for this combo
-            combo_key = f"{sym}:{side}:{combo}"
-            stats = self.learner.get_recent_stats(sym, side, combo, days=30)
-            wr = (stats['wins'] / stats['total'] * 100) if stats and stats['total'] > 0 else 0
-            total = stats['total'] if stats else 0
             
             # Signal type emoji
             type_emoji = {
@@ -1511,29 +1516,130 @@ class DivergenceBot:
             profit_target = qty * abs(tp - entry)
             loss_risk = qty * abs(sl - entry)
             
-            # Send Telegram notification
+            # Send Telegram notification - ORDER PLACED (pending fill)
             side_emoji = '🟢 LONG' if side == 'long' else '🔴 SHORT'
             msg = (
-                f"🎯 **DIVERGENCE TRADE EXECUTED**\n"
+                f"📋 **LIMIT ORDER PLACED**\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"📊 Symbol: `{sym}`\n"
                 f"📈 Side: **{side_emoji}**\n"
                 f"💎 Type: **{type_emoji}**\n\n"
-                f"💰 **Entry**: ${entry:.4f}\n"
+                f"💰 **Entry**: ${entry:.4f} (waiting)\n"
                 f"🎯 **TP**: ${tp:.4f} (+${profit_target:.2f})\n"
                 f"🛑 **SL**: ${sl:.4f} (-${loss_risk:.2f})\n"
                 f"📊 RSI: {rsi:.1f}\n\n"
-                f"🔐 **Protection**: ✅ BRACKET ORDER\n"
-                f"├ TP/SL set at entry\n"
-                f"└ Instant protection\n\n"
+                f"⏳ **Status**: PENDING FILL\n"
+                f"├ Timeout: 5 minutes\n"
+                f"└ Auto-cancel if unfilled\n\n"
                 f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
             )
             await self.send_telegram(msg)
             
-            logger.info(f"✅ EXECUTED: {sym} {side} {combo} @ {entry:.4f}")
+            logger.info(f"📋 LIMIT ORDER PLACED: {sym} {side} @ {entry:.4f} (waiting for fill)")
             
         except Exception as e:
             logger.error(f"Execute divergence trade error {sym}: {e}")
+    
+    async def check_pending_orders(self):
+        """Check pending orders for fills or timeout (5 minutes).
+        
+        - If filled: Move to active_trades and increment trades_executed
+        - If 5 minutes passed without fill: Cancel and send notification
+        """
+        if not hasattr(self, 'pending_orders') or not self.pending_orders:
+            return
+        
+        to_remove = []
+        now = time.time()
+        TIMEOUT_SECONDS = 300  # 5 minutes
+        
+        for order_id, order_data in list(self.pending_orders.items()):
+            sym = order_data['symbol']
+            order_age = now - order_data['order_time']
+            
+            try:
+                # Check order status
+                status = self.broker.get_order_status(sym, order_id)
+                
+                if status:
+                    order_status = status.get('orderStatus', 'Unknown')
+                    
+                    if order_status == 'Filled':
+                        # ORDER FILLED - Move to active trades
+                        fill_price = float(status.get('avgPrice', order_data['entry']))
+                        
+                        self.active_trades[sym] = {
+                            'side': order_data['side'],
+                            'combo': order_data['combo'],
+                            'signal_type': order_data['signal_type'],
+                            'entry': fill_price,
+                            'tp': order_data['tp'],
+                            'sl': order_data['sl'],
+                            'qty': order_data['qty'],
+                            'order_id': order_id,
+                            'open_time': now
+                        }
+                        
+                        self.trades_executed += 1
+                        to_remove.append(order_id)
+                        
+                        # Send FILLED notification
+                        side_emoji = '🟢 LONG' if order_data['side'] == 'long' else '🔴 SHORT'
+                        type_emoji = {
+                            'regular_bullish': '📈 Regular Bullish',
+                            'regular_bearish': '📉 Regular Bearish', 
+                            'hidden_bullish': '🔼 Hidden Bullish',
+                            'hidden_bearish': '🔽 Hidden Bearish'
+                        }.get(order_data['signal_type'], order_data['signal_type'])
+                        
+                        msg = (
+                            f"✅ **ORDER FILLED!**\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"📊 Symbol: `{sym}`\n"
+                            f"📈 Side: **{side_emoji}**\n"
+                            f"💎 Type: **{type_emoji}**\n\n"
+                            f"💰 Fill Price: ${fill_price:.4f}\n"
+                            f"🎯 TP: ${order_data['tp']:.4f}\n"
+                            f"🛑 SL: ${order_data['sl']:.4f}\n\n"
+                            f"🔐 **Protected**: TP/SL active"
+                        )
+                        await self.send_telegram(msg)
+                        logger.info(f"✅ FILLED: {sym} {order_data['side']} @ {fill_price:.4f}")
+                    
+                    elif order_status in ['Cancelled', 'Rejected', 'Deactivated']:
+                        # Already cancelled/rejected
+                        to_remove.append(order_id)
+                        logger.info(f"Order {order_id[:8]} was {order_status}")
+                    
+                    elif order_age > TIMEOUT_SECONDS:
+                        # TIMEOUT - Cancel the order
+                        logger.info(f"⏰ Order timeout for {sym} - cancelling after {order_age:.0f}s")
+                        
+                        cancel_result = self.broker.cancel_order(sym, order_id)
+                        to_remove.append(order_id)
+                        
+                        # Send CANCELLED notification
+                        msg = (
+                            f"⏰ **ORDER CANCELLED (Timeout)**\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"📊 Symbol: `{sym}`\n"
+                            f"📈 Side: {order_data['side'].upper()}\n"
+                            f"💰 Entry: ${order_data['entry']:.4f}\n\n"
+                            f"❌ Order not filled after 5 minutes\n"
+                            f"└ Cancelled automatically"
+                        )
+                        await self.send_telegram(msg)
+                        logger.info(f"❌ CANCELLED: {sym} order timed out")
+                
+            except Exception as e:
+                logger.error(f"Error checking order {order_id[:8]}: {e}")
+                # If order too old and we can't check it, just remove
+                if order_age > TIMEOUT_SECONDS * 2:
+                    to_remove.append(order_id)
+        
+        # Remove processed orders
+        for order_id in to_remove:
+            self.pending_orders.pop(order_id, None)
 
     async def execute_trade(self, sym, side, row, combo, source='manual'):
         """Execute trade using LIMIT ORDER (not market) for precise entry.
@@ -1951,6 +2057,9 @@ class DivergenceBot:
                     
                     # Monitor pending limit orders (check for fills, invalidation, timeout)
                     await self.monitor_pending_limit_orders(candle_data)
+                    
+                    # Check divergence pending orders for 5-minute timeout
+                    await self.check_pending_orders()
                     
                     # Check for closed trades and send notifications
                     for sym in list(self.active_trades.keys()):

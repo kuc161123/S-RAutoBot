@@ -1093,6 +1093,13 @@ class DivergenceBot:
                 atr = last_row['atr']
                 entry = last_row['close']
                 
+                # ====================================================
+                # VOLUME FILTER: Match backtest (vol > 50% of 20MA)
+                # ====================================================
+                if 'vol_ok' in last_row and not last_row['vol_ok']:
+                    logger.debug(f"Skip {sym}: Volume too low (below 50% of vol_ma)")
+                    continue
+                
                 # Log signal detection
                 logger.info(f"📊 DIVERGENCE: {sym} {side.upper()} {combo} (RSI: {signal.rsi_value:.1f})")
                 

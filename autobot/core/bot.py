@@ -1501,10 +1501,42 @@ class DivergenceBot:
             def round_to_tick(price):
                 return round(price / tick_size) * tick_size
             
-            # Calculate position size using ATR for SL distance estimation
-            sl_distance_estimate = atr
+            # ============================================
+            # STEP 0: CALCULATE PIVOT SL DISTANCE FIRST
+            # ============================================
+            # This ensures position size is based on ACTUAL SL distance
+            # so risk per trade is consistent (not ATR-dependent)
+            
+            RR_RATIO = 3.0
+            LOOKBACK = 15  # Bars to look back for swing
+            
+            # Get recent highs/lows from DataFrame
+            recent_lows = df['low'].tail(LOOKBACK).values
+            recent_highs = df['high'].tail(LOOKBACK).values
+            
+            # Calculate SL distance from signal price (close approximation to entry)
+            if side == 'long':
+                swing_low = min(recent_lows)
+                sl_distance_estimate = abs(signal_price - swing_low)
+            else:
+                swing_high = max(recent_highs)
+                sl_distance_estimate = abs(swing_high - signal_price)
+            
+            # Apply min/max constraints (0.3-2.0 × ATR)
+            min_sl_dist = 0.3 * atr
+            max_sl_dist = 2.0 * atr
+            
+            if sl_distance_estimate < min_sl_dist:
+                sl_distance_estimate = min_sl_dist
+            elif sl_distance_estimate > max_sl_dist:
+                sl_distance_estimate = max_sl_dist
+            
+            # Calculate position size based on ACTUAL SL distance
             risk_amount = balance * (self.risk_config['value'] / 100)
             qty = risk_amount / sl_distance_estimate if sl_distance_estimate > 0 else 0
+            
+            sl_atr_mult = sl_distance_estimate / atr if atr > 0 else 1.0
+            logger.info(f"📐 {sym} SL distance: {sl_atr_mult:.2f}×ATR | Risk: ${risk_amount:.2f}")
             
             # Round qty to lot size (fix floating point precision)
             qty = (qty // qty_step) * qty_step

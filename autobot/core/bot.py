@@ -357,18 +357,21 @@ class DivergenceBot:
     # --- Telegram Commands ---
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = (
-            "🤖 **VWAP BOT COMMANDS**\n\n"
-            "/help - Show this message\n"
-            "/status - System health & connections\n"
+            "🤖 **RSI DIVERGENCE BOT**\n\n"
+            "📊 **ANALYSIS**\n"
             "/dashboard - Live trading stats\n"
-            "/top - Top performing combos\n"
-            "/analytics - Deep pattern analysis (30d)\n"
-            "/learn - Learning system report\n"
-            "/promote - Show promotion candidates\n"
+            "/backtest - Live vs backtest comparison\n"
+            "/analytics - Deep pattern analysis\n"
+            "/top - Top performing setups\n\n"
+            "⚙️ **SYSTEM**\n"
+            "/status - System health\n"
+            "/risk - Current risk settings\n"
+            "/learn - Learning system report\n\n"
+            "📈 **STRATEGY**\n"
             "/sessions - Session win rates\n"
-            "/blacklist - Show blacklisted combos\n"
-            "/smart - Smart filter status\n"
-            "/risk - Current risk settings"
+            "/blacklist - Blacklisted symbols\n"
+            "/help - Show this message\n\n"
+            "💡 **Strategy:** Pivot SL + 3:1 R:R"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 
@@ -418,23 +421,20 @@ class DivergenceBot:
             uptime_hrs = (time.time() - self.learner.started_at) / 3600
             scanning_symbols = len(getattr(self, 'all_symbols', []))
             
-            # === DIVERGENCE STATS ===
-            learning = self.learner
-            total_signals = learning.total_signals
-            total_wins = learning.total_wins
-            total_losses = learning.total_losses
-            total_resolved = total_wins + total_losses
-            
-            if total_resolved > 0:
-                wr = total_wins / total_resolved * 100
-                ev = (total_wins / total_resolved * 2.0) - (total_losses / total_resolved * 1.0)
-            else:
-                wr = 0
-                ev = 0
-            
             # === EXECUTED TRADES ===
             exec_total = self.wins + self.losses
             exec_wr = (self.wins / exec_total * 100) if exec_total > 0 else 0
+            
+            # Calculate EV with 3:1 R:R
+            if exec_total > 0:
+                live_ev = (self.wins * 3.0) - self.losses
+                ev_per_trade = live_ev / exec_total
+            else:
+                live_ev = 0
+                ev_per_trade = 0
+            
+            # Calculate P&L in R-multiples
+            pnl_r = (self.wins * 3.0) - (self.losses * 1.0)
             
             # === BUILD MESSAGE ===
             msg = (
@@ -448,12 +448,12 @@ class DivergenceBot:
                 
                 f"🎯 **STRATEGY**\n"
                 f"├ Type: RSI Divergence\n"
-                f"├ Timeframe: 15 minutes\n"
-                f"├ R:R: 2:1\n"
+                f"├ SL: Pivot (swing low/high)\n"
+                f"├ R:R: 3:1\n"
                 f"└ Symbols: {scanning_symbols}\n\n"
                 
-                f"📊 **SIGNALS DETECTED**\n"
-                f"├ Total: {self.signals_detected}\n"
+                f"📊 **SIGNALS**\n"
+                f"├ Detected: {self.signals_detected}\n"
                 f"└ Rate: {self.signals_detected / max(uptime_hrs, 0.1):.0f}/hr\n\n"
                 
                 f"💰 **EXECUTED TRADES**\n"
@@ -461,19 +461,9 @@ class DivergenceBot:
                 f"├ Open: {len(self.active_trades)}\n"
                 f"├ ✅ Won: {self.wins}\n"
                 f"├ ❌ Lost: {self.losses}\n"
-                f"└ WR: {exec_wr:.0f}%\n\n"
-                
-                f"📈 **DIVERGENCE TYPES**\n"
-                f"├ 📉 Regular Bearish: 66% WR\n"
-                f"├ 📈 Regular Bullish: 64% WR\n"
-                f"├ 🔽 Hidden Bearish: 59% WR\n"
-                f"└ 🔼 Hidden Bullish: 55% WR\n\n"
-                
-                f"📊 **BACKTEST REFERENCE**\n"
-                f"├ Trades: 26,850\n"
-                f"├ Win Rate: 61.3%\n"
-                f"├ EV: +0.84R\n"
-                f"└ Consistency: 100% (6/6 periods)\n"
+                f"├ WR: {exec_wr:.1f}%\n"
+                f"├ EV: {ev_per_trade:+.2f}R/trade\n"
+                f"└ P&L: {pnl_r:+.1f}R\n"
             )
             
             # Add active trades if any
@@ -481,10 +471,11 @@ class DivergenceBot:
                 msg += "\n🔔 **ACTIVE POSITIONS**\n"
                 for sym, trade in list(self.active_trades.items())[:5]:
                     side_icon = "🟢" if trade['side'] == 'long' else "🔴"
-                    msg += f"├ {side_icon} `{sym}` @ ${trade['entry']:.4f}\n"
+                    rr = trade.get('actual_rr', 3.0)
+                    msg += f"├ {side_icon} `{sym}` R:R={rr:.1f}:1\n"
             
             msg += "\n━━━━━━━━━━━━━━━━━━━━\n"
-            msg += "💡 /status /help"
+            msg += "💡 /backtest /status /help"
             
             await update.message.reply_text(msg, parse_mode='Markdown')
             
@@ -499,6 +490,115 @@ class DivergenceBot:
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
             logger.error(f"cmd_learn error: {e}")
+
+    async def cmd_backtest(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show comprehensive live vs backtest performance comparison"""
+        try:
+            # === BACKTEST REFERENCE (Validated) ===
+            BT_WIN_RATE = 57.5  # % (Pivot SL + 3:1 R:R)
+            BT_EV = 1.30        # R per trade
+            BT_RR = 3.0         # Risk:Reward
+            BT_TRADES_PER_DAY = 333  # Across 150 symbols
+            
+            # === LIVE DATA ===
+            uptime_hrs = (time.time() - self.learner.started_at) / 3600
+            uptime_days = uptime_hrs / 24
+            
+            live_total = self.wins + self.losses
+            live_wr = (self.wins / live_total * 100) if live_total > 0 else 0
+            live_pnl = (self.wins * BT_RR) - self.losses
+            live_ev = live_pnl / live_total if live_total > 0 else 0
+            
+            # Expected values based on backtest
+            expected_trades = BT_TRADES_PER_DAY * uptime_days * (len(getattr(self, 'all_symbols', [])) / 150)
+            expected_wins = expected_trades * (BT_WIN_RATE / 100)
+            expected_pnl = expected_trades * BT_EV
+            
+            # Calculate performance vs expectation
+            if expected_trades > 0:
+                trade_pct = (live_total / expected_trades) * 100
+            else:
+                trade_pct = 0
+            
+            if expected_pnl > 0 and live_total > 0:
+                pnl_pct = (live_pnl / expected_pnl) * 100
+            else:
+                pnl_pct = 0
+            
+            wr_diff = live_wr - BT_WIN_RATE
+            ev_diff = live_ev - BT_EV
+            
+            # Performance rating
+            if live_total < 10:
+                rating = "📊 Insufficient Data"
+                rating_detail = "Need 10+ trades for analysis"
+            elif live_wr >= BT_WIN_RATE and live_ev >= BT_EV * 0.8:
+                rating = "🏆 OUTPERFORMING"
+                rating_detail = "Live exceeds backtest!"
+            elif live_wr >= BT_WIN_RATE * 0.9 and live_ev >= BT_EV * 0.6:
+                rating = "✅ ON TARGET"
+                rating_detail = "Within expected range"
+            elif live_wr >= BT_WIN_RATE * 0.8:
+                rating = "⚠️ BELOW TARGET"
+                rating_detail = "Monitor closely"
+            else:
+                rating = "❌ UNDERPERFORMING"
+                rating_detail = "Review strategy"
+            
+            # Build message
+            msg = (
+                "📊 **LIVE vs BACKTEST COMPARISON**\n"
+                "━━━━━━━━━━━━━━━━━━━━\n\n"
+                
+                f"⏱️ **ANALYSIS PERIOD**\n"
+                f"├ Uptime: {uptime_days:.1f} days ({uptime_hrs:.1f}h)\n"
+                f"└ Symbols: {len(getattr(self, 'all_symbols', []))}\n\n"
+                
+                f"📈 **WIN RATE**\n"
+                f"├ Live: {live_wr:.1f}%\n"
+                f"├ Backtest: {BT_WIN_RATE:.1f}%\n"
+                f"└ Diff: {wr_diff:+.1f}%\n\n"
+                
+                f"💰 **EXPECTED VALUE**\n"
+                f"├ Live: {live_ev:+.2f}R/trade\n"
+                f"├ Backtest: {BT_EV:+.2f}R/trade\n"
+                f"└ Diff: {ev_diff:+.2f}R\n\n"
+                
+                f"🔢 **TRADE COUNT**\n"
+                f"├ Live: {live_total}\n"
+                f"├ Expected: {expected_trades:.0f}\n"
+                f"└ Rate: {trade_pct:.0f}%\n\n"
+                
+                f"💵 **P&L (R-multiples)**\n"
+                f"├ Live: {live_pnl:+.1f}R\n"
+                f"├ Expected: {expected_pnl:+.1f}R\n"
+                f"└ Rate: {pnl_pct:.0f}%\n\n"
+                
+                f"📊 **DETAILED STATS**\n"
+                f"├ ✅ Wins: {self.wins} ({self.wins * BT_RR:+.1f}R)\n"
+                f"├ ❌ Losses: {self.losses} ({-self.losses:.1f}R)\n"
+                f"├ R:R Ratio: {BT_RR}:1\n"
+                f"└ Risk: {self.risk_config['value']}%\n\n"
+                
+                f"🎯 **PERFORMANCE RATING**\n"
+                f"├ Status: {rating}\n"
+                f"└ {rating_detail}\n\n"
+                
+                f"📋 **BACKTEST REFERENCE**\n"
+                f"├ WR: {BT_WIN_RATE}% (Pivot SL)\n"
+                f"├ EV: +{BT_EV}R/trade\n"
+                f"├ R:R: {BT_RR}:1\n"
+                f"└ Total: +25,730R (60 days)\n"
+            )
+            
+            msg += "\n━━━━━━━━━━━━━━━━━━━━\n"
+            msg += "💡 /dashboard /analytics /help"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Backtest comparison error: {e}")
+            logger.error(f"cmd_backtest error: {e}")
 
     async def cmd_analytics(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show deep analytics (Day/Hour/Patterns)"""
@@ -2087,6 +2187,7 @@ class DivergenceBot:
             self.tg_app.add_handler(CommandHandler("risk", self.cmd_risk))
             self.tg_app.add_handler(CommandHandler("phantoms", self.cmd_phantoms))
             self.tg_app.add_handler(CommandHandler("dashboard", self.cmd_dashboard))
+            self.tg_app.add_handler(CommandHandler("backtest", self.cmd_backtest))
             self.tg_app.add_handler(CommandHandler("analytics", self.cmd_analytics))
             self.tg_app.add_handler(CommandHandler("learn", self.cmd_learn))
             self.tg_app.add_handler(CommandHandler("promote", self.cmd_promote))

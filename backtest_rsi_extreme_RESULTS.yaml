@@ -1,0 +1,10 @@
+_metadata:
+  avg_ev: 0
+  avg_wr: 0
+  generated: '2025-12-11T17:14:01.260344'
+  profitable_setups: 0
+  rr_ratio: 2.0:1
+  rsi_overbought: 70
+  rsi_oversold: 30
+  strategy: RSI Extreme Reversal
+  timeframe: 15M

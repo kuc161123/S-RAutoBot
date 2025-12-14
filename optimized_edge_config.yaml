@@ -1,0 +1,18 @@
+BATUSDT:
+  allowed_combos_short:
+  - ALL
+  filter:
+    hours: &id001
+    - 0
+    - 1
+    - 2
+    - 21
+    - 22
+    - 23
+    side: short
+STRKUSDT:
+  allowed_combos_short:
+  - ALL
+  filter:
+    hours: *id001
+    side: short

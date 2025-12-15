@@ -258,6 +258,95 @@ class DivergenceBot:
                     logger.info(f"📂 Fresh start for RSI Divergence strategy")
             except Exception as e:
                 logger.debug(f"Failed to load trades from Redis: {e}")
+        
+        # === CRITICAL: Reconcile with Bybit positions ===
+        self._reconcile_positions_on_startup()
+
+    def _reconcile_positions_on_startup(self):
+        """Reconcile active_trades with actual Bybit positions on startup.
+        
+        This prevents trades from being "lost" if the bot restarts while
+        positions are open. Fetches all open positions from Bybit and
+        reconstructs active_trades for any positions not already tracked.
+        """
+        try:
+            positions = self.broker.get_positions()
+            if not positions:
+                logger.info("📂 No open positions found on Bybit")
+                return
+            
+            open_positions = [p for p in positions if float(p.get('size', 0)) > 0]
+            
+            if not open_positions:
+                logger.info("📂 No open positions found on Bybit")
+                return
+            
+            reconciled_count = 0
+            already_tracked = 0
+            
+            for pos in open_positions:
+                sym = pos.get('symbol')
+                size = float(pos.get('size', 0))
+                
+                if size <= 0:
+                    continue
+                
+                # Check if already tracked
+                if sym in self.active_trades:
+                    already_tracked += 1
+                    logger.debug(f"✅ {sym} already tracked in active_trades")
+                    continue
+                
+                # Position exists on Bybit but not in our tracking - reconstruct
+                pos_side = pos.get('side', '').lower()
+                side = 'long' if pos_side == 'buy' else 'short'
+                entry = float(pos.get('avgPrice', 0))
+                
+                # Get TP/SL from position
+                tp = float(pos.get('takeProfit', 0)) if pos.get('takeProfit') else 0
+                sl = float(pos.get('stopLoss', 0)) if pos.get('stopLoss') else 0
+                
+                # Calculate R:R if we have TP/SL
+                actual_rr = 0
+                if tp and sl and entry:
+                    if side == 'long':
+                        tp_dist = abs(tp - entry)
+                        sl_dist = abs(entry - sl)
+                    else:
+                        tp_dist = abs(entry - tp)
+                        sl_dist = abs(sl - entry)
+                    actual_rr = tp_dist / sl_dist if sl_dist > 0 else 0
+                
+                # Add to active_trades
+                self.active_trades[sym] = {
+                    'side': side,
+                    'combo': 'DIV:recovered',  # Mark as recovered position
+                    'signal_type': 'recovered',
+                    'entry': entry,
+                    'signal_price': entry,
+                    'tp': tp,
+                    'sl': sl,
+                    'qty': size,
+                    'order_id': 'recovered',
+                    'actual_rr': actual_rr,
+                    'open_time': time.time(),  # Unknown original time
+                    'recovered_on_startup': True  # Flag for special handling
+                }
+                
+                reconciled_count += 1
+                logger.info(f"🔄 RECOVERED: {sym} {side.upper()} @ {entry:.6f} (TP: {tp}, SL: {sl})")
+            
+            if reconciled_count > 0:
+                logger.info(f"📂 Position Reconciliation: Recovered {reconciled_count} positions, {already_tracked} already tracked")
+                # Save state immediately after reconciliation
+                self.save_state()
+            else:
+                logger.info(f"📂 Position Reconciliation: All {already_tracked} positions already tracked")
+                
+        except Exception as e:
+            logger.error(f"Position reconciliation error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def _sync_promoted_to_yaml(self):
         """Sync promoted combos to YAML file.
@@ -1197,13 +1286,14 @@ class DivergenceBot:
                 entry = last_row['close']
                 
                 # ====================================================
-                # VOLUME FILTER: Match backtest (vol > 50% of 20MA)
+                # VOLUME FILTER: DISABLED - Uncomment to re-enable
+                # Match backtest (vol > 50% of 20MA)
                 # ====================================================
-                if 'vol_ok' in last_row and not last_row['vol_ok']:
-                    vol = last_row.get('volume', 0)
-                    vol_ma = last_row.get('vol_ma', 0)
-                    logger.info(f"📉 VOLUME SKIP: {sym} {side} - vol={vol:.0f} < 50% of vol_ma={vol_ma:.0f}")
-                    continue
+                # if 'vol_ok' in last_row and not last_row['vol_ok']:
+                #     vol = last_row.get('volume', 0)
+                #     vol_ma = last_row.get('vol_ma', 0)
+                #     logger.info(f"📉 VOLUME SKIP: {sym} {side} - vol={vol:.0f} < 50% of vol_ma={vol_ma:.0f}")
+                #     continue
                 
                 # Log signal detection
                 logger.info(f"📊 DIVERGENCE: {sym} {side.upper()} {combo} (RSI: {signal.rsi_value:.1f})")
@@ -2215,8 +2305,25 @@ class DivergenceBot:
         
         # Load symbols from backtest results (for TRADING)
         self.load_overrides()
-        self.load_state()  # Restore previous session data
+        self.load_state()  # Restore previous session data + reconcile positions
         trading_symbols = list(self.divergence_combos.keys())
+        
+        # === NOTIFY ABOUT RECOVERED POSITIONS ===
+        recovered_positions = [t for t in self.active_trades.values() if t.get('recovered_on_startup')]
+        if recovered_positions:
+            msg = f"🔄 **POSITIONS RECOVERED** ({len(recovered_positions)})\n"
+            msg += "━━━━━━━━━━━━━━━━━━━━\n"
+            for sym, trade in list(self.active_trades.items())[:5]:
+                if trade.get('recovered_on_startup'):
+                    side_icon = "🟢" if trade['side'] == 'long' else "🔴"
+                    msg += f"{side_icon} `{sym}` @ ${trade['entry']:.4f}\n"
+                    if trade.get('tp') and trade.get('sl'):
+                        msg += f"   TP: ${trade['tp']:.4f} | SL: ${trade['sl']:.4f}\n"
+            if len(recovered_positions) > 5:
+                msg += f"\n...and {len(recovered_positions) - 5} more"
+            msg += "\n\n✅ **Positions will continue to be monitored**"
+            await self.send_telegram(msg)
+            logger.info(f"🔄 Recovered {len(recovered_positions)} positions from Bybit")
         
         # === STARTUP PROMOTION SCAN ===
         # Check if any combos should be promoted based on 30-day PostgreSQL data

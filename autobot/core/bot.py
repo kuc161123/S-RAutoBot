@@ -2332,7 +2332,7 @@ class DivergenceBot:
         await self.send_telegram("⏳ **Divergence Bot Starting...**\nInitializing systems...")
         
         # Initialize Learner
-        self.learner = UnifiedLearner(db_url=self.cfg['database']['url'])
+        self.learner = UnifiedLearner()
         
         # Initialize Shadow Auditor (Verification)
         self.auditor = ShadowAuditor()

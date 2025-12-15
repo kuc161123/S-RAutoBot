@@ -745,15 +745,14 @@ class UnifiedLearner:
             signal.max_favorable = max(signal.max_favorable, favorable_pct)
             signal.max_adverse = max(signal.max_adverse, adverse_pct)
             
-            # === CHECK TIMEOUT (4 hours) ===
+            # === CHECK TIMEOUT (25 hours = ~100 bars on 15min) ===
+            # BACKTEST MATCH: Timeout after 25 hours, EXCLUDE from WR (not a loss)
             age_hours = (now - signal.start_time) / 3600
-            if age_hours > 4:
+            if age_hours > 25:
                 timeout_count += 1
-                # CRITICAL FIX: Record timeout as a loss (signal didn't hit TP in time)
-                # This ensures analytics accurately reflect all signals
-                self._resolve_signal(signal, 'loss')  # Count as loss for accuracy
+                # Remove without counting as win or loss (matches backtest behavior)
                 self.pending_signals.remove(signal)
-                logger.info(f"⏰ TIMEOUT: {signal.symbol} {signal.side} after {age_hours:.1f}h (recorded as loss)")
+                logger.info(f"⏰ TIMEOUT: {signal.symbol} {signal.side} after {age_hours:.1f}h (excluded from WR)")
                 continue
             
             # === CHECK OUTCOME USING HIGH/LOW ===

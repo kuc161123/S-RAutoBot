@@ -1259,12 +1259,14 @@ class DivergenceBot:
                 return
             
             # ====================================================
-            # SIGNAL COOLDOWN: Prevent duplicate detections
+            # SIGNAL COOLDOWN: BACKTEST MATCH - 10 bars between signals
             # ====================================================
-            if not hasattr(self, 'signal_cooldowns'):
-                self.signal_cooldowns = {}
+            if not hasattr(self, 'last_signal_candle'):
+                self.last_signal_candle = {}  # Per symbol (not per combo)
             
-            COOLDOWN_MINUTES = 15  # Match 15-min candle period
+            COOLDOWN_BARS = 10  # Match backtest: min 10 bars between signals per symbol
+            CANDLE_MINUTES = 15  # 15-min candles
+            COOLDOWN_SECONDS = COOLDOWN_BARS * CANDLE_MINUTES * 60  # ~2.5 hours
             
             # Process each detected signal - EXECUTE ALL (backtest validated)
             for signal in signals:
@@ -1272,19 +1274,19 @@ class DivergenceBot:
                 combo = signal.combo  # e.g., "DIV:regular_bullish"
                 signal_type = signal.signal_type
                 
-                # Check cooldown
-                cooldown_key = f"{sym}:{side}:{signal_type}"
-                last_signal_time = self.signal_cooldowns.get(cooldown_key, 0)
+                # Check cooldown - per SYMBOL only (not per combo like before)
+                # Backtest uses: if i - last_idx < 10: continue
+                last_signal_time = self.last_signal_candle.get(sym, 0)
                 current_time = time.time()
                 
-                if current_time - last_signal_time < (COOLDOWN_MINUTES * 60):
-                    # Still in cooldown - skip (matches backtest: one signal per candle)
-                    remaining = int((COOLDOWN_MINUTES * 60) - (current_time - last_signal_time))
-                    logger.info(f"⏳ COOLDOWN: {sym} {side} {signal_type} - {remaining}s remaining")
+                if current_time - last_signal_time < COOLDOWN_SECONDS:
+                    # Still in cooldown - skip
+                    remaining = int(COOLDOWN_SECONDS - (current_time - last_signal_time))
+                    logger.info(f"⏳ COOLDOWN: {sym} - {remaining//60}min remaining (10-bar rule)")
                     continue
                 
-                # Update cooldown
-                self.signal_cooldowns[cooldown_key] = current_time
+                # Update cooldown - per symbol
+                self.last_signal_candle[sym] = current_time
                 
                 self.signals_detected += 1
                 

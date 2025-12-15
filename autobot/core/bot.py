@@ -1233,26 +1233,36 @@ class DivergenceBot:
             # ====================================================
             # BACKTEST MATCH: Only process when NEW candle closes
             # ====================================================
+            # ====================================================
+            # BACKTEST MATCH: Only process when NEW CLOSED candle exists
+            # ====================================================
             if not hasattr(self, 'last_candle_processed'):
                 self.last_candle_processed = {}
             
-            current_candle_time = df.index[-1]
+            # Use index -2 (latest closed candle) because index -1 is forming/open
+            if len(df) < 2: return
+            
+            # Get timestamp of the CLOSED candle (second to last)
+            closed_candle_time = df.index[-2]
             last_processed = self.last_candle_processed.get(sym)
             
-            if last_processed is not None and current_candle_time <= last_processed:
-                # Same candle as before - skip (backtest only processed each candle once)
-                # Note: Only log at debug to avoid spam (200 symbols x every loop)
+            if last_processed is not None and closed_candle_time <= last_processed:
+                # Already processed this closed candle
                 return
             
-            # Mark this candle as processed
-            self.last_candle_processed[sym] = current_candle_time
+            # Mark this closed candle as processed
+            self.last_candle_processed[sym] = closed_candle_time
+            
+            # DROP the incomplete forming candle (last row)
+            # This ensures we only trade confirmed signals with full volume
+            df_closed = df.iloc[:-1].copy()
             
             # Calculate RSI and ATR using divergence module
-            df = prepare_dataframe(df)
+            df = prepare_dataframe(df_closed)
             if df.empty or len(df) < 50: 
                 return
             
-            # Detect divergence signals
+            # Detect divergence signals on CLOSED candles
             signals = detect_divergence(df, sym)
             
             if not signals:

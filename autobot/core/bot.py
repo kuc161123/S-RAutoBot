@@ -2480,7 +2480,9 @@ class DivergenceBot:
                 # Scan ALL symbols for learning, but only trade allowed ones
                 for sym in self.all_symbols:
                     await self.process_symbol(sym)
-                    await asyncio.sleep(0.1)  # Faster for learning
+                    # RATE LIMIT PROTECTION: 0.2s delay = max 5 req/s
+                    # Bybit limit is typically 10-20/s, but 5/s is safe and stable
+                    await asyncio.sleep(0.2)
                 
                 # Mark first loop as completed (trading will start on NEXT loop)
                 if not self.first_loop_completed:

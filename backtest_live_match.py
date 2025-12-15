@@ -30,7 +30,7 @@ warnings.filterwarnings('ignore')
 
 TIMEFRAME = '15'
 DATA_DAYS = 60
-NUM_SYMBOLS = 200  # Top 200 by volume (same as live)
+NUM_SYMBOLS = 400  # STRESS TEST: Top 400 by volume
 
 # NO slippage/fee adjustment - real Bybit handles this
 APPLY_SLIPPAGE = False

@@ -73,6 +73,13 @@ class DivergenceBot:
         # Format: {symbol: {order_id, side, combo, entry_price, tp, sl, qty, created_at}}
         self.pending_limit_orders = {}
         
+        # BACKTEST MATCH: Skip trading on first loop (avoid stale signals)
+        self.first_loop_completed = False
+        
+        # BACKTEST MATCH: Queue entries for next candle open
+        # Format: {symbol: {side, combo, signal_type, df, detected_at}}
+        self.pending_entries = {}
+        
         # Unified Learning System (all learning features in one)
         self.learner = UnifiedLearner(
             on_promote_callback=self._on_combo_promoted,
@@ -1314,14 +1321,28 @@ class DivergenceBot:
                     notify=True
                 )
                 
-                # EXECUTE IMMEDIATELY - Backtest validated 61.3% WR at 2:1 R:R
-                # All 4 divergence types are profitable:
-                # - regular_bearish: 66% WR
-                # - regular_bullish: 64% WR
-                # - hidden_bearish: 59% WR
-                # - hidden_bullish: 55% WR
-                logger.info(f"🚀 EXECUTING DIVERGENCE: {sym} {side} {combo}")
-                await self.execute_divergence_trade(sym, side, df, combo, signal_type)
+                # ====================================================
+                # BACKTEST MATCH: Queue for next candle open entry
+                # ====================================================
+                # Skip trading on first loop (avoid stale signals on startup)
+                if not self.first_loop_completed:
+                    logger.info(f"⏳ FIRST LOOP SKIP: {sym} {side} {combo} (will start trading on next loop)")
+                    continue
+                
+                # Queue signal for execution on next candle (matches backtest behavior)
+                # Backtest enters on idx+1 candle open, not immediately on signal
+                if sym not in self.pending_entries:
+                    self.pending_entries[sym] = {
+                        'side': side,
+                        'combo': combo,
+                        'signal_type': signal_type,
+                        'signal_price': entry,
+                        'atr': atr,
+                        'detected_at': time.time()
+                    }
+                    logger.info(f"📋 QUEUED: {sym} {side} {combo} - will execute on next candle open")
+                else:
+                    logger.info(f"⏳ ALREADY QUEUED: {sym} - waiting for next candle")
                     
         except Exception as e:
             logger.error(f"Error processing {sym}: {e}")
@@ -2408,10 +2429,49 @@ class DivergenceBot:
                 trading_symbols = list(self.divergence_combos.keys())
                 self.loop_count += 1
                 
+                # ============================================================
+                # BACKTEST MATCH: Execute pending entries from PREVIOUS loop
+                # This matches backtest behavior of entering on next candle open
+                # ============================================================
+                if self.pending_entries:
+                    logger.info(f"📊 Executing {len(self.pending_entries)} queued entries from previous candle")
+                    for sym, entry_info in list(self.pending_entries.items()):
+                        try:
+                            # Get fresh klines for execution
+                            klines = self.broker.get_klines(sym, '15', limit=100)
+                            if klines and len(klines) >= 50:
+                                df = pd.DataFrame(klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+                                df['start'] = pd.to_datetime(df['start'].astype(int), unit='ms')
+                                df.set_index('start', inplace=True)
+                                df.sort_index(inplace=True)
+                                for c in ['open', 'high', 'low', 'close', 'volume']: 
+                                    df[c] = df[c].astype(float)
+                                df = prepare_dataframe(df)
+                                
+                                if not df.empty:
+                                    logger.info(f"🚀 EXECUTING QUEUED: {sym} {entry_info['side']} {entry_info['combo']}")
+                                    await self.execute_divergence_trade(
+                                        sym, 
+                                        entry_info['side'], 
+                                        df, 
+                                        entry_info['combo'], 
+                                        entry_info['signal_type']
+                                    )
+                            # Remove from pending after execution attempt
+                            del self.pending_entries[sym]
+                        except Exception as e:
+                            logger.error(f"Failed to execute queued entry {sym}: {e}")
+                            del self.pending_entries[sym]
+                
                 # Scan ALL symbols for learning, but only trade allowed ones
                 for sym in self.all_symbols:
                     await self.process_symbol(sym)
                     await asyncio.sleep(0.1)  # Faster for learning
+                
+                # Mark first loop as completed (trading will start on NEXT loop)
+                if not self.first_loop_completed:
+                    self.first_loop_completed = True
+                    logger.info("✅ First loop completed - trading will start on next loop")
                 
                 # Phantom tracking now handled by learner.update_signals() below
                 

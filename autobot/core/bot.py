@@ -1813,9 +1813,11 @@ class DivergenceBot:
             RR_RATIO = 3.0
             LOOKBACK = 15  # Bars to look back for swing
             
-            # Get recent highs/lows from DataFrame
-            recent_lows = df['low'].tail(LOOKBACK).values
-            recent_highs = df['high'].tail(LOOKBACK).values
+            # MATCH BACKTEST: Exclude current forming candle (entry candle) from swing search
+            # We want SL based on the PATTERN (previous candles), not the entry candle
+            # Use iloc[:-1] to drop last row
+            recent_lows = df['low'].iloc[:-1].tail(LOOKBACK).values
+            recent_highs = df['high'].iloc[:-1].tail(LOOKBACK).values
             
             if side == 'long':
                 # SL at recent swing low

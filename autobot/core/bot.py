@@ -1286,14 +1286,14 @@ class DivergenceBot:
                 entry = last_row['close']
                 
                 # ====================================================
-                # VOLUME FILTER: DISABLED - Uncomment to re-enable
+                # VOLUME FILTER: REQUIRED (backtest validated)
                 # Match backtest (vol > 50% of 20MA)
                 # ====================================================
-                # if 'vol_ok' in last_row and not last_row['vol_ok']:
-                #     vol = last_row.get('volume', 0)
-                #     vol_ma = last_row.get('vol_ma', 0)
-                #     logger.info(f"📉 VOLUME SKIP: {sym} {side} - vol={vol:.0f} < 50% of vol_ma={vol_ma:.0f}")
-                #     continue
+                if 'vol_ok' in last_row and not last_row['vol_ok']:
+                    vol = last_row.get('volume', 0)
+                    vol_ma = last_row.get('vol_ma', 0)
+                    logger.info(f"📉 VOLUME SKIP: {sym} {side} - vol={vol:.0f} < 50% of vol_ma={vol_ma:.0f}")
+                    continue
                 
                 # Log signal detection
                 logger.info(f"📊 DIVERGENCE: {sym} {side.upper()} {combo} (RSI: {signal.rsi_value:.1f})")

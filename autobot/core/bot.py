@@ -10,6 +10,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from autobot.brokers.bybit import Bybit, BybitConfig
 from autobot.core.unified_learner import UnifiedLearner, wilson_lower_bound
+from autobot.core.shadow_auditor import ShadowAuditor
 from autobot.core.divergence_detector import (
     detect_divergence, calculate_rsi, prepare_dataframe, 
     DivergenceSignal, get_signal_description, SIGNAL_DESCRIPTIONS,
@@ -559,7 +560,12 @@ class DivergenceBot:
                 f"├ ❌ Lost: {self.losses}\n"
                 f"├ WR: {exec_wr:.1f}%\n"
                 f"├ EV: {ev_per_trade:+.2f}R/trade\n"
-                f"└ P&L: {pnl_r:+.1f}R\n"
+                f"└ P&L: {pnl_r:+.1f}R\n\n"
+                
+                f"🕵️ **SHADOW AUDIT**\n"
+                f"├ Match Rate: {self.auditor.get_stats()['rate']:.1f}%\n"
+                f"├ Checks: {self.auditor.get_stats()['matches'] + self.auditor.get_stats()['mismatches']}\n"
+                f"└ Mismatches: {self.auditor.get_stats()['mismatches']}\n"
             )
             
             # Add active trades if any
@@ -1295,9 +1301,6 @@ class DivergenceBot:
                     logger.info(f"⏳ COOLDOWN: {sym} - {remaining//60}min remaining (10-bar rule)")
                     continue
                 
-                # Update cooldown - per symbol
-                self.last_signal_candle[sym] = current_time
-                
                 self.signals_detected += 1
                 
                 last_row = df.iloc[-1]
@@ -1305,10 +1308,36 @@ class DivergenceBot:
                 entry = last_row['close']
                 
                 # ====================================================
-                # VOLUME FILTER: REQUIRED (backtest validated)
-                # Match backtest (vol > 50% of 20MA)
+                # SHADOW AUDIT: Verify decision against backtest logic
                 # ====================================================
+                # Determine what the live bot decided for this signal
+                live_action = "TRADE"
                 if 'vol_ok' in last_row and not last_row['vol_ok']:
+                    live_action = "SKIP_VOLUME"
+                
+                # Perform Audit
+                # Note: df is already df_closed (latest closed candle + history)
+                # But auditor expects full df? Auditor uses iloc[-1] of passed df as signal candle.
+                # Passed df has `last_row` at -1. So this is correct.
+                # Wait, passing df.iloc[:-1] drops the 'last_row'? 
+                # NO. `df` in this context IS the closed dataframe (we dropped forming candle earlier at line 1245ish)
+                # So `last_row` IS the closed candle.
+                # BUT if we pass `df.iloc[:-1]`, we drop the signal candle! 
+                # Auditor needs the SIGNAL candle at the end.
+                # So pass `df`.
+                
+                if hasattr(self, 'auditor'):
+                    audit_ok, audit_msg = self.auditor.audit(sym, df, {'action': live_action})
+                    if not audit_ok:
+                        logger.error(f"❌ AUDIT FAILURE: {sym} - {audit_msg}")
+                    else:
+                         if live_action != "NO_SIGNAL":
+                            logger.debug(f"✅ AUDIT PASS: {sym} {live_action}")
+                
+                # ====================================================
+                # VOLUME FILTER: REQUIRED (backtest validated)
+                # ====================================================
+                if live_action == "SKIP_VOLUME":
                     vol = last_row.get('volume', 0)
                     vol_ma = last_row.get('vol_ma', 0)
                     logger.info(f"📉 VOLUME SKIP: {sym} {side} - vol={vol:.0f} < 50% of vol_ma={vol_ma:.0f}")
@@ -2301,6 +2330,12 @@ class DivergenceBot:
         
         # Send starting notification
         await self.send_telegram("⏳ **Divergence Bot Starting...**\nInitializing systems...")
+        
+        # Initialize Learner
+        self.learner = UnifiedLearner(db_url=self.cfg['database']['url'])
+        
+        # Initialize Shadow Auditor (Verification)
+        self.auditor = ShadowAuditor()
         
         # Initialize Telegram
         try:

@@ -2569,45 +2569,65 @@ class DivergenceBot:
                                 sl = trade_info.get('sl', 0)
                                 
                                 # Determine outcome based on which level was hit (TP or SL)
-                                # Not candle close - actual exit is at TP or SL level
+                                # CRITICAL FIX: Get ACTUAL exit price from Bybit, don't guess!
                                 if entry and tp and sl:
-                                    if side == 'long':
-                                        # Long: Won if high reached TP, Lost if low reached SL
-                                        # Check which was hit first (use candle extremes)
-                                        hit_tp = candle_high >= tp
-                                        hit_sl = candle_low <= sl
-                                        
-                                        if hit_tp and not hit_sl:
-                                            outcome = "win"
-                                            exit_price = tp
-                                        elif hit_sl and not hit_tp:
-                                            outcome = "loss"
-                                            exit_price = sl
-                                        elif hit_tp and hit_sl:
-                                            # Both hit - use current price to guess
-                                            outcome = "win" if current_price >= entry else "loss"
-                                            exit_price = tp if outcome == "win" else sl
+                                    # First, try to get actual exit price from Bybit executions
+                                    actual_exit_price = None
+                                    try:
+                                        executions = self.broker.get_executions(sym, limit=10)
+                                        if executions:
+                                            # Find the close execution (most recent for this symbol)
+                                            for exec_record in executions:
+                                                if exec_record.get('symbol') == sym:
+                                                    actual_exit_price = float(exec_record.get('execPrice', 0))
+                                                    break
+                                    except Exception as e:
+                                        logger.debug(f"Could not get executions for {sym}: {e}")
+                                    
+                                    # Determine outcome based on actual exit or TP/SL proximity
+                                    if actual_exit_price and actual_exit_price > 0:
+                                        # Use ACTUAL exit price
+                                        if side == 'long':
+                                            # Close to TP = win, close to SL = loss
+                                            tp_dist = abs(actual_exit_price - tp)
+                                            sl_dist = abs(actual_exit_price - sl)
+                                            outcome = "win" if tp_dist < sl_dist else "loss"
+                                            exit_price = actual_exit_price
                                         else:
-                                            # Neither? Use current price comparison
-                                            outcome = "win" if current_price >= entry else "loss"
-                                            exit_price = current_price
+                                            tp_dist = abs(actual_exit_price - tp)
+                                            sl_dist = abs(actual_exit_price - sl)
+                                            outcome = "win" if tp_dist < sl_dist else "loss"
+                                            exit_price = actual_exit_price
                                     else:
-                                        # Short: Won if low reached TP, Lost if high reached SL
-                                        hit_tp = candle_low <= tp
-                                        hit_sl = candle_high >= sl
-                                        
-                                        if hit_tp and not hit_sl:
-                                            outcome = "win"
-                                            exit_price = tp
-                                        elif hit_sl and not hit_tp:
-                                            outcome = "loss"
-                                            exit_price = sl
-                                        elif hit_tp and hit_sl:
-                                            outcome = "win" if current_price <= entry else "loss"
-                                            exit_price = tp if outcome == "win" else sl
+                                        # Fallback: Check if TP or SL was hit using candle data
+                                        # MATCH BACKTEST: SL checked FIRST (pessimistic)
+                                        if side == 'long':
+                                            hit_sl = candle_low <= sl
+                                            hit_tp = candle_high >= tp
+                                            # SL checked first (matches backtest!)
+                                            if hit_sl:
+                                                outcome = "loss"
+                                                exit_price = sl
+                                            elif hit_tp:
+                                                outcome = "win"
+                                                exit_price = tp
+                                            else:
+                                                # Neither? Use current price
+                                                outcome = "win" if current_price >= entry else "loss"
+                                                exit_price = current_price
                                         else:
-                                            outcome = "win" if current_price <= entry else "loss"
-                                            exit_price = current_price
+                                            hit_sl = candle_high >= sl
+                                            hit_tp = candle_low <= tp
+                                            # SL checked first (matches backtest!)
+                                            if hit_sl:
+                                                outcome = "loss"
+                                                exit_price = sl
+                                            elif hit_tp:
+                                                outcome = "win"
+                                                exit_price = tp
+                                            else:
+                                                outcome = "win" if current_price <= entry else "loss"
+                                                exit_price = current_price
                                     
                                     # Calculate P/L percentage
                                     if side == 'long':

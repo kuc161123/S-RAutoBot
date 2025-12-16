@@ -1368,8 +1368,9 @@ class DivergenceBot:
                 # HIDDEN BEARISH-ONLY FILTER (42-62% WR validated)
                 # ====================================================
                 hidden_bearish_only = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
-                if hidden_bearish_only and combo != 'hidden_bearish':
-                    logger.info(f"⏭️ HIDDEN-BEARISH-ONLY SKIP: {sym} {combo} (only hidden_bearish allowed)")
+                # Note: signal_type is 'hidden_bearish', combo is 'DIV:hidden_bearish'
+                if hidden_bearish_only and signal_type != 'hidden_bearish':
+                    logger.info(f"⏭️ HIDDEN-BEARISH-ONLY SKIP: {sym} {combo} (only hidden_bearish allowed, got {signal_type})")
                     continue
                 
                 # Get BTC price for context

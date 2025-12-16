@@ -1410,6 +1410,8 @@ class DivergenceBot:
                         'swing_high': signal_swing_high,  # Calculated at signal time
                         'detected_at': time.time()
                     }
+                    # CRITICAL: Set cooldown to prevent repeated signals
+                    self.last_signal_candle[sym] = time.time()
                     logger.info(f"📋 QUEUED: {sym} {side} {combo} - will execute on next candle open")
                 else:
                     logger.info(f"⏳ ALREADY QUEUED: {sym} - waiting for next candle")
@@ -2558,8 +2560,9 @@ class DivergenceBot:
                     logger.info(f"📊 Executing {len(self.pending_entries)} queued entries from previous candle")
                     for sym, entry_info in list(self.pending_entries.items()):
                         try:
-                            # Get fresh klines for execution
-                            klines = self.broker.get_klines(sym, '15', limit=100)
+                            # Get fresh klines for execution (use same timeframe as detection)
+                            tf = self.cfg.get('trade', {}).get('timeframe', '60')
+                            klines = self.broker.get_klines(sym, tf, limit=100)
                             if klines and len(klines) >= 50:
                                 df = pd.DataFrame(klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
                                 df['start'] = pd.to_datetime(df['start'].astype(int), unit='ms')

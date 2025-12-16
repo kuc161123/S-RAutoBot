@@ -1888,7 +1888,16 @@ class DivergenceBot:
                 
                 # CRITICAL: Validate SL is BELOW entry for long
                 if sl >= actual_entry:
-                    logger.warning(f"⚠️ SKIP {sym}: Swing low ({sl}) is ABOVE entry ({actual_entry})! Setup invalidated.") 
+                    logger.error(f"❌ ABORT {sym}: Swing low ({sl}) is ABOVE entry ({actual_entry})! Closing position.")
+                    # MUST close the position we just opened!
+                    try:
+                        close_result = self.broker.place_market(sym, 'short', actual_qty, reduce_only=True)
+                        if close_result and close_result.get('retCode') == 0:
+                            logger.info(f"✅ Emergency close successful for {sym}")
+                        else:
+                            logger.error(f"❌ Emergency close FAILED for {sym}: {close_result}")
+                    except Exception as e:
+                        logger.error(f"❌ Emergency close exception for {sym}: {e}")
                     return
                 
                 sl_distance = actual_entry - sl  # Must be positive (SL below entry)
@@ -1912,7 +1921,16 @@ class DivergenceBot:
                 
                 # CRITICAL: Validate SL is ABOVE entry for short
                 if sl <= actual_entry:
-                    logger.warning(f"⚠️ SKIP {sym}: Swing high ({sl}) is BELOW entry ({actual_entry})! Setup invalidated.")
+                    logger.error(f"❌ ABORT {sym}: Swing high ({sl}) is BELOW entry ({actual_entry})! Closing position.")
+                    # MUST close the position we just opened!
+                    try:
+                        close_result = self.broker.place_market(sym, 'long', actual_qty, reduce_only=True)
+                        if close_result and close_result.get('retCode') == 0:
+                            logger.info(f"✅ Emergency close successful for {sym}")
+                        else:
+                            logger.error(f"❌ Emergency close FAILED for {sym}: {close_result}")
+                    except Exception as e:
+                        logger.error(f"❌ Emergency close exception for {sym}: {e}")
                     return
                 
                 sl_distance = sl - actual_entry  # Must be positive (SL above entry)

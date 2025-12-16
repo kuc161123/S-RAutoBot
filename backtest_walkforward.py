@@ -27,24 +27,24 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # =============================================================================
 # CONFIGURATION (matches live bot exactly)
 # =============================================================================
-# Instead of hardcoding symbols, load from config.yaml
-def load_symbols_from_config():
-    """Load trading symbols from config.yaml"""
-    import yaml
+# Instead of loading from config, fetch top 400 symbols by 24h volume
+def load_symbols_from_bybit():
+    """Fetch top 400 symbols by 24h volume from Bybit"""
+    import requests
     try:
-        with open('config.yaml', 'r') as f:
-            config = yaml.safe_load(f)
-        # Symbols are in 'trade' section
-        symbols = config.get('trade', {}).get('symbols', [])
-        if len(symbols) > 200:
-            symbols = symbols[:200]  # Cap at 200
-        print(f"📋 Loaded {len(symbols)} symbols from config.yaml")
-        return symbols if symbols else ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
+        url = "https://api.bybit.com/v5/market/tickers?category=linear"
+        resp = requests.get(url, timeout=10)
+        tickers = resp.json().get('result', {}).get('list', [])
+        usdt_pairs = [t for t in tickers if t['symbol'].endswith('USDT')]
+        usdt_pairs.sort(key=lambda x: float(x.get('turnover24h', 0)), reverse=True)
+        symbols = [t['symbol'] for t in usdt_pairs[:400]]  # Top 400
+        print(f"📋 Fetched {len(symbols)} symbols from Bybit (by 24h volume)")
+        return symbols
     except Exception as e:
-        print(f"Warning: Could not load symbols: {e}")
+        print(f"Warning: Could not fetch symbols: {e}")
         return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
 
-SYMBOLS = load_symbols_from_config()
+SYMBOLS = load_symbols_from_bybit()
 
 # Strategy parameters
 RSI_PERIOD = 14
@@ -66,7 +66,7 @@ TIMEFRAME = '60'        # 60-minute (1H) candles
 
 # Signal filter
 BEARISH_ONLY = False    # Not just bearish
-HIDDEN_BEARISH_ONLY = False  # Test ALL divergence types
+HIDDEN_BEARISH_ONLY = True  # ONLY hidden_bearish (best performer)
 
 # =============================================================================
 # INDICATOR CALCULATIONS (matches live bot exactly)

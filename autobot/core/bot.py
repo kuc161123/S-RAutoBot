@@ -546,9 +546,9 @@ class DivergenceBot:
                 f"🎯 **STRATEGY**\n"
                 f"├ Type: RSI Divergence\n"
                 f"├ TF: {self.cfg.get('trade', {}).get('timeframe', '60')}min (1H)\n"
-                f"├ Mode: {'⚡ HIDDEN BEARISH (97 Symbols)' if self.cfg.get('trade', {}).get('hidden_bearish_only', False) else ('BEARISH ONLY' if self.cfg.get('trade', {}).get('bearish_only', False) else 'All Signals')}\n"
+                f"├ Mode: 🎯 ALL DIVERGENCES (126 Symbols)\n"
                 f"├ SL: Pivot | R:R: 3:1\n"
-                f"├ WR: 48.8% avg (40-70%)\n"
+                f"├ WR: 52.9% avg (40-90%)\n"
                 f"└ Scanning: {scanning_symbols} symbols\n\n"
                 
                 f"📊 **SIGNALS**\n"
@@ -598,12 +598,12 @@ class DivergenceBot:
     async def cmd_backtest(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show comprehensive live vs backtest performance comparison"""
         try:
-            # === BACKTEST REFERENCE (Hidden Bearish Strategy 1H) ===
-            # From verified 1H candle-by-candle backtest (3:1 Pivot)
-            BT_WIN_RATE = 54.8  # % (Verified on 150 top symbols)
-            BT_EV = 1.19        # R per trade
+            # === BACKTEST REFERENCE (All Divergences Strategy 1H) ===
+            # From walk-forward validated all-divergences backtest
+            BT_WIN_RATE = 52.9  # % (All 4 types, 126 symbols)
+            BT_EV = 1.12        # R per trade
             BT_RR = 3.0         # Risk:Reward
-            BT_TRADES_PER_DAY = 38  # ~38 trades/day (2281 trades / 60 days)
+            BT_TRADES_PER_DAY = 111  # ~111 trades/day (6688 trades / 60 days)
             
             # === LIVE DATA ===
             uptime_hrs = (time.time() - self.learner.started_at) / 3600
@@ -690,10 +690,10 @@ class DivergenceBot:
                 f"└ {rating_detail}\n\n"
                 
                 f"📋 **BACKTEST REFERENCE**\n"
-                f"├ WR: {BT_WIN_RATE}% (1H Verified)\n"
+                f"├ WR: {BT_WIN_RATE}% (All Divergences)\n"
                 f"├ EV: +{BT_EV}R/trade\n"
                 f"├ R:R: {BT_RR}:1\n"
-                f"└ Total: +2,719R (60 days, 150 syms)\n"
+                f"└ Total: +7,476R (60 days, 126 syms)\n"
             )
             
             msg += "\n━━━━━━━━━━━━━━━━━━━━\n"

@@ -404,110 +404,139 @@ trade:
   - REQUSDT
   - ROSEUSDT
   timeframe: '60'
-  bearish_only: true   # Only trade bearish divergences (validated by walk-forward backtest)
-  hidden_bearish_only: true  # Even stricter: only hidden_bearish (42-62% WR)
+  bearish_only: false   # Disabled - trading ALL divergence types
+  hidden_bearish_only: false  # Disabled - trading ALL divergence types
   
-  # 97 symbols validated by 400-symbol walk-forward backtest for hidden_bearish
-  # All have 40%+ WR on hidden bearish signals, 1H timeframe, 10+ trades
-  # Combined potential: +3,848R | Avg WR: 48.8%
+  # 126 symbols validated by walk-forward backtest for ALL divergences
+  # 1H timeframe, 6/6 periods profitable, WR >= 40%, N >= 5
+  # Combined: 6688 trades | 52.9% WR | +1.12 EV | +7,476R
   divergence_symbols:
-    - AVAXUSDT       # 70.6% WR, +62R
-    - LYNUSDT        # 69.8% WR, +95R
-    - CTCUSDT        # 69.2% WR, +115R
-    - MORPHOUSDT     # 69.2% WR, +46R
-    - KAITOUSDT      # 64.9% WR, +59R
-    - NEOUSDT        # 62.5% WR, +48R
-    - BEAMUSDT       # 61.5% WR, +38R
-    - MMTUSDT        # 61.4% WR, +83R
-    - GRTUSDT        # 61.1% WR, +26R
-    - SAROSUSDT      # 60.3% WR, +89R
-    - TAUSDT         # 60.0% WR, +70R
-    - BSVUSDT        # 58.3% WR, +48R
-    - JELLYJELLYUSDT # 57.5% WR, +95R
-    - ZKCUSDT        # 55.6% WR, +77R
-    - MONUSDT        # 55.3% WR, +46R
-    - JASMYUSDT      # 55.0% WR, +48R
-    - SUPERUSDT      # 55.0% WR, +24R
-    - MOODENGUSDT    # 54.5% WR, +39R
-    - XLMUSDT        # 54.5% WR, +65R
-    - QUSDT          # 54.5% WR, +65R
-    - MASKUSDT       # 54.3% WR, +41R
-    - SANDUSDT       # 54.2% WR, +56R
-    - ATOMUSDT       # 53.8% WR, +30R
-    - RVNUSDT        # 53.8% WR, +45R
-    - DEEPUSDT       # 52.9% WR, +78R
-    - PLUMEUSDT      # 52.8% WR, +40R
-    - NEARUSDT       # 52.8% WR, +40R
-    - AUSDT          # 52.7% WR, +61R
-    - SUNUSDT        # 52.2% WR, +25R
-    - WLDUSDT        # 52.0% WR, +27R
-    - KSMUSDT        # 51.7% WR, +31R
-    - BBUSDT         # 51.6% WR, +33R
-    - FILUSDT        # 51.5% WR, +35R
-    - HUSDT          # 51.1% WR, +47R
-    - TRUMPUSDT      # 50.7% WR, +71R
-    - RESOLVUSDT     # 50.0% WR, +16R
-    - RLCUSDT        # 50.0% WR, +32R
-    - DYDXUSDT       # 50.0% WR, +22R
-    - DYMUSDT        # 49.0% WR, +49R
-    - TNSRUSDT       # 48.7% WR, +72R
-    - CYBERUSDT      # 48.6% WR, +35R
-    - OGUSDT         # 48.3% WR, +27R
-    - MANAUSDT       # 47.7% WR, +40R
-    - AXLUSDT        # 47.7% WR, +40R
-    - NOMUSDT        # 47.5% WR, +36R
-    - ALLOUSDT       # 47.4% WR, +17R
-    - GOATUSDT       # 47.2% WR, +32R
-    - OPUSDT         # 46.7% WR, +26R
-    - SAPIENUSDT     # 46.3% WR, +35R
-    - PTBUSDT        # 46.3% WR, +57R
-    - 10000SATSUSDT  # 46.2% WR, +44R
-    - GIGAUSDT       # 46.2% WR, +22R
-    - GRASSUSDT      # 46.2% WR, +22R
-    - ACTUSDT        # 45.8% WR, +20R
-    - AEVOUSDT       # 45.7% WR, +38R
-    - BATUSDT        # 45.5% WR, +27R
-    - HPOS10IUSDT    # 45.5% WR, +27R
-    - ARKMUSDT       # 45.5% WR, +54R
-    - MEWUSDT        # 45.5% WR, +27R
-    - ENJUSDT        # 45.2% WR, +34R
-    - WUSDT          # 44.7% WR, +37R
-    - APEUSDT        # 44.4% WR, +49R
-    - ORCAUSDT       # 44.4% WR, +21R
-    - DGBUSDT        # 44.4% WR, +35R
-    - STABLEUSDT     # 44.1% WR, +26R
-    - CELOUSDT       # 43.8% WR, +48R
-    - SUSHIUSDT      # 43.6% WR, +29R
-    - SONICUSDT      # 43.6% WR, +29R
-    - AAVEUSDT       # 43.5% WR, +34R
-    - ZBTUSDT        # 43.3% WR, +44R
-    - FLUXUSDT       # 43.2% WR, +27R
-    - YBUSDT         # 43.2% WR, +54R
-    - XNYUSDT        # 42.9% WR, +55R
-    - APTUSDT        # 42.9% WR, +10R
-    - 1INCHUSDT      # 42.4% WR, +46R
-    - ALTUSDT        # 42.3% WR, +18R
-    - SHIB1000USDT   # 42.2% WR, +31R
-    - IDUSDT         # 42.2% WR, +31R
-    - ZKUSDT         # 41.7% WR, +40R
-    - AVAAIUSDT      # 41.7% WR, +8R
-    - MELANIAUSDT    # 41.7% WR, +16R
-    - PROVEUSDT      # 41.5% WR, +35R
-    - AUCTIONUSDT    # 41.2% WR, +33R
-    - 1000BONKUSDT   # 40.9% WR, +28R
-    - BERAUSDT       # 40.9% WR, +14R
-    - DEGENUSDT      # 40.9% WR, +14R
-    - XMRUSDT        # 40.9% WR, +42R
-    - XCNUSDT        # 40.9% WR, +28R
-    - EIGENUSDT      # 40.6% WR, +20R
-    - KAIAUSDT       # 40.6% WR, +20R
-    - JCTUSDT        # 40.5% WR, +23R
-    - CKBUSDT        # 40.5% WR, +26R
-    - IOTAUSDT       # 40.5% WR, +26R
-    - PIPPINUSDT     # 40.0% WR, +21R
-    - GASUSDT        # 40.0% WR, +15R
-    - ADAUSDT        # 40.0% WR, +36R
-    - HEMIUSDT       # 40.0% WR, +30R
+    - SAROSUSDT        # 70.4% WR, 27 trades, +49R
+    - LIGHTUSDT        # 84.2% WR, 19 trades, +45R
+    - NXPCUSDT         # 78.9% WR, 19 trades, +41R
+    - KASUSDT          # 75.0% WR, 20 trades, +40R
+    - SUIUSDT          # 81.2% WR, 16 trades, +36R
+    - HBARUSDT         # 70.0% WR, 20 trades, +36R
+    - BERAUSDT         # 70.0% WR, 20 trades, +36R
+    - AXLUSDT          # 76.5% WR, 17 trades, +35R
+    - PENGUUSDT        # 60.9% WR, 23 trades, +33R
+    - LUNA2USDT        # 68.4% WR, 19 trades, +33R
+    - LDOUSDT          # 75.0% WR, 16 trades, +32R
+    - POLUSDT          # 75.0% WR, 16 trades, +32R
+    - ETHUSDT          # 70.6% WR, 17 trades, +31R
+    - PTBUSDT          # 70.6% WR, 17 trades, +31R
+    - MOVEUSDT         # 66.7% WR, 18 trades, +30R
+    - AVNTUSDT         # 66.7% WR, 18 trades, +30R
+    - LTCUSDT          # 63.2% WR, 19 trades, +29R
+    - CRVUSDT          # 63.2% WR, 19 trades, +29R
+    - PUMPFUNUSDT      # 63.2% WR, 19 trades, +29R
+    - USELESSUSDT      # 63.2% WR, 19 trades, +29R
+    - JUPUSDT          # 63.2% WR, 19 trades, +29R
+    - AEROUSDT         # 60.0% WR, 20 trades, +28R
+    - PLUMEUSDT        # 54.2% WR, 24 trades, +28R
+    - ACEUSDT          # 52.0% WR, 25 trades, +27R
+    - WLDUSDT          # 57.1% WR, 21 trades, +27R
+    - TIAUSDT          # 52.0% WR, 25 trades, +27R
+    - INJUSDT          # 64.7% WR, 17 trades, +27R
+    - DYDXUSDT         # 64.7% WR, 17 trades, +27R
+    - ETHFIUSDT        # 64.7% WR, 17 trades, +27R
+    - ENAUSDT          # 61.1% WR, 18 trades, +26R
+    - SOMIUSDT         # 71.4% WR, 14 trades, +26R
+    - TNSRUSDT         # 54.5% WR, 22 trades, +26R
+    - MMTUSDT          # 90.0% WR, 10 trades, +26R
+    - SUSDT            # 61.1% WR, 18 trades, +26R
+    - RESOLVUSDT       # 54.5% WR, 22 trades, +26R
+    - ZECUSDT          # 66.7% WR, 15 trades, +25R
+    - ADAUSDT          # 52.2% WR, 23 trades, +25R
+    - XPLUSDT          # 57.9% WR, 19 trades, +25R
+    - SEIUSDT          # 66.7% WR, 15 trades, +25R
+    - 0GUSDT           # 57.9% WR, 19 trades, +25R
+    - DOODUSDT         # 66.7% WR, 15 trades, +25R
+    - LRCUSDT          # 57.9% WR, 19 trades, +25R
+    - TAOUSDT          # 62.5% WR, 16 trades, +24R
+    - DOTUSDT          # 62.5% WR, 16 trades, +24R
+    - ZKUSDT           # 62.5% WR, 16 trades, +24R
+    - CROUSDT          # 55.0% WR, 20 trades, +24R
+    - MORPHOUSDT       # 62.5% WR, 16 trades, +24R
+    - APEXUSDT         # 55.0% WR, 20 trades, +24R
+    - PYRUSDT          # 58.8% WR, 17 trades, +23R
+    - ASTERUSDT        # 64.3% WR, 14 trades, +22R
+    - NEARUSDT         # 50.0% WR, 22 trades, +22R
+    - ICPUSDT          # 50.0% WR, 22 trades, +22R
+    - HUSDT            # 64.3% WR, 14 trades, +22R
+    - ORCAUSDT         # 64.3% WR, 14 trades, +22R
+    - PENDLEUSDT       # 55.6% WR, 18 trades, +22R
+    - PAXGUSDT         # 72.7% WR, 11 trades, +21R
+    - MUSDT            # 52.6% WR, 19 trades, +21R
+    - USTCUSDT         # 60.0% WR, 15 trades, +21R
+    - PYTHUSDT         # 47.8% WR, 23 trades, +21R
+    - XLMUSDT          # 56.2% WR, 16 trades, +20R
+    - ICNTUSDT         # 66.7% WR, 12 trades, +20R
+    - RENDERUSDT       # 56.2% WR, 16 trades, +20R
+    - CAKEUSDT         # 66.7% WR, 12 trades, +20R
+    - BTCUSDT          # 52.9% WR, 17 trades, +19R
+    - MYXUSDT          # 61.5% WR, 13 trades, +19R
+    - MOODENGUSDT      # 47.6% WR, 21 trades, +19R
+    - ENSOUSDT         # 52.9% WR, 17 trades, +19R
+    - XRPUSDT          # 50.0% WR, 18 trades, +18R
+    - FARTCOINUSDT     # 70.0% WR, 10 trades, +18R
+    - ONDOUSDT         # 50.0% WR, 18 trades, +18R
+    - SHIB1000USDT     # 50.0% WR, 18 trades, +18R
+    - IPUSDT           # 45.5% WR, 22 trades, +18R
+    - METUSDT          # 70.0% WR, 10 trades, +18R
+    - UAIUSDT          # 70.0% WR, 10 trades, +18R
+    - PARTIUSDT        # 45.5% WR, 22 trades, +18R
+    - DOGEUSDT         # 53.3% WR, 15 trades, +17R
+    - BCHUSDT          # 53.3% WR, 15 trades, +17R
+    - STABLEUSDT       # 85.7% WR, 7 trades, +17R
+    - COAIUSDT         # 63.6% WR, 11 trades, +17R
+    - TRXUSDT          # 53.3% WR, 15 trades, +17R
+    - WLFIUSDT         # 63.6% WR, 11 trades, +17R
+    - ZENUSDT          # 47.4% WR, 19 trades, +17R
+    - 1000PEPEUSDT     # 58.3% WR, 12 trades, +16R
+    - GUNUSDT          # 50.0% WR, 16 trades, +16R
+    - POPCATUSDT       # 58.3% WR, 12 trades, +16R
+    - BRETTUSDT        # 45.0% WR, 20 trades, +16R
+    - GIGGLEUSDT       # 50.0% WR, 16 trades, +16R
+    - SOLUSDT          # 53.8% WR, 13 trades, +15R
+    - UNIUSDT          # 47.1% WR, 17 trades, +15R
+    - GALAUSDT         # 47.1% WR, 17 trades, +15R
+    - TONUSDT          # 47.1% WR, 17 trades, +15R
+    - APTUSDT          # 53.8% WR, 13 trades, +15R
+    - TRUMPUSDT        # 53.8% WR, 13 trades, +15R
+    - ZORAUSDT         # 47.1% WR, 17 trades, +15R
+    - BNBUSDT          # 60.0% WR, 10 trades, +14R
+    - OPUSDT           # 50.0% WR, 14 trades, +14R
+    - ARCUSDT          # 44.4% WR, 18 trades, +14R
+    - MAGICUSDT        # 44.4% WR, 18 trades, +14R
+    - ARBUSDT          # 54.5% WR, 11 trades, +13R
+    - TRUTHUSDT        # 54.5% WR, 11 trades, +13R
+    - STRKUSDT         # 42.1% WR, 19 trades, +13R
+    - XMRUSDT          # 46.7% WR, 15 trades, +13R
+    - EIGENUSDT        # 42.1% WR, 19 trades, +13R
+    - DASHUSDT         # 46.7% WR, 15 trades, +13R
+    - WAVESUSDT        # 46.7% WR, 15 trades, +13R
+    - APEUSDT          # 54.5% WR, 11 trades, +13R
+    - PIPPINUSDT       # 43.8% WR, 16 trades, +12R
+    - HYPEUSDT         # 40.0% WR, 20 trades, +12R
+    - LINKUSDT         # 43.8% WR, 16 trades, +12R
+    - WIFUSDT          # 62.5% WR, 8 trades, +12R
+    - AVAXUSDT         # 50.0% WR, 12 trades, +12R
+    - 1000LUNCUSDT     # 40.0% WR, 20 trades, +12R
+    - ATOMUSDT         # 43.8% WR, 16 trades, +12R
+    - FORMUSDT         # 50.0% WR, 12 trades, +12R
+    - JELLYJELLYUSDT   # 55.6% WR, 9 trades, +11R
+    - EDENUSDT         # 41.2% WR, 17 trades, +11R
+    - XAUTUSDT         # 80.0% WR, 5 trades, +11R
+    - PIEVERSEUSDT     # 80.0% WR, 5 trades, +11R
+    - SANDUSDT         # 41.2% WR, 17 trades, +11R
+    - SWARMSUSDT       # 42.9% WR, 14 trades, +10R
+    - ORDIUSDT         # 42.9% WR, 14 trades, +10R
+    - ETCUSDT          # 42.9% WR, 14 trades, +10R
+    - SPXUSDT          # 50.0% WR, 10 trades, +10R
+    - RIVERUSDT        # 41.7% WR, 12 trades, +8R
+    - MONUSDT          # 40.0% WR, 5 trades, +3R
+    - KITEUSDT         # 40.0% WR, 5 trades, +3R
   
   use_enhanced_parallel: true
   use_ml_dynamic_risk: false

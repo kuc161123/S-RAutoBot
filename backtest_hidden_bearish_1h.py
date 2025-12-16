@@ -250,6 +250,8 @@ def run():
     
     start_time = time.time()
     
+    symbol_stats = []
+
     for idx, sym in enumerate(symbols):
         try:
             df = fetch_klines(sym, TIMEFRAME, DATA_DAYS)
@@ -272,6 +274,10 @@ def run():
             rows = list(df.itertuples())
             last_trade_idx = -20
             
+            sym_wins = 0
+            sym_losses = 0
+            sym_r = 0.0
+            
             for sig in signals:
                 i = sig['idx']
                 if i - last_trade_idx < 10: continue # Cooldown
@@ -287,12 +293,28 @@ def run():
                 
                 if res == 'win':
                     wins += 1
+                    sym_wins += 1
                     total_r += RISK_REWARD
+                    sym_r += RISK_REWARD
                     last_trade_idx = i
                 elif res == 'loss':
                     losses += 1
+                    sym_losses += 1
                     total_r -= 1.0 # Risk is 1R
+                    sym_r -= 1.0
                     last_trade_idx = i
+            
+            # Track symbol stats
+            sym_total = sym_wins + sym_losses
+            if sym_total > 0:
+                symbol_stats.append({
+                    'symbol': sym,
+                    'wins': sym_wins,
+                    'losses': sym_losses,
+                    'total': sym_total,
+                    'wr': sym_wins / sym_total,
+                    'r_total': sym_r
+                })
                     
         except Exception as e:
             continue
@@ -315,6 +337,26 @@ def run():
         print(f"📊 EV: {ev:+.2f}R")
         print(f"⏱️ Trades/Day: {total/DATA_DAYS:.1f}")
         print("=" * 60)
+        
+        # Filter and Print Golden List
+        print("\n🏆 GOLDEN CONFIGURATION (YAML)")
+        print("Copy below into config.yaml -> divergence_symbols:")
+        print("-" * 60)
+        print("  divergence_symbols:")
+        
+        # Sort by WR desc
+        symbol_stats.sort(key=lambda x: x['wr'], reverse=True)
+        
+        valid_count = 0
+        for s in symbol_stats:
+            if s['wr'] >= 0.40 and s['total'] >= 5: # Min 40% WR, Min 5 trades
+                valid_count += 1
+                comment = f"# {s['wr']*100:.1f}% WR, {s['total']} trades, {s['r_total']:+.1f}R"
+                print(f"    - {s['symbol']:<12} {comment}")
+        
+        print("-" * 60)
+        print(f"Total Valid Symbols: {valid_count}")
+        
     else:
         print("No trades found.")
 

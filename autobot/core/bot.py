@@ -1831,157 +1831,113 @@ class DivergenceBot:
                 logger.warning(f"Failed to set leverage for {sym}: {e}")
             
             # ============================================
-            # STEP 1: MARKET ENTRY (instant fill)
+            # STEP 1: CALCULATE TP/SL AT EXPECTED ENTRY PRICE
             # ============================================
-            order = self.broker.place_market(sym, side, qty)
+            # Use signal_price as expected entry (matches backtest candle open)
+            expected_entry = round_to_tick(signal_price)
             
-            if not order or order.get('retCode') != 0:
-                error_msg = order.get('retMsg', 'Unknown error') if order else 'No response'
-                logger.error(f"Failed to place market order for {sym}: {error_msg}")
-                return
-            
-            order_id = order.get('result', {}).get('orderId', 'N/A')
-            logger.info(f"✅ MARKET ORDER PLACED: {sym} {side} qty={qty}")
-            
-            # ============================================
-            # STEP 2: GET ACTUAL FILL PRICE
-            # ============================================
-            import asyncio
-            await asyncio.sleep(0.5)  # Wait for position to register
-            
-            pos = self.broker.get_position(sym)
-            if not pos or float(pos.get('size', 0)) == 0:
-                logger.error(f"No position found for {sym} after market order")
-                return
-            
-            actual_entry = float(pos.get('avgPrice', signal_price))
-            actual_qty = float(pos.get('size', qty))
-            logger.info(f"📍 ACTUAL ENTRY: {sym} @ ${actual_entry:.6f} (signal was ${signal_price:.6f})")
-            
-            # ============================================
-            # STEP 3: CALCULATE PIVOT-BASED SL/TP (3:1 R:R)
-            # ============================================
-            # Use recent swing low/high for SL placement
-            # Backtest validated: 57.5% WR, +1.30 EV (vs +0.92 with ATR)
             RR_RATIO = 3.0
-            LOOKBACK = 15  # Bars to look back for swing
+            LOOKBACK = 15
             
-            # CRITICAL: Use signal-time swing values if provided (matches backtest exactly)
-            # Backtest calculates SL at signal time, not execution time
+            # Use signal-time swing values if provided (matches backtest exactly)
             if signal_swing_low is not None and signal_swing_high is not None:
-                # Use stored values from signal time
                 swing_low_val = signal_swing_low
                 swing_high_val = signal_swing_high
-                # Use signal-time ATR for constraints if provided
                 constraint_atr = signal_atr if signal_atr else atr
-                logger.debug(f"Using signal-time swing: low={swing_low_val}, high={swing_high_val}")
             else:
-                # Fallback: calculate from current df (backward compatibility)
                 swing_low_val = df_closed['low'].tail(LOOKBACK).min()
                 swing_high_val = df_closed['high'].tail(LOOKBACK).max()
                 constraint_atr = atr
-                logger.debug(f"Calculated swing from df: low={swing_low_val}, high={swing_high_val}")
             
             if side == 'long':
-                # SL at recent swing low - MUST BE BELOW ENTRY
+                # SL at swing low - MUST BE BELOW expected entry
                 sl = round_to_tick(swing_low_val)
                 
-                # CRITICAL: Validate SL is BELOW entry for long
-                if sl >= actual_entry:
-                    logger.error(f"❌ ABORT {sym}: Swing low ({sl}) is ABOVE entry ({actual_entry})! Closing position.")
-                    # MUST close the position we just opened!
-                    try:
-                        close_result = self.broker.place_market(sym, 'short', actual_qty, reduce_only=True)
-                        if close_result and close_result.get('retCode') == 0:
-                            logger.info(f"✅ Emergency close successful for {sym}")
-                        else:
-                            logger.error(f"❌ Emergency close FAILED for {sym}: {close_result}")
-                    except Exception as e:
-                        logger.error(f"❌ Emergency close exception for {sym}: {e}")
+                if sl >= expected_entry:
+                    logger.warning(f"⚠️ SKIP {sym}: Swing low ({sl}) >= expected entry ({expected_entry})")
                     return
                 
-                sl_distance = actual_entry - sl  # Must be positive (SL below entry)
-                
-                # Minimum SL: 0.3×ATR  (avoid too tight)
-                # Maximum SL: 2.0×ATR  (avoid too wide)
+                sl_distance = expected_entry - sl
                 min_sl_dist = 0.3 * constraint_atr
                 max_sl_dist = 2.0 * constraint_atr
                 
                 if sl_distance < min_sl_dist:
                     sl_distance = min_sl_dist
-                    sl = round_to_tick(actual_entry - sl_distance)
+                    sl = round_to_tick(expected_entry - sl_distance)
                 elif sl_distance > max_sl_dist:
                     sl_distance = max_sl_dist
-                    sl = round_to_tick(actual_entry - sl_distance)
+                    sl = round_to_tick(expected_entry - sl_distance)
                 
-                tp = round_to_tick(actual_entry + (RR_RATIO * sl_distance))
+                tp = round_to_tick(expected_entry + (RR_RATIO * sl_distance))
             else:
-                # SL at recent swing high - MUST BE ABOVE ENTRY
+                # SL at swing high - MUST BE ABOVE expected entry
                 sl = round_to_tick(swing_high_val)
                 
-                # CRITICAL: Validate SL is ABOVE entry for short
-                if sl <= actual_entry:
-                    logger.error(f"❌ ABORT {sym}: Swing high ({sl}) is BELOW entry ({actual_entry})! Closing position.")
-                    # MUST close the position we just opened!
-                    try:
-                        close_result = self.broker.place_market(sym, 'long', actual_qty, reduce_only=True)
-                        if close_result and close_result.get('retCode') == 0:
-                            logger.info(f"✅ Emergency close successful for {sym}")
-                        else:
-                            logger.error(f"❌ Emergency close FAILED for {sym}: {close_result}")
-                    except Exception as e:
-                        logger.error(f"❌ Emergency close exception for {sym}: {e}")
+                if sl <= expected_entry:
+                    logger.warning(f"⚠️ SKIP {sym}: Swing high ({sl}) <= expected entry ({expected_entry})")
                     return
                 
-                sl_distance = sl - actual_entry  # Must be positive (SL above entry)
-                
-                # Min/Max SL constraints
+                sl_distance = sl - expected_entry
                 min_sl_dist = 0.3 * constraint_atr
                 max_sl_dist = 2.0 * constraint_atr
                 
                 if sl_distance < min_sl_dist:
                     sl_distance = min_sl_dist
-                    sl = round_to_tick(actual_entry + sl_distance)
+                    sl = round_to_tick(expected_entry + sl_distance)
                 elif sl_distance > max_sl_dist:
                     sl_distance = max_sl_dist
-                    sl = round_to_tick(actual_entry + sl_distance)
+                    sl = round_to_tick(expected_entry + sl_distance)
                 
-                tp = round_to_tick(actual_entry - (RR_RATIO * sl_distance))
+                tp = round_to_tick(expected_entry - (RR_RATIO * sl_distance))
             
-            tp_distance = abs(tp - actual_entry)
+            tp_distance = abs(tp - expected_entry)
             actual_rr = tp_distance / sl_distance if sl_distance > 0 else 0
             sl_atr_mult = sl_distance / atr if atr > 0 else 1.0
             
             logger.info(f"📊 {sym} PIVOT SL: {sl_atr_mult:.2f}×ATR | R:R = {actual_rr:.1f}:1")
-            logger.info(f"   Entry: ${actual_entry:.6f} | SL: ${sl:.6f} | TP: ${tp:.6f}")
+            logger.info(f"   Entry: ${expected_entry:.6f} | SL: ${sl:.6f} | TP: ${tp:.6f}")
             
             # ============================================
-            # STEP 4: SET TP/SL ON POSITION
+            # STEP 2: PLACE LIMIT ORDER WITH BRACKET TP/SL
             # ============================================
-            tpsl_result = self.broker.set_tpsl(sym, tp, sl, actual_qty)
-            if not tpsl_result or tpsl_result.get('retCode') != 0:
-                error_msg = tpsl_result.get('retMsg', 'Unknown') if tpsl_result else 'No response'
-                logger.error(f"Failed to set TP/SL for {sym}: {error_msg}")
-                # Continue anyway - position is open
-            else:
-                logger.info(f"🔐 TP/SL SET: {sym} TP=${tp:.6f} SL=${sl:.6f}")
+            # This matches backtest: entry at specific price with instant protection
+            order = self.broker.place_limit(
+                sym, side, qty, expected_entry,
+                take_profit=tp, stop_loss=sl
+            )
             
-            self.trades_executed += 1
+            if not order or order.get('retCode') != 0:
+                error_msg = order.get('retMsg', 'Unknown error') if order else 'No response'
+                logger.error(f"Failed to place limit order for {sym}: {error_msg}")
+                return
             
-            # Track trade with ACTUAL data
-            self.active_trades[sym] = {
+            # Check if order was immediately cancelled (price too far from market)
+            if order.get('_immediately_cancelled'):
+                logger.warning(f"Limit order for {sym} was immediately {order.get('_cancel_reason')}")
+                return
+            
+            order_id = order.get('result', {}).get('orderId', 'N/A')
+            logger.info(f"✅ LIMIT ORDER PLACED: {sym} {side} qty={qty} @ ${expected_entry:.6f}")
+            logger.info(f"🛡️ BRACKET TP/SL: TP=${tp:.6f} SL=${sl:.6f}")
+            
+            # Track in pending_limit_orders for monitoring (fills, timeout, invalidation)
+            self.pending_limit_orders[sym] = {
+                'order_id': order_id,
                 'side': side,
                 'combo': combo,
                 'signal_type': signal_type,
-                'entry': actual_entry,
-                'signal_price': signal_price,
+                'entry_price': expected_entry,
                 'tp': tp,
                 'sl': sl,
-                'qty': actual_qty,
-                'order_id': order_id,
-                'actual_rr': actual_rr,
-                'open_time': time.time()
+                'qty': qty,
+                'created_at': time.time(),
+                'is_auto_promoted': False
             }
+            
+            self.trades_executed += 1
+            
+            # Note: active_trades is tracked in monitor_pending_limit_orders when order FILLS
+            # Don't track here since the order is still pending
             
             # Signal type emoji
             type_emoji = {
@@ -1992,34 +1948,33 @@ class DivergenceBot:
             }.get(signal_type, signal_type)
             
             # Calculate expected profit/loss
-            profit_target = actual_qty * tp_distance
-            loss_risk = actual_qty * sl_distance
+            profit_target = qty * tp_distance
+            loss_risk = qty * sl_distance
             
-            # Send Telegram notification
+            # Send Telegram notification for limit order placed
             side_emoji = '🟢 LONG' if side == 'long' else '🔴 SHORT'
-            slippage = abs(actual_entry - signal_price)
-            slippage_pct = (slippage / signal_price) * 100 if signal_price > 0 else 0
             
             msg = (
-                f"🎯 **TRADE EXECUTED**\n"
+                f"📋 **LIMIT ORDER PLACED**\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"📊 Symbol: `{sym}`\n"
                 f"📈 Side: **{side_emoji}**\n"
                 f"💎 Type: **{type_emoji}**\n\n"
-                f"💰 **Entry**: ${actual_entry:.6f}\n"
-                f"├ Signal: ${signal_price:.6f}\n"
-                f"└ Slippage: {slippage_pct:.3f}%\n\n"
+                f"💰 **Entry**: ${expected_entry:.6f}\n"
+                f"├ Limit Price (= signal close)\n"
+                f"└ Matches backtest entry\n\n"
                 f"🎯 **TP**: ${tp:.6f} (+${profit_target:.2f})\n"
                 f"🛑 **SL**: ${sl:.6f} (-${loss_risk:.2f})\n"
                 f"📊 **R:R**: {actual_rr:.2f}:1\n"
                 f"📊 RSI: {rsi:.1f}\n\n"
-                f"🔐 **Protection**: ✅ TP/SL Active\n"
-                f"└ Calculated from actual fill\n\n"
+                f"🔐 **Protection**: ✅ Bracket Order\n"
+                f"└ TP/SL set at order creation\n\n"
+                f"⏱️ Timeout: 5 minutes\n"
                 f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
             )
             await self.send_telegram(msg)
             
-            logger.info(f"✅ COMPLETE: {sym} {side} @ ${actual_entry:.6f} R:R={actual_rr:.2f}:1")
+            logger.info(f"✅ COMPLETE: {sym} {side} LIMIT @ ${expected_entry:.6f} R:R={actual_rr:.2f}:1")
             
         except Exception as e:
             logger.error(f"Execute divergence trade error {sym}: {e}")

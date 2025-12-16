@@ -545,8 +545,8 @@ class DivergenceBot:
                 
                 f"🎯 **STRATEGY**\n"
                 f"├ Type: RSI Divergence\n"
-                f"├ TF: {self.config.get('trading', {}).get('timeframe', '60')}min (1H)\n"
-                f"├ Mode: {'⚡ HIDDEN BEARISH (97 Symbols)' if self.config.get('trading', {}).get('hidden_bearish_only', False) else ('BEARISH ONLY' if self.config.get('trading', {}).get('bearish_only', False) else 'All Signals')}\n"
+                f"├ TF: {self.cfg.get('trading', {}).get('timeframe', '60')}min (1H)\n"
+                f"├ Mode: {'⚡ HIDDEN BEARISH (97 Symbols)' if self.cfg.get('trading', {}).get('hidden_bearish_only', False) else ('BEARISH ONLY' if self.cfg.get('trading', {}).get('bearish_only', False) else 'All Signals')}\n"
                 f"├ SL: Pivot | R:R: 3:1\n"
                 f"├ WR: 48.8% avg (40-70%)\n"
                 f"└ Scanning: {scanning_symbols} symbols\n\n"
@@ -1226,7 +1226,7 @@ class DivergenceBot:
         """
         try:
             # Use timeframe from config (1H = walk-forward validated, bearish-only strategy)
-            timeframe = self.config.get('trading', {}).get('timeframe', '60')
+            timeframe = self.cfg.get('trading', {}).get('timeframe', '60')
             klines = self.broker.get_klines(sym, timeframe, limit=100)
             if not klines or len(klines) < 50: 
                 return
@@ -1359,7 +1359,7 @@ class DivergenceBot:
                 # ====================================================
                 # BEARISH-ONLY FILTER (walk-forward validated)
                 # ====================================================
-                bearish_only = self.config.get('trading', {}).get('bearish_only', False)
+                bearish_only = self.cfg.get('trading', {}).get('bearish_only', False)
                 if bearish_only and side == 'long':
                     logger.info(f"⏭️ BEARISH-ONLY SKIP: {sym} {combo} (bullish signal ignored)")
                     continue
@@ -1367,7 +1367,7 @@ class DivergenceBot:
                 # ====================================================
                 # HIDDEN BEARISH-ONLY FILTER (42-62% WR validated)
                 # ====================================================
-                hidden_bearish_only = self.config.get('trading', {}).get('hidden_bearish_only', False)
+                hidden_bearish_only = self.cfg.get('trading', {}).get('hidden_bearish_only', False)
                 if hidden_bearish_only and combo != 'hidden_bearish':
                     logger.info(f"⏭️ HIDDEN-BEARISH-ONLY SKIP: {sym} {combo} (only hidden_bearish allowed)")
                     continue
@@ -2347,18 +2347,22 @@ class DivergenceBot:
         logger.info("🚀 RSI Divergence Strategy - DIRECT EXECUTION MODE")
         
         await self.send_telegram(
-            f"🚀 **1H BEARISH-ONLY MODE**\n"
-            f"├ Walk-forward validated strategy\n"
-            f"├ 55.8% WR, +1.08R/trade\n"
-            f"└ Limit orders match backtest\n\n"
-            f"📊 **Signal Types (BEARISH ONLY)**\n"
-            f"├ 📉 Hidden Bearish: 67.9% WR\n"
-            f"├ 📉 Regular Bearish: 33.3% WR\n"
+            f"🚀 **HIDDEN BEARISH (97 Symbols)**\n"
+            f"├ 400-symbol walk-forward validated\n"
+            f"├ WR: 40-70.6% (avg 48.8%)\n"
+            f"├ Potential: +3,848R\n"
+            f"└ EV: +0.17R/trade\n\n"
+            f"📊 **Signal Types**\n"
+            f"├ ⚡ Hidden Bearish: ACTIVE\n"
+            f"├ ⏭️ Regular Bearish: SKIPPED\n"
             f"├ ⏭️ Bullish: SKIPPED\n"
             f"└ ⏭️ Hidden Bullish: SKIPPED\n\n"
-            f"🎯 **Strategy**: RSI Divergence\n"
-            f"⏱️ **Timeframe**: 1 Hour (60 min)\n"
-            f"📚 **Top Symbols**: AVAXUSDT, ADAUSDT, DOTUSDT"
+            f"🏆 **Top 5 (70%+ WR)**\n"
+            f"├ AVAXUSDT: 70.6% WR\n"
+            f"├ LYNUSDT: 69.8% WR\n"
+            f"├ CTCUSDT: 69.2% WR\n"
+            f"├ MORPHOUSDT: 69.2% WR\n"
+            f"└ KAITOUSDT: 64.9% WR"
         )
 
     async def run(self):
@@ -2452,9 +2456,9 @@ class DivergenceBot:
         divergence_symbols = self.cfg.get('trading', {}).get('divergence_symbols', [])
         
         if hidden_bearish_only and divergence_symbols:
-            # Use the walk-forward validated top 20 symbols
+            # Use the walk-forward validated 97 symbols
             self.all_symbols = divergence_symbols
-            logger.info(f"📊 Using TOP 20 validated symbols for hidden_bearish mode ({len(self.all_symbols)} symbols)")
+            logger.info(f"📊 Using {len(self.all_symbols)} validated symbols for hidden_bearish mode (40-70.6% WR)")
         else:
             # Fetch top 200 by volume
             try:
@@ -2495,9 +2499,9 @@ class DivergenceBot:
                            and f"{c['symbol']}:{c['side']}:{c['combo']}" not in self.learner.promoted])
 
         # Send success notification
-        bearish_mode = self.config.get('trading', {}).get('bearish_only', False)
-        hidden_bearish_mode = self.config.get('trading', {}).get('hidden_bearish_only', False)
-        timeframe = self.config.get('trading', {}).get('timeframe', '60')
+        bearish_mode = self.cfg.get('trading', {}).get('bearish_only', False)
+        hidden_bearish_mode = self.cfg.get('trading', {}).get('hidden_bearish_only', False)
+        timeframe = self.cfg.get('trading', {}).get('timeframe', '60')
         
         if hidden_bearish_mode:
             mode_text = "🎯 HIDDEN BEARISH ONLY (97 Symbols)"
@@ -2529,7 +2533,7 @@ class DivergenceBot:
                 f"📊 **Strategy**: RSI Divergence\n"
                 f"⏱️ **Timeframe**: {timeframe} minutes\n"
                 f"🎯 **R:R**: 3:1\n"
-                f"📈 **Walk-Forward**: 55.8% WR | +1.08R/trade\n\n"
+                f"📈 **Walk-Forward**: 48.8% avg WR | +0.17R/trade\n\n"
                 f"🚀 **Mode**: {'BEARISH ONLY' if bearish_mode else 'ALL SIGNALS'}\n\n"
                 f"📚 Scanning: **{len(self.all_symbols)}** symbols\n"
                 f"⚙️ Risk: **{self.risk_config['value']}%** per trade\n\n"

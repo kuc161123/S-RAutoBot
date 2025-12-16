@@ -465,6 +465,28 @@ class Bybit:
             logger.debug(f"Failed to get executions for {symbol}: {e}")
             return []
     
+    def get_closed_pnl(self, symbol: str, limit: int = 10) -> list:
+        """Get closed PnL records for a symbol.
+        
+        This returns the ACTUAL realized PnL from Bybit, not a guess.
+        Use this to definitively determine if a trade was a win or loss.
+        
+        Returns list of closed trades with closedPnl, avgEntryPrice, avgExitPrice etc.
+        """
+        try:
+            params = {
+                "category": "linear",
+                "symbol": symbol,
+                "limit": str(min(max(1, limit), 200)),
+            }
+            resp = self._request("GET", "/v5/position/closed-pnl", params)
+            if resp and resp.get("result"):
+                return resp["result"].get("list", []) or []
+            return []
+        except Exception as e:
+            logger.debug(f"Failed to get closed pnl for {symbol}: {e}")
+            return []
+    
     def get_position(self, symbol:str) -> Optional[Dict[str, Any]]:
         """Get current position for a symbol"""
         try:

@@ -1883,9 +1883,15 @@ class DivergenceBot:
                 logger.debug(f"Calculated swing from df: low={swing_low_val}, high={swing_high_val}")
             
             if side == 'long':
-                # SL at recent swing low
+                # SL at recent swing low - MUST BE BELOW ENTRY
                 sl = round_to_tick(swing_low_val)
-                sl_distance = abs(actual_entry - sl)
+                
+                # CRITICAL: Validate SL is BELOW entry for long
+                if sl >= actual_entry:
+                    logger.warning(f"⚠️ SKIP {sym}: Swing low ({sl}) is ABOVE entry ({actual_entry})! Setup invalidated.") 
+                    return
+                
+                sl_distance = actual_entry - sl  # Must be positive (SL below entry)
                 
                 # Minimum SL: 0.3×ATR  (avoid too tight)
                 # Maximum SL: 2.0×ATR  (avoid too wide)
@@ -1901,9 +1907,15 @@ class DivergenceBot:
                 
                 tp = round_to_tick(actual_entry + (RR_RATIO * sl_distance))
             else:
-                # SL at recent swing high
+                # SL at recent swing high - MUST BE ABOVE ENTRY
                 sl = round_to_tick(swing_high_val)
-                sl_distance = abs(sl - actual_entry)
+                
+                # CRITICAL: Validate SL is ABOVE entry for short
+                if sl <= actual_entry:
+                    logger.warning(f"⚠️ SKIP {sym}: Swing high ({sl}) is BELOW entry ({actual_entry})! Setup invalidated.")
+                    return
+                
+                sl_distance = sl - actual_entry  # Must be positive (SL above entry)
                 
                 # Min/Max SL constraints
                 min_sl_dist = 0.3 * constraint_atr
@@ -2603,51 +2615,64 @@ class DivergenceBot:
                                 tp = trade_info.get('tp', 0)
                                 sl = trade_info.get('sl', 0)
                                 
-                                # Determine outcome based on which level was hit (TP or SL)
-                                # CRITICAL FIX: Get ACTUAL exit price from Bybit, don't guess!
-                                if entry and tp and sl:
-                                    # First, try to get actual exit price from Bybit executions
+                                # =========================================================
+                                # DEFINITIVE WIN/LOSS: Use Bybit Closed PnL API
+                                # =========================================================
+                                # This returns the ACTUAL realized PnL, no guessing!
+                                outcome = None
+                                exit_price = None
+                                
+                                try:
+                                    closed_pnl_records = self.broker.get_closed_pnl(sym, limit=5)
+                                    if closed_pnl_records:
+                                        # Find the most recent closed position for this symbol
+                                        for record in closed_pnl_records:
+                                            if record.get('symbol') == sym:
+                                                actual_pnl = float(record.get('closedPnl', 0))
+                                                exit_price = float(record.get('avgExitPrice', 0))
+                                                
+                                                # DEFINITIVE: Positive PnL = WIN, Negative = LOSS
+                                                if actual_pnl > 0:
+                                                    outcome = "win"
+                                                else:
+                                                    outcome = "loss"
+                                                
+                                                logger.info(f"📊 CLOSED PnL: {sym} PnL=${actual_pnl:.4f} -> {outcome.upper()}")
+                                                break
+                                except Exception as e:
+                                    logger.debug(f"Could not get closed pnl for {sym}: {e}")
+                                
+                                # Fallback: Use execution data if closed PnL not available
+                                if outcome is None and entry and tp and sl:
                                     actual_exit_price = None
                                     open_time_ms = int(trade_info.get('open_time', 0) * 1000)
                                     try:
                                         executions = self.broker.get_executions(sym, limit=20)
                                         if executions:
-                                            # Find the CLOSING execution:
-                                            # 1. Must be AFTER trade open time
-                                            # 2. Look for execution closest to TP or SL (that's the exit)
                                             for exec_record in executions:
                                                 if exec_record.get('symbol') != sym:
                                                     continue
-                                                    
-                                                # Check execution time is after we opened
                                                 exec_time = int(exec_record.get('execTime', 0))
                                                 if exec_time <= open_time_ms:
-                                                    continue  # This is the entry, skip
-                                                
+                                                    continue
                                                 exec_price = float(exec_record.get('execPrice', 0))
                                                 if exec_price <= 0:
                                                     continue
-                                                    
-                                                # Check if this price is near TP or SL (it's the exit)
                                                 dist_to_tp = abs(exec_price - tp)
-                                                dist_to_sl = abs(exec_price - sl) 
+                                                dist_to_sl = abs(exec_price - sl)
                                                 dist_to_entry = abs(exec_price - entry)
-                                                
-                                                # If closer to TP/SL than to entry, this is the exit
                                                 if dist_to_tp < dist_to_entry or dist_to_sl < dist_to_entry:
                                                     actual_exit_price = exec_price
                                                     break
                                     except Exception as e:
                                         logger.debug(f"Could not get executions for {sym}: {e}")
                                     
-                                    # Determine outcome based on actual exit or TP/SL proximity
                                     if actual_exit_price and actual_exit_price > 0:
-                                        # Use ACTUAL exit price
                                         tp_dist = abs(actual_exit_price - tp)
                                         sl_dist = abs(actual_exit_price - sl)
                                         outcome = "win" if tp_dist < sl_dist else "loss"
                                         exit_price = actual_exit_price
-                                        logger.info(f"📍 ACTUAL EXIT: {sym} @ ${actual_exit_price:.6f} (TP=${tp:.6f}, SL=${sl:.6f}) -> {outcome.upper()}")
+                                        logger.info(f"📍 EXEC EXIT: {sym} @ ${actual_exit_price:.6f} -> {outcome.upper()}")
                                     else:
                                         # Fallback: Check if TP or SL was hit using candle data
                                         # MATCH BACKTEST: SL checked FIRST (pessimistic)

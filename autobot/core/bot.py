@@ -598,12 +598,12 @@ class DivergenceBot:
     async def cmd_backtest(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show comprehensive live vs backtest performance comparison"""
         try:
-            # === BACKTEST REFERENCE (Hidden Bearish Strategy) ===
-            # From 400-symbol walk-forward validation
-            BT_WIN_RATE = 48.8  # % avg across 97 symbols (range: 40-70%)
-            BT_EV = 0.95        # R per trade = (0.488 * 3) - (0.512 * 1) = 0.95R
+            # === BACKTEST REFERENCE (Hidden Bearish Strategy 1H) ===
+            # From verified 1H candle-by-candle backtest (3:1 Pivot)
+            BT_WIN_RATE = 54.8  # % (Verified on 150 top symbols)
+            BT_EV = 1.19        # R per trade
             BT_RR = 3.0         # Risk:Reward
-            BT_TRADES_PER_DAY = 67  # ~4050 trades / 60 days (3848R / 0.95R per trade)
+            BT_TRADES_PER_DAY = 38  # ~38 trades/day (2281 trades / 60 days)
             
             # === LIVE DATA ===
             uptime_hrs = (time.time() - self.learner.started_at) / 3600
@@ -690,10 +690,10 @@ class DivergenceBot:
                 f"└ {rating_detail}\n\n"
                 
                 f"📋 **BACKTEST REFERENCE**\n"
-                f"├ WR: {BT_WIN_RATE}% (Hidden Bearish)\n"
+                f"├ WR: {BT_WIN_RATE}% (1H Verified)\n"
                 f"├ EV: +{BT_EV}R/trade\n"
                 f"├ R:R: {BT_RR}:1\n"
-                f"└ Total: +3,848R (60 days, 97 symbols)\n"
+                f"└ Total: +2,719R (60 days, 150 syms)\n"
             )
             
             msg += "\n━━━━━━━━━━━━━━━━━━━━\n"

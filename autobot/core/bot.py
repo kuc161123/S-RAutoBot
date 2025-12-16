@@ -1705,7 +1705,16 @@ class DivergenceBot:
         Uses pivot points (recent swing low/high) for SL placement.
         Backtest validated: 57.5% WR, +1.30 EV, +40% more profit vs ATR.
         """
-        row = df.iloc[-1]  # Get last row for current price data
+        # CRITICAL FIX: Drop the forming candle FIRST
+        # The df passed in contains the forming (incomplete) candle at index -1
+        # We need to use CLOSED candles only for all calculations
+        if len(df) < 2:
+            logger.warning(f"Skip {sym}: Not enough candles")
+            return
+        
+        # Drop the last row (forming candle) to work with closed data only
+        df_closed = df.iloc[:-1].copy()
+        row = df_closed.iloc[-1]  # Now this is the latest CLOSED candle
         try:
             # Check if already in position or have pending order
             pos = self.broker.get_position(sym)
@@ -1842,11 +1851,10 @@ class DivergenceBot:
             RR_RATIO = 3.0
             LOOKBACK = 15  # Bars to look back for swing
             
-            # MATCH BACKTEST: Exclude current forming candle (entry candle) from swing search
-            # We want SL based on the PATTERN (previous candles), not the entry candle
-            # Use iloc[:-1] to drop last row
-            recent_lows = df['low'].iloc[:-1].tail(LOOKBACK).values
-            recent_highs = df['high'].iloc[:-1].tail(LOOKBACK).values
+            # SL based on CLOSED candles (forming candle already dropped in df_closed)
+            # Look back 15 candles for swing high/low
+            recent_lows = df_closed['low'].tail(LOOKBACK).values
+            recent_highs = df_closed['high'].tail(LOOKBACK).values
             
             if side == 'long':
                 # SL at recent swing low

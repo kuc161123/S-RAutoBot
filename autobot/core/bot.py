@@ -545,6 +545,8 @@ class DivergenceBot:
                 
                 f"🎯 **STRATEGY**\n"
                 f"├ Type: RSI Divergence\n"
+                f"├ Timeframe: {self.config.get('trading', {}).get('timeframe', '60')}min\n"
+                f"├ Mode: {'BEARISH ONLY' if self.config.get('trading', {}).get('bearish_only', False) else 'All Signals'}\n"
                 f"├ SL: Pivot (swing low/high)\n"
                 f"├ R:R: 3:1\n"
                 f"└ Symbols: {scanning_symbols}\n\n"
@@ -1223,8 +1225,9 @@ class DivergenceBot:
         BACKTEST MATCHED: Only detects on NEW candle close + signal cooldown
         """
         try:
-            # Use 15-minute timeframe (matches walk-forward validated backtest)
-            klines = self.broker.get_klines(sym, '15', limit=100)
+            # Use timeframe from config (1H = walk-forward validated, bearish-only strategy)
+            timeframe = self.config.get('trading', {}).get('timeframe', '60')
+            klines = self.broker.get_klines(sym, timeframe, limit=100)
             if not klines or len(klines) < 50: 
                 return
             
@@ -1352,6 +1355,14 @@ class DivergenceBot:
                 
                 # Log signal detection
                 logger.info(f"📊 DIVERGENCE: {sym} {side.upper()} {combo} (RSI: {signal.rsi_value:.1f})")
+                
+                # ====================================================
+                # BEARISH-ONLY FILTER (walk-forward validated)
+                # ====================================================
+                bearish_only = self.config.get('trading', {}).get('bearish_only', False)
+                if bearish_only and side == 'long':
+                    logger.info(f"⏭️ BEARISH-ONLY SKIP: {sym} {combo} (bullish signal ignored)")
+                    continue
                 
                 # Get BTC price for context
                 btc_price = 0
@@ -2328,18 +2339,18 @@ class DivergenceBot:
         logger.info("🚀 RSI Divergence Strategy - DIRECT EXECUTION MODE")
         
         await self.send_telegram(
-            f"🚀 **DIRECT EXECUTION MODE**\n"
-            f"├ All divergence signals trade\n"
-            f"├ No promotion waiting\n"
-            f"└ Backtest: 61.3% WR\n\n"
-            f"📊 **Signal Types (ALL ACTIVE)**\n"
-            f"├ 📉 Regular Bearish: 66% WR\n"
-            f"├ 📈 Regular Bullish: 64% WR\n"
-            f"├ 🔽 Hidden Bearish: 59% WR\n"
-            f"└ 🔼 Hidden Bullish: 55% WR\n\n"
+            f"🚀 **1H BEARISH-ONLY MODE**\n"
+            f"├ Walk-forward validated strategy\n"
+            f"├ 55.8% WR, +1.08R/trade\n"
+            f"└ Limit orders match backtest\n\n"
+            f"📊 **Signal Types (BEARISH ONLY)**\n"
+            f"├ 📉 Hidden Bearish: 67.9% WR\n"
+            f"├ 📉 Regular Bearish: 33.3% WR\n"
+            f"├ ⏭️ Bullish: SKIPPED\n"
+            f"└ ⏭️ Hidden Bullish: SKIPPED\n\n"
             f"🎯 **Strategy**: RSI Divergence\n"
-            f"⏱️ **Timeframe**: 15 minutes\n"
-            f"📚 **Symbols**: Top 200 by volume"
+            f"⏱️ **Timeframe**: 1 Hour (60 min)\n"
+            f"📚 **Top Symbols**: AVAXUSDT, ADAUSDT, DOTUSDT"
         )
 
     async def run(self):
@@ -2466,18 +2477,21 @@ class DivergenceBot:
                            and f"{c['symbol']}:{c['side']}:{c['combo']}" not in self.learner.promoted])
 
         # Send success notification
+        bearish_mode = self.config.get('trading', {}).get('bearish_only', False)
+        timeframe = self.config.get('trading', {}).get('timeframe', '60')
+        
         await self.send_telegram(
             f"✅ **RSI Divergence Bot Online!**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📊 **Strategy**: RSI Divergence\n"
-            f"⏱️ **Timeframe**: 15 minutes\n"
-            f"🎯 **R:R**: 2:1\n"
-            f"📈 **Backtest**: 61.3% WR | +0.84 EV\n\n"
-            f"🚀 **Divergence Types (ALL ACTIVE)**\n"
-            f"├ 📉 Regular Bearish: 66% WR\n"
-            f"├ 📈 Regular Bullish: 64% WR\n"
-            f"├ 🔽 Hidden Bearish: 59% WR\n"
-            f"└ 🔼 Hidden Bullish: 55% WR\n\n"
+            f"⏱️ **Timeframe**: {timeframe} minutes\n"
+            f"🎯 **R:R**: 3:1\n"
+            f"📈 **Walk-Forward**: 55.8% WR | +1.08R/trade\n\n"
+            f"🚀 **Mode**: {'BEARISH ONLY' if bearish_mode else 'ALL SIGNALS'}\n"
+            f"├ 📉 Hidden Bearish: 67.9% WR\n"
+            f"├ 📉 Regular Bearish: 33.3% WR\n"
+            f"├ {'⏭️' if bearish_mode else '📈'} Bullish: {'SKIPPED' if bearish_mode else 'Active'}\n"
+            f"└ {'⏭️' if bearish_mode else '🔼'} Hidden Bullish: {'SKIPPED' if bearish_mode else 'Active'}\n\n"
             f"📚 Scanning: **{len(self.all_symbols)}** symbols\n"
             f"⚙️ Risk: **{self.risk_config['value']}%** per trade\n\n"
             f"💾 System Health:\n"

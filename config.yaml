@@ -403,8 +403,8 @@ trade:
   - REDUSDT
   - REQUSDT
   - ROSEUSDT
-  timeframe: '15'
-  use_ema: false
+  timeframe: '60'
+  bearish_only: true   # Only trade bearish divergences (validated by walk-forward backtest)
   use_enhanced_parallel: true
   use_ml_dynamic_risk: false
   use_ml_scoring: false

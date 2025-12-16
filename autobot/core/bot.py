@@ -545,8 +545,8 @@ class DivergenceBot:
                 
                 f"🎯 **STRATEGY**\n"
                 f"├ Type: RSI Divergence\n"
-                f"├ TF: {self.cfg.get('trading', {}).get('timeframe', '60')}min (1H)\n"
-                f"├ Mode: {'⚡ HIDDEN BEARISH (97 Symbols)' if self.cfg.get('trading', {}).get('hidden_bearish_only', False) else ('BEARISH ONLY' if self.cfg.get('trading', {}).get('bearish_only', False) else 'All Signals')}\n"
+                f"├ TF: {self.cfg.get('trade', {}).get('timeframe', '60')}min (1H)\n"
+                f"├ Mode: {'⚡ HIDDEN BEARISH (97 Symbols)' if self.cfg.get('trade', {}).get('hidden_bearish_only', False) else ('BEARISH ONLY' if self.cfg.get('trade', {}).get('bearish_only', False) else 'All Signals')}\n"
                 f"├ SL: Pivot | R:R: 3:1\n"
                 f"├ WR: 48.8% avg (40-70%)\n"
                 f"└ Scanning: {scanning_symbols} symbols\n\n"
@@ -1226,7 +1226,7 @@ class DivergenceBot:
         """
         try:
             # Use timeframe from config (1H = walk-forward validated, bearish-only strategy)
-            timeframe = self.cfg.get('trading', {}).get('timeframe', '60')
+            timeframe = self.cfg.get('trade', {}).get('timeframe', '60')
             klines = self.broker.get_klines(sym, timeframe, limit=100)
             if not klines or len(klines) < 50: 
                 return
@@ -1359,7 +1359,7 @@ class DivergenceBot:
                 # ====================================================
                 # BEARISH-ONLY FILTER (walk-forward validated)
                 # ====================================================
-                bearish_only = self.cfg.get('trading', {}).get('bearish_only', False)
+                bearish_only = self.cfg.get('trade', {}).get('bearish_only', False)
                 if bearish_only and side == 'long':
                     logger.info(f"⏭️ BEARISH-ONLY SKIP: {sym} {combo} (bullish signal ignored)")
                     continue
@@ -1367,7 +1367,7 @@ class DivergenceBot:
                 # ====================================================
                 # HIDDEN BEARISH-ONLY FILTER (42-62% WR validated)
                 # ====================================================
-                hidden_bearish_only = self.cfg.get('trading', {}).get('hidden_bearish_only', False)
+                hidden_bearish_only = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
                 if hidden_bearish_only and combo != 'hidden_bearish':
                     logger.info(f"⏭️ HIDDEN-BEARISH-ONLY SKIP: {sym} {combo} (only hidden_bearish allowed)")
                     continue
@@ -2452,8 +2452,8 @@ class DivergenceBot:
         
         # Fetch TOP 200 symbols by 24h volume (SAME AS BACKTEST)
         # Check if using walk-forward validated divergence_symbols (hidden_bearish mode)
-        hidden_bearish_only = self.cfg.get('trading', {}).get('hidden_bearish_only', False)
-        divergence_symbols = self.cfg.get('trading', {}).get('divergence_symbols', [])
+        hidden_bearish_only = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
+        divergence_symbols = self.cfg.get('trade', {}).get('divergence_symbols', [])
         
         if hidden_bearish_only and divergence_symbols:
             # Use the walk-forward validated 97 symbols
@@ -2499,9 +2499,9 @@ class DivergenceBot:
                            and f"{c['symbol']}:{c['side']}:{c['combo']}" not in self.learner.promoted])
 
         # Send success notification
-        bearish_mode = self.cfg.get('trading', {}).get('bearish_only', False)
-        hidden_bearish_mode = self.cfg.get('trading', {}).get('hidden_bearish_only', False)
-        timeframe = self.cfg.get('trading', {}).get('timeframe', '60')
+        bearish_mode = self.cfg.get('trade', {}).get('bearish_only', False)
+        hidden_bearish_mode = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
+        timeframe = self.cfg.get('trade', {}).get('timeframe', '60')
         
         if hidden_bearish_mode:
             mode_text = "🎯 HIDDEN BEARISH ONLY (97 Symbols)"

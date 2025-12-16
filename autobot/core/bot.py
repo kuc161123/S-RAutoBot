@@ -1559,7 +1559,7 @@ class DivergenceBot:
                         'is_auto_promoted': order_info.get('is_auto_promoted', False)
                     }
                     
-                    self.trades_executed += 1
+                    self.trades_executed += 1  # Only count when order actually FILLS
                     del self.pending_limit_orders[sym]
                     
                     # Calculate values for notification
@@ -1587,7 +1587,7 @@ class DivergenceBot:
                         f"🛡️ **TP/SL PROTECTION**\n"
                         f"├ Take Profit: ${tp:.4f} (+{tp_pct:.2f}%)\n"
                         f"├ Stop Loss: ${sl:.4f} (-{sl_pct:.2f}%)\n"
-                        f"└ R:R: **{order_info['optimal_rr']}:1**"
+                        f"└ R:R: **{order_info.get('optimal_rr', 3.0)}:1**"
                     )
                     continue
                 
@@ -1953,10 +1953,12 @@ class DivergenceBot:
                 'sl': sl,
                 'qty': qty,
                 'created_at': time.time(),
-                'is_auto_promoted': False
+                'is_auto_promoted': False,
+                'optimal_rr': actual_rr  # Store R:R for notification
             }
             
-            self.trades_executed += 1
+            # NOTE: trades_executed is incremented when order FILLS, not here
+            # This prevents double-counting
             
             # Note: active_trades is tracked in monitor_pending_limit_orders when order FILLS
             # Don't track here since the order is still pending
@@ -2627,12 +2629,16 @@ class DivergenceBot:
                     await self.check_pending_orders()
                     
                     # Check for closed trades and send notifications
+                    if self.active_trades:
+                        logger.info(f"🔍 Checking {len(self.active_trades)} active trades for closure: {list(self.active_trades.keys())}")
                     for sym in list(self.active_trades.keys()):
                         try:
                             pos = self.broker.get_position(sym)
                             has_position = pos and float(pos.get('size', 0)) > 0
+                            logger.debug(f"Position check {sym}: has_position={has_position}, size={pos.get('size') if pos else 0}")
                             
                             if not has_position:
+                                logger.info(f"✅ TRADE CLOSED DETECTED: {sym} - resolving outcome") 
                                 # Trade closed - determine outcome
                                 trade_info = self.active_trades.pop(sym)
                                 
@@ -2796,7 +2802,9 @@ class DivergenceBot:
                                             # Demote immediately - remove from YAML
                                             await self._immediate_demote(sym, side, combo, lb_wr, updated_stats['total'])
                         except Exception as e:
-                            logger.debug(f"Trade close check error for {sym}: {e}")
+                            logger.error(f"Trade close check error for {sym}: {e}")
+                            import traceback
+                            logger.error(traceback.format_exc())
                     
                     # Clear learner's last_resolved (we handle our own close notifications now)
                     if hasattr(self.learner, 'last_resolved'):
@@ -2809,7 +2817,9 @@ class DivergenceBot:
                         self.learner.update_btc_price(btc_price)
                         
                 except Exception as e:
-                    logger.debug(f"Learner update error: {e}")
+                    logger.error(f"Learner update error: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
                 
                 # Daily summary (every 24 hours)
                 await self.send_daily_summary()

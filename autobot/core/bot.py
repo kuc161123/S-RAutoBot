@@ -1307,6 +1307,13 @@ class DivergenceBot:
                 atr = last_row['atr']
                 entry = last_row['close']
                 
+                # CRITICAL: Calculate swing low/high NOW at signal time
+                # Backtest uses: range(start_lookback, idx + 1) which is signal candle + 14 prior
+                # We must NOT recalculate at execution time (new candle would change the result)
+                SWING_LOOKBACK = 15
+                signal_swing_low = df['low'].tail(SWING_LOOKBACK).min()
+                signal_swing_high = df['high'].tail(SWING_LOOKBACK).max()
+                
                 # ====================================================
                 # SHADOW AUDIT: Verify decision against backtest logic
                 # ====================================================
@@ -1379,6 +1386,8 @@ class DivergenceBot:
                         'signal_type': signal_type,
                         'signal_price': entry,
                         'atr': atr,
+                        'swing_low': signal_swing_low,  # Calculated at signal time
+                        'swing_high': signal_swing_high,  # Calculated at signal time
                         'detected_at': time.time()
                     }
                     logger.info(f"📋 QUEUED: {sym} {side} {combo} - will execute on next candle open")
@@ -1699,11 +1708,17 @@ class DivergenceBot:
     # NOTE: update_phantoms() removed - phantom tracking now handled by learner.update_signals()
 
 
-    async def execute_divergence_trade(self, sym, side, df, combo, signal_type):
+    async def execute_divergence_trade(self, sym, side, df, combo, signal_type, 
+                                         signal_atr=None, signal_swing_low=None, signal_swing_high=None):
         """Execute divergence trade with pivot-based SL and 3:1 R:R.
         
         Uses pivot points (recent swing low/high) for SL placement.
         Backtest validated: 57.5% WR, +1.30 EV, +40% more profit vs ATR.
+        
+        Args:
+            signal_atr: ATR calculated at signal time (for SL constraints)
+            signal_swing_low: Swing low calculated at signal time
+            signal_swing_high: Swing high calculated at signal time
         """
         # CRITICAL FIX: Drop the forming candle FIRST
         # The df passed in contains the forming (incomplete) candle at index -1
@@ -1851,21 +1866,31 @@ class DivergenceBot:
             RR_RATIO = 3.0
             LOOKBACK = 15  # Bars to look back for swing
             
-            # SL based on CLOSED candles (forming candle already dropped in df_closed)
-            # Look back 15 candles for swing high/low
-            recent_lows = df_closed['low'].tail(LOOKBACK).values
-            recent_highs = df_closed['high'].tail(LOOKBACK).values
+            # CRITICAL: Use signal-time swing values if provided (matches backtest exactly)
+            # Backtest calculates SL at signal time, not execution time
+            if signal_swing_low is not None and signal_swing_high is not None:
+                # Use stored values from signal time
+                swing_low_val = signal_swing_low
+                swing_high_val = signal_swing_high
+                # Use signal-time ATR for constraints if provided
+                constraint_atr = signal_atr if signal_atr else atr
+                logger.debug(f"Using signal-time swing: low={swing_low_val}, high={swing_high_val}")
+            else:
+                # Fallback: calculate from current df (backward compatibility)
+                swing_low_val = df_closed['low'].tail(LOOKBACK).min()
+                swing_high_val = df_closed['high'].tail(LOOKBACK).max()
+                constraint_atr = atr
+                logger.debug(f"Calculated swing from df: low={swing_low_val}, high={swing_high_val}")
             
             if side == 'long':
                 # SL at recent swing low
-                swing_low = min(recent_lows)
-                sl = round_to_tick(swing_low)
+                sl = round_to_tick(swing_low_val)
                 sl_distance = abs(actual_entry - sl)
                 
                 # Minimum SL: 0.3×ATR  (avoid too tight)
                 # Maximum SL: 2.0×ATR  (avoid too wide)
-                min_sl_dist = 0.3 * atr
-                max_sl_dist = 2.0 * atr
+                min_sl_dist = 0.3 * constraint_atr
+                max_sl_dist = 2.0 * constraint_atr
                 
                 if sl_distance < min_sl_dist:
                     sl_distance = min_sl_dist
@@ -1877,13 +1902,12 @@ class DivergenceBot:
                 tp = round_to_tick(actual_entry + (RR_RATIO * sl_distance))
             else:
                 # SL at recent swing high
-                swing_high = max(recent_highs)
-                sl = round_to_tick(swing_high)
+                sl = round_to_tick(swing_high_val)
                 sl_distance = abs(sl - actual_entry)
                 
                 # Min/Max SL constraints
-                min_sl_dist = 0.3 * atr
-                max_sl_dist = 2.0 * atr
+                min_sl_dist = 0.3 * constraint_atr
+                max_sl_dist = 2.0 * constraint_atr
                 
                 if sl_distance < min_sl_dist:
                     sl_distance = min_sl_dist
@@ -2512,7 +2536,10 @@ class DivergenceBot:
                                         entry_info['side'], 
                                         df, 
                                         entry_info['combo'], 
-                                        entry_info['signal_type']
+                                        entry_info['signal_type'],
+                                        entry_info.get('atr'),
+                                        entry_info.get('swing_low'),
+                                        entry_info.get('swing_high')
                                     )
                             # Remove from pending after execution attempt
                             del self.pending_entries[sym]

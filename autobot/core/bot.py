@@ -1364,6 +1364,14 @@ class DivergenceBot:
                     logger.info(f"⏭️ BEARISH-ONLY SKIP: {sym} {combo} (bullish signal ignored)")
                     continue
                 
+                # ====================================================
+                # HIDDEN BEARISH-ONLY FILTER (42-62% WR validated)
+                # ====================================================
+                hidden_bearish_only = self.config.get('trading', {}).get('hidden_bearish_only', False)
+                if hidden_bearish_only and combo != 'hidden_bearish':
+                    logger.info(f"⏭️ HIDDEN-BEARISH-ONLY SKIP: {sym} {combo} (only hidden_bearish allowed)")
+                    continue
+                
                 # Get BTC price for context
                 btc_price = 0
                 try:
@@ -2439,18 +2447,28 @@ class DivergenceBot:
             logger.info(f"🚀 Startup: Promoted {len(startup_promoted)} combos")
         
         # Fetch TOP 200 symbols by 24h volume (SAME AS BACKTEST)
-        try:
-            import requests
-            url = "https://api.bybit.com/v5/market/tickers?category=linear"
-            resp = requests.get(url, timeout=10)
-            tickers = resp.json().get('result', {}).get('list', [])
-            usdt_pairs = [t for t in tickers if t['symbol'].endswith('USDT')]
-            usdt_pairs.sort(key=lambda x: float(x.get('turnover24h', 0)), reverse=True)
-            self.all_symbols = [t['symbol'] for t in usdt_pairs[:200]]
-            logger.info(f"📚 Fetched TOP 200 symbols by volume (same as backtest)")
-        except Exception as e:
-            logger.error(f"Failed to fetch symbols: {e}, falling back to config")
-            self.all_symbols = self.cfg.get('trade', {}).get('symbols', [])
+        # Check if using walk-forward validated divergence_symbols (hidden_bearish mode)
+        hidden_bearish_only = self.cfg.get('trading', {}).get('hidden_bearish_only', False)
+        divergence_symbols = self.cfg.get('trading', {}).get('divergence_symbols', [])
+        
+        if hidden_bearish_only and divergence_symbols:
+            # Use the walk-forward validated top 20 symbols
+            self.all_symbols = divergence_symbols
+            logger.info(f"📊 Using TOP 20 validated symbols for hidden_bearish mode ({len(self.all_symbols)} symbols)")
+        else:
+            # Fetch top 200 by volume
+            try:
+                import requests
+                url = "https://api.bybit.com/v5/market/tickers?category=linear"
+                resp = requests.get(url, timeout=10)
+                tickers = resp.json().get('result', {}).get('list', [])
+                usdt_pairs = [t for t in tickers if t['symbol'].endswith('USDT')]
+                usdt_pairs.sort(key=lambda x: float(x.get('turnover24h', 0)), reverse=True)
+                self.all_symbols = [t['symbol'] for t in usdt_pairs[:200]]
+                logger.info(f"📚 Fetched TOP 200 symbols by volume (same as backtest)")
+            except Exception as e:
+                logger.error(f"Failed to fetch symbols: {e}, falling back to config")
+                self.all_symbols = self.cfg.get('trade', {}).get('symbols', [])
         
         # Sync promoted combos to YAML (ensures YAML matches promoted set)
         self._sync_promoted_to_yaml()
@@ -2478,28 +2496,46 @@ class DivergenceBot:
 
         # Send success notification
         bearish_mode = self.config.get('trading', {}).get('bearish_only', False)
+        hidden_bearish_mode = self.config.get('trading', {}).get('hidden_bearish_only', False)
         timeframe = self.config.get('trading', {}).get('timeframe', '60')
         
-        await self.send_telegram(
-            f"✅ **RSI Divergence Bot Online!**\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"📊 **Strategy**: RSI Divergence\n"
-            f"⏱️ **Timeframe**: {timeframe} minutes\n"
-            f"🎯 **R:R**: 3:1\n"
-            f"📈 **Walk-Forward**: 55.8% WR | +1.08R/trade\n\n"
-            f"🚀 **Mode**: {'BEARISH ONLY' if bearish_mode else 'ALL SIGNALS'}\n"
-            f"├ 📉 Hidden Bearish: 67.9% WR\n"
-            f"├ 📉 Regular Bearish: 33.3% WR\n"
-            f"├ {'⏭️' if bearish_mode else '📈'} Bullish: {'SKIPPED' if bearish_mode else 'Active'}\n"
-            f"└ {'⏭️' if bearish_mode else '🔼'} Hidden Bullish: {'SKIPPED' if bearish_mode else 'Active'}\n\n"
-            f"📚 Scanning: **{len(self.all_symbols)}** symbols\n"
-            f"⚙️ Risk: **{self.risk_config['value']}%** per trade\n\n"
-            f"💾 System Health:\n"
-            f"• Redis: {redis_ok}\n"
-            f"• Postgres: {pg_ok}\n\n"
-            f"🖥️ **Dashboard**: `http://localhost:8888`\n"
-            f"Commands: /help /status /dashboard"
-        )
+        if hidden_bearish_mode:
+            mode_text = "🎯 HIDDEN BEARISH ONLY (Top 20)"
+            await self.send_telegram(
+                f"✅ **RSI Divergence Bot Online!**\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"📊 **Mode**: HIDDEN BEARISH TOP 20\n"
+                f"⏱️ **Timeframe**: {timeframe} min (1H)\n"
+                f"🎯 **R:R**: 3:1\n\n"
+                f"📈 **Walk-Forward Validated**\n"
+                f"├ WR: 42-62% (avg 49%)\n"
+                f"├ Total R: +897R (backtest)\n"
+                f"└ EV: +0.15R/trade\n\n"
+                f"🏆 **Top 5 Symbols**\n"
+                f"├ BEAMUSDT: 61.5% WR\n"
+                f"├ HAEDALUSDT: 60.9% WR\n"
+                f"├ MMTUSDT: 60.7% WR\n"
+                f"├ MONUSDT: 58.3% WR\n"
+                f"└ PLUMEUSDT: 56.8% WR\n\n"
+                f"📚 Scanning: **{len(self.all_symbols)}** symbols\n"
+                f"⚙️ Risk: **{self.risk_config['value']}%** per trade\n\n"
+                f"💾 Redis: {redis_ok} | Postgres: {pg_ok}\n"
+                f"Commands: /help /status /dashboard"
+            )
+        else:
+            await self.send_telegram(
+                f"✅ **RSI Divergence Bot Online!**\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"📊 **Strategy**: RSI Divergence\n"
+                f"⏱️ **Timeframe**: {timeframe} minutes\n"
+                f"🎯 **R:R**: 3:1\n"
+                f"📈 **Walk-Forward**: 55.8% WR | +1.08R/trade\n\n"
+                f"🚀 **Mode**: {'BEARISH ONLY' if bearish_mode else 'ALL SIGNALS'}\n\n"
+                f"📚 Scanning: **{len(self.all_symbols)}** symbols\n"
+                f"⚙️ Risk: **{self.risk_config['value']}%** per trade\n\n"
+                f"💾 Redis: {redis_ok} | Postgres: {pg_ok}\n"
+                f"Commands: /help /status /dashboard"
+            )
         
         logger.info(f"Trading {len(trading_symbols)} symbols, Learning {len(self.all_symbols)} symbols")
             

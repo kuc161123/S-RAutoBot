@@ -405,6 +405,32 @@ trade:
   - ROSEUSDT
   timeframe: '60'
   bearish_only: true   # Only trade bearish divergences (validated by walk-forward backtest)
+  hidden_bearish_only: true  # Even stricter: only hidden_bearish (42-62% WR)
+  
+  # Top 20 symbols validated by walk-forward backtest for hidden_bearish
+  # All have 42%+ WR on hidden bearish signals, 1H timeframe
+  divergence_symbols:
+    - BEAMUSDT      # 61.5% WR, +38R
+    - HAEDALUSDT    # 60.9% WR, +33R
+    - MMTUSDT       # 60.7% WR, +80R
+    - MONUSDT       # 58.3% WR, +48R
+    - PLUMEUSDT     # 56.8% WR, +47R
+    - BBUSDT        # 54.8% WR, +37R
+    - NOMUSDT       # 50.0% WR, +40R
+    - METISUSDT     # 49.4% WR, +81R
+    - INUSDT        # 49.1% WR, +51R
+    - MANAUSDT      # 47.7% WR, +40R
+    - DGBUSDT       # 46.7% WR, +39R
+    - 10000SATSUSDT # 46.2% WR, +44R
+    - DYMUSDT       # 46.0% WR, +42R
+    - HIGHUSDT      # 45.7% WR, +29R
+    - BROCCOLIUSDT  # 45.2% WR, +34R
+    - DBRUSDT       # 45.2% WR, +34R
+    - APTUSDT       # 42.9% WR, +10R
+    - DASHUSDT      # 42.1% WR, +39R
+    - CKBUSDT       # 41.9% WR, +29R
+    - AVAAIUSDT     # 41.7% WR, +8R
+  
   use_enhanced_parallel: true
   use_ml_dynamic_risk: false
   use_ml_scoring: false

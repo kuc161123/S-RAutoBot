@@ -27,10 +27,24 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # =============================================================================
 # CONFIGURATION (matches live bot exactly)
 # =============================================================================
-SYMBOLS = [
-    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT',
-    'ADAUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT', 'MATICUSDT'
-]
+# Instead of hardcoding symbols, load from config.yaml
+def load_symbols_from_config():
+    """Load trading symbols from config.yaml"""
+    import yaml
+    try:
+        with open('config.yaml', 'r') as f:
+            config = yaml.safe_load(f)
+        # Symbols are in 'trade' section
+        symbols = config.get('trade', {}).get('symbols', [])
+        if len(symbols) > 200:
+            symbols = symbols[:200]  # Cap at 200
+        print(f"📋 Loaded {len(symbols)} symbols from config.yaml")
+        return symbols if symbols else ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
+    except Exception as e:
+        print(f"Warning: Could not load symbols: {e}")
+        return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
+
+SYMBOLS = load_symbols_from_config()
 
 # Strategy parameters
 RSI_PERIOD = 14
@@ -47,11 +61,12 @@ ALLOW_LIMIT_NOT_FILL = True    # If True, limit orders can miss if price doesn't
 CANDLES_TO_FILL = 1            # How many candles to wait for limit fill (1 = current only)
 
 # Data parameters
-DAYS_BACK = 90          # Days of historical data
+DAYS_BACK = 60          # Days of historical data
 TIMEFRAME = '60'        # 60-minute (1H) candles
 
 # Signal filter
-BEARISH_ONLY = True     # Only trade bearish signals (hidden+regular)
+BEARISH_ONLY = False    # Not just bearish
+HIDDEN_BEARISH_ONLY = False  # Test ALL divergence types
 
 # =============================================================================
 # INDICATOR CALCULATIONS (matches live bot exactly)
@@ -258,9 +273,10 @@ def simulate_trade_outcome(df: pd.DataFrame, entry_idx: int, side: str, entry: f
 # =============================================================================
 
 def load_data(symbol: str) -> pd.DataFrame:
-    """Load historical data from Bybit"""
+    """Load historical data from Bybit with pagination (API returns max 200 per request)"""
     from autobot.brokers.bybit import Bybit, BybitConfig
     import yaml
+    import time
     
     # Load config
     with open('config.yaml', 'r') as f:
@@ -273,15 +289,43 @@ def load_data(symbol: str) -> pd.DataFrame:
     )
     broker = Bybit(bybit_config)
     
-    # Calculate limit for days
-    candles_per_day = 24 * 4  # 15-min candles
-    limit = min(DAYS_BACK * candles_per_day, 1000)
+    # Calculate candles needed based on timeframe
+    timeframe_minutes = int(TIMEFRAME)  # '60' -> 60 minutes
+    candles_per_day = int(24 * 60 / timeframe_minutes)  # 24 for 1H, 96 for 15m
+    needed_candles = min(DAYS_BACK * candles_per_day, 1000)  # Cap at 1000
     
-    klines = broker.get_klines(symbol, TIMEFRAME, limit=limit)
-    if not klines or len(klines) < 100:
+    # Bybit API returns max 200 candles per request - need pagination
+    all_klines = []
+    end_time = None  # None = latest
+    
+    while len(all_klines) < needed_candles:
+        # Fetch batch (Bybit API only returns 200 max per request)
+        klines = broker.get_klines(symbol, TIMEFRAME, limit=200, end=end_time)
+        
+        if not klines or len(klines) == 0:
+            break
+            
+        # Add to collection (newest first from API)
+        all_klines = klines + all_klines  # Prepend older data
+        
+        # Get end time for next request (oldest candle timestamp - 1)
+        oldest_ts = int(klines[0][0])  # First element is oldest in this batch
+        end_time = oldest_ts - 1
+        
+        # Rate limit protection
+        time.sleep(0.1)
+        
+        # Safety check
+        if len(all_klines) >= needed_candles:
+            break
+    
+    if not all_klines or len(all_klines) < 100:
         return pd.DataFrame()
     
-    df = pd.DataFrame(klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+    # Trim to needed amount
+    all_klines = all_klines[-needed_candles:]
+    
+    df = pd.DataFrame(all_klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
     df['start'] = pd.to_datetime(df['start'].astype(int), unit='ms')
     df.set_index('start', inplace=True)
     df.sort_index(inplace=True)
@@ -410,6 +454,10 @@ def run_walkforward_backtest():
             # Apply bearish-only filter if enabled
             if BEARISH_ONLY and side == 'long':
                 continue  # Skip bullish signals
+            
+            # Apply hidden_bearish_only filter if enabled
+            if HIDDEN_BEARISH_ONLY and signal_type != 'hidden_bearish':
+                continue  # Only trade hidden_bearish signals
             
             signals_detected += 1
             

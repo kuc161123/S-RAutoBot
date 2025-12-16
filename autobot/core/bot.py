@@ -2608,13 +2608,34 @@ class DivergenceBot:
                                 if entry and tp and sl:
                                     # First, try to get actual exit price from Bybit executions
                                     actual_exit_price = None
+                                    open_time_ms = int(trade_info.get('open_time', 0) * 1000)
                                     try:
-                                        executions = self.broker.get_executions(sym, limit=10)
+                                        executions = self.broker.get_executions(sym, limit=20)
                                         if executions:
-                                            # Find the close execution (most recent for this symbol)
+                                            # Find the CLOSING execution:
+                                            # 1. Must be AFTER trade open time
+                                            # 2. Look for execution closest to TP or SL (that's the exit)
                                             for exec_record in executions:
-                                                if exec_record.get('symbol') == sym:
-                                                    actual_exit_price = float(exec_record.get('execPrice', 0))
+                                                if exec_record.get('symbol') != sym:
+                                                    continue
+                                                    
+                                                # Check execution time is after we opened
+                                                exec_time = int(exec_record.get('execTime', 0))
+                                                if exec_time <= open_time_ms:
+                                                    continue  # This is the entry, skip
+                                                
+                                                exec_price = float(exec_record.get('execPrice', 0))
+                                                if exec_price <= 0:
+                                                    continue
+                                                    
+                                                # Check if this price is near TP or SL (it's the exit)
+                                                dist_to_tp = abs(exec_price - tp)
+                                                dist_to_sl = abs(exec_price - sl) 
+                                                dist_to_entry = abs(exec_price - entry)
+                                                
+                                                # If closer to TP/SL than to entry, this is the exit
+                                                if dist_to_tp < dist_to_entry or dist_to_sl < dist_to_entry:
+                                                    actual_exit_price = exec_price
                                                     break
                                     except Exception as e:
                                         logger.debug(f"Could not get executions for {sym}: {e}")
@@ -2622,17 +2643,11 @@ class DivergenceBot:
                                     # Determine outcome based on actual exit or TP/SL proximity
                                     if actual_exit_price and actual_exit_price > 0:
                                         # Use ACTUAL exit price
-                                        if side == 'long':
-                                            # Close to TP = win, close to SL = loss
-                                            tp_dist = abs(actual_exit_price - tp)
-                                            sl_dist = abs(actual_exit_price - sl)
-                                            outcome = "win" if tp_dist < sl_dist else "loss"
-                                            exit_price = actual_exit_price
-                                        else:
-                                            tp_dist = abs(actual_exit_price - tp)
-                                            sl_dist = abs(actual_exit_price - sl)
-                                            outcome = "win" if tp_dist < sl_dist else "loss"
-                                            exit_price = actual_exit_price
+                                        tp_dist = abs(actual_exit_price - tp)
+                                        sl_dist = abs(actual_exit_price - sl)
+                                        outcome = "win" if tp_dist < sl_dist else "loss"
+                                        exit_price = actual_exit_price
+                                        logger.info(f"📍 ACTUAL EXIT: {sym} @ ${actual_exit_price:.6f} (TP=${tp:.6f}, SL=${sl:.6f}) -> {outcome.upper()}")
                                     else:
                                         # Fallback: Check if TP or SL was hit using candle data
                                         # MATCH BACKTEST: SL checked FIRST (pessimistic)

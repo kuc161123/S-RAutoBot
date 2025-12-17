@@ -1,29 +1,23 @@
 #!/usr/bin/env python3
 """
-ALL DIVERGENCES WALK-FORWARD BACKTEST
-=====================================
-Tests ALL 4 divergence types with walk-forward validation:
-- Regular Bullish (Price LL, RSI HL) -> Long
-- Regular Bearish (Price HH, RSI LH) -> Short
-- Hidden Bullish (Price HL, RSI LL) -> Long
-- Hidden Bearish (Price LH, RSI HH) -> Short
+BOS FILTER - CORRECTED (NO LOOKAHEAD BIAS)
+===========================================
+CRITICAL FIX: Checks if SIGNAL candle broke structure
+- Signal detected on candle i
+- Check if candle i broke previous candle's structure
+- Enter at candle i+1 open
 
-Outputs per-type performance to recommend optimal strategy.
+Original checked entry candle which isn't known yet = lookahead bias
 """
 
 import requests
 import pandas as pd
 import numpy as np
-import math
 from collections import defaultdict
 from datetime import datetime
 import time
 import warnings
 warnings.filterwarnings('ignore')
-
-# =============================================================================
-# CONFIGURATION
-# =============================================================================
 
 TIMEFRAME = '60'
 DATA_DAYS = 60
@@ -46,10 +40,6 @@ MIN_SL_ATR = 0.3
 MAX_SL_ATR = 2.0
 
 BASE_URL = "https://api.bybit.com"
-
-# =============================================================================
-# HELPERS
-# =============================================================================
 
 def calc_ev(wr, rr): return (wr * rr) - (1 - wr)
 
@@ -109,12 +99,7 @@ def find_pivots(data, left=3, right=3):
         if is_low: pivot_lows[i] = data[i]
     return pivot_highs, pivot_lows
 
-# =============================================================================
-# DETECTION - ALL 4 DIVERGENCE TYPES
-# =============================================================================
-
 def detect_all_divergences(df):
-    """Detect all 4 divergence types"""
     if len(df) < 100: return []
     
     close = df['close'].values
@@ -125,7 +110,6 @@ def detect_all_divergences(df):
     signals = []
     
     for i in range(30, n - 5):
-        # Find pivot lows
         curr_pl = curr_pli = prev_pl = prev_pli = None
         for j in range(i, max(i - LOOKBACK_BARS, 0), -1):
             if not np.isnan(price_pl[j]):
@@ -134,7 +118,6 @@ def detect_all_divergences(df):
                     prev_pl, prev_pli = price_pl[j], j
                     break
         
-        # Find pivot highs
         curr_ph = curr_phi = prev_ph = prev_phi = None
         for j in range(i, max(i - LOOKBACK_BARS, 0), -1):
             if not np.isnan(price_ph[j]):
@@ -143,38 +126,30 @@ def detect_all_divergences(df):
                     prev_ph, prev_phi = price_ph[j], j
                     break
         
-        # REGULAR BULLISH: Price LL, RSI HL -> Long
         if curr_pl and prev_pl:
             if curr_pl < prev_pl and rsi[curr_pli] > rsi[prev_pli]:
                 if rsi[i] < RSI_OVERSOLD + 15:
                     signals.append({'idx': i, 'type': 'regular_bullish', 'side': 'long', 'swing': curr_pl})
                     continue
         
-        # REGULAR BEARISH: Price HH, RSI LH -> Short
         if curr_ph and prev_ph:
             if curr_ph > prev_ph and rsi[curr_phi] < rsi[prev_phi]:
                 if rsi[i] > RSI_OVERBOUGHT - 15:
                     signals.append({'idx': i, 'type': 'regular_bearish', 'side': 'short', 'swing': curr_ph})
                     continue
         
-        # HIDDEN BULLISH: Price HL, RSI LL -> Long
         if curr_pl and prev_pl:
             if curr_pl > prev_pl and rsi[curr_pli] < rsi[prev_pli]:
                 if rsi[i] < RSI_OVERBOUGHT - 10:
                     signals.append({'idx': i, 'type': 'hidden_bullish', 'side': 'long', 'swing': curr_pl})
                     continue
         
-        # HIDDEN BEARISH: Price LH, RSI HH -> Short
         if curr_ph and prev_ph:
             if curr_ph < prev_ph and rsi[curr_phi] > rsi[prev_phi]:
                 if rsi[i] > RSI_OVERSOLD + 10:
                     signals.append({'idx': i, 'type': 'hidden_bearish', 'side': 'short', 'swing': curr_ph})
     
     return signals
-
-# =============================================================================
-# SL/TP & SIMULATION
-# =============================================================================
 
 def calc_pivot_sltp(rows, idx, side, atr, swing_price):
     entry = rows[idx + 1].open if idx + 1 < len(rows) else rows[idx].close
@@ -215,26 +190,21 @@ def simulate_trade(rows, signal_idx, side, sl, tp, entry):
     
     return 'timeout', 100
 
-# =============================================================================
-# MAIN
-# =============================================================================
-
 def run():
     print("=" * 70)
-    print("📊 ALL DIVERGENCES WALK-FORWARD BACKTEST")
+    print("📊 BOS FILTER - CORRECTED (NO LOOKAHEAD)")
     print("=" * 70)
-    print(f"Testing: Regular Bullish, Regular Bearish, Hidden Bullish, Hidden Bearish")
-    print(f"Timeframe: {TIMEFRAME}m | R:R: {RISK_REWARD}:1 | Periods: {NUM_PERIODS}")
+    print(f"Filter: Check if SIGNAL candle (i) broke previous structure")
+    print(f"LONG: Signal candle high > prev candle high")
+    print(f"SHORT: Signal candle low < prev candle low")
     print("=" * 70)
     
     symbols = get_symbols(NUM_SYMBOLS)
     print(f"\n📋 Testing {len(symbols)} symbols...")
     
-    # Track by type
     type_results = defaultdict(lambda: {'w': 0, 'l': 0, 'r': 0.0})
     period_results = defaultdict(lambda: defaultdict(lambda: {'w': 0, 'l': 0}))
-    
-    start_time = time.time()
+    filtered_count = 0
     
     for idx, sym in enumerate(symbols):
         try:
@@ -250,7 +220,6 @@ def run():
             df['vol_ok'] = df['volume'] > df['vol_ma'] * 0.5
             df = df.dropna()
             
-            # CRITICAL FIX: Drop forming candle to avoid lookahead bias
             if len(df) > 0:
                 df = df.iloc[:-1]
             
@@ -268,9 +237,25 @@ def run():
                 i = sig['idx']
                 if i - last_trade_idx < COOLDOWN_BARS: continue
                 if i >= len(rows) - 50: continue
+                if i < 1: continue  # Need previous candle
                 
-                row = rows[i]
+                row = rows[i]  # SIGNAL CANDLE
+                prev_row = rows[i - 1]  # PREVIOUS CANDLE
+                
                 if not row.vol_ok or row.atr <= 0: continue
+                
+                # === BOS CHECK (NO LOOKAHEAD) ===
+                # Check if SIGNAL candle broke previous candle's structure
+                if sig['side'] == 'long':
+                    # LONG: Signal candle high must break above prev candle high
+                    if row.high <= prev_row.high:
+                        filtered_count += 1
+                        continue
+                else:
+                    # SHORT: Signal candle low must break below prev candle low
+                    if row.low >= prev_row.low:
+                        filtered_count += 1
+                        continue
                 
                 entry, sl, tp = calc_pivot_sltp(rows, i, sig['side'], row.atr, sig['swing'])
                 result, bars = simulate_trade(rows, i, sig['side'], sl, tp, entry)
@@ -300,21 +285,13 @@ def run():
         
         if (idx + 1) % 30 == 0:
             total = sum(t['w'] + t['l'] for t in type_results.values())
-            print(f"  [{idx+1}/{NUM_SYMBOLS}] Trades: {total}")
+            print(f"  [{idx+1}/{NUM_SYMBOLS}] Trades: {total} | Filtered: {filtered_count}")
     
-    elapsed = (time.time() - start_time) / 60
-    
-    # ==========================================================================
-    # RESULTS BY TYPE
-    # ==========================================================================
+    print(f"\n🔍 Total Signals Filtered: {filtered_count}")
     
     print("\n" + "=" * 70)
-    print("📊 RESULTS BY DIVERGENCE TYPE")
+    print("📊 RESULTS")
     print("=" * 70)
-    print(f"{'Type':<20} {'N':>6} {'WR':>8} {'EV':>8} {'Total R':>10} {'Consistent':>12}")
-    print("-" * 70)
-    
-    type_rankings = []
     
     for sig_type in ['regular_bullish', 'regular_bearish', 'hidden_bullish', 'hidden_bearish']:
         data = type_results[sig_type]
@@ -324,7 +301,6 @@ def run():
             wr = data['w'] / n
             ev = calc_ev(wr, RISK_REWARD)
             
-            # Check walk-forward consistency
             profitable_periods = 0
             for p in range(NUM_PERIODS):
                 pd_data = period_results[sig_type][p]
@@ -334,55 +310,10 @@ def run():
                     if calc_ev(pd_wr, RISK_REWARD) > 0:
                         profitable_periods += 1
             
-            consistency = f"{profitable_periods}/{NUM_PERIODS}"
-            status = "✅" if ev > 0 and profitable_periods >= 4 else "⚠️" if ev > 0 else "❌"
-            
-            type_rankings.append({
-                'type': sig_type,
-                'n': n,
-                'wr': wr,
-                'ev': ev,
-                'r': data['r'],
-                'consistency': profitable_periods,
-                'status': status
-            })
-            
-            print(f"{sig_type:<20} {n:>6} {wr*100:>7.1f}% {ev:>+7.2f} {data['r']:>+9.0f}R {consistency:>12} {status}")
+            print(f"{sig_type:<20} {n:>6} trades | {wr*100:>5.1f}% WR | {ev:>+5.2f} EV | {data['r']:>+7.0f}R | {profitable_periods}/6")
         else:
-            print(f"{sig_type:<20} {'--':>6} {'--':>8} {'--':>8} {'--':>10} {'--':>12}")
+            print(f"{sig_type:<20} {'--':>6} trades | {'--':>5} WR | {'--':>5} EV | {'--':>7}R | --/6")
     
-    # Sort by EV
-    type_rankings.sort(key=lambda x: x['ev'], reverse=True)
-    
-    # ==========================================================================
-    # RECOMMENDATION
-    # ==========================================================================
-    
-    print("\n" + "=" * 70)
-    print("🎯 RECOMMENDATION")
-    print("=" * 70)
-    
-    # Filter viable strategies
-    viable = [t for t in type_rankings if t['ev'] > 0 and t['consistency'] >= 4]
-    good = [t for t in type_rankings if t['ev'] > 0.5 and t['consistency'] >= 5]
-    
-    if good:
-        print("\n✅ RECOMMENDED STRATEGIES (High Confidence):")
-        for t in good:
-            print(f"   🏆 {t['type']}: {t['wr']*100:.1f}% WR, +{t['ev']:.2f} EV, {t['consistency']}/6 consistent")
-        
-        best = good[0]
-        print(f"\n💡 TOP PICK: {best['type'].upper()}")
-        print(f"   This strategy has the best combination of EV ({best['ev']:+.2f}) and consistency.")
-        
-    elif viable:
-        print("\n⚠️ VIABLE STRATEGIES (Moderate Confidence):")
-        for t in viable:
-            print(f"   {t['type']}: {t['wr']*100:.1f}% WR, +{t['ev']:.2f} EV, {t['consistency']}/6 consistent")
-    else:
-        print("\n❌ No strategies meet the criteria (EV > 0, 4+ periods profitable)")
-    
-    # Combined Option
     total_w = sum(t['w'] for t in type_results.values())
     total_l = sum(t['l'] for t in type_results.values())
     total_n = total_w + total_l
@@ -392,12 +323,17 @@ def run():
         combined_wr = total_w / total_n
         combined_ev = calc_ev(combined_wr, RISK_REWARD)
         
-        print(f"\n📊 COMBINED (All Types): {total_n} trades, {combined_wr*100:.1f}% WR, {combined_ev:+.2f} EV, {total_r:+.0f}R")
-        
-        if good and len(good) >= 2:
-            print("\n💡 OPTION: Run multiple strategies for more trades while maintaining quality.")
+        print(f"\n📊 COMBINED: {total_n} trades, {combined_wr*100:.1f}% WR, {combined_ev:+.2f} EV, {total_r:+.0f}R")
+        print(f"   Filtered: {filtered_count} ({filtered_count/(total_n+filtered_count)*100:.1f}%)")
     
     print("\n" + "=" * 70)
+    print("📊 COMPARISON")
+    print("=" * 70)
+    print("No Filter:           6694 trades, 53.0% WR, +1.12 EV, +7498R")
+    print("BOS OLD (Lookahead): 5285 trades, 57.6% WR, +1.30 EV, +6895R ❌")
+    if total_n > 0:
+        print(f"BOS CORRECTED:       {total_n} trades, {combined_wr*100:.1f}% WR, {combined_ev:+.2f} EV, {total_r:+.0f}R ✅")
+    print("=" * 70)
 
 if __name__ == "__main__":
     run()

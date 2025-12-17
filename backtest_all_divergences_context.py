@@ -1,31 +1,25 @@
 #!/usr/bin/env python3
 """
-ALL DIVERGENCES WALK-FORWARD BACKTEST
-=====================================
-Tests ALL 4 divergence types with walk-forward validation:
-- Regular Bullish (Price LL, RSI HL) -> Long
-- Regular Bearish (Price HH, RSI LH) -> Short
-- Hidden Bullish (Price HL, RSI LL) -> Long
-- Hidden Bearish (Price LH, RSI HH) -> Short
+CONTEXT-AWARE DIVERGENCE FILTER
+================================
+Smart filtering based on market conditions:
+- Regular Divergence: Only in ranging markets (ADX < 25)
+- Hidden Divergence: Only with HTF trend (4H 200 EMA)
 
-Outputs per-type performance to recommend optimal strategy.
+This ensures we use the right divergence type for the right market.
 """
 
 import requests
 import pandas as pd
 import numpy as np
-import math
 from collections import defaultdict
 from datetime import datetime
 import time
 import warnings
 warnings.filterwarnings('ignore')
 
-# =============================================================================
-# CONFIGURATION
-# =============================================================================
-
 TIMEFRAME = '60'
+HTF_TIMEFRAME = '240'  # 4H for trend
 DATA_DAYS = 60
 NUM_SYMBOLS = 150
 NUM_PERIODS = 6
@@ -45,11 +39,10 @@ RISK_REWARD = 3.0
 MIN_SL_ATR = 0.3
 MAX_SL_ATR = 2.0
 
-BASE_URL = "https://api.bybit.com"
+ADX_THRESHOLD = 25  # Below this = ranging market
+EMA_PERIOD = 200    # HTF trend filter
 
-# =============================================================================
-# HELPERS
-# =============================================================================
+BASE_URL = "https://api.bybit.com"
 
 def calc_ev(wr, rr): return (wr * rr) - (1 - wr)
 
@@ -98,6 +91,31 @@ def calculate_rsi(close, period=14):
     rs = avg_gain / (avg_loss + 1e-10)
     return 100 - (100 / (1 + rs))
 
+def calculate_adx(df, period=14):
+    """Calculate ADX for trend strength"""
+    high = df['high']
+    low = df['low']
+    close = df['close']
+    
+    plus_dm = high.diff()
+    minus_dm = -low.diff()
+    plus_dm[plus_dm < 0] = 0
+    minus_dm[minus_dm < 0] = 0
+    
+    tr1 = high - low
+    tr2 = abs(high - close.shift())
+    tr3 = abs(low - close.shift())
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.rolling(period).mean()
+    
+    plus_di = 100 * (plus_dm.rolling(period).mean() / atr)
+    minus_di = 100 * (minus_dm.rolling(period).mean() / atr)
+    
+    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
+    adx = dx.rolling(period).mean()
+    
+    return adx
+
 def find_pivots(data, left=3, right=3):
     n = len(data)
     pivot_highs = np.full(n, np.nan)
@@ -109,12 +127,7 @@ def find_pivots(data, left=3, right=3):
         if is_low: pivot_lows[i] = data[i]
     return pivot_highs, pivot_lows
 
-# =============================================================================
-# DETECTION - ALL 4 DIVERGENCE TYPES
-# =============================================================================
-
 def detect_all_divergences(df):
-    """Detect all 4 divergence types"""
     if len(df) < 100: return []
     
     close = df['close'].values
@@ -125,7 +138,6 @@ def detect_all_divergences(df):
     signals = []
     
     for i in range(30, n - 5):
-        # Find pivot lows
         curr_pl = curr_pli = prev_pl = prev_pli = None
         for j in range(i, max(i - LOOKBACK_BARS, 0), -1):
             if not np.isnan(price_pl[j]):
@@ -134,7 +146,6 @@ def detect_all_divergences(df):
                     prev_pl, prev_pli = price_pl[j], j
                     break
         
-        # Find pivot highs
         curr_ph = curr_phi = prev_ph = prev_phi = None
         for j in range(i, max(i - LOOKBACK_BARS, 0), -1):
             if not np.isnan(price_ph[j]):
@@ -143,38 +154,30 @@ def detect_all_divergences(df):
                     prev_ph, prev_phi = price_ph[j], j
                     break
         
-        # REGULAR BULLISH: Price LL, RSI HL -> Long
         if curr_pl and prev_pl:
             if curr_pl < prev_pl and rsi[curr_pli] > rsi[prev_pli]:
                 if rsi[i] < RSI_OVERSOLD + 15:
                     signals.append({'idx': i, 'type': 'regular_bullish', 'side': 'long', 'swing': curr_pl})
                     continue
         
-        # REGULAR BEARISH: Price HH, RSI LH -> Short
         if curr_ph and prev_ph:
             if curr_ph > prev_ph and rsi[curr_phi] < rsi[prev_phi]:
                 if rsi[i] > RSI_OVERBOUGHT - 15:
                     signals.append({'idx': i, 'type': 'regular_bearish', 'side': 'short', 'swing': curr_ph})
                     continue
         
-        # HIDDEN BULLISH: Price HL, RSI LL -> Long
         if curr_pl and prev_pl:
             if curr_pl > prev_pl and rsi[curr_pli] < rsi[prev_pli]:
                 if rsi[i] < RSI_OVERBOUGHT - 10:
                     signals.append({'idx': i, 'type': 'hidden_bullish', 'side': 'long', 'swing': curr_pl})
                     continue
         
-        # HIDDEN BEARISH: Price LH, RSI HH -> Short
         if curr_ph and prev_ph:
             if curr_ph < prev_ph and rsi[curr_phi] > rsi[prev_phi]:
                 if rsi[i] > RSI_OVERSOLD + 10:
                     signals.append({'idx': i, 'type': 'hidden_bearish', 'side': 'short', 'swing': curr_ph})
     
     return signals
-
-# =============================================================================
-# SL/TP & SIMULATION
-# =============================================================================
 
 def calc_pivot_sltp(rows, idx, side, atr, swing_price):
     entry = rows[idx + 1].open if idx + 1 < len(rows) else rows[idx].close
@@ -215,45 +218,51 @@ def simulate_trade(rows, signal_idx, side, sl, tp, entry):
     
     return 'timeout', 100
 
-# =============================================================================
-# MAIN
-# =============================================================================
-
 def run():
     print("=" * 70)
-    print("📊 ALL DIVERGENCES WALK-FORWARD BACKTEST")
+    print("📊 CONTEXT-AWARE DIVERGENCE FILTER")
     print("=" * 70)
-    print(f"Testing: Regular Bullish, Regular Bearish, Hidden Bullish, Hidden Bearish")
-    print(f"Timeframe: {TIMEFRAME}m | R:R: {RISK_REWARD}:1 | Periods: {NUM_PERIODS}")
+    print(f"Regular Div: Only when ADX < {ADX_THRESHOLD} (ranging)")
+    print(f"Hidden Div: Only with 4H trend (200 EMA)")
     print("=" * 70)
     
     symbols = get_symbols(NUM_SYMBOLS)
     print(f"\n📋 Testing {len(symbols)} symbols...")
     
-    # Track by type
     type_results = defaultdict(lambda: {'w': 0, 'l': 0, 'r': 0.0})
     period_results = defaultdict(lambda: defaultdict(lambda: {'w': 0, 'l': 0}))
     
-    start_time = time.time()
+    filtered_adx = 0
+    filtered_trend = 0
     
     for idx, sym in enumerate(symbols):
         try:
+            # Fetch 1H data
             df = fetch_klines(sym, TIMEFRAME, DATA_DAYS)
-            if df.empty or len(df) < 200: continue
+            if df.empty or len(df) < 300: continue
             
+            # Fetch 4H data for trend
+            df_htf = fetch_klines(sym, HTF_TIMEFRAME, DATA_DAYS)
+            if df_htf.empty or len(df_htf) < 250: continue
+            
+            # Calculate indicators on 1H
             df['rsi'] = calculate_rsi(df['close'], RSI_PERIOD)
+            df['adx'] = calculate_adx(df, 14)
             hl = df['high'] - df['low']
             hc = abs(df['high'] - df['close'].shift())
             lc = abs(df['low'] - df['close'].shift())
             df['atr'] = pd.concat([hl, hc, lc], axis=1).max(axis=1).rolling(14).mean()
             df['vol_ma'] = df['volume'].rolling(20).mean()
             df['vol_ok'] = df['volume'] > df['vol_ma'] * 0.5
-            df = df.dropna()
             
-            # CRITICAL FIX: Drop forming candle to avoid lookahead bias
+            # Calculate 200 EMA on 4H for trend
+            df_htf['ema200'] = df_htf['close'].ewm(span=EMA_PERIOD, adjust=False).mean()
+            
+            df = df.dropna()
+            df_htf = df_htf.dropna()
+            
             if len(df) > 0:
                 df = df.iloc[:-1]
-            
             if len(df) < 100: continue
             
             signals = detect_all_divergences(df)
@@ -271,6 +280,38 @@ def run():
                 
                 row = rows[i]
                 if not row.vol_ok or row.atr <= 0: continue
+                
+                # === CONTEXT-AWARE FILTER ===
+                signal_time = row.Index
+                signal_adx = row.adx if hasattr(row, 'adx') else 30
+                
+                # Get HTF trend at signal time
+                htf_at_signal = df_htf[df_htf.index <= signal_time]
+                if htf_at_signal.empty: continue
+                
+                latest_htf = htf_at_signal.iloc[-1]
+                htf_price = latest_htf['close']
+                htf_ema = latest_htf['ema200']
+                htf_trend = 'up' if htf_price > htf_ema else 'down'
+                
+                # Filter logic
+                is_regular = sig['type'] in ['regular_bullish', 'regular_bearish']
+                is_hidden = sig['type'] in ['hidden_bullish', 'hidden_bearish']
+                
+                if is_regular:
+                    # Regular divergence: Only in ranging markets (ADX < threshold)
+                    if signal_adx >= ADX_THRESHOLD:
+                        filtered_adx += 1
+                        continue
+                
+                if is_hidden:
+                    # Hidden divergence: Only with HTF trend
+                    if sig['side'] == 'long' and htf_trend != 'up':
+                        filtered_trend += 1
+                        continue
+                    if sig['side'] == 'short' and htf_trend != 'down':
+                        filtered_trend += 1
+                        continue
                 
                 entry, sl, tp = calc_pivot_sltp(rows, i, sig['side'], row.atr, sig['swing'])
                 result, bars = simulate_trade(rows, i, sig['side'], sl, tp, entry)
@@ -300,21 +341,16 @@ def run():
         
         if (idx + 1) % 30 == 0:
             total = sum(t['w'] + t['l'] for t in type_results.values())
-            print(f"  [{idx+1}/{NUM_SYMBOLS}] Trades: {total}")
+            print(f"  [{idx+1}/{NUM_SYMBOLS}] Trades: {total} | ADX filter: {filtered_adx} | Trend filter: {filtered_trend}")
     
-    elapsed = (time.time() - start_time) / 60
-    
-    # ==========================================================================
-    # RESULTS BY TYPE
-    # ==========================================================================
+    print(f"\n🔍 Filtering:")
+    print(f"   ADX (regular only): {filtered_adx}")
+    print(f"   Trend (hidden only): {filtered_trend}")
+    print(f"   Total filtered: {filtered_adx + filtered_trend}")
     
     print("\n" + "=" * 70)
-    print("📊 RESULTS BY DIVERGENCE TYPE")
+    print("📊 RESULTS")
     print("=" * 70)
-    print(f"{'Type':<20} {'N':>6} {'WR':>8} {'EV':>8} {'Total R':>10} {'Consistent':>12}")
-    print("-" * 70)
-    
-    type_rankings = []
     
     for sig_type in ['regular_bullish', 'regular_bearish', 'hidden_bullish', 'hidden_bearish']:
         data = type_results[sig_type]
@@ -324,7 +360,6 @@ def run():
             wr = data['w'] / n
             ev = calc_ev(wr, RISK_REWARD)
             
-            # Check walk-forward consistency
             profitable_periods = 0
             for p in range(NUM_PERIODS):
                 pd_data = period_results[sig_type][p]
@@ -334,55 +369,10 @@ def run():
                     if calc_ev(pd_wr, RISK_REWARD) > 0:
                         profitable_periods += 1
             
-            consistency = f"{profitable_periods}/{NUM_PERIODS}"
-            status = "✅" if ev > 0 and profitable_periods >= 4 else "⚠️" if ev > 0 else "❌"
-            
-            type_rankings.append({
-                'type': sig_type,
-                'n': n,
-                'wr': wr,
-                'ev': ev,
-                'r': data['r'],
-                'consistency': profitable_periods,
-                'status': status
-            })
-            
-            print(f"{sig_type:<20} {n:>6} {wr*100:>7.1f}% {ev:>+7.2f} {data['r']:>+9.0f}R {consistency:>12} {status}")
+            print(f"{sig_type:<20} {n:>6} trades | {wr*100:>5.1f}% WR | {ev:>+5.2f} EV | {data['r']:>+7.0f}R | {profitable_periods}/6")
         else:
-            print(f"{sig_type:<20} {'--':>6} {'--':>8} {'--':>8} {'--':>10} {'--':>12}")
+            print(f"{sig_type:<20} {'--':>6} trades | {'--':>5} WR | {'--':>5} EV | {'--':>7}R | --/6")
     
-    # Sort by EV
-    type_rankings.sort(key=lambda x: x['ev'], reverse=True)
-    
-    # ==========================================================================
-    # RECOMMENDATION
-    # ==========================================================================
-    
-    print("\n" + "=" * 70)
-    print("🎯 RECOMMENDATION")
-    print("=" * 70)
-    
-    # Filter viable strategies
-    viable = [t for t in type_rankings if t['ev'] > 0 and t['consistency'] >= 4]
-    good = [t for t in type_rankings if t['ev'] > 0.5 and t['consistency'] >= 5]
-    
-    if good:
-        print("\n✅ RECOMMENDED STRATEGIES (High Confidence):")
-        for t in good:
-            print(f"   🏆 {t['type']}: {t['wr']*100:.1f}% WR, +{t['ev']:.2f} EV, {t['consistency']}/6 consistent")
-        
-        best = good[0]
-        print(f"\n💡 TOP PICK: {best['type'].upper()}")
-        print(f"   This strategy has the best combination of EV ({best['ev']:+.2f}) and consistency.")
-        
-    elif viable:
-        print("\n⚠️ VIABLE STRATEGIES (Moderate Confidence):")
-        for t in viable:
-            print(f"   {t['type']}: {t['wr']*100:.1f}% WR, +{t['ev']:.2f} EV, {t['consistency']}/6 consistent")
-    else:
-        print("\n❌ No strategies meet the criteria (EV > 0, 4+ periods profitable)")
-    
-    # Combined Option
     total_w = sum(t['w'] for t in type_results.values())
     total_l = sum(t['l'] for t in type_results.values())
     total_n = total_w + total_l
@@ -392,12 +382,16 @@ def run():
         combined_wr = total_w / total_n
         combined_ev = calc_ev(combined_wr, RISK_REWARD)
         
-        print(f"\n📊 COMBINED (All Types): {total_n} trades, {combined_wr*100:.1f}% WR, {combined_ev:+.2f} EV, {total_r:+.0f}R")
-        
-        if good and len(good) >= 2:
-            print("\n💡 OPTION: Run multiple strategies for more trades while maintaining quality.")
+        print(f"\n📊 COMBINED: {total_n} trades, {combined_wr*100:.1f}% WR, {combined_ev:+.2f} EV, {total_r:+.0f}R")
     
     print("\n" + "=" * 70)
+    print("📊 COMPARISON")
+    print("=" * 70)
+    print("No Filter:          6694 trades, 53.0% WR, +1.12 EV, +7498R")
+    print("Candle Color:       6302 trades, 58.2% WR, +1.33 EV, +8370R")
+    if total_n > 0:
+        print(f"Context-Aware:      {total_n} trades, {combined_wr*100:.1f}% WR, {combined_ev:+.2f} EV, {total_r:+.0f}R")
+    print("=" * 70)
 
 if __name__ == "__main__":
     run()

@@ -1,0 +1,42 @@
+======================================================================
+📊 ALL DIVERGENCES WALK-FORWARD BACKTEST
+======================================================================
+Testing: Regular Bullish, Regular Bearish, Hidden Bullish, Hidden Bearish
+Timeframe: 60m | R:R: 3.0:1 | Periods: 6
+======================================================================
+
+📋 Testing 150 symbols...
+  [30/150] Trades: 1295
+  [60/150] Trades: 2668
+  [90/150] Trades: 3978
+  [120/150] Trades: 5282
+  [150/150] Trades: 6694
+
+======================================================================
+📊 RESULTS BY DIVERGENCE TYPE
+======================================================================
+Type                      N       WR       EV    Total R   Consistent
+----------------------------------------------------------------------
+regular_bullish        1968    52.8%   +1.11     +2192R          6/6 ✅
+regular_bearish        1527    55.9%   +1.24     +1889R          6/6 ✅
+hidden_bullish         1418    50.7%   +1.03     +1458R          6/6 ✅
+hidden_bearish         1781    52.5%   +1.10     +1959R          6/6 ✅
+
+======================================================================
+🎯 RECOMMENDATION
+======================================================================
+
+✅ RECOMMENDED STRATEGIES (High Confidence):
+   🏆 regular_bearish: 55.9% WR, +1.24 EV, 6/6 consistent
+   🏆 regular_bullish: 52.8% WR, +1.11 EV, 6/6 consistent
+   🏆 hidden_bearish: 52.5% WR, +1.10 EV, 6/6 consistent
+   🏆 hidden_bullish: 50.7% WR, +1.03 EV, 6/6 consistent
+
+💡 TOP PICK: REGULAR_BEARISH
+   This strategy has the best combination of EV (+1.24) and consistency.
+
+📊 COMBINED (All Types): 6694 trades, 53.0% WR, +1.12 EV, +7498R
+
+💡 OPTION: Run multiple strategies for more trades while maintaining quality.
+
+======================================================================

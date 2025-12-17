@@ -2741,7 +2741,11 @@ class DivergenceBot:
                                             else:
                                                 outcome = "win" if current_price <= entry else "loss"
                                                 exit_price = current_price
-                                    
+                                
+                                # =======================================================
+                                # COUNTER UPDATE & NOTIFICATION (runs for ALL outcomes)
+                                # =======================================================
+                                if outcome and entry and exit_price:
                                     # Calculate P/L percentage
                                     if side == 'long':
                                         pnl_pct = ((exit_price - entry) / entry) * 100

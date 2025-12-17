@@ -1604,6 +1604,7 @@ class DivergenceBot:
                         # Position tracking
                         'qty_initial': filled_qty,
                         'qty_remaining': filled_qty,
+                        'qty_partial': qty_partial,  # Store properly rounded partial qty
                         'sl_distance': sl_distance,
                         
                         # Profit targets
@@ -2278,13 +2279,15 @@ class DivergenceBot:
                                 # Partial TP filled!
                                 trade_info['partial_tp_filled'] = True
                                 trade_info['partial_r_locked'] = 0.5  # 50% at 1R = 0.5R
-                                trade_info['qty_remaining'] = trade_info['qty_initial'] / 2
+                                # Use the pre-calculated qty_partial (already rounded to qtyStep)
+                                qty_remaining = trade_info.get('qty_partial', trade_info['qty_initial'] / 2)
+                                trade_info['qty_remaining'] = qty_remaining
                                 
                                 self.partial_wins += 1
                                 
                                 # Move SL to break-even
                                 try:
-                                    self.broker.set_sl_only(sym, entry, trade_info['qty_remaining'])
+                                    self.broker.set_sl_only(sym, entry, qty_remaining)
                                     trade_info['sl_current'] = entry
                                     trade_info['sl_at_breakeven'] = True
                                     trade_info['last_sl_update_time'] = time.time()
@@ -2345,7 +2348,9 @@ class DivergenceBot:
                     
                     if should_update and time_since_update >= MIN_SL_UPDATE_INTERVAL:
                         try:
-                            self.broker.set_sl_only(sym, new_sl, trade_info.get('qty_remaining', trade_info['qty_initial'] / 2))
+                            # Use qty_remaining which is already properly rounded
+                            qty_for_sl = trade_info.get('qty_remaining', trade_info['qty_initial'])
+                            self.broker.set_sl_only(sym, new_sl, qty_for_sl)
                             
                             old_sl = trade_info['sl_current']
                             trade_info['sl_current'] = new_sl

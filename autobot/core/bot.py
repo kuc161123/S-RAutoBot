@@ -547,9 +547,9 @@ class DivergenceBot:
                 live_ev = 0
                 ev_per_trade = 0
             
-            # Calculate P&L in R-multiples (now accounts for partial TP)
-            # Each trade can result in: -1R (full loss), 0R (BE), +0.5R to +2R
-            pnl_r = (self.wins * 1.5) - (self.losses * 1.0)  # Avg win ~1.5R with partial
+            # Calculate P&L in R-multiples (now accounts for 0.5R partial TP)
+            # Each trade can result in: -1R (full loss), 0R (BE), +0.25R to +1.75R
+            pnl_r = (self.wins * 1.0) - (self.losses * 1.0)  # Avg win ~1.0R with 0.5R partial
             
             # === BUILD MESSAGE ===
             msg = (
@@ -564,11 +564,11 @@ class DivergenceBot:
                 f"🎯 **STRATEGY**\n"
                 f"├ Type: RSI Divergence\n"
                 f"├ TF: {self.cfg.get('trade', {}).get('timeframe', '60')}min (1H)\n"
-                f"├ Mode: 🎯 ALL DIVERGENCES (126 Symbols)\n"
-                f"├ **EXIT: Partial TP + Trailing SL**\n"
-                f"├ 50% TP at +1R | SL → BE\n"
-                f"├ After +2R: Trail 1R behind\n"
-                f"└ Max: +2R (0.5R + 1.5R)\n\n"
+                f"├ Mode: 🎯 ALL DIVERGENCES\n"
+                f"├ **EXIT: 0.5R TP + Trailing SL**\n"
+                f"├ 50% TP at +0.5R | SL → BE\n"
+                f"├ After +1R: Trail 0.5R behind\n"
+                f"└ Max: +1.75R (0.25R + 1.5R)\n\n"
                 
                 f"📊 **SIGNALS**\n"
                 f"├ Detected: {self.signals_detected}\n"
@@ -1997,14 +1997,15 @@ class DivergenceBot:
             actual_rr = tp_distance / sl_distance if sl_distance > 0 else 0
             sl_atr_mult = sl_distance / atr if atr > 0 else 1.0
             
-            # Calculate partial TP at 1R
+            # Calculate partial TP at 0.5R (changed from 1R for faster profit lock)
+            PARTIAL_TP_R = 0.5  # Take 50% profit at 0.5R
             if side == 'long':
-                tp_1r = round_to_tick(expected_entry + sl_distance)  # +1R
+                tp_1r = round_to_tick(expected_entry + (PARTIAL_TP_R * sl_distance))  # +0.5R
             else:
-                tp_1r = round_to_tick(expected_entry - sl_distance)  # +1R for short
+                tp_1r = round_to_tick(expected_entry - (PARTIAL_TP_R * sl_distance))  # +0.5R for short
             
             logger.info(f"📊 {sym} PIVOT SL: {sl_atr_mult:.2f}×ATR | R:R = {actual_rr:.1f}:1")
-            logger.info(f"   Entry: ${expected_entry:.6f} | SL: ${sl:.6f} | TP1R: ${tp_1r:.6f} | TP3R: ${tp:.6f}")
+            logger.info(f"   Entry: ${expected_entry:.6f} | SL: ${sl:.6f} | TP0.5R: ${tp_1r:.6f} | TP3R: ${tp:.6f}")
             
             # Calculate position size
             risk_val = self.risk_config['value']
@@ -2087,7 +2088,7 @@ class DivergenceBot:
             }.get(signal_type, signal_type)
             
             # Calculate expected profit/loss
-            profit_target_partial = (qty / 2) * sl_distance  # 50% at 1R
+            profit_target_partial = (qty / 2) * (0.5 * sl_distance)  # 50% at 0.5R = 0.25R
             loss_risk = qty * sl_distance
             
             # Send Telegram notification for limit order placed
@@ -2100,12 +2101,12 @@ class DivergenceBot:
                 f"📈 Side: **{side_emoji}**\n"
                 f"💎 Type: **{type_emoji}**\n\n"
                 f"💰 **Entry**: ${expected_entry:.6f}\n\n"
-                f"🎯 **EXIT STRATEGY (Partial TP + Trailing)**\n"
-                f"├ 50% TP: ${tp_1r:.6f} (+1R)\n"
+                f"🎯 **EXIT STRATEGY (0.5R TP + Trail)**\n"
+                f"├ 50% TP: ${tp_1r:.6f} (+0.5R)\n"
                 f"├ Initial SL: ${sl:.6f} (-1R)\n"
-                f"├ After +1R: SL → Break-Even\n"
-                f"├ After +2R: Trail 1R behind\n"
-                f"└ Target: +3R (remaining 50%)\n\n"
+                f"├ After +0.5R: SL → Break-Even\n"
+                f"├ After +1R: Trail 0.5R behind\n"
+                f"└ Max: +1.75R (0.25R + 1.5R)\n\n"
                 f"📊 RSI: {rsi:.1f}\n"
                 f"⏱️ Timeout: 5 minutes\n"
                 f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
@@ -2278,7 +2279,7 @@ class DivergenceBot:
                             if order_status and order_status.get('orderStatus') == 'Filled':
                                 # Partial TP filled!
                                 trade_info['partial_tp_filled'] = True
-                                trade_info['partial_r_locked'] = 0.5  # 50% at 1R = 0.5R
+                                trade_info['partial_r_locked'] = 0.25  # 50% at 0.5R = 0.25R
                                 # Use the pre-calculated qty_partial (already rounded to qtyStep)
                                 qty_remaining = trade_info.get('qty_partial', trade_info['qty_initial'] / 2)
                                 trade_info['qty_remaining'] = qty_remaining
@@ -2300,13 +2301,13 @@ class DivergenceBot:
                                         f"━━━━━━━━━━━━━━━━━━━━\n"
                                         f"📊 Symbol: `{sym}`\n"
                                         f"📈 Side: **{side.upper()}**\n\n"
-                                        f"✅ **50% CLOSED AT +1R**\n"
-                                        f"├ Locked: **+0.5R** ✅\n"
+                                        f"✅ **50% CLOSED AT +0.5R**\n"
+                                        f"├ Locked: **+0.25R** ✅\n"
                                         f"└ Remaining: 50%\n\n"
                                         f"🔄 **SL MOVED TO BREAK-EVEN**\n"
                                         f"├ New SL: ${entry:.4f}\n"
                                         f"└ Status: **PROTECTED**\n\n"
-                                        f"💡 Worst case now: **+0.5R**"
+                                        f"💡 Worst case now: **+0.25R**"
                                     )
                                 except Exception as e:
                                     logger.error(f"Failed to move SL to BE for {sym}: {e}")
@@ -2314,27 +2315,28 @@ class DivergenceBot:
                         except Exception as e:
                             logger.debug(f"Error checking partial TP order for {sym}: {e}")
                     
-                    # Also check if 1R was hit by price even without order fill
-                    elif max_r >= 1.0 and not trade_info.get('sl_at_breakeven', False):
-                        # 1R was reached but no partial TP order - move SL to BE anyway
+                    # Also check if 0.5R was hit by price even without order fill
+                    elif max_r >= 0.5 and not trade_info.get('sl_at_breakeven', False):
+                        # 0.5R was reached but no partial TP order - move SL to BE anyway
                         try:
                             self.broker.set_sl_only(sym, entry, trade_info.get('qty_remaining', trade_info['qty_initial']))
                             trade_info['sl_current'] = entry
                             trade_info['sl_at_breakeven'] = True
                             trade_info['last_sl_update_time'] = time.time()
-                            logger.info(f"📈 1R REACHED, SL TO BE: {sym}")
+                            logger.info(f"📈 0.5R REACHED, SL TO BE: {sym}")
                         except Exception as e:
                             logger.error(f"Failed to move SL to BE for {sym}: {e}")
                 
                 # ============================================
-                # CHECK 2: Trailing SL (after 2R)
+                # CHECK 2: Trailing SL (after 1R, changed from 2R)
                 # ============================================
-                if trade_info.get('partial_tp_filled', False) and max_r >= 2.0:
-                    # Calculate trailing SL level (1R behind max)
+                if trade_info.get('partial_tp_filled', False) and max_r >= 1.0:
+                    # Calculate trailing SL level (0.5R behind max)
+                    TRAIL_DISTANCE = 0.5  # Trail 0.5R behind
                     if side == 'long':
-                        new_sl = entry + (max_r - 1.0) * sl_distance
+                        new_sl = entry + (max_r - TRAIL_DISTANCE) * sl_distance
                     else:
-                        new_sl = entry - (max_r - 1.0) * sl_distance
+                        new_sl = entry - (max_r - TRAIL_DISTANCE) * sl_distance
                     
                     current_sl = trade_info.get('sl_current', trade_info['sl_initial'])
                     
@@ -2786,17 +2788,17 @@ class DivergenceBot:
         timeframe = self.cfg.get('trade', {}).get('timeframe', '60')
         
         if hidden_bearish_mode:
-            mode_text = "🎯 HIDDEN BEARISH ONLY (97 Symbols)"
+            mode_text = "🎯 HIDDEN BEARISH ONLY"
             await self.send_telegram(
                 f"✅ **RSI Divergence Bot Online!**\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"📊 **Mode**: HIDDEN BEARISH (97 Symbols)\n"
+                f"📊 **Mode**: HIDDEN BEARISH\n"
                 f"⏱️ **Timeframe**: {timeframe} min (1H)\n\n"
-                f"🎯 **EXIT STRATEGY**\n"
-                f"├ 50% TP at +1R (lock profit)\n"
-                f"├ SL → Break-Even after +1R\n"
-                f"├ Trail 1R behind after +2R\n"
-                f"└ Max profit: +2R per trade\n\n"
+                f"🎯 **EXIT STRATEGY (0.5R TP)**\n"
+                f"├ 50% TP at +0.5R (lock +0.25R)\n"
+                f"├ SL → Break-Even after +0.5R\n"
+                f"├ Trail 0.5R behind after +1R\n"
+                f"└ Max profit: +1.75R per trade\n\n"
                 f"📚 Scanning: **{len(self.all_symbols)}** symbols\n"
                 f"⚙️ Risk: **{self.risk_config['value']}%** per trade\n\n"
                 f"💾 Redis: {redis_ok} | Postgres: {pg_ok}\n"
@@ -2808,11 +2810,11 @@ class DivergenceBot:
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"📊 **Strategy**: RSI Divergence\n"
                 f"⏱️ **Timeframe**: {timeframe} minutes\n\n"
-                f"🎯 **EXIT STRATEGY**\n"
-                f"├ 50% TP at +1R (lock profit)\n"
-                f"├ SL → Break-Even after +1R\n"
-                f"├ Trail 1R behind after +2R\n"
-                f"└ Max profit: +2R per trade\n\n"
+                f"🎯 **EXIT STRATEGY (0.5R TP)**\n"
+                f"├ 50% TP at +0.5R (lock +0.25R)\n"
+                f"├ SL → Break-Even after +0.5R\n"
+                f"├ Trail 0.5R behind after +1R\n"
+                f"└ Max profit: +1.75R per trade\n\n"
                 f"📚 Scanning: **{len(self.all_symbols)}** symbols\n"
                 f"⚙️ Risk: **{self.risk_config['value']}%** per trade\n\n"
                 f"💾 Redis: {redis_ok} | Postgres: {pg_ok}\n"

@@ -1564,10 +1564,13 @@ class DivergenceBot:
                 if order_status == 'Filled':
                     logger.info(f"✅ ORDER FILLED: {sym} {side} @ {avg_price}")
                     
-                    # Get order info fields
+                    # Get order info fields (qty_partial is already properly rounded)
                     tp_1r = order_info.get('tp_1r', tp)  # Partial TP at 1R
                     sl_distance = order_info.get('sl_distance', abs(avg_price - sl))
-                    qty_partial = order_info.get('qty_partial', filled_qty / 2)
+                    qty_partial = order_info.get('qty_partial', filled_qty / 2)  # Already rounded to qtyStep
+                    qty_step = order_info.get('qty_step', 0.001)
+                    
+                    logger.info(f"   Placing partial TP: {qty_partial} @ ${tp_1r:.6f} (qtyStep={qty_step})")
                     
                     # ============================================
                     # PLACE PARTIAL TP ORDER (50% at 1R)
@@ -1897,44 +1900,61 @@ class DivergenceBot:
             logger.info(f"📐 {sym} SL distance: {sl_atr_mult:.2f}×ATR | Risk: ${risk_amount:.2f}")
             
             # Round qty to lot size (fix floating point precision)
-            qty = (qty // qty_step) * qty_step
-            # Fix floating point precision (e.g., 1236.1000000000001 -> 1236.1)
-            decimals = len(str(qty_step).split('.')[-1]) if '.' in str(qty_step) else 0
-            qty = round(qty, decimals)
+            # Get instrument info (tick size, lot size)
+            tick_size = 0.0001
+            qty_step = 0.001
+            min_qty = 0.001
+            try:
+                inst_list = self.broker.get_instruments_info(symbol=sym)
+                if inst_list and len(inst_list) > 0:
+                    inst_info = inst_list[0]
+                    tick_size = float(inst_info.get('priceFilter', {}).get('tickSize', 0.0001))
+                    qty_step = float(inst_info.get('lotSizeFilter', {}).get('qtyStep', 0.001))
+                    min_qty = float(inst_info.get('lotSizeFilter', {}).get('minOrderQty', 0.001))
+            except Exception as e:
+                logger.warning(f"Failed to get instrument info for {sym}: {e}")
             
-            if qty < min_qty:
-                logger.warning(f"Qty {qty} below min {min_qty} for {sym}")
+            # Helper function to round to tick size
+            def round_to_tick(price):
+                return round(price / tick_size) * tick_size
+            
+            # Helper function to round quantity to qtyStep
+            def round_to_qty_step(quantity):
+                """Round quantity to instrument's qtyStep (e.g., whole numbers for some coins)"""
+                if qty_step > 0:
+                    return round(quantity / qty_step) * qty_step
+                return round(quantity, 6)
+            
+            # Calculate position size
+            signal_price = row['close']
+            atr = row['atr']
+            rsi = row['rsi']
+            
+            # ATR validation (matches backtest: if pd.isna(atr) or atr <= 0: continue)
+            if pd.isna(atr) or atr <= 0:
+                logger.warning(f"Skip {sym}: Invalid ATR ({atr})")
                 return
             
-            # Set maximum leverage
-            try:
-                self.broker.set_leverage(sym, leverage=None)
-            except Exception as e:
-                logger.warning(f"Failed to set leverage for {sym}: {e}")
-            
-            # ============================================
-            # STEP 1: CALCULATE TP/SL AT EXPECTED ENTRY PRICE
-            # ============================================
-            # Use signal_price as expected entry (matches backtest candle open)
-            expected_entry = round_to_tick(signal_price)
-            
+            # Calculate SL/TP (Pivot-based)
             RR_RATIO = 3.0
-            LOOKBACK = 15
             
-            # Use signal-time swing values if provided (matches backtest exactly)
-            if signal_swing_low is not None and signal_swing_high is not None:
-                swing_low_val = signal_swing_low
-                swing_high_val = signal_swing_high
-                constraint_atr = signal_atr if signal_atr else atr
-            else:
-                swing_low_val = df_closed['low'].tail(LOOKBACK).min()
-                swing_high_val = df_closed['high'].tail(LOOKBACK).max()
-                constraint_atr = atr
+            # Get swing points from signal detection
+            swing_low = signal_swing_low if signal_swing_low is not None else df_closed['low'].rolling(14).min().iloc[-1]
+            swing_high = signal_swing_high if signal_swing_high is not None else df_closed['high'].rolling(14).max().iloc[-1]
+            
+            # Use next candle's open as entry (matches backtest)
+            if len(df) < 2:
+                logger.warning(f"Skip {sym}: Not enough candles for next open")
+                return
+            expected_entry = df.iloc[-1]['open']  # Next candle's open (forming candle)
+            
+            # Constraint ATR (for SL distance validation)
+            constraint_atr = signal_atr if signal_atr is not None else atr
             
             if side == 'long':
-                # SL at swing low - MUST BE BELOW expected entry
-                sl = round_to_tick(swing_low_val)
+                sl = swing_low
                 
+                # Validate SL is below entry
                 if sl >= expected_entry:
                     logger.warning(f"⚠️ SKIP {sym}: Swing low ({sl}) >= expected entry ({expected_entry})")
                     return
@@ -1952,9 +1972,9 @@ class DivergenceBot:
                 
                 tp = round_to_tick(expected_entry + (RR_RATIO * sl_distance))
             else:
-                # SL at swing high - MUST BE ABOVE expected entry
-                sl = round_to_tick(swing_high_val)
+                sl = swing_high
                 
+                # Validate SL is above entry  
                 if sl <= expected_entry:
                     logger.warning(f"⚠️ SKIP {sym}: Swing high ({sl}) <= expected entry ({expected_entry})")
                     return
@@ -1985,6 +2005,29 @@ class DivergenceBot:
             logger.info(f"📊 {sym} PIVOT SL: {sl_atr_mult:.2f}×ATR | R:R = {actual_rr:.1f}:1")
             logger.info(f"   Entry: ${expected_entry:.6f} | SL: ${sl:.6f} | TP1R: ${tp_1r:.6f} | TP3R: ${tp:.6f}")
             
+            # Calculate position size
+            risk_val = self.risk_config['value']
+            risk_type = self.risk_config['type']
+            risk_amount = balance * (risk_val / 100) if risk_type == 'percent' else risk_val
+            
+            qty = risk_amount / sl_distance
+            qty = round_to_qty_step(qty)  # Round to valid qtyStep
+            
+            if qty < min_qty:
+                logger.warning(f"Skip {sym}: qty {qty} < min {min_qty}")
+                return
+            
+            # Calculate partial qty (50%) - CRITICAL: Round to qtyStep
+            qty_partial = round_to_qty_step(qty / 2)
+            
+            # Ensure partial qty is at least min_qty
+            if qty_partial < min_qty:
+                logger.warning(f"⚠️ {sym}: Partial qty {qty_partial} < min {min_qty}, using full qty instead")
+                qty_partial = qty  # Use full position if half is too small
+            
+            logger.info(f"📐 {sym} SL distance: {sl_atr_mult:.2f}×ATR | Risk: ${risk_amount:.2f}")
+            logger.info(f"   Qty: {qty} | Partial (50%): {qty_partial} | qtyStep: {qty_step}")
+            
             # ============================================
             # STEP 2: PLACE LIMIT ORDER WITH SL ONLY
             # ============================================
@@ -2009,7 +2052,7 @@ class DivergenceBot:
             logger.info(f"🛡️ SL PROTECTION: SL=${sl:.6f} (TP will be partial at 1R)")
             
             # Track in pending_limit_orders for monitoring (fills, timeout, invalidation)
-            # NEW: Include partial TP fields
+            # NEW: Include partial TP fields with PROPERLY ROUNDED qty
             self.pending_limit_orders[sym] = {
                 'order_id': order_id,
                 'side': side,
@@ -2021,7 +2064,8 @@ class DivergenceBot:
                 'sl': sl,
                 'sl_distance': sl_distance,  # NEW: For trailing calculations
                 'qty': qty,
-                'qty_partial': round(qty / 2, 6),  # NEW: 50% for partial TP
+                'qty_partial': qty_partial,  # NEW: 50% for partial TP - PROPERLY ROUNDED
+                'qty_step': qty_step,        # NEW: Store for later use
                 'created_at': time.time(),
                 'is_auto_promoted': False,
                 'optimal_rr': actual_rr  # Store R:R for notification

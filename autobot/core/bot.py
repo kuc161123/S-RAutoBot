@@ -66,6 +66,7 @@ class DivergenceBot:
         self.partial_wins = 0  # Trades where partial TP was taken
         self.full_wins = 0     # Trades that hit full 3R target
         self.trailed_exits = 0 # Trades that exited via trailing SL
+        self.total_r_realized = 0.0  # Actual cumulative R-value (accurate P&L)
         
         # Daily Summary
         self.last_daily_summary = time.time()
@@ -186,6 +187,7 @@ class DivergenceBot:
             'partial_wins': self.partial_wins,
             'full_wins': self.full_wins,
             'trailed_exits': self.trailed_exits,
+            'total_r_realized': self.total_r_realized,  # Accurate P&L tracking
             'signals_detected': self.signals_detected,
             'trades_executed': self.trades_executed,
             'last_daily_summary': self.last_daily_summary,
@@ -242,6 +244,7 @@ class DivergenceBot:
             self.partial_wins = state.get('partial_wins', 0)
             self.full_wins = state.get('full_wins', 0)
             self.trailed_exits = state.get('trailed_exits', 0)
+            self.total_r_realized = state.get('total_r_realized', 0.0)  # Accurate P&L
             self.signals_detected = state.get('signals_detected', 0)
             self.trades_executed = state.get('trades_executed', 0)
             self.last_daily_summary = state.get('last_daily_summary', time.time())
@@ -258,7 +261,7 @@ class DivergenceBot:
             pending_orders = len(self.pending_limit_orders)
             active = len(self.active_trades)
             logger.info(f"📂 State loaded from {file_path} (saved {age_hrs:.1f}h ago)")
-            logger.info(f"   Stats: {self.wins}W/{self.losses}L | Partial TPs: {self.partial_wins} | Trailed: {self.trailed_exits}")
+            logger.info(f"   Stats: {self.wins}W/{self.losses}L | P&L: {self.total_r_realized:+.2f}R")
             logger.info(f"   Orders: {pending_orders} pending, {active} active trades")
         except FileNotFoundError:
             logger.info("📂 No previous state found, starting fresh")
@@ -547,9 +550,8 @@ class DivergenceBot:
                 live_ev = 0
                 ev_per_trade = 0
             
-            # Calculate P&L in R-multiples (now accounts for 0.5R partial TP)
-            # Each trade can result in: -1R (full loss), 0R (BE), +0.25R to +1.75R
-            pnl_r = (self.wins * 1.0) - (self.losses * 1.0)  # Avg win ~1.0R with 0.5R partial
+            # Use actual tracked R-value for accurate P&L
+            pnl_r = self.total_r_realized
             
             # === BUILD MESSAGE ===
             msg = (
@@ -577,12 +579,13 @@ class DivergenceBot:
                 f"💰 **EXECUTED TRADES**\n"
                 f"├ Total: {self.trades_executed}\n"
                 f"├ Open: {len(self.active_trades)}\n"
+                f"├ Closed: {self.wins + self.losses}\n"
                 f"├ ✅ Won: {self.wins} | ❌ Lost: {self.losses}\n"
                 f"├ 💰 Partial TPs: {self.partial_wins}\n"
                 f"├ 📈 Trailed Exits: {self.trailed_exits}\n"
                 f"├ 🎯 Full TPs: {self.full_wins}\n"
                 f"├ WR: {exec_wr:.1f}%\n"
-                f"└ P&L: ~{pnl_r:+.1f}R\n\n"
+                f"└ P&L: {pnl_r:+.2f}R\n\n"
                 
                 f"🕵️ **SHADOW AUDIT**\n"
                 f"├ Match Rate: {self.auditor.get_stats()['rate']:.1f}%\n"
@@ -3059,6 +3062,8 @@ class DivergenceBot:
                                         exit_type = "✅ WIN" if exit_r > 0 else "❌ LOSS"
                                     
                                     # Count as win if total_r > 0
+                                    self.total_r_realized += total_r  # Track actual R earned
+                                    
                                     if total_r > 0:
                                         outcome_display = f"✅ +{total_r:.2f}R"
                                         outcome = "win"

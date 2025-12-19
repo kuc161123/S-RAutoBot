@@ -592,18 +592,122 @@ class DivergenceBot:
                 f"└ Checks: {self.auditor.get_stats()['matches'] + self.auditor.get_stats()['mismatches']}\n"
             )
             
-            # Add active trades if any - show R level and SL status
+            # Add active trades with ENHANCED detail
             if self.active_trades:
-                msg += "\n🔔 **ACTIVE POSITIONS**\n"
-                for sym, trade in list(self.active_trades.items())[:5]:
-                    side_icon = "🟢" if trade['side'] == 'long' else "🔴"
-                    max_r = trade.get('max_favorable_r', 0)
-                    partial_done = "✅" if trade.get('partial_tp_filled') else "⏳"
-                    sl_status = "BE" if trade.get('sl_at_breakeven') else "SL"
-                    msg += f"├ {side_icon} `{sym}` +{max_r:.1f}R {partial_done} {sl_status}\n"
+                # Calculate total unrealized P&L
+                total_unrealized = sum(trade.get('max_favorable_r', 0) for trade in self.active_trades.values())
+                
+                msg += f"\n🔔 **ACTIVE POSITIONS** ({len(self.active_trades)} open, {total_unrealized:+.1f}R unrealized)\n\n"
+                
+                # Show top 3 in dashboard, use /positions for all
+                for sym, trade in list(self.active_trades.items())[:3]:
+                    try:
+                        # Get current market price for accurate R calculation
+                        current_price = 0
+                        try:
+                            ticker = self.broker.get_ticker(sym)
+                            current_price = float(ticker.get('lastPrice', 0)) if ticker else 0
+                        except:
+                            current_price = 0
+                        
+                        side = trade['side']
+                        entry = trade['entry']
+                        sl_distance = trade.get('sl_distance', 0)
+                        sl_current = trade.get('sl_current', trade.get('sl_initial', 0))
+                        partial_filled = trade.get('partial_tp_filled', False)
+                        partial_r_locked = trade.get('partial_r_locked', 0)
+                        sl_at_be = trade.get('sl_at_breakeven', False)
+                        trailing = trade.get('trailing_active', False)
+                        max_r = trade.get('max_favorable_r', 0)
+                        open_time = trade.get('open_time', time.time())
+                        
+                        # Calculate current R accurately
+                        if current_price > 0 and sl_distance > 0:
+                            if side == 'long':
+                                current_r = (current_price - entry) / sl_distance
+                                price_dir = "📈" if current_price > entry else "📉"
+                            else:
+                                current_r = (entry - current_price) / sl_distance
+                                price_dir = "📉" if current_price < entry else "📈"
+                        else:
+                            current_r = max_r
+                            price_dir = "⏸️"
+                        
+                        # Calculate SL in R
+                        if sl_distance > 0:
+                            if side == 'long':
+                                sl_r = (sl_current - entry) / sl_distance
+                            else:
+                                sl_r = (entry - sl_current) / sl_distance
+                        else:
+                            sl_r = -1.0
+                        
+                        # Calculate unrealized P&L
+                        if partial_filled:
+                            unrealized_r = (current_r - 0) * 0.5  # 50% remaining
+                            total_current_r = partial_r_locked + unrealized_r
+                        else:
+                            unrealized_r = current_r
+                            total_current_r = current_r
+                        
+                        # Status icons
+                        side_icon = "🟢" if side == 'long' else "🔴"
+                        partial_icon = "✅" if partial_filled else "⏳"
+                        protection = "🛡️" if sl_at_be else "⚠️"
+                        trail_icon = "🔥" if trailing else ("⏸️" if sl_at_be else "OFF")
+                        
+                        # Time in trade
+                        time_in_trade = int((time.time() - open_time) / 60)
+                        hours = time_in_trade // 60
+                        mins = time_in_trade % 60
+                        time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
+                        
+                        # Next milestone
+                        if not partial_filled:
+                            distance_to_partial = 0.5 - current_r
+                            next_milestone = f"{distance_to_partial:+.1f}R to +0.5R (partial TP)"
+                        elif not trailing:
+                            distance_to_trail = 1.0 - current_r
+                            next_milestone = f"{distance_to_trail:+.1f}R to +1R (trail)"
+                        else:
+                            next_milestone = "Trail moves with price"
+                        
+                        # Risk status
+                        if trailing:
+                            risk_status = f"{protection} TRAILING at {sl_r:+.1f}R"
+                        elif sl_at_be:
+                            risk_status = f"{protection} Protected at BE"
+                        else:
+                            risk_status = f"{protection} At Risk"
+                        
+                        # Format price display
+                        if current_price > 0:
+                            price_display = f"${entry:.4f} → ${current_price:.4f}"
+                        else:
+                            price_display = f"${entry:.4f}"
+                        
+                        # Build compact display
+                        msg += (
+                            f"┌─ {side_icon} {side.upper()} `{sym}` ────\n"
+                            f"├ Now: {total_current_r:+.2f}R ({price_display}) {price_dir}\n"
+                            f"├ {risk_status}\n"
+                            f"├ Locked: {partial_r_locked:+.2f}R | Open: {unrealized_r:+.2f}R\n"
+                            f"├ SL: ${sl_current:.4f} ({sl_r:+.1f}R) | Max: {max_r:+.1f}R\n"
+                            f"├ Trail: {trail_icon} | Time: {time_str}\n"
+                            f"└ Next: {next_milestone}\n\n"
+                        )
+                    except Exception as e:
+                        # Fallback to simple display if error
+                        side_icon = "🟢" if trade.get('side') == 'long' else "🔴"
+                        max_r = trade.get('max_favorable_r', 0)
+                        msg += f"├ {side_icon} `{sym}` +{max_r:.1f}R\n"
+                
+                if len(self.active_trades) > 3:
+                    remaining = len(self.active_trades) - 3
+                    msg += f"... and {remaining} more (use /positions for all)\n"
             
             msg += "\n━━━━━━━━━━━━━━━━━━━━\n"
-            msg += "💡 /backtest /status /help"
+            msg += "💡 /positions /backtest /help"
             
             await update.message.reply_text(msg, parse_mode='Markdown')
             
@@ -618,6 +722,133 @@ class DivergenceBot:
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
             logger.error(f"cmd_learn error: {e}")
+
+    async def cmd_positions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show ALL active positions with full detail"""
+        try:
+            if not self.active_trades:
+                await update.message.reply_text("📊 No active positions.")
+                return
+            
+            # Calculate totals
+            total_unrealized = 0
+            total_locked = 0
+            
+            msg = f"📊 **ALL ACTIVE POSITIONS** ({len(self.active_trades)} total)\n\n"
+            
+            for sym, trade in self.active_trades.items():
+                try:
+                    # Get current market price for accurate R
+                    current_price = 0
+                    try:
+                        ticker = self.broker.get_ticker(sym)
+                        current_price = float(ticker.get('lastPrice', 0)) if ticker else 0
+                    except:
+                        pass
+                    
+                    side = trade['side']
+                    entry = trade['entry']
+                    sl_distance = trade.get('sl_distance', 0)
+                    sl_current = trade.get('sl_current', trade.get('sl_initial', 0))
+                    partial_filled = trade.get('partial_tp_filled', False)
+                    partial_r_locked = trade.get('partial_r_locked', 0)
+                    sl_at_be = trade.get('sl_at_breakeven', False)
+                    trailing = trade.get('trailing_active', False)
+                    max_r = trade.get('max_favorable_r', 0)
+                    open_time = trade.get('open_time', time.time())
+                    combo = trade.get('combo', 'Unknown')
+                    
+                    # Calculate current R accurately
+                    if current_price > 0 and sl_distance > 0:
+                        if side == 'long':
+                            current_r = (current_price - entry) / sl_distance
+                            price_dir = "📈" if current_price > entry else "📉"
+                        else:
+                            current_r = (entry - current_price) / sl_distance
+                            price_dir = "📉" if current_price < entry else "📈"
+                    else:
+                        current_r = max_r
+                        price_dir = "⏸️"
+                    
+                    # Calculate SL in R
+                    if sl_distance > 0:
+                        if side == 'long':
+                            sl_r = (sl_current - entry) / sl_distance
+                        else:
+                            sl_r = (entry - sl_current) / sl_distance
+                    else:
+                        sl_r = -1.0
+                    
+                    # Calculate P&L
+                    if partial_filled:
+                        unrealized_r = current_r * 0.5
+                        total_current_r = partial_r_locked + unrealized_r
+                        total_locked += partial_r_locked
+                    else:
+                        unrealized_r = current_r
+                        total_current_r = current_r
+                    
+                    total_unrealized += total_current_r
+                    
+                    # Icons
+                    side_icon = "🟢" if side == 'long' else "🔴"
+                    protection = "🛡️" if sl_at_be else "⚠️"
+                    trail_icon = "🔥" if trailing else ("⏸️" if sl_at_be else "OFF")
+                    
+                    # Time
+                    mins = int((time.time() - open_time) / 60)
+                    hours = mins // 60
+                    mins_rem = mins % 60
+                    time_str = f"{hours}h {mins_rem}m" if hours > 0 else f"{mins_rem}m"
+                    
+                    # Next milestone
+                    if not partial_filled:
+                        dist = 0.5 - current_r
+                        next_milestone = f"{dist:+.1f}R to +0.5R (partial TP)"
+                    elif not trailing:
+                        dist = 1.0 - current_r
+                        next_milestone = f"{dist:+.1f}R to +1R (trail)"
+                    else:
+                        next_milestone = "Trailing with price"
+                    
+                    # Risk status
+                    if trailing:
+                        status = f"{protection} TRAILING at {sl_r:+.1f}R"
+                    elif sl_at_be:
+                        status = f"{protection} Protected at BE"
+                    else:
+                        status = f"{protection} At Risk"
+                    
+                    # Prices
+                    if current_price > 0:
+                        prices = f"${entry:.6f} → ${current_price:.6f}"
+                    else:
+                        prices = f"${entry:.6f}"
+                    
+                    msg += (
+                        f"┌─ {side_icon} {side.upper()} `{sym}` ──────────\n"
+                        f"├ **Current: {total_current_r:+.2f}R** ({prices}) {price_dir}\n"
+                        f"├ Status: {status}\n"
+                        f"├ Combo: `{combo}`\n"
+                        f"├ Locked: **{partial_r_locked:+.2f}R** | Open: {unrealized_r:+.2f}R\n"
+                        f"├ SL: ${sl_current:.6f} ({sl_r:+.1f}R) | Max: {max_r:+.1f}R\n"
+                        f"├ Trail: {trail_icon} | Time: {time_str}\n"
+                        f"└ Next: {next_milestone}\n\n"
+                    )
+                except Exception as e:
+                    logger.error(f"Error formatting position {sym}: {e}")
+                    msg += f"├ {sym}: Error loading details\n"
+            
+            # Summary footer
+            msg += f"━━━━━━━━━━━━━━━━━━━━\n"
+            msg += f"💰 **TOTAL**: {total_unrealized:+.2f}R unrealized | {total_locked:+.2f}R locked\n"
+            msg += f"💡 Use /dashboard for summary"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"cmd_positions error: {e}")
 
     async def cmd_backtest(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show comprehensive live vs backtest performance comparison"""
@@ -2674,6 +2905,7 @@ class DivergenceBot:
             self.tg_app.add_handler(CommandHandler("risk", self.cmd_risk))
             self.tg_app.add_handler(CommandHandler("phantoms", self.cmd_phantoms))
             self.tg_app.add_handler(CommandHandler("dashboard", self.cmd_dashboard))
+            self.tg_app.add_handler(CommandHandler("positions", self.cmd_positions))  # NEW: Show all positions
             self.tg_app.add_handler(CommandHandler("backtest", self.cmd_backtest))
             self.tg_app.add_handler(CommandHandler("analytics", self.cmd_analytics))
             self.tg_app.add_handler(CommandHandler("learn", self.cmd_learn))

@@ -2903,9 +2903,6 @@ class DivergenceBot:
                     # Monitor pending limit orders (check for fills, invalidation, timeout)
                     await self.monitor_pending_limit_orders(candle_data)
                     
-                    # Check divergence pending orders for 5-minute timeout
-                    await self.check_pending_orders()
-                    
                     # Monitor trailing SL and partial TP fills
                     await self.monitor_trailing_sl(candle_data)
                     

@@ -600,11 +600,16 @@ class DivergenceBot:
                     try:
                         # Get current market price for accurate R calculation
                         current_price = 0
+                        ticker_error = None
                         try:
                             ticker = self.broker.get_ticker(sym)
-                            current_price = float(ticker.get('lastPrice', 0)) if ticker else 0
-                        except:
-                            current_price = 0
+                            if ticker and 'lastPrice' in ticker:
+                                current_price = float(ticker['lastPrice'])
+                            else:
+                                ticker_error = "No lastPrice in ticker"
+                        except Exception as e:
+                            ticker_error = str(e)
+                            logger.warning(f"Failed to fetch ticker for {sym}: {e}")
                         
                         side = trade['side']
                         entry = trade['entry']
@@ -626,8 +631,15 @@ class DivergenceBot:
                                 current_r = (entry - current_price) / sl_distance
                                 price_dir = "📉" if current_price < entry else "📈"
                         else:
-                            current_r = max_r
-                            price_dir = "⏸️"
+                            # Fallback: use entry price if ticker failed (R = 0)
+                            if ticker_error:
+                                logger.error(f"{sym}: Using entry price (ticker failed: {ticker_error})")
+                                current_price = entry
+                                current_r = 0
+                                price_dir = "⚠️"
+                            else:
+                                current_r = max_r
+                                price_dir = "⏸️"
                         
                         # Calculate SL in R
                         if sl_distance > 0:
@@ -732,10 +744,15 @@ class DivergenceBot:
                 try:
                     # Get current market price for accurate R
                     current_price = 0
+                    ticker_error = None
                     try:
                         ticker = self.broker.get_ticker(sym)
-                        current_price = float(ticker.get('lastPrice', 0)) if ticker else 0
-                    except:
+                        if ticker and 'lastPrice' in ticker:
+                            current_price = float(ticker['lastPrice'])
+                        else:
+                            ticker_error = "No lastPrice in ticker"
+                    except Exception as e:
+                        ticker_error = str(e)
                         pass
                     
                     side = trade['side']
@@ -759,8 +776,14 @@ class DivergenceBot:
                             current_r = (entry - current_price) / sl_distance
                             price_dir = "📉" if current_price < entry else "📈"
                     else:
-                        current_r = max_r
-                        price_dir = "⏸️"
+                        # Fallback: use entry price if ticker failed (R = 0)
+                        if ticker_error:
+                            current_price = entry
+                            current_r = 0
+                            price_dir = "⚠️"
+                        else:
+                            current_r = max_r
+                            price_dir = "⏸️"
                     
                     # Calculate SL in R
                     if sl_distance > 0:

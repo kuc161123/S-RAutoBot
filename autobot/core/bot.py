@@ -842,11 +842,11 @@ class DivergenceBot:
         """Show comprehensive live vs backtest performance comparison"""
         try:
             # === BACKTEST REFERENCE (All Divergences Strategy 1H) ===
-            # From walk-forward validated all-divergences backtest
-            BT_WIN_RATE = 52.9  # % (All 4 types, 126 symbols)
-            BT_EV = 1.12        # R per trade
-            BT_RR = 3.0         # Risk:Reward
-            BT_TRADES_PER_DAY = 111  # ~111 trades/day (6688 trades / 60 days)
+            # From walk-forward validated optimal trailing backtest (150 symbols)
+            BT_WIN_RATE = 54.7  # % (Optimal trailing: BE 0.7R, trail 0.3R)
+            BT_EV = 0.179       # R per trade (grid search out-of-sample)
+            BT_RR = 3.0         # Risk:Reward (full 3R target)
+            BT_TRADES_PER_DAY = 49  # ~49 trades/day (2969 trades OOS / 60 days est)
             
             # === LIVE DATA ===
             uptime_hrs = (time.time() - self.learner.started_at) / 3600
@@ -933,10 +933,10 @@ class DivergenceBot:
                 f"└ {rating_detail}\n\n"
                 
                 f"📋 **BACKTEST REFERENCE**\n"
-                f"├ WR: {BT_WIN_RATE}% (All Divergences)\n"
+                f"├ WR: {BT_WIN_RATE}% (Optimal Trail)\n"
                 f"├ EV: +{BT_EV}R/trade\n"
                 f"├ R:R: {BT_RR}:1\n"
-                f"└ Total: +7,476R (60 days, 126 syms)\n"
+                f"└ Total: +532R OOS (150 syms, walk-forward)\n"
             )
             
             msg += "\n━━━━━━━━━━━━━━━━━━━━\n"

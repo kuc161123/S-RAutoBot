@@ -3180,6 +3180,22 @@ class DivergenceBot:
                                             else:
                                                 outcome = "win" if current_price <= entry else "loss"
                                                 exit_price = current_price
+                                    
+                                    # FINAL FALLBACK: If exit_price is still 0/None, try ticker one last time
+                                    if not exit_price or exit_price <= 0:
+                                        try:
+                                            ticker = self.broker.get_ticker(sym)
+                                            if ticker:
+                                                exit_price = float(ticker.get('lastPrice', 0))
+                                                logger.info(f"Using ticker for exit price: {exit_price}")
+                                        except:
+                                            pass
+                                    
+                                    # If STILL 0, use entry (neutral result) to prevent crash
+                                    if not exit_price or exit_price <= 0:
+                                        exit_price = entry
+                                        outcome = "loss"  # Assume loss if unknown
+                                        logger.warning(f"Could not determine exit price for {sym}, assuming entry/loss")
                                 
                                 # =======================================================
                                 # COUNTER UPDATE & NOTIFICATION (runs for ALL outcomes)

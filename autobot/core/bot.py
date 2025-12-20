@@ -2513,12 +2513,12 @@ class DivergenceBot:
                                     f"📈 **TRAILING SL UPDATED**\n"
                                     f"━━━━━━━━━━━━━━━━━━━━\n"
                                     f"📊 Symbol: `{sym}`\n"
-                                    f"📈 Current: +{max_r:.1f}R unrealized\n\n"
+                                    f"📈 Current: +{max_r:.1f}R (full position)\n\n"
                                     f"🛡️ **SL MOVED**\n"
                                     f"├ Previous: ${old_sl:.4f}\n"
                                     f"├ New: ${new_sl:.4f}\n"
                                     f"└ Protected: **+{protected_r:.1f}R** minimum\n\n"
-                                    f"💰 Total locked: +0.5R (partial) + {protected_r:.1f}R = **+{0.5 + protected_r/2:.2f}R**"
+                                    f"💰 Trailing at +{protected_r:.1f}R (0.3R behind +{max_r:.1f}R)"
                                 )
                         except Exception as e:
                             logger.error(f"Failed to update trailing SL for {sym}: {e}")

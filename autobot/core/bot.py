@@ -2672,7 +2672,8 @@ class DivergenceBot:
                     
                     if sl_valid:
                         try:
-                            self.broker.set_sl_only(sym, initial_trail_sl, trade_info['qty_remaining'])
+                            # Use Full mode (no qty) - Partial mode causes errors
+                            self.broker.set_sl_only(sym, initial_trail_sl)
                             
                             # === VERIFY SL WAS ACTUALLY SET ===
                             import time as t
@@ -2747,9 +2748,8 @@ class DivergenceBot:
                     
                     if should_update and time_since_update >= MIN_SL_UPDATE_INTERVAL:
                         try:
-                            # Use qty_remaining which is already properly rounded
-                            qty_for_sl = trade_info.get('qty_remaining', trade_info['qty_initial'])
-                            self.broker.set_sl_only(sym, new_sl, qty_for_sl)
+                            # Use Full mode (no qty) - Partial mode causes Bybit errors
+                            self.broker.set_sl_only(sym, new_sl)
                             
                             old_sl = trade_info['sl_current']
                             trade_info['sl_current'] = new_sl

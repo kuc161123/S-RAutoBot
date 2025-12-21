@@ -492,99 +492,84 @@ def backtest_timeframe(symbols, interval, data_days, cooldown_bars, timeout_bars
 
 def main():
     print("=" * 80)
-    print("🔬 ULTRA-ROBUST BACKTEST: 3M vs 1H COMPARISON")
+    print("🔬 1H STOCHASTIC RSI FILTER BACKTEST")
     print("=" * 80)
-    print("\nMAXIMUM ROBUSTNESS FEATURES:")
-    print("  ✓ 300 symbols (top Bybit by volume)")
-    print("  ✓ 60 days of data")
+    print("\nCOMPARING:")
+    print("  • 1H BASE (no filter)")
+    print("  • 1H + StochRSI EXTREMES (K>80 shorts, K<20 longs)")
+    print("")
+    print("ROBUSTNESS FEATURES:")
+    print(f"  ✓ {NUM_SYMBOLS} symbols (top Bybit by volume)")
+    print(f"  ✓ {DATA_DAYS} days of data")
     print("  ✓ Walk-forward: 70% IS / 30% OOS")
     print("  ✓ NO lookahead (pivot right=0)")
-    print("  ✓ Slippage: 0.1% (3m) / 0.05% (1H)")
+    print("  ✓ ATR-based SL (1.0x ATR)")
     print("  ✓ Commission: 0.055% per leg")
     print("  ✓ Timeout = LOSS")
-    print("  ✓ Weekday/Weekend breakdown")
     print("=" * 80)
     
-    # Get top 300 symbols
-    print("\n📦 Fetching top 300 symbols by volume...")
+    # Get symbols
+    print(f"\n📦 Fetching top {NUM_SYMBOLS} symbols by volume...")
     symbols = get_top_symbols(NUM_SYMBOLS)
     print(f"   Got {len(symbols)} symbols")
     
-    if len(symbols) < 50:
+    if len(symbols) < 20:
         print("❌ Not enough symbols. Check API connection.")
         return
     
     results = {}
     
-    # Test 3-minute
-    results['3m'] = backtest_timeframe(
-        symbols, '3', DATA_DAYS, 
-        COOLDOWN_BARS_3M, TIMEOUT_BARS_3M, 
-        SLIPPAGE_PCT_3M, "3-MINUTE"
-    )
-    
-    # Test 1-hour (60-minute)
-    results['1h'] = backtest_timeframe(
+    # Test 1H WITHOUT StochRSI filter
+    results['1h_base'] = backtest_timeframe(
         symbols, '60', DATA_DAYS, 
         COOLDOWN_BARS_1H, TIMEOUT_BARS_1H, 
-        SLIPPAGE_PCT_1H, "1-HOUR (60-MINUTE)"
+        SLIPPAGE_PCT_1H, "1H BASE (No Filter)",
+        stoch_filter=False
+    )
+    
+    # Test 1H WITH StochRSI filter
+    results['1h_stoch'] = backtest_timeframe(
+        symbols, '60', DATA_DAYS, 
+        COOLDOWN_BARS_1H, TIMEOUT_BARS_1H, 
+        SLIPPAGE_PCT_1H, "1H + STOCH RSI EXTREMES",
+        stoch_filter=True
     )
     
     # === SUMMARY ===
     print("\n" + "=" * 80)
-    print("📊 FINAL COMPARISON: OUT-OF-SAMPLE RESULTS ONLY")
+    print("📊 COMPARISON: OUT-OF-SAMPLE RESULTS")
     print("=" * 80)
     
-    print(f"\n| Timeframe | Trades | WR%    | LB WR% | Total R  | Avg R   | Robust? |")
-    print(f"|-----------|--------|--------|--------|----------|---------|---------|")
+    print("\n| Strategy              | Trades | WR%    | LB WR% | Total R  | Avg R   |")
+    print("|----------------------|--------|--------|--------|----------|---------|")
     
-    for tf, data in results.items():
-        if data['oos']:
+    for name, data in results.items():
+        if data.get('oos'):
             oos = data['oos']
-            is_data = data['is']
-            
-            # Robustness check
-            if is_data:
-                wr_drop = is_data['wr'] - oos['wr']
-                robust = "✅" if abs(wr_drop) < 5 else "⚠️"
-            else:
-                wr_drop = 0
-                robust = "?"
-            
-            print(f"| {tf:<9} | {oos['n']:<6} | {oos['wr']:<6.1f} | {oos['lb_wr']:<6.1f} | {oos['total_r']:>+8.1f} | {oos['avg_r']:>+7.3f} | {robust:<7} |")
-    
-    # Weekday vs Weekend
-    print(f"\n📅 WEEKDAY vs WEEKEND BREAKDOWN (OOS)")
-    print(f"\n| TF  | Weekday WR | Weekend WR | WD Total R | WE Total R |")
-    print(f"|-----|------------|------------|------------|------------|")
-    
-    for tf, data in results.items():
-        wd = data['weekday']
-        we = data['weekend']
-        if wd and we:
-            print(f"| {tf:<3} | {wd['wr']:<10.1f} | {we['wr']:<10.1f} | {wd['total_r']:>+10.1f} | {we['total_r']:>+10.1f} |")
+            label = "1H BASE (No Filter)" if name == '1h_base' else "1H + STOCH RSI"
+            print(f"| {label:<20} | {oos['n']:<6} | {oos['wr']:<6.1f} | {oos['lb_wr']:<6.1f} | {oos['total_r']:>+8.1f} | {oos['avg_r']:>+7.3f} |")
     
     # Recommendation
     print("\n" + "=" * 80)
     print("💡 RECOMMENDATION")
     print("=" * 80)
     
-    if '3m' in results and '1h' in results:
-        r3m = results['3m']['oos']
-        r1h = results['1h']['oos']
-        
-        if r3m and r1h:
-            if r3m['avg_r'] > r1h['avg_r']:
-                diff = ((r3m['avg_r'] - r1h['avg_r']) / abs(r1h['avg_r'])) * 100 if r1h['avg_r'] != 0 else 0
-                print(f"\n🏆 3-MINUTE is BETTER:")
-                print(f"   • {r3m['avg_r']:+.3f} vs {r1h['avg_r']:+.3f} Avg R/trade")
-                print(f"   • {diff:+.0f}% improvement per trade")
-                print(f"   • {r3m['n']} vs {r1h['n']} trades over 60 days")
-            else:
-                diff = ((r1h['avg_r'] - r3m['avg_r']) / abs(r3m['avg_r'])) * 100 if r3m['avg_r'] != 0 else 0
-                print(f"\n🏆 1-HOUR is BETTER:")
-                print(f"   • {r1h['avg_r']:+.3f} vs {r3m['avg_r']:+.3f} Avg R/trade")
-                print(f"   • {diff:+.0f}% improvement per trade")
+    base = results.get('1h_base', {}).get('oos', {})
+    stoch = results.get('1h_stoch', {}).get('oos', {})
+    
+    if base and stoch:
+        if stoch['avg_r'] > base['avg_r']:
+            diff = ((stoch['avg_r'] - base['avg_r']) / abs(base['avg_r'])) * 100 if base['avg_r'] != 0 else 0
+            print(f"\n🏆 STOCH RSI FILTER IS BETTER:")
+            print(f"   • Avg R: {stoch['avg_r']:+.3f} vs {base['avg_r']:+.3f}")
+            print(f"   • WR: {stoch['wr']:.1f}% vs {base['wr']:.1f}%")
+            print(f"   • Improvement: {diff:+.0f}% per trade")
+            print(f"\n   CONSIDER implementing StochRSI filter in live bot!")
+        else:
+            diff = ((base['avg_r'] - stoch['avg_r']) / abs(stoch['avg_r'])) * 100 if stoch['avg_r'] != 0 else 0
+            print(f"\n🏆 BASE (NO FILTER) IS BETTER:")
+            print(f"   • Avg R: {base['avg_r']:+.3f} vs {stoch['avg_r']:+.3f}")
+            print(f"   • {diff:+.0f}% improvement per trade")
     
     return results
 

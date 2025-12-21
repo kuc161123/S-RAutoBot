@@ -2328,7 +2328,14 @@ class DivergenceBot:
             def round_to_qty_step(quantity):
                 """Round quantity to instrument's qtyStep (e.g., whole numbers for some coins)"""
                 if qty_step > 0:
-                    return round(quantity / qty_step) * qty_step
+                    # Round to qtyStep and then round to proper decimal places to avoid floating point issues
+                    rounded = round(quantity / qty_step) * qty_step
+                    # Calculate decimal places from qtyStep (e.g., 0.1 = 1 decimal, 0.01 = 2 decimals)
+                    if qty_step >= 1:
+                        decimals = 0
+                    else:
+                        decimals = len(str(qty_step).split('.')[-1].rstrip('0'))
+                    return round(rounded, max(decimals, 0))
                 return round(quantity, 6)
             
             # Calculate position size
@@ -2848,11 +2855,33 @@ class DivergenceBot:
             
             qty = risk_amt / dist
             
-            # Round based on price magnitude
-            if entry > 1000: qty = round(qty, 3)
-            elif entry > 10: qty = round(qty, 2)
-            elif entry > 1: qty = round(qty, 1)
-            else: qty = round(qty, 0)
+            # Get instrument info for proper qty rounding
+            try:
+                inst_list = self.broker.get_instruments_info(symbol=sym)
+                if inst_list and len(inst_list) > 0:
+                    inst = inst_list[0]
+                    qty_step = float(inst.get('lotSizeFilter', {}).get('qtyStep', 0.001))
+                    min_qty = float(inst.get('lotSizeFilter', {}).get('minOrderQty', 0.001))
+                else:
+                    qty_step = 0.001
+                    min_qty = 0.001
+            except:
+                qty_step = 0.001
+                min_qty = 0.001
+            
+            # Round to qtyStep and fix floating point precision
+            if qty_step > 0:
+                qty = round(qty / qty_step) * qty_step
+                # Calculate decimal places from qtyStep
+                if qty_step >= 1:
+                    decimals = 0
+                else:
+                    decimals = len(str(qty_step).split('.')[-1].rstrip('0'))
+                qty = round(qty, max(decimals, 0))
+            
+            if qty < min_qty:
+                logger.warning(f"Skip {sym}: qty {qty} < min {min_qty}")
+                return
             
             if qty <= 0: return
 

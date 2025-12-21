@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-ULTRA-ROBUST 3M vs 1H COMPARISON BACKTEST
-=========================================
-Tests Hidden Bearish + Optimal Trailing on:
-- 3-minute candles (proposed)
-- 60-minute candles (current)
+1H STOCHASTIC RSI FILTER BACKTEST
+=================================
+Tests 1H timeframe with/without StochRSI Extremes Filter
 
-MAXIMUM ROBUSTNESS:
-1. 300 symbols (top by volume from Bybit)
+FILTER RULES:
+- Shorts: StochRSI K > 80 (overbought)
+- Longs: StochRSI K < 20 (oversold)
+
+ROBUSTNESS:
+1. 50 symbols (for speed)
 2. 60 days of data
 3. Walk-forward: 70% train / 30% test
 4. NO lookahead (pivot right=0)
-5. Slippage: 0.1% (higher for 3m due to more trades)
+5. ATR-based SL (1.0x ATR)
 6. Commission: 0.055% per leg
 7. Pessimistic timeout (assume loss)
 8. SL checked FIRST on every candle
-9. Volume filter active
-10. Minimum trade gap (cooldown)
 """
 
 import requests
@@ -34,7 +34,7 @@ warnings.filterwarnings('ignore')
 # =============================================================================
 
 DATA_DAYS = 60
-NUM_SYMBOLS = 300
+NUM_SYMBOLS = 50  # Reduced for speed
 
 # === TRAILING STRATEGY (OPTIMAL) ===
 BE_THRESHOLD_R = 0.7
@@ -42,31 +42,31 @@ TRAIL_START_R = 0.7
 TRAIL_DISTANCE_R = 0.3
 MAX_PROFIT_R = 3.0
 
-# === COSTS (CONSERVATIVE FOR 3M) ===
-SLIPPAGE_PCT_3M = 0.10   # Higher slippage for faster TF
-SLIPPAGE_PCT_1H = 0.05   # Lower slippage for slower TF
-COMMISSION_PCT = 0.055   # Bybit taker
+# === COSTS ===
+SLIPPAGE_PCT_1H = 0.05
+COMMISSION_PCT = 0.055
 
 # === DIVERGENCE ===
 RSI_PERIOD = 14
 LOOKBACK_BARS = 14
 PIVOT_LEFT = 3
-PIVOT_RIGHT = 0  # ZERO lookahead
+PIVOT_RIGHT = 0
 
-# === SL CONSTRAINTS ===
-MIN_SL_ATR = 0.3
-MAX_SL_ATR = 2.0
-SWING_LOOKBACK = 15
+# === SL: ATR-BASED (not pivot) ===
+ATR_SL_MULTIPLIER = 1.0  # 1.0x ATR
+
+# === STOCHASTIC RSI ===
+STOCH_K_PERIOD = 14
+OVERBOUGHT = 80
+OVERSOLD = 20
 
 # === FILTERS ===
 VOLUME_FILTER = True
 MIN_VOL_RATIO = 0.5
 
 # === TIMING ===
-COOLDOWN_BARS_3M = 10    # ~30 min cooldown
-COOLDOWN_BARS_1H = 10    # ~10 hour cooldown
-TIMEOUT_BARS_3M = 100    # ~5 hours
-TIMEOUT_BARS_1H = 50     # ~50 hours
+COOLDOWN_BARS_1H = 10
+TIMEOUT_BARS_1H = 50
 TRAIN_PCT = 0.70
 
 BASE_URL = "https://api.bybit.com"
@@ -147,6 +147,44 @@ def calculate_atr_at_bar(highs, lows, closes, period=14):
     if len(tr_list) < period:
         return np.nan
     return np.mean(tr_list[-period:])
+
+def calculate_stoch_rsi(rsis, k_period=14):
+    """Calculate Stochastic RSI K value.
+    
+    Returns K value (0-100) or None if not enough data.
+    """
+    if len(rsis) < k_period:
+        return None
+    
+    recent_rsi = rsis[-k_period:]
+    valid_rsi = [r for r in recent_rsi if not np.isnan(r)]
+    
+    if len(valid_rsi) < k_period:
+        return None
+    
+    min_rsi = min(valid_rsi)
+    max_rsi = max(valid_rsi)
+    current_rsi = rsis[-1]
+    
+    if np.isnan(current_rsi) or max_rsi == min_rsi:
+        return None
+    
+    return ((current_rsi - min_rsi) / (max_rsi - min_rsi)) * 100
+
+def calculate_atr_sl(entry_price, atr, side, multiplier=1.0):
+    """Calculate ATR-based SL (instead of pivot-based).
+    
+    Returns (sl_price, sl_distance).
+    """
+    sl_distance = multiplier * atr
+    
+    if side == 'long':
+        sl = entry_price - sl_distance
+    else:
+        sl = entry_price + sl_distance
+    
+    return sl, sl_distance
+
 
 def find_pivot_highs_no_lookahead(highs, left=3):
     pivots = []
@@ -295,13 +333,13 @@ def simulate_trade(opens, highs, lows, closes, entry_idx, side, entry_price, sl_
 # BACKTEST ONE TIMEFRAME
 # =============================================================================
 
-def backtest_timeframe(symbols, interval, data_days, cooldown_bars, timeout_bars, slippage_pct, label):
-    """Run full backtest for one timeframe"""
+def backtest_timeframe(symbols, interval, data_days, cooldown_bars, timeout_bars, slippage_pct, label, stoch_filter=False):
+    """Run full backtest for one timeframe with optional StochRSI filter"""
     print(f"\n{'='*60}")
     print(f"📊 BACKTESTING: {label}")
     print(f"{'='*60}")
     print(f"  Symbols: {len(symbols)} | Days: {data_days} | Interval: {interval}min")
-    print(f"  Slippage: {slippage_pct}% | Timeout: {timeout_bars} bars")
+    print(f"  StochRSI Filter: {'ENABLED (K>80 short, K<20 long)' if stoch_filter else 'DISABLED'}")
     
     is_trades = []
     oos_trades = []
@@ -310,6 +348,8 @@ def backtest_timeframe(symbols, interval, data_days, cooldown_bars, timeout_bars
     
     start_time = time.time()
     failed = 0
+    filtered_signals = 0
+    total_signals = 0
     
     for sym_idx, sym in enumerate(symbols):
         try:
@@ -356,17 +396,28 @@ def backtest_timeframe(symbols, interval, data_days, cooldown_bars, timeout_bars
                 if not signal:
                     continue
                 
+                total_signals += 1
+                side = signal['side']
+                
+                # === STOCHASTIC RSI FILTER ===
+                if stoch_filter:
+                    stoch_k = calculate_stoch_rsi(rsis[:i+1], STOCH_K_PERIOD)
+                    if stoch_k is not None:
+                        if side == 'short' and stoch_k <= OVERBOUGHT:
+                            filtered_signals += 1
+                            continue  # Skip - need overbought for shorts
+                        if side == 'long' and stoch_k >= OVERSOLD:
+                            filtered_signals += 1
+                            continue  # Skip - need oversold for longs
+                
                 entry_idx = i + 1
                 if entry_idx >= n:
                     continue
                 
                 entry_price = opens[entry_idx]
-                side = signal['side']
                 
-                sl, sl_distance = calculate_sl_strict(
-                    highs[:entry_idx], lows[:entry_idx], 
-                    side, atr, entry_price, SWING_LOOKBACK
-                )
+                # === ATR-BASED SL (not pivot) ===
+                sl, sl_distance = calculate_atr_sl(entry_price, atr, side, ATR_SL_MULTIPLIER)
                 
                 if sl_distance <= 0:
                     continue

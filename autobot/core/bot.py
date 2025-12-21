@@ -1851,24 +1851,21 @@ class DivergenceBot:
                     logger.info(f"⏳ FIRST LOOP SKIP: {sym} {side} {combo} (will start trading on next loop)")
                     continue
                 
-                # Queue signal for execution on next candle (matches backtest behavior)
-                # Backtest enters on idx+1 candle open, not immediately on signal
-                if sym not in self.pending_entries:
-                    self.pending_entries[sym] = {
-                        'side': side,
-                        'combo': combo,
-                        'signal_type': signal_type,
-                        'signal_price': entry,
-                        'atr': atr,
-                        'swing_low': signal_swing_low,  # Calculated at signal time
-                        'swing_high': signal_swing_high,  # Calculated at signal time
-                        'detected_at': time.time()
-                    }
+                # === IMMEDIATE EXECUTION: Execute NOW on signal ===
+                # No more waiting for next candle - faster entry, less slippage
+                if sym not in self.pending_entries and sym not in self.active_trades:
                     # CRITICAL: Set cooldown to prevent repeated signals
                     self.last_signal_candle[sym] = time.time()
-                    logger.info(f"📋 QUEUED: {sym} {side} {combo} - will execute on next candle open")
+                    
+                    logger.info(f"🚀 IMMEDIATE EXECUTE: {sym} {side} {combo}")
+                    
+                    # Execute directly - use current close as entry reference
+                    await self.execute_divergence_trade(
+                        sym, side, df, combo, signal_type,
+                        atr, signal_swing_low, signal_swing_high
+                    )
                 else:
-                    logger.info(f"⏳ ALREADY QUEUED: {sym} - waiting for next candle")
+                    logger.info(f"⏳ ALREADY TRADING: {sym} - skipping signal")
                     
         except Exception as e:
             logger.error(f"Error processing {sym}: {e}")
@@ -2355,11 +2352,9 @@ class DivergenceBot:
             swing_low = signal_swing_low if signal_swing_low is not None else df_closed['low'].rolling(14).min().iloc[-1]
             swing_high = signal_swing_high if signal_swing_high is not None else df_closed['high'].rolling(14).max().iloc[-1]
             
-            # Use next candle's open as entry (matches backtest)
-            if len(df) < 2:
-                logger.warning(f"Skip {sym}: Not enough candles for next open")
-                return
-            expected_entry = df.iloc[-1]['open']  # Next candle's open (forming candle)
+            # === IMMEDIATE EXECUTION: Use current close as entry ===
+            # No more waiting for next candle open - faster entry
+            expected_entry = signal_price  # Use signal price (current close)
             
             # Constraint ATR (for SL distance validation)
             constraint_atr = signal_atr if signal_atr is not None else atr
@@ -3499,25 +3494,27 @@ class DivergenceBot:
                                     else:
                                         exit_r = 0
                                     
-                                    # === CRITICAL SAFETY CAP: ALWAYS -1R MAX ===
+                                    # === CRITICAL SAFETY CAP: ALWAYS -1R MAX FOR STATS ===
                                     # With proper position sizing, SL hit = -1R exactly
                                     # Allow 10% slippage margin, but cap beyond that
+                                    exit_r_actual = exit_r  # Store actual for display
                                     if exit_r < -1.1:
                                         logger.error(f"🚨 ABNORMAL LOSS: {sym} exit_r={exit_r:.2f}R! SL may have slipped!")
                                         logger.error(f"   Entry: ${entry:.4f}, Exit: ${exit_price:.4f}, SL Distance: ${sl_distance:.6f}")
                                         
-                                        # CAP the loss at -1R for stats (actual P&L is what it is)
-                                        exit_r_capped = -1.0
-                                        logger.warning(f"   Capping exit_r from {exit_r:.2f}R to {exit_r_capped:.2f}R for stats")
+                                        # CAP the loss at -1R for stats ONLY
+                                        exit_r_for_stats = -1.0
+                                        logger.warning(f"   Capping exit_r from {exit_r:.2f}R to {exit_r_for_stats:.2f}R for stats only")
                                         await self.send_telegram(
                                             f"⚠️ **SL SLIPPAGE DETECTED**\n"
                                             f"Symbol: `{sym}`\n"
-                                            f"Actual: {exit_r:.2f}R, Capped: -1.0R\n"
+                                            f"Actual Loss: {exit_r_actual:.2f}R\n"
+                                            f"Stats Capped: -1.0R\n"
                                             f"Investigate if this keeps happening!"
                                         )
-                                        exit_r = exit_r_capped
+                                        exit_r = exit_r_for_stats  # Capped for stats
                                     
-                                    # Total R = exit_r (full position, no partial)
+                                    # Total R = exit_r (capped for stats, but notification shows actual)
                                     total_r = exit_r
                                     
                                     # Categorize exit type

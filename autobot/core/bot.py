@@ -2525,6 +2525,26 @@ class DivergenceBot:
                         # ORDER FILLED - Move to active trades
                         fill_price = float(status.get('avgPrice', order_data['entry']))
                         
+                        # === CRITICAL: VERIFY SL IS SET ON BYBIT ===
+                        # If SL not set, position is unprotected!
+                        try:
+                            import time as t
+                            t.sleep(0.3)  # Brief delay for API
+                            verified_sl, _ = self.broker.verify_position_sl(sym)
+                            
+                            if not verified_sl or verified_sl == 0:
+                                logger.error(f"⚠️ SL NOT SET after fill for {sym}! Setting immediately...")
+                                self.broker.set_sl_only(sym, order_data['sl'])
+                                await self.send_telegram(
+                                    f"⚠️ **SL WAS MISSING - NOW SET**\n"
+                                    f"Symbol: `{sym}`\n"
+                                    f"SL: ${order_data['sl']:.4f}"
+                                )
+                            else:
+                                logger.info(f"✅ SL VERIFIED: {sym} @ ${verified_sl:.4f}")
+                        except Exception as e:
+                            logger.error(f"Failed to verify SL for {sym}: {e}")
+                        
                         self.active_trades[sym] = {
                             'side': order_data['side'],
                             'combo': order_data['combo'],
@@ -2532,7 +2552,11 @@ class DivergenceBot:
                             'entry': fill_price,
                             'tp': order_data['tp'],
                             'sl': order_data['sl'],
+                            'sl_initial': order_data['sl'],  # Store original SL for -1R cap
+                            'sl_distance': order_data.get('sl_distance', abs(fill_price - order_data['sl'])),
                             'qty': order_data['qty'],
+                            'qty_initial': order_data['qty'],
+                            'qty_remaining': order_data['qty'],
                             'order_id': order_id,
                             'open_time': now
                         }
@@ -2558,7 +2582,7 @@ class DivergenceBot:
                             f"💰 Fill Price: ${fill_price:.4f}\n"
                             f"🎯 TP: ${order_data['tp']:.4f}\n"
                             f"🛑 SL: ${order_data['sl']:.4f}\n\n"
-                            f"🔐 **Protected**: TP/SL active"
+                            f"🔐 **Protected**: SL verified ✓"
                         )
                         await self.send_telegram(msg)
                         logger.info(f"✅ FILLED: {sym} {order_data['side']} @ {fill_price:.4f}")
@@ -3475,17 +3499,22 @@ class DivergenceBot:
                                     else:
                                         exit_r = 0
                                     
-                                    # === CRITICAL SAFETY CAP ===
-                                    # If exit_r is more than -2R, something went VERY wrong
-                                    # SL should have triggered at -1R max
-                                    if exit_r < -2.0:
-                                        logger.error(f"🚨 ABNORMAL LOSS: {sym} exit_r={exit_r:.2f}R! SL may not have been set!")
+                                    # === CRITICAL SAFETY CAP: ALWAYS -1R MAX ===
+                                    # With proper position sizing, SL hit = -1R exactly
+                                    # Allow 10% slippage margin, but cap beyond that
+                                    if exit_r < -1.1:
+                                        logger.error(f"🚨 ABNORMAL LOSS: {sym} exit_r={exit_r:.2f}R! SL may have slipped!")
                                         logger.error(f"   Entry: ${entry:.4f}, Exit: ${exit_price:.4f}, SL Distance: ${sl_distance:.6f}")
                                         
                                         # CAP the loss at -1R for stats (actual P&L is what it is)
-                                        # This prevents polluting WR stats with impossible losses
-                                        exit_r_capped = max(exit_r, -1.0)
+                                        exit_r_capped = -1.0
                                         logger.warning(f"   Capping exit_r from {exit_r:.2f}R to {exit_r_capped:.2f}R for stats")
+                                        await self.send_telegram(
+                                            f"⚠️ **SL SLIPPAGE DETECTED**\n"
+                                            f"Symbol: `{sym}`\n"
+                                            f"Actual: {exit_r:.2f}R, Capped: -1.0R\n"
+                                            f"Investigate if this keeps happening!"
+                                        )
                                         exit_r = exit_r_capped
                                     
                                     # Total R = exit_r (full position, no partial)

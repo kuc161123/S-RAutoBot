@@ -2949,22 +2949,22 @@ class DivergenceBot:
         logger.info("🚀 RSI Divergence Strategy - DIRECT EXECUTION MODE")
         
         await self.send_telegram(
-            f"🚀 **HIDDEN BEARISH (97 Symbols)**\n"
-            f"├ 400-symbol walk-forward validated\n"
-            f"├ WR: 40-70.6% (avg 48.8%)\n"
-            f"├ Potential: +3,848R\n"
-            f"└ EV: +0.17R/trade\n\n"
+            f"🚀 **HIDDEN BEARISH ({len(self.divergence_combos)} Symbols)**\n"
+            f"├ Grid search validated (150 symbols)\n"
+            f"├ WR: **54.7%** (out-of-sample)\n"
+            f"├ EV: **+0.179R**/trade\n"
+            f"└ OOS Total: **+532R**\n\n"
+            f"🎯 **EXIT STRATEGY**\n"
+            f"├ BE: Move to break-even at **+0.7R**\n"
+            f"├ Trail: Start trailing at **+0.7R**\n"
+            f"├ Distance: **0.3R** behind price\n"
+            f"└ Target: **+3R** max profit\n\n"
             f"📊 **Signal Types**\n"
             f"├ ⚡ Hidden Bearish: ACTIVE\n"
             f"├ ⏭️ Regular Bearish: SKIPPED\n"
             f"├ ⏭️ Bullish: SKIPPED\n"
             f"└ ⏭️ Hidden Bullish: SKIPPED\n\n"
-            f"🏆 **Top 5 (70%+ WR)**\n"
-            f"├ AVAXUSDT: 70.6% WR\n"
-            f"├ LYNUSDT: 69.8% WR\n"
-            f"├ CTCUSDT: 69.2% WR\n"
-            f"├ MORPHOUSDT: 69.2% WR\n"
-            f"└ KAITOUSDT: 64.9% WR"
+            f"💡 Commands: /pnl /dashboard /help"
         )
 
     async def run(self):

@@ -474,6 +474,7 @@ class DivergenceBot:
             "🤖 **RSI DIVERGENCE BOT**\n\n"
             "📊 **ANALYSIS**\n"
             "/dashboard - Live trading stats\n"
+            "/pnl - Exchange-verified P&L (Bybit API)\n"
             "/backtest - Live vs backtest comparison\n"
             "/analytics - Deep pattern analysis\n"
             "/top - Top performing setups\n\n"
@@ -485,7 +486,7 @@ class DivergenceBot:
             "/sessions - Session win rates\n"
             "/blacklist - Blacklisted symbols\n"
             "/help - Show this message\n\n"
-            "💡 **Strategy:** Pivot SL + 3:1 R:R"
+            "💡 **Strategy:** Optimal Trail (0.7R BE, 0.3R trail)"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 
@@ -508,6 +509,142 @@ class DivergenceBot:
             f"⚡ Risk: {self.risk_config['value']} {self.risk_config['type']}"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
+
+    async def cmd_pnl(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show exchange-verified P&L from Bybit API (ground truth)"""
+        try:
+            # === 1. GET WALLET BALANCE ===
+            balance = self.broker.get_balance() or 0
+            
+            # === 2. GET ALL CLOSED PNL (last 100 trades) ===
+            closed_records = self.broker.get_all_closed_pnl(limit=100)
+            
+            if not closed_records:
+                await update.message.reply_text(
+                    f"📊 **EXCHANGE-VERIFIED P&L**\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"💼 **WALLET BALANCE**\n"
+                    f"└ Current: **${balance:,.2f}** USDT\n\n"
+                    f"📈 No closed trades found in recent history.\n\n"
+                    f"💡 Data from Bybit API",
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # === 3. ANALYZE CLOSED TRADES ===
+            total_pnl = 0
+            wins = 0
+            losses = 0
+            win_pnl = 0
+            loss_pnl = 0
+            symbol_pnl = {}  # Track per-symbol P&L
+            recent_trades = []  # Last 5 trades
+            
+            for record in closed_records:
+                try:
+                    pnl = float(record.get('closedPnl', 0))
+                    symbol = record.get('symbol', 'UNKNOWN')
+                    side = record.get('side', '?')
+                    
+                    total_pnl += pnl
+                    
+                    if pnl > 0:
+                        wins += 1
+                        win_pnl += pnl
+                    else:
+                        losses += 1
+                        loss_pnl += pnl
+                    
+                    # Track per-symbol
+                    if symbol not in symbol_pnl:
+                        symbol_pnl[symbol] = {'pnl': 0, 'trades': 0}
+                    symbol_pnl[symbol]['pnl'] += pnl
+                    symbol_pnl[symbol]['trades'] += 1
+                    
+                    # Track recent trades (first 5 in list = most recent)
+                    if len(recent_trades) < 5:
+                        created_time = int(record.get('createdTime', 0))
+                        recent_trades.append({
+                            'symbol': symbol,
+                            'side': side,
+                            'pnl': pnl,
+                            'time': created_time
+                        })
+                except Exception as e:
+                    logger.debug(f"Error parsing closed pnl record: {e}")
+                    continue
+            
+            # === 4. CALCULATE STATS ===
+            total_trades = wins + losses
+            win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
+            avg_win = (win_pnl / wins) if wins > 0 else 0
+            avg_loss = (loss_pnl / losses) if losses > 0 else 0
+            
+            # Sort symbols by P&L
+            sorted_symbols = sorted(symbol_pnl.items(), key=lambda x: x[1]['pnl'], reverse=True)
+            top_5 = sorted_symbols[:5]
+            
+            # === 5. BUILD MESSAGE ===
+            pnl_emoji = "🟢" if total_pnl >= 0 else "🔴"
+            pnl_sign = "+" if total_pnl >= 0 else ""
+            
+            msg = (
+                f"📊 **EXCHANGE-VERIFIED P&L**\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"💼 **WALLET BALANCE**\n"
+                f"└ Current: **${balance:,.2f}** USDT\n\n"
+                f"📈 **CLOSED POSITIONS** (from Bybit)\n"
+                f"├ Total: {total_trades}\n"
+                f"├ ✅ Wins: {wins} ({pnl_sign}${win_pnl:.2f})\n"
+                f"├ ❌ Losses: {losses} (${loss_pnl:.2f})\n"
+                f"├ WR: **{win_rate:.1f}%**\n"
+                f"└ {pnl_emoji} Net: **{pnl_sign}${total_pnl:.2f}**\n\n"
+            )
+            
+            # Average trade info
+            if total_trades > 0:
+                msg += (
+                    f"📊 **AVERAGES**\n"
+                    f"├ Avg Win: ${avg_win:.2f}\n"
+                    f"├ Avg Loss: ${avg_loss:.2f}\n"
+                    f"└ Expectancy: ${(total_pnl/total_trades):.2f}/trade\n\n"
+                )
+            
+            # Top 5 symbols
+            if top_5:
+                msg += f"💰 **TOP PERFORMERS**\n"
+                for sym, data in top_5:
+                    sym_emoji = "🟢" if data['pnl'] >= 0 else "🔴"
+                    sym_sign = "+" if data['pnl'] >= 0 else ""
+                    msg += f"├ {sym_emoji} `{sym}`: {sym_sign}${data['pnl']:.2f} ({data['trades']})\n"
+                msg += "\n"
+            
+            # Recent trades
+            if recent_trades:
+                msg += f"📋 **LAST 5 TRADES**\n"
+                for trade in recent_trades:
+                    t_emoji = "🟢" if trade['pnl'] >= 0 else "🔴"
+                    t_sign = "+" if trade['pnl'] >= 0 else ""
+                    side_emoji = "📈" if trade['side'] == 'Buy' else "📉"
+                    # Format time
+                    if trade['time'] > 0:
+                        mins_ago = int((time.time() * 1000 - trade['time']) / 60000)
+                        time_str = f"{mins_ago}m ago" if mins_ago < 60 else f"{mins_ago//60}h ago"
+                    else:
+                        time_str = "?"
+                    msg += f"├ {t_emoji} `{trade['symbol']}` {side_emoji} {t_sign}${trade['pnl']:.2f} ({time_str})\n"
+                msg += "\n"
+            
+            msg += (
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"💡 Data from Bybit API (100 trades)"
+            )
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error fetching P&L: {e}")
+            logger.error(f"cmd_pnl error: {e}")
 
     async def cmd_phantoms(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show pending signals being tracked by the learner"""
@@ -2834,6 +2971,7 @@ class DivergenceBot:
             
             self.tg_app.add_handler(CommandHandler("help", self.cmd_help))
             self.tg_app.add_handler(CommandHandler("status", self.cmd_status))
+            self.tg_app.add_handler(CommandHandler("pnl", self.cmd_pnl))  # NEW: Exchange-verified P&L
             self.tg_app.add_handler(CommandHandler("risk", self.cmd_risk))
             self.tg_app.add_handler(CommandHandler("phantoms", self.cmd_phantoms))
             self.tg_app.add_handler(CommandHandler("dashboard", self.cmd_dashboard))

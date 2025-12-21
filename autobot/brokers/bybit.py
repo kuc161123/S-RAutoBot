@@ -487,6 +487,34 @@ class Bybit:
             logger.debug(f"Failed to get closed pnl for {symbol}: {e}")
             return []
     
+    def get_all_closed_pnl(self, limit: int = 100, start_time: int = None) -> list:
+        """Get ALL closed PnL records across all symbols.
+        
+        This returns the ACTUAL realized PnL from Bybit for all symbols.
+        Used for the /pnl command to show exchange-verified P&L.
+        
+        Args:
+            limit: Max number of records (up to 200)
+            start_time: Optional start time in milliseconds
+            
+        Returns:
+            List of closed trade records with closedPnl, symbol, side, etc.
+        """
+        try:
+            params = {
+                "category": "linear",
+                "limit": str(min(max(1, limit), 200)),
+            }
+            if start_time:
+                params["startTime"] = str(start_time)
+            resp = self._request("GET", "/v5/position/closed-pnl", params)
+            if resp and resp.get("result"):
+                return resp["result"].get("list", []) or []
+            return []
+        except Exception as e:
+            logger.debug(f"Failed to get all closed pnl: {e}")
+            return []
+    
     def get_position(self, symbol:str) -> Optional[Dict[str, Any]]:
         """Get current position for a symbol"""
         try:

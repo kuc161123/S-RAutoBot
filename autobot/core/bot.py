@@ -727,10 +727,25 @@ class DivergenceBot:
             
             # Add active trades with ENHANCED detail
             if self.active_trades:
-                # Calculate total unrealized P&L
-                total_unrealized = sum(trade.get('max_favorable_r', 0) for trade in self.active_trades.values())
+                # === FETCH UNREALIZED PNL FROM EXCHANGE (100% accurate) ===
+                total_unrealized_usd = 0
+                total_unrealized_r = 0
+                try:
+                    exchange_positions = self.broker.get_positions()
+                    for pos in exchange_positions:
+                        unrealized = float(pos.get('unrealisedPnl', 0))
+                        total_unrealized_usd += unrealized
+                    
+                    # Convert USD to R (approximate using avg risk per trade)
+                    avg_risk_usd = self.broker.get_balance() * (self.risk_config['value'] / 100) if self.broker.get_balance() else 10
+                    if avg_risk_usd > 0:
+                        total_unrealized_r = total_unrealized_usd / avg_risk_usd
+                except Exception as e:
+                    logger.warning(f"Could not fetch exchange unrealized PnL: {e}")
+                    # Fallback to internal tracking
+                    total_unrealized_r = sum(trade.get('max_favorable_r', 0) for trade in self.active_trades.values())
                 
-                msg += f"\n🔔 **ACTIVE POSITIONS** ({len(self.active_trades)} open, {total_unrealized:+.1f}R unrealized)\n\n"
+                msg += f"\n🔔 **ACTIVE POSITIONS** ({len(self.active_trades)} open, {total_unrealized_r:+.1f}R / ${total_unrealized_usd:+.2f} unrealized)\n\n"
                 
                 # Show top 3 in dashboard, use /positions for all
                 for sym, trade in list(self.active_trades.items())[:3]:

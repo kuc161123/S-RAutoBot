@@ -3409,6 +3409,13 @@ class DivergenceBot:
                                     sl_distance = trade_info.get('sl_distance', abs(exit_price - entry))
                                     sl_current = trade_info.get('sl_current', trade_info.get('sl_initial', sl))
                                     
+                                    # === SANITY CHECK: sl_distance should be reasonable ===
+                                    # Typically 0.5%-5% of entry price
+                                    if sl_distance > 0 and entry > 0:
+                                        sl_pct = (sl_distance / entry) * 100
+                                        if sl_pct > 10 or sl_pct < 0.1:
+                                            logger.warning(f"⚠️ ABNORMAL SL DISTANCE: {sym} sl_distance=${sl_distance:.6f} = {sl_pct:.2f}% of entry")
+                                    
                                     # Calculate exit R for FULL position (no partial)
                                     if sl_distance > 0:
                                         if side == 'long':
@@ -3417,6 +3424,19 @@ class DivergenceBot:
                                             exit_r = (entry - exit_price) / sl_distance
                                     else:
                                         exit_r = 0
+                                    
+                                    # === CRITICAL SAFETY CAP ===
+                                    # If exit_r is more than -2R, something went VERY wrong
+                                    # SL should have triggered at -1R max
+                                    if exit_r < -2.0:
+                                        logger.error(f"🚨 ABNORMAL LOSS: {sym} exit_r={exit_r:.2f}R! SL may not have been set!")
+                                        logger.error(f"   Entry: ${entry:.4f}, Exit: ${exit_price:.4f}, SL Distance: ${sl_distance:.6f}")
+                                        
+                                        # CAP the loss at -1R for stats (actual P&L is what it is)
+                                        # This prevents polluting WR stats with impossible losses
+                                        exit_r_capped = max(exit_r, -1.0)
+                                        logger.warning(f"   Capping exit_r from {exit_r:.2f}R to {exit_r_capped:.2f}R for stats")
+                                        exit_r = exit_r_capped
                                     
                                     # Total R = exit_r (full position, no partial)
                                     total_r = exit_r

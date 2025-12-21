@@ -2016,12 +2016,12 @@ class DivergenceBot:
                         f"├ Fill Price: ${avg_price:.4f}\n"
                         f"├ Quantity: {filled_qty}\n"
                         f"└ Value: ${position_value:.2f}\n\n"
-                        f"🎯 **EXIT STRATEGY**\n"
-                        f"├ {'✅' if tp_1r_order_id else '⚠️'} 50% TP @ ${tp_1r:.4f} (+1R)\n"
-                        f"├ ✅ SL @ ${sl:.4f} (-{sl_pct:.2f}%)\n"
-                        f"├ After +1R: SL → Break-Even\n"
-                        f"└ After +2R: Trail 1R behind\n\n"
-                        f"💡 Worst case: -1R | Best case: +2R"
+                        f"🎯 **EXIT STRATEGY (Optimal Trail)**\n"
+                        f"├ Initial SL: ${sl:.4f} (-{sl_pct:.2f}%)\n"
+                        f"├ At +0.7R: SL → Break-Even\n"
+                        f"├ At +0.7R: Trail 0.3R behind\n"
+                        f"└ Max: +3R target\n\n"
+                        f"💡 Worst: -1R | Best: +3R"
                     )
                     continue
                 

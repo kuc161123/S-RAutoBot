@@ -1989,12 +1989,38 @@ class DivergenceBot:
                 
                 logger.debug(f"📊 {sym} order status: {order_status}, filled: {filled_qty}")
                 
-                # CASE 1: Order fully filled
                 if order_status == 'Filled':
                     logger.info(f"✅ ORDER FILLED: {sym} {side} @ {avg_price}")
                     
                     # Get order info fields
-                    sl_distance = order_info.get('sl_distance', abs(avg_price - sl))
+                    original_sl_distance = order_info.get('sl_distance', 0)
+                    original_entry = order_info.get('entry_price', avg_price)
+                    
+                    # === CRITICAL FIX: Recalculate SL based on ACTUAL fill price ===
+                    # If fill price differs from limit price, SL must be adjusted
+                    # Otherwise the SL could be too close (or even wrong side of entry)
+                    price_diff = abs(avg_price - original_entry)
+                    sl_distance = original_sl_distance  # Use original ATR-based distance
+                    
+                    if price_diff > 0.0001 * avg_price:  # Significant fill price difference
+                        logger.info(f"📐 Price diff detected: Limit ${original_entry:.6f} vs Fill ${avg_price:.6f}")
+                        
+                        # Recalculate SL maintaining the same ATR distance from FILL price
+                        if side == 'long':
+                            sl = avg_price - sl_distance
+                        else:
+                            sl = avg_price + sl_distance
+                        
+                        logger.info(f"🔧 SL ADJUSTED: ${order_info['sl']:.6f} → ${sl:.6f} (maintaining {sl_distance/avg_price*100:.2f}% distance)")
+                        
+                        # Update SL on Bybit immediately
+                        try:
+                            self.broker.set_sl_only(sym, sl)
+                            logger.info(f"✅ SL updated on Bybit to ${sl:.6f}")
+                        except Exception as e:
+                            logger.error(f"Failed to update SL after fill adjustment: {e}")
+                    else:
+                        sl = order_info['sl']  # Use original SL if prices are close
                     
                     # NO PARTIAL TP - Optimal strategy trails from 0.7R
                     logger.info(f"✅ ORDER FILLED: {sym} {side} @ {avg_price:.4f}")
@@ -2013,12 +2039,12 @@ class DivergenceBot:
                         # Position tracking (full position, no partial)
                         'qty_initial': filled_qty,
                         'qty_remaining': filled_qty,  # Full position until SL hit
-                        'sl_distance': sl_distance,
+                        'sl_distance': sl_distance,  # ATR-based distance (correct)
                         
                         # Profit targets
                         'tp_3r': tp,  # Full 3R target (reference)
                         
-                        # SL tracking
+                        # SL tracking - use ADJUSTED SL
                         'sl_initial': sl,
                         'sl_current': sl,
                         

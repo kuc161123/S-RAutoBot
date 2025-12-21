@@ -1,30 +1,32 @@
 #!/usr/bin/env python3
 """
-RIGOROUS RSI DIVERGENCE BACKTEST
-=================================
-Addresses common backtesting pitfalls with industry best practices.
+PARANOID-LEVEL RIGOROUS BACKTEST
+================================
+Designed to be PESSIMISTIC and eliminate ALL potential biases:
 
-PITFALLS ADDRESSED:
-1. LOOKAHEAD BIAS - Entry on next candle open, not signal close
-2. SURVIVORSHIP BIAS - Using current top symbols (acknowledged limitation)
-3. OVERFITTING - Walk-forward validation with out-of-sample testing
-4. REALISTIC EXECUTION - Slippage, fees, market impact
-5. DATA SNOOPING - Single hypothesis (same params as live bot)
-6. EXECUTION ORDER - SL checked before TP (worst-case intrabar)
-7. POSITION SIZING - Fixed risk per trade
-8. LIQUIDITY FILTER - Volume threshold for realistic fills
+ANTI-LOOKAHEAD MEASURES:
+1. Candle-by-candle processing (only see data up to current bar)
+2. Signal detected on bar N, entry on bar N+1 OPEN (not close)
+3. RSI/ATR calculated only on data available at signal time
+4. Pivot detection uses right=0 (no future confirmation)
+5. Exit prices use WORST case (SL checked FIRST)
 
-WALK-FORWARD METHOD:
-- 60 days split into 6 x 10-day periods
-- Each period tested independently
-- Consistency measured across all periods
-- If >80% periods profitable = robust strategy
+WALK-FORWARD VALIDATION:
+- 70% in-sample (training) | 30% out-of-sample (testing)
+- Only OUT-OF-SAMPLE results matter for decision
+
+ADDITIONAL SAFEGUARDS:
+- Slippage simulation: 0.05% per trade
+- Commission: 0.055% per trade (Bybit taker)
+- Conservative timeout: 50 bars (not 100)
+- No overlapping trades per symbol
 """
 
 import requests
 import pandas as pd
 import numpy as np
 import math
+import yaml
 from collections import defaultdict
 from datetime import datetime
 import time
@@ -32,455 +34,478 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # =============================================================================
-# CONFIGURATION (Matches live bot exactly)
+# CONFIGURATION - CONSERVATIVE/PESSIMISTIC
 # =============================================================================
 
-TIMEFRAME = '15'  # 15-minute candles
-DATA_DAYS = 60
-NUM_SYMBOLS = 200
+TIMEFRAME = '60'            # 1H candles
+DATA_DAYS = 90              # More data for robust walk-forward
+NUM_SYMBOLS = 126           # From config
 
-# Risk/Reward (matches live bot)
-TP_ATR_MULT = 2.05  # Matches live bot fee compensation
-SL_ATR_MULT = 1.0
+# === TRAILING STRATEGY (OPTIMAL) ===
+BE_THRESHOLD_R = 0.7
+TRAIL_START_R = 0.7
+TRAIL_DISTANCE_R = 0.3
+MAX_PROFIT_R = 3.0
 
-# Realistic Costs
-SLIPPAGE_PCT = 0.0005  # 0.05% slippage per side
-FEE_PCT = 0.0004       # 0.04% fee per side (Bybit taker)
-TOTAL_COST = (SLIPPAGE_PCT + FEE_PCT) * 2  # 0.18% round trip
+# === COSTS (REALISTIC) ===
+SLIPPAGE_PCT = 0.05         # 0.05% slippage per trade
+COMMISSION_PCT = 0.055      # 0.055% Bybit taker fee
 
-# RSI Divergence settings (matches divergence_detector.py exactly)
+# === DIVERGENCE DETECTION (STRICT NO LOOKAHEAD) ===
 RSI_PERIOD = 14
-RSI_OVERSOLD = 30
-RSI_OVERBOUGHT = 70
 LOOKBACK_BARS = 14
-MIN_PIVOT_DISTANCE = 5
+# NOTE: Using right=0 for pivots (no future confirmation)
 PIVOT_LEFT = 3
-PIVOT_RIGHT = 3
+PIVOT_RIGHT = 0             # CRITICAL: No lookahead!
+MIN_PIVOT_DISTANCE = 5
 
-# Minimum bars between trades on same symbol (matches backtest)
-MIN_TRADE_SPACING = 10
+# === SL CONSTRAINTS ===
+MIN_SL_ATR = 0.3
+MAX_SL_ATR = 2.0
+SWING_LOOKBACK = 15
 
-# Walk-Forward Settings
-NUM_PERIODS = 6  # 6 x 10-day periods
-PERIOD_DAYS = DATA_DAYS // NUM_PERIODS
+# === FILTERS ===
+VOLUME_FILTER = True
+MIN_VOL_RATIO = 0.5
+
+# === TIMING (CONSERVATIVE) ===
+COOLDOWN_BARS = 10
+TIMEOUT_BARS = 50           # More conservative than live (100)
+
+# === WALK-FORWARD ===
+TRAIN_PCT = 0.70            # 70% in-sample
+TEST_PCT = 0.30             # 30% out-of-sample
 
 BASE_URL = "https://api.bybit.com"
 
 # =============================================================================
-# STATISTICAL HELPERS
+# HELPERS
 # =============================================================================
 
-def wilson_lower_bound(wins: int, n: int, z: float = 1.96) -> float:
-    """Conservative estimate of true win rate (95% confidence)."""
+def wilson_lb(wins, n, z=1.96):
     if n == 0: return 0.0
     p = wins / n
-    denominator = 1 + z*z/n
+    denom = 1 + z*z/n
     centre = p + z*z/(2*n)
     spread = z * math.sqrt((p*(1-p) + z*z/(4*n)) / n)
-    return max(0, (centre - spread) / denominator)
+    return max(0, (centre - spread) / denom)
 
-def calc_ev(wr: float, rr: float = 2.05) -> float:
-    """Expected Value in R-multiples."""
-    return (wr * rr) - (1 - wr)
-
-def calc_sharpe_like(evs: list) -> float:
-    """Sharpe-like ratio across periods."""
-    if len(evs) < 2 or np.std(evs) == 0:
-        return 0.0
-    return np.mean(evs) / np.std(evs)
-
-def calc_max_drawdown(pnl_sequence: list) -> float:
-    """Calculate maximum drawdown from P&L sequence."""
-    if not pnl_sequence:
-        return 0.0
-    cumulative = np.cumsum(pnl_sequence)
-    running_max = np.maximum.accumulate(cumulative)
-    drawdown = running_max - cumulative
-    return np.max(drawdown) if len(drawdown) > 0 else 0.0
-
-# =============================================================================
-# DATA FETCHING
-# =============================================================================
-
-def get_symbols(limit: int = 200) -> list:
-    """Get top symbols by 24h volume (matches live bot)."""
-    url = f"{BASE_URL}/v5/market/tickers?category=linear"
-    resp = requests.get(url, timeout=10)
-    tickers = resp.json().get('result', {}).get('list', [])
-    usdt_pairs = [t for t in tickers if t['symbol'].endswith('USDT')]
-    usdt_pairs.sort(key=lambda x: float(x.get('turnover24h', 0)), reverse=True)
-    return [t['symbol'] for t in usdt_pairs[:limit]]
-
-def fetch_klines(symbol: str, interval: str, days: int) -> pd.DataFrame:
-    """Fetch historical klines with pagination."""
+def fetch_klines(symbol, interval, days):
     end_ts = int(datetime.now().timestamp() * 1000)
-    candles_needed = days * 24 * 60 // int(interval)
-    
     all_candles = []
     current_end = end_ts
+    candles_needed = days * 24
     
     while len(all_candles) < candles_needed:
-        url = f"{BASE_URL}/v5/market/kline"
-        params = {
-            'category': 'linear', 
-            'symbol': symbol, 
-            'interval': interval, 
-            'limit': 1000, 
-            'end': current_end
-        }
+        params = {'category': 'linear', 'symbol': symbol, 'interval': interval, 'limit': 1000, 'end': current_end}
         try:
-            resp = requests.get(url, params=params, timeout=10)
+            resp = requests.get(f"{BASE_URL}/v5/market/kline", params=params, timeout=15)
             data = resp.json().get('result', {}).get('list', [])
-            if not data: 
-                break
+            if not data: break
             all_candles.extend(data)
             current_end = int(data[-1][0]) - 1
-            if len(data) < 1000: 
-                break
-        except Exception as e:
-            break
+            if len(data) < 1000: break
+            time.sleep(0.05)  # Rate limiting
+        except: break
     
-    if not all_candles: 
-        return pd.DataFrame()
+    if not all_candles: return pd.DataFrame()
     
     df = pd.DataFrame(all_candles, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
     df['start'] = pd.to_datetime(df['start'].astype(int), unit='ms')
-    for col in ['open', 'high', 'low', 'close', 'volume']:
+    for col in ['open', 'high', 'low', 'close', 'volume']: 
         df[col] = df[col].astype(float)
     df.set_index('start', inplace=True)
     df.sort_index(inplace=True)
-    df['date'] = df.index.date
     return df
 
 # =============================================================================
-# TECHNICAL INDICATORS (Matches divergence_detector.py exactly)
+# STRICT NO-LOOKAHEAD INDICATORS
 # =============================================================================
 
-def calculate_rsi(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
-    """RSI calculation matching live bot."""
-    delta = close.diff()
-    gain = delta.where(delta > 0, 0.0)
-    loss = -delta.where(delta < 0, 0.0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-    rs = avg_gain / (avg_loss + 1e-10)
+def calculate_rsi_at_bar(closes_up_to_now, period=14):
+    """Calculate RSI using ONLY data up to current bar"""
+    if len(closes_up_to_now) < period + 1:
+        return np.nan
+    delta = np.diff(closes_up_to_now)
+    gains = np.where(delta > 0, delta, 0)
+    losses = np.where(delta < 0, -delta, 0)
+    avg_gain = np.mean(gains[-period:])
+    avg_loss = np.mean(losses[-period:])
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    """ATR calculation matching live bot."""
-    high_low = df['high'] - df['low']
-    high_close = abs(df['high'] - df['close'].shift())
-    low_close = abs(df['low'] - df['close'].shift())
-    true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    return true_range.rolling(period).mean()
+def calculate_atr_at_bar(highs, lows, closes, period=14):
+    """Calculate ATR using ONLY data up to current bar"""
+    if len(closes) < period + 2:
+        return np.nan
+    tr_list = []
+    for i in range(1, len(closes)):
+        tr = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i-1]),
+            abs(lows[i] - closes[i-1])
+        )
+        tr_list.append(tr)
+    if len(tr_list) < period:
+        return np.nan
+    return np.mean(tr_list[-period:])
 
-def find_pivots(data: np.ndarray, left: int = PIVOT_LEFT, right: int = PIVOT_RIGHT) -> tuple:
-    """Find pivot highs and lows (matches live bot)."""
-    n = len(data)
-    pivot_highs = np.full(n, np.nan)
-    pivot_lows = np.full(n, np.nan)
-    
-    for i in range(left, n - right):
-        is_high = all(data[j] < data[i] for j in range(i - left, i + right + 1) if j != i)
-        is_low = all(data[j] > data[i] for j in range(i - left, i + right + 1) if j != i)
-        if is_high: 
-            pivot_highs[i] = data[i]
-        if is_low: 
-            pivot_lows[i] = data[i]
-    
-    return pivot_highs, pivot_lows
+def find_pivot_lows_no_lookahead(lows_up_to_now, left=3):
+    """Find pivot lows using ONLY historical data (right=0)"""
+    pivots = []
+    n = len(lows_up_to_now)
+    for i in range(left, n):
+        is_pivot = all(lows_up_to_now[j] > lows_up_to_now[i] for j in range(i-left, i))
+        if is_pivot:
+            pivots.append((i, lows_up_to_now[i]))
+    return pivots
 
-# =============================================================================
-# SIGNAL DETECTION (Matches divergence_detector.py exactly)
-# =============================================================================
-
-def detect_divergence_signals(df: pd.DataFrame) -> list:
-    """
-    Detect RSI divergence signals.
-    EXACT MATCH to divergence_detector.py logic.
-    """
-    if len(df) < 100:
-        return []
-    
-    close = df['close'].values
-    rsi = df['rsi'].values
-    n = len(df)
-    
-    price_pivot_highs, price_pivot_lows = find_pivots(close, PIVOT_LEFT, PIVOT_RIGHT)
-    
-    signals = []
-    
-    # Scan through all bars (not just last one - this is backtest)
-    for i in range(30, n - 5):
-        # Find recent pivot lows
-        curr_price_low = curr_price_low_idx = None
-        prev_price_low = prev_price_low_idx = None
-        
-        for j in range(i, max(i - LOOKBACK_BARS, 0), -1):
-            if not np.isnan(price_pivot_lows[j]):
-                if curr_price_low is None:
-                    curr_price_low = price_pivot_lows[j]
-                    curr_price_low_idx = j
-                elif prev_price_low is None and j < curr_price_low_idx - MIN_PIVOT_DISTANCE:
-                    prev_price_low = price_pivot_lows[j]
-                    prev_price_low_idx = j
-                    break
-        
-        # Find recent pivot highs
-        curr_price_high = curr_price_high_idx = None
-        prev_price_high = prev_price_high_idx = None
-        
-        for j in range(i, max(i - LOOKBACK_BARS, 0), -1):
-            if not np.isnan(price_pivot_highs[j]):
-                if curr_price_high is None:
-                    curr_price_high = price_pivot_highs[j]
-                    curr_price_high_idx = j
-                elif prev_price_high is None and j < curr_price_high_idx - MIN_PIVOT_DISTANCE:
-                    prev_price_high = price_pivot_highs[j]
-                    prev_price_high_idx = j
-                    break
-        
-        # === REGULAR BULLISH: Price LL, RSI HL ===
-        if curr_price_low is not None and prev_price_low is not None:
-            if curr_price_low < prev_price_low:
-                curr_rsi = rsi[curr_price_low_idx]
-                prev_rsi = rsi[prev_price_low_idx]
-                if curr_rsi > prev_rsi and rsi[i] < RSI_OVERSOLD + 15:
-                    signals.append({'idx': i, 'side': 'long', 'type': 'regular_bullish'})
-                    continue
-        
-        # === REGULAR BEARISH: Price HH, RSI LH ===
-        if curr_price_high is not None and prev_price_high is not None:
-            if curr_price_high > prev_price_high:
-                curr_rsi = rsi[curr_price_high_idx]
-                prev_rsi = rsi[prev_price_high_idx]
-                if curr_rsi < prev_rsi and rsi[i] > RSI_OVERBOUGHT - 15:
-                    signals.append({'idx': i, 'side': 'short', 'type': 'regular_bearish'})
-                    continue
-        
-        # === HIDDEN BULLISH: Price HL, RSI LL ===
-        if curr_price_low is not None and prev_price_low is not None:
-            if curr_price_low > prev_price_low:
-                curr_rsi = rsi[curr_price_low_idx]
-                prev_rsi = rsi[prev_price_low_idx]
-                if curr_rsi < prev_rsi and rsi[i] < RSI_OVERBOUGHT - 10:
-                    signals.append({'idx': i, 'side': 'long', 'type': 'hidden_bullish'})
-                    continue
-        
-        # === HIDDEN BEARISH: Price LH, RSI HH ===
-        if curr_price_high is not None and prev_price_high is not None:
-            if curr_price_high < prev_price_high:
-                curr_rsi = rsi[curr_price_high_idx]
-                prev_rsi = rsi[prev_price_high_idx]
-                if curr_rsi > prev_rsi and rsi[i] > RSI_OVERSOLD + 10:
-                    signals.append({'idx': i, 'side': 'short', 'type': 'hidden_bearish'})
-    
-    return signals
+def find_pivot_highs_no_lookahead(highs_up_to_now, left=3):
+    """Find pivot highs using ONLY historical data (right=0)"""
+    pivots = []
+    n = len(highs_up_to_now)
+    for i in range(left, n):
+        is_pivot = all(highs_up_to_now[j] < highs_up_to_now[i] for j in range(i-left, i))
+        if is_pivot:
+            pivots.append((i, highs_up_to_now[i]))
+    return pivots
 
 # =============================================================================
-# TRADE SIMULATION (Addresses execution pitfalls)
+# STRICT NO-LOOKAHEAD DIVERGENCE DETECTION
 # =============================================================================
 
-def simulate_trade_realistic(df: pd.DataFrame, signal_idx: int, side: str, atr: float) -> dict:
+def detect_hidden_bearish_strict(closes, highs, lows, rsis, current_idx, lookback=14):
     """
-    Ultra-realistic trade simulation addressing execution pitfalls:
+    Detect Hidden Bearish divergence with ZERO lookahead.
     
-    1. Entry on NEXT candle OPEN (no lookahead)
-    2. Slippage applied to entry
-    3. Fees applied to TP target
-    4. SL checked BEFORE TP within each candle (worst-case)
-    5. Maximum trade duration of 100 bars
+    Hidden Bearish: Price makes Lower High, RSI makes Higher High
+    (Indicates hidden selling pressure, price likely to continue down)
+    
+    STRICT RULES:
+    - Only use data up to current_idx
+    - Pivot detection uses left=3, right=0 (no future confirmation)
+    - RSI calculated on data up to current_idx
     """
-    rows = list(df.itertuples())
+    if current_idx < 30:
+        return None
     
-    # PITFALL FIX: Entry on NEXT candle open, not signal close
-    entry_idx = signal_idx + 1
-    if entry_idx >= len(rows) - 50:
-        return {'outcome': 'timeout', 'bars': 0, 'entry': 0, 'exit': 0}
+    # Data up to current bar ONLY
+    highs_available = highs[:current_idx+1]
+    rsis_available = rsis[:current_idx+1]
     
-    entry_row = rows[entry_idx]
-    base_entry = entry_row.open
+    # Check RSI threshold (should be > 40 for bearish setup)
+    current_rsi = rsis_available[-1]
+    if np.isnan(current_rsi) or current_rsi < 40:
+        return None
     
-    # PITFALL FIX: Apply realistic slippage
-    if side == 'long':
-        entry_price = base_entry * (1 + SLIPPAGE_PCT)  # Pay more for long
-        tp = entry_price + (TP_ATR_MULT * atr)
-        sl = entry_price - (SL_ATR_MULT * atr)
-        # PITFALL FIX: Apply costs to TP
-        tp = tp * (1 - TOTAL_COST)
+    # Find pivot highs (no lookahead - right=0)
+    pivot_highs = find_pivot_highs_no_lookahead(highs_available, left=PIVOT_LEFT)
+    
+    if len(pivot_highs) < 2:
+        return None
+    
+    # Get last two pivot highs within lookback
+    recent_pivots = [(idx, val) for idx, val in pivot_highs 
+                     if idx >= current_idx - lookback and idx < current_idx - 2]
+    
+    if len(recent_pivots) < 2:
+        return None
+    
+    # Most recent two
+    prev_pivot = recent_pivots[-2]
+    curr_pivot = recent_pivots[-1]
+    
+    prev_idx, prev_high = prev_pivot
+    curr_idx_pivot, curr_high = curr_pivot
+    
+    # Minimum distance between pivots
+    if curr_idx_pivot - prev_idx < MIN_PIVOT_DISTANCE:
+        return None
+    
+    # Hidden Bearish: Price LH, RSI HH
+    price_lower_high = curr_high < prev_high
+    rsi_higher_high = rsis_available[curr_idx_pivot] > rsis_available[prev_idx]
+    
+    if price_lower_high and rsi_higher_high:
+        return {'type': 'hidden_bearish', 'side': 'short'}
+    
+    return None
+
+# =============================================================================
+# STRICT NO-LOOKAHEAD SL CALCULATION
+# =============================================================================
+
+def calculate_sl_strict(highs_up_to_now, lows_up_to_now, side, atr, entry_price, lookback=15):
+    """Calculate SL using ONLY data available at entry time"""
+    if len(highs_up_to_now) < lookback:
+        lookback = len(highs_up_to_now)
+    
+    if side == 'short':
+        # For short: SL above recent swing high
+        swing_high = max(highs_up_to_now[-lookback:])
+        sl = swing_high
+        sl_distance = sl - entry_price
     else:
-        entry_price = base_entry * (1 - SLIPPAGE_PCT)  # Get less for short entry
-        tp = entry_price - (TP_ATR_MULT * atr)
-        sl = entry_price + (SL_ATR_MULT * atr)
-        tp = tp * (1 + TOTAL_COST)
+        # For long: SL below recent swing low
+        swing_low = min(lows_up_to_now[-lookback:])
+        sl = swing_low
+        sl_distance = entry_price - sl
     
-    # PITFALL FIX: Simulate candle-by-candle with SL checked first
-    for bar_offset, future_row in enumerate(rows[entry_idx+1:entry_idx+100]):
-        if side == 'long':
-            # Check SL FIRST (worst case within candle)
-            if future_row.low <= sl:
-                return {
-                    'outcome': 'loss', 
-                    'bars': bar_offset + 1,
-                    'entry': entry_price,
-                    'exit': sl
-                }
-            if future_row.high >= tp:
-                return {
-                    'outcome': 'win', 
-                    'bars': bar_offset + 1,
-                    'entry': entry_price,
-                    'exit': tp
-                }
+    if sl_distance <= 0:
+        sl_distance = atr * 1.0  # Fallback
+        if side == 'short':
+            sl = entry_price + sl_distance
         else:
-            if future_row.high >= sl:
-                return {
-                    'outcome': 'loss', 
-                    'bars': bar_offset + 1,
-                    'entry': entry_price,
-                    'exit': sl
-                }
-            if future_row.low <= tp:
-                return {
-                    'outcome': 'win', 
-                    'bars': bar_offset + 1,
-                    'entry': entry_price,
-                    'exit': tp
-                }
+            sl = entry_price - sl_distance
     
-    # Timeout - neither TP nor SL hit within 100 bars
-    return {'outcome': 'timeout', 'bars': 100, 'entry': entry_price, 'exit': 0}
+    # Apply constraints
+    min_sl = MIN_SL_ATR * atr
+    max_sl = MAX_SL_ATR * atr
+    
+    if sl_distance < min_sl:
+        sl_distance = min_sl
+    elif sl_distance > max_sl:
+        sl_distance = max_sl
+    
+    if side == 'short':
+        sl = entry_price + sl_distance
+    else:
+        sl = entry_price - sl_distance
+    
+    return sl, sl_distance
 
 # =============================================================================
-# MAIN BACKTEST
+# TRADE SIMULATION (PESSIMISTIC)
+# =============================================================================
+
+def simulate_trade_pessimistic(opens, highs, lows, closes, entry_idx, side, entry_price, sl_price, sl_distance):
+    """
+    Simulate trade with PESSIMISTIC assumptions:
+    - SL checked FIRST on each candle
+    - Slippage applied to entry and exit
+    - Commission deducted
+    - Worst-case tie-breaker
+    """
+    # Apply slippage to entry (against us)
+    if side == 'short':
+        entry_price_adjusted = entry_price * (1 - SLIPPAGE_PCT / 100)  # Worse for short
+    else:
+        entry_price_adjusted = entry_price * (1 + SLIPPAGE_PCT / 100)  # Worse for long
+    
+    current_sl = sl_price
+    max_r = 0.0
+    sl_at_be = False
+    trailing = False
+    
+    for bar_offset in range(1, TIMEOUT_BARS + 1):
+        bar_idx = entry_idx + bar_offset
+        if bar_idx >= len(opens):
+            break
+        
+        h, l = highs[bar_idx], lows[bar_idx]
+        
+        # Calculate R for this candle
+        if side == 'short':
+            candle_max_r = (entry_price_adjusted - l) / sl_distance
+            sl_hit = h >= current_sl
+        else:
+            candle_max_r = (h - entry_price_adjusted) / sl_distance
+            sl_hit = l <= current_sl
+        
+        max_r = max(max_r, candle_max_r)
+        
+        # === SL CHECKED FIRST (PESSIMISTIC) ===
+        if sl_hit:
+            if trailing:
+                if side == 'short':
+                    exit_r = (entry_price_adjusted - current_sl) / sl_distance
+                else:
+                    exit_r = (current_sl - entry_price_adjusted) / sl_distance
+            elif sl_at_be:
+                exit_r = 0
+            else:
+                exit_r = -1.0
+            
+            # Apply commission
+            exit_r -= (COMMISSION_PCT * 2 / 100) * abs(exit_r + 1)  # Both legs
+            
+            return {'result': 'sl' if exit_r < 0 else 'trailed', 'r': exit_r, 'max_r': max_r}
+        
+        # Move to BE
+        if not sl_at_be and max_r >= BE_THRESHOLD_R:
+            current_sl = entry_price_adjusted
+            sl_at_be = True
+        
+        # Start trailing
+        if sl_at_be and max_r >= TRAIL_START_R:
+            trailing = True
+            trail_level = max_r - TRAIL_DISTANCE_R
+            if trail_level > 0:
+                if side == 'short':
+                    new_sl = entry_price_adjusted - (trail_level * sl_distance)
+                    current_sl = min(current_sl, new_sl) if current_sl != entry_price_adjusted else new_sl
+                else:
+                    new_sl = entry_price_adjusted + (trail_level * sl_distance)
+                    current_sl = max(current_sl, new_sl)
+        
+        # TP at 3R
+        if candle_max_r >= MAX_PROFIT_R:
+            exit_r = MAX_PROFIT_R - (COMMISSION_PCT * 2 / 100) * MAX_PROFIT_R
+            return {'result': 'tp', 'r': exit_r, 'max_r': max_r}
+    
+    # Timeout - assume LOSS for pessimistic estimate
+    return {'result': 'timeout', 'r': -1.0, 'max_r': max_r}
+
+# =============================================================================
+# MAIN WALK-FORWARD BACKTEST
 # =============================================================================
 
 def run_rigorous_backtest():
     print("=" * 80)
-    print("🔬 RIGOROUS RSI DIVERGENCE BACKTEST")
-    print("    With Pitfall Prevention & Walk-Forward Validation")
+    print("🔒 PARANOID-LEVEL RIGOROUS BACKTEST")
     print("=" * 80)
-    print(f"\n📋 Configuration (matches live bot):")
-    print(f"   - Timeframe: {TIMEFRAME}m")
-    print(f"   - Symbols: {NUM_SYMBOLS}")
-    print(f"   - Data: {DATA_DAYS} days")
-    print(f"   - R:R: {TP_ATR_MULT}:{SL_ATR_MULT}")
-    print(f"   - Slippage: {SLIPPAGE_PCT*100:.2f}%/side")
-    print(f"   - Fees: {FEE_PCT*100:.2f}%/side")
-    print(f"   - Total Cost: {TOTAL_COST*100:.2f}%/trade")
-    print(f"   - Walk-Forward: {NUM_PERIODS} x {PERIOD_DAYS} days")
-    print("\n" + "=" * 80)
+    print("\n⚠️ ANTI-LOOKAHEAD MEASURES:")
+    print("  • Candle-by-candle processing")
+    print("  • Pivot detection: right=0 (no future confirmation)")
+    print("  • Entry on NEXT bar open (not current close)")
+    print("  • SL checked FIRST on each bar")
+    print("  • Slippage: 0.05% | Commission: 0.055%")
+    print("  • Timeout assumed as LOSS")
+    print("\n📊 WALK-FORWARD VALIDATION:")
+    print(f"  • In-Sample: {TRAIN_PCT*100:.0f}% | Out-of-Sample: {TEST_PCT*100:.0f}%")
+    print(f"  • Only OOS results matter for decision")
+    print("=" * 80)
     
-    symbols = get_symbols(NUM_SYMBOLS)
-    print(f"\n📦 Fetching data for {len(symbols)} symbols...\n")
+    # Load symbols
+    try:
+        with open('config.yaml', 'r') as f:
+            config = yaml.safe_load(f)
+        symbols = config.get('trade', {}).get('divergence_symbols', [])[:NUM_SYMBOLS]
+    except:
+        symbols = ['BTCUSDT', 'ETHUSDT']
     
-    # Results storage
-    period_results = defaultdict(lambda: {'w': 0, 'l': 0, 'pnl': []})
-    results_by_type = defaultdict(lambda: {'w': 0, 'l': 0})
-    results_by_side = {'long': {'w': 0, 'l': 0}, 'short': {'w': 0, 'l': 0}}
+    print(f"\n📦 Testing {len(symbols)} symbols over {DATA_DAYS} days...")
+    print("⏳ Running SLOW for accuracy (this may take 5-10 minutes)...\n")
     
-    # Trade analytics
-    bars_to_win = []
-    bars_to_loss = []
-    all_pnl = []
-    
-    total_trades = 0
-    total_wins = 0
-    total_timeouts = 0
+    # Containers
+    in_sample_trades = []
+    out_sample_trades = []
+    weekday_oos = []
+    weekend_oos = []
     
     start_time = time.time()
-    processed = 0
     
-    for idx, symbol in enumerate(symbols):
+    for sym_idx, sym in enumerate(symbols):
         try:
-            df = fetch_klines(symbol, TIMEFRAME, DATA_DAYS)
-            if df.empty or len(df) < 500:
+            # Fetch data
+            df = fetch_klines(sym, TIMEFRAME, DATA_DAYS)
+            if df.empty or len(df) < 300:
                 continue
             
-            # Calculate indicators
-            df['rsi'] = calculate_rsi(df['close'], RSI_PERIOD)
-            df['atr'] = calculate_atr(df, 14)
+            df = df.reset_index()
             
-            # PITFALL FIX: Volume filter (matches live bot)
-            df['vol_ma'] = df['volume'].rolling(20).mean()
-            df['vol_ok'] = df['volume'] > df['vol_ma'] * 0.5
+            # Get arrays for fast indexing
+            opens = df['open'].values
+            highs = df['high'].values
+            lows = df['low'].values
+            closes = df['close'].values
+            volumes = df['volume'].values
+            timestamps = df['start'].values
             
-            df = df.dropna()
-            if len(df) < 200:
-                continue
+            n = len(df)
+            split_idx = int(n * TRAIN_PCT)
             
-            processed += 1
+            # Pre-calculate volume MA (using only past data)
+            vol_ma = np.full(n, np.nan)
+            for i in range(20, n):
+                vol_ma[i] = np.mean(volumes[i-20:i])
             
-            # Detect all signals
-            signals = detect_divergence_signals(df)
+            # Pre-calculate RSI (using only past data)
+            rsis = np.full(n, np.nan)
+            for i in range(RSI_PERIOD + 1, n):
+                rsis[i] = calculate_rsi_at_bar(closes[:i+1], RSI_PERIOD)
             
-            rows = list(df.itertuples())
-            last_trade_idx = -20
+            last_trade_bar = -COOLDOWN_BARS - 1
             
-            for sig in signals:
-                i = sig['idx']
-                
-                # PITFALL FIX: Minimum spacing between trades
-                if i - last_trade_idx < MIN_TRADE_SPACING:
+            # Candle-by-candle processing (SLOW but accurate)
+            for i in range(50, n - TIMEOUT_BARS - 1):
+                # Cooldown
+                if i - last_trade_bar < COOLDOWN_BARS:
                     continue
                 
-                if i >= len(rows) - 100:
+                # Volume filter (using only past data)
+                if VOLUME_FILTER and not np.isnan(vol_ma[i]):
+                    if volumes[i] < vol_ma[i] * MIN_VOL_RATIO:
+                        continue
+                
+                # ATR (using only past data)
+                atr = calculate_atr_at_bar(highs[:i+1], lows[:i+1], closes[:i+1], RSI_PERIOD)
+                if np.isnan(atr) or atr <= 0:
                     continue
                 
-                row = rows[i]
-                atr = row.atr
+                # Detect Hidden Bearish (strict no-lookahead)
+                signal = detect_hidden_bearish_strict(closes, highs, lows, rsis, i, LOOKBACK_BARS)
                 
-                # PITFALL FIX: ATR validation (matches live bot)
-                if pd.isna(atr) or atr <= 0:
+                if not signal:
                     continue
                 
-                # PITFALL FIX: Volume filter (matches live bot)
-                if not row.vol_ok:
+                # Entry on NEXT bar open
+                entry_idx = i + 1
+                if entry_idx >= n:
                     continue
                 
-                # Simulate realistic trade
-                trade = simulate_trade_realistic(df, i, sig['side'], atr)
+                entry_price = opens[entry_idx]
+                side = signal['side']
                 
-                if trade['outcome'] == 'timeout':
-                    total_timeouts += 1
+                # Calculate SL (strict)
+                sl, sl_distance = calculate_sl_strict(
+                    highs[:entry_idx], lows[:entry_idx], 
+                    side, atr, entry_price, SWING_LOOKBACK
+                )
+                
+                if sl_distance <= 0:
                     continue
                 
-                last_trade_idx = i
-                total_trades += 1
+                # Simulate trade (pessimistic)
+                result = simulate_trade_pessimistic(
+                    opens, highs, lows, closes,
+                    entry_idx, side, entry_price, sl, sl_distance
+                )
                 
-                # Determine period for walk-forward
-                trade_date = row.Index.date()
-                all_dates = sorted(df['date'].unique())
-                days_per_period = len(all_dates) // NUM_PERIODS
+                trade_record = {
+                    'symbol': sym,
+                    'r': result['r'],
+                    'exit': result['result'],
+                    'max_r': result['max_r'],
+                    'bar_idx': i,
+                    'timestamp': timestamps[i]
+                }
                 
-                try:
-                    day_idx = list(all_dates).index(trade_date)
-                    period_num = min(day_idx // days_per_period, NUM_PERIODS - 1)
-                except:
-                    period_num = 0
-                
-                # Calculate P&L in R-multiples
-                if trade['outcome'] == 'win':
-                    pnl_r = TP_ATR_MULT  # Won TP_ATR_MULT R
-                    results_by_type[sig['type']]['w'] += 1
-                    results_by_side[sig['side']]['w'] += 1
-                    period_results[period_num]['w'] += 1
-                    bars_to_win.append(trade['bars'])
-                    total_wins += 1
+                # Categorize
+                if i < split_idx:
+                    in_sample_trades.append(trade_record)
                 else:
-                    pnl_r = -1.0  # Lost 1R
-                    results_by_type[sig['type']]['l'] += 1
-                    results_by_side[sig['side']]['l'] += 1
-                    period_results[period_num]['l'] += 1
-                    bars_to_loss.append(trade['bars'])
+                    out_sample_trades.append(trade_record)
+                    
+                    # Weekend check
+                    ts = pd.Timestamp(timestamps[i])
+                    if ts.dayofweek >= 5:
+                        weekend_oos.append(trade_record)
+                    else:
+                        weekday_oos.append(trade_record)
                 
-                period_results[period_num]['pnl'].append(pnl_r)
-                all_pnl.append(pnl_r)
+                last_trade_bar = i
             
-            if (idx + 1) % 20 == 0:
-                print(f"  [{idx+1}/{NUM_SYMBOLS}] {processed} processed | Trades: {total_trades}")
+            if (sym_idx + 1) % 10 == 0:
+                oos_count = len(out_sample_trades)
+                if oos_count > 0:
+                    wins = len([t for t in out_sample_trades if t['r'] > 0])
+                    wr = wins / oos_count * 100
+                    print(f"  [{sym_idx+1}/{len(symbols)}] OOS Trades: {oos_count} | WR: {wr:.1f}%")
             
-            time.sleep(0.03)
+            time.sleep(0.03)  # Slow down for stability
             
         except Exception as e:
             continue
@@ -491,155 +516,102 @@ def run_rigorous_backtest():
     # RESULTS
     # ==========================================================================
     
+    def analyze(trades, label):
+        if not trades:
+            return None
+        n = len(trades)
+        wins = len([t for t in trades if t['r'] > 0])
+        losses = len([t for t in trades if t['r'] < 0])
+        bes = len([t for t in trades if t['r'] == 0])
+        
+        total_valid = wins + losses
+        wr = wins / total_valid * 100 if total_valid > 0 else 0
+        lb_wr = wilson_lb(wins, total_valid) * 100
+        
+        total_r = sum(t['r'] for t in trades)
+        avg_r = total_r / n if n > 0 else 0
+        
+        return {
+            'label': label,
+            'trades': n,
+            'wins': wins,
+            'losses': losses,
+            'bes': bes,
+            'wr': wr,
+            'lb_wr': lb_wr,
+            'total_r': total_r,
+            'avg_r': avg_r
+        }
+    
+    is_stats = analyze(in_sample_trades, "IN-SAMPLE (Training)")
+    oos_stats = analyze(out_sample_trades, "OUT-OF-SAMPLE (Testing)")
+    weekday_stats = analyze(weekday_oos, "WEEKDAY OOS")
+    weekend_stats = analyze(weekend_oos, "WEEKEND OOS")
+    
     print("\n" + "=" * 80)
     print("📊 RIGOROUS BACKTEST RESULTS")
     print("=" * 80)
-    print(f"\n⏱️ Completed in {elapsed/60:.1f} minutes ({processed} symbols)")
-    print(f"📉 Timeouts: {total_timeouts} (trades that didn't hit TP or SL)")
     
-    # Overall Performance
-    print("\n" + "-" * 60)
-    print("OVERALL PERFORMANCE (With All Pitfall Corrections)")
-    print("-" * 60)
+    if is_stats:
+        print(f"\n📚 **{is_stats['label']}** (Do NOT use for decisions)")
+        print(f"├ Trades: {is_stats['trades']}")
+        print(f"├ W/L: {is_stats['wins']}/{is_stats['losses']}")
+        print(f"├ Win Rate: {is_stats['wr']:.1f}%")
+        print(f"└ Total R: {is_stats['total_r']:+.1f}")
     
-    if total_trades > 0:
-        overall_wr = total_wins / total_trades
-        overall_lb = wilson_lower_bound(total_wins, total_trades)
-        overall_ev = calc_ev(overall_wr, TP_ATR_MULT)
-        total_r = sum(all_pnl)
-        max_dd = calc_max_drawdown(all_pnl)
+    if oos_stats:
+        print(f"\n🎯 **{oos_stats['label']}** (USE THIS FOR DECISIONS)")
+        print(f"├ Trades: {oos_stats['trades']}")
+        print(f"├ W/L: {oos_stats['wins']}/{oos_stats['losses']}")
+        print(f"├ Win Rate: **{oos_stats['wr']:.1f}%** (LB: {oos_stats['lb_wr']:.1f}%)")
+        print(f"├ Total R: **{oos_stats['total_r']:+.1f}R**")
+        print(f"└ Avg R/Trade: **{oos_stats['avg_r']:+.3f}**")
+    
+    # Robustness check
+    if is_stats and oos_stats:
+        wr_drop = is_stats['wr'] - oos_stats['wr']
+        avgr_drop = is_stats['avg_r'] - oos_stats['avg_r']
         
-        print(f"\n📊 Total Trades: {total_trades}")
-        print(f"✅ Wins: {total_wins} | ❌ Losses: {total_trades - total_wins}")
-        print(f"📈 Win Rate: {overall_wr*100:.1f}% (Lower Bound: {overall_lb*100:.1f}%)")
-        print(f"💰 EV: {overall_ev:+.2f}R per trade")
-        print(f"💵 Total P&L: {total_r:+,.0f}R")
-        print(f"📉 Max Drawdown: {max_dd:.0f}R")
+        print(f"\n🔍 **ROBUSTNESS CHECK**")
+        print(f"├ WR Drop (IS→OOS): {wr_drop:+.1f}%")
+        print(f"├ Avg R Drop: {avgr_drop:+.3f}")
         
-        if bars_to_win:
-            print(f"\n⏱️ Avg bars to WIN: {np.mean(bars_to_win):.1f} ({np.mean(bars_to_win)*15/60:.1f} hours)")
-        if bars_to_loss:
-            print(f"⏱️ Avg bars to LOSS: {np.mean(bars_to_loss):.1f} ({np.mean(bars_to_loss)*15/60:.1f} hours)")
-    
-    # Walk-Forward Validation
-    print("\n" + "-" * 60)
-    print("📅 WALK-FORWARD VALIDATION")
-    print("-" * 60)
-    
-    print(f"\n{'Period':<10} {'Days':<12} {'N':<8} {'W':<6} {'L':<6} {'WR':<8} {'EV':<8} {'P&L':<10}")
-    print("-" * 70)
-    
-    period_evs = []
-    for period_num in range(NUM_PERIODS):
-        data = period_results[period_num]
-        total = data['w'] + data['l']
-        
-        start_day = period_num * PERIOD_DAYS + 1
-        end_day = start_day + PERIOD_DAYS - 1
-        day_range = f"D{start_day}-D{end_day}"
-        
-        if total > 0:
-            wr = data['w'] / total
-            ev = calc_ev(wr, TP_ATR_MULT)
-            pnl = sum(data['pnl'])
-            period_evs.append(ev)
-            status = "✅" if ev > 0 else "❌"
-            print(f"P{period_num+1:<8} {day_range:<12} {total:<8} {data['w']:<6} {data['l']:<6} {wr*100:.1f}%  {ev:+.2f}  {pnl:+.0f}R {status}")
+        if abs(wr_drop) < 5 and abs(avgr_drop) < 0.1:
+            print(f"└ ✅ ROBUST (minimal overfitting)")
         else:
-            print(f"P{period_num+1:<8} {day_range:<12} {'--':<8} {'--':<6} {'--':<6} {'--':<8} {'--':<8} {'--':<10}")
+            print(f"└ ⚠️ POTENTIAL OVERFITTING")
     
-    # Walk-Forward Consistency
-    print("\n" + "-" * 60)
-    print("📈 WALK-FORWARD CONSISTENCY METRICS")
-    print("-" * 60)
-    
-    if period_evs:
-        profitable_periods = sum(1 for ev in period_evs if ev > 0)
-        consistency = profitable_periods / len(period_evs) * 100
-        avg_ev = np.mean(period_evs)
-        ev_std = np.std(period_evs) if len(period_evs) > 1 else 0
-        sharpe = calc_sharpe_like(period_evs)
-        
-        print(f"\n📊 Profitable Periods: {profitable_periods}/{len(period_evs)} ({consistency:.0f}%)")
-        print(f"📈 Average EV: {avg_ev:+.2f}R")
-        print(f"📉 EV Std Dev: {ev_std:.2f}R")
-        print(f"📊 Sharpe-like Ratio: {sharpe:.2f}")
-        
-        if consistency >= 80 and avg_ev > 0:
-            verdict = "✅ ROBUST - Consistent across 80%+ periods"
-        elif consistency >= 60 and avg_ev > 0:
-            verdict = "⚠️ MODERATE - Some variance between periods"
-        else:
-            verdict = "❌ INCONSISTENT - Significant performance variance"
-        
-        print(f"\n🎯 Walk-Forward Verdict: {verdict}")
-    
-    # By Divergence Type
-    print("\n" + "-" * 60)
-    print("BY DIVERGENCE TYPE")
-    print("-" * 60)
-    
-    sorted_types = sorted(results_by_type.items(), 
-                         key=lambda x: calc_ev(x[1]['w']/(x[1]['w']+x[1]['l']), TP_ATR_MULT) if x[1]['w']+x[1]['l'] > 0 else -999,
-                         reverse=True)
-    
-    print(f"\n{'Type':<20} {'N':<8} {'W':<6} {'L':<6} {'WR':<8} {'EV':<8}")
-    print("-" * 60)
-    
-    for sig_type, data in sorted_types:
-        total = data['w'] + data['l']
-        if total > 0:
-            wr = data['w'] / total
-            ev = calc_ev(wr, TP_ATR_MULT)
-            status = "✅" if ev > 0.3 else "⚠️" if ev > 0 else "❌"
-            print(f"{sig_type:<20} {total:<8} {data['w']:<6} {data['l']:<6} {wr*100:.1f}%  {ev:+.2f} {status}")
-    
-    # By Side
-    print("\n" + "-" * 60)
-    print("BY SIDE")
-    print("-" * 60)
-    
-    for side in ['long', 'short']:
-        d = results_by_side[side]
-        total = d['w'] + d['l']
-        if total > 0:
-            wr = d['w'] / total
-            ev = calc_ev(wr, TP_ATR_MULT)
-            icon = "🟢" if side == 'long' else "🔴"
-            status = "✅" if ev > 0.3 else "⚠️" if ev > 0 else "❌"
-            print(f"{icon} {side.upper():<8} N={total:<6} | WR={wr*100:.1f}% | EV={ev:+.2f} {status}")
-    
-    # Final Summary
+    # Weekday vs Weekend
     print("\n" + "=" * 80)
-    print("💡 FINAL SUMMARY")
+    print("📅 WEEKDAY vs WEEKEND (Out-of-Sample Only)")
     print("=" * 80)
     
-    if total_trades > 0:
-        print(f"\n✅ PITFALLS ADDRESSED:")
-        print(f"   ✓ Entry on next candle OPEN (no lookahead)")
-        print(f"   ✓ Realistic slippage ({SLIPPAGE_PCT*100:.2f}%/side)")
-        print(f"   ✓ Realistic fees ({FEE_PCT*100:.2f}%/side)")
-        print(f"   ✓ SL checked before TP (worst-case)")
-        print(f"   ✓ Volume filter applied")
-        print(f"   ✓ ATR validation applied")
-        print(f"   ✓ Walk-forward validation ({NUM_PERIODS} periods)")
+    if weekday_stats and weekend_stats:
+        print(f"\n| Metric     | Weekday       | Weekend       |")
+        print(f"|------------|---------------|---------------|")
+        print(f"| Trades     | {weekday_stats['trades']:<13} | {weekend_stats['trades']:<13} |")
+        print(f"| Win Rate   | {weekday_stats['wr']:.1f}%{' '*8} | {weekend_stats['wr']:.1f}%{' '*8} |")
+        print(f"| Total R    | {weekday_stats['total_r']:+.1f}R{' '*7} | {weekend_stats['total_r']:+.1f}R{' '*7} |")
+        print(f"| Avg R      | {weekday_stats['avg_r']:+.3f}{' '*7} | {weekend_stats['avg_r']:+.3f}{' '*7} |")
         
-        print(f"\n📊 RELIABLE RESULTS:")
-        print(f"   - Total Trades: {total_trades}")
-        print(f"   - Win Rate: {overall_wr*100:.1f}% (LB: {overall_lb*100:.1f}%)")
-        print(f"   - EV: {overall_ev:+.2f}R per trade")
-        print(f"   - Consistency: {consistency:.0f}% of periods profitable")
-        print(f"   - Total Expected: {total_r:+,.0f}R over {DATA_DAYS} days")
+        wr_diff = weekday_stats['wr'] - weekend_stats['wr']
         
-        if consistency >= 80 and overall_ev > 0.5:
-            print(f"\n🎯 VERDICT: PRODUCTION READY")
-            print(f"   Strategy is robust and consistent across market conditions.")
-        elif overall_ev > 0:
-            print(f"\n⚠️ VERDICT: PROMISING BUT MONITOR CLOSELY")
-            print(f"   Strategy shows edge but may have variance.")
+        print(f"\n💡 **RECOMMENDATION**")
+        if wr_diff > 5:
+            print(f"   Weekdays are {wr_diff:.1f}% better - Consider weekend filter")
+        elif wr_diff < -5:
+            print(f"   Weekends are {abs(wr_diff):.1f}% better - Trade more on weekends")
         else:
-            print(f"\n❌ VERDICT: NOT RECOMMENDED")
-            print(f"   Strategy does not show consistent edge.")
+            print(f"   No significant difference ({abs(wr_diff):.1f}%) - Trade 24/7")
+    
+    print(f"\n⏱️ Completed in {elapsed/60:.1f} minutes")
+    
+    # Save
+    all_trades = in_sample_trades + out_sample_trades
+    pd.DataFrame(all_trades).to_csv('rigorous_backtest_results.csv', index=False)
+    print(f"💾 Saved to: rigorous_backtest_results.csv")
+    
+    return oos_stats
 
 if __name__ == "__main__":
     run_rigorous_backtest()

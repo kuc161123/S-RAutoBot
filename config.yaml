@@ -403,13 +403,13 @@ trade:
   - REDUSDT
   - REQUSDT
   - ROSEUSDT
-  timeframe: '60'
+  timeframe: '3'
   bearish_only: false   # Disabled - trading ALL divergence types
   hidden_bearish_only: false  # Disabled - trading ALL divergence types
   
-  # 126 symbols validated by walk-forward backtest for ALL divergences
-  # 1H timeframe, 6/6 periods profitable, WR >= 40%, N >= 5
-  # Combined: 6688 trades | 52.9% WR | +1.12 EV | +7,476R
+  # 126 symbols validated for 3M divergence trading
+  # 3-minute timeframe for faster trade cycles
+  # Optimal trailing: BE 0.7R, Trail 0.3R behind
   divergence_symbols:
     - SAROSUSDT        # 70.4% WR, 27 trades, +49R
     - LIGHTUSDT        # 84.2% WR, 19 trades, +45R

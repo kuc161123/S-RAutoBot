@@ -3494,27 +3494,20 @@ class DivergenceBot:
                                     else:
                                         exit_r = 0
                                     
-                                    # === CRITICAL SAFETY CAP: ALWAYS -1R MAX FOR STATS ===
-                                    # With proper position sizing, SL hit = -1R exactly
-                                    # Allow 10% slippage margin, but cap beyond that
-                                    exit_r_actual = exit_r  # Store actual for display
+                                    # === REALISTIC STATS: Show actual loss/gain ===
+                                    # No capping - stats reflect real performance
                                     if exit_r < -1.1:
+                                        # Log warning for investigation but DON'T cap
                                         logger.error(f"🚨 ABNORMAL LOSS: {sym} exit_r={exit_r:.2f}R! SL may have slipped!")
                                         logger.error(f"   Entry: ${entry:.4f}, Exit: ${exit_price:.4f}, SL Distance: ${sl_distance:.6f}")
-                                        
-                                        # CAP the loss at -1R for stats ONLY
-                                        exit_r_for_stats = -1.0
-                                        logger.warning(f"   Capping exit_r from {exit_r:.2f}R to {exit_r_for_stats:.2f}R for stats only")
                                         await self.send_telegram(
                                             f"⚠️ **SL SLIPPAGE DETECTED**\n"
                                             f"Symbol: `{sym}`\n"
-                                            f"Actual Loss: {exit_r_actual:.2f}R\n"
-                                            f"Stats Capped: -1.0R\n"
+                                            f"Actual Loss: {exit_r:.2f}R\n"
                                             f"Investigate if this keeps happening!"
                                         )
-                                        exit_r = exit_r_for_stats  # Capped for stats
                                     
-                                    # Total R = exit_r (capped for stats, but notification shows actual)
+                                    # Total R = actual exit_r (realistic, no capping)
                                     total_r = exit_r
                                     
                                     # Categorize exit type

@@ -1016,8 +1016,8 @@ class DivergenceBot:
     async def cmd_backtest(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show comprehensive live vs backtest performance comparison"""
         try:
-            # === BACKTEST REFERENCE (All Divergences Strategy 1H) ===
-            # From walk-forward validated optimal trailing backtest (150 symbols)
+            # === BACKTEST REFERENCE (All Divergences Strategy 3M) ===
+            # From rigorous backtest (50 symbols, walk-forward validated)
             BT_WIN_RATE = 54.7  # % (Optimal trailing: BE 0.7R, trail 0.3R)
             BT_EV = 0.179       # R per trade (grid search out-of-sample)
             BT_RR = 3.0         # Risk:Reward (full 3R target)
@@ -1644,8 +1644,8 @@ class DivergenceBot:
         BACKTEST MATCHED: Only detects on NEW candle close + signal cooldown
         """
         try:
-            # Use timeframe from config (1H = walk-forward validated, bearish-only strategy)
-            timeframe = self.cfg.get('trade', {}).get('timeframe', '60')
+            # Use timeframe from config (3M = fast trading with optimal trailing)
+            timeframe = self.cfg.get('trade', {}).get('timeframe', '3')
             klines = self.broker.get_klines(sym, timeframe, limit=100)
             if not klines or len(klines) < 50: 
                 return
@@ -2571,12 +2571,12 @@ class DivergenceBot:
             self.pending_orders.pop(order_id, None)
 
     async def monitor_trailing_sl(self, candle_data: dict):
-        """Monitor active trades for partial TP fills and trailing SL updates.
+        """Monitor active trades for optimal trailing SL updates.
         
-        This function handles:
-        1. Detecting when partial TP order fills (50% at 1R)
-        2. Moving SL to break-even after partial TP
-        3. Trailing SL at 1R behind after 2R profit
+        OPTIMAL TRAILING STRATEGY:
+        1. At +0.7R: Move SL to break-even (protect capital)
+        2. From +0.7R: Trail 0.3R behind max favorable price
+        3. Max target: +3R
         
         Called every loop iteration with current candle data.
         """
@@ -3105,7 +3105,7 @@ class DivergenceBot:
         # Send success notification
         bearish_mode = self.cfg.get('trade', {}).get('bearish_only', False)
         hidden_bearish_mode = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
-        timeframe = self.cfg.get('trade', {}).get('timeframe', '60')
+        timeframe = self.cfg.get('trade', {}).get('timeframe', '3')
         
         if hidden_bearish_mode:
             mode_text = "🎯 HIDDEN BEARISH ONLY"
@@ -3156,7 +3156,7 @@ class DivergenceBot:
                     for sym, entry_info in list(self.pending_entries.items()):
                         try:
                             # Get fresh klines for execution (use same timeframe as detection)
-                            tf = self.cfg.get('trade', {}).get('timeframe', '60')
+                            tf = self.cfg.get('trade', {}).get('timeframe', '3')
                             klines = self.broker.get_klines(sym, tf, limit=100)
                             if klines and len(klines) >= 50:
                                 df = pd.DataFrame(klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
@@ -3424,16 +3424,8 @@ class DivergenceBot:
                                     # Duration
                                     duration_mins = (time.time() - trade_info['open_time']) / 60
                                     
-                                    # Build breakdown message
-                                    if partial_tp_filled:
-                                        breakdown = (
-                                            f"📊 **BREAKDOWN**\n"
-                                            f"├ 50% @ +1R: +0.5R ✅\n"
-                                            f"├ 50% @ {exit_r:+.1f}R: {remaining_r:+.2f}R\n"
-                                            f"└ **TOTAL: {total_r:+.2f}R** {exit_type}\n\n"
-                                        )
-                                    else:
-                                        breakdown = f"├ Full position: {exit_r:+.2f}R\n\n"
+                                    # Build breakdown message (no partial TP in optimal strategy)
+                                    breakdown = f"├ Full position: {exit_r:+.2f}R\n\n"
                                     
                                     await self.send_telegram(
                                         f"📝 **TRADE CLOSED**\n"

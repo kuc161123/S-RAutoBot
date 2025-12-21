@@ -2265,62 +2265,6 @@ class DivergenceBot:
             def round_to_tick(price):
                 return round(price / tick_size) * tick_size
             
-            # ============================================
-            # STEP 0: CALCULATE PIVOT SL DISTANCE FIRST
-            # ============================================
-            # This ensures position size is based on ACTUAL SL distance
-            # so risk per trade is consistent (not ATR-dependent)
-            
-            RR_RATIO = 3.0
-            LOOKBACK = 15  # Bars to look back for swing
-            
-            # Get recent highs/lows from DataFrame
-            recent_lows = df['low'].tail(LOOKBACK).values
-            recent_highs = df['high'].tail(LOOKBACK).values
-            
-            # Calculate SL distance from signal price (close approximation to entry)
-            if side == 'long':
-                swing_low = min(recent_lows)
-                sl_distance_estimate = abs(signal_price - swing_low)
-            else:
-                swing_high = max(recent_highs)
-                sl_distance_estimate = abs(swing_high - signal_price)
-            
-            # Apply min/max constraints (0.3-2.0 × ATR)
-            min_sl_dist = 0.3 * atr
-            max_sl_dist = 2.0 * atr
-            
-            if sl_distance_estimate < min_sl_dist:
-                sl_distance_estimate = min_sl_dist
-            elif sl_distance_estimate > max_sl_dist:
-                sl_distance_estimate = max_sl_dist
-            
-            # Calculate position size based on ACTUAL SL distance
-            risk_amount = balance * (self.risk_config['value'] / 100)
-            qty = risk_amount / sl_distance_estimate if sl_distance_estimate > 0 else 0
-            
-            sl_atr_mult = sl_distance_estimate / atr if atr > 0 else 1.0
-            logger.info(f"📐 {sym} SL distance: {sl_atr_mult:.2f}×ATR | Risk: ${risk_amount:.2f}")
-            
-            # Round qty to lot size (fix floating point precision)
-            # Get instrument info (tick size, lot size)
-            tick_size = 0.0001
-            qty_step = 0.001
-            min_qty = 0.001
-            try:
-                inst_list = self.broker.get_instruments_info(symbol=sym)
-                if inst_list and len(inst_list) > 0:
-                    inst_info = inst_list[0]
-                    tick_size = float(inst_info.get('priceFilter', {}).get('tickSize', 0.0001))
-                    qty_step = float(inst_info.get('lotSizeFilter', {}).get('qtyStep', 0.001))
-                    min_qty = float(inst_info.get('lotSizeFilter', {}).get('minOrderQty', 0.001))
-            except Exception as e:
-                logger.warning(f"Failed to get instrument info for {sym}: {e}")
-            
-            # Helper function to round to tick size
-            def round_to_tick(price):
-                return round(price / tick_size) * tick_size
-            
             # Helper function to round quantity to qtyStep
             def round_to_qty_step(quantity):
                 """Round quantity to instrument's qtyStep (e.g., whole numbers for some coins)"""
@@ -2335,20 +2279,10 @@ class DivergenceBot:
                     return round(rounded, max(decimals, 0))
                 return round(quantity, 6)
             
-            # Calculate position size
-            signal_price = row['close']
-            atr = row['atr']
-            rsi = row['rsi']
-            
-            # ATR validation (matches backtest: if pd.isna(atr) or atr <= 0: continue)
-            if pd.isna(atr) or atr <= 0:
-                logger.warning(f"Skip {sym}: Invalid ATR ({atr})")
-                return
-            
-            # Calculate SL/TP (Pivot-based)
+            # Calculate SL/TP (ATR-based)
             RR_RATIO = 3.0
             
-            # Get swing points from signal detection
+            # Get swing points from signal detection (legacy, but kept for compatibility)
             swing_low = signal_swing_low if signal_swing_low is not None else df_closed['low'].rolling(14).min().iloc[-1]
             swing_high = signal_swing_high if signal_swing_high is not None else df_closed['high'].rolling(14).max().iloc[-1]
             
@@ -2415,7 +2349,7 @@ class DivergenceBot:
             # NEW: Place with SL only - partial TP will be added after fill
             order = self.broker.place_limit(
                 sym, side, qty, expected_entry,
-                take_profit=None, stop_loss=sl  # SL only, no TP yet
+                take_profit=None, stop_loss=sl  # SL only, no TP yet (trailing strategy)
             )
             
             if not order or order.get('retCode') != 0:
@@ -2430,10 +2364,10 @@ class DivergenceBot:
             
             order_id = order.get('result', {}).get('orderId', 'N/A')
             logger.info(f"✅ LIMIT ORDER PLACED: {sym} {side} qty={qty} @ ${expected_entry:.6f}")
-            logger.info(f"🛡️ SL PROTECTION: SL=${sl:.6f} (TP will be partial at 1R)")
+            logger.info(f"🛡️ SL PROTECTION: SL=${sl:.6f} (Trailing strategy active)")
             
             # Track in pending_limit_orders for monitoring (fills, timeout, invalidation)
-            # NEW: Include partial TP fields with PROPERLY ROUNDED qty
+            # NEW: Track order for monitoring (fills, timeout, invalidation)
             self.pending_limit_orders[sym] = {
                 'order_id': order_id,
                 'side': side,

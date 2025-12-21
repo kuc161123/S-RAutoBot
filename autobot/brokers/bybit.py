@@ -591,6 +591,7 @@ class Bybit:
         """Set only Stop Loss for a position using trading-stop.
 
         Uses Partial mode when qty provided, otherwise Full mode.
+        Returns response dict with retCode = 0 on success.
         """
         try:
             if qty:
@@ -614,10 +615,38 @@ class Bybit:
                     "slOrderType": "Market",
                     "positionIdx": 0,
                 }
-            return self._request("POST", "/v5/position/trading-stop", data)
+            
+            resp = self._request("POST", "/v5/position/trading-stop", data)
+            
+            # Validate response
+            if resp and resp.get("retCode") == 0:
+                logger.info(f"✅ SL SET: {symbol} @ {stop_loss} (qty={qty})")
+                return resp
+            else:
+                ret_code = resp.get("retCode") if resp else "no response"
+                ret_msg = resp.get("retMsg") if resp else "no message"
+                logger.error(f"❌ SL SET FAILED: {symbol} - retCode={ret_code}, msg={ret_msg}")
+                raise RuntimeError(f"SL set failed: {ret_msg}")
+                
         except Exception as e:
             logger.error(f"Failed to set SL-only for {symbol}: {e}")
             raise
+    
+    def verify_position_sl(self, symbol: str) -> tuple:
+        """Verify the current SL set on Bybit for a position.
+        
+        Returns (sl_price, tp_price) or (None, None) if no position.
+        """
+        try:
+            pos = self.get_position(symbol)
+            if pos and float(pos.get('size', 0)) > 0:
+                sl = float(pos.get('stopLoss', 0))
+                tp = float(pos.get('takeProfit', 0))
+                return (sl, tp)
+            return (None, None)
+        except Exception as e:
+            logger.error(f"Failed to verify SL for {symbol}: {e}")
+            return (None, None)
 
     def place_reduce_only_limit(self, symbol: str, side: str, qty: float, price: float,
                                  post_only: bool = True, reduce_only: bool = True) -> Dict[str, Any]:

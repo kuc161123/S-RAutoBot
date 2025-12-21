@@ -2631,29 +2631,59 @@ class DivergenceBot:
                     
                     protected_r = max_r - TRAIL_DISTANCE  # e.g., 0.7 - 0.3 = +0.4R
                     
-                    try:
-                        self.broker.set_sl_only(sym, initial_trail_sl, trade_info['qty_remaining'])
-                        trade_info['sl_current'] = initial_trail_sl
-                        trade_info['sl_at_breakeven'] = True  # Flag that we've passed BE threshold
-                        trade_info['trailing_active'] = True  # Trailing is now active
-                        trade_info['last_sl_update_time'] = time.time()
-                        
-                        logger.info(f"🛡️ +0.7R REACHED, SL TO +{protected_r:.1f}R: {sym} @ {initial_trail_sl}")
-                        
-                        # Send notification
-                        await self.send_telegram(
-                            f"🛡️ **TRAILING SL ACTIVATED**\n"
-                            f"━━━━━━━━━━━━━━━━━━━━\n"
-                            f"📊 Symbol: `{sym}`\n"
-                            f"📈 Side: **{side.upper()}**\n\n"
-                            f"✅ **+{max_r:.1f}R ACHIEVED**\n"
-                            f"├ SL: ${initial_trail_sl:.4f} (+{protected_r:.1f}R)\n"
-                            f"├ Protected: **+{protected_r:.1f}R** locked in 🔒\n"
-                            f"└ Trail: 0.3R behind max price\n\n"
-                            f"💡 Trailing active, profit protected!"
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to set trailing SL for {sym}: {e}")
+                    # === CRITICAL SANITY CHECK ===
+                    # For LONG: trailing SL must be ABOVE entry (protecting profit)
+                    # For SHORT: trailing SL must be BELOW entry (protecting profit)
+                    sl_valid = True
+                    if side == 'long' and initial_trail_sl <= entry:
+                        logger.error(f"❌ SANITY FAIL: LONG {sym} trail SL ${initial_trail_sl:.4f} <= entry ${entry:.4f}!")
+                        sl_valid = False
+                    if side == 'short' and initial_trail_sl >= entry:
+                        logger.error(f"❌ SANITY FAIL: SHORT {sym} trail SL ${initial_trail_sl:.4f} >= entry ${entry:.4f}!")
+                        sl_valid = False
+                    
+                    if sl_valid:
+                        try:
+                            self.broker.set_sl_only(sym, initial_trail_sl, trade_info['qty_remaining'])
+                            
+                            # === VERIFY SL WAS ACTUALLY SET ===
+                            import time as t
+                            t.sleep(0.3)  # Brief delay for API to propagate
+                            verified_sl, _ = self.broker.verify_position_sl(sym)
+                            
+                            if verified_sl and abs(verified_sl - initial_trail_sl) < sl_distance * 0.1:
+                                logger.info(f"✅ VERIFIED: {sym} SL confirmed at ${verified_sl:.4f}")
+                            else:
+                                logger.warning(f"⚠️ SL VERIFICATION MISMATCH: {sym} expected ${initial_trail_sl:.4f}, got ${verified_sl or 0:.4f}")
+                            
+                            trade_info['sl_current'] = initial_trail_sl
+                            trade_info['sl_at_breakeven'] = True  # Flag that we've passed BE threshold
+                            trade_info['trailing_active'] = True  # Trailing is now active
+                            trade_info['last_sl_update_time'] = time.time()
+                            
+                            logger.info(f"🛡️ +0.7R REACHED, SL TO +{protected_r:.1f}R: {sym} @ {initial_trail_sl}")
+                            
+                            # Send notification
+                            await self.send_telegram(
+                                f"🛡️ **TRAILING SL ACTIVATED**\n"
+                                f"━━━━━━━━━━━━━━━━━━━━\n"
+                                f"📊 Symbol: `{sym}`\n"
+                                f"📈 Side: **{side.upper()}**\n\n"
+                                f"✅ **+{max_r:.1f}R ACHIEVED**\n"
+                                f"├ SL: ${initial_trail_sl:.4f} (+{protected_r:.1f}R)\n"
+                                f"├ Protected: **+{protected_r:.1f}R** locked in 🔒\n"
+                                f"└ Trail: 0.3R behind max price\n\n"
+                                f"💡 Trailing active, profit protected!"
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to set trailing SL for {sym}: {e}")
+                            # CRITICAL: Alert user that SL failed!
+                            await self.send_telegram(
+                                f"⚠️ **SL SET FAILED!**\n"
+                                f"Symbol: `{sym}` {side.upper()}\n"
+                                f"Error: {str(e)[:50]}\n\n"
+                                f"⚡ **MANUAL ACTION MAY BE REQUIRED**"
+                            )
                 
                 # ============================================
                 # CHECK 2: Trailing SL (from 0.7R, Optimal Strategy)
@@ -2668,9 +2698,20 @@ class DivergenceBot:
                     
                     current_sl = trade_info.get('sl_current', trade_info['sl_initial'])
                     
+                    # === CRITICAL SANITY CHECK ===
+                    sl_valid = True
+                    if side == 'long' and new_sl <= entry:
+                        logger.error(f"❌ TRAIL SANITY FAIL: LONG {sym} new SL ${new_sl:.4f} <= entry ${entry:.4f}!")
+                        sl_valid = False
+                    if side == 'short' and new_sl >= entry:
+                        logger.error(f"❌ TRAIL SANITY FAIL: SHORT {sym} new SL ${new_sl:.4f} >= entry ${entry:.4f}!")
+                        sl_valid = False
+                    
                     # Only update if new SL is better (more protective)
-                    should_update = (side == 'long' and new_sl > current_sl + sl_distance * 0.1) or \
-                                   (side == 'short' and new_sl < current_sl - sl_distance * 0.1)
+                    should_update = sl_valid and (
+                        (side == 'long' and new_sl > current_sl + sl_distance * 0.1) or
+                        (side == 'short' and new_sl < current_sl - sl_distance * 0.1)
+                    )
                     
                     # Throttle updates
                     last_update = trade_info.get('last_sl_update_time', 0)

@@ -2618,32 +2618,42 @@ class DivergenceBot:
                 max_r = trade_info['max_favorable_r']
                 
                 # ============================================
-                # CHECK 1: Move SL to BE at +0.7R (Optimal Strategy)
+                # CHECK 1: Move SL to trailing position at +0.7R (Optimal Strategy)
                 # ============================================
                 if not trade_info.get('sl_at_breakeven', False) and max_r >= 0.7:
-                    # Price reached +0.7R, move SL to break-even to protect capital
+                    # Price reached +0.7R, move SL to +0.4R (0.3R behind max)
+                    # This is BETTER than just BE - immediately protects profit!
+                    TRAIL_DISTANCE = 0.3
+                    if side == 'long':
+                        initial_trail_sl = entry + (max_r - TRAIL_DISTANCE) * sl_distance
+                    else:
+                        initial_trail_sl = entry - (max_r - TRAIL_DISTANCE) * sl_distance
+                    
+                    protected_r = max_r - TRAIL_DISTANCE  # e.g., 0.7 - 0.3 = +0.4R
+                    
                     try:
-                        self.broker.set_sl_only(sym, entry, trade_info['qty_remaining'])
-                        trade_info['sl_current'] = entry
-                        trade_info['sl_at_breakeven'] = True
+                        self.broker.set_sl_only(sym, initial_trail_sl, trade_info['qty_remaining'])
+                        trade_info['sl_current'] = initial_trail_sl
+                        trade_info['sl_at_breakeven'] = True  # Flag that we've passed BE threshold
+                        trade_info['trailing_active'] = True  # Trailing is now active
                         trade_info['last_sl_update_time'] = time.time()
                         
-                        logger.info(f"🛡️ +0.7R REACHED, SL TO BE: {sym} @ {entry}")
+                        logger.info(f"🛡️ +0.7R REACHED, SL TO +{protected_r:.1f}R: {sym} @ {initial_trail_sl}")
                         
                         # Send notification
                         await self.send_telegram(
-                            f"🛡️ **SL MOVED TO BREAK-EVEN**\n"
+                            f"🛡️ **TRAILING SL ACTIVATED**\n"
                             f"━━━━━━━━━━━━━━━━━━━━\n"
                             f"📊 Symbol: `{sym}`\n"
                             f"📈 Side: **{side.upper()}**\n\n"
-                            f"✅ **+0.7R ACHIEVED**\n"
-                            f"├ SL: ${entry:.4f} (BE)\n"
-                            f"├ Status: **PROTECTED** 🛡️\n"
-                            f"└ Trail: Starts at +0.7R\n\n"
-                            f"💡 Capital protected, now trailing"
+                            f"✅ **+{max_r:.1f}R ACHIEVED**\n"
+                            f"├ SL: ${initial_trail_sl:.4f} (+{protected_r:.1f}R)\n"
+                            f"├ Protected: **+{protected_r:.1f}R** locked in 🔒\n"
+                            f"└ Trail: 0.3R behind max price\n\n"
+                            f"💡 Trailing active, profit protected!"
                         )
                     except Exception as e:
-                        logger.error(f"Failed to move SL to BE for {sym}: {e}")
+                        logger.error(f"Failed to set trailing SL for {sym}: {e}")
                 
                 # ============================================
                 # CHECK 2: Trailing SL (from 0.7R, Optimal Strategy)

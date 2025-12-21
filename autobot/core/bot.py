@@ -1807,7 +1807,8 @@ class DivergenceBot:
                     logger.debug(f"StochRSI not available for {sym}, proceeding anyway")
                 
                 # Log signal detection
-                logger.info(f"📊 DIVERGENCE: {sym} {side.upper()} {combo} (RSI: {signal.rsi_value:.1f}, StochK: {stoch_k:.1f if stoch_k else 'N/A'})")
+                stoch_display = f"{stoch_k:.1f}" if stoch_k is not None else "N/A"
+                logger.info(f"📊 DIVERGENCE: {sym} {side.upper()} {combo} (RSI: {signal.rsi_value:.1f}, StochK: {stoch_display})")
                 
                 # ====================================================
                 # BEARISH-ONLY FILTER (walk-forward validated)

@@ -17,13 +17,12 @@ high_probability_trio:
   # VWAP Filter: Longs below VWAP, Shorts above VWAP
   require_vwap: true
   
-  # 1-2-3 Pattern: DISABLED - execute immediately after VWAP+RSI+Volume
-  require_reversal_candle: false   # Set to true to wait for HL/LH pattern
-  max_wait_candles: 10             # Only used if require_reversal_candle is true
-  
-  # Pattern Detection Thresholds (only used if require_reversal_candle is true)
-  min_wick_ratio: 0.6
-  max_body_ratio: 0.3
+  # Two-Bar Momentum Trigger
+  # LONG: 2 Green candles + Close₂ > High₁
+  # SHORT: 2 Red candles + Close₂ < Low₁
+  require_two_bar_momentum: true   # Wait for momentum pattern
+  max_wait_candles: 10             # Max candles to wait for pattern
+  max_chase_pct: 0.5               # Safety filter: discard if moved > 0.5%
 
 exploration:
   enabled: true

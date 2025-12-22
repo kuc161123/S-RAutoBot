@@ -170,6 +170,62 @@ def detect_123_pattern(df, side: str, signal_candle_idx: int = -3) -> tuple:
         
         return False, None
 
+
+def detect_two_bar_momentum(df, side: str, signal_price: float = 0, max_chase_pct: float = 0.5) -> tuple:
+    """
+    Detect Two-Bar Momentum Trigger for trade entry.
+    
+    LONG: Candle 1 Green + Candle 2 Green + Close₂ > High₁
+    SHORT: Candle 1 Red + Candle 2 Red + Close₂ < Low₁
+    
+    Safety Filter: Discard if price moved > max_chase_pct from signal level
+    
+    Returns (has_trigger, pattern_type, should_discard, discard_reason)
+    """
+    if len(df) < 2:
+        return False, None, False, None
+    
+    candle1 = df.iloc[-2]
+    candle2 = df.iloc[-1]
+    
+    current_price = candle2['close']
+    
+    if side == 'long':
+        # Check pattern: Both green + Close₂ > High₁
+        candle1_green = candle1['close'] > candle1['open']
+        candle2_green = candle2['close'] > candle2['open']
+        close2_breaks_high1 = candle2['close'] > candle1['high']
+        
+        has_pattern = candle1_green and candle2_green and close2_breaks_high1
+        
+        if has_pattern:
+            # Safety filter: Check if we're chasing
+            if signal_price > 0:
+                move_pct = (current_price - signal_price) / signal_price * 100
+                if move_pct > max_chase_pct:
+                    return False, None, True, f"Price up {move_pct:.2f}% (> {max_chase_pct}%)"
+            
+            return True, "Green + Green Break", False, None
+    
+    else:  # short
+        # Check pattern: Both red + Close₂ < Low₁
+        candle1_red = candle1['close'] < candle1['open']
+        candle2_red = candle2['close'] < candle2['open']
+        close2_breaks_low1 = candle2['close'] < candle1['low']
+        
+        has_pattern = candle1_red and candle2_red and close2_breaks_low1
+        
+        if has_pattern:
+            # Safety filter: Check if we're chasing
+            if signal_price > 0:
+                move_pct = (signal_price - current_price) / signal_price * 100
+                if move_pct > max_chase_pct:
+                    return False, None, True, f"Price down {move_pct:.2f}% (> {max_chase_pct}%)"
+            
+            return True, "Red + Red Break", False, None
+    
+    return False, None, False, None
+
 class DivergenceBot:
     def __init__(self):
         self.load_config()
@@ -244,10 +300,11 @@ class DivergenceBot:
         trio_cfg = self.cfg.get('high_probability_trio', {})
         self.trio_enabled = trio_cfg.get('enabled', True)
         self.trio_require_vwap = trio_cfg.get('require_vwap', True)
-        self.trio_require_reversal = trio_cfg.get('require_reversal_candle', True)
+        self.trio_require_two_bar = trio_cfg.get('require_two_bar_momentum', True)
         self.trio_max_wait_candles = trio_cfg.get('max_wait_candles', 10)
+        self.trio_max_chase_pct = trio_cfg.get('max_chase_pct', 0.5)
         
-        logger.info(f"📊 HIGH-PROB TRIO: {'ENABLED' if self.trio_enabled else 'DISABLED'} | VWAP: {self.trio_require_vwap} | 1-2-3: {self.trio_require_reversal}")
+        logger.info(f"📊 HIGH-PROB TRIO: {'ENABLED' if self.trio_enabled else 'DISABLED'} | VWAP: {self.trio_require_vwap} | 2-Bar: {self.trio_require_two_bar}")
         
     def load_config(self):
         # Load .env manually
@@ -852,7 +909,7 @@ class DivergenceBot:
                 f"├ Type: RSI Divergence\n"
                 f"├ TF: {self.cfg.get('trade', {}).get('timeframe', '3')}min (3M)\n"
                 f"├ 🔥 **HIGH-PROB TRIO: {'✅ ON' if self.trio_enabled else '❌ OFF'}**\n"
-                f"├ VWAP: {'✓' if self.trio_require_vwap else '✗'} | 1-2-3: {'✓' if self.trio_require_reversal else 'OFF'}\n"
+                f"├ VWAP: {'✓' if self.trio_require_vwap else '✗'} | 2-Bar: {'✓' if self.trio_require_two_bar else 'OFF'}\n"
                 f"├ Pending Triggers: {len(self.pending_trio_signals)}\n"
                 f"├ **EXIT: Optimal Trailing SL**\n"
                 f"├ BE at +0.7R (protect capital)\n"
@@ -2002,15 +2059,15 @@ class DivergenceBot:
                     continue
                 
                 # ====================================================
-                # HIGH-PROBABILITY TRIO: QUEUE FOR PRICE ACTION TRIGGER
+                # HIGH-PROBABILITY TRIO: QUEUE FOR TWO-BAR MOMENTUM TRIGGER
                 # ====================================================
-                if self.trio_enabled and self.trio_require_reversal:
+                if self.trio_enabled and self.trio_require_two_bar:
                     # Check if already pending or trading
                     if sym in self.pending_trio_signals or sym in self.pending_entries or sym in self.active_trades:
                         logger.info(f"⏳ ALREADY PENDING/TRADING: {sym}")
                         continue
                     
-                    # Add to pending queue - will execute when reversal candle detected
+                    # Add to pending queue - will execute when two-bar momentum detected
                     vwap = last_row.get('vwap', 0)
                     self.pending_trio_signals[sym] = PendingTrioSignal(
                         symbol=sym,
@@ -2027,7 +2084,7 @@ class DivergenceBot:
                     )
                     
                     self.last_signal_candle[sym] = time.time()
-                    logger.info(f"⏳ TRIO PENDING: {sym} {side} {combo} - waiting for 1-2-3 pattern")
+                    logger.info(f"⏳ TRIO PENDING: {sym} {side} {combo} - waiting for 2-bar momentum")
                     
                     # Send notification about pending signal
                     await self.send_telegram(
@@ -2040,8 +2097,8 @@ class DivergenceBot:
                         f"├ VWAP: {'Below ✓' if side == 'long' else 'Above ✓'}\n"
                         f"├ RSI Zone: {signal.rsi_value:.1f} ✓\n"
                         f"└ Volume: Above threshold ✓\n\n"
-                        f"⏳ **WAITING FOR 1-2-3 PATTERN:**\n"
-                        f"└ {'Higher Low' if side == 'long' else 'Lower High'} confirmation\n\n"
+                        f"⏳ **WAITING FOR 2-BAR MOMENTUM:**\n"
+                        f"└ {'2 Green + Close₂ > High₁' if side == 'long' else '2 Red + Close₂ < Low₁'}\n\n"
                         f"⏰ Max wait: {self.trio_max_wait_candles} candles"
                     )
                     continue
@@ -2068,7 +2125,7 @@ class DivergenceBot:
         Called each loop iteration. Checks for:
         1. RSI invalidation (crossed wrong direction)
         2. Expiration (waited too many candles)
-        3. 1-2-3 Pattern trigger (Higher Low for longs, Lower High for shorts)
+        3. Two-Bar Momentum trigger (2 Green/Red + Close break)
         """
         if not self.pending_trio_signals:
             return
@@ -2120,7 +2177,7 @@ class DivergenceBot:
                     continue
                 
                 # ====================================================
-                # CHECK 3: REVERSAL CANDLE TRIGGER
+                # CHECK 3: TWO-BAR MOMENTUM TRIGGER
                 # ====================================================
                 # Build a mini dataframe from recent candles for detection
                 df_mini = pd.DataFrame([candle_data.get(sym, {})])
@@ -2135,8 +2192,24 @@ class DivergenceBot:
                     except:
                         continue
                 
-                if len(df_mini) >= 3:
-                    has_trigger, pattern_type = detect_123_pattern(df_mini, signal.side)
+                if len(df_mini) >= 2:
+                    has_trigger, pattern_type, should_discard, discard_reason = detect_two_bar_momentum(
+                        df_mini, signal.side, signal.entry_price, self.trio_max_chase_pct
+                    )
+                    
+                    # Handle discard (chase filter)
+                    if should_discard:
+                        logger.info(f"⚠️ SIGNAL DISCARDED: {sym} {signal.side} - {discard_reason}")
+                        await self.send_telegram(
+                            f"⚠️ **SIGNAL DISCARDED**\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"📊 Symbol: `{sym}`\n"
+                            f"📈 Side: **{signal.side.upper()}**\n"
+                            f"❌ Reason: {discard_reason}\n"
+                            f"💡 Avoided chasing extended move"
+                        )
+                        del self.pending_trio_signals[sym]
+                        continue
                     
                     if has_trigger:
                         logger.info(f"✅ TRIO TRIGGERED: {sym} {signal.side} - {pattern_type} detected!")
@@ -2164,7 +2237,7 @@ class DivergenceBot:
                         
                         # Send trigger notification
                         await self.send_telegram(
-                            f"✅ **1-2-3 PATTERN TRIGGERED!**\n"
+                            f"✅ **2-BAR MOMENTUM TRIGGERED!**\n"
                             f"━━━━━━━━━━━━━━━━━━━━\n"
                             f"📊 Symbol: `{sym}`\n"
                             f"📈 Side: **{signal.side.upper()}**\n"
@@ -2174,47 +2247,6 @@ class DivergenceBot:
                         
                         del self.pending_trio_signals[sym]
                     else:
-                        # ====================================================
-                        # FALLBACK: After 5 candles, trigger if price favorable
-                        # ====================================================
-                        if signal.candles_waited >= 5:
-                            # Check if price is moving in our favor
-                            current_price = df_mini.iloc[-1]['close'] if len(df_mini) > 0 else 0
-                            
-                            price_favorable = False
-                            if signal.side == 'long' and current_price > signal.entry_price:
-                                price_favorable = True
-                            elif signal.side == 'short' and current_price < signal.entry_price:
-                                price_favorable = True
-                            
-                            if price_favorable:
-                                logger.info(f"✅ FALLBACK TRIGGER: {sym} {signal.side} - price favorable after {signal.candles_waited} candles")
-                                
-                                if sym not in self.active_trades and sym not in self.pending_entries:
-                                    fake_df = pd.DataFrame([{
-                                        'close': signal.entry_price,
-                                        'atr': signal.atr,
-                                        'low': signal.swing_low,
-                                        'high': signal.swing_high
-                                    }])
-                                    
-                                    await self.execute_divergence_trade(
-                                        sym, signal.side, fake_df, signal.combo, signal.signal_type,
-                                        signal.atr, signal.swing_low, signal.swing_high
-                                    )
-                                    
-                                    await self.send_telegram(
-                                        f"✅ **FALLBACK TRIGGERED!**\n"
-                                        f"━━━━━━━━━━━━━━━━━━━━\n"
-                                        f"📊 Symbol: `{sym}`\n"
-                                        f"📈 Side: **{signal.side.upper()}**\n"
-                                        f"🎯 Reason: **Price Moving Favorably**\n"
-                                        f"⏱️ After {signal.candles_waited} candles"
-                                    )
-                                    
-                                    del self.pending_trio_signals[sym]
-                                    continue
-                        
                         logger.debug(f"⏳ TRIO WAITING: {sym} - {signal.candles_waited}/{signal.max_wait_candles}")
                         
             except Exception as e:
@@ -3613,7 +3645,7 @@ class DivergenceBot:
                 f"🔥 **HIGH-PROBABILITY TRIO** {trio_status}\n"
                 f"├ VWAP Filter: {'✓' if self.trio_require_vwap else '✗'}\n"
                 f"├ RSI Zones: 30/70 (Regular), 30-50/50-70 (Hidden)\n"
-                f"└ 1-2-3 Pattern: {'✅ ON' if self.trio_require_reversal else '❌ OFF (Immediate)'}\n\n"
+                f"└ 2-Bar Momentum: {'✅ ON' if self.trio_require_two_bar else '❌ OFF (Immediate)'}\n\n"
                 f"🎯 **EXIT STRATEGY (Optimal Trail)**\n"
                 f"├ BE at +0.7R (protect capital)\n"
                 f"├ Trail from +0.7R: 0.3R behind\n"
@@ -3632,7 +3664,7 @@ class DivergenceBot:
                 f"🔥 **HIGH-PROBABILITY TRIO** {trio_status}\n"
                 f"├ VWAP Filter: {'✓' if self.trio_require_vwap else '✗'}\n"
                 f"├ RSI Zones: 30/70 (Regular), 30-50/50-70 (Hidden)\n"
-                f"└ 1-2-3 Pattern: {'✅ ON' if self.trio_require_reversal else '❌ OFF (Immediate)'}\n\n"
+                f"└ 2-Bar Momentum: {'✅ ON' if self.trio_require_two_bar else '❌ OFF (Immediate)'}\n\n"
                 f"🎯 **EXIT STRATEGY (Optimal Trail)**\n"
                 f"├ BE at +0.7R (protect capital)\n"
                 f"├ Trail from +0.7R: 0.3R behind\n"

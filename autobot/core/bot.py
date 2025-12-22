@@ -3002,6 +3002,18 @@ class DivergenceBot:
                     
                     if sl_valid:
                         try:
+                            # === ADDITIONAL VALIDATION: SL must be reasonable vs current price ===
+                            if current_price > 0:
+                                sl_distance_pct = abs(initial_trail_sl - current_price) / current_price * 100
+                                if sl_distance_pct > 10:  # SL more than 10% from current price
+                                    logger.error(f"❌ INVALID TRAIL SL: {sym} SL ${initial_trail_sl:.4f} is {sl_distance_pct:.1f}% from price ${current_price:.4f}")
+                                    continue
+                            
+                            # Ensure SL is a reasonable number (not zero, not astronomically high)
+                            if initial_trail_sl <= 0 or initial_trail_sl > current_price * 2:
+                                logger.error(f"❌ INVALID TRAIL SL VALUE: {sym} SL={initial_trail_sl}, price={current_price}")
+                                continue
+                            
                             # Use Full mode (no qty) - Partial mode causes errors
                             self.broker.set_sl_only(sym, initial_trail_sl)
                             
@@ -3078,6 +3090,17 @@ class DivergenceBot:
                     
                     if should_update and time_since_update >= MIN_SL_UPDATE_INTERVAL:
                         try:
+                            # === VALIDATION: SL must be reasonable vs current price ===
+                            if current_price > 0:
+                                sl_distance_pct = abs(new_sl - current_price) / current_price * 100
+                                if sl_distance_pct > 10:  # SL more than 10% from current price
+                                    logger.error(f"❌ INVALID TRAIL SL: {sym} SL ${new_sl:.4f} is {sl_distance_pct:.1f}% from price ${current_price:.4f}")
+                                    continue
+                            
+                            if new_sl <= 0 or new_sl > current_price * 2:
+                                logger.error(f"❌ INVALID TRAIL SL VALUE: {sym} SL={new_sl}, price={current_price}")
+                                continue
+                            
                             # Use Full mode (no qty) - Partial mode causes Bybit errors
                             self.broker.set_sl_only(sym, new_sl)
                             

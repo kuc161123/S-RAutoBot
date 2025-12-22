@@ -2211,7 +2211,7 @@ class DivergenceBot:
         """Execute divergence trade with ATR-based SL and 3:1 R:R.
         
         Uses 1.0x ATR for SL distance (more consistent than pivots).
-        StochRSI filter: Shorts K>80 (overbought), Longs K<20 (oversold).
+        Uses 1.0x ATR for SL distance (more consistent than pivots).
         
         Args:
             signal_atr: ATR calculated at signal time (for SL distance)
@@ -2334,7 +2334,7 @@ class DivergenceBot:
             sl_atr_mult = sl_distance / atr if atr > 0 else 1.0
             
             # OPTIMAL STRATEGY: No partial TP, trail from 0.7R with 0.3R distance
-            # StochRSI filter + ATR-based SL (backtest: +215% Avg R improvement)
+            # OPTIMAL STRATEGY: Trail from 0.7R with 0.3R distance, ATR-based SL
             logger.info(f"📊 {sym} ATR SL: {sl_atr_mult:.2f}×ATR | R:R = {actual_rr:.1f}:1")
             logger.info(f"   Entry: ${expected_entry:.6f} | SL: ${sl:.6f} | TP3R: ${tp:.6f}")
             
@@ -2437,8 +2437,6 @@ class DivergenceBot:
                 f"📊 Symbol: `{sym}`\n"
                 f"📈 Side: **{side_emoji}**\n"
                 f"💎 Type: **{type_emoji}**\n\n"
-                f"✅ **FILTERS PASSED**\n"
-                f"├ StochRSI: {'K>80 ✓' if side == 'short' else 'K<20 ✓'}\n"
                 f"└ Volume: Above threshold ✓\n\n"
                 f"💰 **Entry**: ${expected_entry:.6f}\n\n"
                 f"🎯 **EXIT STRATEGY**\n"

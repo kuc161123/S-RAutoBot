@@ -112,75 +112,61 @@ def check_trio_rsi_zone(signal_type: str, rsi_value: float) -> tuple:
 
 def detect_123_pattern(df, side: str, signal_candle_idx: int = -3) -> tuple:
     """
-    Detect 1-2-3 Pattern confirmation after divergence.
+    Detect 1-2-3 Pattern confirmation after divergence (LENIENT VERSION).
     
-    For LONGS: Look for Higher Low (price making HL after divergence LL)
-    For SHORTS: Look for Lower High (price making LH after divergence HH)
+    For LONGS: Look for Higher Low - current low > any of the previous 2 lows
+    For SHORTS: Look for Lower High - current high < any of the previous 2 highs
+    
+    This is more lenient than requiring strict structure after min/max.
     
     Args:
         df: DataFrame with OHLC data
         side: 'long' or 'short'
-        signal_candle_idx: Index of the divergence signal candle (default -3)
+        signal_candle_idx: Unused (kept for compatibility)
     
     Returns (has_trigger, pattern_type)
     """
-    if len(df) < 5:
+    if len(df) < 3:
         return False, None
     
-    # Get recent swing points (last 5 candles after signal)
-    recent = df.iloc[-5:]
+    # Get last 3 candles for pattern detection
+    recent = df.iloc[-3:]
     
     if side == 'long':
-        # For LONG: Need Higher Low
-        # 1. Find the lowest low in recent candles (this is the divergence low)
-        # 2. Check if the most recent low is HIGHER than a previous low
+        # For LONG: Current low should be HIGHER than at least one previous low
+        current_low = recent['low'].iloc[-1]
+        prev_low_1 = recent['low'].iloc[-2]
+        prev_low_2 = recent['low'].iloc[-3]
         
-        lows = recent['low'].values
+        # Check if we have a higher low (current > previous)
+        is_higher_low = current_low > min(prev_low_1, prev_low_2)
         
-        # Find the minimum low (divergence point)
-        min_low_idx = lows.argmin()
-        min_low = lows[min_low_idx]
+        # Additional check: price should be moving up (close > open on last candle)
+        is_bullish_candle = recent['close'].iloc[-1] > recent['open'].iloc[-1]
         
-        # Check if we have a higher low AFTER the minimum
-        if min_low_idx < len(lows) - 1:  # Not the last candle
-            # Get lows after the minimum
-            lows_after_min = lows[min_low_idx + 1:]
-            
-            # The most recent low should be higher than the minimum
-            recent_low = lows[-1]
-            
-            if recent_low > min_low:
-                # Additional confirmation: current close should be above recent highs
-                if recent['close'].iloc[-1] > recent['high'].iloc[-2]:
-                    return True, "Higher Low + Break"
-                return True, "Higher Low"
+        if is_higher_low:
+            if is_bullish_candle:
+                return True, "Higher Low + Bullish"
+            return True, "Higher Low"
         
         return False, None
     
     else:  # short
-        # For SHORT: Need Lower High
-        # 1. Find the highest high in recent candles (this is the divergence high)
-        # 2. Check if the most recent high is LOWER than a previous high
+        # For SHORT: Current high should be LOWER than at least one previous high
+        current_high = recent['high'].iloc[-1]
+        prev_high_1 = recent['high'].iloc[-2]
+        prev_high_2 = recent['high'].iloc[-3]
         
-        highs = recent['high'].values
+        # Check if we have a lower high (current < previous)
+        is_lower_high = current_high < max(prev_high_1, prev_high_2)
         
-        # Find the maximum high (divergence point)
-        max_high_idx = highs.argmax()
-        max_high = highs[max_high_idx]
+        # Additional check: price should be moving down (close < open on last candle)
+        is_bearish_candle = recent['close'].iloc[-1] < recent['open'].iloc[-1]
         
-        # Check if we have a lower high AFTER the maximum
-        if max_high_idx < len(highs) - 1:  # Not the last candle
-            # Get highs after the maximum
-            highs_after_max = highs[max_high_idx + 1:]
-            
-            # The most recent high should be lower than the maximum
-            recent_high = highs[-1]
-            
-            if recent_high < max_high:
-                # Additional confirmation: current close should be below recent lows
-                if recent['close'].iloc[-1] < recent['low'].iloc[-2]:
-                    return True, "Lower High + Break"
-                return True, "Lower High"
+        if is_lower_high:
+            if is_bearish_candle:
+                return True, "Lower High + Bearish"
+            return True, "Lower High"
         
         return False, None
 
@@ -2149,7 +2135,7 @@ class DivergenceBot:
                     except:
                         continue
                 
-                if len(df_mini) >= 5:
+                if len(df_mini) >= 3:
                     has_trigger, pattern_type = detect_123_pattern(df_mini, signal.side)
                     
                     if has_trigger:

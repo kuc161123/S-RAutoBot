@@ -110,65 +110,79 @@ def check_trio_rsi_zone(signal_type: str, rsi_value: float) -> tuple:
     return True, "Unknown type"
 
 
-def detect_reversal_candle(df, side: str) -> tuple:
+def detect_123_pattern(df, side: str, signal_candle_idx: int = -3) -> tuple:
     """
-    Detect bullish/bearish reversal candles.
+    Detect 1-2-3 Pattern confirmation after divergence.
     
-    Bullish: Hammer or Bullish Engulfing
-    Bearish: Shooting Star or Bearish Engulfing
+    For LONGS: Look for Higher Low (price making HL after divergence LL)
+    For SHORTS: Look for Lower High (price making LH after divergence HH)
     
-    Returns (has_trigger, candle_type)
+    Args:
+        df: DataFrame with OHLC data
+        side: 'long' or 'short'
+        signal_candle_idx: Index of the divergence signal candle (default -3)
+    
+    Returns (has_trigger, pattern_type)
     """
-    if len(df) < 2:
+    if len(df) < 5:
         return False, None
     
-    last = df.iloc[-1]
-    prev = df.iloc[-2]
-    
-    body = abs(last['close'] - last['open'])
-    range_size = last['high'] - last['low']
-    
-    if range_size == 0:
-        return False, None
-    
-    upper_wick = last['high'] - max(last['open'], last['close'])
-    lower_wick = min(last['open'], last['close']) - last['low']
+    # Get recent swing points (last 5 candles after signal)
+    recent = df.iloc[-5:]
     
     if side == 'long':
-        # HAMMER: Lower wick > 60% of range, body < 30% of range
-        is_hammer = lower_wick > 0.6 * range_size and body < 0.3 * range_size
+        # For LONG: Need Higher Low
+        # 1. Find the lowest low in recent candles (this is the divergence low)
+        # 2. Check if the most recent low is HIGHER than a previous low
         
-        # BULLISH ENGULFING: Green candle fully engulfs previous red candle
-        is_engulfing = (
-            last['close'] > last['open'] and      # Current is green
-            prev['close'] < prev['open'] and      # Previous was red
-            last['close'] > prev['open'] and      # Close above prev open
-            last['open'] < prev['close']          # Open below prev close
-        )
+        lows = recent['low'].values
         
-        if is_hammer:
-            return True, "Hammer"
-        if is_engulfing:
-            return True, "Bullish Engulfing"
+        # Find the minimum low (divergence point)
+        min_low_idx = lows.argmin()
+        min_low = lows[min_low_idx]
+        
+        # Check if we have a higher low AFTER the minimum
+        if min_low_idx < len(lows) - 1:  # Not the last candle
+            # Get lows after the minimum
+            lows_after_min = lows[min_low_idx + 1:]
+            
+            # The most recent low should be higher than the minimum
+            recent_low = lows[-1]
+            
+            if recent_low > min_low:
+                # Additional confirmation: current close should be above recent highs
+                if recent['close'].iloc[-1] > recent['high'].iloc[-2]:
+                    return True, "Higher Low + Break"
+                return True, "Higher Low"
+        
+        return False, None
     
     else:  # short
-        # SHOOTING STAR: Upper wick > 60% of range, body < 30% of range
-        is_shooting_star = upper_wick > 0.6 * range_size and body < 0.3 * range_size
+        # For SHORT: Need Lower High
+        # 1. Find the highest high in recent candles (this is the divergence high)
+        # 2. Check if the most recent high is LOWER than a previous high
         
-        # BEARISH ENGULFING: Red candle fully engulfs previous green candle
-        is_engulfing = (
-            last['close'] < last['open'] and      # Current is red
-            prev['close'] > prev['open'] and      # Previous was green
-            last['close'] < prev['open'] and      # Close below prev open
-            last['open'] > prev['close']          # Open above prev close
-        )
+        highs = recent['high'].values
         
-        if is_shooting_star:
-            return True, "Shooting Star"
-        if is_engulfing:
-            return True, "Bearish Engulfing"
-    
-    return False, None
+        # Find the maximum high (divergence point)
+        max_high_idx = highs.argmax()
+        max_high = highs[max_high_idx]
+        
+        # Check if we have a lower high AFTER the maximum
+        if max_high_idx < len(highs) - 1:  # Not the last candle
+            # Get highs after the maximum
+            highs_after_max = highs[max_high_idx + 1:]
+            
+            # The most recent high should be lower than the maximum
+            recent_high = highs[-1]
+            
+            if recent_high < max_high:
+                # Additional confirmation: current close should be below recent lows
+                if recent['close'].iloc[-1] < recent['low'].iloc[-2]:
+                    return True, "Lower High + Break"
+                return True, "Lower High"
+        
+        return False, None
 
 class DivergenceBot:
     def __init__(self):
@@ -247,7 +261,7 @@ class DivergenceBot:
         self.trio_require_reversal = trio_cfg.get('require_reversal_candle', True)
         self.trio_max_wait_candles = trio_cfg.get('max_wait_candles', 10)
         
-        logger.info(f"📊 HIGH-PROB TRIO: {'ENABLED' if self.trio_enabled else 'DISABLED'} | VWAP: {self.trio_require_vwap} | Reversal: {self.trio_require_reversal}")
+        logger.info(f"📊 HIGH-PROB TRIO: {'ENABLED' if self.trio_enabled else 'DISABLED'} | VWAP: {self.trio_require_vwap} | 1-2-3: {self.trio_require_reversal}")
         
     def load_config(self):
         # Load .env manually
@@ -852,7 +866,7 @@ class DivergenceBot:
                 f"├ Type: RSI Divergence\n"
                 f"├ TF: {self.cfg.get('trade', {}).get('timeframe', '3')}min (3M)\n"
                 f"├ 🔥 **HIGH-PROB TRIO: {'✅ ON' if self.trio_enabled else '❌ OFF'}**\n"
-                f"├ VWAP: {'✓' if self.trio_require_vwap else '✗'} | Reversal: {'✓' if self.trio_require_reversal else '✗'}\n"
+                f"├ VWAP: {'✓' if self.trio_require_vwap else '✗'} | 1-2-3: {'✓' if self.trio_require_reversal else '✗'}\n"
                 f"├ Pending Triggers: {len(self.pending_trio_signals)}\n"
                 f"├ **EXIT: Optimal Trailing SL**\n"
                 f"├ BE at +0.7R (protect capital)\n"
@@ -2027,7 +2041,7 @@ class DivergenceBot:
                     )
                     
                     self.last_signal_candle[sym] = time.time()
-                    logger.info(f"⏳ TRIO PENDING: {sym} {side} {combo} - waiting for reversal candle")
+                    logger.info(f"⏳ TRIO PENDING: {sym} {side} {combo} - waiting for 1-2-3 pattern")
                     
                     # Send notification about pending signal
                     await self.send_telegram(
@@ -2040,8 +2054,8 @@ class DivergenceBot:
                         f"├ VWAP: {'Below ✓' if side == 'long' else 'Above ✓'}\n"
                         f"├ RSI Zone: {signal.rsi_value:.1f} ✓\n"
                         f"└ Volume: Above threshold ✓\n\n"
-                        f"⏳ **WAITING FOR:**\n"
-                        f"└ {'Hammer/Engulfing' if side == 'long' else 'Star/Engulfing'} candle\n\n"
+                        f"⏳ **WAITING FOR 1-2-3 PATTERN:**\n"
+                        f"└ {'Higher Low' if side == 'long' else 'Lower High'} confirmation\n\n"
                         f"⏰ Max wait: {self.trio_max_wait_candles} candles"
                     )
                     continue
@@ -2068,7 +2082,7 @@ class DivergenceBot:
         Called each loop iteration. Checks for:
         1. RSI invalidation (crossed wrong direction)
         2. Expiration (waited too many candles)
-        3. Reversal candle trigger (Hammer/Engulfing)
+        3. 1-2-3 Pattern trigger (Higher Low for longs, Lower High for shorts)
         """
         if not self.pending_trio_signals:
             return
@@ -2135,11 +2149,11 @@ class DivergenceBot:
                     except:
                         continue
                 
-                if len(df_mini) >= 2:
-                    has_trigger, candle_type = detect_reversal_candle(df_mini, signal.side)
+                if len(df_mini) >= 5:
+                    has_trigger, pattern_type = detect_123_pattern(df_mini, signal.side)
                     
                     if has_trigger:
-                        logger.info(f"✅ TRIO TRIGGERED: {sym} {signal.side} - {candle_type} detected!")
+                        logger.info(f"✅ TRIO TRIGGERED: {sym} {signal.side} - {pattern_type} detected!")
                         
                         # Check if position already exists
                         if sym in self.active_trades or sym in self.pending_entries:
@@ -2164,11 +2178,11 @@ class DivergenceBot:
                         
                         # Send trigger notification
                         await self.send_telegram(
-                            f"✅ **TRIO TRIGGERED!**\n"
+                            f"✅ **1-2-3 PATTERN TRIGGERED!**\n"
                             f"━━━━━━━━━━━━━━━━━━━━\n"
                             f"📊 Symbol: `{sym}`\n"
                             f"📈 Side: **{signal.side.upper()}**\n"
-                            f"🎯 Trigger: **{candle_type}**\n"
+                            f"🎯 Pattern: **{pattern_type}**\n"
                             f"⏱️ After {signal.candles_waited} candles"
                         )
                         
@@ -3572,7 +3586,7 @@ class DivergenceBot:
                 f"🔥 **HIGH-PROBABILITY TRIO** {trio_status}\n"
                 f"├ VWAP Filter: {'✓' if self.trio_require_vwap else '✗'}\n"
                 f"├ RSI Zones: 30/70 (Regular), 30-50/50-70 (Hidden)\n"
-                f"└ Reversal Candle: {'Required' if self.trio_require_reversal else 'Optional'}\n\n"
+                f"└ 1-2-3 Pattern: {'Required' if self.trio_require_reversal else 'Optional'}\n\n"
                 f"🎯 **EXIT STRATEGY (Optimal Trail)**\n"
                 f"├ BE at +0.7R (protect capital)\n"
                 f"├ Trail from +0.7R: 0.3R behind\n"
@@ -3591,7 +3605,7 @@ class DivergenceBot:
                 f"🔥 **HIGH-PROBABILITY TRIO** {trio_status}\n"
                 f"├ VWAP Filter: {'✓' if self.trio_require_vwap else '✗'}\n"
                 f"├ RSI Zones: 30/70 (Regular), 30-50/50-70 (Hidden)\n"
-                f"└ Reversal Candle: {'Required' if self.trio_require_reversal else 'Optional'}\n\n"
+                f"└ 1-2-3 Pattern: {'Required' if self.trio_require_reversal else 'Optional'}\n\n"
                 f"🎯 **EXIT STRATEGY (Optimal Trail)**\n"
                 f"├ BE at +0.7R (protect capital)\n"
                 f"├ Trail from +0.7R: 0.3R behind\n"

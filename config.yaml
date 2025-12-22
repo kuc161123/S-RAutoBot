@@ -6,6 +6,25 @@ bybit:
   use_alt_on_fail: true
   ws_public: wss://stream.bybit.com/v5/public/linear
   ws_public_alt: wss://stream.bytick.com/v5/public/linear
+
+# ============================================
+# HIGH-PROBABILITY TRIO CONFIGURATION
+# Enhanced entry filters for better win rate
+# ============================================
+high_probability_trio:
+  enabled: true                    # Master switch for trio filters
+  
+  # VWAP Filter: Longs below VWAP, Shorts above VWAP
+  require_vwap: true
+  
+  # Price Action: Wait for reversal candle trigger
+  require_reversal_candle: true
+  max_wait_candles: 10             # Invalidate pending signal after X candles
+  
+  # Reversal Candle Detection Thresholds
+  min_wick_ratio: 0.6              # Wick must be 60% of range for hammer/star
+  max_body_ratio: 0.3              # Body must be < 30% of range
+
 exploration:
   enabled: true
 ml:

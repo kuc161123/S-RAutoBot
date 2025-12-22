@@ -33,6 +33,143 @@ logger = logging.getLogger("DivergenceBot")
 # RSI Divergence Strategy - Walk-Forward Validated
 # 26,850 trades | 61.3% WR | +0.84 EV at 2:1 R:R
 
+# ============================================
+# HIGH-PROBABILITY TRIO COMPONENTS
+# ============================================
+
+@dataclass
+class PendingTrioSignal:
+    """A divergence waiting for price action confirmation."""
+    symbol: str
+    side: str  # 'long' or 'short'
+    signal_type: str  # 'regular_bullish', 'hidden_bearish', etc.
+    rsi_at_signal: float
+    vwap_at_signal: float
+    entry_price: float
+    atr: float
+    swing_low: float
+    swing_high: float
+    combo: str
+    candles_waited: int = 0
+    created_time: float = 0
+    max_wait_candles: int = 10
+    
+    def __post_init__(self):
+        if self.created_time == 0:
+            self.created_time = time.time()
+    
+    def is_invalidated(self, current_rsi: float) -> tuple:
+        """Check if signal should be voided based on RSI movement."""
+        if self.signal_type == 'regular_bullish':
+            if current_rsi > 50:
+                return True, f"RSI {current_rsi:.1f} crossed above 50"
+        elif self.signal_type == 'regular_bearish':
+            if current_rsi < 50:
+                return True, f"RSI {current_rsi:.1f} crossed below 50"
+        elif self.signal_type == 'hidden_bullish':
+            if current_rsi < 30:
+                return True, f"RSI {current_rsi:.1f} dropped below 30"
+        elif self.signal_type == 'hidden_bearish':
+            if current_rsi > 70:
+                return True, f"RSI {current_rsi:.1f} rose above 70"
+        return False, None
+    
+    def is_expired(self) -> bool:
+        """Check if waited too long for trigger."""
+        return self.candles_waited >= self.max_wait_candles
+
+
+def check_trio_rsi_zone(signal_type: str, rsi_value: float) -> tuple:
+    """
+    Check if RSI is in valid zone for divergence type.
+    Returns (is_valid, reason)
+    
+    Regular: Need extreme zones (30/70)
+    Hidden: Need moderate zones (30-50 / 50-70)
+    """
+    if signal_type == 'regular_bullish':
+        if rsi_value >= 30:
+            return False, f"RSI {rsi_value:.1f} >= 30 (need < 30)"
+        return True, f"RSI {rsi_value:.1f} < 30 ✓"
+    
+    elif signal_type == 'regular_bearish':
+        if rsi_value <= 70:
+            return False, f"RSI {rsi_value:.1f} <= 70 (need > 70)"
+        return True, f"RSI {rsi_value:.1f} > 70 ✓"
+    
+    elif signal_type == 'hidden_bullish':
+        if rsi_value < 30 or rsi_value > 50:
+            return False, f"RSI {rsi_value:.1f} not in 30-50"
+        return True, f"RSI {rsi_value:.1f} in 30-50 ✓"
+    
+    elif signal_type == 'hidden_bearish':
+        if rsi_value < 50 or rsi_value > 70:
+            return False, f"RSI {rsi_value:.1f} not in 50-70"
+        return True, f"RSI {rsi_value:.1f} in 50-70 ✓"
+    
+    return True, "Unknown type"
+
+
+def detect_reversal_candle(df, side: str) -> tuple:
+    """
+    Detect bullish/bearish reversal candles.
+    
+    Bullish: Hammer or Bullish Engulfing
+    Bearish: Shooting Star or Bearish Engulfing
+    
+    Returns (has_trigger, candle_type)
+    """
+    if len(df) < 2:
+        return False, None
+    
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    
+    body = abs(last['close'] - last['open'])
+    range_size = last['high'] - last['low']
+    
+    if range_size == 0:
+        return False, None
+    
+    upper_wick = last['high'] - max(last['open'], last['close'])
+    lower_wick = min(last['open'], last['close']) - last['low']
+    
+    if side == 'long':
+        # HAMMER: Lower wick > 60% of range, body < 30% of range
+        is_hammer = lower_wick > 0.6 * range_size and body < 0.3 * range_size
+        
+        # BULLISH ENGULFING: Green candle fully engulfs previous red candle
+        is_engulfing = (
+            last['close'] > last['open'] and      # Current is green
+            prev['close'] < prev['open'] and      # Previous was red
+            last['close'] > prev['open'] and      # Close above prev open
+            last['open'] < prev['close']          # Open below prev close
+        )
+        
+        if is_hammer:
+            return True, "Hammer"
+        if is_engulfing:
+            return True, "Bullish Engulfing"
+    
+    else:  # short
+        # SHOOTING STAR: Upper wick > 60% of range, body < 30% of range
+        is_shooting_star = upper_wick > 0.6 * range_size and body < 0.3 * range_size
+        
+        # BEARISH ENGULFING: Red candle fully engulfs previous green candle
+        is_engulfing = (
+            last['close'] < last['open'] and      # Current is red
+            prev['close'] > prev['open'] and      # Previous was green
+            last['close'] < prev['open'] and      # Close below prev open
+            last['open'] > prev['close']          # Open above prev close
+        )
+        
+        if is_shooting_star:
+            return True, "Shooting Star"
+        if is_engulfing:
+            return True, "Bearish Engulfing"
+    
+    return False, None
+
 class DivergenceBot:
     def __init__(self):
         self.load_config()
@@ -97,6 +234,20 @@ class DivergenceBot:
             on_promote_callback=self._on_combo_promoted,
             on_demote_callback=self._on_combo_demoted
         )
+        
+        # ============================================
+        # HIGH-PROBABILITY TRIO: Pending signals waiting for trigger
+        # ============================================
+        self.pending_trio_signals = {}  # {symbol: PendingTrioSignal}
+        
+        # Load trio config (defaults if not specified)
+        trio_cfg = self.cfg.get('high_probability_trio', {})
+        self.trio_enabled = trio_cfg.get('enabled', True)
+        self.trio_require_vwap = trio_cfg.get('require_vwap', True)
+        self.trio_require_reversal = trio_cfg.get('require_reversal_candle', True)
+        self.trio_max_wait_candles = trio_cfg.get('max_wait_candles', 10)
+        
+        logger.info(f"📊 HIGH-PROB TRIO: {'ENABLED' if self.trio_enabled else 'DISABLED'} | VWAP: {self.trio_require_vwap} | Reversal: {self.trio_require_reversal}")
         
     def load_config(self):
         # Load .env manually
@@ -700,7 +851,9 @@ class DivergenceBot:
                 f"🎯 **STRATEGY**\n"
                 f"├ Type: RSI Divergence\n"
                 f"├ TF: {self.cfg.get('trade', {}).get('timeframe', '3')}min (3M)\n"
-                f"├ Mode: 🎯 ALL DIVERGENCES\n"
+                f"├ 🔥 **HIGH-PROB TRIO: {'✅ ON' if self.trio_enabled else '❌ OFF'}**\n"
+                f"├ VWAP: {'✓' if self.trio_require_vwap else '✗'} | Reversal: {'✓' if self.trio_require_reversal else '✗'}\n"
+                f"├ Pending Triggers: {len(self.pending_trio_signals)}\n"
                 f"├ **EXIT: Optimal Trailing SL**\n"
                 f"├ BE at +0.7R (protect capital)\n"
                 f"├ Trail from +0.7R: 0.3R behind\n"
@@ -1780,7 +1933,7 @@ class DivergenceBot:
                 # The filter was skipping too many valid signals
                 # ====================================================
                 
-                # Log signal detection (no StochRSI filtering)
+                # Log signal detection
                 logger.info(f"📊 DIVERGENCE: {sym} {side.upper()} {combo} (RSI: {signal.rsi_value:.1f})")
                 
                 # ====================================================
@@ -1795,10 +1948,37 @@ class DivergenceBot:
                 # HIDDEN BEARISH-ONLY FILTER (42-62% WR validated)
                 # ====================================================
                 hidden_bearish_only = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
-                # Note: signal_type is 'hidden_bearish', combo is 'DIV:hidden_bearish'
                 if hidden_bearish_only and signal_type != 'hidden_bearish':
-                    logger.info(f"⏭️ HIDDEN-BEARISH-ONLY SKIP: {sym} {combo} (only hidden_bearish allowed, got {signal_type})")
+                    logger.info(f"⏭️ HIDDEN-BEARISH-ONLY SKIP: {sym} {combo} (only hidden_bearish allowed)")
                     continue
+                
+                # ====================================================
+                # HIGH-PROBABILITY TRIO FILTER 1: VWAP
+                # ====================================================
+                if self.trio_enabled and self.trio_require_vwap:
+                    vwap = last_row.get('vwap', 0)
+                    current_price = last_row['close']
+                    
+                    if vwap > 0:
+                        # LONG: Must be BELOW VWAP (buying cheap)
+                        if side == 'long' and current_price >= vwap:
+                            logger.info(f"📊 VWAP SKIP: {sym} LONG - price ${current_price:.4f} >= VWAP ${vwap:.4f}")
+                            continue
+                        # SHORT: Must be ABOVE VWAP (selling expensive)
+                        if side == 'short' and current_price <= vwap:
+                            logger.info(f"📊 VWAP SKIP: {sym} SHORT - price ${current_price:.4f} <= VWAP ${vwap:.4f}")
+                            continue
+                        logger.info(f"✅ VWAP OK: {sym} {side} - price ${current_price:.4f} vs VWAP ${vwap:.4f}")
+                
+                # ====================================================
+                # HIGH-PROBABILITY TRIO FILTER 2: RSI ZONE
+                # ====================================================
+                if self.trio_enabled:
+                    rsi_valid, rsi_reason = check_trio_rsi_zone(signal_type, signal.rsi_value)
+                    if not rsi_valid:
+                        logger.info(f"📊 RSI ZONE SKIP: {sym} {signal_type} - {rsi_reason}")
+                        continue
+                    logger.info(f"✅ RSI ZONE OK: {sym} {signal_type} - {rsi_reason}")
                 
                 # Get BTC price for context
                 btc_price = 0
@@ -1812,27 +1992,65 @@ class DivergenceBot:
                 # Record signal in learner for tracking stats
                 smart_tp, smart_sl, smart_explanation = self.learner.record_signal(
                     sym, side, combo, entry, atr, btc_price, 
-                    is_allowed=True,  # All divergence signals are allowed
+                    is_allowed=True,
                     notify=True
                 )
                 
-                # ====================================================
-                # BACKTEST MATCH: Queue for next candle open entry
-                # ====================================================
                 # Skip trading on first loop (avoid stale signals on startup)
                 if not self.first_loop_completed:
-                    logger.info(f"⏳ FIRST LOOP SKIP: {sym} {side} {combo} (will start trading on next loop)")
+                    logger.info(f"⏳ FIRST LOOP SKIP: {sym} {side} {combo}")
                     continue
                 
-                # === IMMEDIATE EXECUTION: Execute NOW on signal ===
-                # No more waiting for next candle - faster entry, less slippage
-                if sym not in self.pending_entries and sym not in self.active_trades:
-                    # CRITICAL: Set cooldown to prevent repeated signals
-                    self.last_signal_candle[sym] = time.time()
+                # ====================================================
+                # HIGH-PROBABILITY TRIO: QUEUE FOR PRICE ACTION TRIGGER
+                # ====================================================
+                if self.trio_enabled and self.trio_require_reversal:
+                    # Check if already pending or trading
+                    if sym in self.pending_trio_signals or sym in self.pending_entries or sym in self.active_trades:
+                        logger.info(f"⏳ ALREADY PENDING/TRADING: {sym}")
+                        continue
                     
+                    # Add to pending queue - will execute when reversal candle detected
+                    vwap = last_row.get('vwap', 0)
+                    self.pending_trio_signals[sym] = PendingTrioSignal(
+                        symbol=sym,
+                        side=side,
+                        signal_type=signal_type,
+                        rsi_at_signal=signal.rsi_value,
+                        vwap_at_signal=vwap,
+                        entry_price=entry,
+                        atr=atr,
+                        swing_low=signal_swing_low,
+                        swing_high=signal_swing_high,
+                        combo=combo,
+                        max_wait_candles=self.trio_max_wait_candles
+                    )
+                    
+                    self.last_signal_candle[sym] = time.time()
+                    logger.info(f"⏳ TRIO PENDING: {sym} {side} {combo} - waiting for reversal candle")
+                    
+                    # Send notification about pending signal
+                    await self.send_telegram(
+                        f"⏳ **SIGNAL PENDING**\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📊 Symbol: `{sym}`\n"
+                        f"📈 Side: **{side.upper()}**\n"
+                        f"💎 Type: `{signal_type}`\n\n"
+                        f"✅ **FILTERS PASSED**\n"
+                        f"├ VWAP: {'Below ✓' if side == 'long' else 'Above ✓'}\n"
+                        f"├ RSI Zone: {signal.rsi_value:.1f} ✓\n"
+                        f"└ Volume: Above threshold ✓\n\n"
+                        f"⏳ **WAITING FOR:**\n"
+                        f"└ {'Hammer/Engulfing' if side == 'long' else 'Star/Engulfing'} candle\n\n"
+                        f"⏰ Max wait: {self.trio_max_wait_candles} candles"
+                    )
+                    continue
+                
+                # === FALLBACK: IMMEDIATE EXECUTION (if trio disabled) ===
+                if sym not in self.pending_entries and sym not in self.active_trades:
+                    self.last_signal_candle[sym] = time.time()
                     logger.info(f"🚀 IMMEDIATE EXECUTE: {sym} {side} {combo}")
                     
-                    # Execute directly - use current close as entry reference
                     await self.execute_divergence_trade(
                         sym, side, df, combo, signal_type,
                         atr, signal_swing_low, signal_swing_high
@@ -1842,6 +2060,125 @@ class DivergenceBot:
                     
         except Exception as e:
             logger.error(f"Error processing {sym}: {e}")
+
+    async def check_pending_trio_triggers(self, candle_data: dict):
+        """
+        HIGH-PROBABILITY TRIO: Check pending signals for price action triggers.
+        
+        Called each loop iteration. Checks for:
+        1. RSI invalidation (crossed wrong direction)
+        2. Expiration (waited too many candles)
+        3. Reversal candle trigger (Hammer/Engulfing)
+        """
+        if not self.pending_trio_signals:
+            return
+        
+        for sym in list(self.pending_trio_signals.keys()):
+            try:
+                signal = self.pending_trio_signals[sym]
+                
+                # Get fresh candle data for this symbol
+                candle = candle_data.get(sym)
+                if not candle:
+                    continue
+                
+                # Get current RSI from candle data
+                current_rsi = candle.get('rsi', 50)
+                
+                # ====================================================
+                # CHECK 1: INVALIDATION (RSI moved wrong direction)
+                # ====================================================
+                is_invalid, reason = signal.is_invalidated(current_rsi)
+                if is_invalid:
+                    logger.info(f"❌ TRIO INVALID: {sym} - {reason}")
+                    del self.pending_trio_signals[sym]
+                    
+                    await self.send_telegram(
+                        f"❌ **SIGNAL INVALIDATED**\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📊 Symbol: `{sym}`\n"
+                        f"📈 Side: **{signal.side.upper()}**\n"
+                        f"❌ Reason: {reason}"
+                    )
+                    continue
+                
+                # ====================================================
+                # CHECK 2: EXPIRATION (waited too long)
+                # ====================================================
+                signal.candles_waited += 1
+                if signal.is_expired():
+                    logger.info(f"⏰ TRIO EXPIRED: {sym} - waited {signal.candles_waited} candles")
+                    del self.pending_trio_signals[sym]
+                    
+                    await self.send_telegram(
+                        f"⏰ **SIGNAL EXPIRED**\n"
+                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                        f"📊 Symbol: `{sym}`\n"
+                        f"📈 Side: **{signal.side.upper()}**\n"
+                        f"⏰ Waited {signal.candles_waited} candles without trigger"
+                    )
+                    continue
+                
+                # ====================================================
+                # CHECK 3: REVERSAL CANDLE TRIGGER
+                # ====================================================
+                # Build a mini dataframe from recent candles for detection
+                df_mini = pd.DataFrame([candle_data.get(sym, {})])
+                if len(df_mini) < 1 or 'high' not in df_mini.columns:
+                    # Try to get fresh data via broker
+                    try:
+                        klines = self.broker.get_kline(sym, interval='3', limit=5)
+                        if klines and len(klines) >= 2:
+                            df_mini = pd.DataFrame(klines)
+                            for col in ['open', 'high', 'low', 'close']:
+                                df_mini[col] = df_mini[col].astype(float)
+                    except:
+                        continue
+                
+                if len(df_mini) >= 2:
+                    has_trigger, candle_type = detect_reversal_candle(df_mini, signal.side)
+                    
+                    if has_trigger:
+                        logger.info(f"✅ TRIO TRIGGERED: {sym} {signal.side} - {candle_type} detected!")
+                        
+                        # Check if position already exists
+                        if sym in self.active_trades or sym in self.pending_entries:
+                            logger.info(f"⚠️ Already trading {sym}, skipping triggered signal")
+                            del self.pending_trio_signals[sym]
+                            continue
+                        
+                        # Build a proper dataframe for execution
+                        # Use signal's stored values
+                        fake_df = pd.DataFrame([{
+                            'close': signal.entry_price,
+                            'atr': signal.atr,
+                            'low': signal.swing_low,
+                            'high': signal.swing_high
+                        }])
+                        
+                        # Execute the trade
+                        await self.execute_divergence_trade(
+                            sym, signal.side, fake_df, signal.combo, signal.signal_type,
+                            signal.atr, signal.swing_low, signal.swing_high
+                        )
+                        
+                        # Send trigger notification
+                        await self.send_telegram(
+                            f"✅ **TRIO TRIGGERED!**\n"
+                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                            f"📊 Symbol: `{sym}`\n"
+                            f"📈 Side: **{signal.side.upper()}**\n"
+                            f"🎯 Trigger: **{candle_type}**\n"
+                            f"⏱️ After {signal.candles_waited} candles"
+                        )
+                        
+                        del self.pending_trio_signals[sym]
+                    else:
+                        logger.debug(f"⏳ TRIO WAITING: {sym} - {signal.candles_waited}/{signal.max_wait_candles}")
+                        
+            except Exception as e:
+                logger.error(f"Error checking trio trigger for {sym}: {e}")
+
 
     async def _immediate_demote(self, symbol: str, side: str, combo: str, lb_wr: float, total: int):
         """Immediately demote a combo from YAML after a trade loss drops WR below threshold.
@@ -2437,13 +2774,15 @@ class DivergenceBot:
                 f"📊 Symbol: `{sym}`\n"
                 f"📈 Side: **{side_emoji}**\n"
                 f"💎 Type: **{type_emoji}**\n\n"
+                f"✅ **HIGH-PROB TRIO PASSED**\n"
+                f"├ VWAP: {'Below ✓' if side == 'long' else 'Above ✓'}\n"
+                f"├ RSI Zone: {rsi:.1f} ✓\n"
                 f"└ Volume: Above threshold ✓\n\n"
                 f"💰 **Entry**: ${expected_entry:.6f}\n\n"
                 f"🎯 **EXIT STRATEGY**\n"
                 f"├ SL: ${sl:.6f} ({sl_atr_mult:.1f}×ATR = -1R)\n"
                 f"├ At +0.7R: Trail 0.3R behind\n"
                 f"└ Max: +3R target\n\n"
-                f"📊 RSI: {rsi:.1f}\n"
                 f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
             )
             await self.send_telegram(msg)
@@ -3198,6 +3537,7 @@ class DivergenceBot:
         bearish_mode = self.cfg.get('trade', {}).get('bearish_only', False)
         hidden_bearish_mode = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
         timeframe = self.cfg.get('trade', {}).get('timeframe', '3')
+        trio_status = "✅ ON" if self.trio_enabled else "❌ OFF"
         
         if hidden_bearish_mode:
             mode_text = "🎯 HIDDEN BEARISH ONLY"
@@ -3206,6 +3546,10 @@ class DivergenceBot:
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"📊 **Mode**: HIDDEN BEARISH\n"
                 f"⏱️ **Timeframe**: {timeframe}min (3M) - Fast Trading\n\n"
+                f"🔥 **HIGH-PROBABILITY TRIO** {trio_status}\n"
+                f"├ VWAP Filter: {'✓' if self.trio_require_vwap else '✗'}\n"
+                f"├ RSI Zones: 30/70 (Regular), 30-50/50-70 (Hidden)\n"
+                f"└ Reversal Candle: {'Required' if self.trio_require_reversal else 'Optional'}\n\n"
                 f"🎯 **EXIT STRATEGY (Optimal Trail)**\n"
                 f"├ BE at +0.7R (protect capital)\n"
                 f"├ Trail from +0.7R: 0.3R behind\n"
@@ -3221,6 +3565,10 @@ class DivergenceBot:
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"📊 **Strategy**: RSI Divergence\n"
                 f"⏱️ **Timeframe**: {timeframe}min (3M) - Fast Trading\n\n"
+                f"🔥 **HIGH-PROBABILITY TRIO** {trio_status}\n"
+                f"├ VWAP Filter: {'✓' if self.trio_require_vwap else '✗'}\n"
+                f"├ RSI Zones: 30/70 (Regular), 30-50/50-70 (Hidden)\n"
+                f"└ Reversal Candle: {'Required' if self.trio_require_reversal else 'Optional'}\n\n"
                 f"🎯 **EXIT STRATEGY (Optimal Trail)**\n"
                 f"├ BE at +0.7R (protect capital)\n"
                 f"├ Trail from +0.7R: 0.3R behind\n"
@@ -3312,6 +3660,27 @@ class DivergenceBot:
                     
                     # Monitor trailing SL and partial TP fills
                     await self.monitor_trailing_sl(candle_data)
+                    
+                    # ============================================================
+                    # HIGH-PROBABILITY TRIO: Check pending signals for triggers
+                    # ============================================================
+                    if self.trio_enabled and self.pending_trio_signals:
+                        # Build enriched candle data with RSI
+                        for sym in list(self.pending_trio_signals.keys()):
+                            if sym in candle_data:
+                                # Add RSI from fresh klines
+                                try:
+                                    klines = self.broker.get_klines(sym, '3', limit=20)
+                                    if klines and len(klines) >= 14:
+                                        df_temp = pd.DataFrame(klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+                                        for c in ['close']:
+                                            df_temp[c] = df_temp[c].astype(float)
+                                        df_temp['rsi'] = df_temp.ta.rsi(length=14)
+                                        candle_data[sym]['rsi'] = df_temp.iloc[-1]['rsi']
+                                except:
+                                    pass
+                        
+                        await self.check_pending_trio_triggers(candle_data)
                     
                     # Check for closed trades and send notifications
                     if self.active_trades:

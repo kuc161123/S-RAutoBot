@@ -17,13 +17,13 @@ high_probability_trio:
   # VWAP Filter: Longs below VWAP, Shorts above VWAP
   require_vwap: true
   
-  # Price Action: Wait for reversal candle trigger
-  require_reversal_candle: true
-  max_wait_candles: 10             # Invalidate pending signal after X candles
+  # 1-2-3 Pattern: DISABLED - execute immediately after VWAP+RSI+Volume
+  require_reversal_candle: false   # Set to true to wait for HL/LH pattern
+  max_wait_candles: 10             # Only used if require_reversal_candle is true
   
-  # Reversal Candle Detection Thresholds
-  min_wick_ratio: 0.6              # Wick must be 60% of range for hammer/star
-  max_body_ratio: 0.3              # Body must be < 30% of range
+  # Pattern Detection Thresholds (only used if require_reversal_candle is true)
+  min_wick_ratio: 0.6
+  max_body_ratio: 0.3
 
 exploration:
   enabled: true

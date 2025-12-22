@@ -2174,6 +2174,47 @@ class DivergenceBot:
                         
                         del self.pending_trio_signals[sym]
                     else:
+                        # ====================================================
+                        # FALLBACK: After 5 candles, trigger if price favorable
+                        # ====================================================
+                        if signal.candles_waited >= 5:
+                            # Check if price is moving in our favor
+                            current_price = df_mini.iloc[-1]['close'] if len(df_mini) > 0 else 0
+                            
+                            price_favorable = False
+                            if signal.side == 'long' and current_price > signal.entry_price:
+                                price_favorable = True
+                            elif signal.side == 'short' and current_price < signal.entry_price:
+                                price_favorable = True
+                            
+                            if price_favorable:
+                                logger.info(f"✅ FALLBACK TRIGGER: {sym} {signal.side} - price favorable after {signal.candles_waited} candles")
+                                
+                                if sym not in self.active_trades and sym not in self.pending_entries:
+                                    fake_df = pd.DataFrame([{
+                                        'close': signal.entry_price,
+                                        'atr': signal.atr,
+                                        'low': signal.swing_low,
+                                        'high': signal.swing_high
+                                    }])
+                                    
+                                    await self.execute_divergence_trade(
+                                        sym, signal.side, fake_df, signal.combo, signal.signal_type,
+                                        signal.atr, signal.swing_low, signal.swing_high
+                                    )
+                                    
+                                    await self.send_telegram(
+                                        f"✅ **FALLBACK TRIGGERED!**\n"
+                                        f"━━━━━━━━━━━━━━━━━━━━\n"
+                                        f"📊 Symbol: `{sym}`\n"
+                                        f"📈 Side: **{signal.side.upper()}**\n"
+                                        f"🎯 Reason: **Price Moving Favorably**\n"
+                                        f"⏱️ After {signal.candles_waited} candles"
+                                    )
+                                    
+                                    del self.pending_trio_signals[sym]
+                                    continue
+                        
                         logger.debug(f"⏳ TRIO WAITING: {sym} - {signal.candles_waited}/{signal.max_wait_candles}")
                         
             except Exception as e:

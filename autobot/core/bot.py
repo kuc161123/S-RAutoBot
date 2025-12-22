@@ -2354,9 +2354,28 @@ class DivergenceBot:
             logger.info(f"   Qty: {qty} | qtyStep: {qty_step}")
             
             # ============================================
+            # CRITICAL: Validate SL vs Current Market Price
+            # ============================================
+            # For SHORTS: SL must be ABOVE current market price (or it triggers immediately)
+            # For LONGS: SL must be BELOW current market price (or it triggers immediately)
+            try:
+                ticker = self.broker.get_tickers(sym)
+                if ticker:
+                    current_market_price = float(ticker.get('lastPrice', 0))
+                    if current_market_price > 0:
+                        if side == 'short' and sl <= current_market_price:
+                            logger.warning(f"⚠️ SKIP {sym}: SHORT SL ${sl:.6f} <= market ${current_market_price:.6f} - would trigger immediately")
+                            return
+                        if side == 'long' and sl >= current_market_price:
+                            logger.warning(f"⚠️ SKIP {sym}: LONG SL ${sl:.6f} >= market ${current_market_price:.6f} - would trigger immediately")
+                            return
+            except Exception as e:
+                logger.debug(f"Could not validate SL vs market for {sym}: {e}")
+            
+            # ============================================
             # STEP 2: PLACE LIMIT ORDER WITH SL ONLY
             # ============================================
-            # NEW: Place with SL only - partial TP will be added after fill
+            # Place with SL only - trailing strategy will manage exit
             order = self.broker.place_limit(
                 sym, side, qty, expected_entry,
                 take_profit=None, stop_loss=sl  # SL only, no TP yet (trailing strategy)

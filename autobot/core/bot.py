@@ -1965,15 +1965,26 @@ class DivergenceBot:
                 if order_status == 'Filled':
                     logger.info(f"✅ ORDER FILLED: {sym} {side} @ {avg_price}")
                     
-                    # Get order info fields
+                    # Get order info fields - with fallback for sl_distance
                     original_sl_distance = order_info.get('sl_distance', 0)
                     original_entry = order_info.get('entry_price', avg_price)
+                    original_sl = order_info.get('sl', 0)
+                    
+                    # === CRITICAL: Ensure sl_distance is never 0 ===
+                    if original_sl_distance <= 0:
+                        # Fallback 1: Calculate from original SL and entry
+                        if original_sl > 0:
+                            original_sl_distance = abs(original_entry - original_sl)
+                        if original_sl_distance <= 0:
+                            # Fallback 2: Use 1% of price as minimum
+                            original_sl_distance = avg_price * 0.01
+                            logger.warning(f"⚠️ {sym}: Using 1% fallback for sl_distance")
                     
                     # === CRITICAL FIX: Recalculate SL based on ACTUAL fill price ===
                     # If fill price differs from limit price, SL must be adjusted
                     # Otherwise the SL could be too close (or even wrong side of entry)
                     price_diff = abs(avg_price - original_entry)
-                    sl_distance = original_sl_distance  # Use original ATR-based distance
+                    sl_distance = original_sl_distance  # Use corrected ATR-based distance
                     
                     if price_diff > 0.0001 * avg_price:  # Significant fill price difference
                         logger.info(f"📐 Price diff detected: Limit ${original_entry:.6f} vs Fill ${avg_price:.6f}")
@@ -2572,6 +2583,17 @@ class DivergenceBot:
                 side = trade_info['side']
                 entry = trade_info['entry']
                 sl_distance = trade_info.get('sl_distance', 0)
+                
+                # === CRITICAL: Check position still exists ===
+                # Position may have closed before we can update trailing SL
+                try:
+                    pos = self.broker.get_position(sym)
+                    if not pos or float(pos.get('size', 0)) <= 0:
+                        logger.info(f"📊 {sym} position closed, removing from active_trades")
+                        # Let the main loop handle trade closure properly
+                        continue
+                except Exception as e:
+                    logger.debug(f"Could not verify position for {sym}: {e}")
                 
                 if sl_distance <= 0:
                     continue

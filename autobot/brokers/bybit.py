@@ -594,6 +594,26 @@ class Bybit:
         Returns response dict with retCode = 0 on success.
         """
         try:
+            # ============================================
+            # VALIDATION: Ensure SL is reasonable
+            # ============================================
+            if stop_loss <= 0:
+                raise ValueError(f"Invalid SL: {stop_loss} <= 0")
+            
+            # Get current price to validate SL is reasonable
+            try:
+                ticker = self.get_tickers(symbol)
+                if ticker:
+                    current_price = float(ticker.get('lastPrice', 0))
+                    if current_price > 0:
+                        distance_pct = abs(stop_loss - current_price) / current_price * 100
+                        if distance_pct > 20:
+                            raise ValueError(f"SL {stop_loss:.4f} is {distance_pct:.1f}% from price {current_price:.4f} - too far!")
+            except ValueError:
+                raise  # Re-raise validation errors
+            except Exception as e:
+                logger.debug(f"Could not validate SL distance: {e}")
+            
             if qty:
                 data = {
                     "category": "linear",

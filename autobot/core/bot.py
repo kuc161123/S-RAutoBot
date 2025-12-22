@@ -1773,42 +1773,15 @@ class DivergenceBot:
                     continue
                 
                 # ====================================================
-                # STOCHASTIC RSI FILTER: +215% Avg R improvement
-                # Shorts: K > 80 (overbought)
-                # Longs: K < 20 (oversold)
+                # STOCHASTIC RSI FILTER: DISABLED
+                # Backtest showed this hurts performance:
+                # - 1H: +188R without vs +56R with filter
+                # - 3M: +323R without vs -130R with filter
+                # The filter was skipping too many valid signals
                 # ====================================================
-                # Calculate Stochastic RSI
-                stoch_k = None
-                try:
-                    rsi_values = df['rsi'].values
-                    k_period = 14
-                    if len(rsi_values) >= k_period + 1:
-                        recent_rsi = rsi_values[-k_period:]
-                        valid_rsi = [r for r in recent_rsi if not pd.isna(r)]
-                        if len(valid_rsi) >= k_period:
-                            min_rsi = min(valid_rsi)
-                            max_rsi = max(valid_rsi)
-                            current_rsi = rsi_values[-1]
-                            if not pd.isna(current_rsi) and max_rsi != min_rsi:
-                                stoch_k = ((current_rsi - min_rsi) / (max_rsi - min_rsi)) * 100
-                except Exception as e:
-                    logger.debug(f"StochRSI calc error for {sym}: {e}")
                 
-                # Apply StochRSI filter
-                if stoch_k is not None:
-                    if side == 'short' and stoch_k <= 80:
-                        logger.info(f"📊 STOCH SKIP: {sym} SHORT - K={stoch_k:.1f} <= 80 (need overbought)")
-                        continue
-                    if side == 'long' and stoch_k >= 20:
-                        logger.info(f"📊 STOCH SKIP: {sym} LONG - K={stoch_k:.1f} >= 20 (need oversold)")
-                        continue
-                    logger.info(f"✅ STOCH OK: {sym} {side} K={stoch_k:.1f}")
-                else:
-                    logger.debug(f"StochRSI not available for {sym}, proceeding anyway")
-                
-                # Log signal detection
-                stoch_display = f"{stoch_k:.1f}" if stoch_k is not None else "N/A"
-                logger.info(f"📊 DIVERGENCE: {sym} {side.upper()} {combo} (RSI: {signal.rsi_value:.1f}, StochK: {stoch_display})")
+                # Log signal detection (no StochRSI filtering)
+                logger.info(f"📊 DIVERGENCE: {sym} {side.upper()} {combo} (RSI: {signal.rsi_value:.1f})")
                 
                 # ====================================================
                 # BEARISH-ONLY FILTER (walk-forward validated)

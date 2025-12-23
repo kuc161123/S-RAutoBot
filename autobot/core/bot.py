@@ -911,7 +911,7 @@ class DivergenceBot:
                 
                 f"🎯 **STRATEGY**\n"
                 f"├ Type: RSI Divergence\n"
-                f"├ TF: {self.cfg.get('trade', {}).get('timeframe', '60')}min (1H)\n"
+                f"├ TF: 60min (1H)\n"
                 f"├ 🔥 **HIGH-PROB TRIO: {'✅ ON' if self.trio_enabled else '❌ OFF'}**\n"
                 f"├ VWAP: {'✓' if self.trio_require_vwap else '✗'} | 2-Bar: {'✓' if self.trio_require_two_bar else 'OFF'}\n"
                 f"├ Pending Triggers: {len(self.pending_trio_signals)}\n"
@@ -1860,7 +1860,7 @@ class DivergenceBot:
         """
         try:
             # Use timeframe from config (3M = fast trading with optimal trailing)
-            timeframe = self.cfg.get('trade', {}).get('timeframe', '60')
+            timeframe = '60'  # HARDCODED: 1-hour timeframe (backtest validated)
             klines = self.broker.get_klines(sym, timeframe, limit=100)
             if not klines or len(klines) < 50: 
                 return
@@ -3509,7 +3509,7 @@ class DivergenceBot:
             active_combos_msg = f"{trading_count} symbols (Active Combos)"
         
         # Params
-        timeframe = self.cfg.get('trade', {}).get('timeframe', '60')
+        timeframe = '60'  # HARDCODED: 1-hour timeframe
         risk_val = self.risk_config['value']
         hidden_bearish_mode = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
         
@@ -3699,7 +3699,7 @@ class DivergenceBot:
                     for sym, entry_info in list(self.pending_entries.items()):
                         try:
                             # Get fresh klines for execution (use same timeframe as detection)
-                            tf = self.cfg.get('trade', {}).get('timeframe', '60')
+                            tf = '60'  # HARDCODED: 1-hour timeframe
                             klines = self.broker.get_klines(sym, tf, limit=100)
                             if klines and len(klines) >= 50:
                                 df = pd.DataFrame(klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
@@ -3745,7 +3745,7 @@ class DivergenceBot:
                 # Update learner with candle data (high/low) for accurate resolution
                 try:
                     # Use configured timeframe for all tracking (High/Low/RSI)
-                    tf_config = str(self.cfg.get('trade', {}).get('timeframe', '60'))
+                    tf_config = '60'  # HARDCODED: 1-hour timeframe
                     
                     candle_data = {}
                     for sym in self.all_symbols:

@@ -29,7 +29,7 @@ warnings.filterwarnings('ignore')
 
 TIMEFRAME = '60'         # 1-hour candles (maximum ATR = lowest fee impact)
 DATA_DAYS = 90           # 90 days of data for sufficient signals
-NUM_SYMBOLS = 40         # Number of symbols
+NUM_SYMBOLS = 200        # Number of symbols (User Verification)
 
 # Fees (Bybit standard)
 MAKER_FEE = 0.00055      # 0.055%

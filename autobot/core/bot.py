@@ -2783,7 +2783,7 @@ class DivergenceBot:
             # For SHORTS: SL must be ABOVE current market price (or it triggers immediately)
             # For LONGS: SL must be BELOW current market price (or it triggers immediately)
             try:
-                ticker = self.broker.get_tickers(sym)
+                ticker = self.broker.get_ticker(sym)
                 if ticker:
                     current_market_price = float(ticker.get('lastPrice', 0))
                     if current_market_price > 0:

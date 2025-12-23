@@ -2732,7 +2732,16 @@ class DivergenceBot:
             # This avoids issues where swing low/high causes invalid SL
             # ============================================
             ATR_SL_MULTIPLIER = 1.0  # 1.0x ATR for SL distance
-            sl_distance = ATR_SL_MULTIPLIER * constraint_atr
+            MIN_SL_PCT = 2.0  # Minimum 2% SL distance (matches backtest)
+            
+            atr_sl_distance = ATR_SL_MULTIPLIER * constraint_atr
+            min_sl_distance = expected_entry * (MIN_SL_PCT / 100)
+            
+            # Use the LARGER of ATR-based or minimum 2%
+            sl_distance = max(atr_sl_distance, min_sl_distance)
+            
+            if sl_distance > atr_sl_distance:
+                logger.info(f"📐 {sym}: Using MIN 2% SL ({min_sl_distance:.6f}) > ATR ({atr_sl_distance:.6f})")
             
             if side == 'long':
                 sl = round_to_tick(expected_entry - sl_distance)

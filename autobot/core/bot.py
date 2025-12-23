@@ -3735,9 +3735,12 @@ class DivergenceBot:
                 
                 # Update learner with candle data (high/low) for accurate resolution
                 try:
+                    # Use configured timeframe for all tracking (High/Low/RSI)
+                    tf_config = str(self.cfg.get('trade', {}).get('timeframe', '60'))
+                    
                     candle_data = {}
                     for sym in self.all_symbols:
-                        klines = self.broker.get_klines(sym, '3', limit=1)
+                        klines = self.broker.get_klines(sym, tf_config, limit=1)
                         if klines and len(klines) > 0:
                             candle = klines[0]
                             candle_data[sym] = {
@@ -3764,7 +3767,7 @@ class DivergenceBot:
                             if sym in candle_data:
                                 # Add RSI from fresh klines
                                 try:
-                                    klines = self.broker.get_klines(sym, '3', limit=20)
+                                    klines = self.broker.get_klines(sym, tf_config, limit=20)
                                     if klines and len(klines) >= 14:
                                         df_temp = pd.DataFrame(klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
                                         for c in ['close']:

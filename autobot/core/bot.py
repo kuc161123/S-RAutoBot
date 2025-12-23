@@ -3480,32 +3480,45 @@ class DivergenceBot:
                 f"Error: `{str(e)[:100]}`"
             )
 
-    async def _startup_promote_demote_scan(self):
-        """Show divergence strategy status on startup.
+    async def _send_startup_report(self):
+        """Send consolidated startup status report."""
+        # Gather stats
+        trading_count = len(self.divergence_combos)
+        scanning_count = len(self.all_symbols)
         
-        DIRECT EXECUTION MODE - All divergence signals execute immediately.
-        Backtest validated: 61.3% WR | +0.84 EV at 2:1 R:R
-        """
-        logger.info("🚀 RSI Divergence Strategy - DIRECT EXECUTION MODE")
+        # Params
+        timeframe = self.cfg.get('trade', {}).get('timeframe', '60')
+        risk_val = self.risk_config['value']
+        hidden_bearish_mode = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
         
-        await self.send_telegram(
-            f"🚀 **HIDDEN BEARISH ({len(self.divergence_combos)} Symbols)**\n"
-            f"├ Grid search validated (150 symbols)\n"
-            f"├ WR: **54.7%** (out-of-sample)\n"
-            f"├ EV: **+0.179R**/trade\n"
-            f"└ OOS Total: **+532R**\n\n"
-            f"🎯 **EXIT STRATEGY (Tight-Trail 1h)**\n"
-            f"├ Lock: Protect profit at **+0.3R**\n"
-            f"├ Trail: **0.1R** behind max price\n"
-            f"├ Target: **+2R** max profit\n"
-            f"└ Backtest: **+295R** (74.5% WR, 1.53 PF)\n\n"
-            f"📊 **Signal Types**\n"
-            f"├ ⚡ Hidden Bearish: ACTIVE\n"
-            f"├ ⏭️ Regular Bearish: SKIPPED\n"
-            f"├ ⏭️ Bullish: SKIPPED\n"
-            f"└ ⏭️ Hidden Bullish: SKIPPED\n\n"
-            f"💡 Commands: /pnl /dashboard /help"
+        # System checks
+        redis_ok = "🟢" if self.learner.redis_client else "🔴"
+        pg_ok = "🟢" if self.learner.pg_conn else "🔴"
+        
+        mode_str = "HIDDEN BEARISH ONLY" if hidden_bearish_mode else "RSI DIVERGENCE (ALL)"
+        
+        msg = (
+            f"🚀 **RSI Divergence Bot (Tight-Trail 1h)**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 **STATUS: ONLINE**\n"
+            f"├ Mode: **{mode_str}**\n"
+            f"├ Trading: **{trading_count}** symbols (Active Combos)\n"
+            f"├ Scanning: **{scanning_count}** symbols (Learning)\n"
+            f"└ Risk: **{risk_val}%** per trade\n\n"
+            
+            f"🎯 **STRATEGY (Bias-Free 1h)**\n"
+            f"├ Timeframe: **{timeframe}m** (1 Hour)\n"
+            f"├ Lock Profit: **+0.3R** (BE Threshold)\n"
+            f"├ Trailing: **0.1R** (Tight Trail)\n"
+            f"└ Max Target: **+2.0R**\n\n"
+            
+            f"📈 **EXPECTED PERFORMANCE**\n"
+            f"└ Backtest: +295R | 74.5% WR | 1.53 PF\n\n"
+            
+            f"💾 System: Redis {redis_ok} | PG {pg_ok}\n"
+            f"💡 Commands: /dashboard /pnl /help"
         )
+        await self.send_telegram(msg)
 
     async def run(self):
         logger.info("🤖 Divergence Bot Starting...")
@@ -3622,7 +3635,8 @@ class DivergenceBot:
         self._sync_promoted_to_yaml()
         
         # Run immediate promote/demote scan on startup
-        await self._startup_promote_demote_scan()
+        # Call consolidated report at the END instead of here
+        # await self._startup_promote_demote_scan()
         
         self.load_overrides()  # Reload after sync and startup scan
         trading_symbols = list(self.divergence_combos.keys())
@@ -3643,50 +3657,8 @@ class DivergenceBot:
                            and f"{c['symbol']}:{c['side']}:{c['combo']}" not in self.learner.promoted])
 
         # Send success notification
-        bearish_mode = self.cfg.get('trade', {}).get('bearish_only', False)
-        hidden_bearish_mode = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
-        timeframe = self.cfg.get('trade', {}).get('timeframe', '3')
-        trio_status = "✅ ON" if self.trio_enabled else "❌ OFF"
-        
-        if hidden_bearish_mode:
-            mode_text = "🎯 HIDDEN BEARISH ONLY"
-            await self.send_telegram(
-                f"✅ **RSI Divergence Bot Online!**\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"📊 **Mode**: HIDDEN BEARISH\n"
-                f"⏱️ **Timeframe**: {timeframe}min (1h) - Tight-Trail\n\n"
-                f"🔥 **HIGH-PROBABILITY TRIO** {trio_status}\n"
-                f"├ VWAP Filter: {'✓' if self.trio_require_vwap else '✗'}\n"
-                f"├ RSI Zones: 30/70 (Regular), 30-50/50-70 (Hidden)\n"
-                f"└ 2-Bar Momentum: {'✅ ON' if self.trio_require_two_bar else '❌ OFF (Immediate)'}\n\n"
-                f"🎯 **EXIT STRATEGY (Tight-Trail 1h)**\n"
-                f"├ Lock: Protect profit at **+0.3R**\n"
-                f"├ Trail: **0.1R** behind max price\n"
-                f"└ Target: **+2R** max profit\n\n"
-                f"📚 Scanning: **{len(self.all_symbols)}** symbols\n"
-                f"⚙️ Risk: **{self.risk_config['value']}%** per trade\n\n"
-                f"💾 Redis: {redis_ok} | Postgres: {pg_ok}\n"
-                f"Commands: /help /status /dashboard"
-            )
-        else:
-            await self.send_telegram(
-                f"✅ **RSI Divergence Bot Online!**\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"📊 **Strategy**: RSI Divergence\n"
-                f"⏱️ **Timeframe**: {timeframe}min (1h) - Tight-Trail\n\n"
-                f"🔥 **HIGH-PROBABILITY TRIO** {trio_status}\n"
-                f"├ VWAP Filter: {'✓' if self.trio_require_vwap else '✗'}\n"
-                f"├ RSI Zones: 30/70 (Regular), 30-50/50-70 (Hidden)\n"
-                f"└ 2-Bar Momentum: {'✅ ON' if self.trio_require_two_bar else '❌ OFF (Immediate)'}\n\n"
-                f"🎯 **EXIT STRATEGY (Optimal Trail)**\n"
-                f"├ BE at +0.7R (protect capital)\n"
-                f"├ Trail from +0.7R: 0.3R behind\n"
-                f"└ Max profit: +3R target\n\n"
-                f"📚 Scanning: **{len(self.all_symbols)}** symbols\n"
-                f"⚙️ Risk: **{self.risk_config['value']}%** per trade\n\n"
-                f"💾 Redis: {redis_ok} | Postgres: {pg_ok}\n"
-                f"Commands: /help /status /dashboard"
-            )
+        # Send consolidated startup report (Now that everything is loaded)
+        await self._send_startup_report()
         
         logger.info(f"Trading {len(trading_symbols)} symbols, Learning {len(self.all_symbols)} symbols")
             

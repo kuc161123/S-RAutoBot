@@ -261,7 +261,7 @@ scalp:
     wick_delta_threshold: 0.0005
   stream_3m_only: true
   threshold: 70
-  timeframe: 3
+  timeframe: 60  # 1-hour candles (backtest: +295R, 74.5% WR, 1.53 PF)
   use_ml: false
 strategy_independence:
   enabled: true

@@ -915,9 +915,9 @@ class DivergenceBot:
                 f"├ 🔥 **HIGH-PROB TRIO: {'✅ ON' if self.trio_enabled else '❌ OFF'}**\n"
                 f"├ VWAP: {'✓' if self.trio_require_vwap else '✗'} | 2-Bar: {'✓' if self.trio_require_two_bar else 'OFF'}\n"
                 f"├ Pending Triggers: {len(self.pending_trio_signals)}\n"
-                f"├ **EXIT: Quick-Lock Trailing SL** ⚡\n"
-                f"├ Lock profit at +0.4R\n"
-                f"├ Trail: 0.15R behind max\n"
+                f"├ **EXIT: Tight-Trail (1h)** ⚡\n"
+                f"├ Lock profit at +0.3R\n"
+                f"├ Trail: 0.1R behind max\n"
                 f"└ Max: +2R target\n\n"
                 
                 f"📊 **SIGNALS**\n"
@@ -2476,10 +2476,10 @@ class DivergenceBot:
                         f"├ Fill Price: ${avg_price:.4f}\n"
                         f"├ Quantity: {filled_qty}\n"
                         f"└ Value: ${position_value:.2f}\n\n"
-                        f"🎯 **EXIT STRATEGY (Quick-Lock)**\n"
+                        f"🎯 **EXIT STRATEGY (Tight-Trail)**\n"
                         f"├ Initial SL: ${sl:.4f} (-{sl_pct:.2f}%)\n"
-                        f"├ At +0.4R: Lock profit\n"
-                        f"├ Trail: 0.15R behind max\n"
+                        f"├ At +0.3R: Lock profit\n"
+                        f"├ Trail: 0.1R behind max\n"
                         f"└ Max: +2R target\n\n"
                         f"💡 Worst: -1R | Best: +2R"
                     )
@@ -2860,9 +2860,9 @@ class DivergenceBot:
                 f"├ RSI Zone: {rsi:.1f} ✓\n"
                 f"└ Volume: Above threshold ✓\n\n"
                 f"💰 **Entry**: ${expected_entry:.6f}\n\n"
-                f"🎯 **EXIT STRATEGY (Quick-Lock)**\n"
+                f"🎯 **EXIT STRATEGY (Tight-Trail 1h)**\n"
                 f"├ SL: ${sl:.6f} ({sl_atr_mult:.1f}×ATR = -1R)\n"
-                f"├ At +0.4R: Lock profit (0.15R behind)\n"
+                f"├ At +0.3R: Lock profit (0.1R behind)\n"
                 f"└ Max: +2R target\n\n"
                 f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
             )
@@ -2999,11 +2999,11 @@ class DivergenceBot:
             self.pending_orders.pop(order_id, None)
 
     async def monitor_trailing_sl(self, candle_data: dict):
-        """Monitor active trades for Quick-Lock trailing SL updates.
+        """Monitor active trades for Tight-Trail SL updates.
         
-        QUICK-LOCK TRAILING STRATEGY (Backtest Validated: +7530R):
-        1. At +0.4R: Start trailing (lock in +0.25R profit)
-        2. Trail 0.15R behind max favorable price
+        TIGHT-TRAIL STRATEGY (1h TF, Backtest: +295R, 74.5% WR, 1.53 PF):
+        1. At +0.3R: Start trailing (lock in +0.2R profit)
+        2. Trail 0.1R behind max favorable price (very tight)
         3. Max target: +2R
         
         Called every loop iteration with current candle data.
@@ -3057,20 +3057,20 @@ class DivergenceBot:
                 max_r = trade_info['max_favorable_r']
                 
                 # ============================================
-                # CHECK 1: Move SL to trailing position at +0.4R (Quick-Lock Strategy)
-                # Backtest validated: +7530R vs +6406R for 0.7R threshold
+                # CHECK 1: Move SL to trailing position at +0.3R (Tight-Trail Strategy)
+                # Backtest validated: +295R (74.5% WR, 1.53 PF) on 1h timeframe
                 # ============================================
-                BE_THRESHOLD = 0.4   # Lock in profit early (vs 0.7R)
-                TRAIL_DISTANCE = 0.15  # Tighter trail (vs 0.3R)
+                BE_THRESHOLD = 0.3   # Lock profit early (vs 0.4R Quick-Lock)
+                TRAIL_DISTANCE = 0.1  # Very tight trail (vs 0.15R)
                 
                 if not trade_info.get('sl_at_breakeven', False) and max_r >= BE_THRESHOLD:
-                    # Price reached +0.4R, move SL to +0.25R (0.15R behind max)
+                    # Price reached +0.3R, move SL to +0.2R (0.1R behind max)
                     if side == 'long':
                         initial_trail_sl = entry + (max_r - TRAIL_DISTANCE) * sl_distance
                     else:
                         initial_trail_sl = entry - (max_r - TRAIL_DISTANCE) * sl_distance
                     
-                    protected_r = max_r - TRAIL_DISTANCE  # e.g., 0.4 - 0.15 = +0.25R
+                    protected_r = max_r - TRAIL_DISTANCE  # e.g., 0.3 - 0.1 = +0.2R
                     
                     # === CRITICAL SANITY CHECK ===
                     # For LONG: trailing SL must be ABOVE entry (protecting profit)
@@ -3140,14 +3140,14 @@ class DivergenceBot:
                             )
                 
                 # ============================================
-                # CHECK 2: Trailing SL (from 0.4R, Quick-Lock Strategy)
-                # Backtest validated: Tighter trailing = more profit locked
+                # CHECK 2: Trailing SL (from 0.3R, Tight-Trail Strategy)
+                # Backtest validated: Best config on 1h timeframe
                 # ============================================
-                BE_THRESHOLD = 0.4
-                TRAIL_DISTANCE = 0.15  # Trail 0.15R behind (vs 0.3R)
+                BE_THRESHOLD = 0.3
+                TRAIL_DISTANCE = 0.1  # Very tight: 0.1R behind (vs 0.15R)
                 
                 if trade_info.get('sl_at_breakeven', False) and max_r >= BE_THRESHOLD:
-                    # Calculate trailing SL level (0.15R behind max - Quick-Lock)
+                    # Calculate trailing SL level (0.1R behind max - Tight-Trail)
                     if side == 'long':
                         new_sl = entry + (max_r - TRAIL_DISTANCE) * sl_distance
                     else:
@@ -3494,11 +3494,11 @@ class DivergenceBot:
             f"├ WR: **54.7%** (out-of-sample)\n"
             f"├ EV: **+0.179R**/trade\n"
             f"└ OOS Total: **+532R**\n\n"
-            f"🎯 **EXIT STRATEGY (Quick-Lock)**\n"
-            f"├ Lock: Protect profit at **+0.4R**\n"
-            f"├ Trail: **0.15R** behind max price\n"
+            f"🎯 **EXIT STRATEGY (Tight-Trail 1h)**\n"
+            f"├ Lock: Protect profit at **+0.3R**\n"
+            f"├ Trail: **0.1R** behind max price\n"
             f"├ Target: **+2R** max profit\n"
-            f"└ Backtest: **+7530R** (72.8% WR after fees)\n\n"
+            f"└ Backtest: **+295R** (74.5% WR, 1.53 PF)\n\n"
             f"📊 **Signal Types**\n"
             f"├ ⚡ Hidden Bearish: ACTIVE\n"
             f"├ ⏭️ Regular Bearish: SKIPPED\n"

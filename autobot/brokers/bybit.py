@@ -4,6 +4,7 @@ import time, hmac, hashlib, requests, json, os
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 import logging
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ class Bybit:
     def __init__(self, cfg:BybitConfig):
         self.cfg = cfg
         self.session = requests.Session()
+        self.precisions_cache = {}  # {symbol: (tick_size_str, qty_step_str)}
         
     def _ts(self) -> str:
         return str(int(time.time() * 1000))
@@ -265,6 +267,18 @@ class Bybit:
             logger.warning(f"Failed to set leverage for {symbol}: {e}")
             return None
         return None
+
+    def get_ticker(self, symbol: str) -> dict:
+        """Get current ticker data."""
+        try:
+            resp = self._request("GET", "/v5/market/tickers", {"category": "linear", "symbol": symbol})
+            if resp and resp.get("result"):
+                items = resp["result"].get("list", [])
+                if items:
+                    return items[0]
+        except Exception as e:
+            logger.error(f"Failed to get ticker for {symbol}: {e}")
+        return {}
     
     def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False,
                       take_profit:float=None, stop_loss:float=None) -> Dict[str, Any]:
@@ -287,14 +301,17 @@ class Bybit:
             "positionIdx": 0  # One-way mode
         }
         
-        # Add TP/SL as bracket order for instant protection
-        if take_profit is not None:
-            data["takeProfit"] = str(take_profit)
-            data["tpTriggerBy"] = "LastPrice"
-        
-        if stop_loss is not None:
-            data["stopLoss"] = str(stop_loss)
-            data["slTriggerBy"] = "LastPrice"
+        if take_profit or stop_loss is not None:
+            tick_size, _ = self._get_precisions(symbol)
+            
+            # Add TP/SL as bracket order for instant protection
+            if take_profit is not None:
+                data["takeProfit"] = self._round_price(take_profit, tick_size)
+                data["tpTriggerBy"] = "LastPrice"
+            
+            if stop_loss is not None:
+                data["stopLoss"] = self._round_price(stop_loss, tick_size)
+                data["slTriggerBy"] = "LastPrice"
         
         bracket_status = ""
         if take_profit or stop_loss:
@@ -326,13 +343,17 @@ class Bybit:
         bybit_side = "Buy" if side.lower() == "long" else "Sell"
         time_in_force = "PostOnly" if post_only else "GTC"
         
+        # Round everything first
+        tick_size, _ = self._get_precisions(symbol)
+        final_price = self._round_price(price, tick_size)
+        
         data = {
             "category": "linear",
             "symbol": symbol,
             "side": bybit_side,
             "orderType": "Limit",
             "qty": str(qty),
-            "price": str(price),
+            "price": final_price,
             "timeInForce": time_in_force,
             "reduceOnly": False,  # Entry order, not reduce-only
             "positionIdx": 0  # One-way mode
@@ -340,11 +361,11 @@ class Bybit:
         
         # Add TP/SL as bracket order for instant protection
         if take_profit is not None:
-            data["takeProfit"] = str(take_profit)
+            data["takeProfit"] = self._round_price(take_profit, tick_size)
             data["tpTriggerBy"] = "LastPrice"
         
         if stop_loss is not None:
-            data["stopLoss"] = str(stop_loss)
+            data["stopLoss"] = self._round_price(stop_loss, tick_size)
             data["slTriggerBy"] = "LastPrice"
         
         bracket_status = ""
@@ -551,16 +572,21 @@ class Bybit:
             except Exception as e:
                 logger.warning(f"Could not get position size: {e}")
         
+        # Precision rounding
+        tick_size, _ = self._get_precisions(symbol)
+        tp_str = self._round_price(take_profit, tick_size)
+        sl_str = self._round_price(stop_loss, tick_size)
+        
         # Use Partial mode with sizes if we have them
         if position_qty:
             data = {
                 "category": "linear",
                 "symbol": symbol,
-                "takeProfit": str(take_profit),
-                "stopLoss": str(stop_loss),
+                "takeProfit": tp_str,
+                "stopLoss": sl_str,
                 "tpSize": str(position_qty),       # Required for Partial mode
                 "slSize": str(position_qty),       # Required for Partial mode
-                "tpLimitPrice": str(take_profit),  # Limit price for TP
+                "tpLimitPrice": tp_str,            # Use proper rounded price
                 "tpTriggerBy": "LastPrice",
                 "slTriggerBy": "LastPrice",
                 "tpslMode": "Partial",             # Partial mode for better fills
@@ -574,9 +600,9 @@ class Bybit:
             data = {
                 "category": "linear",
                 "symbol": symbol,
-                "takeProfit": str(take_profit),
-                "stopLoss": str(stop_loss),
-                "tpLimitPrice": str(take_profit),  # ensure Limit TP even in Full mode
+                "takeProfit": tp_str,
+                "stopLoss": sl_str,
+                "tpLimitPrice": tp_str,  # ensure Limit TP even in Full mode
                 "tpTriggerBy": "LastPrice",
                 "slTriggerBy": "LastPrice",
                 "tpslMode": "Full",                # Full mode doesn't need sizes
@@ -586,6 +612,34 @@ class Bybit:
             }
         
         return self._request("POST", "/v5/position/trading-stop", data)
+
+    def _get_precisions(self, symbol: str) -> tuple[str, str]:
+        """Get (tick_size, qty_step) as strings for a symbol (cached)."""
+        if symbol in self.precisions_cache:
+            return self.precisions_cache[symbol]
+        
+        try:
+            instruments = self.get_instruments_info(symbol=symbol)
+            if instruments:
+                for i in instruments:
+                    if i['symbol'] == symbol:
+                        ts = i.get('priceFilter', {}).get('tickSize', '0.01')
+                        qs = i.get('lotSizeFilter', {}).get('qtyStep', '0.001')
+                        self.precisions_cache[symbol] = (ts, qs)
+                        return (ts, qs)
+        except Exception as e:
+            logger.error(f"Failed to fetch precisions for {symbol}: {e}")
+        
+        # Fallback defaults
+        return ("0.01", "0.001")
+
+    def _round_price(self, price: float, tick_size: str) -> str:
+        """Round price to tick size string."""
+        d_price = Decimal(str(price))
+        d_tick = Decimal(tick_size)
+        # Round to nearest tick
+        rounded = (d_price / d_tick).quantize(Decimal('1')) * d_tick
+        return f"{rounded:f}"  # Format without scientific notation
 
     def set_sl_only(self, symbol: str, stop_loss: float, qty: float = None) -> Dict[str, Any]:
         """Set only Stop Loss for a position using trading-stop.
@@ -600,9 +654,15 @@ class Bybit:
             if stop_loss <= 0:
                 raise ValueError(f"Invalid SL: {stop_loss} <= 0")
             
+            # === AUTO-ROUNDING FIX ===
+            # Fetch tick size and round strictly to avoid 10001 errors
+            tick_size, _ = self._get_precisions(symbol)
+            final_sl_str = self._round_price(stop_loss, tick_size)
+            logger.info(f"📐 Rounded SL for {symbol}: {stop_loss} -> {final_sl_str} (tick: {tick_size})")
+            
             # Get current price to validate SL is reasonable
             try:
-                ticker = self.get_tickers(symbol)
+                ticker = self.get_ticker(symbol)
                 if ticker:
                     current_price = float(ticker.get('lastPrice', 0))
                     if current_price > 0:
@@ -618,7 +678,7 @@ class Bybit:
                 data = {
                     "category": "linear",
                     "symbol": symbol,
-                    "stopLoss": str(stop_loss),
+                    "stopLoss": final_sl_str,
                     "slSize": str(qty),
                     "slTriggerBy": "LastPrice",
                     "tpslMode": "Partial",
@@ -629,7 +689,7 @@ class Bybit:
                 data = {
                     "category": "linear",
                     "symbol": symbol,
-                    "stopLoss": str(stop_loss),
+                    "stopLoss": final_sl_str,
                     "slTriggerBy": "LastPrice",
                     "tpslMode": "Full",
                     "slOrderType": "Market",
@@ -675,13 +735,17 @@ class Bybit:
         side: "Buy" or "Sell" relative to order direction. For long TP use "Sell"; for short TP use "Buy".
         """
         tif = "PostOnly" if post_only else "GTC"
+        # Round price
+        tick_size, _ = self._get_precisions(symbol)
+        final_price = self._round_price(price, tick_size)
+        
         data = {
             "category": "linear",
             "symbol": symbol,
             "side": side.capitalize(),
             "orderType": "Limit",
             "qty": str(qty),
-            "price": str(price),
+            "price": final_price,
             "timeInForce": tif,
             "reduceOnly": reduce_only,
             "positionIdx": 0,

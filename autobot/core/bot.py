@@ -2447,6 +2447,9 @@ class DivergenceBot:
                         'sl_initial': sl,
                         'sl_current': sl,
                         
+                        # Risk tracking for accurate P&L calculation
+                        'risk_amt': order_info.get('risk_amt', 0),  # USD risk for R calculation
+                        
                         # State machine (no partial TP tracking)
                         'sl_at_breakeven': False,
                         'max_favorable_r': 0.0,
@@ -3928,7 +3931,14 @@ class DivergenceBot:
                                 if outcome and entry and exit_price:
                                     # Get trailing info
                                     sl_distance = trade_info.get('sl_distance', abs(exit_price - entry))
-                                    risk_amt = trade_info.get('risk_amt', 10)  # Risk amount in USD
+                                    
+                                    # Get risk_amt - CRITICAL for accurate R calculation
+                                    # If not stored, calculate from qty * sl_distance
+                                    risk_amt = trade_info.get('risk_amt', 0)
+                                    if risk_amt <= 0:
+                                        qty = trade_info.get('qty_initial', trade_info.get('qty_remaining', 0))
+                                        risk_amt = qty * sl_distance if qty > 0 and sl_distance > 0 else 10
+                                        logger.warning(f"risk_amt not stored for {sym}, calculated: ${risk_amt:.2f}")
                                     
                                     # Calculate theoretical R (for reference only)
                                     if sl_distance > 0:

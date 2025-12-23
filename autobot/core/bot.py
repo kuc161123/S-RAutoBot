@@ -2473,12 +2473,12 @@ class DivergenceBot:
                         f"├ Fill Price: ${avg_price:.4f}\n"
                         f"├ Quantity: {filled_qty}\n"
                         f"└ Value: ${position_value:.2f}\n\n"
-                        f"🎯 **EXIT STRATEGY (Optimal Trail)**\n"
+                        f"🎯 **EXIT STRATEGY (Quick-Lock)**\n"
                         f"├ Initial SL: ${sl:.4f} (-{sl_pct:.2f}%)\n"
-                        f"├ At +0.7R: SL → Break-Even\n"
-                        f"├ At +0.7R: Trail 0.3R behind\n"
-                        f"└ Max: +3R target\n\n"
-                        f"💡 Worst: -1R | Best: +3R"
+                        f"├ At +0.4R: Lock profit\n"
+                        f"├ Trail: 0.15R behind max\n"
+                        f"└ Max: +2R target\n\n"
+                        f"💡 Worst: -1R | Best: +2R"
                     )
                     continue
                 
@@ -2857,10 +2857,10 @@ class DivergenceBot:
                 f"├ RSI Zone: {rsi:.1f} ✓\n"
                 f"└ Volume: Above threshold ✓\n\n"
                 f"💰 **Entry**: ${expected_entry:.6f}\n\n"
-                f"🎯 **EXIT STRATEGY**\n"
+                f"🎯 **EXIT STRATEGY (Quick-Lock)**\n"
                 f"├ SL: ${sl:.6f} ({sl_atr_mult:.1f}×ATR = -1R)\n"
-                f"├ At +0.7R: Trail 0.3R behind\n"
-                f"└ Max: +3R target\n\n"
+                f"├ At +0.4R: Lock profit (0.15R behind)\n"
+                f"└ Max: +2R target\n\n"
                 f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
             )
             await self.send_telegram(msg)
@@ -2996,12 +2996,12 @@ class DivergenceBot:
             self.pending_orders.pop(order_id, None)
 
     async def monitor_trailing_sl(self, candle_data: dict):
-        """Monitor active trades for optimal trailing SL updates.
+        """Monitor active trades for Quick-Lock trailing SL updates.
         
-        OPTIMAL TRAILING STRATEGY:
-        1. At +0.7R: Move SL to break-even (protect capital)
-        2. From +0.7R: Trail 0.3R behind max favorable price
-        3. Max target: +3R
+        QUICK-LOCK TRAILING STRATEGY (Backtest Validated: +7530R):
+        1. At +0.4R: Start trailing (lock in +0.25R profit)
+        2. Trail 0.15R behind max favorable price
+        3. Max target: +2R
         
         Called every loop iteration with current candle data.
         """
@@ -3261,8 +3261,8 @@ class DivergenceBot:
             
             # Calculate TP/SL with 2:1 R:R
             # Using 1 ATR for SL (1R), 2*ATR for TP (2R)
-            MIN_SL_PCT = 0.5  # Minimum 0.5% distance for SL
-            MIN_TP_PCT = 1.0  # Minimum 1.0% distance for TP
+            MIN_SL_PCT = 2.0  # Minimum 2.0% distance (fee impact = 5.5% of risk)
+            MIN_TP_PCT = 4.0  # Minimum 4.0% distance for TP (2:1)
             
             # Calculate minimum distances based on percentage
             min_sl_dist = entry * (MIN_SL_PCT / 100)

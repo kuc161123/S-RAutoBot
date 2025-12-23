@@ -421,7 +421,7 @@ trade:
   - REDUSDT
   - REQUSDT
   - ROSEUSDT
-  timeframe: '3'
+
   bearish_only: false   # Disabled - trading ALL divergence types
   hidden_bearish_only: false  # Disabled - trading ALL divergence types
   

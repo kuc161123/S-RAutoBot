@@ -1917,9 +1917,15 @@ class DivergenceBot:
             if not hasattr(self, 'last_signal_candle'):
                 self.last_signal_candle = {}  # Per symbol (not per combo)
             
+            # Use config timeframe for cooldown calc
+            try:
+                tf_int = int(timeframe)
+            except:
+                tf_int = 3 # fallback to 3m
+                
             COOLDOWN_BARS = 10  # Match backtest: min 10 bars between signals per symbol
-            CANDLE_MINUTES = 15  # 15-min candles
-            COOLDOWN_SECONDS = COOLDOWN_BARS * CANDLE_MINUTES * 60  # ~2.5 hours
+            CANDLE_MINUTES = tf_int
+            COOLDOWN_SECONDS = COOLDOWN_BARS * CANDLE_MINUTES * 60
             
             # Process each detected signal - EXECUTE ALL (backtest validated)
             for signal in signals:
@@ -3483,8 +3489,15 @@ class DivergenceBot:
     async def _send_startup_report(self):
         """Send consolidated startup status report."""
         # Gather stats
+        # In Direct Mode, we trade ALL symbols if self.divergence_combos is empty
         trading_count = len(self.divergence_combos)
         scanning_count = len(self.all_symbols)
+        
+        if trading_count == 0 and scanning_count > 0:
+            trading_count = scanning_count  # Direct Mode trades everything
+            active_combos_msg = "DIRECT EXECUTION (All Symbols)"
+        else:
+            active_combos_msg = f"{trading_count} symbols (Active Combos)"
         
         # Params
         timeframe = self.cfg.get('trade', {}).get('timeframe', '60')
@@ -3502,7 +3515,7 @@ class DivergenceBot:
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📊 **STATUS: ONLINE**\n"
             f"├ Mode: **{mode_str}**\n"
-            f"├ Trading: **{trading_count}** symbols (Active Combos)\n"
+            f"├ Trading: **{active_combos_msg}**\n"
             f"├ Scanning: **{scanning_count}** symbols (Learning)\n"
             f"└ Risk: **{risk_val}%** per trade\n\n"
             

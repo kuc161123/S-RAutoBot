@@ -20,7 +20,7 @@ high_probability_trio:
   # Two-Bar Momentum Trigger
   # LONG: 2 Green candles + Close₂ > High₁
   # SHORT: 2 Red candles + Close₂ < Low₁
-  require_two_bar_momentum: true   # Wait for momentum pattern
+  require_two_bar_momentum: false  # DISABLED - Execute immediately on divergence
   max_wait_candles: 10             # Max candles to wait for pattern
   max_chase_pct: 0.5               # Safety filter: discard if moved > 0.5%
 

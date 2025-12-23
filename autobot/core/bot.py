@@ -258,7 +258,9 @@ class DivergenceBot:
         # Partial TP stats (removed - using optimal trailing only)
         self.full_wins = 0     # Trades that hit full 3R target
         self.trailed_exits = 0 # Trades that exited via trailing SL
-        self.total_r_realized = 0.0  # Actual cumulative R-value (accurate P&L)
+        self.total_r_realized = 0.0  # Cumulative R-value (theoretical)
+        self.total_pnl_usd = 0.0     # ACTUAL USD P&L from exchange (ground truth)
+        self.total_fees_paid = 0.0   # Track cumulative fees
         
         # Daily Summary
         self.last_daily_summary = time.time()
@@ -393,7 +395,8 @@ class DivergenceBot:
             'losses': self.losses,
             'full_wins': self.full_wins,
             'trailed_exits': self.trailed_exits,
-            'total_r_realized': self.total_r_realized,  # Accurate P&L tracking
+            'total_r_realized': self.total_r_realized,
+            'total_pnl_usd': self.total_pnl_usd,  # Exchange-verified USD P&L
             'signals_detected': self.signals_detected,
             'trades_executed': self.trades_executed,
             'last_daily_summary': self.last_daily_summary,
@@ -449,7 +452,8 @@ class DivergenceBot:
             self.losses = state.get('losses', 0)
             self.full_wins = state.get('full_wins', 0)
             self.trailed_exits = state.get('trailed_exits', 0)
-            self.total_r_realized = state.get('total_r_realized', 0.0)  # Accurate P&L
+            self.total_r_realized = state.get('total_r_realized', 0.0)
+            self.total_pnl_usd = state.get('total_pnl_usd', 0.0)  # Exchange-verified USD P&L
             self.signals_detected = state.get('signals_detected', 0)
             self.trades_executed = state.get('trades_executed', 0)
             self.last_daily_summary = state.get('last_daily_summary', time.time())
@@ -466,7 +470,7 @@ class DivergenceBot:
             pending_orders = len(self.pending_limit_orders)
             active = len(self.active_trades)
             logger.info(f"📂 State loaded from {file_path} (saved {age_hrs:.1f}h ago)")
-            logger.info(f"   Stats: {self.wins}W/{self.losses}L | P&L: {self.total_r_realized:+.2f}R")
+            logger.info(f"   Stats: {self.wins}W/{self.losses}L | P&L: ${self.total_pnl_usd:+.2f} ({self.total_r_realized:+.2f}R)")
             logger.info(f"   Orders: {pending_orders} pending, {active} active trades")
         except FileNotFoundError:
             logger.info("📂 No previous state found, starting fresh")
@@ -928,7 +932,8 @@ class DivergenceBot:
                 f"├ 📈 Trailed Exits: {self.trailed_exits}\n"
                 f"├ 🎯 Full TPs: {self.full_wins}\n"
                 f"├ WR: {exec_wr:.1f}%\n"
-                f"└ P&L: {pnl_r:+.2f}R\n\n"
+                f"├ 💵 USD P&L: **${self.total_pnl_usd:+.2f}**\n"
+                f"└ R-Total: {pnl_r:+.2f}R\n\n"
                 
                 f"🕵️ **SHADOW AUDIT**\n"
                 f"├ Match Rate: {self.auditor.get_stats()['rate']:.1f}%\n"
@@ -3803,31 +3808,36 @@ class DivergenceBot:
                                 sl = trade_info.get('sl', 0)
                                 
                                 # =========================================================
-                                # DEFINITIVE WIN/LOSS: Use Bybit Closed PnL API
+                                # EXCHANGE-VERIFIED P&L (Ground Truth)
                                 # =========================================================
-                                # This returns the ACTUAL realized PnL, no guessing!
+                                # Use Bybit Closed PnL API - this includes ALL fees!
                                 outcome = None
                                 exit_price = None
+                                actual_pnl_usd = 0.0
+                                used_exchange_pnl = False
                                 
                                 try:
+                                    # Small delay to ensure Bybit has processed the close
+                                    await asyncio.sleep(0.5)
                                     closed_pnl_records = self.broker.get_closed_pnl(sym, limit=5)
                                     if closed_pnl_records:
                                         # Find the most recent closed position for this symbol
                                         for record in closed_pnl_records:
                                             if record.get('symbol') == sym:
-                                                actual_pnl = float(record.get('closedPnl', 0))
+                                                actual_pnl_usd = float(record.get('closedPnl', 0))
                                                 exit_price = float(record.get('avgExitPrice', 0))
                                                 
-                                                # DEFINITIVE: Positive PnL = WIN, Negative = LOSS
-                                                if actual_pnl > 0:
+                                                # DEFINITIVE: Actual USD P&L (includes fees!)
+                                                if actual_pnl_usd > 0:
                                                     outcome = "win"
                                                 else:
                                                     outcome = "loss"
                                                 
-                                                logger.info(f"📊 CLOSED PnL: {sym} PnL=${actual_pnl:.4f} -> {outcome.upper()}")
+                                                used_exchange_pnl = True
+                                                logger.info(f"📊 EXCHANGE P&L: {sym} ${actual_pnl_usd:+.4f} -> {outcome.upper()}")
                                                 break
                                 except Exception as e:
-                                    logger.debug(f"Could not get closed pnl for {sym}: {e}")
+                                    logger.warning(f"Could not get closed pnl for {sym}: {e}")
                                 
                                 # Fallback: Use execution data if closed PnL not available
                                 if outcome is None and entry and tp and sl:
@@ -3908,70 +3918,71 @@ class DivergenceBot:
                                         logger.warning(f"Could not determine exit price for {sym}, assuming entry/loss")
                                 
                                 # =======================================================
-                                # COUNTER UPDATE & NOTIFICATION (runs for ALL outcomes)
+                                # COUNTER UPDATE & NOTIFICATION (EXCHANGE-VERIFIED)
                                 # =======================================================
                                 if outcome and entry and exit_price:
-                                    # Get trailing info (no partial TP in optimal strategy)
+                                    # Get trailing info
                                     sl_distance = trade_info.get('sl_distance', abs(exit_price - entry))
-                                    sl_current = trade_info.get('sl_current', trade_info.get('sl_initial', sl))
+                                    risk_amt = trade_info.get('risk_amt', 10)  # Risk amount in USD
                                     
-                                    # === SANITY CHECK: sl_distance should be reasonable ===
-                                    # Typically 0.5%-5% of entry price
-                                    if sl_distance > 0 and entry > 0:
-                                        sl_pct = (sl_distance / entry) * 100
-                                        if sl_pct > 10 or sl_pct < 0.1:
-                                            logger.warning(f"⚠️ ABNORMAL SL DISTANCE: {sym} sl_distance=${sl_distance:.6f} = {sl_pct:.2f}% of entry")
-                                    
-                                    # Calculate exit R for FULL position (no partial)
+                                    # Calculate theoretical R (for reference only)
                                     if sl_distance > 0:
                                         if side == 'long':
-                                            exit_r = (exit_price - entry) / sl_distance
+                                            theoretical_r = (exit_price - entry) / sl_distance
                                         else:
-                                            exit_r = (entry - exit_price) / sl_distance
+                                            theoretical_r = (entry - exit_price) / sl_distance
                                     else:
-                                        exit_r = 0
+                                        theoretical_r = 0
                                     
-                                    # === REALISTIC STATS: Show actual loss/gain ===
-                                    # No capping - stats reflect real performance
-                                    if exit_r < -1.1:
-                                        # Log warning for investigation but DON'T cap
-                                        logger.error(f"🚨 ABNORMAL LOSS: {sym} exit_r={exit_r:.2f}R! SL may have slipped!")
-                                        logger.error(f"   Entry: ${entry:.4f}, Exit: ${exit_price:.4f}, SL Distance: ${sl_distance:.6f}")
-                                        await self.send_telegram(
-                                            f"⚠️ **SL SLIPPAGE DETECTED**\n"
-                                            f"Symbol: `{sym}`\n"
-                                            f"Actual Loss: {exit_r:.2f}R\n"
-                                            f"Investigate if this keeps happening!"
-                                        )
-                                    
-                                    # Total R = actual exit_r (realistic, no capping)
-                                    total_r = exit_r
-                                    
-                                    # Categorize exit type
-                                    if exit_r >= 3.0:
-                                        exit_type = "🎯 FULL TP"
-                                        self.full_wins += 1
-                                    elif exit_r >= 0:
-                                        exit_type = "📈 TRAILED"
-                                        self.trailed_exits += 1
+                                    # === USE EXCHANGE P&L AS GROUND TRUTH ===
+                                    if used_exchange_pnl and actual_pnl_usd != 0:
+                                        # Convert USD P&L to R-multiple for consistency
+                                        if risk_amt > 0:
+                                            actual_r = actual_pnl_usd / risk_amt
+                                        else:
+                                            actual_r = theoretical_r
+                                        
+                                        # Track ACTUAL USD P&L (ground truth!)
+                                        self.total_pnl_usd += actual_pnl_usd
+                                        
+                                        # Categorize exit type based on ACTUAL P&L
+                                        if actual_pnl_usd > 0:
+                                            if actual_r >= 2.5:
+                                                exit_type = "🎯 BIG WIN"
+                                                self.full_wins += 1
+                                            else:
+                                                exit_type = "📈 WIN"
+                                                self.trailed_exits += 1
+                                            outcome = "win"
+                                            outcome_display = f"✅ ${actual_pnl_usd:+.2f} ({actual_r:+.2f}R)"
+                                            self.wins += 1
+                                        else:
+                                            exit_type = "❌ LOSS"
+                                            outcome = "loss"
+                                            outcome_display = f"❌ ${actual_pnl_usd:.2f} ({actual_r:.2f}R)"
+                                            self.losses += 1
+                                        
+                                        # Track R (using actual)
+                                        self.total_r_realized += actual_r
+                                        
+                                        pnl_source = "Exchange-verified ✓"
                                     else:
-                                        exit_type = "⚖️ BE+" if exit_r >= -0.1 else "❌ LOSS"
-                                    
-                                    # Count as win if total_r > 0
-                                    self.total_r_realized += total_r  # Track actual R earned
-                                    
-                                    if total_r > 0:
-                                        outcome_display = f"✅ +{total_r:.2f}R"
-                                        outcome = "win"
-                                        self.wins += 1
-                                    elif total_r >= -0.1:
-                                        outcome_display = f"⚖️ BE ({total_r:+.2f}R)"
-                                        outcome = "win"  # Count BE as win for analytics
-                                        self.wins += 1
-                                    else:
-                                        outcome_display = f"❌ {total_r:.2f}R"
-                                        outcome = "loss"
-                                        self.losses += 1
+                                        # Fallback: Use theoretical R (less accurate)
+                                        actual_r = theoretical_r
+                                        self.total_r_realized += theoretical_r
+                                        
+                                        if theoretical_r > 0:
+                                            outcome = "win"
+                                            outcome_display = f"✅ ~{theoretical_r:+.2f}R"
+                                            self.wins += 1
+                                            exit_type = "📈 WIN"
+                                        else:
+                                            outcome = "loss"
+                                            outcome_display = f"❌ ~{theoretical_r:.2f}R"
+                                            self.losses += 1
+                                            exit_type = "❌ LOSS"
+                                        
+                                        pnl_source = "Estimated (API unavailable)"
                                     
                                     # Calculate P/L percentage
                                     if side == 'long':
@@ -3979,8 +3990,7 @@ class DivergenceBot:
                                     else:
                                         pnl_pct = ((entry - exit_price) / entry) * 100
                                     
-                                    # *** CRITICAL FIX: Update learner analytics ***
-                                    # This ensures combo stats are updated for executed trades
+                                    # Update learner analytics
                                     resolved = self.learner.resolve_executed_trade(
                                         sym, side, outcome, 
                                         exit_price=exit_price,
@@ -3991,7 +4001,7 @@ class DivergenceBot:
                                     if not resolved:
                                         logger.warning(f"Could not resolve trade in learner: {sym} {side}")
                                     
-                                    # Get updated WR/N from analytics (now includes this trade)
+                                    # Get updated WR/N from analytics
                                     updated_stats = self.learner.get_combo_stats(sym, side, combo)
                                     if updated_stats:
                                         wr_info = f"WR: {updated_stats['wr']:.0f}% (LB: {updated_stats['lower_wr']:.0f}%) | N={updated_stats['total']}"
@@ -4001,21 +4011,35 @@ class DivergenceBot:
                                     # Duration
                                     duration_mins = (time.time() - trade_info['open_time']) / 60
                                     
-                                    # Build breakdown message (no partial TP in optimal strategy)
-                                    breakdown = f"├ Full position: {exit_r:+.2f}R\n\n"
+                                    # === ENHANCED NOTIFICATION WITH USD P&L ===
+                                    # Show both USD and R for complete picture
+                                    if used_exchange_pnl:
+                                        pnl_detail = (
+                                            f"💵 **P&L**: {outcome_display}\n"
+                                            f"├ USD: **${actual_pnl_usd:+.2f}** (after fees)\n"
+                                            f"├ Theoretical: {theoretical_r:+.2f}R\n"
+                                            f"└ Source: {pnl_source}\n\n"
+                                        )
+                                    else:
+                                        pnl_detail = (
+                                            f"💵 **P&L**: {outcome_display}\n"
+                                            f"└ Source: {pnl_source}\n\n"
+                                        )
                                     
                                     await self.send_telegram(
                                         f"📝 **TRADE CLOSED**\n"
                                         f"━━━━━━━━━━━━━━━━━━━━\n"
                                         f"📊 Symbol: `{sym}`\n"
                                         f"📈 Side: **{side.upper()}**\n"
-                                        f"🎯 Combo: `{combo}`\n\n"
-                                        f"💰 **RESULT**: {outcome_display}\n"
-                                        f"{breakdown}"
+                                        f"🏷️ Type: {exit_type}\n\n"
+                                        f"{pnl_detail}"
                                         f"📈 Entry: ${entry:.4f}\n"
                                         f"📉 Exit: ${exit_price:.4f}\n"
+                                        f"📊 Move: {pnl_pct:+.2f}%\n"
                                         f"⏱️ Duration: {duration_mins:.0f}m\n\n"
-                                        f"📊 **STATS**\n"
+                                        f"📊 **CUMULATIVE**\n"
+                                        f"├ Total P&L: **${self.total_pnl_usd:+.2f}**\n"
+                                        f"├ W/L: {self.wins}W / {self.losses}L\n"
                                         f"└ {wr_info}"
                                     )
                                     

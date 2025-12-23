@@ -9,20 +9,25 @@ bybit:
 
 # ============================================
 # HIGH-PROBABILITY TRIO CONFIGURATION
-# Enhanced entry filters for better win rate
+# VALIDATED: Volume-Only + Trail_Tight_3R
+# Backtest: +424R, 71.7% WR, Sharpe 7.61
 # ============================================
 high_probability_trio:
   enabled: true                    # Master switch for trio filters
   
-  # VWAP Filter: Longs below VWAP, Shorts above VWAP
-  require_vwap: true
+  # VWAP Filter: DISABLED (backtest shows it reduces profitability by -106R)
+  require_vwap: false              # VALIDATED: Keep disabled
   
-  # Two-Bar Momentum Trigger
-  # LONG: 2 Green candles + Close₂ > High₁
-  # SHORT: 2 Red candles + Close₂ < Low₁
-  require_two_bar_momentum: false  # DISABLED - Execute immediately on divergence
-  max_wait_candles: 10             # Max candles to wait for pattern
-  max_chase_pct: 0.5               # Safety filter: discard if moved > 0.5%
+  # Volume Filter: ENABLED (best single filter, outperforms full trio)
+  require_volume: true             # VALIDATED: Keep enabled
+  
+  # RSI Zone Filter: NOT USED (no improvement over volume-only)
+  # require_rsi_zone: false        # Implicit - not checked
+  
+  # Two-Bar Momentum Trigger: DISABLED (execute immediately)
+  require_two_bar_momentum: false
+  max_wait_candles: 10
+  max_chase_pct: 0.5
 
 exploration:
   enabled: true

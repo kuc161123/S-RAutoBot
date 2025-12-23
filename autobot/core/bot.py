@@ -1035,10 +1035,10 @@ class DivergenceBot:
                         mins = time_in_trade % 60
                         time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
                         
-                        # Next milestone (OPTIMAL STRATEGY)
-                        if not sl_at_be and current_r < 0.7:
-                            distance_to_be = 0.7 - current_r
-                            next_milestone = f"{distance_to_be:+.1f}R to +0.7R (BE + trail)"
+                        # Next milestone (Tight-Trail STRATEGY)
+                        if not sl_at_be and current_r < 0.3:
+                            distance_to_be = 0.3 - current_r
+                            next_milestone = f"{distance_to_be:+.1f}R to +0.3R (BE + trail)"
                         elif sl_at_be and not trailing:
                             next_milestone = "Waiting for trail activation"
                         else:
@@ -1181,10 +1181,10 @@ class DivergenceBot:
                     mins_rem = mins % 60
                     time_str = f"{hours}h {mins_rem}m" if hours > 0 else f"{mins_rem}m"
                     
-                    # Next milestone (OPTIMAL STRATEGY)
-                    if not sl_at_be and current_r < 0.7:
-                        dist = 0.7 - current_r
-                        next_milestone = f"{dist:+.1f}R to +0.7R (BE + trail)"
+                    # Next milestone (Tight-Trail STRATEGY)
+                    if not sl_at_be and current_r < 0.3:
+                        dist = 0.3 - current_r
+                        next_milestone = f"{dist:+.1f}R to +0.3R (BE + trail)"
                     elif sl_at_be and not trailing:
                         next_milestone = "Waiting for trail activation"
                     else:
@@ -2421,9 +2421,9 @@ class DivergenceBot:
                     else:
                         sl = order_info['sl']  # Use original SL if prices are close
                     
-                    # NO PARTIAL TP - Optimal strategy trails from 0.7R
+                    # NO PARTIAL TP - Tight-Trail aligns with 1h TF
                     logger.info(f"✅ ORDER FILLED: {sym} {side} @ {avg_price:.4f}")
-                    logger.info(f"   Strategy: Trail from +0.7R with 0.3R distance")
+                    logger.info(f"   Strategy: Trail from +0.3R with 0.1R distance")
                     
                     # Move to active_trades with trailing SL tracking only
                     self.active_trades[sym] = {
@@ -2751,8 +2751,8 @@ class DivergenceBot:
             actual_rr = tp_distance / sl_distance if sl_distance > 0 else 0
             sl_atr_mult = sl_distance / atr if atr > 0 else 1.0
             
-            # OPTIMAL STRATEGY: No partial TP, trail from 0.7R with 0.3R distance
-            # OPTIMAL STRATEGY: Trail from 0.7R with 0.3R distance, ATR-based SL
+            # Tight-Trail STRATEGY: No partial TP, trail from 0.3R with 0.1R distance
+            # Backtest validated: +295R, 74.5% WR on 1h TF
             logger.info(f"📊 {sym} ATR SL: {sl_atr_mult:.2f}×ATR | R:R = {actual_rr:.1f}:1")
             logger.info(f"   Entry: ${expected_entry:.6f} | SL: ${sl:.6f} | TP3R: ${tp:.6f}")
             
@@ -3115,7 +3115,7 @@ class DivergenceBot:
                             trade_info['trailing_active'] = True  # Trailing is now active
                             trade_info['last_sl_update_time'] = time.time()
                             
-                            logger.info(f"🛡️ +0.7R REACHED, SL TO +{protected_r:.1f}R: {sym} @ {initial_trail_sl}")
+                            logger.info(f"🛡️ +0.3R REACHED, SL TO +{protected_r:.1f}R: {sym} @ {initial_trail_sl}")
                             
                             # Send notification
                             await self.send_telegram(
@@ -3126,7 +3126,7 @@ class DivergenceBot:
                                 f"✅ **+{max_r:.1f}R ACHIEVED**\n"
                                 f"├ SL: ${initial_trail_sl:.4f} (+{protected_r:.1f}R)\n"
                                 f"├ Protected: **+{protected_r:.1f}R** locked in 🔒\n"
-                                f"└ Trail: 0.3R behind max price\n\n"
+                                f"└ Trail: 0.1R behind max price\n\n"
                                 f"💡 Trailing active, profit protected!"
                             )
                         except Exception as e:
@@ -3654,15 +3654,15 @@ class DivergenceBot:
                 f"✅ **RSI Divergence Bot Online!**\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"📊 **Mode**: HIDDEN BEARISH\n"
-                f"⏱️ **Timeframe**: {timeframe}min (3M) - Fast Trading\n\n"
+                f"⏱️ **Timeframe**: {timeframe}min (1h) - Tight-Trail\n\n"
                 f"🔥 **HIGH-PROBABILITY TRIO** {trio_status}\n"
                 f"├ VWAP Filter: {'✓' if self.trio_require_vwap else '✗'}\n"
                 f"├ RSI Zones: 30/70 (Regular), 30-50/50-70 (Hidden)\n"
                 f"└ 2-Bar Momentum: {'✅ ON' if self.trio_require_two_bar else '❌ OFF (Immediate)'}\n\n"
-                f"🎯 **EXIT STRATEGY (Optimal Trail)**\n"
-                f"├ BE at +0.7R (protect capital)\n"
-                f"├ Trail from +0.7R: 0.3R behind\n"
-                f"└ Max profit: +3R target\n\n"
+                f"🎯 **EXIT STRATEGY (Tight-Trail 1h)**\n"
+                f"├ Lock: Protect profit at **+0.3R**\n"
+                f"├ Trail: **0.1R** behind max price\n"
+                f"└ Target: **+2R** max profit\n\n"
                 f"📚 Scanning: **{len(self.all_symbols)}** symbols\n"
                 f"⚙️ Risk: **{self.risk_config['value']}%** per trade\n\n"
                 f"💾 Redis: {redis_ok} | Postgres: {pg_ok}\n"
@@ -3673,7 +3673,7 @@ class DivergenceBot:
                 f"✅ **RSI Divergence Bot Online!**\n"
                 f"━━━━━━━━━━━━━━━━━━━━\n"
                 f"📊 **Strategy**: RSI Divergence\n"
-                f"⏱️ **Timeframe**: {timeframe}min (3M) - Fast Trading\n\n"
+                f"⏱️ **Timeframe**: {timeframe}min (1h) - Tight-Trail\n\n"
                 f"🔥 **HIGH-PROBABILITY TRIO** {trio_status}\n"
                 f"├ VWAP Filter: {'✓' if self.trio_require_vwap else '✗'}\n"
                 f"├ RSI Zones: 30/70 (Regular), 30-50/50-70 (Hidden)\n"

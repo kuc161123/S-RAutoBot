@@ -639,7 +639,7 @@ class Bybit:
         d_tick = Decimal(tick_size)
         # Round to nearest tick
         rounded = (d_price / d_tick).quantize(Decimal('1')) * d_tick
-        return f"{rounded:f}"  # Format without scientific notation
+        return str(rounded)  # Use str() to preserve quantized precision (e.g. 0.7540)
 
     def set_sl_only(self, symbol: str, stop_loss: float, qty: float = None) -> Dict[str, Any]:
         """Set only Stop Loss for a position using trading-stop.

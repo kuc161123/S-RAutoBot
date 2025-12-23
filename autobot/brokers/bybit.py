@@ -614,24 +614,67 @@ class Bybit:
         return self._request("POST", "/v5/position/trading-stop", data)
 
     def _get_precisions(self, symbol: str) -> tuple[str, str]:
-        """Get (tick_size, qty_step) as strings for a symbol (cached)."""
+        """Get (tick_size, qty_step) as strings for a symbol (cached).
+        
+        CRITICAL: This is used for SL/TP/price rounding. 
+        If cache miss, fetches from API. Always logs to help debug.
+        """
         if symbol in self.precisions_cache:
             return self.precisions_cache[symbol]
+        
+        # Cache miss - fetch from API
+        logger.warning(f"⚠️ Precision cache miss for {symbol} - fetching from API...")
         
         try:
             instruments = self.get_instruments_info(symbol=symbol)
             if instruments:
                 for i in instruments:
                     if i['symbol'] == symbol:
-                        ts = i.get('priceFilter', {}).get('tickSize', '0.01')
+                        ts = i.get('priceFilter', {}).get('tickSize', '0.0001')
                         qs = i.get('lotSizeFilter', {}).get('qtyStep', '0.001')
                         self.precisions_cache[symbol] = (ts, qs)
+                        logger.info(f"✅ Cached precisions for {symbol}: tickSize={ts}, qtyStep={qs}")
                         return (ts, qs)
         except Exception as e:
-            logger.error(f"Failed to fetch precisions for {symbol}: {e}")
+            logger.error(f"❌ Failed to fetch precisions for {symbol}: {e}")
         
-        # Fallback defaults
-        return ("0.01", "0.001")
+        # Fallback - use conservative defaults and log loudly
+        logger.error(f"❌ USING FALLBACK PRECISION for {symbol}: tickSize=0.0001, qtyStep=0.001")
+        self.precisions_cache[symbol] = ("0.0001", "0.001")  # Cache fallback too
+        return ("0.0001", "0.001")
+
+    def preload_all_precisions(self) -> int:
+        """Preload precision info for ALL USDT perpetual symbols.
+        
+        Call this at bot startup to avoid per-trade API calls.
+        Returns number of symbols cached.
+        """
+        try:
+            logger.info("📥 Preloading precision data for all USDT perpetuals...")
+            
+            # Fetch ALL instruments at once (single API call)
+            resp = self._request("GET", "/v5/market/instruments-info", {"category": "linear", "limit": 1000})
+            if not resp or resp.get("retCode") != 0:
+                logger.error(f"Failed to fetch instruments: {resp}")
+                return 0
+            
+            instruments = resp.get("result", {}).get("list", [])
+            count = 0
+            
+            for inst in instruments:
+                symbol = inst.get("symbol", "")
+                if symbol.endswith("USDT"):
+                    ts = inst.get('priceFilter', {}).get('tickSize', '0.0001')
+                    qs = inst.get('lotSizeFilter', {}).get('qtyStep', '0.001')
+                    self.precisions_cache[symbol] = (ts, qs)
+                    count += 1
+            
+            logger.info(f"✅ Preloaded precisions for {count} USDT perpetual symbols")
+            return count
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to preload precisions: {e}")
+            return 0
 
     def _round_price(self, price: float, tick_size: str) -> str:
         """Round price to tick size string."""

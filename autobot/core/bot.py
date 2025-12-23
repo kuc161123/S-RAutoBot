@@ -344,6 +344,11 @@ class DivergenceBot:
             api_secret=self.cfg['bybit']['api_secret']
         ))
         
+        # CRITICAL: Preload ALL symbol precisions at startup
+        # This ensures SL/TP prices are always rounded correctly
+        precision_count = self.broker.preload_all_precisions()
+        logger.info(f"📐 Precision cache ready with {precision_count} symbols")
+        
     def load_overrides(self):
         """Load combos - DIRECT DIVERGENCE EXECUTION MODE
         

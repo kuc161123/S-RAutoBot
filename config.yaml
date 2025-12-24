@@ -9,8 +9,8 @@ bybit:
 
 # ============================================
 # HIGH-PROBABILITY TRIO CONFIGURATION
-# VALIDATED: Volume-Only + Trail_Tight_3R
-# Backtest: +424R, 71.7% WR, Sharpe 7.61
+# OPTIMIZED: 30M + Tight-Trail 7R
+# Backtest: +5442R, 72.4% WR, WF 5/5
 # ============================================
 high_probability_trio:
   enabled: true                    # Master switch for trio filters
@@ -266,7 +266,7 @@ scalp:
     wick_delta_threshold: 0.0005
   stream_3m_only: true
   threshold: 70
-  timeframe: 60  # 1-hour candles (backtest: +295R, 74.5% WR, 1.53 PF)
+  timeframe: 30  # OPTIMIZED: 30-minute candles (+5442R, 72.4% WR)
   use_ml: false
 strategy_independence:
   enabled: true

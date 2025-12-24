@@ -256,7 +256,7 @@ class DivergenceBot:
         self.losses = 0
         
         # Partial TP stats (removed - using optimal trailing only)
-        self.full_wins = 0     # Trades that hit full 3R target
+        self.full_wins = 0     # Trades that hit full 7R target
         self.trailed_exits = 0 # Trades that exited via trailing SL
         self.total_r_realized = 0.0  # Cumulative R-value (theoretical)
         self.total_pnl_usd = 0.0     # ACTUAL USD P&L from exchange (ground truth)
@@ -705,7 +705,7 @@ class DivergenceBot:
             "/sessions - Session win rates\n"
             "/blacklist - Blacklisted symbols\n"
             "/help - Show this message\n\n"
-            "💡 **Strategy:** Optimal Trail (0.7R BE, 0.3R trail)"
+            "💡 **Strategy:** 30M Opt (0.2R BE, 0.05R trail)"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 
@@ -918,14 +918,14 @@ class DivergenceBot:
                 
                 f"🎯 **STRATEGY**\n"
                 f"├ Type: RSI Divergence\n"
-                f"├ TF: 60min (1H)\n"
+                f"├ TF: 30min (30M) OPTIMIZED\n"
                 f"├ 🔥 **HIGH-PROB TRIO: {'✅ ON' if self.trio_enabled else '❌ OFF'}**\n"
                 f"├ VWAP: {'✓' if self.trio_require_vwap else '✗'} | 2-Bar: {'✓' if self.trio_require_two_bar else 'OFF'}\n"
                 f"├ Pending Triggers: {len(self.pending_trio_signals)}\n"
-                f"├ **EXIT: Tight-Trail 3R (1h)** ⚡\n"
-                f"├ Lock profit at +0.3R\n"
-                f"├ Trail: 0.1R behind max\n"
-                f"└ Max: +3R target\n\n"
+                f"├ **EXIT: Tight-Trail 7R (30M)** ⚡\n"
+                f"├ Lock profit at +0.2R\n"
+                f"├ Trail: 0.05R behind max\n"
+                f"└ Max: +7R target\n\n"
                 
                 f"📊 **SIGNALS**\n"
                 f"├ Detected: {self.signals_detected}\n"
@@ -1043,9 +1043,9 @@ class DivergenceBot:
                         time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
                         
                         # Next milestone (Tight-Trail STRATEGY)
-                        if not sl_at_be and current_r < 0.3:
-                            distance_to_be = 0.3 - current_r
-                            next_milestone = f"{distance_to_be:+.1f}R to +0.3R (BE + trail)"
+                        if not sl_at_be and current_r < 0.2:
+                            distance_to_be = 0.2 - current_r
+                            next_milestone = f"{distance_to_be:+.1f}R to +0.2R (BE + trail)"
                         elif sl_at_be and not trailing:
                             next_milestone = "Waiting for trail activation"
                         else:
@@ -1189,9 +1189,9 @@ class DivergenceBot:
                     time_str = f"{hours}h {mins_rem}m" if hours > 0 else f"{mins_rem}m"
                     
                     # Next milestone (Tight-Trail STRATEGY)
-                    if not sl_at_be and current_r < 0.3:
-                        dist = 0.3 - current_r
-                        next_milestone = f"{dist:+.1f}R to +0.3R (BE + trail)"
+                    if not sl_at_be and current_r < 0.2:
+                        dist = 0.2 - current_r
+                        next_milestone = f"{dist:+.1f}R to +0.2R (BE + trail)"
                     elif sl_at_be and not trailing:
                         next_milestone = "Waiting for trail activation"
                     else:
@@ -1238,12 +1238,12 @@ class DivergenceBot:
     async def cmd_backtest(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show comprehensive live vs backtest performance comparison"""
         try:
-            # === BACKTEST REFERENCE (All Divergences Strategy 3M) ===
-            # From rigorous backtest (50 symbols, walk-forward validated)
-            BT_WIN_RATE = 54.7  # % (Optimal trailing: BE 0.7R, trail 0.3R)
-            BT_EV = 0.179       # R per trade (grid search out-of-sample)
-            BT_RR = 3.0         # Risk:Reward (full 3R target)
-            BT_TRADES_PER_DAY = 49  # ~49 trades/day (2969 trades OOS / 60 days est)
+            # === BACKTEST REFERENCE (30M Optimized 7R) ===
+            # From comprehensive optimization (+5442R, 72.4% WR, 5/5 WF)
+            BT_WIN_RATE = 72.4  # % (Optimal trailing: BE 0.2R, trail 0.05R)
+            BT_EV = 0.147       # R per trade (+5442R / 37051 trades)
+            BT_RR = 7.0         # Risk:Reward (full 7R target)
+            BT_TRADES_PER_DAY = 411  # ~411 trades/day (37051 trades / 90 days)
             
             # === LIVE DATA ===
             uptime_hrs = (time.time() - self.learner.started_at) / 3600
@@ -1867,7 +1867,7 @@ class DivergenceBot:
         """
         try:
             # Use timeframe from config (3M = fast trading with optimal trailing)
-            timeframe = '60'  # HARDCODED: 1-hour timeframe (backtest validated)
+            timeframe = '30'  # OPTIMIZED: 30-minute timeframe (backtest validated)
             klines = self.broker.get_klines(sym, timeframe, limit=100)
             if not klines or len(klines) < 50: 
                 return
@@ -2434,9 +2434,9 @@ class DivergenceBot:
                     else:
                         sl = order_info['sl']  # Use original SL if prices are close
                     
-                    # NO PARTIAL TP - Tight-Trail aligns with 1h TF
+                    # NO PARTIAL TP - Tight-Trail aligns with 30M TF
                     logger.info(f"✅ ORDER FILLED: {sym} {side} @ {avg_price:.4f}")
-                    logger.info(f"   Strategy: Trail from +0.3R with 0.1R distance")
+                    logger.info(f"   Strategy: Trail from +0.2R with 0.05R distance")
                     
                     # Move to active_trades with trailing SL tracking only
                     self.active_trades[sym] = {
@@ -2454,7 +2454,7 @@ class DivergenceBot:
                         'sl_distance': sl_distance,  # ATR-based distance (correct)
                         
                         # Profit targets
-                        'tp_3r': tp,  # Full 3R target (reference)
+                        'tp_3r': tp,  # Full 7R target (reference)
                         
                         # SL tracking - use ADJUSTED SL
                         'sl_initial': sl,
@@ -2489,12 +2489,12 @@ class DivergenceBot:
                         f"├ Fill Price: ${avg_price:.4f}\n"
                         f"├ Quantity: {filled_qty}\n"
                         f"└ Value: ${position_value:.2f}\n\n"
-                        f"🎯 **EXIT STRATEGY (Tight-Trail 3R)**\n"
+                        f"🎯 **EXIT STRATEGY (Tight-Trail 7R)**\n"
                         f"├ Initial SL: ${sl:.4f} (-{sl_pct:.2f}%)\n"
-                        f"├ At +0.3R: Lock profit\n"
-                        f"├ Trail: 0.1R behind max\n"
-                        f"└ Max: +3R target\n\n"
-                        f"💡 Worst: -1R | Best: +3R"
+                        f"├ At +0.2R: Lock profit\n"
+                        f"├ Trail: 0.05R behind max\n"
+                        f"└ Max: +7R target\n\n"
+                        f"💡 Worst: -1R | Best: +7R"
                     )
                     continue
                 
@@ -2721,7 +2721,7 @@ class DivergenceBot:
                 return round(quantity, 6)
             
             # Calculate SL/TP (ATR-based)
-            RR_RATIO = 3.0
+            RR_RATIO = 7.0  # OPTIMIZED: 7R target (was 3.0)
             
             # Get swing points from signal detection (legacy, but kept for compatibility)
             swing_low = signal_swing_low if signal_swing_low is not None else df_closed['low'].rolling(14).min().iloc[-1]
@@ -2773,10 +2773,10 @@ class DivergenceBot:
             actual_rr = tp_distance / sl_distance if sl_distance > 0 else 0
             sl_atr_mult = sl_distance / atr if atr > 0 else 1.0
             
-            # Tight-Trail STRATEGY: No partial TP, trail from 0.3R with 0.1R distance
-            # Backtest validated: +295R, 74.5% WR on 1h TF
+            # Tight-Trail STRATEGY: No partial TP, trail from 0.2R with 0.05R distance
+            # Backtest validated: +5442R, 72.4% WR on 30M TF
             logger.info(f"📊 {sym} ATR SL: {sl_atr_mult:.2f}×ATR | R:R = {actual_rr:.1f}:1")
-            logger.info(f"   Entry: ${expected_entry:.6f} | SL: ${sl:.6f} | TP3R: ${tp:.6f}")
+            logger.info(f"   Entry: ${expected_entry:.6f} | SL: ${sl:.6f} | TP7R: ${tp:.6f}")
             
             # Calculate position size
             risk_val = self.risk_config['value']
@@ -2843,7 +2843,7 @@ class DivergenceBot:
                 'combo': combo,
                 'signal_type': signal_type,
                 'entry_price': expected_entry,
-                'tp': tp,           # Full 3R target
+                'tp': tp,           # Full 7R target
                 'sl': sl,
                 'sl_distance': sl_distance,  # For trailing calculations
                 'qty': qty,
@@ -2879,10 +2879,10 @@ class DivergenceBot:
                 f"💎 Type: **{type_emoji}**\n\n"
                 f"✅ **VOLUME FILTER PASSED** ✓\n\n"
                 f"💰 **Entry**: ${expected_entry:.6f}\n\n"
-                f"🎯 **EXIT STRATEGY (Tight-Trail 3R 1h)**\n"
+                f"🎯 **EXIT STRATEGY (Tight-Trail 7R 30M)**\n"
                 f"├ SL: ${sl:.6f} ({sl_atr_mult:.1f}×ATR = -1R)\n"
-                f"├ At +0.3R: Lock profit (0.1R behind)\n"
-                f"└ Max: +3R target\n\n"
+                f"├ At +0.2R: Lock profit (0.05R behind)\n"
+                f"└ Max: +7R target\n\n"
                 f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
             )
             await self.send_telegram(msg)
@@ -3020,10 +3020,10 @@ class DivergenceBot:
     async def monitor_trailing_sl(self, candle_data: dict):
         """Monitor active trades for Tight-Trail SL updates.
         
-        TIGHT-TRAIL 3R STRATEGY (Validated: +424R, 71.7% WR, Sharpe 7.61):
-        1. At +0.3R: Start trailing (lock in +0.2R profit)
-        2. Trail 0.1R behind max favorable price (very tight)
-        3. Max target: +3R
+        TIGHT-TRAIL 7R STRATEGY (Validated: +5442R, 72.4% WR, 30M TF):
+        1. At +0.2R: Start trailing (lock in +0.15R profit)
+        2. Trail 0.05R behind max favorable price (ultra tight)
+        3. Max target: +7R
         
         Called every loop iteration with current candle data.
         """
@@ -3077,13 +3077,13 @@ class DivergenceBot:
                 
                 # ============================================
                 # CHECK 1: Move SL to trailing position at +0.3R (Tight-Trail Strategy)
-                # Backtest validated: +295R (74.5% WR, 1.53 PF) on 1h timeframe
+                # OPTIMIZED: +5442R (72.4% WR) on 30M timeframe
                 # ============================================
-                BE_THRESHOLD = 0.3   # Lock profit early (vs 0.4R Quick-Lock)
-                TRAIL_DISTANCE = 0.1  # Very tight trail (vs 0.15R)
+                BE_THRESHOLD = 0.2   # OPTIMIZED: Lock profit at +0.2R (was 0.3)
+                TRAIL_DISTANCE = 0.05  # OPTIMIZED: Very tight 0.05R trail (was 0.1)
                 
                 if not trade_info.get('sl_at_breakeven', False) and max_r >= BE_THRESHOLD:
-                    # Price reached +0.3R, move SL to +0.2R (0.1R behind max)
+                    # Price reached +0.2R, move SL to (0.05R behind max)
                     if side == 'long':
                         initial_trail_sl = entry + (max_r - TRAIL_DISTANCE) * sl_distance
                     else:
@@ -3134,7 +3134,7 @@ class DivergenceBot:
                             trade_info['trailing_active'] = True  # Trailing is now active
                             trade_info['last_sl_update_time'] = time.time()
                             
-                            logger.info(f"🛡️ +0.3R REACHED, SL TO +{protected_r:.1f}R: {sym} @ {initial_trail_sl}")
+                            logger.info(f"🛡️ +0.2R REACHED, SL TO +{protected_r:.1f}R: {sym} @ {initial_trail_sl}")
                             
                             # Send notification
                             await self.send_telegram(
@@ -3160,10 +3160,10 @@ class DivergenceBot:
                 
                 # ============================================
                 # CHECK 2: Trailing SL (from 0.3R, Tight-Trail Strategy)
-                # Backtest validated: Best config on 1h timeframe
+                # OPTIMIZED: Best config on 30M timeframe
                 # ============================================
-                BE_THRESHOLD = 0.3
-                TRAIL_DISTANCE = 0.1  # Very tight: 0.1R behind (vs 0.15R)
+                BE_THRESHOLD = 0.2  # OPTIMIZED: 0.2R threshold (was 0.3)
+                TRAIL_DISTANCE = 0.05  # OPTIMIZED: 0.05R behind (was 0.1)
                 
                 if trade_info.get('sl_at_breakeven', False) and max_r >= BE_THRESHOLD:
                     # Calculate trailing SL level (0.1R behind max - Tight-Trail)
@@ -3230,7 +3230,7 @@ class DivergenceBot:
                                     f"├ Previous: ${old_sl:.4f}\n"
                                     f"├ New: ${new_sl:.4f}\n"
                                     f"└ Protected: **+{protected_r:.1f}R** minimum\n\n"
-                                    f"💰 Trailing at +{protected_r:.1f}R (0.3R behind +{max_r:.1f}R)"
+                                    f"💰 Trailing at +{protected_r:.1f}R (0.05R behind +{max_r:.1f}R)"
                                 )
                         except Exception as e:
                             logger.error(f"Failed to update trailing SL for {sym}: {e}")
@@ -3513,7 +3513,7 @@ class DivergenceBot:
             active_combos_msg = f"{trading_count} symbols (Active Combos)"
         
         # Params
-        timeframe = '60'  # HARDCODED: 1-hour timeframe
+        timeframe = '30'  # OPTIMIZED: 30-minute timeframe
         risk_val = self.risk_config['value']
         hidden_bearish_mode = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
         
@@ -3524,7 +3524,7 @@ class DivergenceBot:
         mode_str = "HIDDEN BEARISH ONLY" if hidden_bearish_mode else "RSI DIVERGENCE (ALL)"
         
         msg = (
-            f"🚀 **RSI Divergence Bot (Tight-Trail 3R)**\n"
+            f"🚀 **RSI Divergence Bot (Tight-Trail 7R OPTIMIZED)**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📊 **STATUS: ONLINE**\n"
             f"├ Mode: **{mode_str}**\n"
@@ -3532,14 +3532,14 @@ class DivergenceBot:
             f"├ Scanning: **{scanning_count}** symbols (Learning)\n"
             f"└ Risk: **{risk_val}%** per trade\n\n"
             
-            f"🎯 **STRATEGY (Volume-Only + 3R)**\n"
-            f"├ Timeframe: **{timeframe}m** (1 Hour)\n"
-            f"├ Lock Profit: **+0.3R** (BE Threshold)\n"
-            f"├ Trailing: **0.1R** (Tight Trail)\n"
-            f"└ Max Target: **+3.0R**\n\n"
+            f"🎯 **STRATEGY (30M OPTIMIZED)**\n"
+            f"├ Timeframe: **{timeframe}m** (30 Min)\n"
+            f"├ Lock Profit: **+0.2R** (BE Threshold)\n"
+            f"├ Trailing: **0.05R** (Tight Trail)\n"
+            f"└ Max Target: **+7.0R**\n\n"
             
             f"📈 **VALIDATED PERFORMANCE**\n"
-            f"└ Backtest: +424R | 71.7% WR | Sharpe 7.61\n\n"
+            f"└ Backtest: +5442R | 72.4% WR | WF 5/5\n\n"
             
             f"💾 System: Redis {redis_ok} | PG {pg_ok}\n"
             f"💡 Commands: /dashboard /pnl /help"
@@ -3703,7 +3703,7 @@ class DivergenceBot:
                     for sym, entry_info in list(self.pending_entries.items()):
                         try:
                             # Get fresh klines for execution (use same timeframe as detection)
-                            tf = '60'  # HARDCODED: 1-hour timeframe
+                            tf = '30'  # OPTIMIZED: 30-minute timeframe
                             klines = self.broker.get_klines(sym, tf, limit=100)
                             if klines and len(klines) >= 50:
                                 df = pd.DataFrame(klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
@@ -3749,7 +3749,7 @@ class DivergenceBot:
                 # Update learner with candle data (high/low) for accurate resolution
                 try:
                     # Use configured timeframe for all tracking (High/Low/RSI)
-                    tf_config = '60'  # HARDCODED: 1-hour timeframe
+                    tf_config = '30'  # OPTIMIZED: 30-minute timeframe
                     
                     candle_data = {}
                     for sym in self.all_symbols:

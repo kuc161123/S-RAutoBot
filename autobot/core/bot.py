@@ -1930,7 +1930,7 @@ class DivergenceBot:
             except:
                 tf_int = 3 # fallback to 3m
                 
-            COOLDOWN_BARS = 10  # Match backtest: min 10 bars between signals per symbol
+            COOLDOWN_BARS = 3  # OPTIMIZED: 3 bars between signals per symbol
             CANDLE_MINUTES = tf_int
             COOLDOWN_SECONDS = COOLDOWN_BARS * CANDLE_MINUTES * 60
             
@@ -2735,11 +2735,10 @@ class DivergenceBot:
             constraint_atr = signal_atr if signal_atr is not None else atr
             
             # ============================================
-            # ATR-BASED SL: 1.0x ATR (more consistent than pivot)
-            # This avoids issues where swing low/high causes invalid SL
+            # ATR-BASED SL: DISABLED (Optimization found fixed 1.2% best)
             # ============================================
-            ATR_SL_MULTIPLIER = 1.0  # 1.0x ATR for SL distance
-            MIN_SL_PCT = 2.0  # Minimum 2% SL distance (matches backtest)
+            ATR_SL_MULTIPLIER = 0.0  # 0.0x ATR (Disable ATR component)
+            MIN_SL_PCT = 1.2  # OPTIMIZED: Fixed 1.2% SL (matches backtest)
             
             atr_sl_distance = ATR_SL_MULTIPLIER * constraint_atr
             min_sl_distance = expected_entry * (MIN_SL_PCT / 100)

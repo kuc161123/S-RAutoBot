@@ -27,9 +27,9 @@ warnings.filterwarnings('ignore')
 # CONFIGURATION - MATCH BOT EXACTLY
 # ============================================================================
 
-TIMEFRAME = '60'         # 1-hour candles (maximum ATR = lowest fee impact)
-DATA_DAYS = 90           # 90 days of data for sufficient signals
-NUM_SYMBOLS = 200        # Number of symbols (User Verification)
+TIMEFRAME = '3'          # 3-minute candles (higher frequency)
+DATA_DAYS = 60           # 60 days of data
+NUM_SYMBOLS = 100        # Top 100 symbols for faster test
 
 # Fees (Bybit standard)
 MAKER_FEE = 0.00055      # 0.055%
@@ -56,18 +56,17 @@ BASE_URL = "https://api.bybit.com"
 
 TRAILING_CONFIGS = [
     # Name, BE_Threshold, Trail_Distance, Max_TP
-    # Simplified: BE_Lock = BE_Threshold - Trail_Distance
-    ("Quick-Lock", 0.4, 0.15, 2.0),          # Current bot config
-    ("Quick-Lock-3R", 0.4, 0.15, 3.0),       # Same but 3R target
+    # Trailing Configs
+    ("Tight-Trail", 0.3, 0.1, 2.0),          # Quick lock, tight trail
+    ("Quick-Lock", 0.4, 0.15, 2.0),          # Slightly looser
     ("Conservative", 0.5, 0.2, 2.0),
-    ("Conservative-3R", 0.5, 0.2, 3.0),
     ("Standard", 0.7, 0.3, 2.0),
-    ("Standard-3R", 0.7, 0.3, 3.0),          # Original bot config
-    ("Aggressive", 1.0, 0.4, 3.0),
-    ("Very-Aggressive", 1.2, 0.5, 4.0),
-    ("Tight-Trail", 0.3, 0.1, 2.0),
-    ("Static-2R", 99.0, 0.0, 2.0),           # No trailing
-    ("Static-3R", 99.0, 0.0, 3.0),           # No trailing
+    ("Standard-3R", 0.7, 0.3, 3.0),
+    
+    # STATIC R:R (NO TRAILING)
+    ("Static-1:2", 99.0, 0.0, 2.0),           # Pure 1:2 R:R, no trail
+    ("Static-1:3", 99.0, 0.0, 3.0),           # Pure 1:3 R:R, no trail
+    ("Static-1:4", 99.0, 0.0, 4.0),           # Pure 1:4 R:R, no trail
 ]
 
 # ============================================================================

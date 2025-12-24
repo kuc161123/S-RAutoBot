@@ -1,0 +1,4 @@
+timeframe,trades,total_r,wr,wf_pass,mc_pass,mc_prob_profit,mc_p5,regime_pass,consec_pass,max_consec_losses,stability_pass,pct_profitable_symbols,tests_passed,verdict
+5,165788,-1529.176643394023,73.62776558013849,False,False,0.0,-2012.7994086196466,False,False,41,False,38.666666666666664,0,❌ FAIL
+15,56710,2870.9396137946037,70.34738141421266,True,True,100.0,2511.8146501175274,True,False,38,True,80.0,4,✅ ROBUST
+30,28218,2772.6618977566754,65.90828549153022,True,True,100.0,2471.987876073079,True,False,23,True,86.66666666666667,4,✅ ROBUST

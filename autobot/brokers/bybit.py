@@ -755,6 +755,11 @@ class Bybit:
                     "positionIdx": 0,
                 }
             
+            # === DEBUG: Log exact request body ===
+            import json as json_module
+            debug_body = json_module.dumps(data, separators=(",", ":"))
+            logger.info(f"🔍 DEBUG SL REQUEST for {symbol}: {debug_body}")
+            
             resp = self._request("POST", "/v5/position/trading-stop", data)
             
             # Validate response

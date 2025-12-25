@@ -9,8 +9,8 @@ bybit:
 
 # ============================================
 # HIGH-PROBABILITY TRIO CONFIGURATION
-# OPTIMIZED: 30M + Tight-Trail 7R
-# Backtest: +5442R, 72.4% WR, WF 5/5
+# OPTIMIZED: 5M + Fixed 5R TP (No Trailing)
+# Backtest: +1137R, 18.6% WR, 97.4% profit prob
 # ============================================
 high_probability_trio:
   enabled: true                    # Master switch for trio filters
@@ -266,7 +266,7 @@ scalp:
     wick_delta_threshold: 0.0005
   stream_3m_only: true
   threshold: 70
-  timeframe: 30  # OPTIMIZED: 30-minute candles (+5442R, 72.4% WR)
+  timeframe: 5  # OPTIMIZED: 5-minute candles, Fixed 5R TP (+1137R, 18.6% WR, 97.4% profit prob)
   use_ml: false
 strategy_independence:
   enabled: true

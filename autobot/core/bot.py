@@ -931,14 +931,14 @@ class DivergenceBot:
                 
                 f"🎯 **STRATEGY**\n"
                 f"├ Type: RSI Divergence\n"
-                f"├ TF: 30min (30M) OPTIMIZED\n"
+                f"├ TF: 5min (5M) OPTIMIZED\n"
                 f"├ 🔥 **HIGH-PROB TRIO: {'✅ ON' if self.trio_enabled else '❌ OFF'}**\n"
                 f"├ VWAP: {'✓' if self.trio_require_vwap else '✗'} | 2-Bar: {'✓' if self.trio_require_two_bar else 'OFF'}\n"
                 f"├ Pending Triggers: {len(self.pending_trio_signals)}\n"
-                f"├ **EXIT: Tight-Trail 7R (30M)** ⚡\n"
-                f"├ Lock profit at +0.2R\n"
-                f"├ Trail: 0.05R behind max\n"
-                f"└ Max: +7R target\n\n"
+                f"├ **EXIT: Fixed 5R TP (5M)** ⚡\n"
+                f"├ SL: -1.2% | TP: +6%\n"
+                f"├ No Trailing - Clean Execution\n"
+                f"└ R:R = 5:1 | 18.6% WR\n\n"
                 
                 f"📊 **SIGNALS**\n"
                 f"├ Detected: {self.signals_detected}\n"
@@ -2438,56 +2438,26 @@ class DivergenceBot:
                         
                         logger.info(f"🔧 SL ADJUSTED: ${order_info['sl']:.6f} → ${sl:.6f} (maintaining {sl_distance/avg_price*100:.2f}% distance)")
                         
-                        # === USE BYBIT NATIVE TRAILING STOP ===
-                        # Calculate trailing parameters (TRAIL_DISTANCE = 0.05R)
-                        TRAIL_DISTANCE_R = 0.05
-                        BE_THRESHOLD_R = 0.2
-                        trail_distance = sl_distance * TRAIL_DISTANCE_R  # Price distance for trailing
-                        
-                        # Activation price: when trailing should start (at +0.2R)
-                        if side == 'long':
-                            activation_price = avg_price + (BE_THRESHOLD_R * sl_distance)
-                        else:
-                            activation_price = avg_price - (BE_THRESHOLD_R * sl_distance)
-                        
+                        # === FIXED 5R TP STRATEGY ===
+                        # No trailing - just set SL and let TP from order handle the rest
                         try:
-                            # Set up native trailing ONCE - Bybit handles the rest!
-                            self.broker.set_trailing_sl(sym, sl, trail_distance, activation_price, side)
-                            logger.info(f"✅ Native trailing set: SL=${sl:.6f}, trail={trail_distance:.6f}, activate at ${activation_price:.6f}")
+                            self.broker.set_sl_only(sym, sl)
+                            logger.info(f"✅ SL set: ${sl:.6f} (Fixed 5R TP strategy)")
                         except Exception as e:
-                            logger.error(f"Failed to set native trailing - falling back to manual: {e}")
-                            # Fallback to old method
-                            try:
-                                self.broker.set_sl_only(sym, sl)
-                                logger.info(f"✅ Fallback SL set on Bybit to ${sl:.6f}")
-                            except Exception as e2:
-                                logger.error(f"Fallback SL also failed: {e2}")
+                            logger.error(f"Failed to set SL: {e}")
                     else:
                         sl = order_info['sl']  # Use original SL if prices are close
                         
-                        # Still set up native trailing for unchanged entry
-                        TRAIL_DISTANCE_R = 0.05
-                        BE_THRESHOLD_R = 0.2
-                        trail_distance = sl_distance * TRAIL_DISTANCE_R
-                        
-                        if side == 'long':
-                            activation_price = avg_price + (BE_THRESHOLD_R * sl_distance)
-                        else:
-                            activation_price = avg_price - (BE_THRESHOLD_R * sl_distance)
-                        
+                        # Set SL on Bybit
                         try:
-                            self.broker.set_trailing_sl(sym, sl, trail_distance, activation_price, side)
-                            logger.info(f"✅ Native trailing set: SL=${sl:.6f}, trail={trail_distance:.6f}")
+                            self.broker.set_sl_only(sym, sl)
+                            logger.info(f"✅ SL set: ${sl:.6f}")
                         except Exception as e:
-                            logger.error(f"Native trailing failed, using fallback: {e}")
-                            try:
-                                self.broker.set_sl_only(sym, sl)
-                            except:
-                                pass
+                            logger.error(f"Failed to set SL: {e}")
                     
-                    # NO PARTIAL TP - Tight-Trail aligns with 30M TF
+                    # Fixed 5R TP - TP is set on order creation, SL set here
                     logger.info(f"✅ ORDER FILLED: {sym} {side} @ {avg_price:.4f}")
-                    logger.info(f"   Strategy: Native trailing from +0.2R with 0.05R distance")
+                    logger.info(f"   Strategy: Fixed 5R TP, 1.2% SL (no trailing)")
                     
                     # Move to active_trades with trailing SL tracking only
                     self.active_trades[sym] = {
@@ -2540,12 +2510,12 @@ class DivergenceBot:
                         f"├ Fill Price: ${avg_price:.4f}\n"
                         f"├ Quantity: {filled_qty}\n"
                         f"└ Value: ${position_value:.2f}\n\n"
-                        f"🎯 **EXIT STRATEGY (Tight-Trail 7R)**\n"
+                        f"🎯 **EXIT STRATEGY (Fixed 5R TP)**\n"
                         f"├ Initial SL: ${sl:.4f} (-{sl_pct:.2f}%)\n"
-                        f"├ At +0.2R: Lock profit\n"
-                        f"├ Trail: 0.05R behind max\n"
-                        f"└ Max: +7R target\n\n"
-                        f"💡 Worst: -1R | Best: +7R"
+                        f"├ TP: +5R (+{sl_pct * 5:.2f}%)\n"
+                        f"├ No trailing - clean exit\n"
+                        f"└ R:R = 5:1\n\n"
+                        f"💡 Worst: -1R | Best: +5R"
                     )
                     continue
                 
@@ -2771,8 +2741,8 @@ class DivergenceBot:
                     return round(rounded, max(decimals, 0))
                 return round(quantity, 6)
             
-            # Calculate SL/TP (ATR-based)
-            RR_RATIO = 7.0  # OPTIMIZED: 7R target (was 3.0)
+            # Calculate SL/TP (Fixed 5R strategy)
+            RR_RATIO = 5.0  # OPTIMIZED: Fixed 5R TP (no trailing), +1137R backtest
             
             # Get swing points from signal detection (legacy, but kept for compatibility)
             swing_low = signal_swing_low if signal_swing_low is not None else df_closed['low'].rolling(14).min().iloc[-1]
@@ -2929,10 +2899,10 @@ class DivergenceBot:
                 f"💎 Type: **{type_emoji}**\n\n"
                 f"✅ **VOLUME FILTER PASSED** ✓\n\n"
                 f"💰 **Entry**: ${expected_entry:.6f}\n\n"
-                f"🎯 **EXIT STRATEGY (Tight-Trail 7R 30M)**\n"
-                f"├ SL: ${sl:.6f} ({sl_atr_mult:.1f}×ATR = -1R)\n"
-                f"├ At +0.2R: Lock profit (0.05R behind)\n"
-                f"└ Max: +7R target\n\n"
+                f"🎯 **EXIT STRATEGY (Fixed 5R TP 5M)**\n"
+                f"├ SL: ${sl:.6f} (-1.2% = -1R)\n"
+                f"├ TP: +5R (+6%)\n"
+                f"└ R:R = 5:1 | No Trailing\n\n"
                 f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
             )
             await self.send_telegram(msg)
@@ -2970,36 +2940,21 @@ class DivergenceBot:
                         # ORDER FILLED - Move to active trades
                         fill_price = float(status.get('avgPrice', order_data['entry']))
                         
-                        # === CRITICAL: SET UP NATIVE TRAILING STOP ===
-                        sl_distance = order_data.get('sl_distance', abs(fill_price - order_data['sl']))
-                        TRAIL_DISTANCE_R = 0.05
-                        BE_THRESHOLD_R = 0.2
-                        trail_distance = sl_distance * TRAIL_DISTANCE_R
+                        # === FIXED 5R TP STRATEGY ===
+                        # Just set the SL - TP was set on order creation
                         side = order_data['side']
                         
-                        if side == 'long':
-                            activation_price = fill_price + (BE_THRESHOLD_R * sl_distance)
-                        else:
-                            activation_price = fill_price - (BE_THRESHOLD_R * sl_distance)
-                        
                         try:
-                            # Set up native trailing ONCE
-                            self.broker.set_trailing_sl(sym, order_data['sl'], trail_distance, activation_price, side)
-                            logger.info(f"✅ Native trailing set for {sym}: SL=${order_data['sl']:.4f}, trail=${trail_distance:.6f}")
+                            self.broker.set_sl_only(sym, order_data['sl'])
+                            logger.info(f"✅ SL set for {sym}: ${order_data['sl']:.4f} (Fixed 5R TP strategy)")
                         except Exception as e:
-                            logger.error(f"Native trailing failed for {sym}: {e}")
-                            # Fallback to basic SL
-                            try:
-                                self.broker.set_sl_only(sym, order_data['sl'])
-                                logger.warning(f"⚠️ Using fallback SL for {sym}")
-                            except Exception as e2:
-                                logger.error(f"Fallback SL also failed: {e2}")
-                                await self.send_telegram(
-                                    f"⚠️ **SL SET FAILED!**\n"
-                                    f"Symbol: `{sym}` {side.upper()}\n"
-                                    f"Error: {str(e2)[:50]}\n\n"
-                                    f"⚡ MANUAL ACTION MAY BE REQUIRED"
-                                )
+                            logger.error(f"SL set failed for {sym}: {e}")
+                            await self.send_telegram(
+                                f"⚠️ **SL SET FAILED!**\n"
+                                f"Symbol: `{sym}` {side.upper()}\n"
+                                f"Error: {str(e)[:50]}\n\n"
+                                f"⚡ MANUAL ACTION MAY BE REQUIRED"
+                            )
                         
                         self.active_trades[sym] = {
                             'side': order_data['side'],
@@ -3607,7 +3562,7 @@ class DivergenceBot:
         mode_str = "HIDDEN BEARISH ONLY" if hidden_bearish_mode else "RSI DIVERGENCE (ALL)"
         
         msg = (
-            f"🚀 **RSI Divergence Bot (Tight-Trail 7R OPTIMIZED)**\n"
+            f"🚀 **RSI Divergence Bot (Fixed 5R TP OPTIMIZED)**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📊 **STATUS: ONLINE**\n"
             f"├ Mode: **{mode_str}**\n"
@@ -3615,14 +3570,14 @@ class DivergenceBot:
             f"├ Scanning: **{scanning_count}** symbols (Learning)\n"
             f"└ Risk: **{risk_val}%** per trade\n\n"
             
-            f"🎯 **STRATEGY (30M OPTIMIZED)**\n"
-            f"├ Timeframe: **{timeframe}m** (30 Min)\n"
-            f"├ Lock Profit: **+0.2R** (BE Threshold)\n"
-            f"├ Trailing: **0.05R** (Tight Trail)\n"
-            f"└ Max Target: **+7.0R**\n\n"
+            f"🎯 **STRATEGY (5M OPTIMIZED)**\n"
+            f"├ Timeframe: **5m** (5 Min)\n"
+            f"├ SL: **-1.2%** (-1R)\n"
+            f"├ TP: **+6%** (+5R)\n"
+            f"└ No Trailing - Clean Execution\n\n"
             
             f"📈 **VALIDATED PERFORMANCE**\n"
-            f"└ Backtest: +5442R | 72.4% WR | WF 5/5\n\n"
+            f"└ Backtest: +1137R | 18.6% WR | 97.4% profit prob\n\n"
             
             f"💾 System: Redis {redis_ok} | PG {pg_ok}\n"
             f"💡 Commands: /dashboard /pnl /help"

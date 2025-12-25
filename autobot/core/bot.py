@@ -3184,13 +3184,23 @@ class DivergenceBot:
                                 logger.error(f"❌ INVALID TRAIL SL VALUE: {sym} SL={initial_trail_sl}, price={current_price}")
                                 continue
                             
-                            # === NATIVE TRAILING HANDLES THIS ===
-                            # Bybit's trailingStop + activePrice now handles SL updates automatically
-                            # We just update our internal tracking state
-                            # self.broker.set_sl_only(sym, initial_trail_sl)  # DISABLED - native trailing
-                            
-                            # Skip verification - native trailing manages SL on Bybit side
-                            # We trust Bybit's implementation
+                            # === CRITICAL: Actually move the SL ===
+                            # Bybit's trailingStop is SEPARATE from stopLoss - we must update SL manually!
+                            # trailingStop was set at order fill as a backup, but we still need to move SL
+                            try:
+                                self.broker.set_sl_only(sym, initial_trail_sl)
+                                logger.info(f"✅ SL MOVED to ${initial_trail_sl:.4f} (+{protected_r:.1f}R)")
+                            except Exception as sl_err:
+                                logger.error(f"❌ Failed to move SL for {sym}: {sl_err}")
+                                # Don't continue - SL not set means position is exposed!
+                                await self.send_telegram(
+                                    f"⚠️ **SL MOVE FAILED!**\n"
+                                    f"Symbol: `{sym}` {side.upper()}\n"
+                                    f"Tried: ${initial_trail_sl:.4f}\n"
+                                    f"Error: {str(sl_err)[:50]}\n\n"
+                                    f"⚡ MANUAL ACTION REQUIRED"
+                                )
+                                continue
                             
                             trade_info['sl_current'] = initial_trail_sl
                             trade_info['sl_at_breakeven'] = True  # Flag that we've passed BE threshold
@@ -3269,9 +3279,13 @@ class DivergenceBot:
                                 logger.error(f"❌ INVALID TRAIL SL VALUE: {sym} SL={new_sl}, price={current_price}")
                                 continue
                             
-                            # === NATIVE TRAILING HANDLES THIS ===
-                            # Bybit's trailingStop handles SL updates automatically
-                            # self.broker.set_sl_only(sym, new_sl)  # DISABLED - native trailing
+                            # === CRITICAL: Actually move the trailing SL ===
+                            # Bybit's trailingStop is SEPARATE - we must update SL manually!
+                            try:
+                                self.broker.set_sl_only(sym, new_sl)
+                            except Exception as sl_err:
+                                logger.error(f"❌ Failed to update trailing SL for {sym}: {sl_err}")
+                                continue
                             
                             old_sl = trade_info['sl_current']
                             trade_info['sl_current'] = new_sl

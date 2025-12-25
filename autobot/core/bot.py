@@ -3201,15 +3201,15 @@ class DivergenceBot:
                             
                             # Send notification
                             await self.send_telegram(
-                                f"🛡️ **TRAILING SL ACTIVATED**\n"
+                                f"🛡️ **NATIVE TRAILING ACTIVATED**\n"
                                 f"━━━━━━━━━━━━━━━━━━━━\n"
                                 f"📊 Symbol: `{sym}`\n"
                                 f"📈 Side: **{side.upper()}**\n\n"
                                 f"✅ **+{max_r:.1f}R ACHIEVED**\n"
                                 f"├ SL: ${initial_trail_sl:.4f} (+{protected_r:.1f}R)\n"
                                 f"├ Protected: **+{protected_r:.1f}R** locked in 🔒\n"
-                                f"└ Trail: 0.1R behind max price\n\n"
-                                f"💡 Trailing active, profit protected!"
+                                f"└ Trail: 0.05R behind max (Bybit native)\n\n"
+                                f"💡 Bybit handles trailing automatically!"
                             )
                         except Exception as e:
                             logger.error(f"Failed to set trailing SL for {sym}: {e}")

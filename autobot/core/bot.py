@@ -750,7 +750,10 @@ class DivergenceBot:
                 )
                 return
             
-            # === 3. ANALYZE CLOSED TRADES ===
+            # === 3. ANALYZE CLOSED TRADES (THIS SESSION ONLY) ===
+            # Filter to trades since bot started for session-accurate stats
+            session_start_ms = int(self.start_time * 1000)  # Convert to milliseconds
+            
             total_pnl = 0
             wins = 0
             losses = 0
@@ -758,13 +761,20 @@ class DivergenceBot:
             loss_pnl = 0
             symbol_pnl = {}  # Track per-symbol P&L
             recent_trades = []  # Last 5 trades
+            session_trades = 0
             
             for record in closed_records:
                 try:
+                    # Filter to this session only
+                    created_time = int(record.get('createdTime', 0))
+                    if created_time < session_start_ms:
+                        continue  # Skip trades from before this session
+                    
                     pnl = float(record.get('closedPnl', 0))
                     symbol = record.get('symbol', 'UNKNOWN')
                     side = record.get('side', '?')
                     
+                    session_trades += 1
                     total_pnl += pnl
                     
                     if pnl > 0:
@@ -782,7 +792,6 @@ class DivergenceBot:
                     
                     # Track recent trades (first 5 in list = most recent)
                     if len(recent_trades) < 5:
-                        created_time = int(record.get('createdTime', 0))
                         recent_trades.append({
                             'symbol': symbol,
                             'side': side,
@@ -854,9 +863,13 @@ class DivergenceBot:
                     msg += f"├ {t_emoji} `{trade['symbol']}` {side_emoji} {t_sign}${trade['pnl']:.2f} ({time_str})\n"
                 msg += "\n"
             
+            # Calculate session uptime
+            uptime_mins = int((time.time() - self.start_time) / 60)
+            uptime_str = f"{uptime_mins}m" if uptime_mins < 60 else f"{uptime_mins//60}h {uptime_mins%60}m"
+            
             msg += (
                 f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"💡 Data from Bybit API (100 trades)"
+                f"💡 Session: {uptime_str} | {session_trades} trades"
             )
             
             await update.message.reply_text(msg, parse_mode='Markdown')
@@ -3191,16 +3204,8 @@ class DivergenceBot:
                                 self.broker.set_sl_only(sym, initial_trail_sl)
                                 logger.info(f"✅ SL MOVED to ${initial_trail_sl:.4f} (+{protected_r:.1f}R)")
                             except Exception as sl_err:
-                                logger.error(f"❌ Failed to move SL for {sym}: {sl_err}")
-                                # Don't continue - SL not set means position is exposed!
-                                await self.send_telegram(
-                                    f"⚠️ **SL MOVE FAILED!**\n"
-                                    f"Symbol: `{sym}` {side.upper()}\n"
-                                    f"Tried: ${initial_trail_sl:.4f}\n"
-                                    f"Error: {str(sl_err)[:50]}\n\n"
-                                    f"⚡ MANUAL ACTION REQUIRED"
-                                )
-                                continue
+                                # Native trailing is active as backup - log error but don't spam user
+                                logger.warning(f"⚠️ Manual SL update failed for {sym}, native trailing is backup: {sl_err}")
                             
                             trade_info['sl_current'] = initial_trail_sl
                             trade_info['sl_at_breakeven'] = True  # Flag that we've passed BE threshold

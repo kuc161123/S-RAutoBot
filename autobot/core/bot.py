@@ -705,7 +705,7 @@ class DivergenceBot:
             "/sessions - Session win rates\n"
             "/blacklist - Blacklisted symbols\n"
             "/help - Show this message\n\n"
-            "💡 **Strategy:** 30M Opt (0.2R BE, 0.05R trail)"
+            "💡 **Strategy:** 5M Fixed 5R TP (no trailing)"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 
@@ -1251,7 +1251,7 @@ class DivergenceBot:
     async def cmd_backtest(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show comprehensive live vs backtest performance comparison"""
         try:
-            # === BACKTEST REFERENCE (30M Optimized 7R) ===
+            # === BACKTEST REFERENCE (5M Fixed 5R) ===
             # From comprehensive optimization (+5442R, 72.4% WR, 5/5 WF)
             BT_WIN_RATE = 72.4  # % (Optimal trailing: BE 0.2R, trail 0.05R)
             BT_EV = 0.147       # R per trade (+5442R / 37051 trades)
@@ -1880,7 +1880,7 @@ class DivergenceBot:
         """
         try:
             # Use timeframe from config (3M = fast trading with optimal trailing)
-            timeframe = '30'  # OPTIMIZED: 30-minute timeframe (backtest validated)
+            timeframe = '5'  # OPTIMIZED: 5-minute timeframe (backtest validated)
             klines = self.broker.get_klines(sym, timeframe, limit=100)
             if not klines or len(klines) < 50: 
                 return
@@ -2794,7 +2794,7 @@ class DivergenceBot:
             sl_atr_mult = sl_distance / atr if atr > 0 else 1.0
             
             # Tight-Trail STRATEGY: No partial TP, trail from 0.2R with 0.05R distance
-            # Backtest validated: +5442R, 72.4% WR on 30M TF
+            # Backtest validated: +1137R, 18.6% WR on 5M TF
             logger.info(f"📊 {sym} ATR SL: {sl_atr_mult:.2f}×ATR | R:R = {actual_rr:.1f}:1")
             logger.info(f"   Entry: ${expected_entry:.6f} | SL: ${sl:.6f} | TP7R: ${tp:.6f}")
             
@@ -3036,7 +3036,7 @@ class DivergenceBot:
     async def monitor_trailing_sl(self, candle_data: dict):
         """Monitor active trades for Tight-Trail SL updates.
         
-        TIGHT-TRAIL 7R STRATEGY (Validated: +5442R, 72.4% WR, 30M TF):
+        FIXED 5R TP STRATEGY (Validated: +1137R, 18.6% WR, 5M TF):
         1. At +0.2R: Start trailing (lock in +0.15R profit)
         2. Trail 0.05R behind max favorable price (ultra tight)
         3. Max target: +7R
@@ -3113,7 +3113,7 @@ class DivergenceBot:
                 
                 # ============================================
                 # CHECK 1: Move SL to trailing position at +0.3R (Tight-Trail Strategy)
-                # OPTIMIZED: +5442R (72.4% WR) on 30M timeframe
+                # OPTIMIZED: +1137R (18.6% WR) on 5M timeframe
                 # ============================================
                 BE_THRESHOLD = 0.2   # OPTIMIZED: Lock profit at +0.2R (was 0.3)
                 TRAIL_DISTANCE = 0.05  # OPTIMIZED: Very tight 0.05R trail (was 0.1)
@@ -3193,7 +3193,7 @@ class DivergenceBot:
                 
                 # ============================================
                 # CHECK 2: Trailing SL (from 0.3R, Tight-Trail Strategy)
-                # OPTIMIZED: Best config on 30M timeframe
+                # OPTIMIZED: Best config on 5M timeframe
                 # ============================================
                 BE_THRESHOLD = 0.2  # OPTIMIZED: 0.2R threshold (was 0.3)
                 TRAIL_DISTANCE = 0.05  # OPTIMIZED: 0.05R behind (was 0.1)
@@ -3551,7 +3551,7 @@ class DivergenceBot:
             active_combos_msg = f"{trading_count} symbols (Active Combos)"
         
         # Params
-        timeframe = '30'  # OPTIMIZED: 30-minute timeframe
+        timeframe = '5'  # OPTIMIZED: 5-minute timeframe
         risk_val = self.risk_config['value']
         hidden_bearish_mode = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
         
@@ -3741,7 +3741,7 @@ class DivergenceBot:
                     for sym, entry_info in list(self.pending_entries.items()):
                         try:
                             # Get fresh klines for execution (use same timeframe as detection)
-                            tf = '30'  # OPTIMIZED: 30-minute timeframe
+                            tf = '5'  # OPTIMIZED: 5-minute timeframe
                             klines = self.broker.get_klines(sym, tf, limit=100)
                             if klines and len(klines) >= 50:
                                 df = pd.DataFrame(klines, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
@@ -3787,7 +3787,7 @@ class DivergenceBot:
                 # Update learner with candle data (high/low) for accurate resolution
                 try:
                     # Use configured timeframe for all tracking (High/Low/RSI)
-                    tf_config = '30'  # OPTIMIZED: 30-minute timeframe
+                    tf_config = '5'  # OPTIMIZED: 5-minute timeframe
                     
                     candle_data = {}
                     for sym in self.all_symbols:

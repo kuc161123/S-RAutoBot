@@ -2536,12 +2536,12 @@ class DivergenceBot:
                         f"├ Fill Price: ${avg_price:.4f}\n"
                         f"├ Quantity: {filled_qty}\n"
                         f"└ Value: ${position_value:.2f}\n\n"
-                        f"🎯 **EXIT STRATEGY (Fixed 5R TP)**\n"
+                        f"🎯 **EXIT STRATEGY (1:1 R:R)**\n"
                         f"├ Initial SL: ${sl:.4f} (-{sl_pct:.2f}%)\n"
-                        f"├ TP: +5R (+{sl_pct * 5:.2f}%)\n"
+                        f"├ TP: ${tp:.4f} (+{sl_pct:.2f}%)\n"
                         f"├ No trailing - clean exit\n"
-                        f"└ R:R = 5:1\n\n"
-                        f"💡 Worst: -1R | Best: +5R"
+                        f"└ R:R = 1:1 (ATR 1.0)\n\n"
+                        f"💡 Worst: -1R | Best: +1R"
                     )
                     continue
                 
@@ -2858,12 +2858,12 @@ class DivergenceBot:
                 logger.debug(f"Could not validate SL vs market for {sym}: {e}")
             
             # ============================================
-            # STEP 2: PLACE LIMIT ORDER WITH SL ONLY
+            # STEP 2: PLACE LIMIT ORDER WITH SL & TP
             # ============================================
-            # Place with SL only - trailing strategy will manage exit
+            # Place with hard SL/TP for 1:1 strategy
             order = self.broker.place_limit(
                 sym, side, qty, expected_entry,
-                take_profit=None, stop_loss=sl  # SL only, no TP yet (trailing strategy)
+                take_profit=tp, stop_loss=sl
             )
             
             if not order or order.get('retCode') != 0:
@@ -2878,7 +2878,7 @@ class DivergenceBot:
             
             order_id = order.get('result', {}).get('orderId', 'N/A')
             logger.info(f"✅ LIMIT ORDER PLACED: {sym} {side} qty={qty} @ ${expected_entry:.6f}")
-            logger.info(f"🛡️ SL PROTECTION: SL=${sl:.6f} (Trailing strategy active)")
+            logger.info(f"🛡️ ORDERS SET: SL=${sl:.6f} | TP=${tp:.6f}")
             
             # Track in pending_limit_orders for monitoring (fills, timeout, invalidation)
             # NEW: Track order for monitoring (fills, timeout, invalidation)

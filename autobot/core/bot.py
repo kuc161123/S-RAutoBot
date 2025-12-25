@@ -3053,6 +3053,13 @@ class DivergenceBot:
                 if sl_distance <= 0:
                     continue
                 
+                # === SANITY CHECK: Validate sl_distance is reasonable ===
+                # Should be between 0.1% and 20% of entry price
+                sl_pct = (sl_distance / entry * 100) if entry > 0 else 0
+                if sl_pct < 0.1 or sl_pct > 20:
+                    logger.error(f"❌ INVALID sl_distance {sym}: {sl_distance} = {sl_pct:.2f}% of entry {entry}. Skipping trailing update.")
+                    continue
+                
                 # Get current price data
                 candle = candle_data.get(sym, {})
                 current_high = candle.get('high', 0)
@@ -3068,11 +3075,24 @@ class DivergenceBot:
                 else:
                     unrealized_r = (entry - current_low) / sl_distance
                 
+                # === SANITY CHECK: Cap unrealized_r to reasonable values ===
+                # If sl_distance is wrong, unrealized_r could be astronomically high
+                MAX_REASONABLE_R = 20.0  # 20R is the absolute maximum we'd ever expect
+                if abs(unrealized_r) > MAX_REASONABLE_R:
+                    logger.error(f"❌ SANITY FAIL {sym}: unrealized_r={unrealized_r:.1f} > {MAX_REASONABLE_R}. sl_distance={sl_distance}, entry={entry}")
+                    continue  # Skip this update - something is wrong
+                
                 # Update max favorable R
                 if unrealized_r > trade_info.get('max_favorable_r', 0):
                     trade_info['max_favorable_r'] = unrealized_r
                 
                 max_r = trade_info['max_favorable_r']
+                
+                # === SANITY CHECK: Verify max_r is reasonable ===
+                if max_r > MAX_REASONABLE_R:
+                    logger.error(f"❌ SANITY FAIL {sym}: max_r={max_r:.1f} > {MAX_REASONABLE_R}. Resetting to {MAX_REASONABLE_R}")
+                    trade_info['max_favorable_r'] = MAX_REASONABLE_R
+                    max_r = MAX_REASONABLE_R
                 
                 # ============================================
                 # CHECK 1: Move SL to trailing position at +0.3R (Tight-Trail Strategy)

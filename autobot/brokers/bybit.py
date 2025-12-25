@@ -703,12 +703,20 @@ class Bybit:
             final_sl_str = self._round_price(stop_loss, tick_size)
             logger.info(f"📐 Rounded SL for {symbol}: {stop_loss} -> {final_sl_str} (tick: {tick_size})")
             
+            # === SANITY CHECK: Reject obviously wrong SL values ===
+            # Values like 2128000 are clearly wrong (should be ~0.02128)
+            if stop_loss > 100000:
+                raise ValueError(f"SL value {stop_loss} is absurdly large - likely a calculation error!")
+            
             # Get current price to validate SL is reasonable
             try:
                 ticker = self.get_ticker(symbol)
                 if ticker:
                     current_price = float(ticker.get('lastPrice', 0))
                     if current_price > 0:
+                        # Check if SL is within reasonable range (100x current price at max)
+                        if stop_loss > current_price * 100 or stop_loss < current_price / 100:
+                            raise ValueError(f"SL {stop_loss:.8f} is way off from price {current_price:.8f} - rejecting!")
                         distance_pct = abs(stop_loss - current_price) / current_price * 100
                         if distance_pct > 20:
                             raise ValueError(f"SL {stop_loss:.4f} is {distance_pct:.1f}% from price {current_price:.4f} - too far!")

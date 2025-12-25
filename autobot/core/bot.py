@@ -3683,16 +3683,23 @@ class DivergenceBot:
             logger.info(f"🚀 Startup: Promoted {len(startup_promoted)} combos")
         
         # Fetch TOP 200 symbols by 24h volume (SAME AS BACKTEST)
-        # Check if using walk-forward validated divergence_symbols (hidden_bearish mode)
-        hidden_bearish_only = self.cfg.get('trade', {}).get('hidden_bearish_only', False)
+        # Load symbols: Prioritize validated list from config (matches backtest)
         divergence_symbols = self.cfg.get('trade', {}).get('divergence_symbols', [])
         
-        if hidden_bearish_only and divergence_symbols:
-            # Use the walk-forward validated 97 symbols
+        if divergence_symbols and len(divergence_symbols) > 0:
+            # Use the walk-forward validated symbols
             self.all_symbols = divergence_symbols
-            logger.info(f"📊 Using {len(self.all_symbols)} validated symbols for hidden_bearish mode (40-70.6% WR)")
+            
+            # Filter bad symbols (same as backtest)
+            BAD_SYMBOLS = ['XAUTUSDT', 'PAXGUSDT', 'USTCUSDT', 'USDCUSDT', 'BUSDUSDT', 'DAIUSDT']
+            original_len = len(self.all_symbols)
+            self.all_symbols = [s for s in self.all_symbols if s not in BAD_SYMBOLS]
+            
+            logger.info(f"📊 Using {len(self.all_symbols)} validated symbols from config (matching backtest)")
+            if len(self.all_symbols) < original_len:
+                logger.info(f"   Filtered {original_len - len(self.all_symbols)} bad symbols")
         else:
-            # Fetch top 200 by volume
+            # Fallback: Fetch top 200 by volume
             try:
                 import requests
                 url = "https://api.bybit.com/v5/market/tickers?category=linear"
@@ -3701,7 +3708,7 @@ class DivergenceBot:
                 usdt_pairs = [t for t in tickers if t['symbol'].endswith('USDT')]
                 usdt_pairs.sort(key=lambda x: float(x.get('turnover24h', 0)), reverse=True)
                 self.all_symbols = [t['symbol'] for t in usdt_pairs[:200]]
-                logger.info(f"📚 Fetched TOP 200 symbols by volume (same as backtest)")
+                logger.info(f"📚 Fetched TOP 200 symbols by volume (Config list empty)")
             except Exception as e:
                 logger.error(f"Failed to fetch symbols: {e}, falling back to config")
                 self.all_symbols = self.cfg.get('trade', {}).get('symbols', [])

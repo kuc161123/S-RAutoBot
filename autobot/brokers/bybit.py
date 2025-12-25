@@ -771,6 +771,82 @@ class Bybit:
             logger.error(f"Failed to set SL-only for {symbol}: {e}")
             raise
     
+    def set_trailing_sl(self, symbol: str, initial_sl: float, trail_distance: float, 
+                        activation_price: float = None, side: str = None) -> Dict[str, Any]:
+        """Set stop loss with Bybit's NATIVE trailing stop mechanism.
+        
+        This uses Bybit's `trailingStop` parameter which lets the exchange
+        handle trailing logic, avoiding constant SL update API calls.
+        
+        Args:
+            symbol: Trading pair (e.g., "BTCUSDT")
+            initial_sl: Initial stop loss price
+            trail_distance: Trail distance in PRICE units (not %)
+            activation_price: Optional price at which trailing activates
+            side: "long" or "short" for validation
+            
+        Returns:
+            API response dict
+        """
+        try:
+            # Fetch precision for formatting
+            tick_size, _ = self._get_precisions(symbol, force_fresh=True)
+            
+            # Format all prices correctly
+            sl_str = self._round_price(initial_sl, tick_size)
+            trail_str = self._round_price(trail_distance, tick_size)
+            
+            logger.info(f"📐 Setting native trailing for {symbol}:")
+            logger.info(f"   Initial SL: {initial_sl} -> {sl_str}")
+            logger.info(f"   Trail dist: {trail_distance} -> {trail_str}")
+            
+            # Validate values
+            if initial_sl <= 0 or trail_distance <= 0:
+                raise ValueError(f"Invalid values: SL={initial_sl}, trail={trail_distance}")
+            
+            # Get current price to validate
+            ticker = self.get_ticker(symbol)
+            if ticker:
+                current_price = float(ticker.get('lastPrice', 0))
+                if current_price > 0:
+                    # Validate SL is reasonable (within 20% of price)
+                    sl_distance_pct = abs(initial_sl - current_price) / current_price * 100
+                    if sl_distance_pct > 20:
+                        raise ValueError(f"SL {sl_str} is {sl_distance_pct:.1f}% from price - too far!")
+            
+            # Build request data
+            data = {
+                "category": "linear",
+                "symbol": symbol,
+                "stopLoss": sl_str,
+                "trailingStop": trail_str,  # Bybit handles trailing!
+                "slTriggerBy": "LastPrice",
+                "tpslMode": "Full",
+                "positionIdx": 0,
+            }
+            
+            # Add activation price if provided
+            if activation_price:
+                act_str = self._round_price(activation_price, tick_size)
+                data["activePrice"] = act_str
+                logger.info(f"   Activation: {activation_price} -> {act_str}")
+            
+            logger.info(f"🚀 Sending native trailing stop request for {symbol}")
+            resp = self._request("POST", "/v5/position/trading-stop", data)
+            
+            if resp and resp.get("retCode") == 0:
+                logger.info(f"✅ NATIVE TRAILING SET: {symbol} SL={sl_str} Trail={trail_str}")
+                return resp
+            else:
+                ret_code = resp.get("retCode") if resp else "no response"
+                ret_msg = resp.get("retMsg") if resp else "no message"
+                logger.error(f"❌ TRAILING SET FAILED: {symbol} - retCode={ret_code}, msg={ret_msg}")
+                raise RuntimeError(f"Trailing stop set failed: {ret_msg}")
+                
+        except Exception as e:
+            logger.error(f"Failed to set trailing SL for {symbol}: {e}")
+            raise
+    
     def verify_position_sl(self, symbol: str) -> tuple:
         """Verify the current SL set on Bybit for a position.
         

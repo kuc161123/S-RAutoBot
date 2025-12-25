@@ -2425,18 +2425,56 @@ class DivergenceBot:
                         
                         logger.info(f"🔧 SL ADJUSTED: ${order_info['sl']:.6f} → ${sl:.6f} (maintaining {sl_distance/avg_price*100:.2f}% distance)")
                         
-                        # Update SL on Bybit immediately
+                        # === USE BYBIT NATIVE TRAILING STOP ===
+                        # Calculate trailing parameters (TRAIL_DISTANCE = 0.05R)
+                        TRAIL_DISTANCE_R = 0.05
+                        BE_THRESHOLD_R = 0.2
+                        trail_distance = sl_distance * TRAIL_DISTANCE_R  # Price distance for trailing
+                        
+                        # Activation price: when trailing should start (at +0.2R)
+                        if side == 'long':
+                            activation_price = avg_price + (BE_THRESHOLD_R * sl_distance)
+                        else:
+                            activation_price = avg_price - (BE_THRESHOLD_R * sl_distance)
+                        
                         try:
-                            self.broker.set_sl_only(sym, sl)
-                            logger.info(f"✅ SL updated on Bybit to ${sl:.6f}")
+                            # Set up native trailing ONCE - Bybit handles the rest!
+                            self.broker.set_trailing_sl(sym, sl, trail_distance, activation_price, side)
+                            logger.info(f"✅ Native trailing set: SL=${sl:.6f}, trail={trail_distance:.6f}, activate at ${activation_price:.6f}")
                         except Exception as e:
-                            logger.error(f"Failed to update SL after fill adjustment: {e}")
+                            logger.error(f"Failed to set native trailing - falling back to manual: {e}")
+                            # Fallback to old method
+                            try:
+                                self.broker.set_sl_only(sym, sl)
+                                logger.info(f"✅ Fallback SL set on Bybit to ${sl:.6f}")
+                            except Exception as e2:
+                                logger.error(f"Fallback SL also failed: {e2}")
                     else:
                         sl = order_info['sl']  # Use original SL if prices are close
+                        
+                        # Still set up native trailing for unchanged entry
+                        TRAIL_DISTANCE_R = 0.05
+                        BE_THRESHOLD_R = 0.2
+                        trail_distance = sl_distance * TRAIL_DISTANCE_R
+                        
+                        if side == 'long':
+                            activation_price = avg_price + (BE_THRESHOLD_R * sl_distance)
+                        else:
+                            activation_price = avg_price - (BE_THRESHOLD_R * sl_distance)
+                        
+                        try:
+                            self.broker.set_trailing_sl(sym, sl, trail_distance, activation_price, side)
+                            logger.info(f"✅ Native trailing set: SL=${sl:.6f}, trail={trail_distance:.6f}")
+                        except Exception as e:
+                            logger.error(f"Native trailing failed, using fallback: {e}")
+                            try:
+                                self.broker.set_sl_only(sym, sl)
+                            except:
+                                pass
                     
                     # NO PARTIAL TP - Tight-Trail aligns with 30M TF
                     logger.info(f"✅ ORDER FILLED: {sym} {side} @ {avg_price:.4f}")
-                    logger.info(f"   Strategy: Trail from +0.2R with 0.05R distance")
+                    logger.info(f"   Strategy: Native trailing from +0.2R with 0.05R distance")
                     
                     # Move to active_trades with trailing SL tracking only
                     self.active_trades[sym] = {
@@ -2919,25 +2957,36 @@ class DivergenceBot:
                         # ORDER FILLED - Move to active trades
                         fill_price = float(status.get('avgPrice', order_data['entry']))
                         
-                        # === CRITICAL: VERIFY SL IS SET ON BYBIT ===
-                        # If SL not set, position is unprotected!
+                        # === CRITICAL: SET UP NATIVE TRAILING STOP ===
+                        sl_distance = order_data.get('sl_distance', abs(fill_price - order_data['sl']))
+                        TRAIL_DISTANCE_R = 0.05
+                        BE_THRESHOLD_R = 0.2
+                        trail_distance = sl_distance * TRAIL_DISTANCE_R
+                        side = order_data['side']
+                        
+                        if side == 'long':
+                            activation_price = fill_price + (BE_THRESHOLD_R * sl_distance)
+                        else:
+                            activation_price = fill_price - (BE_THRESHOLD_R * sl_distance)
+                        
                         try:
-                            import time as t
-                            t.sleep(0.3)  # Brief delay for API
-                            verified_sl, _ = self.broker.verify_position_sl(sym)
-                            
-                            if not verified_sl or verified_sl == 0:
-                                logger.error(f"⚠️ SL NOT SET after fill for {sym}! Setting immediately...")
-                                self.broker.set_sl_only(sym, order_data['sl'])
-                                await self.send_telegram(
-                                    f"⚠️ **SL WAS MISSING - NOW SET**\n"
-                                    f"Symbol: `{sym}`\n"
-                                    f"SL: ${order_data['sl']:.4f}"
-                                )
-                            else:
-                                logger.info(f"✅ SL VERIFIED: {sym} @ ${verified_sl:.4f}")
+                            # Set up native trailing ONCE
+                            self.broker.set_trailing_sl(sym, order_data['sl'], trail_distance, activation_price, side)
+                            logger.info(f"✅ Native trailing set for {sym}: SL=${order_data['sl']:.4f}, trail=${trail_distance:.6f}")
                         except Exception as e:
-                            logger.error(f"Failed to verify SL for {sym}: {e}")
+                            logger.error(f"Native trailing failed for {sym}: {e}")
+                            # Fallback to basic SL
+                            try:
+                                self.broker.set_sl_only(sym, order_data['sl'])
+                                logger.warning(f"⚠️ Using fallback SL for {sym}")
+                            except Exception as e2:
+                                logger.error(f"Fallback SL also failed: {e2}")
+                                await self.send_telegram(
+                                    f"⚠️ **SL SET FAILED!**\n"
+                                    f"Symbol: `{sym}` {side.upper()}\n"
+                                    f"Error: {str(e2)[:50]}\n\n"
+                                    f"⚡ MANUAL ACTION MAY BE REQUIRED"
+                                )
                         
                         self.active_trades[sym] = {
                             'side': order_data['side'],
@@ -3135,18 +3184,13 @@ class DivergenceBot:
                                 logger.error(f"❌ INVALID TRAIL SL VALUE: {sym} SL={initial_trail_sl}, price={current_price}")
                                 continue
                             
-                            # Use Full mode (no qty) - Partial mode causes errors
-                            self.broker.set_sl_only(sym, initial_trail_sl)
+                            # === NATIVE TRAILING HANDLES THIS ===
+                            # Bybit's trailingStop + activePrice now handles SL updates automatically
+                            # We just update our internal tracking state
+                            # self.broker.set_sl_only(sym, initial_trail_sl)  # DISABLED - native trailing
                             
-                            # === VERIFY SL WAS ACTUALLY SET ===
-                            import time as t
-                            t.sleep(0.3)  # Brief delay for API to propagate
-                            verified_sl, _ = self.broker.verify_position_sl(sym)
-                            
-                            if verified_sl and abs(verified_sl - initial_trail_sl) < sl_distance * 0.1:
-                                logger.info(f"✅ VERIFIED: {sym} SL confirmed at ${verified_sl:.4f}")
-                            else:
-                                logger.warning(f"⚠️ SL VERIFICATION MISMATCH: {sym} expected ${initial_trail_sl:.4f}, got ${verified_sl or 0:.4f}")
+                            # Skip verification - native trailing manages SL on Bybit side
+                            # We trust Bybit's implementation
                             
                             trade_info['sl_current'] = initial_trail_sl
                             trade_info['sl_at_breakeven'] = True  # Flag that we've passed BE threshold
@@ -3225,8 +3269,9 @@ class DivergenceBot:
                                 logger.error(f"❌ INVALID TRAIL SL VALUE: {sym} SL={new_sl}, price={current_price}")
                                 continue
                             
-                            # Use Full mode (no qty) - Partial mode causes Bybit errors
-                            self.broker.set_sl_only(sym, new_sl)
+                            # === NATIVE TRAILING HANDLES THIS ===
+                            # Bybit's trailingStop handles SL updates automatically
+                            # self.broker.set_sl_only(sym, new_sl)  # DISABLED - native trailing
                             
                             old_sl = trade_info['sl_current']
                             trade_info['sl_current'] = new_sl

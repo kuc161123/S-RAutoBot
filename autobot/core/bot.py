@@ -1934,7 +1934,25 @@ class DivergenceBot:
                 return
             
             # Detect divergence signals on CLOSED candles
-            signals = detect_divergence(df, sym)
+            all_signals = detect_divergence(df, sym)
+            
+            if not all_signals:
+                return
+                
+            # FILTER SIGNALS based on config (matches backtest logic)
+            signals = []
+            for sig in all_signals:
+                if self.divergence_filter == 'regular_only':
+                    if sig.signal_type in ['regular_bullish', 'regular_bearish']:
+                        signals.append(sig)
+                elif self.divergence_filter == 'regular_bullish_only':
+                     if sig.signal_type == 'regular_bullish':
+                        signals.append(sig)
+                elif self.divergence_filter == 'hidden_bearish_only':
+                     if sig.signal_type == 'hidden_bearish':
+                        signals.append(sig)
+                else: # 'all'
+                    signals.append(sig)
             
             if not signals:
                 return
@@ -2750,8 +2768,8 @@ class DivergenceBot:
                 return round(quantity, 6)
             
             # Calculate SL/TP (OPTIMIZED 5M Strategy - Grid Search Validated)
-            # +8155R | 51.2% WR | 6/6 Walk-Forward | 100% Monte Carlo Prob
-            RR_RATIO = 1.0  # OPTIMIZED: 1:1 R:R (validated profitable)
+            # Uses config values loaded in __init__ (defaults: 1.0 R:R, 1.0x ATR)
+            RR_RATIO = self.rr_ratio
             
             # Get swing points from signal detection (legacy, but kept for compatibility)
             swing_low = signal_swing_low if signal_swing_low is not None else df_closed['low'].rolling(14).min().iloc[-1]
@@ -2765,17 +2783,17 @@ class DivergenceBot:
             constraint_atr = signal_atr if signal_atr is not None else atr
             
             # ============================================
-            # ATR-BASED SL: ENABLED (Grid Search Validated: 0.8x ATR optimal)
-            # Result: +8155R, 51.2% WR, 6/6 Walk-Forward, 100% MC Prob
+            # ATR-BASED SL: ENABLED (Grid Search Validated)
+            # Result: +8813R, 51.3% WR, 6/6 Walk-Forward, 100% MC Prob
             # ============================================
-            ATR_SL_MULTIPLIER = 0.8  # OPTIMIZED: 0.8x ATR for tight SL
+            ATR_SL_MULTIPLIER = self.sl_atr_multiplier
             
             sl_distance = ATR_SL_MULTIPLIER * constraint_atr
             
             # Ensure minimum SL distance (0.1% of price as absolute floor)
             min_sl_distance = expected_entry * 0.001
             if sl_distance < min_sl_distance:
-                logger.info(f"📐 {sym}: ATR SL too tight ({sl_distance:.6f}), using min ({min_sl_distance:.6f})")
+                logger.debug(f"📐 {sym}: ATR SL too tight ({sl_distance:.6f}), using min ({min_sl_distance:.6f})")
                 sl_distance = min_sl_distance
             
             if side == 'long':
@@ -2801,9 +2819,8 @@ class DivergenceBot:
             actual_rr = tp_distance / sl_distance if sl_distance > 0 else 0
             sl_atr_mult = sl_distance / atr if atr > 0 else 1.0
             
-            # OPTIMIZED 5M STRATEGY: 1:1 R:R with 0.8x ATR SL (Regular Divergences Only)
-            # Backtest validated: +8155R, 51.2% WR, 6/6 Walk-Forward, 100% MC Prob
-            logger.info(f"📊 {sym} ATR SL: {sl_atr_mult:.2f}×ATR | R:R = {actual_rr:.1f}:1")
+            # OPTIMIZED 5M STRATEGY: 1:1 R:R with 1.0x ATR SL (Regular Divergences Only)
+            logger.info(f"📊 {sym} ATR SL: {sl_atr_mult:.2f}×ATR (Cfg: {ATR_SL_MULTIPLIER}) | R:R = {actual_rr:.1f}:1")
             logger.info(f"   Entry: ${expected_entry:.6f} | SL: ${sl:.6f} | TP: ${tp:.6f}")
             
             # Calculate position size

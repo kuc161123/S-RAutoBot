@@ -613,17 +613,25 @@ class Bybit:
         
         return self._request("POST", "/v5/position/trading-stop", data)
 
-    def _get_precisions(self, symbol: str) -> tuple[str, str]:
+    def _get_precisions(self, symbol: str, force_fresh: bool = False) -> tuple[str, str]:
         """Get (tick_size, qty_step) as strings for a symbol (cached).
         
         CRITICAL: This is used for SL/TP/price rounding. 
         If cache miss, fetches from API. Always logs to help debug.
+        
+        Args:
+            symbol: The trading pair symbol (e.g., "BTCUSDT")
+            force_fresh: If True, bypass cache and fetch fresh data from API
         """
-        if symbol in self.precisions_cache:
+        # Check cache first (unless force_fresh)
+        if not force_fresh and symbol in self.precisions_cache:
             return self.precisions_cache[symbol]
         
-        # Cache miss - fetch from API
-        logger.warning(f"⚠️ Precision cache miss for {symbol} - fetching from API...")
+        # Cache miss or force_fresh - fetch from API
+        if force_fresh:
+            logger.info(f"📐 Force-fetching fresh precision for {symbol}...")
+        else:
+            logger.warning(f"⚠️ Precision cache miss for {symbol} - fetching from API...")
         
         try:
             instruments = self.get_instruments_info(symbol=symbol)
@@ -698,8 +706,8 @@ class Bybit:
                 raise ValueError(f"Invalid SL: {stop_loss} <= 0")
             
             # === AUTO-ROUNDING FIX ===
-            # Fetch tick size and round strictly to avoid 10001 errors
-            tick_size, _ = self._get_precisions(symbol)
+            # ALWAYS fetch fresh precision before setting SL (avoid stale cache issues)
+            tick_size, _ = self._get_precisions(symbol, force_fresh=True)
             final_sl_str = self._round_price(stop_loss, tick_size)
             logger.info(f"📐 Rounded SL for {symbol}: {stop_loss} -> {final_sl_str} (tick: {tick_size})")
             

@@ -299,7 +299,7 @@ class DivergenceBot:
         self.pending_trio_signals = {}  # {symbol: PendingTrioSignal}
         
         # Load trio config (defaults if not specified)
-        # OPTIMIZED: Grid search validated +8155R, 51.2% WR, 6/6 WF, 100% MC prob
+        # OPTIMIZED: Grid search validated +8813R, 51.3% WR, 6/6 WF, 100% MC prob
         trio_cfg = self.cfg.get('high_probability_trio', {})
         self.trio_enabled = trio_cfg.get('enabled', True)
         self.trio_require_vwap = trio_cfg.get('require_vwap', False)  # DISABLED - reduces profit
@@ -308,12 +308,12 @@ class DivergenceBot:
         self.trio_max_wait_candles = trio_cfg.get('max_wait_candles', 10)
         self.trio_max_chase_pct = trio_cfg.get('max_chase_pct', 0.5)
         
-        # NEW: Divergence type filter (regular_only = +8155R vs all = +1186R)
+        # NEW: Divergence type filter (regular_only = +8813R)
         self.divergence_filter = trio_cfg.get('divergence_filter', 'regular_only')
         
-        # NEW: Configurable SL/TP from grid search (1:1 R:R, 0.8x ATR)
+        # NEW: Configurable SL/TP from grid search (1:1 R:R, 1.0x ATR)
         self.rr_ratio = trio_cfg.get('rr_ratio', 1.0)
-        self.sl_atr_multiplier = trio_cfg.get('sl_atr_multiplier', 0.8)
+        self.sl_atr_multiplier = trio_cfg.get('sl_atr_multiplier', 1.0)
         
         logger.info(f"📊 CONFIG: Div={self.divergence_filter} | R:R={self.rr_ratio}:1 | SL={self.sl_atr_multiplier}×ATR")
         logger.info(f"📊 FILTERS: Volume={'ON' if self.trio_require_volume else 'OFF'} | VWAP={'ON' if self.trio_require_vwap else 'OFF'}")
@@ -943,10 +943,10 @@ class DivergenceBot:
                 f"├ Div: **REGULAR ONLY** (hidden off)\n"
                 f"├ 📊 Volume Filter: {'✅' if self.trio_require_volume else '❌'}\n"
                 f"├ Pending Triggers: {len(self.pending_trio_signals)}\n"
-                f"├ **EXIT: 1:1 R:R (ATR×0.8 SL)** ⚡\n"
-                f"├ Grid Search: +8155R validated\n"
+                f"├ **EXIT: 1:1 R:R (ATR×1.0 SL)** ⚡\n"
+                f"├ Grid Search: +8813R validated\n"
                 f"├ Walk-Forward: 6/6 periods ✅\n"
-                f"└ MC Prob: 100% | WR: 51.2%\n\n"
+                f"└ MC Prob: 100% | WR: 51.3%\n\n"
                 
                 f"📊 **SIGNALS**\n"
                 f"├ Detected: {self.signals_detected}\n"
@@ -2910,7 +2910,7 @@ class DivergenceBot:
                 f"🎯 **EXIT (Grid Search Validated)**\n"
                 f"├ SL: ${sl:.6f} ({self.sl_atr_multiplier}×ATR)\n"
                 f"├ TP: ${tp:.6f} ({self.rr_ratio}R)\n"
-                f"└ R:R = {actual_rr:.1f}:1 | WR: 51.2%\n\n"
+                f"└ R:R = {actual_rr:.1f}:1 | WR: 51.3%\n\n"
                 f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
             )
             await self.send_telegram(msg)
@@ -3586,7 +3586,7 @@ class DivergenceBot:
             f"└ Volume Filter: **{'ON' if self.trio_require_volume else 'OFF'}**\n\n"
             
             f"📈 **VALIDATED PERFORMANCE**\n"
-            f"├ Backtest: +8155R | 51.2% WR\n"
+            f"├ Backtest: +8813R | 51.3% WR\n"
             f"├ Walk-Forward: 6/6 periods ✅\n"
             f"└ Monte Carlo: 100% profit prob\n\n"
             

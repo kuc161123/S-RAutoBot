@@ -3070,6 +3070,11 @@ class DivergenceBot:
         """
         if not self.active_trades:
             return
+            
+        # DISABLE trailing for 1:1 Strategy (Low R:R doesn't need trailing)
+        # The backtest proves 1:1 R:R is best with simple hard SL/TP
+        if getattr(self, 'rr_ratio', 2.0) <= 1.5:
+            return
         
         # Throttle: Max 1 SL update per symbol per 60 seconds
         MIN_SL_UPDATE_INTERVAL = 60
@@ -3842,7 +3847,7 @@ class DivergenceBot:
                     await self.monitor_pending_limit_orders(candle_data)
                     
                     # Monitor trailing SL and partial TP fills
-                    await self.monitor_trailing_sl(candle_data)
+                    # await self.monitor_trailing_sl(candle_data)  # DISABLED: User requested deep removal of trailing logic
                     
                     # ============================================================
                     # HIGH-PROBABILITY TRIO: Check pending signals for triggers

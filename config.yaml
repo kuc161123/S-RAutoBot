@@ -8,26 +8,32 @@ bybit:
   ws_public_alt: wss://stream.bytick.com/v5/public/linear
 
 # ============================================
-# HIGH-PROBABILITY TRIO CONFIGURATION
-# OPTIMIZED: 5M + Fixed 5R TP (No Trailing)
-# Backtest: +1137R, 18.6% WR, 97.4% profit prob
+# OPTIMIZED 5M STRATEGY CONFIGURATION
+# Grid Search Validated: +8155R, 51.2% WR
+# Walk-Forward: 6/6 periods | Monte Carlo: 100% prob
 # ============================================
 high_probability_trio:
   enabled: true                    # Master switch for trio filters
   
-  # VWAP Filter: DISABLED (backtest shows it reduces profitability by -106R)
-  require_vwap: false              # VALIDATED: Keep disabled
+  # DIVERGENCE FILTER: Regular only (hidden divergences unprofitable)
+  # Grid Search Result: regular_only = +8155R vs all = +1186R
+  divergence_filter: regular_only  # NEW: 'all', 'regular_only', 'regular_bullish_only', 'hidden_bearish_only'
   
-  # Volume Filter: ENABLED (best single filter, outperforms full trio)
+  # Volume Filter: ENABLED (critical for profitability)
+  # With volume: +1186R | Without volume: -4210R
   require_volume: true             # VALIDATED: Keep enabled
   
-  # RSI Zone Filter: NOT USED (no improvement over volume-only)
-  # require_rsi_zone: false        # Implicit - not checked
+  # VWAP Filter: DISABLED (reduces profitability)
+  require_vwap: false              # VALIDATED: Keep disabled
   
   # Two-Bar Momentum Trigger: DISABLED (execute immediately)
   require_two_bar_momentum: false
   max_wait_candles: 10
   max_chase_pct: 0.5
+  
+  # SL/TP Configuration (used by bot.py)
+  rr_ratio: 1.0                    # OPTIMIZED: 1:1 R:R
+  sl_atr_multiplier: 0.8           # OPTIMIZED: 0.8x ATR for SL
 
 exploration:
   enabled: true

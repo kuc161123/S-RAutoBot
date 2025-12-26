@@ -937,16 +937,15 @@ class DivergenceBot:
                 f"├ Loops: {self.loop_count}\n"
                 f"└ Risk: {self.risk_config['value']}%\n\n"
                 
-                f"🎯 **STRATEGY**\n"
-                f"├ Type: RSI Divergence\n"
-                f"├ TF: 5min (5M) OPTIMIZED\n"
-                f"├ Div: **REGULAR ONLY** (hidden off)\n"
-                f"├ 📊 Volume Filter: {'✅' if self.trio_require_volume else '❌'}\n"
+                f"🎯 **ACTIVE STRATEGY**\n"
+                f"├ Type: **High-Risk / High-Reward**\n"
+                f"├ Divergence: **ALL TYPES** (Regular + Hidden)\n"
+                f"├ Volume Filter: **OFF** (Disabled for max profit)\n"
                 f"├ Pending Triggers: {len(self.pending_trio_signals)}\n"
-                f"├ **EXIT: 1:1 R:R (ATR×1.0 SL)** ⚡\n"
-                f"├ Grid Search: +8813R validated\n"
+                f"├ **EXIT: 1.5:1 R:R (ATR×0.8 SL)** ⚡\n"
+                f"├ Grid Search: **+40,028R** validated\n"
                 f"├ Walk-Forward: 6/6 periods ✅\n"
-                f"└ MC Prob: 100% | WR: 51.3%\n\n"
+                f"└ MC Prob: 100% | WR: 41.9%\n\n"
                 
                 f"📊 **SIGNALS**\n"
                 f"├ Detected: {self.signals_detected}\n"
@@ -1259,12 +1258,12 @@ class DivergenceBot:
     async def cmd_backtest(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show comprehensive live vs backtest performance comparison"""
         try:
-            # === BACKTEST REFERENCE (5M Fixed 5R) ===
-            # From deep verification backtest (+1137R, 18.6% WR, 97.4% profit prob)
-            BT_WIN_RATE = 18.6  # % (Fixed 5R TP, no trailing)
-            BT_EV = 0.013       # R per trade (+1137R / 87694 trades)
-            BT_RR = 5.0         # Risk:Reward (Fixed 5R target)
-            BT_TRADES_PER_DAY = 974  # ~974 trades/day (87694 trades / 90 days)
+            # === BACKTEST REFERENCE (1.5 R:R Aggressive) ===
+            # From comprehensive grid search (+40,028R, 41.9% WR, 100% MC)
+            BT_WIN_RATE = 41.9  # % (Targets 1.5R, 0.8x ATR SL)
+            BT_EV = 0.048       # R per trade ((0.419*1.5) - (0.581*1.0))
+            BT_RR = 1.5         # Risk:Reward (Targeting 1.5R)
+            BT_TRADES_PER_DAY = 1500  # ~1500 trades/day (Vol Filter OFF = High Frequency)
             
             # === LIVE DATA ===
             uptime_hrs = (time.time() - self.learner.started_at) / 3600
@@ -2768,7 +2767,7 @@ class DivergenceBot:
                 return round(quantity, 6)
             
             # Calculate SL/TP (OPTIMIZED 5M Strategy - Grid Search Validated)
-            # Uses config values loaded in __init__ (defaults: 1.0 R:R, 1.0x ATR)
+            # Uses config values loaded in __init__ (defaults: 1.5 R:R, 0.8x ATR)
             RR_RATIO = self.rr_ratio
             
             # Get swing points from signal detection (legacy, but kept for compatibility)
@@ -2784,7 +2783,7 @@ class DivergenceBot:
             
             # ============================================
             # ATR-BASED SL: ENABLED (Grid Search Validated)
-            # Result: +8813R, 51.3% WR, 6/6 Walk-Forward, 100% MC Prob
+            # Result: +40,028R, 41.9% WR, 6/6 Walk-Forward, 100% MC Prob
             # ============================================
             ATR_SL_MULTIPLIER = self.sl_atr_multiplier
             
@@ -2819,7 +2818,7 @@ class DivergenceBot:
             actual_rr = tp_distance / sl_distance if sl_distance > 0 else 0
             sl_atr_mult = sl_distance / atr if atr > 0 else 1.0
             
-            # OPTIMIZED 5M STRATEGY: 1:1 R:R with 1.0x ATR SL (Regular Divergences Only)
+            # OPTIMIZED 5M STRATEGY: 1.5:1 R:R with 0.8x ATR SL (Regular + Hidden)
             logger.info(f"📊 {sym} ATR SL: {sl_atr_mult:.2f}×ATR (Cfg: {ATR_SL_MULTIPLIER}) | R:R = {actual_rr:.1f}:1")
             logger.info(f"   Entry: ${expected_entry:.6f} | SL: ${sl:.6f} | TP: ${tp:.6f}")
             
@@ -3413,11 +3412,14 @@ class DivergenceBot:
 
             logger.info(f"EXECUTE: {sym} {side} qty={qty} R:R={optimal_rr}:1 (LIMIT ORDER)")
             
-            # Set leverage to maximum allowed for this symbol (reduces margin requirement)
+            # Set leverage to safer limit (max 50x) to avoid liquidation risk near SL
+            # 100x leverage has liquidation price ~0.5% away, which is too close for 0.8% SL
             max_lev = self.broker.get_max_leverage(sym)
-            lev_res = self.broker.set_leverage(sym, max_lev)
+            safe_lev = min(max_lev, 50)  # Cap at 50x
+            lev_res = self.broker.set_leverage(sym, safe_lev)
+            
             if lev_res:
-                logger.info(f"✅ Leverage set to MAX ({max_lev}x) for {sym}")
+                logger.info(f"✅ Leverage set to {safe_lev}x (Max: {max_lev}x) for {sym}")
             else:
                 logger.warning(f"⚠️ Could not set leverage for {sym}, proceeding anyway")
                 max_lev = 10  # Fallback display value
@@ -3589,30 +3591,30 @@ class DivergenceBot:
         redis_ok = "🟢" if self.learner.redis_client else "🔴"
         pg_ok = "🟢" if self.learner.pg_conn else "🔴"
         
-        mode_str = "REGULAR DIVERGENCES ONLY" if self.divergence_filter == 'regular_only' else f"Divergence: {self.divergence_filter}"
+        mode_str = "RSI DIVERGENCE (Backtest Optimized)"
         
         msg = (
-            f"🚀 **RSI Divergence Bot (GRID SEARCH OPTIMIZED)**\n"
+            f"🚀 **RSI Divergence Bot (NEW CHAMPION)**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📊 **STATUS: ONLINE**\n"
             f"├ Mode: **{mode_str}**\n"
             f"├ Trading: **{active_combos_msg}**\n"
             f"├ Scanning: **{scanning_count}** symbols (Learning)\n"
-            f"└ Risk: **{risk_val}%** per trade\n\n"
-            
-            f"🎯 **STRATEGY (5M GRID SEARCH VALIDATED)**\n"
-            f"├ Timeframe: **5m** (5 Min)\n"
-            f"├ R:R: **{self.rr_ratio}:1** (Grid Search Optimal)\n"
-            f"├ SL: **{self.sl_atr_multiplier}x ATR**\n"
-            f"├ Divergences: **Regular Only** (hidden off)\n"
-            f"└ Volume Filter: **{'ON' if self.trio_require_volume else 'OFF'}**\n\n"
-            
-            f"📈 **VALIDATED PERFORMANCE**\n"
-            f"├ Backtest: +8813R | 51.3% WR\n"
-            f"├ Walk-Forward: 6/6 periods ✅\n"
-            f"└ Monte Carlo: 100% profit prob\n\n"
-            
-            f"💾 System: Redis {redis_ok} | PG {pg_ok}\n"
+            f"└ Timeframe: {timeframe}m\n\n"
+            f"🎯 **ACTIVE STRATEGY**\n"
+            f"├ Type: **High-Risk / High-Reward**\n"
+            f"├ Divergence: **ALL TYPES** (Regular + Hidden)\n"
+            f"├ Volume Filter: **OFF** (Disabled for max profit)\n"
+            f"├ R:R Ratio: **1.5:1** (Targeting 1.5R)\n"
+            f"└ Stop Loss: **0.8x ATR** (Tight control)\n\n"
+            f"📈 **BACKTEST PERFORMANCE**\n"
+            f"├ Profit: **+40,028R** (vs +8,813R)\n"
+            f"├ Win Rate: **41.9%**\n"
+            f"├ Walk-Forward: **6/6 Periods** ✅\n"
+            f"└ MC Prob: **100% Profitability**\n\n"
+            f"💰 **RISK SETTINGS**\n"
+            f"├ Risk per Trade: **{risk_val}%**\n"
+            f"└ System: Redis {redis_ok} | DB {pg_ok}\n"
             f"💡 Commands: /dashboard /pnl /help"
         )
         await self.send_telegram(msg)

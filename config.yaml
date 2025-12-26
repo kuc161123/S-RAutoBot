@@ -9,19 +9,19 @@ bybit:
 
 # ============================================
 # OPTIMIZED 5M STRATEGY CONFIGURATION
-# Grid Search Validated: +8155R, 51.2% WR
+# Grid Search Validated: +40,028R, 41.9% WR
 # Walk-Forward: 6/6 periods | Monte Carlo: 100% prob
 # ============================================
 high_probability_trio:
   enabled: true                    # Master switch for trio filters
   
-  # DIVERGENCE FILTER: Regular only (hidden divergences unprofitable)
-  # Grid Search Result: regular_only = +8155R vs all = +1186R
-  divergence_filter: regular_only  # NEW: 'all', 'regular_only', 'regular_bullish_only', 'hidden_bearish_only'
+  # DIVERGENCE FILTER: All types (Regular + Hidden)
+  # Grid Search Result: all = +40,028R vs regular_only = +30,717R
+  divergence_filter: all           # NEW: 'all', 'regular_only', 'regular_bullish_only', 'hidden_bearish_only'
   
-  # Volume Filter: ENABLED (critical for profitability)
-  # With volume: +1186R | Without volume: -4210R
-  require_volume: true             # VALIDATED: Keep enabled
+  # Volume Filter: DISABLED (filtering was reducing profit)
+  # With volume: +29,401R | Without volume: +40,028R
+  require_volume: false            # VALIDATED: Disable for max profit
   
   # VWAP Filter: DISABLED (reduces profitability)
   require_vwap: false              # VALIDATED: Keep disabled
@@ -32,9 +32,9 @@ high_probability_trio:
   max_chase_pct: 0.5
   
   # SL/TP Configuration (used by bot.py)
-  rr_ratio: 1.0                    # OPTIMIZED: 1:1 R:R
-  sl_atr_multiplier: 1.0           # OPTIMIZED: 1.0x ATR (Improved from 0.8x)
-  # Stats: +8813R | 51.3% WR | 6/6 WF | 100% MC
+  rr_ratio: 1.5                    # OPTIMIZED: 1.5:1 R:R
+  sl_atr_multiplier: 0.8           # OPTIMIZED: 0.8x ATR (Tighter stop)
+  # Stats: +40,028R | 41.9% WR | 6/6 WF | 100% MC
 
 exploration:
   enabled: true

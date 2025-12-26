@@ -2087,7 +2087,9 @@ class DivergenceBot:
                 # ====================================================
                 # HIGH-PROBABILITY TRIO FILTER 2: RSI ZONE
                 # ====================================================
-                if self.trio_enabled:
+                # FIX: Only apply RSI Zone filter for SPECIFIC strategies (not 'all')
+                # The 'all' strategy uses the core detector's looser logic for max volume
+                if self.trio_enabled and self.divergence_filter != 'all':
                     rsi_valid, rsi_reason = check_trio_rsi_zone(signal_type, signal.rsi_value)
                     if not rsi_valid:
                         logger.info(f"📊 RSI ZONE SKIP: {sym} {signal_type} - {rsi_reason}")

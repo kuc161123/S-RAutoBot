@@ -2007,7 +2007,8 @@ class DivergenceBot:
                 # ====================================================
                 # Determine what the live bot decided for this signal
                 live_action = "TRADE"
-                if 'vol_ok' in last_row and not last_row['vol_ok']:
+                # FIX: Only filter by volume if CONFIG requires it
+                if self.trio_require_volume and 'vol_ok' in last_row and not last_row['vol_ok']:
                     live_action = "SKIP_VOLUME"
                 
                 # Perform Audit

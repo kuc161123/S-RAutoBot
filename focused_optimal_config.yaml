@@ -1,0 +1,28 @@
+high_probability_trio:
+  backtest_stats:
+    monte_carlo_prob: !!python/object/apply:numpy.core.multiarray.scalar
+    - !!python/object/apply:numpy.dtype
+      args:
+      - f8
+      - false
+      - true
+      state: !!python/tuple
+      - 3
+      - <
+      - null
+      - null
+      - null
+      - -1
+      - -1
+      - 0
+    - !!binary |
+      AAAAAAAAWUA=
+    total_r: 5536
+    trades: 74066
+    walk_forward_score: 6/6
+    win_rate: 26.9
+  divergence_filter: all
+  enabled: true
+  require_volume: false
+  rr_ratio: 3.0
+  sl_atr_multiplier: 0.8

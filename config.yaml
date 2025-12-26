@@ -32,9 +32,9 @@ high_probability_trio:
   max_chase_pct: 0.5
   
   # SL/TP Configuration (used by bot.py)
-  rr_ratio: 1.5                    # OPTIMIZED: 1.5:1 R:R
-  sl_atr_multiplier: 0.8           # OPTIMIZED: 0.8x ATR (Tighter stop)
-  # Stats: +40,028R | 41.9% WR | 6/6 WF | 100% MC
+  rr_ratio: 3.0                    # OPTIMAL: 3.0:1 R:R (Backtest: +5568R, 26.9% WR)
+  sl_atr_multiplier: 0.8           # OPTIMAL: 0.8x ATR (Tighter stop)
+  # Stats: +5568R | 26.9% WR | 6/6 WF | 100% MC (20 high-liquidity coins)
 
 exploration:
   enabled: true

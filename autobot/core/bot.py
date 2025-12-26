@@ -299,21 +299,21 @@ class DivergenceBot:
         self.pending_trio_signals = {}  # {symbol: PendingTrioSignal}
         
         # Load trio config (defaults if not specified)
-        # OPTIMIZED: Grid search validated +8813R, 51.3% WR, 6/6 WF, 100% MC prob
+        # OPTIMAL: Backtest validated +5568R, 26.9% WR, 6/6 WF, 100% MC prob (3:1 R:R)
         trio_cfg = self.cfg.get('high_probability_trio', {})
         self.trio_enabled = trio_cfg.get('enabled', True)
         self.trio_require_vwap = trio_cfg.get('require_vwap', False)  # DISABLED - reduces profit
-        self.trio_require_volume = trio_cfg.get('require_volume', True)  # ENABLED - critical for profit
+        self.trio_require_volume = trio_cfg.get('require_volume', False)  # DISABLED - backtest shows max profit with volume OFF
         self.trio_require_two_bar = trio_cfg.get('require_two_bar_momentum', False)
         self.trio_max_wait_candles = trio_cfg.get('max_wait_candles', 10)
         self.trio_max_chase_pct = trio_cfg.get('max_chase_pct', 0.5)
         
-        # NEW: Divergence type filter (regular_only = +8813R)
+        # Divergence type filter (all = +5568R at 3:1 R:R)
         self.divergence_filter = trio_cfg.get('divergence_filter', 'regular_only')
         
-        # NEW: Configurable SL/TP from grid search (1:1 R:R, 1.0x ATR)
-        self.rr_ratio = trio_cfg.get('rr_ratio', 1.0)
-        self.sl_atr_multiplier = trio_cfg.get('sl_atr_multiplier', 1.0)
+        # Configurable SL/TP from focused backtest (optimal: 3.0 R:R, 0.8x ATR)
+        self.rr_ratio = trio_cfg.get('rr_ratio', 3.0)
+        self.sl_atr_multiplier = trio_cfg.get('sl_atr_multiplier', 0.8)
         
         logger.info(f"📊 CONFIG: Div={self.divergence_filter} | R:R={self.rr_ratio}:1 | SL={self.sl_atr_multiplier}×ATR")
         logger.info(f"📊 FILTERS: Volume={'ON' if self.trio_require_volume else 'OFF'} | VWAP={'ON' if self.trio_require_vwap else 'OFF'}")
@@ -938,14 +938,14 @@ class DivergenceBot:
                 f"└ Risk: {self.risk_config['value']}%\n\n"
                 
                 f"🎯 **ACTIVE STRATEGY**\n"
-                f"├ Type: **High-Risk / High-Reward**\n"
-                f"├ Divergence: **ALL TYPES** (Regular + Hidden)\n"
-                f"├ Volume Filter: **OFF** (Disabled for max profit)\n"
+                f"├ Type: **High R:R Strategy**\n"
+                f"├ Divergence: **{self.divergence_filter.upper()}**\n"
+                f"├ Volume Filter: **{'ON' if self.trio_require_volume else 'OFF'}**\n"
                 f"├ Pending Triggers: {len(self.pending_trio_signals)}\n"
-                f"├ **EXIT: 1.5:1 R:R (ATR×0.8 SL)** ⚡\n"
-                f"├ Grid Search: **+40,028R** validated\n"
+                f"├ **EXIT: {self.rr_ratio}:1 R:R (ATR×{self.sl_atr_multiplier} SL)** ⚡\n"
+                f"├ Backtest: **+5,568R** (90d, 20 coins)\n"
                 f"├ Walk-Forward: 6/6 periods ✅\n"
-                f"└ MC Prob: 100% | WR: 41.9%\n\n"
+                f"└ MC Prob: 100% | Expected WR: 26.9%\n\n"
                 
                 f"📊 **SIGNALS**\n"
                 f"├ Detected: {self.signals_detected}\n"
@@ -1258,12 +1258,12 @@ class DivergenceBot:
     async def cmd_backtest(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show comprehensive live vs backtest performance comparison"""
         try:
-            # === BACKTEST REFERENCE (1.5 R:R Aggressive) ===
-            # From comprehensive grid search (+40,028R, 41.9% WR, 100% MC)
-            BT_WIN_RATE = 41.9  # % (Targets 1.5R, 0.8x ATR SL)
-            BT_EV = 0.048       # R per trade ((0.419*1.5) - (0.581*1.0))
-            BT_RR = 1.5         # Risk:Reward (Targeting 1.5R)
-            BT_TRADES_PER_DAY = 1500  # ~1500 trades/day (Vol Filter OFF = High Frequency)
+            # === BACKTEST REFERENCE (3:1 R:R Optimal) ===
+            # From focused backtest (+5,568R, 26.9% WR, 6/6 WF, 100% MC)
+            BT_WIN_RATE = 26.9  # % (3:1 R:R, 0.8x ATR SL)
+            BT_EV = 0.076       # R per trade ((0.269*3.0) - (0.731*1.0))
+            BT_RR = 3.0         # Risk:Reward (Targeting 3R)
+            BT_TRADES_PER_DAY = 823  # ~823 trades/day (74010 trades / 90 days for 'all' filter)
             
             # === LIVE DATA ===
             uptime_hrs = (time.time() - self.learner.started_at) / 3600
@@ -2795,7 +2795,7 @@ class DivergenceBot:
                 return round(quantity, 6)
             
             # Calculate SL/TP (OPTIMIZED 5M Strategy - Grid Search Validated)
-            # Uses config values loaded in __init__ (defaults: 1.5 R:R, 0.8x ATR)
+            # Uses config values loaded in __init__ (optimal: 3.0 R:R, 0.8x ATR)
             RR_RATIO = self.rr_ratio
             
             # Get swing points from signal detection (legacy, but kept for compatibility)
@@ -2811,7 +2811,7 @@ class DivergenceBot:
             
             # ============================================
             # ATR-BASED SL: ENABLED (Grid Search Validated)
-            # Result: +40,028R, 41.9% WR, 6/6 Walk-Forward, 100% MC Prob
+            # Result: +5,568R, 26.9% WR, 6/6 Walk-Forward, 100% MC Prob
             # ============================================
             ATR_SL_MULTIPLIER = self.sl_atr_multiplier
             
@@ -2846,7 +2846,7 @@ class DivergenceBot:
             actual_rr = tp_distance / sl_distance if sl_distance > 0 else 0
             sl_atr_mult = sl_distance / atr if atr > 0 else 1.0
             
-            # OPTIMIZED 5M STRATEGY: 1.5:1 R:R with 0.8x ATR SL (Regular + Hidden)
+            # OPTIMAL 5M STRATEGY: 3.0:1 R:R with 0.8x ATR SL (All divergence types)
             logger.info(f"📊 {sym} ATR SL: {sl_atr_mult:.2f}×ATR (Cfg: {ATR_SL_MULTIPLIER}) | R:R = {actual_rr:.1f}:1")
             logger.info(f"   Entry: ${expected_entry:.6f} | SL: ${sl:.6f} | TP: ${tp:.6f}")
             
@@ -2965,7 +2965,7 @@ class DivergenceBot:
                 f"🎯 **EXIT (Grid Search Validated)**\n"
                 f"├ SL: ${sl:.6f} ({self.sl_atr_multiplier}×ATR)\n"
                 f"├ TP: ${tp:.6f} ({self.rr_ratio}R)\n"
-                f"└ R:R = {actual_rr:.1f}:1 | WR: 51.3%\n\n"
+                f"└ R:R = {actual_rr:.1f}:1 | Expected WR: 26.9%\n\n"
                 f"💵 Risk: ${risk_amount:.2f} ({self.risk_config['value']}%)"
             )
             await self.send_telegram(msg)
@@ -3634,7 +3634,7 @@ class DivergenceBot:
         mode_str = "RSI DIVERGENCE (Backtest Optimized)"
         
         msg = (
-            f"🚀 **RSI Divergence Bot (NEW CHAMPION)**\n"
+            f"🚀 **RSI Divergence Bot (OPTIMAL CONFIG)**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📊 **STATUS: ONLINE**\n"
             f"├ Mode: **{mode_str}**\n"
@@ -3642,14 +3642,14 @@ class DivergenceBot:
             f"├ Scanning: **{scanning_count}** symbols (Learning)\n"
             f"└ Timeframe: {timeframe}m\n\n"
             f"🎯 **ACTIVE STRATEGY**\n"
-            f"├ Type: **High-Risk / High-Reward**\n"
-            f"├ Divergence: **ALL TYPES** (Regular + Hidden)\n"
-            f"├ Volume Filter: **OFF** (Disabled for max profit)\n"
-            f"├ R:R Ratio: **1.5:1** (Targeting 1.5R)\n"
-            f"└ Stop Loss: **0.8x ATR** (Tight control)\n\n"
-            f"📈 **BACKTEST PERFORMANCE**\n"
-            f"├ Profit: **+40,028R** (vs +8,813R)\n"
-            f"├ Win Rate: **41.9%**\n"
+            f"├ Type: **High R:R Strategy**\n"
+            f"├ Divergence: **{self.divergence_filter.upper()}**\n"
+            f"├ Volume Filter: **{'ON' if self.trio_require_volume else 'OFF'}**\n"
+            f"├ R:R Ratio: **{self.rr_ratio}:1** (Targeting {self.rr_ratio}R)\n"
+            f"└ Stop Loss: **{self.sl_atr_multiplier}x ATR** (Tight control)\n\n"
+            f"📈 **BACKTEST PERFORMANCE (90 days, 20 coins)**\n"
+            f"├ Profit: **+5,568R** (Top config)\n"
+            f"├ Win Rate: **26.9%** (Expected for 3:1 R:R)\n"
             f"├ Walk-Forward: **6/6 Periods** ✅\n"
             f"└ MC Prob: **100% Profitability**\n\n"
             f"💰 **RISK SETTINGS**\n"

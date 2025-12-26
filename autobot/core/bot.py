@@ -2563,12 +2563,12 @@ class DivergenceBot:
                         f"├ Fill Price: ${avg_price:.4f}\n"
                         f"├ Quantity: {filled_qty}\n"
                         f"└ Value: ${position_value:.2f}\n\n"
-                        f"🎯 **EXIT STRATEGY (1:1 R:R)**\n"
+                        f"🎯 **EXIT STRATEGY ({self.rr_ratio}:1 R:R)**\n"
                         f"├ Initial SL: ${sl:.4f} (-{sl_pct:.2f}%)\n"
-                        f"├ TP: ${tp:.4f} (+{sl_pct:.2f}%)\n"
+                        f"├ TP: ${tp:.4f} (+{sl_pct * self.rr_ratio:.2f}%)\n"
                         f"├ No trailing - clean exit\n"
-                        f"└ R:R = 1:1 (ATR 1.0)\n\n"
-                        f"💡 Worst: -1R | Best: +1R"
+                        f"└ R:R = {self.rr_ratio}:1 (ATR {self.sl_atr_multiplier})\n\n"
+                        f"💡 Worst: -1R | Best: +{self.rr_ratio}R"
                     )
                     continue
                 
@@ -2864,6 +2864,16 @@ class DivergenceBot:
             
             logger.info(f"📐 {sym} SL distance: {sl_atr_mult:.2f}×ATR | Risk: ${risk_amount:.2f}")
             logger.info(f"   Qty: {qty} | qtyStep: {qty_step}")
+            
+            # Check if Cost exceeds Balance (prevent 'ab not enough' errors)
+            estimated_cost = qty * expected_entry
+            if estimated_cost > balance:
+                max_afford_qty = (balance * 0.95) / expected_entry
+                logger.warning(f"📉 Insufficient Balance for {sym}: Cost ${estimated_cost:.2f} > Bal ${balance:.2f}. Reducing Qty to {max_afford_qty:.4f}")
+                qty = round_to_qty_step(max_afford_qty)
+                if qty < min_qty:
+                    logger.warning(f"Skip {sym}: Reduced qty {qty} < min {min_qty}")
+                    return
             
             # ============================================
             # CRITICAL: Validate SL vs Current Market Price

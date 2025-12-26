@@ -121,16 +121,12 @@ def detect_divergence(
     min_distance: int = MIN_PIVOT_DISTANCE
 ) -> List[DivergenceSignal]:
     """
-    Detect RSI divergence patterns in price data.
+    Detect RSI divergence patterns using ROLLING WINDOW to match Backtest Logic.
     
-    Args:
-        df: DataFrame with 'close', 'high', 'low', 'rsi' columns
-        symbol: Trading symbol
-        lookback: How many bars back to look for divergence
-        min_distance: Minimum bars between pivots
-        
-    Returns:
-        List of DivergenceSignal objects for detected divergences
+    Backtest Logic:
+    - Uses rolling(14) min/max to identify swing points
+    - Compares current price/RSI vs simple rolling window
+    - NO complex fractal pivot detection (keeps it simple and robust)
     """
     if len(df) < 50:
         return []
@@ -140,115 +136,68 @@ def detect_divergence(
         df = df.copy()
         df['rsi'] = calculate_rsi(df['close'], RSI_PERIOD)
     
-    close = df['close'].values
-    rsi = df['rsi'].values
-    n = len(df)
+    # Calculate rolling metrics exactly like backtest
+    # df['price_low'] = df['low'].rolling(lookback).min()
+    # df['price_high'] = df['high'].rolling(lookback).max()
+    # But for detection on ANY candle (not just vector), we look at the last row
     
-    # Find pivots on price and RSI
-    price_pivot_highs, price_pivot_lows = find_pivots(close, PIVOT_LEFT, PIVOT_RIGHT)
-    rsi_pivot_highs, rsi_pivot_lows = find_pivots(rsi, PIVOT_LEFT, PIVOT_RIGHT)
+    # We need history to calculate rolling values
+    # Copy relevant columns to avoid affecting source
+    data = df[['high', 'low', 'close', 'rsi']].copy()
+    
+    data['price_low'] = data['low'].rolling(lookback).min()
+    data['price_high'] = data['high'].rolling(lookback).max()
+    data['rsi_low'] = data['rsi'].rolling(lookback).min()
+    data['rsi_high'] = data['rsi'].rolling(lookback).max()
+    
+    # We only check the LAST confirmed candle (iloc[-1])
+    # The 'df' passed here is usually df_closed (the last closed candle is the last row)
+    curr = data.iloc[-1]
+    prev_lookback = data.iloc[-lookback-1:-1] # The window BEFORE current
     
     signals = []
+    timestamp = df.index[-1]
+    price = curr['close']
+    rsi = curr['rsi']
     
-    # Only check last bar for new signals
-    i = n - 1
+    # shift(lookback) in backtest roughly compares current vs [t-lookback] window
+    # Backtest logic:
+    # reg_bull: low <= rolling_low & rsi > rsi_rolling_low.shift & rsi < 45
     
-    # Find recent pivot lows (for bullish divergence)
-    curr_price_low = curr_price_low_idx = None
-    prev_price_low = prev_price_low_idx = None
+    # 1. Regular Bullish
+    # Price is at new 14-period low, but RSI is NOT at new low (and RSI < 45)
+    # Note: data['price_low'] includes current bar, so curr['low'] == curr['price_low'] is the trigger
+    is_new_low = curr['low'] <= curr['price_low'] + 0.0000001
     
-    for j in range(i, max(i - lookback, 0), -1):
-        if not np.isnan(price_pivot_lows[j]):
-            if curr_price_low is None:
-                curr_price_low = price_pivot_lows[j]
-                curr_price_low_idx = j
-            elif prev_price_low is None and j < curr_price_low_idx - min_distance:
-                prev_price_low = price_pivot_lows[j]
-                prev_price_low_idx = j
-                break
+    # RSI low from PREVIOUS window (excluding current impact)
+    # approximating backtest's shift(lookback) logic which compares to "old" lows
+    prev_rsi_low = prev_lookback['rsi'].min()
     
-    # Find recent pivot highs (for bearish divergence)
-    curr_price_high = curr_price_high_idx = None
-    prev_price_high = prev_price_high_idx = None
+    if is_new_low and curr['rsi'] > prev_rsi_low and curr['rsi'] < 45:
+        signals.append(DivergenceSignal(symbol, 'long', 'regular_bullish', rsi, price, timestamp, "DIV:regular_bullish"))
+
+    # 2. Regular Bearish
+    # Price is at new 14-period high, but RSI is NOT at new high (and RSI > 55)
+    is_new_high = curr['high'] >= curr['price_high'] - 0.0000001
+    prev_rsi_high = prev_lookback['rsi'].max()
     
-    for j in range(i, max(i - lookback, 0), -1):
-        if not np.isnan(price_pivot_highs[j]):
-            if curr_price_high is None:
-                curr_price_high = price_pivot_highs[j]
-                curr_price_high_idx = j
-            elif prev_price_high is None and j < curr_price_high_idx - min_distance:
-                prev_price_high = price_pivot_highs[j]
-                prev_price_high_idx = j
-                break
+    if is_new_high and curr['rsi'] < prev_rsi_high and curr['rsi'] > 55:
+        signals.append(DivergenceSignal(symbol, 'short', 'regular_bearish', rsi, price, timestamp, "DIV:regular_bearish"))
+
+    # 3. Hidden Bullish
+    # Price is HIGHER than old low, but RSI is lower (Continuation)
+    # Check: Low > Old Low (from 14 bars ago) AND RSI < Old RSI
+    # In backtest: df['low'] > df['low'].shift(lookback)
+    compare_candle = data.iloc[-lookback-1] if len(data) > lookback else data.iloc[0]
     
-    current_rsi = rsi[i]
-    current_price = close[i]
-    current_time = df.index[i]
-    
-    # === REGULAR BULLISH: Price Lower Low, RSI Higher Low ===
-    if curr_price_low is not None and prev_price_low is not None:
-        if curr_price_low < prev_price_low:  # Price made lower low
-            curr_rsi = rsi[curr_price_low_idx]
-            prev_rsi = rsi[prev_price_low_idx]
-            if curr_rsi > prev_rsi and current_rsi < RSI_OVERSOLD + 15:
-                signals.append(DivergenceSignal(
-                    symbol=symbol,
-                    side='long',
-                    signal_type='regular_bullish',
-                    rsi_value=current_rsi,
-                    price=current_price,
-                    timestamp=current_time,
-                    combo='DIV:regular_bullish'
-                ))
-    
-    # === REGULAR BEARISH: Price Higher High, RSI Lower High ===
-    if curr_price_high is not None and prev_price_high is not None:
-        if curr_price_high > prev_price_high:  # Price made higher high
-            curr_rsi = rsi[curr_price_high_idx]
-            prev_rsi = rsi[prev_price_high_idx]
-            if curr_rsi < prev_rsi and current_rsi > RSI_OVERBOUGHT - 15:
-                signals.append(DivergenceSignal(
-                    symbol=symbol,
-                    side='short',
-                    signal_type='regular_bearish',
-                    rsi_value=current_rsi,
-                    price=current_price,
-                    timestamp=current_time,
-                    combo='DIV:regular_bearish'
-                ))
-    
-    # === HIDDEN BULLISH: Price Higher Low, RSI Lower Low ===
-    if curr_price_low is not None and prev_price_low is not None:
-        if curr_price_low > prev_price_low:  # Price made higher low
-            curr_rsi = rsi[curr_price_low_idx]
-            prev_rsi = rsi[prev_price_low_idx]
-            if curr_rsi < prev_rsi and current_rsi < RSI_OVERBOUGHT - 10:
-                signals.append(DivergenceSignal(
-                    symbol=symbol,
-                    side='long',
-                    signal_type='hidden_bullish',
-                    rsi_value=current_rsi,
-                    price=current_price,
-                    timestamp=current_time,
-                    combo='DIV:hidden_bullish'
-                ))
-    
-    # === HIDDEN BEARISH: Price Lower High, RSI Higher High ===
-    if curr_price_high is not None and prev_price_high is not None:
-        if curr_price_high < prev_price_high:  # Price made lower high
-            curr_rsi = rsi[curr_price_high_idx]
-            prev_rsi = rsi[prev_price_high_idx]
-            if curr_rsi > prev_rsi and current_rsi > RSI_OVERSOLD + 10:
-                signals.append(DivergenceSignal(
-                    symbol=symbol,
-                    side='short',
-                    signal_type='hidden_bearish',
-                    rsi_value=current_rsi,
-                    price=current_price,
-                    timestamp=current_time,
-                    combo='DIV:hidden_bearish'
-                ))
-    
+    if curr['low'] > compare_candle['low'] and curr['rsi'] < compare_candle['rsi'] and curr['rsi'] < 60:
+         signals.append(DivergenceSignal(symbol, 'long', 'hidden_bullish', rsi, price, timestamp, "DIV:hidden_bullish"))
+
+    # 4. Hidden Bearish
+    # Price is LOWER than old high, but RSI is higher
+    if curr['high'] < compare_candle['high'] and curr['rsi'] > compare_candle['rsi'] and curr['rsi'] > 40:
+         signals.append(DivergenceSignal(symbol, 'short', 'hidden_bearish', rsi, price, timestamp, "DIV:hidden_bearish"))
+            
     return signals
 
 

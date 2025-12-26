@@ -3916,6 +3916,47 @@ class DivergenceBot:
                         logger.info(f"🔍 Checking {len(self.active_trades)} active trades for closure: {list(self.active_trades.keys())}")
                     for sym in list(self.active_trades.keys()):
                         try:
+                            trade_info = self.active_trades[sym]
+                            
+                            # ============================================================
+                            # BACKTEST MATCH: 500-BAR TIMEOUT (41 hours on 5M timeframe)
+                            # Force close zombie trades that haven't hit SL/TP
+                            # ============================================================
+                            TIMEOUT_HOURS = 41  # 500 bars × 5 min / 60 = 41.6 hours
+                            trade_age_hours = (time.time() - trade_info.get('open_time', time.time())) / 3600
+                            
+                            if trade_age_hours > TIMEOUT_HOURS:
+                                logger.warning(f"⏰ TIMEOUT: {sym} open for {trade_age_hours:.1f}h > {TIMEOUT_HOURS}h - FORCE CLOSING")
+                                
+                                # Force close via market order
+                                try:
+                                    side = trade_info['side']
+                                    close_side = 'Sell' if side == 'long' else 'Buy'
+                                    qty = trade_info.get('qty_remaining', trade_info.get('qty_initial', 0))
+                                    
+                                    if qty > 0:
+                                        self.broker.place_market(sym, close_side, qty, reduce_only=True)
+                                        logger.info(f"📤 TIMEOUT CLOSE: {sym} {close_side} {qty}")
+                                        
+                                        # Record as small loss (matches backtest: -FEE_PCT)
+                                        self.losses += 1
+                                        self.total_r_realized -= 0.05  # Small fee loss
+                                        
+                                        await self.send_telegram(
+                                            f"⏰ **TIMEOUT EXIT**\n"
+                                            f"━━━━━━━━━━━━━━━━━━━━\n"
+                                            f"📊 Symbol: `{sym}`\n"
+                                            f"⏱ Duration: {trade_age_hours:.1f} hours\n"
+                                            f"📉 Result: Small loss (fees only)\n"
+                                            f"💡 Reason: 500-bar limit (backtest match)"
+                                        )
+                                except Exception as close_err:
+                                    logger.error(f"Failed to close timed-out trade {sym}: {close_err}")
+                                
+                                # Remove from active trades
+                                self.active_trades.pop(sym, None)
+                                continue
+                            
                             pos = self.broker.get_position(sym)
                             has_position = pos and float(pos.get('size', 0)) > 0
                             logger.debug(f"Position check {sym}: has_position={has_position}, size={pos.get('size') if pos else 0}")

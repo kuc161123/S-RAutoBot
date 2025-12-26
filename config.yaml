@@ -31,7 +31,7 @@ high_probability_trio:
   require_two_bar_momentum: false
   require_structure_break: true  # PROFITABLE: Wait for close > swing high
   structure_lookback: 10          # 10-bar lookback for swing high/low
-  max_wait_candles: 4             # Wait up to 4 candles (20 mins on 5M)
+  max_wait_candles: 1             # STRICT: Wait only 1 candle (5 mins) - VALIDATED
   max_chase_pct: 0.5
   
   # SL/TP Configuration (OPTIMAL from exhaustive backtest)

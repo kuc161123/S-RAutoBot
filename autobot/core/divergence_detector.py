@@ -153,35 +153,45 @@ def detect_divergence(
     # We only check the LAST confirmed candle (iloc[-1])
     # The 'df' passed here is usually df_closed (the last closed candle is the last row)
     curr = data.iloc[-1]
-    prev_lookback = data.iloc[-lookback-1:-1] # The window BEFORE current
+    
+    # BACKTEST MATCHING:
+    # Regular Divergence in backtest uses: df['rsi'] > df['rsi_low'].shift(lookback)
+    # shift(lookback) means we access the rolling min from 'lookback' bars ago.
+    # rolling window at T-14 covers [T-14-13 ... T-14]. i.e. [T-27 ... T-14].
+    # So we need to look at the window from 2*lookback ago up to lookback ago.
+    
+    # Distant window for Regular Divergence (matches shift(lookback))
+    distant_start = -2 * lookback - 1
+    distant_end = -lookback - 1
+    
+    # Safety Check: Ensure we have enough data
+    if abs(distant_start) > len(data):
+        # Not enough history for full match, fallback to what we have or return empty
+        return []
+        
+    distant_window = data.iloc[distant_start:distant_end]
     
     signals = []
     timestamp = df.index[-1]
     price = curr['close']
     rsi = curr['rsi']
     
-    # shift(lookback) in backtest roughly compares current vs [t-lookback] window
-    # Backtest logic:
-    # reg_bull: low <= rolling_low & rsi > rsi_rolling_low.shift & rsi < 45
-    
     # 1. Regular Bullish
-    # Price is at new 14-period low, but RSI is NOT at new low (and RSI < 45)
-    # Note: data['price_low'] includes current bar, so curr['low'] == curr['price_low'] is the trigger
+    # Backtest: low <= price_low (current window) AND rsi > rsi_low.shift(lookback) (distant window)
     is_new_low = curr['low'] <= curr['price_low'] + 0.0000001
     
-    # RSI low from PREVIOUS window (excluding current impact)
-    # approximating backtest's shift(lookback) logic which compares to "old" lows
-    prev_rsi_low = prev_lookback['rsi'].min()
+    # RSI low from DISTANT window (matches shift(lookback))
+    distant_rsi_low = distant_window['rsi'].min()
     
-    if is_new_low and curr['rsi'] > prev_rsi_low and curr['rsi'] < 45:
+    if is_new_low and curr['rsi'] > distant_rsi_low and curr['rsi'] < 45:
         signals.append(DivergenceSignal(symbol, 'long', 'regular_bullish', rsi, price, timestamp, "DIV:regular_bullish"))
 
     # 2. Regular Bearish
-    # Price is at new 14-period high, but RSI is NOT at new high (and RSI > 55)
+    # Backtest: high >= price_high (current window) AND rsi < rsi_high.shift(lookback) (distant window)
     is_new_high = curr['high'] >= curr['price_high'] - 0.0000001
-    prev_rsi_high = prev_lookback['rsi'].max()
+    distant_rsi_high = distant_window['rsi'].max()
     
-    if is_new_high and curr['rsi'] < prev_rsi_high and curr['rsi'] > 55:
+    if is_new_high and curr['rsi'] < distant_rsi_high and curr['rsi'] > 55:
         signals.append(DivergenceSignal(symbol, 'short', 'regular_bearish', rsi, price, timestamp, "DIV:regular_bearish"))
 
     # 3. Hidden Bullish

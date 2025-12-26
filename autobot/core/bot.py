@@ -4148,26 +4148,28 @@ class DivergenceBot:
                                     else:
                                         pnl_detail = (
                                             f"💵 **P&L**: {outcome_display}\n"
+                                            f"├ USD: ~${abs(actual_r)*risk_amt:+.2f} (est)\n"
+                                            f"├ Theoretical: {theoretical_r:+.2f}R\n"
                                             f"└ Source: {pnl_source}\n\n"
                                         )
                                     
-                                    await self.send_telegram(
-                                        f"📝 **TRADE CLOSED**\n"
-                                        f"━━━━━━━━━━━━━━━━━━━━\n"
-                                        f"📊 Symbol: `{sym}`\n"
-                                        f"📈 Side: **{side.upper()}**\n"
-                                        f"🏷️ Type: {exit_type}\n\n"
-                                        f"{pnl_detail}"
-                                        f"📈 Entry: ${entry:.4f}\n"
-                                        f"📉 Exit: ${exit_price:.4f}\n"
-                                        f"📊 Move: {pnl_pct:+.2f}%\n"
-                                        f"⏱️ Duration: {duration_mins:.0f}m\n\n"
-                                        f"📊 **CUMULATIVE**\n"
-                                        f"├ Total P&L: **${self.total_pnl_usd:+.2f}**\n"
-                                        f"├ W/L: {self.wins}W / {self.losses}L\n"
-                                        f"└ {wr_info}"
-                                    )
-                                    
+                                    # Send exit notification
+                                    if self.tg_app:
+                                        msg = (
+                                            f"{exit_type} : {sym} {side.upper()}\n\n"
+                                            f"{pnl_detail}"
+                                            f"⏱ Time: {duration_mins:.1f}m\n"
+                                            f"📉 Exit: {exit_price:.6f}\n"
+                                            f"🚪 Type: {outcome}\n\n"
+                                            f"📊 Statistics:\n"
+                                            f"{wr_info}\n"
+                                            f"Realized R: {self.total_r_realized:.2f}R\n"
+                                            f"Total P&L: ${self.total_pnl_usd:.2f}\n"
+                                            f"Win Rate: {(self.wins / (self.wins + self.losses) * 100) if (self.wins + self.losses) > 0 else 0:.1f}%"
+                                        )
+                                        asyncio.create_task(self.tg_app.bot.send_message(chat_id=self.cfg['telegram']['chat_id'], text=msg))
+                                        logger.info(f"SENT NOTIFICATION: {sym} {outcome}")
+                            
                                     # IMMEDIATE DEMOTION CHECK after a loss
                                     if outcome == 'loss' and updated_stats:
                                         lb_wr = updated_stats.get('lower_wr', 100)

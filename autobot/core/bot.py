@@ -2196,7 +2196,7 @@ class DivergenceBot:
                         f"├ RSI: {signal.rsi_value:.1f}\n"
                         f"└ Confirmation Required: **{trigger_type.upper()}**\n\n"
                         + confirmation_msg +
-                        f"⏰ Max wait: {self.trio_max_wait_candles} candles ({self.trio_max_wait_candles * 5} mins)"
+                        f"⏰ Max wait: {self.trio_max_wait_candles} candle ({self.trio_max_wait_candles * 5} mins) - STRICT"
                     )
                     continue
                 

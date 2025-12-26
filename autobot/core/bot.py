@@ -2321,8 +2321,9 @@ class DivergenceBot:
                             
                             # Build a proper dataframe for execution
                             fake_df = pd.DataFrame([{
-                                'close': signal.entry_price,
+                                'close': candle.get('close', signal.entry_price),
                                 'atr': signal.atr,
+                                'rsi': current_rsi,
                                 'low': signal.swing_low,
                                 'high': signal.swing_high
                             }])
@@ -2379,8 +2380,9 @@ class DivergenceBot:
                         
                         # Build dataframe for execution
                         fake_df = pd.DataFrame([{
-                            'close': signal.entry_price,
+                            'close': current_close,
                             'atr': signal.atr,
+                            'rsi': current_rsi,
                             'low': signal.swing_low,
                             'high': signal.swing_high
                         }])
@@ -2795,16 +2797,18 @@ class DivergenceBot:
             signal_swing_low: (legacy, not used)
             signal_swing_high: (legacy, not used)
         """
-        # CRITICAL FIX: Drop the forming candle FIRST
-        # The df passed in contains the forming (incomplete) candle at index -1
-        # We need to use CLOSED candles only for all calculations
-        if len(df) < 2:
-            logger.warning(f"Skip {sym}: Not enough candles")
+        # CRITICAL FIX: Handle both full dataframes and single-row triggers
+        if len(df) >= 2:
+            # The df passed in contains the forming (incomplete) candle at index -1
+            # Drop the last row (forming candle) to work with closed data only
+            df_closed = df.iloc[:-1].copy()
+            row = df_closed.iloc[-1]  # Now this is the latest CLOSED candle
+        elif len(df) == 1:
+            # This is a pre-validated trigger candle from check_pending_trio_triggers
+            row = df.iloc[0]
+        else:
+            logger.warning(f"Skip {sym}: Not enough candles (empty df)")
             return
-        
-        # Drop the last row (forming candle) to work with closed data only
-        df_closed = df.iloc[:-1].copy()
-        row = df_closed.iloc[-1]  # Now this is the latest CLOSED candle
         try:
             # Check if already in position or have pending order
             pos = self.broker.get_position(sym)

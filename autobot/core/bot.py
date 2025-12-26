@@ -3412,14 +3412,12 @@ class DivergenceBot:
 
             logger.info(f"EXECUTE: {sym} {side} qty={qty} R:R={optimal_rr}:1 (LIMIT ORDER)")
             
-            # Set leverage to safer limit (max 50x) to avoid liquidation risk near SL
-            # 100x leverage has liquidation price ~0.5% away, which is too close for 0.8% SL
+            # Set leverage to maximum allowed for this symbol (reduces margin requirement)
             max_lev = self.broker.get_max_leverage(sym)
-            safe_lev = min(max_lev, 50)  # Cap at 50x
-            lev_res = self.broker.set_leverage(sym, safe_lev)
+            lev_res = self.broker.set_leverage(sym, max_lev)
             
             if lev_res:
-                logger.info(f"✅ Leverage set to {safe_lev}x (Max: {max_lev}x) for {sym}")
+                logger.info(f"✅ Leverage set to MAX ({max_lev}x) for {sym}")
             else:
                 logger.warning(f"⚠️ Could not set leverage for {sym}, proceeding anyway")
                 max_lev = 10  # Fallback display value

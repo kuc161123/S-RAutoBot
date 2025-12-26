@@ -1820,13 +1820,38 @@ class DivergenceBot:
     def calculate_indicators(self, df):
         if len(df) < 50: return df
         
-        df['atr'] = df.ta.atr(length=14)
-        df['rsi'] = df.ta.rsi(length=14)
+        # ============================================================
+        # BACKTEST MATCHING: CUSTOM INDICATORS (SMA-based)
+        # Standard pandas_ta uses Wilder's Smoothing (RMA)
+        # Backtest uses Simple Rolling Mean (SMA)
+        # We MUST use the backtest version for 1:1 signal alignment
+        # ============================================================
+        
+        # 1. Custom ATR (Simple Rolling Mean)
+        high_low = df['high'] - df['low']
+        high_close = abs(df['high'] - df['close'].shift())
+        low_close = abs(df['low'] - df['close'].shift())
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        df['atr'] = tr.rolling(14).mean()
+        
+        # 2. Custom RSI (Simple Rolling Mean)
+        delta = df['close'].diff()
+        gain = delta.where(delta > 0, 0).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / (loss + 1e-10)
+        df['rsi'] = 100 - (100 / (1 + rs))
         
         macd = df.ta.macd(close='close', fast=12, slow=26, signal=9)
-        df['macd'] = macd['MACD_12_26_9']
-        df['macd_signal'] = macd['MACDs_12_26_9']
-        df['macd_hist'] = macd['MACDh_12_26_9']
+        if macd is not None:
+            df['macd'] = macd['MACD_12_26_9']
+            df['macd_signal'] = macd['MACDs_12_26_9']
+            df['macd_hist'] = macd['MACDh_12_26_9']
+        else:
+             # Fallback if ta fails
+             df['macd'] = 0
+             df['macd_signal'] = 0
+             df['macd_hist'] = 0
+
         df['prev_hist'] = df['macd_hist'].shift(1)
         df['prev_rsi'] = df['rsi'].shift(1)
         

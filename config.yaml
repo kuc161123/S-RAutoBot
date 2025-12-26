@@ -31,7 +31,7 @@ high_probability_trio:
   require_two_bar_momentum: false
   require_structure_break: true  # PROFITABLE: Wait for close > swing high
   structure_lookback: 10          # 10-bar lookback for swing high/low
-  max_wait_candles: 4             # GROWTH MODE: 4 candles (20 mins) - +4193R, +1.25R/trade
+  max_wait_candles: 10            # HIGH VOLUME MODE: 10 candles (50 mins) - +9841R, +1.01R/trade
   max_chase_pct: 0.5
   
   # SL/TP Configuration (OPTIMAL from exhaustive backtest)
@@ -442,8 +442,8 @@ trade:
   
   # 126 symbols validated for 3M divergence trading
   # 3-minute timeframe for faster trade cycles
-  # VALIDATED 98 SYMBOLS (4-candle GROWTH mode, realistic fees+slippage)
-  # Result: 3362 trades, +4193R, +1.247R/trade, 65.4% WR
+  # VALIDATED 98 SYMBOLS (10-candle HIGH VOLUME mode, realistic fees+slippage)
+  # Result: 9775 trades, +9841R, +1.007R/trade, 59.1% WR
   # Out-of-Sample validated | Monte Carlo: 100% profitable
   # Top 98 by 24h volume (exact from backtest)
   divergence_symbols:

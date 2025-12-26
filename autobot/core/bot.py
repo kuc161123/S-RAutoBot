@@ -3378,7 +3378,10 @@ class DivergenceBot:
                 logger.info(f"📐 {sym}: Using minimum SL distance (ATR={atr_sl_pct:.2f}% < {MIN_SL_PCT}%)")
 
             
-            qty = risk_amt / dist
+            # SLIPPAGE & FEE BUFFER (5%)
+            # Reduce position size by 5% to account for fees (0.11%) and slippage
+            # This ensures Realized Loss is closer to Risk Amount
+            qty = (risk_amt * 0.95) / dist
             
             # Get instrument info for proper qty rounding
             try:

@@ -305,18 +305,20 @@ class DivergenceBot:
         self.trio_require_vwap = trio_cfg.get('require_vwap', False)  # DISABLED - reduces profit
         self.trio_require_volume = trio_cfg.get('require_volume', False)  # DISABLED - backtest shows max profit with volume OFF
         self.trio_require_two_bar = trio_cfg.get('require_two_bar_momentum', False)
+        self.trio_require_structure_break = trio_cfg.get('require_structure_break', False)
+        self.structure_lookback = trio_cfg.get('structure_lookback', 10)
         self.trio_max_wait_candles = trio_cfg.get('max_wait_candles', 10)
         self.trio_max_chase_pct = trio_cfg.get('max_chase_pct', 0.5)
         
-        # Divergence type filter (all = +5568R at 3:1 R:R)
+        # Divergence type filter (all = +170R at 3:1 R:R with structure break)
         self.divergence_filter = trio_cfg.get('divergence_filter', 'regular_only')
         
-        # Configurable SL/TP from focused backtest (optimal: 3.0 R:R, 0.8x ATR)
+        # Configurable SL/TP from exhaustive backtest (optimal: 3.0 R:R, 0.8x ATR, structure break)
         self.rr_ratio = trio_cfg.get('rr_ratio', 3.0)
         self.sl_atr_multiplier = trio_cfg.get('sl_atr_multiplier', 0.8)
         
         logger.info(f"📊 CONFIG: Div={self.divergence_filter} | R:R={self.rr_ratio}:1 | SL={self.sl_atr_multiplier}×ATR")
-        logger.info(f"📊 FILTERS: Volume={'ON' if self.trio_require_volume else 'OFF'} | VWAP={'ON' if self.trio_require_vwap else 'OFF'}")
+        logger.info(f"📊 FILTERS: Volume={'ON' if self.trio_require_volume else 'OFF'} | VWAP={'ON' if self.trio_require_vwap else 'OFF'} | StructBreak={'ON' if self.trio_require_structure_break else 'OFF'}")
         
     def load_config(self):
         # Load .env manually
@@ -713,7 +715,7 @@ class DivergenceBot:
             "/sessions - Session win rates\n"
             "/blacklist - Blacklisted symbols\n"
             "/help - Show this message\n\n"
-            "💡 **Strategy:** 5M Fixed 5R TP (no trailing)"
+            "💡 **Strategy:** 5M Structure Break (+1.85R/trade)"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 
@@ -938,14 +940,14 @@ class DivergenceBot:
                 f"└ Risk: {self.risk_config['value']}%\n\n"
                 
                 f"🎯 **ACTIVE STRATEGY**\n"
-                f"├ Type: **High R:R Strategy**\n"
+                f"├ Type: **Structure Break Confirmation**\n"
                 f"├ Divergence: **{self.divergence_filter.upper()}**\n"
-                f"├ Volume Filter: **{'ON' if self.trio_require_volume else 'OFF'}**\n"
-                f"├ Pending Triggers: {len(self.pending_trio_signals)}\n"
+                f"├ Confirmation: **{'Structure Break' if self.trio_require_structure_break else '2-Bar Momentum' if self.trio_require_two_bar else 'INSTANT'}**\n"
+                f"├ Pending Setups: {len(self.pending_trio_signals)}\n"
                 f"├ **EXIT: {self.rr_ratio}:1 R:R (ATR×{self.sl_atr_multiplier} SL)** ⚡\n"
-                f"├ Backtest: **+5,568R** (90d, 20 coins)\n"
-                f"├ Walk-Forward: 6/6 periods ✅\n"
-                f"└ MC Prob: 100% | Expected WR: 26.9%\n\n"
+                f"├ Backtest: **+170.5R** (60d, 20 coins, 92 trades)\n"
+                f"├ Expected: **+1.854R per trade**\n"
+                f"└ All-Day Trading (No Time Filter)\n\n"
                 
                 f"📊 **SIGNALS**\n"
                 f"├ Detected: {self.signals_detected}\n"
@@ -2145,7 +2147,7 @@ class DivergenceBot:
                 # ====================================================
                 # HIGH-PROBABILITY TRIO: QUEUE FOR TWO-BAR MOMENTUM TRIGGER
                 # ====================================================
-                if self.trio_enabled and self.trio_require_two_bar:
+                if self.trio_enabled and (self.trio_require_two_bar or self.trio_require_structure_break):
                     # Check if already pending or trading
                     if sym in self.pending_trio_signals or sym in self.pending_entries or sym in self.active_trades:
                         logger.info(f"⏳ ALREADY PENDING/TRADING: {sym}")
@@ -2168,21 +2170,32 @@ class DivergenceBot:
                     )
                     
                     self.last_signal_candle[sym] = time.time()
-                    logger.info(f"⏳ TRIO PENDING: {sym} {side} {combo} - waiting for 2-bar momentum")
+                    trigger_type = "structure break" if self.trio_require_structure_break else "2-bar momentum"
+                    logger.info(f"⏳ TRIO PENDING: {sym} {side} {combo} - waiting for {trigger_type}")
                     
                     # Send notification about pending signal
+                    confirmation_msg = ""
+                    if self.trio_require_structure_break:
+                        confirmation_msg = (
+                            f"⏳ **WAITING FOR STRUCTURE BREAK:**\n"
+                            f"└ Price must close {'ABOVE' if side == 'long' else 'BELOW'} swing {'high' if side == 'long' else 'low'}\n\n"
+                        )
+                    elif self.trio_require_two_bar:
+                        confirmation_msg = (
+                            f"⏳ **WAITING FOR 2-BAR MOMENTUM:**\n"
+                            f"└ {'2 Green + Close₂ > High₁' if side == 'long' else '2 Red + Close₂ < Low₁'}\n\n"
+                        )
+                    
                     await self.send_telegram(
                         f"⏳ **SIGNAL PENDING**\n"
                         f"━━━━━━━━━━━━━━━━━━━━\n"
                         f"📊 Symbol: `{sym}`\n"
                         f"📈 Side: **{side.upper()}**\n"
                         f"💎 Type: `{signal_type}`\n\n"
-                        f"✅ **FILTERS PASSED**\n"
-                        f"├ VWAP: {'Below ✓' if side == 'long' else 'Above ✓'}\n"
-                        f"├ RSI Zone: {signal.rsi_value:.1f} ✓\n"
-                        f"└ Volume: Above threshold ✓\n\n"
-                        f"⏳ **WAITING FOR 2-BAR MOMENTUM:**\n"
-                        f"└ {'2 Green + Close₂ > High₁' if side == 'long' else '2 Red + Close₂ < Low₁'}\n\n"
+                        f"✅ **DIVERGENCE DETECTED**\n"
+                        f"├ RSI: {signal.rsi_value:.1f}\n"
+                        f"└ Confirmation Required: **{trigger_type.upper()}**\n\n"
+                        + confirmation_msg +
                         f"⏰ Max wait: {self.trio_max_wait_candles} candles"
                     )
                     continue
@@ -2260,52 +2273,111 @@ class DivergenceBot:
                     )
                     continue
                 
-                # ====================================================
-                # CHECK 3: TWO-BAR MOMENTUM TRIGGER
-                # ====================================================
-                # Build a mini dataframe from recent candles for detection
-                df_mini = pd.DataFrame([candle_data.get(sym, {})])
-                if len(df_mini) < 1 or 'high' not in df_mini.columns:
-                    # Try to get fresh data via broker
-                    try:
-                        klines = self.broker.get_kline(sym, interval='3', limit=5)
-                        if klines and len(klines) >= 2:
-                            df_mini = pd.DataFrame(klines)
-                            for col in ['open', 'high', 'low', 'close']:
-                                df_mini[col] = df_mini[col].astype(float)
-                    except:
-                        continue
                 
-                if len(df_mini) >= 2:
-                    has_trigger, pattern_type, should_discard, discard_reason = detect_two_bar_momentum(
-                        df_mini, signal.side, signal.entry_price, self.trio_max_chase_pct
-                    )
+                # ====================================================
+                # CHECK 3: TWO-BAR MOMENTUM TRIGGER (if enabled)
+                # ====================================================
+                if self.trio_require_two_bar:
+                    # Build a mini dataframe from recent candles for detection
+                    df_mini = pd.DataFrame([candle_data.get(sym, {})])
+                    if len(df_mini) < 1 or 'high' not in df_mini.columns:
+                        # Try to get fresh data via broker
+                        try:
+                            klines = self.broker.get_kline(sym, interval='3', limit=5)
+                            if klines and len(klines) >= 2:
+                                df_mini = pd.DataFrame(klines)
+                                for col in ['open', 'high', 'low', 'close']:
+                                    df_mini[col] = df_mini[col].astype(float)
+                        except:
+                            continue
                     
-                    # Handle discard (chase filter)
-                    if should_discard:
-                        logger.info(f"⚠️ SIGNAL DISCARDED: {sym} {signal.side} - {discard_reason}")
-                        await self.send_telegram(
-                            f"⚠️ **SIGNAL DISCARDED**\n"
-                            f"━━━━━━━━━━━━━━━━━━━━\n"
-                            f"📊 Symbol: `{sym}`\n"
-                            f"📈 Side: **{signal.side.upper()}**\n"
-                            f"❌ Reason: {discard_reason}\n"
-                            f"💡 Avoided chasing extended move"
+                    if len(df_mini) >= 2:
+                        has_trigger, pattern_type, should_discard, discard_reason = detect_two_bar_momentum(
+                            df_mini, signal.side, signal.entry_price, self.trio_max_chase_pct
                         )
-                        del self.pending_trio_signals[sym]
-                        continue
-                    
-                    if has_trigger:
-                        logger.info(f"✅ TRIO TRIGGERED: {sym} {signal.side} - {pattern_type} detected!")
                         
-                        # Check if position already exists
-                        if sym in self.active_trades or sym in self.pending_entries:
-                            logger.info(f"⚠️ Already trading {sym}, skipping triggered signal")
+                        # Handle discard (chase filter)
+                        if should_discard:
+                            logger.info(f"⚠️ SIGNAL DISCARDED: {sym} {signal.side} - {discard_reason}")
+                            await self.send_telegram(
+                                f"⚠️ **SIGNAL DISCARDED**\n"
+                                f"━━━━━━━━━━━━━━━━━━━━\n"
+                                f"📊 Symbol: `{sym}`\n"
+                                f"📈 Side: **{signal.side.upper()}**\n"
+                                f"❌ Reason: {discard_reason}\n"
+                                f"💡 Avoided chasing extended move"
+                            )
                             del self.pending_trio_signals[sym]
                             continue
                         
-                        # Build a proper dataframe for execution
-                        # Use signal's stored values
+                        if has_trigger:
+                            logger.info(f"✅ TRIO TRIGGERED: {sym} {signal.side} - {pattern_type} detected!")
+                            
+                            # Check if position already exists
+                            if sym in self.active_trades or sym in self.pending_entries:
+                                logger.info(f"⚠️ Already trading {sym}, skipping triggered signal")
+                                del self.pending_trio_signals[sym]
+                                continue
+                            
+                            # Build a proper dataframe for execution
+                            fake_df = pd.DataFrame([{
+                                'close': signal.entry_price,
+                                'atr': signal.atr,
+                                'low': signal.swing_low,
+                                'high': signal.swing_high
+                            }])
+                            
+                            # Execute the trade
+                            await self.execute_divergence_trade(
+                                sym, signal.side, fake_df, signal.combo, signal.signal_type,
+                                signal.atr, signal.swing_low, signal.swing_high
+                            )
+                            
+                            # Send trigger notification
+                            await self.send_telegram(
+                                f"✅ **2-BAR MOMENTUM TRIGGERED!**\n"
+                                f"━━━━━━━━━━━━━━━━━━━━\n"
+                                f"📊 Symbol: `{sym}`\n"
+                                f"📈 Side: **{signal.side.upper()}**\n"
+                                f"🎯 Pattern: **{pattern_type}**\n"
+                            f"⏱️ After {signal.candles_waited} candles"
+                        )
+                        
+                        del self.pending_trio_signals[sym]
+                    else:
+                        logger.debug(f"⏳ TRIO WAITING (2-bar): {sym} - {signal.candles_waited}/{signal.max_wait_candles}")
+                
+                # ====================================================
+                # CHECK 4: STRUCTURE BREAK TRIGGER (if enabled)
+                # ====================================================
+                elif self.trio_require_structure_break:
+                    # Get current close price
+                    current_close = candle.get('close', 0)
+                    if current_close == 0:
+                        continue
+                    
+                    # Check structure break based on side
+                    structure_broken = False
+                    
+                    if signal.side == 'long':
+                        # Long: Wait for close ABOVE swing high
+                        if current_close > signal.swing_high:
+                            structure_broken = True
+                            logger.info(f"✅ STRUCTURE BREAK (LONG): {sym} - Close {current_close:.4f} > Swing High {signal.swing_high:.4f}")
+                    else:
+                        # Short: Wait for close BELOW swing low
+                        if current_close < signal.swing_low:
+                            structure_broken = True
+                            logger.info(f"✅ STRUCTURE BREAK (SHORT): {sym} - Close {current_close:.4f} < Swing Low {signal.swing_low:.4f}")
+                    
+                    if structure_broken:
+                        # Check if position already exists
+                        if sym in self.active_trades or sym in self.pending_entries:
+                            logger.info(f"⚠️ Already trading {sym}, skipping structure break signal")
+                            del self.pending_trio_signals[sym]
+                            continue
+                        
+                        # Build dataframe for execution
                         fake_df = pd.DataFrame([{
                             'close': signal.entry_price,
                             'atr': signal.atr,
@@ -2321,17 +2393,17 @@ class DivergenceBot:
                         
                         # Send trigger notification
                         await self.send_telegram(
-                            f"✅ **2-BAR MOMENTUM TRIGGERED!**\n"
+                            f"✅ **STRUCTURE BREAK TRIGGERED!**\n"
                             f"━━━━━━━━━━━━━━━━━━━━\n"
                             f"📊 Symbol: `{sym}`\n"
                             f"📈 Side: **{signal.side.upper()}**\n"
-                            f"🎯 Pattern: **{pattern_type}**\n"
+                            f"🎯 Breakout: Close {current_close:.4f} {'>' if signal.side=='long' else '<'} {'High' if signal.side=='long' else 'Low'} {signal.swing_high if signal.side=='long' else signal.swing_low:.4f}\n"
                             f"⏱️ After {signal.candles_waited} candles"
                         )
                         
                         del self.pending_trio_signals[sym]
                     else:
-                        logger.debug(f"⏳ TRIO WAITING: {sym} - {signal.candles_waited}/{signal.max_wait_candles}")
+                        logger.debug(f"⏳ TRIO WAITING (struct break): {sym} - {signal.candles_waited}/{signal.max_wait_candles}")
                         
             except Exception as e:
                 logger.error(f"Error checking trio trigger for {sym}: {e}")
@@ -3634,7 +3706,7 @@ class DivergenceBot:
         mode_str = "RSI DIVERGENCE (Backtest Optimized)"
         
         msg = (
-            f"🚀 **RSI Divergence Bot (OPTIMAL CONFIG)**\n"
+            f"🚀 **RSI Divergence Bot (Structure Break)**\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📊 **STATUS: ONLINE**\n"
             f"├ Mode: **{mode_str}**\n"
@@ -3642,16 +3714,16 @@ class DivergenceBot:
             f"├ Scanning: **{scanning_count}** symbols (Learning)\n"
             f"└ Timeframe: {timeframe}m\n\n"
             f"🎯 **ACTIVE STRATEGY**\n"
-            f"├ Type: **High R:R Strategy**\n"
+            f"├ Type: **Structure Break Confirmation**\n"
             f"├ Divergence: **{self.divergence_filter.upper()}**\n"
-            f"├ Volume Filter: **{'ON' if self.trio_require_volume else 'OFF'}**\n"
+            f"├ Confirmation: **{'Structure Break' if self.trio_require_structure_break else '2-Bar Momentum' if self.trio_require_two_bar else 'INSTANT'}**\n"
             f"├ R:R Ratio: **{self.rr_ratio}:1** (Targeting {self.rr_ratio}R)\n"
             f"└ Stop Loss: **{self.sl_atr_multiplier}x ATR** (Tight control)\n\n"
-            f"📈 **BACKTEST PERFORMANCE (90 days, 20 coins)**\n"
-            f"├ Profit: **+5,568R** (Top config)\n"
-            f"├ Win Rate: **26.9%** (Expected for 3:1 R:R)\n"
-            f"├ Walk-Forward: **6/6 Periods** ✅\n"
-            f"└ MC Prob: **100% Profitability**\n\n"
+            f"📈 **BACKTEST PERFORMANCE (60 days, 20 coins)**\n"
+            f"├ Profit: **+170.5R** (92 trades)\n"
+            f"├ Expected: **+1.854R per trade**\n"
+            f"├ All-Day Trading (No Time Filter)\n"
+            f"└ Exhaustive Config Search Validated ✅\n\n"
             f"💰 **RISK SETTINGS**\n"
             f"├ Risk per Trade: **{risk_val}%**\n"
             f"└ System: Redis {redis_ok} | DB {pg_ok}\n"

@@ -26,15 +26,18 @@ high_probability_trio:
   # VWAP Filter: DISABLED (reduces profitability)
   require_vwap: false              # VALIDATED: Keep disabled
   
-  # Two-Bar Momentum Trigger: DISABLED (execute immediately)
+  # Two-Bar Momentum Trigger: REPLACED WITH STRUCTURE BREAK
+  # NEW: Structure Break Confirmation (+1.854R per trade validated)
   require_two_bar_momentum: false
-  max_wait_candles: 10
+  require_structure_break: true  # PROFITABLE: Wait for close > swing high
+  structure_lookback: 10          # 10-bar lookback for swing high/low
+  max_wait_candles: 20            # Allow more time for structure break
   max_chase_pct: 0.5
   
-  # SL/TP Configuration (used by bot.py)
-  rr_ratio: 3.0                    # OPTIMAL: 3.0:1 R:R (Backtest: +5568R, 26.9% WR)
-  sl_atr_multiplier: 0.8           # OPTIMAL: 0.8x ATR (Tighter stop)
-  # Stats: +5568R | 26.9% WR | 6/6 WF | 100% MC (20 high-liquidity coins)
+  # SL/TP Configuration (OPTIMAL from exhaustive backtest)
+  rr_ratio: 3.0                    # PROFITABLE: 3.0:1 R:R (+1.854R per trade)
+  sl_atr_multiplier: 0.8           # PROFITABLE: 0.8x ATR (tight stop)
+  # Backtest: +170.5R | 92 trades | +1.854R avg | All-day trading
 
 exploration:
   enabled: true

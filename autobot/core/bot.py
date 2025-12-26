@@ -715,7 +715,7 @@ class DivergenceBot:
             "/sessions - Session win rates\n"
             "/blacklist - Blacklisted symbols\n"
             "/help - Show this message\n\n"
-            "💡 **Strategy:** 5M Structure Break (100 symbols, +1.53R/trade)"
+            "💡 **Strategy:** 5M Structure Break (98 symbols, +1.53R/trade)"
         )
         await update.message.reply_text(msg, parse_mode='Markdown')
 
@@ -945,7 +945,7 @@ class DivergenceBot:
                 f"├ Confirmation: **{'Structure Break' if self.trio_require_structure_break else '2-Bar Momentum' if self.trio_require_two_bar else 'INSTANT'}**\n"
                 f"├ Pending Setups: {len(self.pending_trio_signals)}\n"
                 f"├ **EXIT: {self.rr_ratio}:1 R:R (ATR×{self.sl_atr_multiplier} SL)** ⚡\n"
-                f"├ Backtest: **+1974R** (60d, 100 coins, 1294 trades)\n"
+                f"├ Backtest: **+1974R** (60d, 98 coins, 1294 trades)\n"
                 f"├ Expected: **+1.526R per trade**\n"
                 f"└ Realistic (Fees+Slippage, 2-candle wait)\n\n"
                 
@@ -3719,7 +3719,7 @@ class DivergenceBot:
             f"├ Confirmation: **{'Structure Break' if self.trio_require_structure_break else '2-Bar Momentum' if self.trio_require_two_bar else 'INSTANT'}**\n"
             f"├ R:R Ratio: **{self.rr_ratio}:1** (Targeting {self.rr_ratio}R)\n"
             f"└ Stop Loss: **{self.sl_atr_multiplier}x ATR** (Tight control)\n\n"
-            f"📈 **BACKTEST PERFORMANCE (60 days, 100 coins)**\n"
+            f"📈 **BACKTEST PERFORMANCE (60 days, 98 coins)**\n"
             f"├ Profit: **+1974R** (1294 trades)\n"
             f"├ Expected: **+1.526R per trade**\n"
             f"├ Out-of-Sample: **+1.357R** ✅\n"

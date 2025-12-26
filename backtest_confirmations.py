@@ -188,11 +188,19 @@ def backtest_confirmation(datasets, config):
                 if side == 'short' and row['shooting_star']: confirmed = True
                 
             elif confirmation == 'structure_break':
-                # Check NEXT candle for structure break
-                if i+1 >= len(df): continue
-                next_row = df.iloc[i+1]
-                if side == 'long' and next_row['close'] > row['swing_high_10']: confirmed = True
-                if side == 'short' and next_row['close'] < row['swing_low_10']: confirmed = True
+                # Check up to 4 candles ahead for structure break (matches bot config)
+                structure_broken = False
+                for ahead in range(1, 5):  # Check next 1-4 candles
+                    if i+ahead >= len(df): break
+                    check_row = df.iloc[i+ahead]
+                    if side == 'long' and check_row['close'] > row['swing_high_10']:
+                        structure_broken = True
+                        break
+                    if side == 'short' and check_row['close'] < row['swing_low_10']:
+                        structure_broken = True
+                        break
+                
+                if structure_broken: confirmed = True
                 
             elif confirmation == 'volume_spike':
                 if row['vol'] > row['vol_ma'] * 1.5: confirmed = True

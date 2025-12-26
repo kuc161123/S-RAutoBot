@@ -26,7 +26,7 @@ class ShadowAuditor:
         # 1. Shadow Detection (Using the Canonical Detector)
         # We pass 'all' filter to see ALL raw signals, then filter locally
         # This matches the bot's raw detection step
-        signals = detect_divergence(df, lookback=14)
+        signals = detect_divergence(df, symbol, lookback=14)
         
         shadow_decision = "NO_SIGNAL"
         shadow_signal_type = None

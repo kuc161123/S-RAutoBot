@@ -2932,7 +2932,8 @@ class DivergenceBot:
                 'qty_step': qty_step,  # Store for later use
                 'created_at': time.time(),
                 'is_auto_promoted': False,
-                'optimal_rr': actual_rr  #Store R:R for notification
+                'optimal_rr': actual_rr,  #Store R:R for notification
+                'risk_amt': risk_amount    # CRITICAL: Store USD risk for accurate R calculation
             }
             
             # NOTE: trades_executed is incremented when order FILLS, not here

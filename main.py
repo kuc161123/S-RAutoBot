@@ -5,7 +5,7 @@ import os
 import sys
 import signal
 import subprocess
-from autobot.core.bot import DivergenceBot
+from autobot.core.bot import Bot4H
 from dashboard import app
 
 # PID file location

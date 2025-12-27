@@ -267,7 +267,12 @@ class Bot4H:
         for signal in new_signals:
             # Only accept trend-aligned signals
             if not signal.daily_trend_aligned:
-                logger.info(f"[{symbol}] {signal.signal_type.upper()} divergence detected but NOT trend-aligned - SKIP")
+                # logger.info(f"[{symbol}] {signal.signal_type.upper()} divergence detected but NOT trend-aligned - SKIP")
+                continue
+            
+            # CRITICAL: Only accept FRESH signals (detected within last 3 candles)
+            # This prevents processing historical signals on startup
+            if (len(df) - signal.index) > 3:
                 continue
             
             # Add to pending signals
@@ -362,11 +367,17 @@ class Bot4H:
             sl_mult = self.strategy_config.get('exit_params', {}).get('sl_atr_mult', 1.0)
             sl_distance = atr * sl_mult
             
-            # Position size = Risk Amount / SL Distance (in USD)
-            position_size = risk_amount / sl_distance
+            # Position size logic:
+            # Risk = (Entry - SL) * Qty
+            # Qty = Risk / (Entry - SL)
+            # Qty = RiskAmount / SL_Distance
             
-            # Adjust for entry price
-            position_size_qty = position_size / entry_price
+            position_size_qty = risk_amount / sl_distance
+            
+            # Sanity check: If Qty is infinite or NaN
+            if position_size_qty <= 0 or not isinstance(position_size_qty, (int, float)):
+                logger.error(f"[{symbol}] Invalid calculated qty: {position_size_qty}")
+                return
             
         except Exception as e:
             logger.error(f"[{symbol}] Error calculating position size: {e}")

@@ -1,216 +1,38 @@
-# ============================================
-# 4H TREND-DIVERGENCE STRATEGY CONFIG
-# Validated: +434R, +0.35R/trade, 25% WR
-# Per-Symbol R:R Optimization (+216% vs Global)
-# ============================================
-
-# Exchange Configuration
-bybit:
-  api_key: ${BYBIT_API_KEY}
-  api_secret: ${BYBIT_API_SECRET}
-  base_url: https://api.bybit.com
-  alt_base_url: https://api.bytick.com
-  use_alt_on_fail: true
-  ws_public: wss://stream.bybit.com/v5/public/linear
-  ws_public_alt: wss://stream.bytick.com/v5/public/linear
-
-# Telegram Notifications
-telegram:
-  token: ${TELEGRAM_BOT_TOKEN}
-  chat_id: ${TELEGRAM_CHAT_ID}
-  poll_mode: legacy
-  probe:
-    get_updates_once: true
-    limit: 3
-
-# Strategy Configuration
-strategy:
-  name: "4h_trend_divergence"
-  timeframe: "240"  # 4H candles
-  
-  # Signal Detection Parameters
-  signal_params:
-    rsi_period: 14
-    lookback_bars: 10
-    min_pivot_distance: 3
-    pivot_right: 3  # Confirmation lag (no look-ahead)
-    
-  # Entry Confirmation
-  entry_params:
-    require_bos: true  # Break of Structure
-    max_wait_candles: 6  # 24 hours max
-    
-  # Daily Trend Filter
-  trend_filter:
-    enabled: true
-    daily_ema_proxy: 1200  # 6 * 200 = Daily EMA on 4H
-    
-  # Exit Parameters
-  exit_params:
-    sl_atr_mult: 1.0  # Fixed 1.0 ATR stop loss
-    # R:R ratios are per-symbol (see symbols section)
-
-# Risk Management
-risk:
-  risk_per_trade: 0.005      # 0.5% risk per trade
-  max_daily_loss: 0.05       # 5% max daily drawdown
-  max_concurrent_positions: 5
-  max_position_size_pct: 0.10  # Max 10% in one symbol
-
-# Symbol Configuration (Per-Symbol R:R Ratios)
-symbols:
-  # 6:1 R:R Group - Trending Coins
-  DOTUSDT:
-    enabled: true
-    rr: 6.0
-    note: "Best performer - strong trends"
-    
-  NEARUSDT:
-    enabled: true
-    rr: 6.0
-    
-  FARTCOINUSDT:
-    enabled: true
-    rr: 6.0
-    note: "High volatility - huge winners"
-    
-  BCHUSDT:
-    enabled: true
-    rr: 6.0
-    
-  AVAXUSDT:
-    enabled: true
-    rr: 6.0
-    
-  ADAUSDT:
-    enabled: true
-    rr: 6.0
-    
-  AVNTUSDT:
-    enabled: true
-    rr: 6.0
-    
-  PIPPINUSDT:
-    enabled: true
-    rr: 6.0
-    
-  # 5:1 R:R Group - Balanced
-  XPLUSDT:
-    enabled: true
-    rr: 5.0
-    note: "85.7% WR - low sample"
-    
-  LINKUSDT:
-    enabled: true
-    rr: 5.0
-    note: "Consistent performer"
-    
-  ZENUSDT:
-    enabled: true
-    rr: 5.0
-    
-  XRPUSDT:
-    enabled: true
-    rr: 5.0
-    
-  ONTUSDT:
-    enabled: true
-    rr: 5.0
-    
-  FLOWUSDT:
-    enabled: true
-    rr: 5.0
-    
-  # 4:1 R:R Group
-  LTCUSDT:
-    enabled: true
-    rr: 4.0
-    
-  SOLUSDT:
-    enabled: true
-    rr: 4.0
-    
-  KAITOUSDT:
-    enabled: true
-    rr: 4.0
-    
-  TRUUSDT:
-    enabled: true
-    rr: 4.0
-    
-  # 3:1 R:R Group
-  ETHUSDT:
-    enabled: true
-    rr: 3.0
-    
-  BTCUSDT:
-    enabled: true
-    rr: 3.0
-    note: "Lower volatility"
-    
-  # 2-2.5:1 R:R Group - Mean Reverting
-  DOGEUSDT:
-    enabled: true
-    rr: 2.0
-    note: "HIGH WIN RATE (65.5%) - mean-reverting"
-    
-  WIFUSDT:
-    enabled: true
-    rr: 2.0
-    
-  SUIUSDT:
-    enabled: true
-    rr: 2.5
-    
-  # DISABLED (Negative expectancy)
-  AAVEUSDT:
-    enabled: false
-    rr: 6.0
-    note: "Losing symbol - SKIP"
-    
-  BNBUSDT:
-    enabled: false
-    rr: 3.0
-    note: "Losing symbol - SKIP"
-    
-  HYPEUSDT:
-    enabled: false
-    rr: 3.0
-    note: "Losing symbol - SKIP"
-
-# Indicator Configuration
+bybit: {alt_base_url: 'https://api.bytick.com', api_key: '${BYBIT_API_KEY}', api_secret: '${BYBIT_API_SECRET}',
+  base_url: 'https://api.bybit.com', use_alt_on_fail: true, ws_public: 'wss://stream.bybit.com/v5/public/linear',
+  ws_public_alt: 'wss://stream.bytick.com/v5/public/linear'}
+execution: {enabled: true, entry_slippage_pct: 0.0003, fee_pct: 0.0006}
 indicators:
   atr_period: 14
-  ema_periods: [1200]  # Daily EMA proxy
+  ema_periods: [1200]
   rsi_period: 14
-
-# Execution Settings
-execution:
-  enabled: true
-  entry_slippage_pct: 0.0003  # 0.03% slippage
-  fee_pct: 0.0006  # 0.06% total fees
-  
-# Notifications
-notifications:
-  startup: true
-  entry: true
-  exit: true
-  daily_summary: true
-  pending_signals: true
-
-# Monitoring
-monitoring:
-  heartbeat_interval_sec: 3600  # Every hour (4H timeframe)
-  health_check: true
-
-# Legacy Features (DISABLED)
-legacy:
-  trailing_stop: false
-  partial_take_profit: false
-  vwap_filter: false
-  volume_filter: false
-  scalp_mode: false
-  
-# REMOVE OLD 5M SETTINGS
-# All 5M divergence logic has been removed
-# This is a pure 4H trend-following system
+legacy: {partial_take_profit: false, scalp_mode: false, trailing_stop: false, volume_filter: false,
+  vwap_filter: false}
+monitoring: {health_check: true, heartbeat_interval_sec: 3600}
+notifications: {daily_summary: true, entry: true, exit: true, pending_signals: true,
+  startup: true}
+risk: {max_concurrent_positions: 5, max_daily_loss: 0.05, max_position_size_pct: 0.1,
+  risk_per_trade: 0.005}
+strategy:
+  entry_params: {max_wait_candles: 6, require_bos: true}
+  exit_params: {sl_atr_mult: 1.0}
+  name: 4h_trend_divergence
+  signal_params: {lookback_bars: 10, min_pivot_distance: 3, pivot_right: 3, rsi_period: 14}
+  timeframe: '240'
+  trend_filter: {daily_ema_proxy: 1200, enabled: true}
+symbols:
+  ARBUSDT: {enabled: true, rr: 5.5}
+  CRVUSDT: {enabled: true, rr: 7.0}
+  ENAUSDT: {enabled: true, rr: 2.0}
+  LTCUSDT: {enabled: true, rr: 3.0}
+  MNTUSDT: {enabled: true, rr: 3.0}
+  NTRNUSDT: {enabled: true, rr: 5.5}
+  OPUSDT: {enabled: true, rr: 6.0}
+  PAXGUSDT: {enabled: true, rr: 8.0}
+  SHIB1000USDT: {enabled: true, rr: 4.5}
+  VIRTUALUSDT: {enabled: true, rr: 6.0}
+telegram:
+  chat_id: ${TELEGRAM_CHAT_ID}
+  poll_mode: legacy
+  probe: {get_updates_once: true, limit: 3}
+  token: ${TELEGRAM_BOT_TOKEN}

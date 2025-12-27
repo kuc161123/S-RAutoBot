@@ -2262,8 +2262,10 @@ class DivergenceBot:
                                 continue
                             
                             # Build a proper dataframe for execution
+                            # BACKTEST MATCH: Use OPEN of trigger candle, not CLOSE
+                            entry_price = candle.get('open', candle.get('close', signal.entry_price))
                             fake_df = pd.DataFrame([{
-                                'close': candle.get('close', signal.entry_price),
+                                'close': entry_price,  # CRITICAL: Use OPEN price for entry
                                 'atr': signal.atr,
                                 'rsi': current_rsi,
                                 'low': signal.swing_low,
@@ -2321,8 +2323,11 @@ class DivergenceBot:
                             continue
                         
                         # Build dataframe for execution
+                        # BACKTEST MATCH: Use OPEN of structure break candle, not CLOSE
+                        # This matches backtest_robust_validation.py line 104: base = df.iloc[idx]['open']
+                        entry_price = candle.get('open', current_close)  # Use OPEN, fallback to CLOSE
                         fake_df = pd.DataFrame([{
-                            'close': current_close,
+                            'close': entry_price,  # CRITICAL: Use OPEN price for entry
                             'atr': signal.atr,
                             'rsi': current_rsi,
                             'low': signal.swing_low,

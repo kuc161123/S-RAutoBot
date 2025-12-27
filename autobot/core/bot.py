@@ -1937,7 +1937,7 @@ class DivergenceBot:
             except:
                 tf_int = 3 # fallback to 3m
                 
-            COOLDOWN_BARS = 3  # OPTIMIZED: 3 bars between signals per symbol
+            COOLDOWN_BARS = 6  # BACKTEST MATCH: 6 bars between signals (30 mins @ 5m)
             CANDLE_MINUTES = tf_int
             COOLDOWN_SECONDS = COOLDOWN_BARS * CANDLE_MINUTES * 60
             

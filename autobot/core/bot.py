@@ -355,7 +355,7 @@ class Bot4H:
         
         # Calculate position size (1% risk)
         try:
-            account_balance = await self.broker.get_wallet_balance()
+            account_balance = await self.broker.get_balance()
             risk_amount = account_balance * self.risk_config.get('risk_per_trade', 0.01)
             
             # SL distance
@@ -382,9 +382,9 @@ class Bot4H:
         
         # === PLACE MARKET ENTRY ORDER ===
         try:
-            order = await self.broker.place_market_order(
+            order = await self.broker.place_market(
                 symbol=symbol,
-                side='Buy' if signal.side == 'long' else 'Sell',
+                side=signal.side,
                 qty=position_size_qty
             )
             
@@ -403,9 +403,9 @@ class Bot4H:
         
         # === PLACE LIMIT TAKE PROFIT ORDER ===
         try:
-            tp_order = await self.broker.place_limit_order(
+            tp_order = await self.broker.place_reduce_only_limit(
                 symbol=symbol,
-                side='Sell' if signal.side == 'long' else 'Buy',  # Opposite side to close
+                side='sell' if signal.side=='long' else 'buy',
                 qty=position_size_qty,
                 price=tp_price,
                 reduce_only=True
@@ -420,11 +420,11 @@ class Bot4H:
         
         # === PLACE STOP-LOSS MARKET ORDER ===
         try:
-            sl_order = await self.broker.place_stop_market_order(
+            sl_order = await self.broker.place_conditional_stop(
                 symbol=symbol,
-                side='Sell' if signal.side == 'long' else 'Buy',  # Opposite side to close
+                side='sell' if signal.side=='long' else 'buy',
                 qty=position_size_qty,
-                stop_price=sl_price,
+                trigger_price=sl_price,
                 reduce_only=True
             )
             

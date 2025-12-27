@@ -99,7 +99,7 @@ class TelegramHandler:
             
             # === GET EXCHANGE-VERIFIED P&L ===
             try:
-                balance = await self.bot.broker.get_wallet_balance()
+                balance = await self.bot.broker.get_balance()
                 
                 # Get closed P&L from exchange (last 100 trades)
                 closed_records = await self.bot.broker.get_all_closed_pnl(limit=100)
@@ -328,21 +328,25 @@ class TelegramHandler:
     
     async def cmd_stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Emergency stop"""
+        self.bot.trading_enabled = False
         msg = """
-⛔ **EMERGENCY STOP REQUESTED**
+⛔ **EMERGENCY STOP EXECUTED**
 
-This would halt all trading.
-(Not implemented in current version)
+Trading has been halted.
+Pending signals will be ignored.
+Active positions will remain open but no new trades will be taken.
 
-To stop the bot, use:
-`Ctrl+C` in terminal
+To resume: `/start`
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
+        logger.warning(f"⛔ EMERGENCY STOP triggered by user {update.effective_user.name}")
     
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start/resume trading"""
-        msg = "✅ Trading is active"
-        await update.message.reply_text(msg)
+        self.bot.trading_enabled = True
+        msg = "✅ **TRADING RESUMED**\n\nThe bot will process the next available signals."
+        await update.message.reply_text(msg, parse_mode='Markdown')
+        logger.info(f"✅ Trading resumed by user {update.effective_user.name}")
     
     async def cmd_risk(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """View or update risk per trade"""

@@ -1,6 +1,7 @@
 from __future__ import annotations
-# Enhanced Bybit v5 REST wrapper with proper error handling
-import time, hmac, hashlib, requests, json, os
+# Enhanced Bybit v5 REST wrapper with proper error handling (ASYNC)
+import time, hmac, hashlib, json, os, asyncio
+import aiohttp
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 import logging
@@ -19,9 +20,14 @@ class BybitConfig:
 class Bybit:
     def __init__(self, cfg:BybitConfig):
         self.cfg = cfg
-        self.session = requests.Session()
+        self.session = None
         self.precisions_cache = {}  # {symbol: (tick_size_str, qty_step_str)}
         
+    async def close(self):
+        """Close the underlying aiohttp session"""
+        if self.session and not self.session.closed:
+            await self.session.close()
+            
     def _ts(self) -> str:
         return str(int(time.time() * 1000))
 
@@ -30,7 +36,11 @@ class Bybit:
         msg = ts + self.cfg.api_key + recv_window + body
         return hmac.new(self.cfg.api_secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
 
-    def _request(self, method:str, path:str, params:dict=None) -> Dict[str, Any]:
+    async def _request(self, method:str, path:str, params:dict=None) -> Dict[str, Any]:
+        """Async request wrapper"""
+        if self.session is None or self.session.closed:
+            self.session = aiohttp.ClientSession()
+            
         recv_window = "20000" # Increased to handle time drift
         ts = self._ts()
         
@@ -80,32 +90,36 @@ class Bybit:
             backoff = 0.5
             for attempt in range(max_retries):
                 try:
-                    if method == "POST":
-                        r = self.session.post(url, headers=headers, data=body, timeout=15)
-                    else:
-                        r = self.session.get(url, headers=headers, timeout=15)
-
-                    r.raise_for_status()
-                    j = r.json()
-
-                    if str(j.get("retCode")) != "0":
-                        # Treat specific non-critical cases as success
+                    async with self.session.request(method, url, headers=headers, data=body if method=="POST" else None, timeout=15) as r:
+                        resp_text = await r.text()
+                        
                         try:
-                            if path == "/v5/position/set-leverage" and str(j.get("retCode")) == "110043":
-                                logger.debug("Leverage not modified — already set; treating as success")
-                                return j
-                        except Exception:
-                            pass
-                        # Retry only for likely transient messages
-                        msg = str(j.get('retMsg', '')).lower()
-                        if any(k in msg for k in ["timeout", "limit", "too many", "system busy", "server error"]):
-                            raise RuntimeError(msg)
-                        logger.error(f"Bybit API error: {j}")
-                        raise RuntimeError(f"Bybit error: {j.get('retMsg', 'Unknown error')}")
+                            # Try to parse JSON even if status != 200 to get error msg
+                            j = json.loads(resp_text)
+                        except:
+                            r.raise_for_status() # If not JSON, check HTTP status
+                            raise RuntimeError(f"Bybit invalid JSON response: {resp_text[:100]}")
+                            
+                        if str(j.get("retCode")) != "0":
+                            # Treat specific non-critical cases as success
+                            try:
+                                if path == "/v5/position/set-leverage" and str(j.get("retCode")) == "110043":
+                                    logger.debug("Leverage not modified — already set; treating as success")
+                                    return j
+                            except Exception:
+                                pass
+                            
+                            # Retry only for likely transient messages
+                            msg = str(j.get('retMsg', '')).lower()
+                            if any(k in msg for k in ["timeout", "limit", "too many", "system busy", "server error"]):
+                                raise RuntimeError(msg)
+                            
+                            logger.error(f"Bybit API error: {j}")
+                            raise RuntimeError(f"Bybit error: {j.get('retMsg', 'Unknown error')}")
 
-                    return j
+                        return j
 
-                except requests.exceptions.RequestException as e:
+                except aiohttp.ClientError as e:
                     last_err = e
                     logger.warning(f"Bybit request attempt {attempt+1}/{max_retries} failed ({'ALT' if base_idx==1 else 'PRIMARY'}): {e}")
                 except RuntimeError as e:
@@ -118,7 +132,7 @@ class Bybit:
                 # Backoff with jitter before next try
                 if attempt < max_retries - 1:
                     sleep_s = backoff * (2 ** attempt) * (1.0 + random.uniform(-0.2, 0.2))
-                    time.sleep(max(0.2, min(5.0, sleep_s)))
+                    await asyncio.sleep(max(0.2, min(5.0, sleep_s)))
 
             # If we exhausted retries on primary and have an alt, fall through to alt
             if base_idx == 0 and len(bases) > 1:
@@ -130,7 +144,7 @@ class Bybit:
             raise last_err
         raise RuntimeError("Bybit request failed")
 
-    def get_instruments_info(self, category:str="linear", symbol:Optional[str]=None) -> list:
+    async def get_instruments_info(self, category:str="linear", symbol:Optional[str]=None) -> list:
         """Get instrument info (tick size, lot size, max leverage, etc.)"""
         try:
             params = {"category": category, "limit": 1000}
@@ -145,7 +159,7 @@ class Bybit:
                 if cursor:
                     params["cursor"] = cursor
                 
-                resp = self._request("GET", "/v5/market/instruments-info", params)
+                resp = await self._request("GET", "/v5/market/instruments-info", params)
                 
                 if resp and resp.get("result"):
                     items = resp["result"].get("list", [])
@@ -161,13 +175,13 @@ class Bybit:
             logger.error(f"Failed to get instruments info: {e}")
             return []
 
-    def get_balance(self) -> Optional[float]:
+    async def get_balance(self) -> Optional[float]:
         """Get USDT balance (robust): try UNIFIED → CONTRACT → SPOT; prefer equity."""
         try:
             account_types = ["UNIFIED", "CONTRACT", "SPOT"]
             for acct in account_types:
                 try:
-                    resp = self._request("GET", "/v5/account/wallet-balance", {"accountType": acct})
+                    resp = await self._request("GET", "/v5/account/wallet-balance", {"accountType": acct})
                 except Exception as _e:
                     logger.debug(f"Wallet balance fetch failed for {acct}: {_e}")
                     continue
@@ -207,7 +221,7 @@ class Bybit:
             logger.error(f"Failed to get balance: {e}")
             return None
 
-    def get_max_leverage(self, symbol: str) -> int:
+    async def get_max_leverage(self, symbol: str) -> int:
         """Get maximum allowed leverage for a symbol from Bybit.
         
         Queries the instruments info API to get the leverageFilter.maxLeverage.
@@ -220,7 +234,7 @@ class Bybit:
             Maximum leverage as integer (e.g., 100, 50, 25)
         """
         try:
-            instruments = self.get_instruments_info(symbol=symbol)
+            instruments = await self.get_instruments_info(symbol=symbol)
             if instruments:
                 for inst in instruments:
                     if inst.get('symbol') == symbol:
@@ -236,7 +250,7 @@ class Bybit:
             logger.warning(f"Error getting max leverage for {symbol}: {e}, using 25x")
             return 25
 
-    def set_leverage(self, symbol: str, leverage: int = None) -> Dict[str, Any] | None:
+    async def set_leverage(self, symbol: str, leverage: int = None) -> Dict[str, Any] | None:
         """Set leverage for a symbol. If leverage is None, uses max allowed.
         
         Args:
@@ -246,7 +260,7 @@ class Bybit:
         try:
             # If no leverage specified, use maximum allowed
             if leverage is None:
-                leverage = self.get_max_leverage(symbol)
+                leverage = await self.get_max_leverage(symbol)
                 logger.info(f"🔧 Using MAX leverage for {symbol}: {leverage}x")
             
             data = {
@@ -255,7 +269,7 @@ class Bybit:
                 "buyLeverage": str(leverage),
                 "sellLeverage": str(leverage)
             }
-            resp = self._request("POST", "/v5/position/set-leverage", data)
+            resp = await self._request("POST", "/v5/position/set-leverage", data)
             return resp
         except RuntimeError as e:
             msg = str(e).lower()
@@ -268,10 +282,10 @@ class Bybit:
             return None
         return None
 
-    def get_ticker(self, symbol: str) -> dict:
+    async def get_ticker(self, symbol: str) -> dict:
         """Get current ticker data."""
         try:
-            resp = self._request("GET", "/v5/market/tickers", {"category": "linear", "symbol": symbol})
+            resp = await self._request("GET", "/v5/market/tickers", {"category": "linear", "symbol": symbol})
             if resp and resp.get("result"):
                 items = resp["result"].get("list", [])
                 if items:
@@ -280,7 +294,7 @@ class Bybit:
             logger.error(f"Failed to get ticker for {symbol}: {e}")
         return {}
     
-    def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False,
+    async def place_market(self, symbol:str, side:str, qty:float, reduce_only:bool=False,
                       take_profit:float=None, stop_loss:float=None) -> Dict[str, Any]:
         """Place market order with optional TP/SL (bracket order).
         
@@ -302,7 +316,7 @@ class Bybit:
         }
         
         if take_profit or stop_loss is not None:
-            tick_size, _ = self._get_precisions(symbol)
+            tick_size, _ = await self._get_precisions(symbol)
             
             # Add TP/SL as bracket order for instant protection
             if take_profit is not None:
@@ -318,9 +332,9 @@ class Bybit:
             bracket_status = f" [BRACKET: TP={take_profit} SL={stop_loss}]"
         
         logger.info(f"📤 Market order: {symbol} {side} qty={qty}{bracket_status}")
-        return self._request("POST", "/v5/order/create", data)
+        return await self._request("POST", "/v5/order/create", data)
     
-    def place_limit(self, symbol: str, side: str, qty: float, price: float, 
+    async def place_limit(self, symbol: str, side: str, qty: float, price: float, 
                     take_profit: float = None, stop_loss: float = None,
                     post_only: bool = False) -> Dict[str, Any]:
         """Place a limit order with optional TP/SL (bracket order).
@@ -334,6 +348,7 @@ class Bybit:
             qty: Order quantity
             price: Limit price
             take_profit: Optional TP price (set at order creation for instant protection)
+            take_profit: Optional TP price (set at order creation for instant protection)
             stop_loss: Optional SL price (set at order creation for instant protection)
             post_only: If True, use PostOnly. If False, use GTC (recommended).
             
@@ -344,7 +359,7 @@ class Bybit:
         time_in_force = "PostOnly" if post_only else "GTC"
         
         # Round everything first
-        tick_size, _ = self._get_precisions(symbol)
+        tick_size, _ = await self._get_precisions(symbol)
         final_price = self._round_price(price, tick_size)
         
         data = {
@@ -373,15 +388,14 @@ class Bybit:
             bracket_status = f" [BRACKET: TP={take_profit} SL={stop_loss}]"
         
         logger.info(f"📤 Placing {time_in_force} limit order: {symbol} {side} qty={qty} price={price}{bracket_status}")
-        response = self._request("POST", "/v5/order/create", data)
+        response = await self._request("POST", "/v5/order/create", data)
         
         # Verify order status after placement
         if response and response.get('retCode') == 0:
             order_id = response.get('result', {}).get('orderId')
             if order_id:
-                import time as time_module
-                time_module.sleep(0.3)  # Brief delay for Bybit to process
-                status = self.get_order_status(symbol, order_id)
+                asyncio.sleep(0.3)  # Brief delay for Bybit to process
+                status = await self.get_order_status(symbol, order_id)
                 if status:
                     order_status = status.get('orderStatus', 'Unknown')
                     logger.info(f"📋 Order {order_id[:16]} status immediately after placement: {order_status}")
@@ -392,7 +406,7 @@ class Bybit:
         
         return response
     
-    def get_order_status(self, symbol: str, order_id: str) -> Optional[Dict[str, Any]]:
+    async def get_order_status(self, symbol: str, order_id: str) -> Optional[Dict[str, Any]]:
         """Get status of a specific order.
         
         Returns order info including:
@@ -403,7 +417,7 @@ class Bybit:
         Returns None if order not found.
         """
         try:
-            resp = self._request("GET", "/v5/order/realtime", {
+            resp = await self._request("GET", "/v5/order/realtime", {
                 "category": "linear",
                 "symbol": symbol,
                 "orderId": order_id
@@ -415,7 +429,7 @@ class Bybit:
                     return orders[0]
             
             # Order might be in history if already filled/cancelled
-            resp = self._request("GET", "/v5/order/history", {
+            resp = await self._request("GET", "/v5/order/history", {
                 "category": "linear",
                 "symbol": symbol,
                 "orderId": order_id
@@ -431,7 +445,7 @@ class Bybit:
             logger.error(f"Failed to get order status for {symbol}/{order_id}: {e}")
             return None
     
-    def cancel_order(self, symbol: str, order_id: str) -> bool:
+    async def cancel_order(self, symbol: str, order_id: str) -> bool:
         """Cancel a specific order.
         
         Returns True if cancelled successfully or already cancelled.
@@ -442,7 +456,7 @@ class Bybit:
                 "symbol": symbol,
                 "orderId": order_id
             }
-            resp = self._request("POST", "/v5/order/cancel", data)
+            resp = await self._request("POST", "/v5/order/cancel", data)
             
             if resp and resp.get("retCode") == 0:
                 logger.info(f"✅ Cancelled order {order_id} for {symbol}")
@@ -459,7 +473,7 @@ class Bybit:
             logger.error(f"Failed to cancel order {order_id}: {e}")
             return False
 
-    def get_executions(self, symbol: str, limit: int = 50, start_time: Optional[int] = None) -> list:
+    async def get_executions(self, symbol: str, limit: int = 50, start_time: Optional[int] = None) -> list:
         """Fetch recent execution fills for a symbol (used to confirm position closes).
 
         Args:
@@ -478,7 +492,7 @@ class Bybit:
             }
             if start_time is not None:
                 params["startTime"] = str(int(start_time))
-            resp = self._request("GET", "/v5/execution/list", params)
+            resp = await self._request("GET", "/v5/execution/list", params)
             if resp and resp.get("result"):
                 return resp["result"].get("list", []) or []
             return []
@@ -486,7 +500,7 @@ class Bybit:
             logger.debug(f"Failed to get executions for {symbol}: {e}")
             return []
     
-    def get_closed_pnl(self, symbol: str, limit: int = 10) -> list:
+    async def get_closed_pnl(self, symbol: str, limit: int = 10) -> list:
         """Get closed PnL records for a symbol.
         
         This returns the ACTUAL realized PnL from Bybit, not a guess.
@@ -500,7 +514,7 @@ class Bybit:
                 "symbol": symbol,
                 "limit": str(min(max(1, limit), 200)),
             }
-            resp = self._request("GET", "/v5/position/closed-pnl", params)
+            resp = await self._request("GET", "/v5/position/closed-pnl", params)
             if resp and resp.get("result"):
                 return resp["result"].get("list", []) or []
             return []
@@ -508,7 +522,7 @@ class Bybit:
             logger.debug(f"Failed to get closed pnl for {symbol}: {e}")
             return []
     
-    def get_all_closed_pnl(self, limit: int = 100, start_time: int = None) -> list:
+    async def get_all_closed_pnl(self, limit: int = 100, start_time: int = None) -> list:
         """Get ALL closed PnL records across all symbols.
         
         This returns the ACTUAL realized PnL from Bybit for all symbols.
@@ -528,7 +542,7 @@ class Bybit:
             }
             if start_time:
                 params["startTime"] = str(start_time)
-            resp = self._request("GET", "/v5/position/closed-pnl", params)
+            resp = await self._request("GET", "/v5/position/closed-pnl", params)
             if resp and resp.get("result"):
                 return resp["result"].get("list", []) or []
             return []
@@ -536,10 +550,10 @@ class Bybit:
             logger.debug(f"Failed to get all closed pnl: {e}")
             return []
     
-    def get_position(self, symbol:str) -> Optional[Dict[str, Any]]:
+    async def get_position(self, symbol:str) -> Optional[Dict[str, Any]]:
         """Get current position for a symbol"""
         try:
-            resp = self._request("GET", "/v5/position/list", {
+            resp = await self._request("GET", "/v5/position/list", {
                 "category": "linear",
                 "symbol": symbol
             })
@@ -552,7 +566,7 @@ class Bybit:
             logger.error(f"Failed to get position for {symbol}: {e}")
             return None
 
-    def set_tpsl(self, symbol:str, take_profit:float, stop_loss:float, qty:float=None) -> Dict[str, Any]:
+    async def set_tpsl(self, symbol:str, take_profit:float, stop_loss:float, qty:float=None) -> Dict[str, Any]:
         """Set position TP/SL - Use Partial mode with Limit TP for better fills"""
         
         # If qty not provided, try to get current position size
@@ -560,10 +574,9 @@ class Bybit:
         if not position_qty:
             try:
                 # Add small delay to ensure position is registered
-                import time
-                time.sleep(0.5)
+                await asyncio.sleep(0.5)
                 
-                positions = self.get_positions()
+                positions = await self.get_positions()
                 for pos in positions:
                     if pos.get("symbol") == symbol and float(pos.get("size", 0)) > 0:
                         position_qty = pos.get("size")
@@ -573,7 +586,7 @@ class Bybit:
                 logger.warning(f"Could not get position size: {e}")
         
         # Precision rounding
-        tick_size, _ = self._get_precisions(symbol)
+        tick_size, _ = await self._get_precisions(symbol)
         tp_str = self._round_price(take_profit, tick_size)
         sl_str = self._round_price(stop_loss, tick_size)
         
@@ -613,7 +626,7 @@ class Bybit:
         
         return self._request("POST", "/v5/position/trading-stop", data)
 
-    def _get_precisions(self, symbol: str, force_fresh: bool = False) -> tuple[str, str]:
+    async def _get_precisions(self, symbol: str, force_fresh: bool = False) -> tuple[str, str]:
         """Get (tick_size, qty_step) as strings for a symbol (cached).
         
         CRITICAL: This is used for SL/TP/price rounding. 
@@ -634,7 +647,7 @@ class Bybit:
             logger.warning(f"⚠️ Precision cache miss for {symbol} - fetching from API...")
         
         try:
-            instruments = self.get_instruments_info(symbol=symbol)
+            instruments = await self.get_instruments_info(symbol=symbol)
             if instruments:
                 for i in instruments:
                     if i['symbol'] == symbol:
@@ -651,7 +664,7 @@ class Bybit:
         self.precisions_cache[symbol] = ("0.0001", "0.001")  # Cache fallback too
         return ("0.0001", "0.001")
 
-    def preload_all_precisions(self) -> int:
+    async def preload_all_precisions(self) -> int:
         """Preload precision info for ALL USDT perpetual symbols.
         
         Call this at bot startup to avoid per-trade API calls.
@@ -661,7 +674,7 @@ class Bybit:
             logger.info("📥 Preloading precision data for all USDT perpetuals...")
             
             # Fetch ALL instruments at once (single API call)
-            resp = self._request("GET", "/v5/market/instruments-info", {"category": "linear", "limit": 1000})
+            resp = await self._request("GET", "/v5/market/instruments-info", {"category": "linear", "limit": 1000})
             if not resp or resp.get("retCode") != 0:
                 logger.error(f"Failed to fetch instruments: {resp}")
                 return 0
@@ -692,7 +705,7 @@ class Bybit:
         rounded = (d_price / d_tick).quantize(Decimal('1')) * d_tick
         return str(rounded)  # Use str() to preserve quantized precision (e.g. 0.7540)
 
-    def set_sl_only(self, symbol: str, stop_loss: float, qty: float = None) -> Dict[str, Any]:
+    async def set_sl_only(self, symbol: str, stop_loss: float, qty: float = None) -> Dict[str, Any]:
         """Set only Stop Loss for a position using trading-stop.
 
         Uses Partial mode when qty provided, otherwise Full mode.
@@ -707,7 +720,7 @@ class Bybit:
             
             # === AUTO-ROUNDING FIX ===
             # ALWAYS fetch fresh precision before setting SL (avoid stale cache issues)
-            tick_size, _ = self._get_precisions(symbol, force_fresh=True)
+            tick_size, _ = await self._get_precisions(symbol, force_fresh=True)
             final_sl_str = self._round_price(stop_loss, tick_size)
             logger.info(f"📐 Rounded SL for {symbol}: {stop_loss} -> {final_sl_str} (tick: {tick_size})")
             
@@ -718,7 +731,7 @@ class Bybit:
             
             # Get current price to validate SL is reasonable
             try:
-                ticker = self.get_ticker(symbol)
+                ticker = await self.get_ticker(symbol)
                 if ticker:
                     current_price = float(ticker.get('lastPrice', 0))
                     if current_price > 0:
@@ -760,7 +773,7 @@ class Bybit:
             debug_body = json_module.dumps(data, separators=(",", ":"))
             logger.info(f"🔍 DEBUG SL REQUEST for {symbol}: {debug_body}")
             
-            resp = self._request("POST", "/v5/position/trading-stop", data)
+            resp = await self._request("POST", "/v5/position/trading-stop", data)
             
             # Validate response
             if resp and resp.get("retCode") == 0:
@@ -776,7 +789,7 @@ class Bybit:
             logger.error(f"Failed to set SL-only for {symbol}: {e}")
             raise
     
-    def set_trailing_sl(self, symbol: str, initial_sl: float, trail_distance: float, 
+    async def set_trailing_sl(self, symbol: str, initial_sl: float, trail_distance: float, 
                         activation_price: float = None, side: str = None) -> Dict[str, Any]:
         """Set stop loss with Bybit's NATIVE trailing stop mechanism.
         
@@ -795,7 +808,7 @@ class Bybit:
         """
         try:
             # Fetch precision for formatting
-            tick_size, _ = self._get_precisions(symbol, force_fresh=True)
+            tick_size, _ = await self._get_precisions(symbol, force_fresh=True)
             
             # Format all prices correctly
             sl_str = self._round_price(initial_sl, tick_size)
@@ -810,7 +823,7 @@ class Bybit:
                 raise ValueError(f"Invalid values: SL={initial_sl}, trail={trail_distance}")
             
             # Get current price to validate
-            ticker = self.get_ticker(symbol)
+            ticker = await self.get_ticker(symbol)
             if ticker:
                 current_price = float(ticker.get('lastPrice', 0))
                 if current_price > 0:
@@ -837,7 +850,7 @@ class Bybit:
                 logger.info(f"   Activation: {activation_price} -> {act_str}")
             
             logger.info(f"🚀 Sending native trailing stop request for {symbol}")
-            resp = self._request("POST", "/v5/position/trading-stop", data)
+            resp = await self._request("POST", "/v5/position/trading-stop", data)
             
             if resp and resp.get("retCode") == 0:
                 logger.info(f"✅ NATIVE TRAILING SET: {symbol} SL={sl_str} Trail={trail_str}")
@@ -868,7 +881,7 @@ class Bybit:
             logger.error(f"Failed to verify SL for {symbol}: {e}")
             return (None, None)
 
-    def place_reduce_only_limit(self, symbol: str, side: str, qty: float, price: float,
+    async def place_reduce_only_limit(self, symbol: str, side: str, qty: float, price: float,
                                  post_only: bool = True, reduce_only: bool = True) -> Dict[str, Any]:
         """Place a reduce-only limit order (optionally PostOnly) for TP purposes.
 
@@ -876,7 +889,7 @@ class Bybit:
         """
         tif = "PostOnly" if post_only else "GTC"
         # Round price
-        tick_size, _ = self._get_precisions(symbol)
+        tick_size, _ = await self._get_precisions(symbol)
         final_price = self._round_price(price, tick_size)
         
         data = {
@@ -890,24 +903,24 @@ class Bybit:
             "reduceOnly": reduce_only,
             "positionIdx": 0,
         }
-        return self._request("POST", "/v5/order/create", data)
+        return await self._request("POST", "/v5/order/create", data)
     
-    def get_positions(self) -> list:
+    async def get_positions(self) -> list:
         """Get open positions"""
         try:
-            resp = self._request("GET", "/v5/position/list", {"category": "linear", "settleCoin": "USDT"})
+            resp = await self._request("GET", "/v5/position/list", {"category": "linear", "settleCoin": "USDT"})
             return resp["result"]["list"]
         except Exception as e:
             logger.error(f"Failed to get positions: {e}")
             return []
 
-    def get_open_orders(self, symbol: str = None) -> list:
+    async def get_open_orders(self, symbol: str = None) -> list:
         """Get open orders (reduce-only TP etc.) for a symbol or all symbols."""
         try:
             params = {"category": "linear"}
             if symbol:
                 params["symbol"] = symbol
-            resp = self._request("GET", "/v5/order/realtime", params)
+            resp = await self._request("GET", "/v5/order/realtime", params)
             if resp and resp.get("result"):
                 return resp["result"].get("list", []) or []
             return []
@@ -915,7 +928,7 @@ class Bybit:
             logger.error(f"Failed to get open orders: {e}")
             return []
 
-    def place_conditional_stop(self, symbol: str, side: str, trigger_price: float, qty: float,
+    async def place_conditional_stop(self, symbol: str, side: str, trigger_price: float, qty: float,
                                reduce_only: bool = True) -> Dict[str, Any]:
         """Place a conditional stop-market reduce-only order as SL fallback.
 
@@ -933,9 +946,9 @@ class Bybit:
             "triggerBy": "LastPrice",
             "positionIdx": 0,
         }
-        return self._request("POST", "/v5/order/create", data)
+        return await self._request("POST", "/v5/order/create", data)
     
-    def cancel_all_orders(self, symbol:str=None) -> bool:
+    async def cancel_all_orders(self, symbol:str=None) -> bool:
         """Cancel all orders for a symbol or all symbols"""
         try:
             data = {
@@ -944,14 +957,14 @@ class Bybit:
             }
             if symbol:
                 data["symbol"] = symbol
-            resp = self._request("POST", "/v5/order/cancel-all", data)
+            resp = await self._request("POST", "/v5/order/cancel-all", data)
             return True
         except Exception as e:
             logger.error(f"Failed to cancel orders: {e}")
             # Not critical if no orders to cancel
             return True
     
-    def get_klines(self, symbol:str, interval:str, limit:int=200, start:Optional[int]=None, end:Optional[int]=None) -> list:
+    async def get_klines(self, symbol:str, interval:str, limit:int=200, start:Optional[int]=None, end:Optional[int]=None) -> list:
         """Get historical kline/candlestick data.
 
         Args:
@@ -972,7 +985,7 @@ class Bybit:
                 params["start"] = str(int(start))
             if end is not None:
                 params["end"] = str(int(end))
-            resp = self._request("GET", "/v5/market/kline", params)
+            resp = await self._request("GET", "/v5/market/kline", params)
             
             if resp and resp.get("result"):
                 klines = resp["result"]["list"]
@@ -984,10 +997,10 @@ class Bybit:
             logger.error(f"Failed to get klines for {symbol}: {e}")
             return []
 
-    def get_api_key_info(self) -> Optional[Dict[str, Any]]:
+    async def get_api_key_info(self) -> Optional[Dict[str, Any]]:
         """Get information about the current API key, including expiration."""
         try:
-            resp = self._request("GET", "/v5/user/query-api")
+            resp = await self._request("GET", "/v5/user/query-api")
             if resp and resp.get("result"):
                 api_keys = resp["result"].get("list", [])
                 # Find the key that is currently being used

@@ -52,7 +52,7 @@ def kill_existing_instances():
     kill_patterns = [
         "python.*main.py",
         "python3.*main.py",
-        "DivergenceBot",
+        "Bot4H",
     ]
     
     for pattern in kill_patterns:
@@ -128,7 +128,7 @@ if __name__ == "__main__":
         dash_thread.start()
         
         # Start main bot
-        bot = DivergenceBot()
+        bot = Bot4H()
         asyncio.run(bot.run())
     except KeyboardInterrupt:
         print("Bot stopped by user")

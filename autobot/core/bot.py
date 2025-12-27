@@ -272,7 +272,7 @@ class Bot4H:
             
             # CRITICAL: Only accept FRESH signals (detected within last 3 candles)
             # This prevents processing historical signals on startup
-            if (len(df) - signal.index) > 3:
+            if (len(df) - signal.divergence_idx) > 3:
                 continue
             
             # Add to pending signals

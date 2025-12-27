@@ -133,8 +133,7 @@ class Bot4H:
         bybit_config = BybitConfig(
             api_key=api_key,
             api_secret=api_secret,
-            base_url=bybit_config_dict.get('base_url', 'https://api.bybit.com'),
-            testnet=False
+            base_url=bybit_config_dict.get('base_url', 'https://api.bybit.com')
         )
         
         self.broker = Bybit(bybit_config)

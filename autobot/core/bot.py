@@ -139,6 +139,27 @@ class Bot4H:
         self.broker = Bybit(bybit_config)
         logger.info("Broker connection initialized")
     
+    async def _apply_max_leverage(self):
+        """
+        Set maximum allowed leverage for all enabled symbols.
+        This ensures optimal margin usage.
+        """
+        logger.info("🔧 CONFIGURING MAX LEVERAGE for all symbols...")
+        enabled_symbols = self.symbol_config.get_enabled_symbols()
+        
+        count = 0
+        for symbol in enabled_symbols:
+            try:
+                # set_leverage(None) defaults to max leverage in broker
+                await self.broker.set_leverage(symbol)
+                count += 1
+                await asyncio.sleep(0.1)  # Avoid rate limits
+            except Exception as e:
+                logger.warning(f"[{symbol}] Could not set leverage: {e}")
+        
+        logger.info(f"✅ Max leverage configured for {count} symbols")
+
+    
     def set_risk_per_trade(self, risk_pct: float):
         """
         Dynamically update risk per trade
@@ -707,6 +728,15 @@ class Bot4H:
             except Exception as e:
                 logger.error(f"Telegram initialization failed: {e}")
 
+                await self.telegram.send_message(msg)
+            except Exception as e:
+                logger.error(f"Telegram initialization failed: {e}")
+
+        # === APPLY MAX LEVERAGE ===
+        try:
+            await self._apply_max_leverage()
+        except Exception as e:
+            logger.error(f"Failed to set max leverage: {e}")
         
         while True:
             try:

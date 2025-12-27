@@ -690,10 +690,13 @@ class Bot4H:
 💰 **Risk**: {self.risk_config.get('risk_per_trade', 0.01)*100:.1f}% per trade
 📈 **Enabled Symbols**: {len(enabled_symbols)}
 
-**Expected Performance:**
-• Win Rate: ~25%
+**Active Portfolio:**
+{', '.join(sorted(enabled_symbols))}
+
+**Expected Performance (3Y Backtest):**
+• Win Rate: >20% (Avg ~25%)
 • Avg R/Trade: +0.35R
-• Trades/Year: ~400
+• Total R: >10R per symbol
 
 🔍 Now monitoring 4H candles...
 

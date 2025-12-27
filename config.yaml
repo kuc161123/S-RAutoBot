@@ -31,7 +31,7 @@ high_probability_trio:
   require_two_bar_momentum: false
   require_structure_break: true  # PROFITABLE: Wait for close > swing high
   structure_lookback: 10          # 10-bar lookback for swing high/low
-  max_wait_candles: 10            # HIGH VOLUME MODE: 10 candles (50 mins) - +9841R, +1.01R/trade
+  max_wait_candles: 2             # VALIDATED: 2 candles (10 mins) - Realistic (+1.526R/trade)
   max_chase_pct: 0.5
   
   # SL/TP Configuration (OPTIMAL from exhaustive backtest)
@@ -442,9 +442,9 @@ trade:
   
   # 126 symbols validated for 3M divergence trading
   # 3-minute timeframe for faster trade cycles
-  # VALIDATED 98 SYMBOLS (10-candle HIGH VOLUME mode, realistic fees+slippage)
-  # Result: 9775 trades, +9841R, +1.007R/trade, 59.1% WR
-  # Out-of-Sample validated | Monte Carlo: 100% profitable
+  # VALIDATED 98 SYMBOLS (2-candle wait, realistic fees+slippage)
+  # Result: 1294 trades, +1974R, +1.526R/trade, 72.6% WR
+  # Out-of-Sample: +1.357R | Monte Carlo: 100% profitable
   # Top 98 by 24h volume (exact from backtest)
   divergence_symbols:
     - BTCUSDT

@@ -45,6 +45,7 @@ class TelegramHandler:
         self.app.add_handler(CommandHandler("stats", self.cmd_stats))
         self.app.add_handler(CommandHandler("stop", self.cmd_stop))
         self.app.add_handler(CommandHandler("start", self.cmd_start))
+        self.app.add_handler(CommandHandler("risk", self.cmd_risk))
         
         # Start polling in background
         await self.app.initialize()
@@ -342,3 +343,35 @@ To stop the bot, use:
         """Start/resume trading"""
         msg = "✅ Trading is active"
         await update.message.reply_text(msg)
+    
+    async def cmd_risk(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """View or update risk per trade"""
+        try:
+            if not context.args:
+                # View current risk
+                risk_pct = self.bot.risk_config.get('risk_per_trade', 0.01) * 100
+                msg = f"💰 **CURRENT RISK**: {risk_pct:.1f}% per trade\n\nTo update: `/risk 0.5` (for 0.5%)"
+                await update.message.reply_text(msg, parse_mode='Markdown')
+                return
+            
+            # Update risk
+            try:
+                val_str = context.args[0].replace('%', '')
+                new_risk = float(val_str)
+                
+                # If user enters 1, assume 1%. If 0.01, assume 1%
+                if new_risk >= 1:
+                    new_risk = new_risk / 100
+                
+                success, msg = self.bot.set_risk_per_trade(new_risk)
+                if success:
+                    await update.message.reply_text(f"✅ {msg}")
+                else:
+                    await update.message.reply_text(f"❌ {msg}")
+                    
+            except ValueError:
+                await update.message.reply_text("❌ Invalid format. Use: `/risk 0.5`")
+                
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"Risk command error: {e}")

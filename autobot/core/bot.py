@@ -139,6 +139,20 @@ class Bot4H:
         self.broker = Bybit(bybit_config)
         logger.info("Broker connection initialized")
     
+    def set_risk_per_trade(self, risk_pct: float):
+        """
+        Dynamically update risk per trade
+        
+        Args:
+            risk_pct: Risk percentage (e.g., 0.005 for 0.5%)
+        """
+        if 0.001 <= risk_pct <= 0.05:
+            self.risk_config['risk_per_trade'] = risk_pct
+            logger.info(f"Risk updated to {risk_pct*100:.1f}%")
+            return True, f"Risk updated to {risk_pct*100:.1f}%"
+        else:
+            return False, "Risk must be between 0.1% and 5.0%"
+    
     def setup_telegram(self):
         """Initialize Telegram handler with commands"""
         telegram_config = self.config.get('telegram', {})

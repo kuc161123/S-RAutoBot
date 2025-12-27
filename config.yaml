@@ -52,8 +52,8 @@ strategy:
 
 # Risk Management
 risk:
-  risk_per_trade: 0.01  # 1% of capital
-  max_daily_loss: 0.05  # 5% daily loss limit
+  risk_per_trade: 0.005      # 0.5% risk per trade
+  max_daily_loss: 0.05       # 5% max daily drawdown
   max_concurrent_positions: 5
   max_position_size_pct: 0.10  # Max 10% in one symbol
 

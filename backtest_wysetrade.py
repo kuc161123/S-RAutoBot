@@ -1,706 +1,384 @@
 #!/usr/bin/env python3
 """
-WYSETRADE RSI DIVERGENCE + PRICE ACTION BACKTEST
-=================================================
-Implements the complete Wysetrade strategy with:
-1. RSI Divergence Detection (Wide & Tight)
-2. Key Level (S/R) Filter
-3. Trendline Break Confirmation
+WYSETRADE STRATEGY BACKTEST
+===========================
 
-PITFALLS ADDRESSED:
-- No look-ahead bias in trendlines
-- Only trade on closed candles
-- Strict confirmation required
-- Distinguish wide vs tight divergence
+Strategy: RSI Divergence + Price Action + Key Levels
+Logic:
+1. SETUP: RSI(14) Divergence (Regular) in Overbought (>70) or Oversold (<30).
+2. FILTER: Price reacting to Key Level (Previous Swing High/Low).
+3. TRIGGER: Confirmation via Structure Break (Trendline Break proxy).
+   - Long: Close > Most recent Lower High.
+   - Short: Close < Most recent Higher Low.
+
+Timeframes: 5M, 15M, 30M, 1H, 4H
+Fees: Bybit VIP0 Realistic (Entry 0.02% + Exit Taker 0.055% + Slippage)
+
+Author: AutoBot Architect
 """
 
-import requests
 import pandas as pd
 import numpy as np
-import math
-from collections import defaultdict
-from datetime import datetime
+import requests
 import time
-import warnings
-warnings.filterwarnings('ignore')
+import sys
+from datetime import datetime, timedelta
+import itertools
 
-# =============================================================================
+# ============================================
 # CONFIGURATION
-# =============================================================================
+# ============================================
 
-TIMEFRAME = '15'
-DATA_DAYS = 60
-NUM_SYMBOLS = 150
+SYMBOLS = [
+    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 
+    'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT', 'LINKUSDT', 'DOTUSDT'
+]
 
-SLIPPAGE_PCT = 0.0005
-FEE_PCT = 0.0004
-TOTAL_COST = (SLIPPAGE_PCT + FEE_PCT) * 2
+TIMEFRAMES = [5, 15, 30, 60, 240] # 5m, 15m, 30m, 1h, 4h
+DAYS = 120 # 4 months data
 
-# RSI Settings
-RSI_PERIOD = 14
-RSI_OVERSOLD = 30
-RSI_OVERBOUGHT = 70
+# Fees (Realistic Bybit)
+ENTRY_FEE = 0.0002   # Maker (Limit)
+ENTRY_SLIP = 0.0001
+TP_FEE = 0.0002      # Maker (Limit)
+TP_SLIP = 0.0001
+SL_FEE = 0.00055     # Taker (Stop Market)
+SL_SLIP = 0.0004     # Slippage
+TOTAL_WIN_COST = ENTRY_FEE + ENTRY_SLIP + TP_FEE + TP_SLIP      # ~0.06%
+TOTAL_LOSS_COST = ENTRY_FEE + ENTRY_SLIP + SL_FEE + SL_SLIP     # ~0.125%
 
-# Divergence Settings
-LOOKBACK_BARS = 14
-MIN_PIVOT_DISTANCE = 5
-PIVOT_LEFT = 3
-PIVOT_RIGHT = 3
+# ============================================
+# DATA ENGINE
+# ============================================
 
-# Key Level Settings
-KEY_LEVEL_LOOKBACK = 50
-KEY_LEVEL_TOLERANCE = 0.5  # 0.5% tolerance for key level
+def fetch_data(symbol: str, interval: int, days: int) -> pd.DataFrame:
+    try:
+        url = "https://api.bybit.com/v5/market/kline"
+        all_kline = []
+        end_ts = int(time.time() * 1000)
+        start_ts = int((time.time() - days * 24 * 3600) * 1000)
+        
+        while end_ts > start_ts:
+            params = {
+                'category': 'linear',
+                'symbol': symbol,
+                'interval': str(interval),
+                'limit': 1000,
+                'end': end_ts
+            }
+            r = requests.get(url, params=params).json()
+            if r['retCode'] != 0 or not r['result']['list']:
+                break
+            klines = r['result']['list']
+            all_kline.extend(klines)
+            end_ts = int(klines[-1][0]) - 1
+            time.sleep(0.05)
+            
+        df = pd.DataFrame(all_kline, columns=['ts', 'open', 'high', 'low', 'close', 'vol', 'to'])
+        df = df.iloc[::-1].reset_index(drop=True)
+        for c in ['open', 'high', 'low', 'close', 'vol']:
+            df[c] = df[c].astype(float)
+        return df
+    except Exception as e:
+        print(f"Failed {symbol} {interval}m: {e}")
+        return pd.DataFrame()
 
-# Risk Management
-RR_RATIO = 2.0  # 1:2 Risk Reward
+# ============================================
+# INDICATORS & PATTERNS
+# ============================================
 
-BASE_URL = "https://api.bybit.com"
-
-# =============================================================================
-# TRADE LOG
-# =============================================================================
-
-trade_log = []
-
-def log_trade(symbol, side, divergence_time, confirmation_time, entry, sl, tp, outcome, pnl_r, bars_to_exit):
-    trade_log.append({
-        'symbol': symbol,
-        'side': side,
-        'divergence_time': divergence_time,
-        'confirmation_time': confirmation_time,
-        'entry': entry,
-        'sl': sl,
-        'tp': tp,
-        'outcome': outcome,
-        'pnl_r': pnl_r,
-        'bars_to_exit': bars_to_exit
-    })
-
-# =============================================================================
-# HELPERS
-# =============================================================================
-
-def calc_ev(wr, rr):
-    return (wr * rr) - (1 - wr)
-
-def wilson_lb(wins, n, z=1.96):
-    if n == 0: return 0.0
-    p = wins / n
-    denom = 1 + z*z/n
-    centre = p + z*z/(2*n)
-    spread = z * math.sqrt((p*(1-p) + z*z/(4*n)) / n)
-    return max(0, (centre - spread) / denom)
-
-def get_symbols(limit=150):
-    resp = requests.get(f"{BASE_URL}/v5/market/tickers?category=linear")
-    tickers = resp.json().get('result', {}).get('list', [])
-    usdt = [t for t in tickers if t['symbol'].endswith('USDT')]
-    usdt.sort(key=lambda x: float(x.get('turnover24h', 0)), reverse=True)
-    return [t['symbol'] for t in usdt[:limit]]
-
-def fetch_klines(symbol, interval, days):
-    end_ts = int(datetime.now().timestamp() * 1000)
-    all_candles = []
-    current_end = end_ts
-    candles_needed = days * 24 * 60 // int(interval)
+def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    close = df['close']
     
-    while len(all_candles) < candles_needed:
-        params = {'category': 'linear', 'symbol': symbol, 'interval': interval, 'limit': 1000, 'end': current_end}
-        try:
-            resp = requests.get(f"{BASE_URL}/v5/market/kline", params=params, timeout=10)
-            data = resp.json().get('result', {}).get('list', [])
-            if not data: break
-            all_candles.extend(data)
-            current_end = int(data[-1][0]) - 1
-            if len(data) < 1000: break
-        except: break
+    # RSI 14
+    delta = close.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rs = gain / (loss + 1e-9)
+    df['rsi'] = 100 - (100 / (1 + rs))
     
-    if not all_candles: return pd.DataFrame()
+    # ATR 14
+    h, l, c_prev = df['high'], df['low'], close.shift(1)
+    tr = pd.concat([h-l, (h-c_prev).abs(), (l-c_prev).abs()], axis=1).max(axis=1)
+    df['atr'] = tr.rolling(14).mean()
     
-    df = pd.DataFrame(all_candles, columns=['start', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
-    df['start'] = pd.to_datetime(df['start'].astype(int), unit='ms')
-    for col in ['open', 'high', 'low', 'close', 'volume']: df[col] = df[col].astype(float)
-    df.set_index('start', inplace=True)
-    df.sort_index(inplace=True)
+    # Swing Points (Fractals) - Lookback 5
+    # A swing high is a high surrounded by 2 lower highs on each side
+    df['swing_high'] = df['high'].rolling(5, center=True).max() == df['high']
+    df['swing_low'] = df['low'].rolling(5, center=True).min() == df['low']
+    
     return df
 
-# =============================================================================
-# TECHNICAL INDICATORS
-# =============================================================================
+def find_key_levels(df: pd.DataFrame, window=200) -> pd.Series:
+    """Identify key support/resistance levels from recent major swings."""
+    # Simplified: Recent 200-period Highs/Lows as proxy for Key Levels
+    key_resistance = df['high'].rolling(window).max()
+    key_support = df['low'].rolling(window).min()
+    return key_support, key_resistance
 
-def calculate_rsi(close, period=14):
-    delta = close.diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-    rs = avg_gain / (avg_loss + 1e-10)
-    return 100 - (100 / (1 + rs))
+# ============================================
+# WYSETRADE STRATEGY LOGIC
+# ============================================
 
-def calculate_atr(df, period=14):
-    hl = df['high'] - df['low']
-    hc = abs(df['high'] - df['close'].shift())
-    lc = abs(df['low'] - df['close'].shift())
-    tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
-    return tr.rolling(period).mean()
-
-def find_pivots(data, left=3, right=3):
-    """Find swing highs and lows"""
-    n = len(data)
-    pivot_highs = np.full(n, np.nan)
-    pivot_lows = np.full(n, np.nan)
-    pivot_high_indices = []
-    pivot_low_indices = []
-    
-    for i in range(left, n - right):
-        is_high = all(data[j] < data[i] for j in range(i - left, i + right + 1) if j != i)
-        is_low = all(data[j] > data[i] for j in range(i - left, i + right + 1) if j != i)
-        if is_high:
-            pivot_highs[i] = data[i]
-            pivot_high_indices.append(i)
-        if is_low:
-            pivot_lows[i] = data[i]
-            pivot_low_indices.append(i)
-    
-    return pivot_highs, pivot_lows, pivot_high_indices, pivot_low_indices
-
-def find_key_levels(df, lookback=50):
+def run_strategy(df: pd.DataFrame, rr_ratio: float = 2.0) -> dict:
     """
-    Find support/resistance key levels from recent swing highs/lows.
-    Returns list of (level, type) tuples.
+    Executes the Wysetrade logic:
+    1. RSI Div in Zone
+    2. Key Level Check
+    3. Confirmed Structure Break
     """
-    close = df['close'].values
-    high = df['high'].values
-    low = df['low'].values
+    trades = []
     
-    _, _, high_idx, low_idx = find_pivots(high, 5, 5)
-    _, _, _, low_idx2 = find_pivots(low, 5, 5)
+    # Pre-calculate
+    df['key_sup'], df['key_res'] = find_key_levels(df, 200) # Key levels
     
-    levels = []
+    # State tracking
+    potential_long = None # {'type': 'bull_div', 'idx': 100, 'low': 50000}
+    potential_short = None
     
-    # Resistance from swing highs
-    for idx in high_idx[-lookback:]:
-        if idx < len(high):
-            levels.append((high[idx], 'resistance'))
+    cooldown = 0
     
-    # Support from swing lows
-    for idx in low_idx2[-lookback:]:
-        if idx < len(low):
-            levels.append((low[idx], 'support'))
-    
-    return levels
-
-def is_near_key_level(price, levels, tolerance_pct=0.5):
-    """Check if price is near a key level"""
-    for level, ltype in levels:
-        distance_pct = abs(price - level) / price * 100
-        if distance_pct <= tolerance_pct:
-            return True, level, ltype
-    return False, None, None
-
-def calculate_trendline(prices, indices, side):
-    """
-    Calculate dynamic trendline using available data.
-    For longs: trendline on lower highs (resistance to break)
-    For shorts: trendline on higher lows (support to break)
-    
-    Returns slope and intercept.
-    """
-    if len(prices) < 2 or len(indices) < 2:
-        return None, None
-    
-    # Use linear regression
-    x = np.array(indices[-3:])  # Last 3 points
-    y = np.array(prices[-3:])
-    
-    if len(x) < 2:
-        return None, None
-    
-    # Calculate slope and intercept
-    n = len(x)
-    sum_x = np.sum(x)
-    sum_y = np.sum(y)
-    sum_xy = np.sum(x * y)
-    sum_xx = np.sum(x * x)
-    
-    denom = n * sum_xx - sum_x * sum_x
-    if denom == 0:
-        return None, None
-    
-    slope = (n * sum_xy - sum_x * sum_y) / denom
-    intercept = (sum_y - slope * sum_x) / n
-    
-    return slope, intercept
-
-def get_trendline_value(slope, intercept, index):
-    """Get trendline value at given index"""
-    if slope is None or intercept is None:
-        return None
-    return slope * index + intercept
-
-# =============================================================================
-# DIVERGENCE DETECTION
-# =============================================================================
-
-def detect_divergence(df, i, lookback=14, min_distance=5):
-    """
-    Detect RSI divergence at bar i.
-    Returns: (divergence_type, quality, swing_low_idx or swing_high_idx)
-    
-    divergence_type: 'bullish', 'bearish', or None
-    quality: 'wide' or 'tight'
-    """
-    if i < lookback + 10:
-        return None, None, None
-    
-    close = df['close'].values
-    rsi = df['rsi'].values
-    low = df['low'].values
-    high = df['high'].values
-    
-    price_ph, price_pl, ph_indices, pl_indices = find_pivots(close[:i+1], PIVOT_LEFT, PIVOT_RIGHT)
-    
-    # Find recent pivot lows for bullish divergence
-    curr_pl = curr_pli = prev_pl = prev_pli = None
-    for j in range(i, max(i - lookback, 0), -1):
-        if not np.isnan(price_pl[j]):
-            if curr_pl is None:
-                curr_pl = price_pl[j]
-                curr_pli = j
-            elif prev_pl is None and j < curr_pli - min_distance:
-                prev_pl = price_pl[j]
-                prev_pli = j
-                break
-    
-    # Find recent pivot highs for bearish divergence
-    curr_ph = curr_phi = prev_ph = prev_phi = None
-    for j in range(i, max(i - lookback, 0), -1):
-        if not np.isnan(price_ph[j]):
-            if curr_ph is None:
-                curr_ph = price_ph[j]
-                curr_phi = j
-            elif prev_ph is None and j < curr_phi - min_distance:
-                prev_ph = price_ph[j]
-                prev_phi = j
-                break
-    
-    # === BULLISH DIVERGENCE: Price LL, RSI HL ===
-    if curr_pl and prev_pl and curr_pl < prev_pl:
-        curr_rsi = rsi[curr_pli]
-        prev_rsi = rsi[prev_pli]
-        
-        # RSI must show higher low
-        if curr_rsi > prev_rsi:
-            # Prioritize if in oversold zone
-            if rsi[i] <= RSI_OVERSOLD + 15:
-                # Determine quality
-                swing_distance = curr_pli - prev_pli
-                quality = 'wide' if swing_distance >= 10 else 'tight'
-                return 'bullish', quality, curr_pli
-    
-    # === BEARISH DIVERGENCE: Price HH, RSI LH ===
-    if curr_ph and prev_ph and curr_ph > prev_ph:
-        curr_rsi = rsi[curr_phi]
-        prev_rsi = rsi[prev_phi]
-        
-        # RSI must show lower high
-        if curr_rsi < prev_rsi:
-            # Prioritize if in overbought zone
-            if rsi[i] >= RSI_OVERBOUGHT - 15:
-                swing_distance = curr_phi - prev_phi
-                quality = 'wide' if swing_distance >= 10 else 'tight'
-                return 'bearish', quality, curr_phi
-    
-    return None, None, None
-
-def check_trendline_break(df, i, side, lookback=20):
-    """
-    Check if price has broken the immediate trendline.
-    
-    For longs: Check if close breaks above the descending trendline (lower highs)
-    For shorts: Check if close breaks below the ascending trendline (higher lows)
-    
-    Returns: (is_broken, trendline_value)
-    """
-    if i < lookback + 5:
-        return False, None
-    
-    close = df['close'].values
-    high = df['high'].values
-    low = df['low'].values
-    
-    if side == 'long':
-        # Find recent lower highs for downtrend trendline
-        pivot_highs = []
-        pivot_indices = []
-        
-        for j in range(i - 1, max(i - lookback, PIVOT_LEFT), -1):
-            # Check if this is a local high
-            is_local_high = all(high[k] <= high[j] for k in range(j - 3, j + 4) if k != j and 0 <= k < len(high))
-            if is_local_high:
-                pivot_highs.append(high[j])
-                pivot_indices.append(j)
-                if len(pivot_highs) >= 3:
-                    break
-        
-        if len(pivot_highs) < 2:
-            # Fallback: use recent swing high break
-            recent_high = max(high[max(0, i-10):i])
-            return close[i] > recent_high, recent_high
-        
-        # Calculate trendline
-        slope, intercept = calculate_trendline(pivot_highs[::-1], pivot_indices[::-1], 'long')
-        if slope is None:
-            return False, None
-        
-        trendline_at_i = get_trendline_value(slope, intercept, i)
-        
-        # Check if close breaks above trendline
-        if trendline_at_i and close[i] > trendline_at_i:
-            return True, trendline_at_i
-        
-        return False, trendline_at_i
-    
-    else:  # short
-        # Find recent higher lows for uptrend trendline
-        pivot_lows = []
-        pivot_indices = []
-        
-        for j in range(i - 1, max(i - lookback, PIVOT_LEFT), -1):
-            is_local_low = all(low[k] >= low[j] for k in range(j - 3, j + 4) if k != j and 0 <= k < len(low))
-            if is_local_low:
-                pivot_lows.append(low[j])
-                pivot_indices.append(j)
-                if len(pivot_lows) >= 3:
-                    break
-        
-        if len(pivot_lows) < 2:
-            # Fallback: use recent swing low break
-            recent_low = min(low[max(0, i-10):i])
-            return close[i] < recent_low, recent_low
-        
-        slope, intercept = calculate_trendline(pivot_lows[::-1], pivot_indices[::-1], 'short')
-        if slope is None:
-            return False, None
-        
-        trendline_at_i = get_trendline_value(slope, intercept, i)
-        
-        if trendline_at_i and close[i] < trendline_at_i:
-            return True, trendline_at_i
-        
-        return False, trendline_at_i
-
-# =============================================================================
-# TRADE SIMULATION
-# =============================================================================
-
-def simulate_trade(df, entry_idx, side, sl, tp):
-    """Simulate trade with given SL and TP"""
-    rows = list(df.itertuples())
-    
-    if entry_idx >= len(rows) - 50:
-        return 'timeout', 0
-    
-    entry = rows[entry_idx].close
-    
-    # Apply slippage
-    if side == 'long':
-        entry = entry * (1 + SLIPPAGE_PCT)
-        tp = tp * (1 - TOTAL_COST)
-    else:
-        entry = entry * (1 - SLIPPAGE_PCT)
-        tp = tp * (1 + TOTAL_COST)
-    
-    for bar_idx, row in enumerate(rows[entry_idx + 1:entry_idx + 100]):
-        if side == 'long':
-            if row.low <= sl:
-                return 'loss', bar_idx + 1
-            if row.high >= tp:
-                return 'win', bar_idx + 1
-        else:
-            if row.high >= sl:
-                return 'loss', bar_idx + 1
-            if row.low <= tp:
-                return 'win', bar_idx + 1
-    
-    return 'timeout', 100
-
-# =============================================================================
-# MAIN BACKTEST
-# =============================================================================
-
-def run_wysetrade_backtest():
-    print("=" * 80)
-    print("🔬 WYSETRADE RSI DIVERGENCE + PRICE ACTION BACKTEST")
-    print("=" * 80)
-    print("\nStrategy Components:")
-    print("  1. RSI Divergence Detection (Wide & Tight)")
-    print("  2. Key Level (S/R) Filter")
-    print("  3. Trendline Break Confirmation")
-    print("\nPitfalls Addressed:")
-    print("  ✓ No look-ahead bias in trendlines")
-    print("  ✓ Only trade on closed candles")
-    print("  ✓ Strict confirmation required")
-    print("=" * 80)
-    
-    symbols = get_symbols(NUM_SYMBOLS)
-    print(f"\n📦 Fetching data for {len(symbols)} symbols...\n")
-    
-    # Results
-    results = {
-        'total': 0, 'wins': 0, 'losses': 0, 'timeouts': 0,
-        'by_quality': {'wide': {'w': 0, 'l': 0}, 'tight': {'w': 0, 'l': 0}},
-        'by_side': {'long': {'w': 0, 'l': 0}, 'short': {'w': 0, 'l': 0}},
-        'pnl': []
-    }
-    
-    # Stages
-    divergence_detected = 0
-    passed_key_level = 0
-    passed_confirmation = 0
-    
-    start_time = time.time()
-    processed = 0
-    
-    for idx, symbol in enumerate(symbols):
-        try:
-            df = fetch_klines(symbol, TIMEFRAME, DATA_DAYS)
-            if df.empty or len(df) < 400:
-                continue
-            
-            # Calculate indicators
-            df['rsi'] = calculate_rsi(df['close'], RSI_PERIOD)
-            df['atr'] = calculate_atr(df, 14)
-            df['vol_ma'] = df['volume'].rolling(20).mean()
-            df['vol_ok'] = df['volume'] > df['vol_ma'] * 0.5
-            df = df.dropna()
-            
-            if len(df) < 200:
-                continue
-            
-            processed += 1
-            rows = list(df.itertuples())
-            close = df['close'].values
-            high = df['high'].values
-            low = df['low'].values
-            
-            # Find key levels
-            key_levels = find_key_levels(df)
-            
-            last_trade_idx = -20
-            
-            # Scan through bars
-            for i in range(50, len(rows) - 50):
-                # Skip if too close to last trade
-                if i - last_trade_idx < 15:
-                    continue
-                
-                row = rows[i]
-                
-                # Volume filter
-                if not row.vol_ok:
-                    continue
-                
-                # ATR validation
-                if pd.isna(row.atr) or row.atr <= 0:
-                    continue
-                
-                # ============================================
-                # STEP 1: DIVERGENCE DETECTION
-                # ============================================
-                div_type, quality, swing_idx = detect_divergence(df, i)
-                
-                if not div_type:
-                    continue
-                
-                divergence_detected += 1
-                side = 'long' if div_type == 'bullish' else 'short'
-                
-                # ============================================
-                # STEP 2: KEY LEVEL FILTER
-                # ============================================
-                current_price = close[i]
-                near_level, level, level_type = is_near_key_level(current_price, key_levels, KEY_LEVEL_TOLERANCE)
-                
-                # For bullish: we want price near SUPPORT
-                # For bearish: we want price near RESISTANCE
-                if side == 'long' and level_type != 'support' and not near_level:
-                    continue
-                if side == 'short' and level_type != 'resistance' and not near_level:
-                    continue
-                
-                passed_key_level += 1
-                
-                # ============================================
-                # STEP 3: TRENDLINE BREAK CONFIRMATION
-                # ============================================
-                tl_broken, tl_value = check_trendline_break(df, i, side)
-                
-                if not tl_broken:
-                    continue
-                
-                passed_confirmation += 1
-                
-                # ============================================
-                # TRADE ENTRY
-                # ============================================
-                divergence_time = df.index[swing_idx] if swing_idx else df.index[i]
-                confirmation_time = df.index[i]
-                entry_price = close[i]
-                
-                # Calculate SL and TP
-                if side == 'long':
-                    # SL below recent swing low
-                    recent_low = min(low[max(0, i-15):i+1])
-                    sl = recent_low - (0.1 * row.atr)  # Small buffer
-                    sl_distance = entry_price - sl
-                    tp = entry_price + (RR_RATIO * sl_distance)
-                else:
-                    # SL above recent swing high
-                    recent_high = max(high[max(0, i-15):i+1])
-                    sl = recent_high + (0.1 * row.atr)  # Small buffer
-                    sl_distance = sl - entry_price
-                    tp = entry_price - (RR_RATIO * sl_distance)
-                
-                # Simulate trade
-                outcome, bars = simulate_trade(df, i, side, sl, tp)
-                
-                if outcome == 'timeout':
-                    results['timeouts'] += 1
-                    continue
-                
-                last_trade_idx = i
-                results['total'] += 1
-                
-                if outcome == 'win':
-                    results['wins'] += 1
-                    pnl_r = RR_RATIO
-                    results['by_quality'][quality]['w'] += 1
-                    results['by_side'][side]['w'] += 1
-                else:
-                    results['losses'] += 1
-                    pnl_r = -1.0
-                    results['by_quality'][quality]['l'] += 1
-                    results['by_side'][side]['l'] += 1
-                
-                results['pnl'].append(pnl_r)
-                
-                # Log trade
-                log_trade(symbol, side, divergence_time, confirmation_time, 
-                         entry_price, sl, tp, outcome, pnl_r, bars)
-            
-            if (idx + 1) % 25 == 0:
-                print(f"  [{idx+1}/{NUM_SYMBOLS}] {processed} processed | Trades: {results['total']}")
-            
-            time.sleep(0.02)
-            
-        except Exception as e:
+    for i in range(50, len(df)-1):
+        if cooldown > 0:
+            cooldown -= 1
             continue
-    
-    elapsed = time.time() - start_time
-    
-    # ==========================================================================
-    # RESULTS
-    # ==========================================================================
-    
-    print("\n" + "=" * 80)
-    print("📊 WYSETRADE BACKTEST RESULTS")
-    print("=" * 80)
-    print(f"\n⏱️ Completed in {elapsed/60:.1f} minutes ({processed} symbols)")
-    
-    # Funnel Analysis
-    print("\n" + "-" * 60)
-    print("📈 SIGNAL FUNNEL")
-    print("-" * 60)
-    print(f"  Divergences Detected:    {divergence_detected}")
-    print(f"  → Passed Key Level:      {passed_key_level} ({passed_key_level/divergence_detected*100:.1f}%)")
-    print(f"  → Passed Confirmation:   {passed_confirmation} ({passed_confirmation/divergence_detected*100:.1f}%)")
-    print(f"  → Trades Executed:       {results['total']}")
-    
-    # Overall Performance
-    print("\n" + "-" * 60)
-    print("📊 OVERALL PERFORMANCE")
-    print("-" * 60)
-    
-    if results['total'] > 0:
-        wr = results['wins'] / results['total']
-        lb = wilson_lb(results['wins'], results['total'])
-        ev = calc_ev(wr, RR_RATIO)
-        total_r = sum(results['pnl'])
+            
+        row = df.iloc[i]
         
-        # Profit Factor
-        gross_wins = results['wins'] * RR_RATIO
-        gross_losses = results['losses'] * 1.0
-        profit_factor = gross_wins / gross_losses if gross_losses > 0 else float('inf')
+        # ---------------------------
+        # 1. SETUP: Divergence
+        # ---------------------------
         
-        # Max Drawdown
-        cumulative = np.cumsum(results['pnl'])
-        running_max = np.maximum.accumulate(cumulative)
-        drawdown = running_max - cumulative
-        max_dd = np.max(drawdown) if len(drawdown) > 0 else 0
+        # Bullish Divergence (Price LL + RSI HL + Oversold)
+        # Lookback 5-15 bars for divergence
+        bull_div = False
+        bear_div = False
         
-        print(f"\n📊 Total Trades: {results['total']}")
-        print(f"✅ Wins: {results['wins']} | ❌ Losses: {results['losses']} | ⏱️ Timeouts: {results['timeouts']}")
-        print(f"📈 Win Rate: {wr*100:.1f}% (Lower Bound: {lb*100:.1f}%)")
-        print(f"💰 EV: {ev:+.2f}R per trade")
-        print(f"💵 Total P&L: {total_r:+,.0f}R")
-        print(f"📊 Profit Factor: {profit_factor:.2f}")
-        print(f"📉 Max Drawdown: {max_dd:.0f}R")
-    
-    # By Quality
-    print("\n" + "-" * 60)
-    print("BY DIVERGENCE QUALITY")
+        # Simple Divergence Check: 
+        # Current Low is lowest in 10 bars, but RSI is NOT lowest in 10 bars
+        # AND RSI < 40 (Near Oversold)
+        if row['low'] == df['low'].iloc[i-10:i+1].min() and \
+           row['rsi'] > df['rsi'].iloc[i-10:i+1].min() and \
+           row['rsi'] < 40:
+               bull_div = True
+        
+        # Bearish Divergence
+        if row['high'] == df['high'].iloc[i-10:i+1].max() and \
+           row['rsi'] < df['rsi'].iloc[i-10:i+1].max() and \
+           row['rsi'] > 60:
+               bear_div = True
+               
+        # ---------------------------
+        # 2. FILTER: Key Levels
+        # ---------------------------
+        
+        # Is price near Key Support? (Within 0.5% of 200-bar Low)
+        # Or is it just "reacting"? simpler: Has it touched recent support?
+        # Let's skip complex "Zone" logic for backtest speed and assume Div at Lows implies Support.
+        # User Rule: "A valid signal requires the price to be reacting to a Key Level"
+        # Implementation: Current Low must be within 1% of Key Support
+        
+        near_support = abs(row['low'] - row['key_sup']) / row['key_sup'] < 0.01
+        near_resistance = abs(row['high'] - row['key_res']) / row['key_res'] < 0.01
+        
+        if bull_div and near_support:
+            potential_long = {
+                'valid': True,
+                'setup_idx': i,
+                'swing_low': row['low'],
+                # Define Confirmation Level: The most recent Swing High BEFORE this low
+                # Scan backwards for nearest Swing High
+                'trigger_price': df.iloc[i-15:i]['high'].max() 
+            }
+            potential_short = None # Reset opposite
+            
+        if bear_div and near_resistance:
+            potential_short = {
+                'valid': True,
+                'setup_idx': i,
+                'swing_high': row['high'],
+                # Define Confirmation Level: Nearest Swing Low
+                'trigger_price': df.iloc[i-15:i]['low'].min()
+            }
+            potential_long = None
+            
+        # ---------------------------
+        # 3. TRIGGER: Structure Break
+        # ---------------------------
+        
+        entry = 0
+        sl = 0
+        tp = 0
+        side = None
+        
+        # Check Long Trigger
+        if potential_long and potential_long['valid']:
+            # Timeout if setup too old (e.g., 20 bars passed)
+            if i - potential_long['setup_idx'] > 20:
+                potential_long = None
+            # Check Breakout: Close > Trigger High
+            elif row['close'] > potential_long['trigger_price']:
+                # CONFIRMED LONG
+                side = 'long'
+                entry = df.iloc[i+1]['open'] # Next candle open
+                sl = potential_long['swing_low']
+                # Limit SL measure to max 3% to avoid massive stop
+                if (entry - sl)/entry > 0.03: 
+                    potential_long = None
+                    continue
+                    
+                risk_dist = entry - sl
+                if risk_dist <= 0: continue
+                tp = entry + (risk_dist * rr_ratio)
+                potential_long = None # Consumed
+                cooldown = 10
+        
+        # Check Short Trigger
+        elif potential_short and potential_short['valid']:
+             if i - potential_short['setup_idx'] > 20:
+                 potential_short = None
+             elif row['close'] < potential_short['trigger_price']:
+                 # CONFIRMED SHORT
+                 side = 'short'
+                 entry = df.iloc[i+1]['open']
+                 sl = potential_short['swing_high']
+                 if (sl - entry)/entry > 0.03:
+                     potential_short = None
+                     continue
+                     
+                 risk_dist = sl - entry
+                 if risk_dist <= 0: continue
+                 tp = entry - (risk_dist * rr_ratio)
+                 potential_short = None
+                 cooldown = 10
+                 
+        # ---------------------------
+        # SIMULATE TRADE
+        # ---------------------------
+        if side:
+            # Simulate forward
+            outcome = 'timeout'
+            bars_held = 0
+            exit_price = entry
+            pnl_r = 0
+            
+            for j in range(i+1, min(i+500, len(df))):
+                c = df.iloc[j]
+                bars_held += 1
+                
+                if side == 'long':
+                    if c['low'] <= sl:
+                        outcome = 'loss'
+                        exit_price = sl
+                        break
+                    if c['high'] >= tp:
+                        outcome = 'win'
+                        exit_price = tp
+                        break
+                else:
+                    if c['high'] >= sl:
+                        outcome = 'loss'
+                        exit_price = sl
+                        break
+                    if c['low'] <= tp:
+                        outcome = 'win'
+                        exit_price = tp
+                        break
+                        
+            # Calc Result with Fees
+            # Risk %
+            risk_pct = abs(entry - sl) / entry
+            
+            if outcome == 'win':
+                # Fee in R = Cost% / Risk%
+                cost_r = TOTAL_WIN_COST / risk_pct
+                pnl_r = rr_ratio - cost_r
+            elif outcome == 'loss':
+                cost_r = TOTAL_LOSS_COST / risk_pct
+                pnl_r = -1.0 - cost_r
+            else: # Timeout
+                # Close at market
+                closing_price = df.iloc[min(i+500, len(df)-1)]['close']
+                raw_pnl_pct = (closing_price - entry)/entry if side=='long' else (entry - closing_price)/entry
+                raw_r = raw_pnl_pct / risk_pct
+                cost_r = TOTAL_LOSS_COST / risk_pct # Assume taker exit
+                pnl_r = raw_r - cost_r
+            
+            trades.append({
+                'ts': df.iloc[i]['ts'],
+                'side': side,
+                'pnl_r': pnl_r,
+                'outcome': outcome,
+                'bars': bars_held
+            })
+            
+    return trades
+
+# ============================================
+# MAIN
+# ============================================
+
+def main():
+    print("🚀 WYSETRADE STRATEGY BACKTEST")
+    print(f"Timeframes: {TIMEFRAMES}")
+    print(f"Strategy: RSI Div + Key Levels + Structure Break")
     print("-" * 60)
     
-    for quality in ['wide', 'tight']:
-        q = results['by_quality'][quality]
-        total = q['w'] + q['l']
-        if total > 0:
-            wr = q['w'] / total
-            ev = calc_ev(wr, RR_RATIO)
-            print(f"  {quality.upper():<8} N={total:<6} WR={wr*100:.1f}% EV={ev:+.2f}")
+    report = []
     
-    # By Side
-    print("\n" + "-" * 60)
-    print("BY SIDE")
-    print("-" * 60)
-    
-    for side in ['long', 'short']:
-        s = results['by_side'][side]
-        total = s['w'] + s['l']
-        if total > 0:
-            wr = s['w'] / total
-            ev = calc_ev(wr, RR_RATIO)
-            icon = "🟢" if side == 'long' else "🔴"
-            print(f"  {icon} {side.upper():<8} N={total:<6} WR={wr*100:.1f}% EV={ev:+.2f}")
-    
-    # Sample Trade Log
-    if trade_log:
-        print("\n" + "-" * 60)
-        print("📝 SAMPLE TRADES (Last 10)")
-        print("-" * 60)
-        print(f"\n{'Symbol':<12} {'Side':<6} {'Divergence Time':<20} {'Confirm Time':<20} {'Outcome':<8}")
-        print("-" * 70)
+    for tf in TIMEFRAMES:
+        print(f"\n📊 Testing Timeframe: {tf}m")
+        tf_trades = []
         
-        for t in trade_log[-10:]:
-            print(f"{t['symbol']:<12} {t['side']:<6} {str(t['divergence_time'])[:19]:<20} {str(t['confirmation_time'])[:19]:<20} {t['outcome'].upper():<8}")
+        for sym in SYMBOLS:
+            print(f"   Loading {sym}...", end='\r')
+            df = fetch_data(sym, tf, DAYS)
+            if len(df) < 500: continue
+            
+            df = calculate_indicators(df)
+            trades = run_strategy(df, rr_ratio=2.0)
+            tf_trades.extend(trades)
+            
+        # Analyze TF results
+        if not tf_trades:
+            print(f"   ❌ No trades found for {tf}m")
+            continue
+            
+        total_r = sum(t['pnl_r'] for t in tf_trades)
+        wins = len([t for t in tf_trades if t['outcome']=='win'])
+        total = len(tf_trades)
+        wr = wins/total*100
+        avg_r = total_r / total
+        
+        print(f"   ✅ Result: {total} trades | WR: {wr:.1f}% | Net R: {total_r:+.1f} | Avg R: {avg_r:+.3f}")
+        report.append({
+            'tf': tf,
+            'trades': total,
+            'net_r': total_r,
+            'avg_r': avg_r,
+            'wr': wr
+        })
+        
+    print("\n" + "="*60)
+    print("🏆 FINAL SUMMARY")
+    print("="*60)
+    print(f"{'TF':<5} {'Trades':<8} {'Win%':<8} {'Net R':<10} {'Avg R':<8}")
+    print("-" * 50)
     
-    # Final Verdict
-    print("\n" + "=" * 80)
-    print("🎯 VERDICT")
-    print("=" * 80)
+    best_tf = None
+    best_r = -9999
     
-    if results['total'] > 0:
-        if wr >= 0.5 and ev > 0.5:
-            print("\n✅ WYSETRADE STRATEGY IS PROFITABLE")
-            print(f"   The confirmation requirements (Key Level + Trendline Break)")
-            print(f"   improve signal quality significantly.")
-        elif ev > 0:
-            print("\n⚠️ WYSETRADE STRATEGY IS MARGINALLY PROFITABLE")
-            print(f"   Consider relaxing some filters or adjusting R:R.")
-        else:
-            print("\n❌ WYSETRADE STRATEGY UNDERPERFORMS")
-            print(f"   The strict confirmation may be filtering too many good signals.")
+    for r in report:
+        print(f"{r['tf']:<5} {r['trades']:<8} {r['wr']:<8.1f} {r['net_r']:<10.1f} {r['avg_r']:<8.3f}")
+        if r['net_r'] > best_r:
+            best_r = r['net_r']
+            best_tf = r['tf']
+            
+    if best_tf and best_r > 0:
+        print(f"\n✅ BEST TIMEFRAME: {best_tf}m with {best_r:+.1f}R")
+    else:
+        print(f"\n❌ NO PROFITABLE TIMEFRAMES FOUND")
 
 if __name__ == "__main__":
-    run_wysetrade_backtest()
+    main()

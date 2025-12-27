@@ -237,7 +237,7 @@ class DivergenceBot:
         # Risk Management (Dynamic)
         self.risk_config = {
             'type': 'percent', 
-            'value': self.cfg.get('risk', {}).get('risk_percent', 0.5)
+            'value': self.cfg.get('trade', {}).get('risk_percent', 0.5)
         }
         
         # Phantom tracking now in unified learner
@@ -255,9 +255,6 @@ class DivergenceBot:
         self.wins = 0
         self.losses = 0
         
-        # Partial TP stats (removed - using optimal trailing only)
-        self.full_wins = 0     # Trades that hit full 7R target
-        self.trailed_exits = 0 # Trades that exited via trailing SL
         self.total_r_realized = 0.0  # Cumulative R-value (theoretical)
         self.total_pnl_usd = 0.0     # ACTUAL USD P&L from exchange (ground truth)
         self.total_fees_paid = 0.0   # Track cumulative fees
@@ -270,9 +267,9 @@ class DivergenceBot:
         # Format: {symbol: {
         #   side, combo, entry, order_id, open_time,
         #   qty_initial, qty_remaining, sl_distance,
-        #   tp_1r, tp_1r_order_id, sl_initial, sl_current,
-        #   partial_tp_filled, sl_at_breakeven, max_favorable_r, trailing_active,
-        #   partial_r_locked, last_sl_update_time
+        #   sl_initial, sl_current,
+        #   sl_at_breakeven, max_favorable_r, 
+        #   last_sl_update_time
         # }}
         self.active_trades = {}
         
@@ -410,8 +407,6 @@ class DivergenceBot:
             'total_pnl': self.total_pnl,
             'wins': self.wins,
             'losses': self.losses,
-            'full_wins': self.full_wins,
-            'trailed_exits': self.trailed_exits,
             'total_r_realized': self.total_r_realized,
             'total_pnl_usd': self.total_pnl_usd,  # Exchange-verified USD P&L
             'signals_detected': self.signals_detected,
@@ -467,8 +462,6 @@ class DivergenceBot:
             self.total_pnl = state.get('total_pnl', 0.0)
             self.wins = state.get('wins', 0)
             self.losses = state.get('losses', 0)
-            self.full_wins = state.get('full_wins', 0)
-            self.trailed_exits = state.get('trailed_exits', 0)
             self.total_r_realized = state.get('total_r_realized', 0.0)
             self.total_pnl_usd = state.get('total_pnl_usd', 0.0)  # Exchange-verified USD P&L
             self.signals_detected = state.get('signals_detected', 0)
@@ -958,8 +951,6 @@ class DivergenceBot:
                 f"├ Open: {len(self.active_trades)}\n"
                 f"├ Closed: {self.wins + self.losses}\n"
                 f"├ ✅ Won: {self.wins} | ❌ Lost: {self.losses}\n"
-                f"├ 📈 Trailed Exits: {self.trailed_exits}\n"
-                f"├ 🎯 Full TPs: {self.full_wins}\n"
                 f"├ WR: {exec_wr:.1f}%\n"
                 f"├ 💵 USD P&L: **${self.total_pnl_usd:+.2f}**\n"
                 f"└ R-Total: {pnl_r:+.2f}R\n\n"
@@ -1011,10 +1002,7 @@ class DivergenceBot:
                         entry = trade['entry']
                         sl_distance = trade.get('sl_distance', 0)
                         sl_current = trade.get('sl_current', trade.get('sl_initial', 0))
-                        partial_filled = trade.get('partial_tp_filled', False)  # May exist in old trades
-                        partial_r_locked = trade.get('partial_r_locked', 0)  # May exist in old trades
                         sl_at_be = trade.get('sl_at_breakeven', False)
-                        trailing = trade.get('trailing_active', False)
                         max_r = trade.get('max_favorable_r', 0)
                         open_time = trade.get('open_time', time.time())
                         
@@ -1056,27 +1044,8 @@ class DivergenceBot:
                         side_icon = "🟢" if side == 'long' else "🔴"
                         partial_icon = "✅" if partial_filled else "⏳"
                         protection = "🛡️" if sl_at_be else "⚠️"
-                        trail_icon = "🔥" if trailing else ("⏸️" if sl_at_be else "OFF")
-                        
-                        # Time in trade
-                        time_in_trade = int((time.time() - open_time) / 60)
-                        hours = time_in_trade // 60
-                        mins = time_in_trade % 60
-                        time_str = f"{hours}h {mins}m" if hours > 0 else f"{mins}m"
-                        
-                        # Next milestone (Tight-Trail STRATEGY)
-                        if not sl_at_be and current_r < 0.2:
-                            distance_to_be = 0.2 - current_r
-                            next_milestone = f"{distance_to_be:+.1f}R to +0.2R (BE + trail)"
-                        elif sl_at_be and not trailing:
-                            next_milestone = "Waiting for trail activation"
-                        else:
-                            next_milestone = "Trailing with price"
-                        
                         # Risk status
-                        if trailing:
-                            risk_status = f"{protection} TRAILING at {sl_r:+.1f}R"
-                        elif sl_at_be:
+                        if sl_at_be:
                             risk_status = f"{protection} Protected at BE"
                         else:
                             risk_status = f"{protection} At Risk"
@@ -1093,8 +1062,7 @@ class DivergenceBot:
                             f"├ Now: {total_current_r:+.2f}R ({price_display}) {price_dir}\n"
                             f"├ {risk_status}\n"
                             f"├ SL: ${sl_current:.4f} ({sl_r:+.1f}R) | Max: {max_r:+.1f}R\n"
-                            f"├ Trail: {trail_icon} | Time: {time_str}\n"
-                            f"└ Next: {next_milestone}\n\n"
+                            f"└ Time: {time_str}\n\n"
                         )
                     except Exception as e:
                         # Fallback to simple display if error
@@ -1190,39 +1158,14 @@ class DivergenceBot:
                     else:
                         sl_r = -1.0
                     
-                    # Calculate P&L (old trades may have partial_r_locked)
-                    # New trades will have partial_r_locked = 0
-                    total_current_r = partial_r_locked + current_r  # For old trades
-                    if not partial_filled:  # New trades (optimal strategy)
-                        total_current_r = current_r  # Full position
-                    total_locked += partial_r_locked  # For summary
-                    
+                    total_current_r = current_r  # Full position
                     total_unrealized += total_current_r
                     
                     # Icons
                     side_icon = "🟢" if side == 'long' else "🔴"
                     protection = "🛡️" if sl_at_be else "⚠️"
-                    trail_icon = "🔥" if trailing else ("⏸️" if sl_at_be else "OFF")
-                    
-                    # Time
-                    mins = int((time.time() - open_time) / 60)
-                    hours = mins // 60
-                    mins_rem = mins % 60
-                    time_str = f"{hours}h {mins_rem}m" if hours > 0 else f"{mins_rem}m"
-                    
-                    # Next milestone (Tight-Trail STRATEGY)
-                    if not sl_at_be and current_r < 0.2:
-                        dist = 0.2 - current_r
-                        next_milestone = f"{dist:+.1f}R to +0.2R (BE + trail)"
-                    elif sl_at_be and not trailing:
-                        next_milestone = "Waiting for trail activation"
-                    else:
-                        next_milestone = "Trailing with price"
-                    
                     # Risk status
-                    if trailing:
-                        status = f"{protection} TRAILING at {sl_r:+.1f}R"
-                    elif sl_at_be:
+                    if sl_at_be:
                         status = f"{protection} Protected at BE"
                     else:
                         status = f"{protection} At Risk"
@@ -1239,8 +1182,7 @@ class DivergenceBot:
                         f"├ Status: {status}\n"
                         f"├ Combo: `{combo}`\n"
                         f"├ SL: ${sl_current:.6f} ({sl_r:+.1f}R) | Max: {max_r:+.1f}R\n"
-                        f"├ Trail: {trail_icon} | Time: {time_str}\n"
-                        f"└ Next: {next_milestone}\n\n"
+                        f"└ Time: {time_str}\n\n"
                     )
                 except Exception as e:
                     logger.error(f"Error formatting position {sym}: {e}")
@@ -1248,7 +1190,7 @@ class DivergenceBot:
             
             # Summary footer
             msg += f"━━━━━━━━━━━━━━━━━━━━\n"
-            msg += f"💰 **TOTAL**: {total_unrealized:+.2f}R unrealized | {total_locked:+.2f}R locked\n"
+            msg += f"💰 **TOTAL**: {total_unrealized:+.2f}R unrealized\n"
             msg += f"💡 Use /dashboard for summary"
             
             await update.message.reply_text(msg, parse_mode='Markdown')
@@ -2025,7 +1967,7 @@ class DivergenceBot:
                 # CRITICAL: Calculate swing low/high NOW at signal time
                 # Backtest uses: range(start_lookback, idx + 1) which is signal candle + 14 prior
                 # We must NOT recalculate at execution time (new candle would change the result)
-                SWING_LOOKBACK = 15
+                SWING_LOOKBACK = self.structure_lookback
                 signal_swing_low = df['low'].tail(SWING_LOOKBACK).min()
                 signal_swing_high = df['high'].tail(SWING_LOOKBACK).max()
                 
@@ -2586,7 +2528,7 @@ class DivergenceBot:
                     logger.info(f"✅ ORDER FILLED: {sym} {side} @ {avg_price:.4f}")
                     logger.info(f"   Strategy: Fixed 5R TP, 1.2% SL (no trailing)")
                     
-                    # Move to active_trades with trailing SL tracking only
+                    # Move to active_trades for tracking
                     self.active_trades[sym] = {
                         # Core trade info
                         'side': side,
@@ -2608,13 +2550,11 @@ class DivergenceBot:
                         'sl_initial': sl,
                         'sl_current': sl,
                         
-                        # Risk tracking for accurate P&L calculation
-                        'risk_amt': order_info.get('risk_amt', 0),  # USD risk for R calculation
+                        # Risk tracking for accurate P&L calculation (based on ACTUAL filled qty)
+                        'risk_amt': filled_qty * sl_distance if filled_qty > 0 and sl_distance > 0 else order_info.get('risk_amt', 0),
                         
-                        # State machine (no partial TP tracking)
                         'sl_at_breakeven': False,
                         'max_favorable_r': 0.0,
-                        'trailing_active': False,
                         'last_sl_update_time': 0,
                     }
                     
@@ -2947,6 +2887,8 @@ class DivergenceBot:
                 max_afford_qty = (balance * 0.95) / expected_entry
                 logger.warning(f"📉 Insufficient Balance for {sym}: Cost ${estimated_cost:.2f} > Bal ${balance:.2f}. Reducing Qty to {max_afford_qty:.4f}")
                 qty = round_to_qty_step(max_afford_qty)
+                # Recalculate actual risk based on affordable quantity
+                risk_amount = qty * sl_distance
                 if qty < min_qty:
                     logger.warning(f"Skip {sym}: Reduced qty {qty} < min {min_qty}")
                     return
@@ -3171,14 +3113,6 @@ class DivergenceBot:
         # Remove processed orders
         for order_id in to_remove:
             self.pending_orders.pop(order_id, None)
-
-    async def monitor_trailing_sl(self, candle_data: dict):
-        """DISABLED: Trailing SL logic completely removed.
-        
-        This function does nothing - using fixed TP/SL only.
-        The bot now uses pure fixed targets as validated in backtests.
-        """
-        return  # DEFINITIVE DISABLE: No trailing SL
 
 
     async def execute_trade(self, sym, side, row, combo, source='manual'):
@@ -3725,8 +3659,6 @@ class DivergenceBot:
                     # Monitor pending limit orders (check for fills, invalidation, timeout)
                     await self.monitor_pending_limit_orders(candle_data)
                     
-                    # Monitor trailing SL and partial TP fills
-                    # await self.monitor_trailing_sl(candle_data)  # DISABLED: User requested deep removal of trailing logic
                     
                     # ============================================================
                     # HIGH-PROBABILITY TRIO: Check pending signals for triggers
@@ -3959,14 +3891,8 @@ class DivergenceBot:
                                         # Track ACTUAL USD P&L (ground truth!)
                                         self.total_pnl_usd += actual_pnl_usd
                                         
-                                        # Categorize exit type based on ACTUAL P&L
                                         if actual_pnl_usd > 0:
-                                            if actual_r >= 2.5:
-                                                exit_type = "🎯 BIG WIN"
-                                                self.full_wins += 1
-                                            else:
-                                                exit_type = "📈 WIN"
-                                                self.trailed_exits += 1
+                                            exit_type = "📈 WIN"
                                             outcome = "win"
                                             outcome_display = f"✅ ${actual_pnl_usd:+.2f} ({actual_r:+.2f}R)"
                                             self.wins += 1

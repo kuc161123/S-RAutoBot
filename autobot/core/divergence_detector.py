@@ -183,7 +183,7 @@ def detect_divergence(
     # RSI low from DISTANT window (matches shift(lookback))
     distant_rsi_low = distant_window['rsi'].min()
     
-    if is_new_low and curr['rsi'] > distant_rsi_low and curr['rsi'] < 45:
+    if is_new_low and curr['rsi'] > distant_rsi_low and curr['rsi'] < 40:
         signals.append(DivergenceSignal(symbol, 'long', 'regular_bullish', rsi, price, timestamp, "DIV:regular_bullish"))
 
     # 2. Regular Bearish
@@ -191,7 +191,7 @@ def detect_divergence(
     is_new_high = curr['high'] >= curr['price_high'] - 0.0000001
     distant_rsi_high = distant_window['rsi'].max()
     
-    if is_new_high and curr['rsi'] < distant_rsi_high and curr['rsi'] > 55:
+    if is_new_high and curr['rsi'] < distant_rsi_high and curr['rsi'] > 60:
         signals.append(DivergenceSignal(symbol, 'short', 'regular_bearish', rsi, price, timestamp, "DIV:regular_bearish"))
 
     # 3. Hidden Bullish
@@ -231,7 +231,7 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     high_close = abs(df['high'] - df['close'].shift())
     low_close = abs(df['low'] - df['close'].shift())
     true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    df['atr'] = true_range.rolling(14).mean()
+    df['atr'] = true_range.rolling(20).mean()
     
     # Volume filter (above 50% of 20-period average)
     df['vol_ma'] = df['volume'].rolling(20).mean()

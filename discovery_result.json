@@ -1,0 +1,1 @@
+{"config": {"rr_ratio": 1.5, "sl_atr": 2.0, "ema_trend": 200, "rsi_entry": "strict", "volatility_filter": "adx_25", "macd_confirm": true}, "score": -202.95641299534142}

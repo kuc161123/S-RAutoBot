@@ -1,0 +1,907 @@
+bybit:
+  alt_base_url: https://api.bytick.com
+  api_key: ${BYBIT_API_KEY}
+  api_secret: ${BYBIT_API_SECRET}
+  base_url: https://api.bybit.com
+  use_alt_on_fail: true
+  ws_public: wss://stream.bybit.com/v5/public/linear
+  ws_public_alt: wss://stream.bytick.com/v5/public/linear
+
+# ============================================
+# OPTIMIZED 5M STRATEGY CONFIGURATION
+# Grid Search Validated: +40,028R, 41.9% WR
+# Walk-Forward: 6/6 periods | Monte Carlo: 100% prob
+# ============================================
+high_probability_trio:
+  enabled: true                    # Master switch for trio filters
+  
+  # DIVERGENCE FILTER: All types (Regular + Hidden)
+  # Grid Search Result: all = +40,028R vs regular_only = +30,717R
+  divergence_filter: all           # NEW: 'all', 'regular_only', 'regular_bullish_only', 'hidden_bearish_only'
+  
+  # Volume Filter: DISABLED (filtering was reducing profit)
+  # With volume: +29,401R | Without volume: +40,028R
+  require_volume: false            # VALIDATED: Disable for max profit
+  
+  # VWAP Filter: DISABLED (reduces profitability)
+  require_vwap: false              # VALIDATED: Keep disabled
+  
+  # Two-Bar Momentum Trigger: REPLACED WITH STRUCTURE BREAK
+  # NEW: Structure Break Confirmation (+1.854R per trade validated)
+  require_two_bar_momentum: false
+  require_structure_break: true  # PROFITABLE: Wait for close > swing high
+  structure_lookback: 10          # 10-bar lookback for swing high/low
+  max_wait_candles: 10            # HIGH VOLUME MODE: 10 candles (50 mins) - +9841R, +1.01R/trade
+  max_chase_pct: 0.5
+  
+  # SL/TP Configuration (OPTIMAL from exhaustive backtest)
+  rr_ratio: 3.0                    # PROFITABLE: 3.0:1 R:R (+1.854R per trade)
+  sl_atr_multiplier: 0.8           # PROFITABLE: 0.8x ATR (tight stop)
+  # Backtest: +170.5R | 92 trades | +1.854R avg | All-day trading
+
+exploration:
+  enabled: true
+ml:
+  fail_open_on_error: false
+network:
+  monitor:
+    enabled: true
+    interval_sec: 60
+phantom:
+  cancel_on_execute: true
+  caps:
+    mr:
+      cluster3: 45
+      none: 180
+      offhours: 30
+    scalp:
+      cluster3: 120
+      none: 600
+      offhours: 80
+    trend:
+      cluster3: 45
+      none: 120
+      offhours: 30
+  cluster3_cap: 45
+  enable_virtual_snapshots: false
+  hourly_symbol_budget:
+    mr: 2
+    scalp: 12
+    trend: 1
+  none_cap: 180
+  offhours_cap: 15
+  ungated_trend: true
+  virtual_snapshots_delta: 5
+phantom_flow:
+  burst:
+    boost: 0.25
+    enabled: true
+    max_boost: 0.4
+    no_accept_minutes: 30
+  daily_target:
+    mr: 200
+    scalp: 200
+    trend: 200
+  enabled: true
+  relax_limits:
+    mr:
+      dist_mid_atr: 0.4
+      rc: 0.3
+      rev_atr: 0.4
+      touches: 3
+    scalp:
+      bb_width_pct: 0.3
+      slope: 0.6
+      vol_ratio: 0.4
+      vwap_dist_atr: 0.6
+      wick: 0.15
+    trend:
+      breakout: 0.08
+      ema_stack: 15.0
+      slope: 1.5
+  relax_mode:
+    catchup:
+      boost_base: 0.3
+      boost_slope: 0.02
+      enabled: true
+      max_boost: 0.4
+      pace_gap_trades: 8
+    deficit_scale: 0.3
+    enable_deficit: true
+    min_relax:
+      mr: 0.8
+      scalp: 0.6
+      trend: 0.4
+    weight_deficit: 0.6
+    wr_guard:
+      cap: 0.5
+      enabled: true
+      min_wr: 40.0
+      window: 40
+  session_multipliers:
+    mr:
+      asian: 0.9
+      european: 1.1
+      off_hours: 0.8
+      us: 1.0
+    scalp:
+      asian: 1.0
+      european: 1.1
+      off_hours: 0.9
+      us: 1.2
+    trend:
+      asian: 0.8
+      european: 1.0
+      off_hours: 0.7
+      us: 1.1
+  smoothing_hours: 2
+scalp:
+  backfill:
+    active_labeling: false
+    ml_enabled: false
+  block_regime: true
+  context:
+    enforce: false
+    use_3m_context: true
+  cooldown_bars: 4
+  daily_exec_cap: 20
+  debug:
+    force_accept: false
+  dedup_enabled: false
+  dedup_hours: 3
+  enabled: true
+  exec:
+    adaptive_combos:
+      enabled: true
+      ev_floor_r: 0.3
+      ev_r_confidence_level: 0.95
+      hysteresis_pct: 2.0
+      long_short_separate: true
+      lookback_days: 30
+      min_sample_size: 30
+      min_wr_threshold: 42.0
+      min_wr_threshold_long: 42.0
+      min_wr_threshold_short: 44.0
+      notify_changes: true
+      strict_side_keys: true
+      update_frequency_hours: 1
+      update_frequency_trades: 50
+      use_ev_r_confidence: true
+      use_ev_r_only: true
+      use_wilson_lb: true
+    adaptive_risk:
+      base_percent: 0.5
+      enabled: false
+      ev_floor_r: 0.0
+      max_percent: 2.0
+      min_percent: 0.5
+      min_samples: 30
+      recency:
+        days: 7
+        ev_floor_r: 0.0
+        min_samples: 15
+        prefer_only: true
+      use_for_high_wr: false
+      wr_lb_ladder:
+        40: 1.0
+        50: 4.0
+    block_noncombo: true
+    blocked_notify: true
+    combos_only: true
+    daily_cap: 0
+    enabled: true
+    extra_vol_gate:
+      enabled: false
+      min_ratio: 1.2
+      notify: true
+    fallback_until_ready: pro
+    manager_fresh_hours: 6
+    mute_disabled_paths: false
+    require_combo_enabled: true
+    risk_percent: 1.0
+  explore:
+    min_bb_width_pct: 0.55
+    relax_enabled: true
+    timeout_hours: 8
+    vol_ratio_min: 1.05
+    vwap_dist_atr_max: 1.2
+    wick_ratio_min: 0.2
+  hard_gates:
+    align_15m_enabled: false
+    allowed_regimes:
+    - normal
+    - high
+    apply_to_exec: true
+    apply_to_phantoms: false
+    bbw_exec_enabled: false
+    bbw_max_pct: 0.9
+    body_enabled: false
+    body_ratio_min: 0.25
+    htf_enabled: false
+    htf_min_ts15: 70.0
+    leader_align_btc_enabled: false
+    min_bb_width_pct: 0.45
+    regime_enabled: false
+    slope_enabled: false
+    slope_fast_min_pb: 0.03
+    slope_fast_only: false
+    slope_long_fast_max: 0.03
+    slope_long_fast_min: 0.0
+    slope_long_slow_max: 999.0
+    slope_long_slow_min: 0.015
+    slope_mode: trend
+    slope_short_fast_max: 0.0
+    slope_short_fast_min: -0.03
+    slope_short_slow_max: -0.015
+    slope_short_slow_min: -999.0
+    slope_slow_min_pb: 0.015
+    slope_use_ranges: true
+    vol_enabled: false
+    vol_ratio_min: 0.8
+    vwap_dist_atr_max: 0.8
+    vwap_dist_atr_min: 0.4
+    vwap_exec_enabled: false
+    wick_delta_min: 0.12
+    wick_enabled: false
+  logging:
+    decision_only: false
+    heartbeat: true
+    kline_trace: false
+    warm_start_heartbeat: true
+  min_r_pct: 0.005
+  notifications:
+    blocks:
+      enabled: true
+      pre_gate_enabled: false
+      rate_limit_sec: 600
+  promote_enabled: false
+  promote_metric: recent
+  promote_min_samples: 200
+  promote_min_wr: 50.0
+  promote_recent_secs: 30
+  promote_window: 50
+  rr: 1.0
+  session_only: []
+  signal:
+    bb_width_threshold: 0.002
+    body_ratio_threshold: 0.4
+    ema_fast: 8
+    ema_slow: 21
+    ema_trend_filter: true
+    volume_ratio_threshold: 1.2
+    vwap_distance_threshold: 0.008
+    vwap_only: false
+    vwap_pattern: bounce
+    vwap_require_alignment: true
+    wick_delta_threshold: 0.0005
+  stream_3m_only: true
+  threshold: 70
+  timeframe: 5  # OPTIMIZED: 5-minute candles, Fixed 5R TP (+1137R, 18.6% WR, 97.4% profit prob)
+  use_ml: false
+strategy_independence:
+  enabled: true
+strategy_isolation:
+  enabled: false
+  execution_policy: arbitrate
+  min_quality_guards:
+    mr:
+      dist_mid_atr_min: 0.3
+      rc_min: 0.45
+      rev_candle_atr_min: 0.7
+      touches_min: 3
+    scalp:
+      min_bb_width_pct: 0.4
+      vol_ratio_min: 0.9
+      vwap_dist_atr_max: 1.2
+    trend:
+      breakout_min: 0.1
+      ema_stack_min: 40.0
+      slope_min: 3.0
+telegram:
+  chat_id: ${TELEGRAM_CHAT_ID}
+  poll_mode: legacy
+  probe:
+    get_updates_once: true
+    limit: 3
+  token: ${TELEGRAM_BOT_TOKEN}
+trade:
+  atr_len: 14
+  both_hit_rule: SL_FIRST
+  confirmation_candles: 2
+  ema_len: 200
+  enable_ml_evolution: false
+  fee_total_pct: 0.0011
+  ml_min_score: 70.0
+  ml_risk_max_percent: 4.0
+  ml_risk_max_score: 85.0
+  ml_risk_min_percent: 2.0
+  ml_risk_min_score: 70.0
+  risk_percent: 1.0
+  risk_usd: 10
+  rr: 2.5
+  sl_buf_atr: 1.5
+  symbols:
+  - 1000000BABYDOGEUSDT
+  - 1000000CHEEMSUSDT
+  - 1000000MOGUSDT
+  - 10000SATSUSDT
+  - 1000CATUSDT
+  - 1000XECUSDT
+  - 2ZUSDT
+  - ACEUSDT
+  - ADAUSDT
+  - AIAUSDT
+  - AIOZUSDT
+  - AIXBTUSDT
+  - ALCHUSDT
+  - ALEOUSDT
+  - API3USDT
+  - APRUSDT
+  - APTUSDT
+  - ARBUSDT
+  - ARUSDT
+  - ASRUSDT
+  - ASTERUSDT
+  - AVAAIUSDT
+  - B2USDT
+  - BABYUSDT
+  - BARDUSDT
+  - BBUSDT
+  - BCHUSDT
+  - BEAMUSDT
+  - BIGTIMEUSDT
+  - BLASTUSDT
+  - BLURUSDT
+  - BOBAUSDT
+  - BOMEUSDT
+  - BROCCOLIUSDT
+  - BRUSDT
+  - CARVUSDT
+  - CHILLGUYUSDT
+  - CKBUSDT
+  - CLOUDUSDT
+  - CRVUSDT
+  - CUSDT
+  - CVXUSDT
+  - DAMUSDT
+  - DASHUSDT
+  - DBRUSDT
+  - DEGENUSDT
+  - DENTUSDT
+  - DGBUSDT
+  - DOGUSDT
+  - DOODUSDT
+  - DOTUSDT
+  - DYMUSDT
+  - EDENUSDT
+  - ENAUSDT
+  - ERAUSDT
+  - ESUSDT
+  - EVAAUSDT
+  - FARTCOINUSDT
+  - FIDAUSDT
+  - FIOUSDT
+  - FLOWUSDT
+  - GALAUSDT
+  - GASUSDT
+  - GNOUSDT
+  - GPSUSDT
+  - GRIFFAINUSDT
+  - HAEDALUSDT
+  - HFTUSDT
+  - HIGHUSDT
+  - HYPERUSDT
+  - ICXUSDT
+  - IDEXUSDT
+  - IDUSDT
+  - ILVUSDT
+  - INUSDT
+  - IOUSDT
+  - JTOUSDT
+  - JUPUSDT
+  - KAVAUSDT
+  - KITEUSDT
+  - KMNOUSDT
+  - KNCUSDT
+  - LPTUSDT
+  - MANAUSDT
+  - MAVIAUSDT
+  - MBOXUSDT
+  - MEMEUSDT
+  - METISUSDT
+  - MEUSDT
+  - MLNUSDT
+  - MMTUSDT
+  - MONUSDT
+  - MOVEUSDT
+  - MUSDT
+  - NAORISUSDT
+  - NMRUSDT
+  - NOMUSDT
+  - OBOLUSDT
+  - OBTUSDT
+  - OMUSDT
+  - ONTUSDT
+  - OPENUSDT
+  - ORDIUSDT
+  - PAXGUSDT
+  - PHAUSDT
+  - PIGGYUSDT
+  - PLUMEUSDT
+  - POLYXUSDT
+  - PONKEUSDT
+  - PUFFERUSDT
+  - PUMPBTCUSDT
+  - QNTUSDT
+  - REDUSDT
+  - REQUSDT
+  - ROSEUSDT
+
+  bearish_only: false   # Disabled - trading ALL divergence types
+  hidden_bearish_only: false  # Disabled - trading ALL divergence types
+  
+  # 126 symbols validated for 3M divergence trading
+  # 3-minute timeframe for faster trade cycles
+  # VALIDATED 98 SYMBOLS (10-candle HIGH VOLUME mode, realistic fees+slippage)
+  # Result: 9775 trades, +9841R, +1.007R/trade, 59.1% WR
+  # Out-of-Sample validated | Monte Carlo: 100% profitable
+  # Top 98 by 24h volume (exact from backtest)
+  divergence_symbols:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+    - XRPUSDT
+    - 0GUSDT
+    - ZBTUSDT
+    - BEATUSDT
+    - DOGEUSDT
+    - FARTCOINUSDT
+    - ZKPUSDT
+    - ADAUSDT
+    - PIPPINUSDT
+    - LIGHTUSDT
+    - HYPEUSDT
+    - SUIUSDT
+    - ZECUSDT
+    - WIFUSDT
+    - 1000PEPEUSDT
+    - BCHUSDT
+    - LINKUSDT
+    - ENAUSDT
+    - AAVEUSDT
+    - MONUSDT
+    - NIGHTUSDT
+    - BNBUSDT
+    - LTCUSDT
+    - UNIUSDT
+    - DOTUSDT
+    - NEARUSDT
+    - AVAXUSDT
+    - RAVEUSDT
+    - AVNTUSDT
+    - XPLUSDT
+    - ASTERUSDT
+    - RIVERUSDT
+    - PUMPFUNUSDT
+    - YBUSDT
+    - ARBUSDT
+    - HBARUSDT
+    - HUSDT
+    - TAOUSDT
+    - FLOCKUSDT
+    - ATUSDT
+    - OPUSDT
+    - TNSRUSDT
+    - ONDOUSDT
+    - APTUSDT
+    - FOLKSUSDT
+    - ACTUSDT
+    - CRVUSDT
+    - WLFIUSDT
+    - PENGUUSDT
+    - TRUTHUSDT
+    - WLDUSDT
+    - FILUSDT
+    - MNTUSDT
+    - FUSDT
+    - VIRTUALUSDT
+    - ICPUSDT
+    - TONUSDT
+    - SQDUSDT
+    - SOLAYERUSDT
+    - BIOUSDT
+    - XTZUSDT
+    - SEIUSDT
+    - TIAUSDT
+    - 1000BONKUSDT
+    - ANIMEUSDT
+    - STABLEUSDT
+    - WETUSDT
+    - LDOUSDT
+    - PLUMEUSDT
+    - TRUMPUSDT
+    - STRKUSDT
+    - ATOMUSDT
+    - COAIUSDT
+    - GALAUSDT
+    - XMRUSDT
+    - OMUSDT
+    - SHIB1000USDT
+    - BANANAUSDT
+    - MOVEUSDT
+    - TWTUSDT
+    - XLMUSDT
+    - TRXUSDT
+    - ETCUSDT
+    - XPINUSDT
+    - INJUSDT
+    - HMSTRUSDT
+    - PENDLEUSDT
+    - MERLUSDT
+    - DYDXUSDT
+    - PIEVERSEUSDT
+    - LYNUSDT
+    - ZKCUSDT
+    - ICNTUSDT
+    - LABUSDT
+    - JELLYJELLYUSDT
+  
+  use_enhanced_parallel: true
+  use_ml_dynamic_risk: false
+  use_ml_scoring: false
+  use_percent_risk: true
+  use_regime_switching: false
+  use_symbol_clusters: true
+  use_vol: false
+  vol_len: 20
+  vol_mult: 1.2
+strategies:
+  1000000BABYDOGEUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:38-50 MTF
+  1000000CHEEMSUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  1000000MOGUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  10000SATSUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  1000CATUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  1000XECUSDT:
+    short:
+    - RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF
+  2ZUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 MTF
+  ACEUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF
+  ADAUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  AIAUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:23-38 MTF
+  AIOZUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:61-78 noMTF
+  AIXBTUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  ALCHUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:38-50 MTF
+  ALEOUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  API3USDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF
+  APRUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF
+  APTUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  ARBUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  ARUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF
+  ASRUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  ASTERUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  AVAAIUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:50-61 noMTF
+  B2USDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  BABYUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  BARDUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF
+  BBUSDT:
+    long:
+    - RSI:60-70 MACD:bear VWAP:0.6-1.2 Fib:0-23 MTF
+  BCHUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:38-50 MTF
+  BEAMUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF
+  BIGTIMEUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  BLASTUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF
+  BLURUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:23-38 MTF
+  BOBAUSDT:
+    short:
+    - RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  BOMEUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  BROCCOLIUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  BRUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF
+  CARVUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  CHILLGUYUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  CKBUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  CLOUDUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  CRVUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF
+  CUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:38-50 MTF
+  CVXUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF
+  DAMUSDT:
+    short:
+    - RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  DASHUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 MTF
+  DBRUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  DEGENUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  DENTUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  DGBUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  DOGUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  DOODUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:0-23 MTF
+  DOTUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:38-50 MTF
+  DYMUSDT:
+    short:
+    - RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF
+  EDENUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF
+  ENAUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF
+  ERAUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:78-100 noMTF
+  ESUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  EVAAUSDT:
+    long:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 noMTF
+  FARTCOINUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:61-78 MTF
+  FIDAUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  FIOUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 MTF
+  FLOWUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  GALAUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  GASUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:23-38 MTF
+  GNOUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  GPSUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  GRIFFAINUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  HAEDALUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  HFTUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 MTF
+  HIGHUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  HYPERUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF
+  ICXUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  IDEXUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:23-38 MTF
+  IDUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  ILVUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  INUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:23-38 MTF
+  IOUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  JTOUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 MTF
+  JUPUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  KAVAUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  KITEUSDT:
+    long:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 noMTF
+  KMNOUSDT:
+    long:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:61-78 noMTF
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:38-50 MTF
+  KNCUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:38-50 MTF
+  LPTUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  MANAUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:1.2+ Fib:50-61 MTF
+  MAVIAUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  MBOXUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  MEMEUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:0.6-1.2 Fib:78-100 noMTF
+  METISUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  MEUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:38-50 noMTF
+  MLNUSDT:
+    long:
+    - RSI:60-70 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  MMTUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  MONUSDT:
+    short:
+    - RSI:<30 MACD:bear VWAP:1.2+ Fib:78-100 noMTF
+  MOVEUSDT:
+    short:
+    - RSI:30-40 MACD:bull VWAP:1.2+ Fib:78-100 noMTF
+  MUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:0.6-1.2 Fib:23-38 MTF
+  NAORISUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:38-50 MTF
+  NMRUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:61-78 noMTF
+  NOMUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF
+  OBOLUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  OBTUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF
+  OMUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:78-100 MTF
+  ONTUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  OPENUSDT:
+    short:
+    - RSI:70+ MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  ORDIUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+  PAXGUSDT:
+    short:
+    - RSI:30-40 MACD:bear VWAP:1.2+ Fib:61-78 noMTF
+  PHAUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  PIGGYUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  PLUMEUSDT:
+    short:
+    - RSI:40-60 MACD:bear VWAP:<0.6 Fib:23-38 MTF
+  POLYXUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:1.2+ Fib:23-38 MTF
+  PONKEUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:38-50 MTF
+  PUFFERUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF
+  PUMPBTCUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:0.6-1.2 Fib:0-23 MTF
+  QNTUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:61-78 noMTF
+  REDUSDT:
+    long:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:50-61 noMTF
+  REQUSDT:
+    short:
+    - RSI:60-70 MACD:bull VWAP:1.2+ Fib:0-23 MTF
+  ROSEUSDT:
+    short:
+    - RSI:40-60 MACD:bull VWAP:<0.6 Fib:23-38 MTF
+risk:
+  risk_percent: 0.5

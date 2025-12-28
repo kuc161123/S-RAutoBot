@@ -159,6 +159,34 @@ class TelegramHandler:
             # === INTERNAL STATS (for tracking) ===
             stats = self.bot.stats
             
+            # === SCAN STATE ===
+            scan = self.bot.scan_state
+            last_scan = scan.get('last_scan_time')
+            if last_scan:
+                mins_ago = int((datetime.now() - last_scan).total_seconds() / 60)
+                last_scan_str = f"{mins_ago} mins ago"
+                next_scan_mins = max(0, 60 - mins_ago)
+            else:
+                last_scan_str = "Not yet"
+                next_scan_mins = "~60"
+            
+            # === PENDING SIGNALS (Awaiting BOS) ===
+            pending_list = []
+            for sym, sigs in self.bot.pending_signals.items():
+                for sig in sigs:
+                    side_icon = "🟢" if sig.signal.signal_type == 'bullish' else "🔴"
+                    pending_list.append(f"{side_icon} {sym} ({sig.candles_waited}/6)")
+            pending_str = "\n│   ".join(pending_list[:3]) if pending_list else "None"
+            
+            # === HOT SIGNALS (RSI Extremes) ===
+            hot_signals = []
+            for sym, rsi in self.bot.rsi_cache.items():
+                if rsi <= 30:
+                    hot_signals.append(f"📉 {sym} RSI: {rsi:.0f} (Oversold)")
+                elif rsi >= 70:
+                    hot_signals.append(f"📈 {sym} RSI: {rsi:.0f} (Overbought)")
+            hot_str = "\n│   ".join(hot_signals[:3]) if hot_signals else "None near extremes"
+            
             # === BUILD COMPREHENSIVE MESSAGE ===
             msg = f"""
 📊 **1H VALIDATED DASHBOARD**
@@ -168,34 +196,33 @@ class TelegramHandler:
 ├ Uptime: {uptime_hrs:.1f}h
 ├ Timeframe: 1H (60m)
 ├ Risk/Trade: {self.bot.risk_config.get('risk_per_trade', 0.01)*100}%
-└ Enabled Symbols: {enabled} (100% Validated)
+└ Enabled: {enabled} Symbols (Validated)
 
-🎯 **STRATEGY**
-├ Setup: RSI Divergence + EMA 200
-├ Confirmation: Break of Structure
-├ Exit: Per-Symbol R:R (4.5:1 to 8:1)
-└ Expected OOS: +375R/Yr
+🔍 **SCANNING STATUS**
+├ Last Scan: {last_scan_str}
+├ Next Scan: ~{next_scan_mins} mins
+├ Fresh Divergences: {scan.get('fresh_divergences', 0)}
+├ Pending (BOS): {len(pending_list)}
+│   {pending_str}
+└ Hot RSI:
+    {hot_str}
 
 💼 **WALLET (BYBIT)**
 ├ Balance: ${balance:,.2f} USDT
 └ Realized P&L: ${total_closed_pnl:+,.2f}
 
-📊 **EXCHANGE-VERIFIED STATS**
-├ Closed Trades: {total_exchange}
-├ ✅ Wins: {wins_exchange} | ❌ Losses: {losses_exchange}
-├ Win Rate: {exchange_wr:.1f}%
-└ Total P&L: ${total_closed_pnl:+,.2f}
+📊 **EXCHANGE STATS**
+├ Trades: {total_exchange} | WR: {exchange_wr:.1f}%
+└ P&L: ${total_closed_pnl:+,.2f}
 
 📈 **INTERNAL TRACKING**
-├ Tracked Trades: {stats['total_trades']}
-├ Win Rate: {stats['win_rate']:.1f}%
-├ Avg R/Trade: {stats['avg_r']:+.2f}R
+├ Trades: {stats['total_trades']} | WR: {stats['win_rate']:.1f}%
+├ Avg R: {stats['avg_r']:+.2f}R
 └ Total R: {stats['total_r']:+.1f}R
 
-🔔 **CURRENT STATUS**
-├ Pending Signals: {pending}
-├ Active Positions: {active}
-└ Unrealized P&L: ${unrealized_pnl_usd:+,.2f} ({unrealized_r_total:+.1f}R)
+🔔 **POSITIONS**
+├ Pending: {pending} | Active: {active}
+└ Unrealized: ${unrealized_pnl_usd:+,.2f} ({unrealized_r_total:+.1f}R)
 """
             
             # === SHOW ACTIVE POSITIONS (if any) ===

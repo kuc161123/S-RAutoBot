@@ -115,6 +115,17 @@ class Bot4H:
         # Candle tracking
         self.last_candle_close: Dict[str, datetime] = {}
         
+        # Scan state for dashboard visibility
+        self.scan_state = {
+            'last_scan_time': None,
+            'symbols_scanned': 0,
+            'fresh_divergences': 0,
+            'last_scan_signals': []  # List of symbols with fresh divergences
+        }
+        
+        # RSI cache for hot signal detection
+        self.rsi_cache: Dict[str, float] = {}  # {symbol: last_rsi}
+        
         logger.info(f"Loaded {len(self.symbol_config.get_enabled_symbols())} enabled symbols")
         logger.info("Initialization complete")
 
@@ -311,6 +322,10 @@ class Bot4H:
         
         # Prepare indicators
         df = prepare_dataframe(df)
+        
+        # Cache latest RSI for dashboard "hot signals"
+        if 'rsi' in df.columns and len(df) > 0:
+            self.rsi_cache[symbol] = df['rsi'].iloc[-1]
         
         # 1. Detect new divergences
         new_signals = detect_divergences(df, symbol)
@@ -810,6 +825,11 @@ class Bot4H:
                 
                 # If we completed a scan cycle (processed symbols implies candle close)
                 if symbols_processed > 0:
+                    # Update scan state for dashboard
+                    self.scan_state['last_scan_time'] = datetime.now()
+                    self.scan_state['symbols_scanned'] = symbols_processed
+                    self.scan_state['fresh_divergences'] = total_signals_found
+                    
                     logger.info(f"✅ Hourly Scan Complete. Processed: {symbols_processed}, New Signals: {total_signals_found}")
                     
                     if total_signals_found == 0 and self.telegram:

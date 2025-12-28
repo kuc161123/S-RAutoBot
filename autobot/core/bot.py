@@ -190,7 +190,7 @@ class Bot4H:
     
     async def fetch_4h_data(self, symbol: str, limit: int = 500) -> Optional[pd.DataFrame]:
         """
-        Fetch 4H candle data from Bybit
+        Fetch candle data from Bybit (uses configured timeframe)
         
         Args:
             symbol: Trading pair
@@ -240,17 +240,16 @@ class Bot4H:
     
     async def check_new_candle_close(self, symbol: str) -> bool:
         """
-        Check if a new 4H candle has closed for a symbol
+        Check if a new 1H candle has closed for a symbol
         
         Returns:
             True if new candle closed, False otherwise
         """
         now = datetime.now()
         
-        # 4H candle closes at 00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC
+        # 1H candle closes at the top of every hour (00:00, 01:00, 02:00, etc.)
         current_hour = now.hour
-        current_4h_period = (current_hour // 4) * 4
-        current_candle_close = now.replace(hour=current_4h_period, minute=0, second=0, microsecond=0)
+        current_candle_close = now.replace(minute=0, second=0, microsecond=0)
         
         last_close = self.last_candle_close.get(symbol)
         
@@ -271,7 +270,7 @@ class Bot4H:
         if not await self.check_new_candle_close(symbol):
             return
         
-        logger.info(f"[{symbol}] New 4H candle closed - processing...")
+        logger.info(f"[{symbol}] New 1H candle closed - processing...")
         
         # Fetch data
         df = await self.fetch_4h_data(symbol)

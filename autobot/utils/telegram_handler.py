@@ -90,9 +90,12 @@ class TelegramHandler:
         """Comprehensive dashboard with Bybit-verified data"""
         try:
             import time
+            from datetime import datetime
             
             # === SYSTEM INFO ===
-            uptime_hrs = (time.time() - self.bot.symbol_config.load_config.__globals__.get('start_time', time.time())) / 3600
+            # === SYSTEM INFO ===
+            uptime_hrs = (datetime.now() - self.bot.start_time).total_seconds() / 3600
+            if uptime_hrs < 0: uptime_hrs = 0
             enabled = len(self.bot.symbol_config.get_enabled_symbols())
             pending = sum(len(sigs) for sigs in self.bot.pending_signals.values())
             active = len(self.bot.active_trades)

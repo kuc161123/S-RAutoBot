@@ -98,6 +98,10 @@ class Bot4H:
             'win_rate': 0.0,
             'avg_r': 0.0
         }
+        self.stats_file = 'stats.json'
+        
+        # Load stats if exists
+        self.load_stats()
         
         # Per-symbol stats
         self.symbol_stats: Dict[str, dict] = {}  # {symbol: {trades, wins, total_r}}
@@ -105,11 +109,35 @@ class Bot4H:
         # Bot control
         self.trading_enabled = True
         
+        # Start Time for Uptime
+        self.start_time = datetime.now()
+        
         # Candle tracking
         self.last_candle_close: Dict[str, datetime] = {}
         
         logger.info(f"Loaded {len(self.symbol_config.get_enabled_symbols())} enabled symbols")
         logger.info("Initialization complete")
+
+    def load_stats(self):
+        """Load internal stats from JSON file"""
+        if os.path.exists(self.stats_file):
+            try:
+                import json
+                with open(self.stats_file, 'r') as f:
+                    data = json.load(f)
+                    self.stats.update(data)
+                logger.info(f"Loaded stats: {self.stats['total_trades']} trades, {self.stats['total_r']:.2f}R")
+            except Exception as e:
+                logger.error(f"Failed to load stats: {e}")
+
+    def save_stats(self):
+        """Save internal stats to JSON file"""
+        try:
+            import json
+            with open(self.stats_file, 'w') as f:
+                json.dump(self.stats, f, indent=4)
+        except Exception as e:
+            logger.error(f"Failed to save stats: {e}")
     
     def load_config(self):
         """Load configuration from config.yaml"""
@@ -645,11 +673,14 @@ class Bot4H:
 
 ━━━━━━━━━━━━━━━━━━━━
 📊 [View Chart](https://www.tradingview.com/chart/?symbol=BYBIT:{trade.symbol})
-"""
-            await self.telegram.send_message(msg)
-        else:
-            logger.info(f"[{trade.symbol}] Entry: ${trade.entry_price:.4f}, SL: ${trade.stop_loss:.4f}, TP: ${trade.take_profit:.4f}")
-    
+            
+        if self.stats['total_trades'] > 0:
+            self.stats['win_rate'] = (self.stats['wins'] / self.stats['total_trades']) * 100
+            self.stats['avg_r'] = self.stats['total_r'] / self.stats['total_trades']
+            
+        # Save to disk
+        self.save_stats()
+
     async def send_exit_notification(self, symbol: str, trade: ActiveTrade, exit_price: float, 
                                      result: str, r_value: float, pnl_usd: float, hours_held: float):
         """Send enhanced exit notification"""

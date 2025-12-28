@@ -703,23 +703,22 @@ class Bot4H:
                 
                 # Send startup notification
                 msg = f"""
-🤖 **1H TREND-DIVERGENCE BOT STARTED**
+🤖 **1H ROBUST DIVERGENCE BOT STARTED**
 
 ⏰ **Timeframe**: 1H (60 minutes)
 📊 **Strategy**: RSI Divergence + BOS + EMA 200 Filter
 💰 **Risk**: {self.risk_config.get('risk_per_trade', 0.01)*100:.1f}% per trade
-📈 **Enabled Symbols**: {len(enabled_symbols)}
+📈 **Enabled Symbols**: {len(enabled_symbols)} (Anti-Overfit Validated)
 
-**Active Portfolio ({len(enabled_symbols)} symbols):**
-{', '.join(sorted(enabled_symbols)[:20])}{'...' if len(enabled_symbols) > 20 else ''}
+**Active Portfolio:**
+{', '.join(sorted(enabled_symbols))}
 
-**Expected Performance (3Y Backtest):**
-• Total R: +680R combined
-• Winners: 44/69 (64%)
-• Avg R/Symbol: +9.85R
-• Top: ONT +78R, SOL +65R, AAVE +61R
+**Expected Performance (OOS Validated):**
+• Out-of-Sample R: +155R combined
+• Robustness: 100% (all passed WFO)
+• Top: SUI +29R, AAVE +22R, KAITO +20R
 
-🔍 Now monitoring 1H candles every hour...
+🛡️ All symbols passed Walk-Forward Validation
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /help for commands

@@ -347,19 +347,19 @@ class Bot4H:
                 # Price is near recent low (within 1%) BUT RSI is rising/higher
                 if current_close < low_20 * 1.01 and current_close > ema:
                     # Potential pullback in uptrend
-                    self.radar_items[symbol] = f"🟢 Pullback Support (RSI {last_rsi:.0f})"
+                    self.radar_items[symbol] = f"🟢 **Bullish Setup** | Testing Lows (${current_close:g}) vs Higher RSI ({last_rsi:.0f}) ⏳"
                 
                 # 4. Check Bearish Setup Forming
                 # Price is near recent high (within 1%) BUT RSI is falling/lower
                 elif current_close > high_20 * 0.99 and current_close < ema:
                     # Potential rally in downtrend
-                    self.radar_items[symbol] = f"🔴 Rally Resistance (RSI {last_rsi:.0f})"
+                    self.radar_items[symbol] = f"🔴 **Bearish Setup** | Testing Highs (${current_close:g}) vs Lower RSI ({last_rsi:.0f}) ⏳"
                 
                 # 5. RSI Extremes (Hot)
                 elif last_rsi <= 25:
-                    self.radar_items[symbol] = f"❄️ Oversold (RSI {last_rsi:.0f})"
+                    self.radar_items[symbol] = f"❄️ **Extreme Oversold** (RSI {last_rsi:.0f}) | Watch for Reversal ⚠️"
                 elif last_rsi >= 75:
-                    self.radar_items[symbol] = f"🔥 Overbought (RSI {last_rsi:.0f})"
+                    self.radar_items[symbol] = f"🔥 **Extreme Overbought** (RSI {last_rsi:.0f}) | Watch for Reversal ⚠️"
                 
                 # Remove if normal
                 elif symbol in self.radar_items:

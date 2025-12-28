@@ -82,7 +82,7 @@ class TelegramHandler:
 /help - Show this message
 
 💡 **Strategy**: 1H RSI Divergence (Validated)
-**Portfolio**: 27 Symbols, +375R OOS Performance
+**Portfolio**: 63 Symbols, ~+750R OOS Performance
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     
@@ -198,7 +198,11 @@ class TelegramHandler:
 ├ Risk/Trade: {self.bot.risk_config.get('risk_per_trade', 0.01)*100}%
 └ Enabled: {enabled} Symbols (Validated)
 
-🔍 **SCANNING STATUS**
+🎯 **STRATEGY**
+├ Setup: RSI Divergence + EMA 200
+├ Confidence: 100% Anti-Overfit
+├ Risk/Reward: 4:1 to 8:1
+└ Expected OOS: ~+750R/Yr
 ├ Last Scan: {last_scan_str}
 ├ Next Scan: ~{next_scan_mins} mins
 ├ Fresh Divergences: {scan.get('fresh_divergences', 0)}

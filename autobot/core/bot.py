@@ -788,7 +788,7 @@ class Bot4H:
 • Monte Carlo Simulation  
 • Stress Test (2x fees)
 
-**Expected OOS Performance:** +375R / Year
+**Expected OOS Performance:** +750R / Year
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /help for commands

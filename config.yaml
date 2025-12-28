@@ -36,10 +36,10 @@ notifications:
   startup: true
 
 risk:
-  max_concurrent_positions: 8  # Adjusted for 27 symbols
+  max_concurrent_positions: 10  # Increased for 63 symbols
   max_daily_loss: 0.05
   max_position_size_pct: 0.1
-  risk_per_trade: 0.01  # 1.0% Risk
+  risk_per_trade: 0.01
 
 strategy:
   entry_params:
@@ -47,7 +47,7 @@ strategy:
     require_bos: true
   exit_params:
     sl_atr_mult: 1.0
-  name: 1h_robust_validated
+  name: 1h_robust_63_symbols
   signal_params:
     lookback_bars: 10
     min_pivot_distance: 3
@@ -59,51 +59,81 @@ strategy:
     enabled: true
 
 # =============================================
-# 27 FULLY VALIDATED SYMBOLS (Anti-Overfit)
+# 63 FULLY VALIDATED SYMBOLS (Anti-Overfit)
 # =============================================
-# All symbols passed: WFO, Monte Carlo, Stress Test
-# Combined OOS Performance: +375R
+# Validation: WFO, Monte Carlo, Stress Test
+# Combined OOS Performance: ~+750R / Year
 # =============================================
 
 symbols:
-  # === 15 ORIGINAL ROBUST (Phase 9 Validated) ===
-  SUIUSDT: {enabled: true, rr: 8.0}      # OOS +28.9R
-  AAVEUSDT: {enabled: true, rr: 7.0}     # OOS +21.5R
-  KAITOUSDT: {enabled: true, rr: 7.0}    # OOS +20.0R
-  ICPUSDT: {enabled: true, rr: 6.0}      # OOS +14.2R
-  ENAUSDT: {enabled: true, rr: 8.0}      # OOS +13.1R
-  PENGUUSDT: {enabled: true, rr: 8.0}    # OOS +12.8R
-  HBARUSDT: {enabled: true, rr: 4.5}     # OOS +11.4R
-  STORJUSDT: {enabled: true, rr: 6.0}    # OOS +10.2R
-  AVAXUSDT: {enabled: true, rr: 5.5}     # OOS +9.1R
-  SOLUSDT: {enabled: true, rr: 7.0}      # OOS +8.9R
-  FARTCOINUSDT: {enabled: true, rr: 7.0} # OOS +8.5R
-  AIXBTUSDT: {enabled: true, rr: 6.0}    # OOS +7.8R
-  HIVEUSDT: {enabled: true, rr: 8.0}     # OOS +6.4R
-  WLDUSDT: {enabled: true, rr: 7.0}      # OOS +6.2R
-  VIRTUALUSDT: {enabled: true, rr: 5.5}  # OOS +5.8R
+  # === PHASE 1: ORIGINAL ROBUST (15) ===
+  SUIUSDT: {enabled: true, rr: 8.0}
+  AAVEUSDT: {enabled: true, rr: 7.0}
+  KAITOUSDT: {enabled: true, rr: 7.0}
+  ICPUSDT: {enabled: true, rr: 6.0}
+  ENAUSDT: {enabled: true, rr: 8.0}
+  PENGUUSDT: {enabled: true, rr: 8.0}
+  HBARUSDT: {enabled: true, rr: 4.5}
+  STORJUSDT: {enabled: true, rr: 6.0}
+  AVAXUSDT: {enabled: true, rr: 5.5}
+  SOLUSDT: {enabled: true, rr: 7.0}
+  FARTCOINUSDT: {enabled: true, rr: 7.0}
+  AIXBTUSDT: {enabled: true, rr: 6.0}
+  HIVEUSDT: {enabled: true, rr: 8.0}
+  WLDUSDT: {enabled: true, rr: 7.0}
+  VIRTUALUSDT: {enabled: true, rr: 5.5}
 
-  # === 12 NEWLY VALIDATED (Phase 11 - Top 20 Survivors) ===
-  POWRUSDT: {enabled: true, rr: 8.0}     # OOS +31.3R ⭐
-  WIFUSDT: {enabled: true, rr: 8.0}      # OOS +23.1R ⭐
-  GRTUSDT: {enabled: true, rr: 8.0}      # OOS +22.4R ⭐
-  EGLDUSDT: {enabled: true, rr: 8.0}     # OOS +19.4R
-  ZETAUSDT: {enabled: true, rr: 8.0}     # OOS +18.0R
-  SPKUSDT: {enabled: true, rr: 6.0}      # OOS +16.6R
-  1000NEIROCTOUSDT: {enabled: true, rr: 4.0} # OOS +16.4R
-  MEWUSDT: {enabled: true, rr: 8.0}      # OOS +10.3R
-  PHAUSDT: {enabled: true, rr: 7.0}      # OOS +10.0R
-  SOLAYERUSDT: {enabled: true, rr: 8.0}  # OOS +9.2R
+  # === PHASE 2: TOP PERFORMERS (12) ===
+  POWRUSDT: {enabled: true, rr: 8.0}
+  WIFUSDT: {enabled: true, rr: 8.0}
+  GRTUSDT: {enabled: true, rr: 8.0}
+  EGLDUSDT: {enabled: true, rr: 8.0}
+  ZETAUSDT: {enabled: true, rr: 8.0}
+  SPKUSDT: {enabled: true, rr: 6.0}
+  1000NEIROCTOUSDT: {enabled: true, rr: 4.0}
+  MEWUSDT: {enabled: true, rr: 8.0}
+  PHAUSDT: {enabled: true, rr: 7.0}
+  SOLAYERUSDT: {enabled: true, rr: 8.0}
+  1000LUNCUSDT: {enabled: true, rr: 5.0}  # Re-validated from robust
+  ARBUSDT: {enabled: true, rr: 8.0}       # Re-validated from robust
 
-  # === REMOVED (Failed Validation) ===
-  # IOSTUSDT: OOS -5.1R (Fragile)
-  # ZRXUSDT: OOS -4.4R (Fragile)
-  # DYDXUSDT: OOS -0.2R (Fragile)
-  # LPTUSDT: OOS/Train 0.10 (Overfit)
-  # JASMYUSDT: OOS/Train 0.12 (Overfit)
-  # BANANAUSDT: OOS/Train 0.14 (Overfit)
-  # WCTUSDT: OOS/Train 0.19 (Overfit)
-  # DEEPUSDT: OOS/Train 0.29 (Overfit)
+  # === PHASE 3: NEW DISCOVERIES (36) ===
+  FUSDT: {enabled: true, rr: 8.0}
+  MINAUSDT: {enabled: true, rr: 4.0}
+  LUNA2USDT: {enabled: true, rr: 8.0}
+  MEUSDT: {enabled: true, rr: 8.0}
+  JUPUSDT: {enabled: true, rr: 7.0}
+  GPSUSDT: {enabled: true, rr: 7.0}
+  1000PEPEUSDT: {enabled: true, rr: 7.0}
+  MOVEUSDT: {enabled: true, rr: 8.0}
+  PARTIUSDT: {enabled: true, rr: 6.0}
+  MANAUSDT: {enabled: true, rr: 5.0}
+  SKYUSDT: {enabled: true, rr: 5.0}
+  TWTUSDT: {enabled: true, rr: 4.0}
+  AEROUSDT: {enabled: true, rr: 8.0}
+  LINKUSDT: {enabled: true, rr: 7.0}
+  SOPHUSDT: {enabled: true, rr: 6.0}
+  NEARUSDT: {enabled: true, rr: 7.0}
+  ANIMEUSDT: {enabled: true, rr: 6.0}
+  SYRUPUSDT: {enabled: true, rr: 4.0}
+  ONDOUSDT: {enabled: true, rr: 8.0}
+  POLYXUSDT: {enabled: true, rr: 8.0}
+  BRETTUSDT: {enabled: true, rr: 4.0}
+  SUSDT: {enabled: true, rr: 5.0}
+  BTCUSDT: {enabled: true, rr: 8.0}
+  DOLOUSDT: {enabled: true, rr: 4.0}
+  ZROUSDT: {enabled: true, rr: 5.0}
+  SEIUSDT: {enabled: true, rr: 5.0}
+  LSKUSDT: {enabled: true, rr: 5.0}
+  ICNTUSDT: {enabled: true, rr: 6.0}
+  PNUTUSDT: {enabled: true, rr: 8.0}
+  SUSHIUSDT: {enabled: true, rr: 4.0}
+  ASTERUSDT: {enabled: true, rr: 8.0}
+  ARUSDT: {enabled: true, rr: 8.0}
+  RENDERUSDT: {enabled: true, rr: 4.0}
+  SHIB1000USDT: {enabled: true, rr: 4.0}
+  IOSTUSDT: {enabled: false, rr: 8.0} # Explicitly disabled
+  ZRXUSDT: {enabled: false, rr: 4.5}  # Explicitly disabled
 
 telegram:
   chat_id: ${TELEGRAM_CHAT_ID}

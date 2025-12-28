@@ -765,7 +765,7 @@ class Bot4H:
 💰 **Risk**: {self.risk_config.get('risk_per_trade', 0.01)*100:.1f}% per trade
 📈 **Enabled Symbols**: {len(enabled_symbols)} (High Growth Portfolio)
 
-**Active Portfolio (33 Symbols):**
+**Active Portfolio ({len(enabled_symbols)} Symbols):**
 {', '.join(sorted(enabled_symbols)[:10])}... and {len(enabled_symbols)-10} more
 
 **Expected Performance:**

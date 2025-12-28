@@ -673,7 +673,21 @@ class Bot4H:
 
 ━━━━━━━━━━━━━━━━━━━━
 📊 [View Chart](https://www.tradingview.com/chart/?symbol=BYBIT:{trade.symbol})
-            
+"""
+            await self.telegram.send_message(msg)
+        else:
+            logger.info(f"[{trade.symbol}] Entry: ${trade.entry_price:.4f}, SL: ${trade.stop_loss:.4f}, TP: ${trade.take_profit:.4f}")
+
+    def _update_stats_on_exit(self, r_value: float, is_win: bool):
+        """Update and persist stats after trade exit"""
+        self.stats['total_trades'] += 1
+        self.stats['total_r'] += r_value
+        
+        if is_win:
+            self.stats['wins'] += 1
+        else:
+            self.stats['losses'] += 1
+        
         if self.stats['total_trades'] > 0:
             self.stats['win_rate'] = (self.stats['wins'] / self.stats['total_trades']) * 100
             self.stats['avg_r'] = self.stats['total_r'] / self.stats['total_trades']

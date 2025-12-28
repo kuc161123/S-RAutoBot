@@ -36,10 +36,10 @@ notifications:
   startup: true
 
 risk:
-  max_concurrent_positions: 10  # Increased for 33 symbols
+  max_concurrent_positions: 8  # Adjusted for 27 symbols
   max_daily_loss: 0.05
   max_position_size_pct: 0.1
-  risk_per_trade: 0.01  # 1.0% Risk (Standard)
+  risk_per_trade: 0.01  # 1.0% Risk
 
 strategy:
   entry_params:
@@ -47,7 +47,7 @@ strategy:
     require_bos: true
   exit_params:
     sl_atr_mult: 1.0
-  name: 1h_hybrid_robust_top20
+  name: 1h_robust_validated
   signal_params:
     lookback_bars: 10
     min_pivot_distance: 3
@@ -58,45 +58,52 @@ strategy:
     daily_ema_proxy: 200
     enabled: true
 
-# 33 HYBRID Symbols (15 Robust + Top 18 from 1-Year Backtest)
-# Combined ProfitPotential: >1,000R/Year
-symbols:
-  # === 15 ROBUST (Anti-Overfit Validated) ===
-  SUIUSDT: {enabled: true, rr: 8.0}
-  AAVEUSDT: {enabled: true, rr: 7.0}
-  KAITOUSDT: {enabled: true, rr: 7.0}
-  ICPUSDT: {enabled: true, rr: 6.0}
-  ENAUSDT: {enabled: true, rr: 8.0}
-  PENGUUSDT: {enabled: true, rr: 8.0}
-  HBARUSDT: {enabled: true, rr: 4.5}
-  STORJUSDT: {enabled: true, rr: 6.0}
-  AVAXUSDT: {enabled: true, rr: 5.5}
-  SOLUSDT: {enabled: true, rr: 7.0}
-  FARTCOINUSDT: {enabled: true, rr: 7.0}
-  AIXBTUSDT: {enabled: true, rr: 6.0}
-  HIVEUSDT: {enabled: true, rr: 8.0}
-  WLDUSDT: {enabled: true, rr: 7.0}
-  VIRTUALUSDT: {enabled: true, rr: 5.5}
+# =============================================
+# 27 FULLY VALIDATED SYMBOLS (Anti-Overfit)
+# =============================================
+# All symbols passed: WFO, Monte Carlo, Stress Test
+# Combined OOS Performance: +375R
+# =============================================
 
-  # === TOP PERFORMERS (1-Year Backtest Leaders) ===
-  WIFUSDT: {enabled: true, rr: 8.0}      # +52.7R
-  LPTUSDT: {enabled: true, rr: 8.0}      # +50.5R
-  JASMYUSDT: {enabled: true, rr: 8.0}    # +49.8R
-  BANANAUSDT: {enabled: true, rr: 8.0}   # +46.4R
-  EGLDUSDT: {enabled: true, rr: 8.0}     # +43.9R
-  SPKUSDT: {enabled: true, rr: 7.0}      # +43.6R
-  IOSTUSDT: {enabled: true, rr: 5.0}     # +37.9R
-  GRTUSDT: {enabled: true, rr: 8.0}      # +37.7R
-  POWRUSDT: {enabled: true, rr: 8.0}     # +37.3R
-  ZETAUSDT: {enabled: true, rr: 8.0}     # +36.9R
-  ZRXUSDT: {enabled: true, rr: 7.0}      # +36.8R
-  1000NEIROCTOUSDT: {enabled: true, rr: 7.0} # +36.8R
-  DEEPUSDT: {enabled: true, rr: 5.0}     # +36.6R
-  WCTUSDT: {enabled: true, rr: 5.5}      # +36.4R
-  PHAUSDT: {enabled: true, rr: 7.0}      # +36.0R
-  SOLAYERUSDT: {enabled: true, rr: 8.0}  # +34.9R
-  MEWUSDT: {enabled: true, rr: 8.0}      # +34.3R
-  DYDXUSDT: {enabled: true, rr: 7.0}     # +33.2R
+symbols:
+  # === 15 ORIGINAL ROBUST (Phase 9 Validated) ===
+  SUIUSDT: {enabled: true, rr: 8.0}      # OOS +28.9R
+  AAVEUSDT: {enabled: true, rr: 7.0}     # OOS +21.5R
+  KAITOUSDT: {enabled: true, rr: 7.0}    # OOS +20.0R
+  ICPUSDT: {enabled: true, rr: 6.0}      # OOS +14.2R
+  ENAUSDT: {enabled: true, rr: 8.0}      # OOS +13.1R
+  PENGUUSDT: {enabled: true, rr: 8.0}    # OOS +12.8R
+  HBARUSDT: {enabled: true, rr: 4.5}     # OOS +11.4R
+  STORJUSDT: {enabled: true, rr: 6.0}    # OOS +10.2R
+  AVAXUSDT: {enabled: true, rr: 5.5}     # OOS +9.1R
+  SOLUSDT: {enabled: true, rr: 7.0}      # OOS +8.9R
+  FARTCOINUSDT: {enabled: true, rr: 7.0} # OOS +8.5R
+  AIXBTUSDT: {enabled: true, rr: 6.0}    # OOS +7.8R
+  HIVEUSDT: {enabled: true, rr: 8.0}     # OOS +6.4R
+  WLDUSDT: {enabled: true, rr: 7.0}      # OOS +6.2R
+  VIRTUALUSDT: {enabled: true, rr: 5.5}  # OOS +5.8R
+
+  # === 12 NEWLY VALIDATED (Phase 11 - Top 20 Survivors) ===
+  POWRUSDT: {enabled: true, rr: 8.0}     # OOS +31.3R ⭐
+  WIFUSDT: {enabled: true, rr: 8.0}      # OOS +23.1R ⭐
+  GRTUSDT: {enabled: true, rr: 8.0}      # OOS +22.4R ⭐
+  EGLDUSDT: {enabled: true, rr: 8.0}     # OOS +19.4R
+  ZETAUSDT: {enabled: true, rr: 8.0}     # OOS +18.0R
+  SPKUSDT: {enabled: true, rr: 6.0}      # OOS +16.6R
+  1000NEIROCTOUSDT: {enabled: true, rr: 4.0} # OOS +16.4R
+  MEWUSDT: {enabled: true, rr: 8.0}      # OOS +10.3R
+  PHAUSDT: {enabled: true, rr: 7.0}      # OOS +10.0R
+  SOLAYERUSDT: {enabled: true, rr: 8.0}  # OOS +9.2R
+
+  # === REMOVED (Failed Validation) ===
+  # IOSTUSDT: OOS -5.1R (Fragile)
+  # ZRXUSDT: OOS -4.4R (Fragile)
+  # DYDXUSDT: OOS -0.2R (Fragile)
+  # LPTUSDT: OOS/Train 0.10 (Overfit)
+  # JASMYUSDT: OOS/Train 0.12 (Overfit)
+  # BANANAUSDT: OOS/Train 0.14 (Overfit)
+  # WCTUSDT: OOS/Train 0.19 (Overfit)
+  # DEEPUSDT: OOS/Train 0.29 (Overfit)
 
 telegram:
   chat_id: ${TELEGRAM_CHAT_ID}

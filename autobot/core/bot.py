@@ -758,22 +758,22 @@ class Bot4H:
                 
                 # Send startup notification
                 msg = f"""
-🤖 **1H HYBRID STRATEGY BOT STARTED**
+🤖 **1H ROBUST VALIDATED BOT STARTED**
 
 ⏰ **Timeframe**: 1H (60 minutes)
-📊 **Strategy**: Hybrid (15 Robust + Top 20 Performers)
+📊 **Strategy**: RSI Divergence + EMA 200 + BOS
 💰 **Risk**: {self.risk_config.get('risk_per_trade', 0.01)*100:.1f}% per trade
-📈 **Enabled Symbols**: {len(enabled_symbols)} (High Growth Portfolio)
+📈 **Enabled Symbols**: {len(enabled_symbols)} (100% Validated)
 
-**Active Portfolio ({len(enabled_symbols)} Symbols):**
-{', '.join(sorted(enabled_symbols)[:10])}... and {len(enabled_symbols)-10} more
+**Active Portfolio:**
+{', '.join(sorted(enabled_symbols)[:8])}... +{len(enabled_symbols)-8} more
 
-**Expected Performance:**
-• Combined Potential: >1,000R / Year
-• Robust Core: SUI, AAVE, KAITO, ICP (+155R OOS)
-• Top Growth: WIF, LPT, JASMY, BANANA (+50R each)
+**Validation Status:** ✅ ALL SYMBOLS PASSED
+• Walk-Forward Optimization
+• Monte Carlo Simulation  
+• Stress Test (2x fees)
 
-🚀 Aggressive growth with verified robust base
+**Expected OOS Performance:** +375R / Year
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /help for commands

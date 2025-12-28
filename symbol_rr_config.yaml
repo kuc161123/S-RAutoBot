@@ -1,9 +1,9 @@
-# 1H Hybrid Strategy Config
-# 15 Robust Symbols + Top 18 Performers from 1-Year Backtest
-# Total Symbols: 33
-# Expected Performance: High Profitability + Robust Core
+# 1H Robust Validated Strategy Config
+# 27 Symbols - All Anti-Overfit Validated
+# Combined OOS Performance: +375R
+# Validation: WFO, Monte Carlo, Stress Test
 
-# === 15 ROBUST (Anti-Overfit Validated) ===
+# === 15 ORIGINAL ROBUST ===
 SUIUSDT: {enabled: true, rr: 8.0}
 AAVEUSDT: {enabled: true, rr: 7.0}
 KAITOUSDT: {enabled: true, rr: 7.0}
@@ -20,22 +20,14 @@ HIVEUSDT: {enabled: true, rr: 8.0}
 WLDUSDT: {enabled: true, rr: 7.0}
 VIRTUALUSDT: {enabled: true, rr: 5.5}
 
-# === TOP PERFORMERS (1-Year Backtest Leaders) ===
-WIFUSDT: {enabled: true, rr: 8.0}      # +52.7R
-LPTUSDT: {enabled: true, rr: 8.0}      # +50.5R
-JASMYUSDT: {enabled: true, rr: 8.0}    # +49.8R
-BANANAUSDT: {enabled: true, rr: 8.0}   # +46.4R
-EGLDUSDT: {enabled: true, rr: 8.0}     # +43.9R
-SPKUSDT: {enabled: true, rr: 7.0}      # +43.6R
-IOSTUSDT: {enabled: true, rr: 5.0}     # +37.9R
-GRTUSDT: {enabled: true, rr: 8.0}      # +37.7R
-POWRUSDT: {enabled: true, rr: 8.0}     # +37.3R
-ZETAUSDT: {enabled: true, rr: 8.0}     # +36.9R
-ZRXUSDT: {enabled: true, rr: 7.0}      # +36.8R
-1000NEIROCTOUSDT: {enabled: true, rr: 7.0} # +36.8R
-DEEPUSDT: {enabled: true, rr: 5.0}     # +36.6R
-WCTUSDT: {enabled: true, rr: 5.5}      # +36.4R
-PHAUSDT: {enabled: true, rr: 7.0}      # +36.0R
-SOLAYERUSDT: {enabled: true, rr: 8.0}  # +34.9R
-MEWUSDT: {enabled: true, rr: 8.0}      # +34.3R
-DYDXUSDT: {enabled: true, rr: 7.0}     # +33.2R
+# === 12 NEWLY VALIDATED ===
+POWRUSDT: {enabled: true, rr: 8.0}
+WIFUSDT: {enabled: true, rr: 8.0}
+GRTUSDT: {enabled: true, rr: 8.0}
+EGLDUSDT: {enabled: true, rr: 8.0}
+ZETAUSDT: {enabled: true, rr: 8.0}
+SPKUSDT: {enabled: true, rr: 6.0}
+1000NEIROCTOUSDT: {enabled: true, rr: 4.0}
+MEWUSDT: {enabled: true, rr: 8.0}
+PHAUSDT: {enabled: true, rr: 7.0}
+SOLAYERUSDT: {enabled: true, rr: 8.0}

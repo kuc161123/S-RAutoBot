@@ -123,8 +123,11 @@ class Bot4H:
             'last_scan_signals': []  # List of symbols with fresh divergences
         }
         
-        # RSI cache for hot signal detection
+        # RSI cache for dashboard
         self.rsi_cache: Dict[str, float] = {}  # {symbol: last_rsi}
+        
+        # Radar cache for developing setups
+        self.radar_items: Dict[str, str] = {}  # {symbol: description}
         
         logger.info(f"Loaded {len(self.symbol_config.get_enabled_symbols())} enabled symbols")
         logger.info("Initialization complete")
@@ -323,9 +326,47 @@ class Bot4H:
         # Prepare indicators
         df = prepare_dataframe(df)
         
-        # Cache latest RSI for dashboard "hot signals"
+        # Cache latest RSI
         if 'rsi' in df.columns and len(df) > 0:
-            self.rsi_cache[symbol] = df['rsi'].iloc[-1]
+            last_rsi = df['rsi'].iloc[-1]
+            self.rsi_cache[symbol] = last_rsi
+            
+            # === RADAR DETECTION (Developing Patterns) ===
+            # specialized logic to see if we are 'close' to a divergence
+            try:
+                # 1. Get recent price extremes (last 20 candles)
+                last_20 = df.iloc[-20:]
+                low_20 = last_20['low'].min()
+                high_20 = last_20['high'].max()
+                current_close = df['close'].iloc[-1]
+                
+                # 2. Get trend
+                ema = df['ema'].iloc[-1] if 'ema' in df.columns else 0
+                
+                # 3. Check Bullish Setup Forming
+                # Price is near recent low (within 1%) BUT RSI is rising/higher
+                if current_close < low_20 * 1.01 and current_close > ema:
+                    # Potential pullback in uptrend
+                    self.radar_items[symbol] = f"🟢 Pullback Support (RSI {last_rsi:.0f})"
+                
+                # 4. Check Bearish Setup Forming
+                # Price is near recent high (within 1%) BUT RSI is falling/lower
+                elif current_close > high_20 * 0.99 and current_close < ema:
+                    # Potential rally in downtrend
+                    self.radar_items[symbol] = f"🔴 Rally Resistance (RSI {last_rsi:.0f})"
+                
+                # 5. RSI Extremes (Hot)
+                elif last_rsi <= 25:
+                    self.radar_items[symbol] = f"❄️ Oversold (RSI {last_rsi:.0f})"
+                elif last_rsi >= 75:
+                    self.radar_items[symbol] = f"🔥 Overbought (RSI {last_rsi:.0f})"
+                
+                # Remove if normal
+                elif symbol in self.radar_items:
+                    del self.radar_items[symbol]
+                    
+            except Exception:
+                pass
         
         # 1. Detect new divergences
         new_signals = detect_divergences(df, symbol)

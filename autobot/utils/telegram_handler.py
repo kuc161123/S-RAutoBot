@@ -178,14 +178,20 @@ class TelegramHandler:
                     pending_list.append(f"{side_icon} {sym} ({sig.candles_waited}/6)")
             pending_str = "\n│   ".join(pending_list[:3]) if pending_list else "None"
             
-            # === HOT SIGNALS (RSI Extremes) ===
-            hot_signals = []
-            for sym, rsi in self.bot.rsi_cache.items():
-                if rsi <= 30:
-                    hot_signals.append(f"📉 {sym} RSI: {rsi:.0f} (Oversold)")
-                elif rsi >= 70:
-                    hot_signals.append(f"📈 {sym} RSI: {rsi:.0f} (Overbought)")
-            hot_str = "\n│   ".join(hot_signals[:3]) if hot_signals else "None near extremes"
+            # === RADAR (Developing Patterns) ===
+            radar_list = []
+            if getattr(self.bot, 'radar_items', None):
+                for sym, desc in self.bot.radar_items.items():
+                    radar_list.append(f"{sym}: {desc}")
+            else:
+                # Fallback to Hot RSI if radar empty (legacy support)
+                for sym, rsi in self.bot.rsi_cache.items():
+                    if rsi <= 30:
+                        radar_list.append(f"📉 {sym}: Oversold (RSI {rsi:.0f})")
+                    elif rsi >= 70:
+                        radar_list.append(f"📈 {sym}: Overbought (RSI {rsi:.0f})")
+            
+            radar_str = "\n    ".join(radar_list[:5]) if radar_list else "Scanning..."
             
             # === BUILD COMPREHENSIVE MESSAGE ===
             msg = f"""
@@ -205,11 +211,11 @@ class TelegramHandler:
 └ Expected OOS: ~+750R/Yr
 ├ Last Scan: {last_scan_str}
 ├ Next Scan: ~{next_scan_mins} mins
-├ Fresh Divergences: {scan.get('fresh_divergences', 0)}
-├ Pending (BOS): {len(pending_list)}
+└ Pending (BOS): {len(pending_list)}
 │   {pending_str}
-└ Hot RSI:
-    {hot_str}
+└ 📡 RADAR (Developing):
+    {radar_str}
+
 
 💼 **WALLET (BYBIT)**
 ├ Balance: ${balance:,.2f} USDT

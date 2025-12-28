@@ -178,20 +178,31 @@ class TelegramHandler:
                     pending_list.append(f"{side_icon} {sym} ({sig.candles_waited}/6)")
             pending_str = "\n│   ".join(pending_list[:3]) if pending_list else "None"
             
-            # === RADAR (Developing Patterns) ===
-            radar_list = []
+            # === RADAR (Categorized with ETA) ===
+            pending_radar = []
+            developing_radar = []
+            extreme_radar = []
+            
+            # 1. Pending BOS signals (most accurate ETA)
+            for sym, sigs in self.bot.pending_signals.items():
+                for sig in sigs:
+                    side_icon = "🟢" if sig.signal.signal_type == 'bullish' else "🔴"
+                    candles_left = 6 - sig.candles_waited
+                    hours_max = candles_left
+                    pending_radar.append(f"│   {side_icon} {sym}: {sig.candles_waited}/6 candles → Max {hours_max}h to entry")
+            
+            # 2. Developing patterns and extreme zones
             if getattr(self.bot, 'radar_items', None):
                 for sym, desc in self.bot.radar_items.items():
-                    radar_list.append(f"{sym}: {desc}")
-            else:
-                # Fallback to Hot RSI if radar empty (legacy support)
-                for sym, rsi in self.bot.rsi_cache.items():
-                    if rsi <= 30:
-                        radar_list.append(f"📉 {sym}: Oversold (RSI {rsi:.0f})")
-                    elif rsi >= 70:
-                        radar_list.append(f"📈 {sym}: Overbought (RSI {rsi:.0f})")
+                    if "Bullish Setup" in desc or "Bearish Setup" in desc:
+                        developing_radar.append(f"│   {sym}: {desc}")
+                    elif "Extreme" in desc:
+                        extreme_radar.append(f"│   {sym}: {desc}")
             
-            radar_str = "\n    ".join(radar_list[:5]) if radar_list else "Scanning..."
+            # Build strings
+            pending_radar_str = "\n".join(pending_radar) if pending_radar else "│   None"
+            developing_radar_str = "\n".join(developing_radar[:3]) if developing_radar else "│   Scanning..."
+            extreme_radar_str = "\n".join(extreme_radar[:3]) if extreme_radar else "│   None"
             
             # === BUILD COMPREHENSIVE MESSAGE ===
             msg = f"""
@@ -209,12 +220,19 @@ class TelegramHandler:
 ├ Confidence: 100% Anti-Overfit
 ├ Risk/Reward: 4:1 to 8:1
 └ Expected OOS: ~+750R/Yr
+
+🔍 **SCANNING STATUS**
 ├ Last Scan: {last_scan_str}
 ├ Next Scan: ~{next_scan_mins} mins
-└ Pending (BOS): {len(pending_list)}
-│   {pending_str}
-└ 📡 RADAR (Developing):
-    {radar_str}
+
+📡 **RADAR WATCH**
+┌─ Pending BOS (Confirmed Signals):
+{pending_radar_str}
+├─ Developing Setups (3-9h):
+{developing_radar_str}
+└─ Extreme Zones (2-8h):
+{extreme_radar_str}
+
 
 
 💼 **WALLET (BYBIT)**

@@ -129,6 +129,9 @@ class Bot4H:
         # Radar cache for developing setups
         self.radar_items: Dict[str, str] = {}  # {symbol: description}
         
+        # Track time in extreme zones for ETA
+        self.extreme_zone_tracker: Dict[str, datetime] = {}  # {symbol: entry_time}
+        
         logger.info(f"Loaded {len(self.symbol_config.get_enabled_symbols())} enabled symbols")
         logger.info("Initialization complete")
 
@@ -347,23 +350,37 @@ class Bot4H:
                 # Price is near recent low (within 1%) BUT RSI is rising/higher
                 if current_close < low_20 * 1.01 and current_close > ema:
                     # Potential pullback in uptrend
-                    self.radar_items[symbol] = f"🟢 **Bullish Setup** | Testing Lows (${current_close:g}) vs Higher RSI ({last_rsi:.0f}) ⏳"
+                    self.radar_items[symbol] = f"🟢 Bullish Setup Forming | Testing lows ${current_close:g} | RSI {last_rsi:.0f} | Est: 3-9h to signal"
                 
                 # 4. Check Bearish Setup Forming
                 # Price is near recent high (within 1%) BUT RSI is falling/lower
                 elif current_close > high_20 * 0.99 and current_close < ema:
                     # Potential rally in downtrend
-                    self.radar_items[symbol] = f"🔴 **Bearish Setup** | Testing Highs (${current_close:g}) vs Lower RSI ({last_rsi:.0f}) ⏳"
+                    self.radar_items[symbol] = f"🔴 Bearish Setup Forming | Testing highs ${current_close:g} | RSI {last_rsi:.0f} | Est: 3-9h to signal"
                 
-                # 5. RSI Extremes (Hot)
+                # 5. RSI Extremes (Hot) - Track time in zone
                 elif last_rsi <= 25:
-                    self.radar_items[symbol] = f"❄️ **Extreme Oversold** (RSI {last_rsi:.0f}) | Watch for Reversal ⚠️"
+                    # Track when it entered extreme zone
+                    if symbol not in self.extreme_zone_tracker:
+                        self.extreme_zone_tracker[symbol] = datetime.now()
+                    
+                    hours_in_zone = (datetime.now() - self.extreme_zone_tracker[symbol]).total_seconds() / 3600
+                    self.radar_items[symbol] = f"❄️ Extreme Oversold | RSI {last_rsi:.0f} ({hours_in_zone:.0f}h) | Reversal likely 2-8h"
+                    
                 elif last_rsi >= 75:
-                    self.radar_items[symbol] = f"🔥 **Extreme Overbought** (RSI {last_rsi:.0f}) | Watch for Reversal ⚠️"
+                    # Track when it entered extreme zone
+                    if symbol not in self.extreme_zone_tracker:
+                        self.extreme_zone_tracker[symbol] = datetime.now()
+                    
+                    hours_in_zone = (datetime.now() - self.extreme_zone_tracker[symbol]).total_seconds() / 3600
+                    self.radar_items[symbol] = f"🔥 Extreme Overbought | RSI {last_rsi:.0f} ({hours_in_zone:.0f}h) | Reversal likely 2-8h"
                 
-                # Remove if normal
-                elif symbol in self.radar_items:
-                    del self.radar_items[symbol]
+                # Remove if normal and clear tracker
+                else:
+                    if symbol in self.radar_items:
+                        del self.radar_items[symbol]
+                    if symbol in self.extreme_zone_tracker:
+                        del self.extreme_zone_tracker[symbol]
                     
             except Exception:
                 pass

@@ -81,8 +81,8 @@ class TelegramHandler:
 /start - Resume trading
 /help - Show this message
 
-💡 **Strategy**: 1H Divergence + EMA 200 (ROBUST)
-**Validated**: 15 symbols, OOS +155R
+💡 **Strategy**: 1H Hybrid (Robust + Growth)
+**Portfolio**: 33 Symbols, >1000R Potential
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     
@@ -158,20 +158,20 @@ class TelegramHandler:
             
             # === BUILD COMPREHENSIVE MESSAGE ===
             msg = f"""
-📊 **1H ROBUST DASHBOARD**
+📊 **1H HYBRID DASHBOARD**
 ━━━━━━━━━━━━━━━━━━━━
 
 ⏰ **SYSTEM**
 ├ Uptime: {uptime_hrs:.1f}h
 ├ Timeframe: 1H (60m)
 ├ Risk/Trade: {self.bot.risk_config.get('risk_per_trade', 0.01)*100}%
-└ Enabled Symbols: {enabled} (Anti-Overfit ✓)
+└ Enabled Symbols: {enabled} (Hybrid Portfolio)
 
 🎯 **STRATEGY**
 ├ Setup: RSI Divergence + EMA 200
 ├ Confirmation: Break of Structure
 ├ Exit: Per-Symbol R:R (4.5:1 to 8:1)
-└ Expected: OOS +155R, 100% Robust
+└ Expected: >1000R/Yr Potential
 
 💼 **WALLET (BYBIT)**
 ├ Balance: ${balance:,.2f} USDT

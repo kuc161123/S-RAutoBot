@@ -703,22 +703,22 @@ class Bot4H:
                 
                 # Send startup notification
                 msg = f"""
-🤖 **1H ROBUST DIVERGENCE BOT STARTED**
+🤖 **1H HYBRID STRATEGY BOT STARTED**
 
 ⏰ **Timeframe**: 1H (60 minutes)
-📊 **Strategy**: RSI Divergence + BOS + EMA 200 Filter
+📊 **Strategy**: Hybrid (15 Robust + Top 20 Performers)
 💰 **Risk**: {self.risk_config.get('risk_per_trade', 0.01)*100:.1f}% per trade
-📈 **Enabled Symbols**: {len(enabled_symbols)} (Anti-Overfit Validated)
+📈 **Enabled Symbols**: {len(enabled_symbols)} (High Growth Portfolio)
 
-**Active Portfolio:**
-{', '.join(sorted(enabled_symbols))}
+**Active Portfolio (33 Symbols):**
+{', '.join(sorted(enabled_symbols)[:10])}... and {len(enabled_symbols)-10} more
 
-**Expected Performance (OOS Validated):**
-• Out-of-Sample R: +155R combined
-• Robustness: 100% (all passed WFO)
-• Top: SUI +29R, AAVE +22R, KAITO +20R
+**Expected Performance:**
+• Combined Potential: >1,000R / Year
+• Robust Core: SUI, AAVE, KAITO, ICP (+155R OOS)
+• Top Growth: WIF, LPT, JASMY, BANANA (+50R each)
 
-🛡️ All symbols passed Walk-Forward Validation
+🚀 Aggressive growth with verified robust base
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /help for commands

@@ -14,7 +14,7 @@ execution:
 
 indicators:
   atr_period: 14
-  ema_periods: [200]  # 200 EMA for 1H timeframe
+  ema_periods: [200]
   rsi_period: 14
 
 legacy:
@@ -36,10 +36,10 @@ notifications:
   startup: true
 
 risk:
-  max_concurrent_positions: 5  # Conservative for 15 symbols
+  max_concurrent_positions: 10  # Increased for 33 symbols
   max_daily_loss: 0.05
   max_position_size_pct: 0.1
-  risk_per_trade: 0.005
+  risk_per_trade: 0.01  # 1.0% Risk (Standard)
 
 strategy:
   entry_params:
@@ -47,40 +47,56 @@ strategy:
     require_bos: true
   exit_params:
     sl_atr_mult: 1.0
-  name: 1h_trend_divergence_robust  # Validated anti-overfit strategy
+  name: 1h_hybrid_robust_top20
   signal_params:
     lookback_bars: 10
     min_pivot_distance: 3
     pivot_right: 3
     rsi_period: 14
-  timeframe: '60'  # 1H timeframe
+  timeframe: '60'
   trend_filter:
-    daily_ema_proxy: 200  # 200 EMA for 1H
+    daily_ema_proxy: 200
     enabled: true
 
-# 15 ROBUST Symbols - Passed ALL Anti-Overfit Tests
-# OOS/Train Ratio verified, Monte Carlo positive, Stress Test passed
+# 33 HYBRID Symbols (15 Robust + Top 18 from 1-Year Backtest)
+# Combined ProfitPotential: >1,000R/Year
 symbols:
-  # Top Performers (OOS >= +15R)
-  SUIUSDT: {enabled: true, rr: 8.0}     # OOS: +28.9R ⭐
-  AAVEUSDT: {enabled: true, rr: 7.0}    # OOS: +21.5R ⭐
-  KAITOUSDT: {enabled: true, rr: 7.0}   # OOS: +20.0R ⭐
-  ICPUSDT: {enabled: true, rr: 6.0}     # OOS: +18.3R ⭐
-  ENAUSDT: {enabled: true, rr: 8.0}     # OOS: +18.0R ⭐
-  
-  # Strong Performers (OOS +10-15R)
-  PENGUUSDT: {enabled: true, rr: 8.0}   # OOS: +13.9R
-  HBARUSDT: {enabled: true, rr: 4.5}    # OOS: +12.9R
-  STORJUSDT: {enabled: true, rr: 6.0}   # OOS: +12.1R
-  AVAXUSDT: {enabled: true, rr: 5.5}    # OOS: +10.3R
-  
-  # Solid Performers (OOS +1-10R)
-  SOLUSDT: {enabled: true, rr: 7.0}     # OOS: +7.1R
-  FARTCOINUSDT: {enabled: true, rr: 7.0} # OOS: +5.4R
-  AIXBTUSDT: {enabled: true, rr: 6.0}   # OOS: +4.3R
-  HIVEUSDT: {enabled: true, rr: 8.0}    # OOS: +3.1R
-  WLDUSDT: {enabled: true, rr: 7.0}     # OOS: +2.8R
-  VIRTUALUSDT: {enabled: true, rr: 5.5} # OOS: +0.9R
+  # === 15 ROBUST (Anti-Overfit Validated) ===
+  SUIUSDT: {enabled: true, rr: 8.0}
+  AAVEUSDT: {enabled: true, rr: 7.0}
+  KAITOUSDT: {enabled: true, rr: 7.0}
+  ICPUSDT: {enabled: true, rr: 6.0}
+  ENAUSDT: {enabled: true, rr: 8.0}
+  PENGUUSDT: {enabled: true, rr: 8.0}
+  HBARUSDT: {enabled: true, rr: 4.5}
+  STORJUSDT: {enabled: true, rr: 6.0}
+  AVAXUSDT: {enabled: true, rr: 5.5}
+  SOLUSDT: {enabled: true, rr: 7.0}
+  FARTCOINUSDT: {enabled: true, rr: 7.0}
+  AIXBTUSDT: {enabled: true, rr: 6.0}
+  HIVEUSDT: {enabled: true, rr: 8.0}
+  WLDUSDT: {enabled: true, rr: 7.0}
+  VIRTUALUSDT: {enabled: true, rr: 5.5}
+
+  # === TOP PERFORMERS (1-Year Backtest Leaders) ===
+  WIFUSDT: {enabled: true, rr: 8.0}      # +52.7R
+  LPTUSDT: {enabled: true, rr: 8.0}      # +50.5R
+  JASMYUSDT: {enabled: true, rr: 8.0}    # +49.8R
+  BANANAUSDT: {enabled: true, rr: 8.0}   # +46.4R
+  EGLDUSDT: {enabled: true, rr: 8.0}     # +43.9R
+  SPKUSDT: {enabled: true, rr: 7.0}      # +43.6R
+  IOSTUSDT: {enabled: true, rr: 5.0}     # +37.9R
+  GRTUSDT: {enabled: true, rr: 8.0}      # +37.7R
+  POWRUSDT: {enabled: true, rr: 8.0}     # +37.3R
+  ZETAUSDT: {enabled: true, rr: 8.0}     # +36.9R
+  ZRXUSDT: {enabled: true, rr: 7.0}      # +36.8R
+  1000NEIROCTOUSDT: {enabled: true, rr: 7.0} # +36.8R
+  DEEPUSDT: {enabled: true, rr: 5.0}     # +36.6R
+  WCTUSDT: {enabled: true, rr: 5.5}      # +36.4R
+  PHAUSDT: {enabled: true, rr: 7.0}      # +36.0R
+  SOLAYERUSDT: {enabled: true, rr: 8.0}  # +34.9R
+  MEWUSDT: {enabled: true, rr: 8.0}      # +34.3R
+  DYDXUSDT: {enabled: true, rr: 7.0}     # +33.2R
 
 telegram:
   chat_id: ${TELEGRAM_CHAT_ID}

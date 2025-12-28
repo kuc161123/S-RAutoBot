@@ -81,8 +81,8 @@ class TelegramHandler:
 /start - Resume trading
 /help - Show this message
 
-💡 **Strategy**: 4H Divergence + Daily Trend
-**Expected**: ~25% WR, +0.35R/trade
+💡 **Strategy**: 1H Divergence + EMA 200
+**Expected**: 64% Winners, +680R (3Y)
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     
@@ -158,20 +158,20 @@ class TelegramHandler:
             
             # === BUILD COMPREHENSIVE MESSAGE ===
             msg = f"""
-📊 **4H DIVERGENCE DASHBOARD**
+📊 **1H DIVERGENCE DASHBOARD**
 ━━━━━━━━━━━━━━━━━━━━
 
 ⏰ **SYSTEM**
 ├ Uptime: {uptime_hrs:.1f}h
-├ Timeframe: 4H (240m)
+├ Timeframe: 1H (60m)
 ├ Risk/Trade: {self.bot.risk_config.get('risk_per_trade', 0.01)*100}%
 └ Enabled Symbols: {enabled}
 
 🎯 **STRATEGY**
-├ Setup: RSI Divergence + Daily Trend
+├ Setup: RSI Divergence + EMA 200
 ├ Confirmation: Break of Structure
-├ Exit: Per-Symbol R:R (2:1 to 6:1)
-└ Expected: 25% WR, +0.35R/trade
+├ Exit: Per-Symbol R:R (2:1 to 8:1)
+└ Expected: 64% Winners, +680R (3Y)
 
 💼 **WALLET (BYBIT)**
 ├ Balance: ${balance:,.2f} USDT

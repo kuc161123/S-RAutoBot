@@ -1,24 +1,50 @@
-ADAUSDT: {enabled: true, rr: 8.0}
-ARBUSDT: {enabled: true, rr: 5.5}
-AVAXUSDT: {enabled: true, rr: 7.0}
-BCHUSDT: {enabled: true, rr: 7.0}
-DASHUSDT: {enabled: true, rr: 5.5}
-DOGEUSDT: {enabled: true, rr: 4.0}
-DOTUSDT: {enabled: true, rr: 8.0}
-ENAUSDT: {enabled: true, rr: 2.0}
-ETCUSDT: {enabled: true, rr: 4.0}
-FLOWUSDT: {enabled: true, rr: 6.0}
-GALAUSDT: {enabled: true, rr: 4.5}
-GASUSDT: {enabled: true, rr: 8.0}
-LINKUSDT: {enabled: true, rr: 6.0}
-LTCUSDT: {enabled: true, rr: 3.0}
-NEARUSDT: {enabled: true, rr: 5.5}
-NTRNUSDT: {enabled: true, rr: 5.5}
-OPUSDT: {enabled: true, rr: 7.0}
-PAXGUSDT: {enabled: true, rr: 8.0}
-SEIUSDT: {enabled: true, rr: 8.0}
-STRKUSDT: {enabled: true, rr: 7.0}
-TRUUSDT: {enabled: true, rr: 8.0}
-TRXUSDT: {enabled: true, rr: 3.5}
-VIRTUALUSDT: {enabled: true, rr: 6.0}
-XLMUSDT: {enabled: true, rr: 5.5}
+# 1H Strategy - 44 Profitable Symbols (3-Year Backtest: +680R)
+# Generated from 1h_3year_optimization_results.csv
+
+# Top 10 Performers
+ONTUSDT: {enabled: true, rr: 4.5}   # +78.6R
+SOLUSDT: {enabled: true, rr: 7.0}   # +65.5R
+AAVEUSDT: {enabled: true, rr: 7.0}  # +61.2R
+SUIUSDT: {enabled: true, rr: 8.0}   # +48.8R
+MERLUSDT: {enabled: true, rr: 6.0}  # +45.5R
+KAITOUSDT: {enabled: true, rr: 7.0} # +38.5R
+ICPUSDT: {enabled: true, rr: 6.0}   # +37.9R
+INJUSDT: {enabled: true, rr: 8.0}   # +36.0R
+HBARUSDT: {enabled: true, rr: 4.5}  # +35.1R
+FLOWUSDT: {enabled: true, rr: 5.0}  # +33.7R
+
+# Strong Performers
+VIRTUALUSDT: {enabled: true, rr: 5.5}  # +31.5R
+ETCUSDT: {enabled: true, rr: 7.0}      # +30.7R
+AVAXUSDT: {enabled: true, rr: 5.5}     # +30.9R
+WIFUSDT: {enabled: true, rr: 8.0}      # +30.1R
+LINKUSDT: {enabled: true, rr: 4.5}     # +29.4R
+STORJUSDT: {enabled: true, rr: 6.0}    # +28.4R
+ENAUSDT: {enabled: true, rr: 8.0}      # +26.7R
+PENGUUSDT: {enabled: true, rr: 8.0}    # +25.7R
+LPTUSDT: {enabled: true, rr: 8.0}      # +25.8R
+ZENUSDT: {enabled: true, rr: 8.0}      # +25.4R
+IDUSDT: {enabled: true, rr: 8.0}       # +24.9R
+GALAUSDT: {enabled: true, rr: 7.0}     # +24.5R
+HIVEUSDT: {enabled: true, rr: 8.0}     # +23.6R
+ARBUSDT: {enabled: true, rr: 8.0}      # +23.1R
+FLOCKUSDT: {enabled: true, rr: 6.0}    # +22.3R
+FILUSDT: {enabled: true, rr: 5.5}      # +19.2R
+AIXBTUSDT: {enabled: true, rr: 6.0}    # +19.0R
+TRUUSDT: {enabled: true, rr: 5.0}      # +18.8R
+SEIUSDT: {enabled: true, rr: 5.5}      # +16.8R
+TRUMPUSDT: {enabled: true, rr: 7.0}    # +16.7R
+WLDUSDT: {enabled: true, rr: 7.0}      # +13.4R
+ZKUSDT: {enabled: true, rr: 5.0}       # +13.5R
+TRXUSDT: {enabled: true, rr: 8.0}      # +9.5R
+1000PEPEUSDT: {enabled: true, rr: 5.5} # +9.3R
+STRKUSDT: {enabled: true, rr: 8.0}     # +8.8R
+FARTCOINUSDT: {enabled: true, rr: 7.0} # +8.3R
+BTCUSDT: {enabled: true, rr: 4.0}      # +7.9R
+SHIB1000USDT: {enabled: true, rr: 4.0} # +7.0R
+ACTUSDT: {enabled: true, rr: 8.0}      # +6.9R
+ONDOUSDT: {enabled: true, rr: 8.0}     # +6.4R
+DOTUSDT: {enabled: true, rr: 4.0}      # +5.7R
+PIPPINUSDT: {enabled: true, rr: 2.0}   # +4.8R
+BNBUSDT: {enabled: true, rr: 4.5}      # +3.3R
+UNIUSDT: {enabled: true, rr: 3.5}      # +0.5R

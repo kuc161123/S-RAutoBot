@@ -688,9 +688,9 @@ class Bot4H:
     async def run(self):
         """Main bot loop"""
         logger.info("="*60)
-        logger.info("🤖 4H TREND-DIVERGENCE BOT STARTED")
+        logger.info("🤖 1H TREND-DIVERGENCE BOT STARTED")
         logger.info("="*60)
-        logger.info(f"Timeframe: 4H")
+        logger.info(f"Timeframe: 1H")
         logger.info(f"Enabled Symbols: {len(self.symbol_config.get_enabled_symbols())}")
         logger.info(f"Risk per trade: {self.risk_config.get('risk_per_trade', 0.01)*100}%")
         logger.info("="*60)
@@ -704,22 +704,23 @@ class Bot4H:
                 
                 # Send startup notification
                 msg = f"""
-🤖 **4H TREND-DIVERGENCE BOT STARTED**
+🤖 **1H TREND-DIVERGENCE BOT STARTED**
 
-⏰ **Timeframe**: 4H (240 minutes)
-📊 **Strategy**: RSI Divergence + BOS + Daily Trend Filter
+⏰ **Timeframe**: 1H (60 minutes)
+📊 **Strategy**: RSI Divergence + BOS + EMA 200 Filter
 💰 **Risk**: {self.risk_config.get('risk_per_trade', 0.01)*100:.1f}% per trade
 📈 **Enabled Symbols**: {len(enabled_symbols)}
 
-**Active Portfolio:**
-{', '.join(sorted(enabled_symbols))}
+**Active Portfolio ({len(enabled_symbols)} symbols):**
+{', '.join(sorted(enabled_symbols)[:20])}{'...' if len(enabled_symbols) > 20 else ''}
 
 **Expected Performance (3Y Backtest):**
-• Win Rate: >20% (Avg ~25%)
-• Avg R/Trade: +0.35R
-• Total R: >10R per symbol
+• Total R: +680R combined
+• Winners: 44/69 (64%)
+• Avg R/Symbol: +9.85R
+• Top: ONT +78R, SOL +65R, AAVE +61R
 
-🔍 Now monitoring 4H candles...
+🔍 Now monitoring 1H candles every hour...
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /help for commands

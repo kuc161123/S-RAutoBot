@@ -259,16 +259,19 @@ class Bot4H:
         
         return False
     
-    async def process_symbol(self, symbol: str):
+    async def process_symbol(self, symbol: str) -> int:
         """
         Process a single symbol for signals and trade execution
         
         Args:
             symbol: Trading pair to process
+            
+        Returns:
+            int: Number of new signals found, or -1 if no new candle
         """
         # Check if new candle closed
         if not await self.check_new_candle_close(symbol):
-            return
+            return -1
         
         logger.info(f"[{symbol}] New 1H candle closed - processing...")
         
@@ -276,18 +279,19 @@ class Bot4H:
         df = await self.fetch_4h_data(symbol)
         if df is None or len(df) < 100:
             logger.warning(f"[{symbol}] Insufficient data")
-            return
+            return 0
         
         # Prepare indicators
         df = prepare_dataframe(df)
         
         # 1. Detect new divergences
         new_signals = detect_divergences(df, symbol)
+        valid_signals_count = 0
         
         for signal in new_signals:
             # Only accept trend-aligned signals
             if not signal.daily_trend_aligned:
-                # logger.info(f"[{symbol}] {signal.signal_type.upper()} divergence detected but NOT trend-aligned - SKIP")
+                logger.debug(f"[{symbol}] {signal.signal_type.upper()} divergence detected but NOT trend-aligned - SKIP")
                 continue
             
             # CRITICAL: Only accept FRESH signals (detected within last 3 candles)
@@ -302,15 +306,21 @@ class Bot4H:
                 self.pending_signals[symbol] = []
             
             self.pending_signals[symbol].append(pending)
+            valid_signals_count += 1
             
             logger.info(f"[{symbol}] 🔔 {signal.signal_type.upper()} DIVERGENCE detected! Waiting for BOS...")
             logger.info(f"[{symbol}]   Price: ${signal.price:.2f}, RSI: {signal.rsi_value:.1f}, Swing: ${signal.swing_level:.2f}")
         
+        if valid_signals_count == 0:
+            logger.info(f"[{symbol}] Scan complete - No fresh divergences found")
+            
         # 2. Check pending signals for BOS
         await self.check_pending_bos(symbol, df)
         
         # 3. Update active trades
         await self.monitor_active_trades(symbol)
+        
+        return valid_signals_count
     
     async def check_pending_bos(self, symbol: str, df: pd.DataFrame):
         """
@@ -739,12 +749,40 @@ class Bot4H:
         
         while True:
             try:
+                # Track cycle stats
+                symbols_processed = 0
+                total_signals_found = 0
+                
                 # Process each enabled symbol
                 for symbol in enabled_symbols:
                     try:
-                        await self.process_symbol(symbol)
+                        signals = await self.process_symbol(symbol)
+                        if signals >= 0:
+                            symbols_processed += 1
+                            total_signals_found += signals
                     except Exception as e:
                         logger.error(f"[{symbol}] Error processing: {e}")
+                
+                # If we completed a scan cycle (processed symbols implies candle close)
+                if symbols_processed > 0:
+                    logger.info(f"✅ Hourly Scan Complete. Processed: {symbols_processed}, New Signals: {total_signals_found}")
+                    
+                    if total_signals_found == 0 and self.telegram:
+                        # Send 'No Divergence' summary to reassure user bot is working
+                        msg = f"""
+🕵️ **HOURLY SCAN COMPLETE**
+
+Checked: {symbols_processed} Symbols
+Result: **No New Divergences Found**
+
+Bot is active and monitoring for:
+• RSI Divergence
+• Trend Alignment (EMA 200)
+• Fresh Patterns (<3 candles)
+
+Next scan in 60 mins... ⏳
+"""
+                        await self.telegram.send_message(msg)
                 
                 # Sleep for 1 minute before next check
                 await asyncio.sleep(60)

@@ -21,7 +21,7 @@ warnings.filterwarnings('ignore')
 
 # === CONFIGURATION ===
 TIMEFRAME = '240'  # 4H
-DATA_DAYS = 365    # 1 Year of data
+DATA_DAYS = 1095   # 3 Years of data
 MIN_TURNOVER = 5_000_000  # $5M daily volume min
 MAX_WAIT_CANDLES = 6
 SL_MULT = 1.0

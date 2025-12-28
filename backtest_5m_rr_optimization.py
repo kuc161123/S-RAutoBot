@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """
-MULTI-TIMEFRAME R:R OPTIMIZATION (15M / 30M / 1H)
-=================================================
-Compare the RSI Divergence + BOS strategy across multiple timeframes.
+5M PER-SYMBOL R:R OPTIMIZATION
+==============================
+Objective: Find if ANY of the 24 "4H Winners" can also be profitable on 5M.
 
-Timeframes tested:
-- 15M: EMA 100 (roughly 1 day)
-- 30M: EMA 200 (roughly 4 days)
-- 1H:  EMA 200 (roughly 8 days)
-
-Symbols: Top 100 liquid USDT perpetuals.
-Data: 90 days of history.
+Key Differences from 4H:
+- Timeframe: 5 minutes
+- Data: 60 days (~17,280 candles per symbol)
+- EMA Period: 200 (standard)
+- R:R Range: 1.5 to 5.0 (shorter trades)
 """
 
 import requests
@@ -21,65 +19,48 @@ import time
 import os
 import yaml
 import warnings
-from concurrent.futures import ThreadPoolExecutor
 warnings.filterwarnings('ignore')
 
 # === CONFIGURATION ===
-TIMEFRAMES = {
-    '15': {'name': '15M', 'ema': 100, 'data_days': 90},
-    '30': {'name': '30M', 'ema': 200, 'data_days': 90},
-    '60': {'name': '1H', 'ema': 200, 'data_days': 120}
-}
-
-MAX_SYMBOLS = 100  # Top 100 by volume
-MIN_TURNOVER = 3_000_000  # $3M daily volume
-MAX_WAIT_CANDLES = 6
+TIMEFRAME = '5'  # 5 Minutes
+DATA_DAYS = 60   # 2 months of data
+MAX_WAIT_CANDLES = 6  # 30 mins to wait for BOS
 SL_MULT = 1.0
 
-# RR Ratios to test
-RR_RATIOS = [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0]
+# RR Ratios to test (smaller for 5M)
+RR_RATIOS = [1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 
-# Costs
+# Costs (higher for 5M due to more trades)
 SLIPPAGE_PCT = 0.0003
 FEE_PCT = 0.0006
 
+# Use the 24 winners from 4H as test subjects
+SYMBOLS = [
+    "ADAUSDT", "ARBUSDT", "AVAXUSDT", "BCHUSDT", "DASHUSDT", "DOGEUSDT",
+    "DOTUSDT", "ENAUSDT", "ETCUSDT", "FLOWUSDT", "GALAUSDT", "GASUSDT",
+    "LINKUSDT", "LTCUSDT", "NEARUSDT", "NTRNUSDT", "OPUSDT", "PAXGUSDT",
+    "SEIUSDT", "STRKUSDT", "TRUUSDT", "TRXUSDT", "VIRTUALUSDT", "XLMUSDT"
+]
+
 BASE_URL = "https://api.bybit.com"
 
-# Indicator settings
+# === INDICATOR LOGIC ===
 RSI_PERIOD = 14
 LOOKBACK_BARS = 10
+MIN_PIVOT_DISTANCE = 3
 PIVOT_RIGHT = 3
-
-def get_top_symbols(n=100):
-    """Fetch top N USDT perpetuals by volume"""
-    try:
-        print(f"Fetching top {n} liquid symbols...")
-        resp = requests.get(f"{BASE_URL}/v5/market/tickers?category=linear", timeout=10)
-        tickers = resp.json().get('result', {}).get('list', [])
-        
-        usdt = []
-        for t in tickers:
-            if t['symbol'].endswith('USDT'):
-                turnover = float(t.get('turnover24h', 0))
-                if turnover >= MIN_TURNOVER:
-                    usdt.append({'symbol': t['symbol'], 'turnover': turnover})
-        
-        usdt.sort(key=lambda x: x['turnover'], reverse=True)
-        symbols = [t['symbol'] for t in usdt[:n]]
-        print(f"Selected {len(symbols)} symbols")
-        return symbols
-    except Exception as e:
-        print(f"Error fetching symbols: {e}")
-        return []
+EMA_PERIOD = 200  # Standard 200 EMA for 5M
 
 def fetch_klines(symbol, interval, days):
-    """Fetch klines with pagination"""
+    """Fetch 5M klines with pagination"""
     end_ts = int(datetime.now().timestamp() * 1000)
     start_ts = end_ts - (days * 24 * 60 * 60 * 1000)
     
     all_candles = []
     current_end = end_ts
-    max_iterations = 30
+    
+    # 60 days of 5M = 60 * 24 * 12 = 17,280 candles = ~18 API calls
+    max_iterations = 20
     
     while current_end > start_ts and max_iterations > 0:
         max_iterations -= 1
@@ -105,10 +86,11 @@ def fetch_klines(symbol, interval, days):
             if len(data) < 1000:
                 break
                 
-            time.sleep(0.1)
+            time.sleep(0.15)  # Be nice to rate limits
             
         except Exception as e:
-            time.sleep(0.5)
+            print(f"    Fetch error: {e}")
+            time.sleep(1)
             continue
     
     if not all_candles:
@@ -125,8 +107,8 @@ def fetch_klines(symbol, interval, days):
     
     return df
 
-def prepare_data(df, ema_period):
-    """Calculate indicators"""
+def prepare_data(df):
+    """Calculate indicators for 5M"""
     # RSI
     delta = df['close'].diff()
     gain = delta.where(delta > 0, 0)
@@ -142,13 +124,13 @@ def prepare_data(df, ema_period):
     lc = abs(df['low'] - df['close'].shift())
     df['atr'] = pd.concat([hl, hc, lc], axis=1).max(axis=1).rolling(14).mean()
     
-    # EMA (adjusted per timeframe)
-    df['ema'] = df['close'].ewm(span=ema_period, adjust=False).mean()
+    # 200 EMA (standard for 5M)
+    df['ema'] = df['close'].ewm(span=EMA_PERIOD, adjust=False).mean()
     
     return df.dropna()
 
 def find_pivots(data, left=3, right=3):
-    """Find pivots"""
+    """Find pivots without look-ahead"""
     n = len(data)
     pivot_highs = np.full(n, np.nan)
     pivot_lows = np.full(n, np.nan)
@@ -180,13 +162,14 @@ def detect_divergences(df):
     signals = []
     
     for i in range(50, n):
-        # BULLISH
+        # FIND LAST 2 PIVOT LOWS
         p_lows = []
         for j in range(i-3, max(0, i-50), -1):
             if not np.isnan(price_pl[j]):
                 p_lows.append((j, price_pl[j]))
                 if len(p_lows) >= 2: break
         
+        # BULLISH DIV
         if len(p_lows) == 2:
             curr_idx, curr_val = p_lows[0]
             prev_idx, prev_val = p_lows[1]
@@ -204,13 +187,14 @@ def detect_divergences(df):
                             'price': curr_val
                         })
 
-        # BEARISH
+        # FIND LAST 2 PIVOT HIGHS
         p_highs = [] 
         for j in range(i-3, max(0, i-50), -1):
             if not np.isnan(price_ph[j]):
                 p_highs.append((j, price_ph[j]))
                 if len(p_highs) >= 2: break
         
+        # BEARISH DIV
         if len(p_highs) == 2:
             curr_idx, curr_val = p_highs[0]
             prev_idx, prev_val = p_highs[1]
@@ -231,7 +215,7 @@ def detect_divergences(df):
     return signals
 
 def backtest_symbol(df, signals, rr):
-    """Run backtest"""
+    """Run backtest for a single symbol and R:R"""
     rows = list(df.itertuples())
     trades = []
     
@@ -246,7 +230,7 @@ def backtest_symbol(df, signals, rr):
         if side == 'long' and curr_price < ema: continue
         if side == 'short' and curr_price > ema: continue
         
-        # BOS
+        # Look for BOS
         entry_idx = None
         
         for j in range(start_idx + 1, min(start_idx + 1 + MAX_WAIT_CANDLES, len(rows))):
@@ -262,12 +246,13 @@ def backtest_symbol(df, signals, rr):
         
         if not entry_idx or entry_idx >= len(rows): continue
         
-        # Execute
+        # EXECUTE
         entry_row = rows[entry_idx]
         entry_price = entry_row.open
         atr = entry_row.atr
         sl_dist = atr * SL_MULT
         
+        # Slippage
         if side == 'long':
             entry_price *= (1 + SLIPPAGE_PCT)
             tp_price = entry_price + (sl_dist * rr)
@@ -277,9 +262,10 @@ def backtest_symbol(df, signals, rr):
             tp_price = entry_price - (sl_dist * rr)
             sl_price = entry_price + sl_dist
             
+        # Outcome (max 100 candles = ~8 hours)
         result = None
         
-        for k in range(entry_idx, min(entry_idx + 200, len(rows))):
+        for k in range(entry_idx, min(entry_idx + 100, len(rows))):
             row = rows[k]
             if side == 'long':
                 if row.low <= sl_price:
@@ -297,133 +283,104 @@ def backtest_symbol(df, signals, rr):
                     break
                     
         if result is None:
-            result = -0.2
+            result = -0.2  # Timeout = small loss
             
         # Fees
         risk_pct = abs(entry_price - sl_price) / entry_price
         if risk_pct == 0: risk_pct = 0.01
+        
         total_fee_cost = (FEE_PCT * 2) / risk_pct
+        
         final_r = result - total_fee_cost
         trades.append(final_r)
         
     return trades
 
-def process_symbol_timeframe(symbol, interval, tf_config):
-    """Process a single symbol on a single timeframe"""
-    try:
-        df = fetch_klines(symbol, interval, tf_config['data_days'])
-        
-        if len(df) < 500:
-            return None
-            
-        df = prepare_data(df, tf_config['ema'])
-        signals = detect_divergences(df)
-        
-        if len(signals) < 5:
-            return None
-            
-        # Optimize R:R
-        best_r = -999
-        best_rr = 0
-        best_wr = 0
-        best_n = 0
-        
-        for rr in RR_RATIOS:
-            trades = backtest_symbol(df, signals, rr)
-            if not trades: continue
-            
-            n = len(trades)
-            total_r = sum(trades)
-            wr = len([t for t in trades if t > 0]) / n
-            
-            if total_r > best_r:
-                best_r = total_r
-                best_rr = rr
-                best_wr = wr
-                best_n = n
-        
-        return {
-            'symbol': symbol,
-            'timeframe': tf_config['name'],
-            'best_rr': best_rr,
-            'total_r': round(best_r, 2),
-            'win_rate': round(best_wr, 3),
-            'trades': best_n,
-            'avg_r': round(best_r / best_n, 3) if best_n > 0 else 0,
-            'profitable': best_r > 0
-        }
-        
-    except Exception as e:
-        return None
-
 def main():
     print("="*80)
-    print("MULTI-TIMEFRAME R:R OPTIMIZATION")
-    print("Timeframes: 15M, 30M, 1H | Symbols: Top 100")
+    print("5M PER-SYMBOL R:R OPTIMIZATION")
+    print("Testing if 4H Winners can also be 5M Winners")
     print("="*80)
     
-    symbols = get_top_symbols(MAX_SYMBOLS)
+    results = []
+    output_file = '5m_optimization_results.csv'
     
-    all_results = []
-    
-    for tf_interval, tf_config in TIMEFRAMES.items():
-        print(f"\n{'='*60}")
-        print(f"TESTING {tf_config['name']} TIMEFRAME (EMA {tf_config['ema']})")
-        print(f"{'='*60}")
+    for i, sym in enumerate(SYMBOLS):
+        print(f"\n[{i+1}/{len(SYMBOLS)}] Processing {sym}...")
         
-        tf_results = []
-        
-        for i, symbol in enumerate(symbols):
-            print(f"  [{i+1}/{len(symbols)}] {symbol}...", end=" ")
+        try:
+            df = fetch_klines(sym, TIMEFRAME, DATA_DAYS)
+            print(f"    Fetched {len(df)} candles")
             
-            result = process_symbol_timeframe(symbol, tf_interval, tf_config)
+            if len(df) < 2000:
+                print(f"    -> Insufficient data")
+                continue
+                
+            df = prepare_data(df)
+            signals = detect_divergences(df)
             
-            if result:
-                status = "✅" if result['profitable'] else "❌"
-                print(f"{status} {result['total_r']:+.1f}R @ {result['best_rr']}:1")
-                tf_results.append(result)
-                all_results.append(result)
-            else:
-                print("⏭️ Skip")
+            print(f"    Detected {len(signals)} divergence signals")
             
-            time.sleep(0.05)  # Rate limit
-        
-        # Timeframe summary
-        winners = [r for r in tf_results if r['profitable']]
-        total_r = sum(r['total_r'] for r in tf_results)
-        
-        print(f"\n📊 {tf_config['name']} SUMMARY:")
-        print(f"   Winners: {len(winners)}/{len(tf_results)}")
-        print(f"   Combined R: {total_r:+.1f}")
-        if winners:
-            print(f"   Best: {max(winners, key=lambda x: x['total_r'])['symbol']} ({max(winners, key=lambda x: x['total_r'])['total_r']:+.1f}R)")
+            if len(signals) < 10:
+                print(f"    -> Not enough signals")
+                continue
+                
+            # Optimize R:R
+            best_r = -999
+            best_rr = 0
+            best_wr = 0
+            best_n = 0
+            
+            for rr in RR_RATIOS:
+                trades = backtest_symbol(df, signals, rr)
+                if not trades: continue
+                
+                n = len(trades)
+                total_r = sum(trades)
+                wr = len([t for t in trades if t > 0]) / n
+                
+                if total_r > best_r:
+                    best_r = total_r
+                    best_rr = rr
+                    best_wr = wr
+                    best_n = n
+            
+            status = "✅ WINNER" if best_r > 0 else "❌ LOSER"
+            print(f"    {status}: R:R={best_rr}:1 | Total R: {best_r:+.1f} | WR: {best_wr*100:.0f}% | N: {best_n}")
+            
+            results.append({
+                'symbol': sym,
+                'best_rr': best_rr,
+                'total_r': round(best_r, 2),
+                'win_rate': round(best_wr, 3),
+                'trades': best_n,
+                'avg_r': round(best_r / best_n, 3) if best_n > 0 else 0,
+                'profitable': best_r > 0
+            })
+                
+        except Exception as e:
+            print(f"    -> Error: {e}")
+            
+    # Save results
+    df_res = pd.DataFrame(results)
+    df_res.to_csv(output_file, index=False)
     
-    # Save all results
-    df_all = pd.DataFrame(all_results)
-    df_all.to_csv('multi_timeframe_results.csv', index=False)
-    
-    # Final comparison
     print("\n" + "="*80)
-    print("FINAL COMPARISON")
+    print("RESULTS SUMMARY")
     print("="*80)
     
-    for tf_name in ['15M', '30M', '1H']:
-        tf_data = [r for r in all_results if r['timeframe'] == tf_name]
-        winners = [r for r in tf_data if r['profitable']]
-        total_r = sum(r['total_r'] for r in tf_data)
-        avg_r = total_r / len(tf_data) if tf_data else 0
-        
-        print(f"\n{tf_name}:")
-        print(f"  Profitable Symbols: {len(winners)}/{len(tf_data)} ({len(winners)/len(tf_data)*100:.0f}%)" if tf_data else "  No data")
-        print(f"  Total Combined R: {total_r:+.1f}")
-        print(f"  Avg R per Symbol: {avg_r:+.2f}")
-        
-        if winners:
-            top3 = sorted(winners, key=lambda x: x['total_r'], reverse=True)[:3]
-            top3_str = ', '.join([f"{w['symbol']} ({w['total_r']:+.1f}R)" for w in top3])
-            print(f"  Top 3: {top3_str}")
+    winners = df_res[df_res['profitable'] == True]
+    losers = df_res[df_res['profitable'] == False]
     
-    print(f"\n📊 Full results saved to: multi_timeframe_results.csv")
+    print(f"\n🏆 PROFITABLE ON 5M: {len(winners)}/{len(df_res)}")
+    if len(winners) > 0:
+        print(winners[['symbol', 'best_rr', 'total_r', 'win_rate', 'trades']].to_string(index=False))
+    
+    print(f"\n❌ NOT PROFITABLE ON 5M: {len(losers)}")
+    if len(losers) > 0:
+        print(losers[['symbol', 'best_rr', 'total_r']].to_string(index=False))
+    
+    print(f"\n📊 Results saved to: {output_file}")
 
 if __name__ == "__main__":
     main()

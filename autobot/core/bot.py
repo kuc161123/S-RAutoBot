@@ -758,6 +758,8 @@ class Bot4H:
         except Exception as e:
             logger.error(f"[{symbol}] Error placing TP limit order: {e}")
             logger.critical(f"[{symbol}] CRITICAL: Position open without TP!")
+            if self.telegram:
+                await self.telegram.send_message(f"⚠️ **CRITICAL: NO TP ORDER**\n\n{symbol} | Position OPEN but TP failed!\nError: {e}\n\n🚨 Set TP manually: ${tp_price:.4f}")
             # Don't return - try to place SL
         
         # === PLACE STOP-LOSS MARKET ORDER ===
@@ -775,6 +777,8 @@ class Bot4H:
         except Exception as e:
             logger.error(f"[{symbol}] Error placing SL stop order: {e}")
             logger.critical(f"[{symbol}] CRITICAL: Position open without SL!")
+            if self.telegram:
+                await self.telegram.send_message(f"🚨 **CRITICAL: NO SL ORDER**\n\n{symbol} | Position OPEN but SL failed!\nError: {e}\n\n🚨🚨 CLOSE POSITION or SET SL MANUALLY: ${sl_price:.4f}")
             return
         
         # Track active trade

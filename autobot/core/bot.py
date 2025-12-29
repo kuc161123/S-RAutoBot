@@ -620,11 +620,24 @@ class Bot4H:
             # Qty = Risk / (Entry - SL)
             # Qty = RiskAmount / SL_Distance
             
-            position_size_qty = risk_amount / sl_distance
+            raw_qty = risk_amount / sl_distance
             
-            # Sanity check: If Qty is infinite or NaN
-            if position_size_qty <= 0 or not isinstance(position_size_qty, (int, float)):
-                logger.error(f"[{symbol}] Invalid calculated qty: {position_size_qty}")
+            # Get qty precision from Bybit API
+            try:
+                _, qty_step = await self.broker.get_precisions(symbol)
+                from decimal import Decimal, ROUND_DOWN
+                qty_step_dec = Decimal(qty_step)
+                raw_qty_dec = Decimal(str(raw_qty))
+                # Round DOWN to qty_step
+                position_size_qty = float(raw_qty_dec.quantize(qty_step_dec, rounding=ROUND_DOWN))
+                logger.info(f"[{symbol}] Qty: {raw_qty:.6f} → {position_size_qty} (step={qty_step})")
+            except Exception as e:
+                logger.warning(f"[{symbol}] Precision fetch failed, using int(): {e}")
+                position_size_qty = int(raw_qty)
+            
+            # Sanity check: If Qty is zero or invalid
+            if position_size_qty <= 0:
+                logger.error(f"[{symbol}] Invalid calculated qty: {position_size_qty} (too small for risk)")
                 return
             
         except Exception as e:

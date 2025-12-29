@@ -546,6 +546,33 @@ class Bot4H:
             logger.info(f"[{symbol}] 🔔 NEW {signal.signal_type.upper()} DIVERGENCE detected! Waiting for BOS...")
             logger.info(f"[{symbol}]   Price: ${signal.price:.2f}, RSI: {signal.rsi_value:.1f}, Swing: ${signal.swing_level:.2f}")
             logger.info(f"[{symbol}]   Signal ID: {signal_id}")
+            
+            # Send Telegram notification for divergence detected
+            if self.telegram:
+                side_emoji = '🟢' if signal.side == 'long' else '🔴'
+                side_text = 'BULLISH' if signal.side == 'long' else 'BEARISH'
+                div_msg = f"""
+🔔 **DIVERGENCE DETECTED**
+━━━━━━━━━━━━━━━━━━━━
+
+📊 **{symbol}** | {side_emoji} {side_text}
+
+**SIGNAL DETAILS**
+├ Price: ${signal.price:,.4f}
+├ RSI: {signal.rsi_value:.1f}
+├ Swing Level: ${signal.swing_level:,.4f}
+└ Status: Waiting for BOS (0/6)
+
+**ETA**
+⏳ 0-6 hours to potential entry
+
+━━━━━━━━━━━━━━━━━━━━
+📊 [Chart](https://www.tradingview.com/chart/?symbol=BYBIT:{symbol})
+"""
+                try:
+                    await self.telegram.send_message(div_msg)
+                except Exception as e:
+                    logger.error(f"Failed to send divergence notification: {e}")
         
         if valid_signals_count == 0:
             logger.info(f"[{symbol}] Scan complete - No new divergences (skipped {duplicate_count} duplicates)")
@@ -588,6 +615,27 @@ class Bot4H:
             # Check for BOS
             if check_bos(df, pending.signal, current_idx):
                 logger.info(f"[{symbol}] ✅ BOS CONFIRMED! Executing trade...")
+                
+                # Send BOS confirmed notification
+                if self.telegram:
+                    side_emoji = '🟢' if pending.signal.side == 'long' else '🔴'
+                    side_text = 'LONG' if pending.signal.side == 'long' else 'SHORT'
+                    bos_msg = f"""
+✅ **BOS CONFIRMED!**
+━━━━━━━━━━━━━━━━━━━━
+
+📊 **{symbol}** | {side_emoji} {side_text}
+
+🔓 Break of Structure confirmed after {pending.candles_waited} candles
+⚡ Executing trade now...
+
+━━━━━━━━━━━━━━━━━━━━
+"""
+                    try:
+                        await self.telegram.send_message(bos_msg)
+                    except Exception as e:
+                        logger.error(f"Failed to send BOS notification: {e}")
+                
                 await self.execute_trade(symbol, pending.signal, df)
                 signals_to_remove.append(pending)
             else:

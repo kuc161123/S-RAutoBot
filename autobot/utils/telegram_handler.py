@@ -43,6 +43,7 @@ class TelegramHandler:
         self.app.add_handler(CommandHandler("dashboard", self.cmd_dashboard))
         self.app.add_handler(CommandHandler("positions", self.cmd_positions))
         self.app.add_handler(CommandHandler("stats", self.cmd_stats))
+        self.app.add_handler(CommandHandler("radar", self.cmd_radar))
         self.app.add_handler(CommandHandler("stop", self.cmd_stop))
         self.app.add_handler(CommandHandler("start", self.cmd_start))
         self.app.add_handler(CommandHandler("risk", self.cmd_risk))
@@ -75,9 +76,10 @@ class TelegramHandler:
 /dashboard - Live trading dashboard
 /positions - All active positions
 /stats - Performance statistics
+/radar - Full radar watch (all symbols)
 
 ⚙️ **CONTROL**
-/stop - Emergency stop (halt trading)
+/stop -Emergency stop (halt trading)
 /start - Resume trading
 /help - Show this message
 
@@ -191,13 +193,50 @@ class TelegramHandler:
                     hours_max = candles_left
                     pending_radar.append(f"│   {side_icon} {sym}: {sig.candles_waited}/6 candles → Max {hours_max}h to entry")
             
-            # 2. Developing patterns and extreme zones
+            # 2. Developing patterns and extreme zones (with rich multi-line format)
             if getattr(self.bot, 'radar_items', None):
-                for sym, desc in self.bot.radar_items.items():
-                    if "Bullish Setup" in desc or "Bearish Setup" in desc:
-                        developing_radar.append(f"│   {sym}: {desc}")
-                    elif "Extreme" in desc:
-                        extreme_radar.append(f"│   {sym}: {desc}")
+                for sym, data in self.bot.radar_items.items():
+                    if isinstance(data, dict):
+                        if data['type'] == 'bullish_setup':
+                            ema_sign = "✓" if data['ema_dist'] < 0 else "⚠️"
+                            progress_bar = "▓" * data['pivot_progress'] + "░" * (6 - data['pivot_progress'])
+                            rsi_trend = "⬆️" if data['rsi_div'] > 0 else "→"
+                            
+                            item = f"""│   {sym}: 🟢 Bullish Divergence Forming
+│   ├─ Price: ${data['price']:g} (Testing 20-bar low, {data['ema_dist']:+.1f}% from EMA200 {ema_sign})
+│   ├─ RSI: {data['rsi']:.0f} {rsi_trend} (Previous pivot: {data['prev_pivot_rsi']:.0f}) → {data['rsi_div']:+.0f} point divergence
+│   ├─ Progress: {progress_bar} {data['pivot_progress']}/6 candles to pivot confirmation
+│   └─ ETA: 3-9h to confirmed signal, then 0-6h to BOS trigger"""
+                            developing_radar.append(item)
+                            
+                        elif data['type'] == 'bearish_setup':
+                            ema_sign = "✓" if data['ema_dist'] > 0 else "⚠️"
+                            progress_bar = "▓" * data['pivot_progress'] + "░" * (6 - data['pivot_progress'])
+                            rsi_trend = "⬇️" if data['rsi_div'] > 0 else "→"
+                            
+                            item = f"""│   {sym}: 🔴 Bearish Divergence Forming
+│   ├─ Price: ${data['price']:g} (Testing 20-bar high, {data['ema_dist']:+.1f}% from EMA200 {ema_sign})
+│   ├─ RSI: {data['rsi']:.0f} {rsi_trend} (Previous pivot: {data['prev_pivot_rsi']:.0f}) → {data['rsi_div']:+.0f} point divergence
+│   ├─ Progress: {progress_bar} {data['pivot_progress']}/6 candles to pivot confirmation
+│   └─ ETA: 3-9h to confirmed signal, then 0-6h to BOS trigger"""
+                            developing_radar.append(item)
+                            
+                        elif data['type'] == 'extreme_oversold':
+                            ema_warn = "⚠️ stretched" if abs(data['ema_dist']) > 3 else ""
+                            item = f"""│   {sym}: ❄️ Extreme Oversold Zone
+│   ├─ RSI: {data['rsi']:.0f}⬇️ ({data['hours_in_zone']:.0f}h in extreme zone)
+│   ├─ Price: ${data['price']:g} ({data['ema_dist']:+.1f}% from EMA {ema_warn})
+│   └─ ETA: Reversal likely within 2-8h"""
+                            extreme_radar.append(item)
+                            
+                        elif data['type'] == 'extreme_overbought':
+                            ema_warn = "⚠️ stretched" if abs(data['ema_dist']) > 3 else ""
+                            item = f"""│   {sym}: 🔥 Extreme Overbought Zone
+│   ├─ RSI: {data['rsi']:.0f}⬇️ ({data['hours_in_zone']:.0f}h in extreme zone)
+│   ├─ Price: ${data['price']:g} ({data['ema_dist']:+.1f}% from EMA {ema_warn})
+│   └─ ETA: Reversal likely within 2-8h"""
+                            extreme_radar.append(item)
+
             
             # Build strings
             pending_radar_str = "\n".join(pending_radar) if pending_radar else "│   None"
@@ -437,3 +476,81 @@ To resume: `/start`
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
             logger.error(f"Risk command error: {e}")
+    async def cmd_radar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show full radar watch for all symbols"""
+        try:
+            # Build comprehensive radar view
+            pending_count = sum(len(sigs) for sigs in self.bot.pending_signals.values())
+            developing_count = sum(1 for data in self.bot.radar_items.values() if isinstance(data, dict) and data.get('type') in ['bullish_setup', 'bearish_setup'])
+            extreme_count = sum(1 for data in self.bot.radar_items.values() if isinstance(data, dict) and data.get('type') in ['extreme_oversold', 'extreme_overbought'])
+            
+            msg = f"""
+📡 **FULL RADAR WATCH**
+━━━━━━━━━━━━━━━━━━━━
+
+Total Active: {pending_count + developing_count + extreme_count} signals
+
+"""
+            
+            # 1. Pending BOS
+            if self.bot.pending_signals:
+                msg += "🎯 **PENDING BOS (Confirmed)**\n\n"
+                for sym, sigs in self.bot.pending_signals.items():
+                    for sig in sigs:
+                        side_icon = "🟢" if sig.signal.signal_type == 'bullish' else "🔴"
+                        candles_left = 6 - sig.candles_waited
+                        msg += f"{side_icon} **{sym}**: {sig.candles_waited}/6 candles → Max {candles_left}h to entry\n"
+                msg += "\n"
+            
+            # 2. Developing Setups
+            developing = []
+            extreme = []
+            
+            if self.bot.radar_items:
+                for sym, data in self.bot.radar_items.items():
+                    if isinstance(data, dict):
+                        if data['type'] in ['bullish_setup', 'bearish_setup']:
+                            developing.append((sym, data))
+                        elif data['type'] in ['extreme_oversold', 'extreme_overbought']:
+                            extreme.append((sym, data))
+            
+            if developing:
+                msg += "🔮 **DEVELOPING PATTERNS**\n\n"
+                for sym, data in developing:
+                    if data['type'] == 'bullish_setup':
+                        progress_bar = "▓" * data['pivot_progress'] + "░" * (6 - data['pivot_progress'])
+                        msg += f"""🟢 **{sym}**: Bullish Divergence Forming
+├─ Price: ${data['price']:g} ({data['ema_dist']:+.1f}% from EMA)
+├─ RSI: {data['rsi']:.0f} ⬆️ (was {data['prev_pivot_rsi']:.0f}, +{data['rsi_div']:.0f}pts)
+├─ Progress: {progress_bar} {data['pivot_progress']}/6
+└─ ETA: 3-9h to signal\n\n"""
+                    else:
+                        progress_bar = "▓" * data['pivot_progress'] + "░" * (6 - data['pivot_progress'])
+                        msg += f"""🔴 **{sym}**: Bearish Divergence Forming
+├─ Price: ${data['price']:g} ({data['ema_dist']:+.1f}% from EMA)
+├─ RSI: {data['rsi']:.0f} ⬇️ (was {data['prev_pivot_rsi']:.0f}, +{data['rsi_div']:.0f}pts)
+├─ Progress: {progress_bar} {data['pivot_progress']}/6
+└─ ETA: 3-9h to signal\n\n"""
+            
+            if extreme:
+                msg += "⚡ **EXTREME ZONES**\n\n"
+                for sym, data in extreme:
+                    if data['type'] == 'extreme_oversold':
+                        msg += f"""❄️ **{sym}**: Extreme Oversold
+├─ RSI: {data['rsi']:.0f} ({data['hours_in_zone']:.0f}h in zone)
+├─ Price: ${data['price']:g}
+└─ ETA: 2-8h to reversal\n\n"""
+                    else:
+                        msg += f"""🔥 **{sym}**: Extreme Overbought
+├─ RSI: {data['rsi']:.0f} ({data['hours_in_zone']:.0f}h in zone)
+├─ Price: ${data['price']:g}
+└─ ETA: 2-8h to reversal\n\n"""
+            
+            if not self.bot.pending_signals and not developing and not extreme:
+                msg += "All clear - no active radar signals\n"
+            
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            
+        except Exception as e:
+            logger.error(f"Error in cmd_radar: {e}")
+            await update.message.reply_text("Error generating radar view")

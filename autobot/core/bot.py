@@ -345,27 +345,81 @@ class Bot4H:
                 
                 # 2. Get trend
                 ema = df['ema'].iloc[-1] if 'ema' in df.columns else 0
+                ema_distance_pct = ((current_close - ema) / ema * 100) if ema > 0 else 0
                 
-                # 3. Check Bullish Setup Forming
+                # 3. Look for previous pivot RSI to calculate divergence strength
+                from autobot.core.divergence_detector import find_pivots
+                close_arr = df['close'].values
+                rsi_arr = df['rsi'].values
+                _, price_lows = find_pivots(close_arr, 3, 3)
+                price_highs, _ = find_pivots(close_arr, 3, 3)
+                
+                prev_pivot_rsi = None
+                pivot_distance = 0
+                
+                # 4. Check Bullish Setup Forming
                 # Price is near recent low (within 1%) BUT RSI is rising/higher
                 if current_close < low_20 * 1.01 and current_close > ema:
-                    # Potential pullback in uptrend
-                    self.radar_items[symbol] = f"🟢 Bullish Setup Forming | Testing lows ${current_close:g} | RSI {last_rsi:.0f} | Est: 3-9h to signal"
+                    # Find last pivot low RSI
+                    for i in range(len(df) - 4, max(0, len(df) - 50), -1):
+                        if not pd.isna(price_lows[i]):
+                            prev_pivot_rsi = rsi_arr[i]
+                            pivot_distance = len(df) - 1 - i
+                            break
+                    
+                    rsi_divergence = last_rsi - prev_pivot_rsi if prev_pivot_rsi else 0
+                    pivot_progress = min(3, pivot_distance)  # 0-3 candles to confirmation
+                    
+                    self.radar_items[symbol] = {
+                        'type': 'bullish_setup',
+                        'price': current_close,
+                        'rsi': last_rsi,
+                        'prev_pivot_rsi': prev_pivot_rsi or 0,
+                        'rsi_div': rsi_divergence,
+                        'ema_dist': ema_distance_pct,
+                        'pivot_progress': pivot_progress,
+                        'pivot_distance': pivot_distance
+                    }
                 
-                # 4. Check Bearish Setup Forming
+                # 5. Check Bearish Setup Forming
                 # Price is near recent high (within 1%) BUT RSI is falling/lower
                 elif current_close > high_20 * 0.99 and current_close < ema:
-                    # Potential rally in downtrend
-                    self.radar_items[symbol] = f"🔴 Bearish Setup Forming | Testing highs ${current_close:g} | RSI {last_rsi:.0f} | Est: 3-9h to signal"
+                    # Find last pivot high RSI
+                    for i in range(len(df) - 4, max(0, len(df) - 50), -1):
+                        if not pd.isna(price_highs[i]):
+                            prev_pivot_rsi = rsi_arr[i]
+                            pivot_distance = len(df) - 1 - i
+                            break
+                    
+                    rsi_divergence = prev_pivot_rsi - last_rsi if prev_pivot_rsi else 0
+                    pivot_progress = min(3, pivot_distance)
+                    
+                    self.radar_items[symbol] = {
+                        'type': 'bearish_setup',
+                        'price': current_close,
+                        'rsi': last_rsi,
+                        'prev_pivot_rsi': prev_pivot_rsi or 0,
+                        'rsi_div': rsi_divergence,
+                        'ema_dist': ema_distance_pct,
+                        'pivot_progress': pivot_progress,
+                        'pivot_distance': pivot_distance
+                    }
                 
-                # 5. RSI Extremes (Hot) - Track time in zone
+                # 6. RSI Extremes (Hot) - Track time in zone
                 elif last_rsi <= 25:
                     # Track when it entered extreme zone
                     if symbol not in self.extreme_zone_tracker:
                         self.extreme_zone_tracker[symbol] = datetime.now()
                     
                     hours_in_zone = (datetime.now() - self.extreme_zone_tracker[symbol]).total_seconds() / 3600
-                    self.radar_items[symbol] = f"❄️ Extreme Oversold | RSI {last_rsi:.0f} ({hours_in_zone:.0f}h) | Reversal likely 2-8h"
+                    
+                    self.radar_items[symbol] = {
+                        'type': 'extreme_oversold',
+                        'price': current_close,
+                        'rsi': last_rsi,
+                        'hours_in_zone': hours_in_zone,
+                        'ema_dist': ema_distance_pct
+                    }
                     
                 elif last_rsi >= 75:
                     # Track when it entered extreme zone
@@ -373,7 +427,14 @@ class Bot4H:
                         self.extreme_zone_tracker[symbol] = datetime.now()
                     
                     hours_in_zone = (datetime.now() - self.extreme_zone_tracker[symbol]).total_seconds() / 3600
-                    self.radar_items[symbol] = f"🔥 Extreme Overbought | RSI {last_rsi:.0f} ({hours_in_zone:.0f}h) | Reversal likely 2-8h"
+                    
+                    self.radar_items[symbol] = {
+                        'type': 'extreme_overbought',
+                        'price': current_close,
+                        'rsi': last_rsi,
+                        'hours_in_zone': hours_in_zone,
+                        'ema_dist': ema_distance_pct
+                    }
                 
                 # Remove if normal and clear tracker
                 else:
@@ -382,7 +443,7 @@ class Bot4H:
                     if symbol in self.extreme_zone_tracker:
                         del self.extreme_zone_tracker[symbol]
                     
-            except Exception:
+            except Exception as e:
                 pass
         
         # 1. Detect new divergences

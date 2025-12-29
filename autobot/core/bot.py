@@ -344,7 +344,7 @@ class Bot4H:
                 current_close = df['close'].iloc[-1]
                 
                 # 2. Get trend
-                ema = df['ema'].iloc[-1] if 'ema' in df.columns else 0
+                ema = df['daily_ema'].iloc[-1] if 'daily_ema' in df.columns else 0
                 ema_distance_pct = ((current_close - ema) / ema * 100) if ema > 0 else 0
                 
                 # 3. Look for previous pivot RSI to calculate divergence strength

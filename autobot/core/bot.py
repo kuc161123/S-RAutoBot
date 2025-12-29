@@ -529,6 +529,11 @@ class Bot4H:
             self.seen_signals.add(signal_id)
             self.save_seen_signals()
             
+            # Only allow ONE pending signal per symbol at a time
+            if symbol in self.pending_signals and len(self.pending_signals[symbol]) > 0:
+                logger.info(f"[{symbol}] Already has pending signal - skipping additional divergence")
+                continue
+            
             # Add to pending signals
             pending = PendingSignal(signal=signal, detected_at=datetime.now())
             

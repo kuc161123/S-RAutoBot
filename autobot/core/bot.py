@@ -728,15 +728,19 @@ class Bot4H:
             
             if not order or 'orderId' not in order:
                 logger.error(f"[{symbol}] Failed to place market order")
+                if self.telegram:
+                    await self.telegram.send_message(f"❌ **TRADE FAILED**\n\n{symbol} | Failed to place market order\nOrder returned: {order}")
                 return
             
             order_id = order['orderId']
-            actual_entry = order.get('avgPrice', entry_price)
+            actual_entry = float(order.get('avgPrice', entry_price))
             
             logger.info(f"[{symbol}] ✅ Market ENTRY order filled: {order_id} @ ${actual_entry:.4f}")
             
         except Exception as e:
             logger.error(f"[{symbol}] Error placing market order: {e}")
+            if self.telegram:
+                await self.telegram.send_message(f"❌ **TRADE FAILED**\n\n{symbol} | Error: {e}")
             return
         
         # === PLACE LIMIT TAKE PROFIT ORDER ===

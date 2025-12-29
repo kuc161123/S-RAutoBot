@@ -370,27 +370,25 @@ class Bot4H:
                     
                     rsi_divergence = last_rsi - prev_pivot_rsi if prev_pivot_rsi else 0
                     
-                    # Pivot confirmation requires 3 candles on each side (6 total)
-                    # BUT we're looking at CURRENT developing pivot, so we count candles SINCE the potential pivot
-                    # A pivot needs 3 RIGHT candles to confirm, so progress is how many candles have passed
-                    # since the potential pivot low started forming
-                    
-                    # More accurate: check how close we are to having 3 candles AFTER the low
-                    # The current candle IS the potential pivot if we're testing lows
-                    # So we need to wait 3 more candles (PIVOT_RIGHT) to confirm
-                    candles_since_potential = 0  # We're AT the potential pivot now
-                    pivot_progress = min(6, candles_since_potential + 3)  # Add 3 for LEFT requirement met
-                    
-                    self.radar_items[symbol] = {
-                        'type': 'bullish_setup',
-                        'price': current_close,
-                        'rsi': last_rsi,
-                        'prev_pivot_rsi': prev_pivot_rsi or 0,
-                        'rsi_div': rsi_divergence,
-                        'ema_dist': ema_distance_pct,
-                        'pivot_progress': pivot_progress,
-                        'pivot_distance': pivot_distance
-                    }
+                    # CRITICAL FIX: Only show as bullish if RSI is HIGHER than previous pivot
+                    # Negative divergence = NOT a bullish divergence, don't show
+                    if rsi_divergence > 0:
+                        candles_since_potential = 0
+                        pivot_progress = min(6, candles_since_potential + 3)
+                        
+                        self.radar_items[symbol] = {
+                            'type': 'bullish_setup',
+                            'price': current_close,
+                            'rsi': last_rsi,
+                            'prev_pivot_rsi': prev_pivot_rsi or 0,
+                            'rsi_div': rsi_divergence,
+                            'ema_dist': ema_distance_pct,
+                            'pivot_progress': pivot_progress,
+                            'pivot_distance': pivot_distance
+                        }
+                    elif symbol in self.radar_items and self.radar_items[symbol].get('type') == 'bullish_setup':
+                        # Remove if no longer valid
+                        del self.radar_items[symbol]
                 
                 # 5. Check Bearish Setup Forming
                 # Price is near recent high (within 1%) BUT RSI is falling/lower
@@ -404,19 +402,25 @@ class Bot4H:
                     
                     rsi_divergence = prev_pivot_rsi - last_rsi if prev_pivot_rsi else 0
                     
-                    candles_since_potential = 0
-                    pivot_progress = min(6, candles_since_potential + 3)
-                    
-                    self.radar_items[symbol] = {
-                        'type': 'bearish_setup',
-                        'price': current_close,
-                        'rsi': last_rsi,
-                        'prev_pivot_rsi': prev_pivot_rsi or 0,
-                        'rsi_div': rsi_divergence,
-                        'ema_dist': ema_distance_pct,
-                        'pivot_progress': pivot_progress,
-                        'pivot_distance': pivot_distance
-                    }
+                    # CRITICAL FIX: Only show as bearish if RSI is LOWER than previous pivot
+                    # Negative divergence = NOT a bearish divergence, don't show
+                    if rsi_divergence > 0:
+                        candles_since_potential = 0
+                        pivot_progress = min(6, candles_since_potential + 3)
+                        
+                        self.radar_items[symbol] = {
+                            'type': 'bearish_setup',
+                            'price': current_close,
+                            'rsi': last_rsi,
+                            'prev_pivot_rsi': prev_pivot_rsi or 0,
+                            'rsi_div': rsi_divergence,
+                            'ema_dist': ema_distance_pct,
+                            'pivot_progress': pivot_progress,
+                            'pivot_distance': pivot_distance
+                        }
+                    elif symbol in self.radar_items and self.radar_items[symbol].get('type') == 'bearish_setup':
+                        # Remove if no longer valid
+                        del self.radar_items[symbol]
                 
                 # 6. RSI Extremes (Hot) - Track time in zone
                 elif last_rsi <= 25:

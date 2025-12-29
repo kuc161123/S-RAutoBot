@@ -132,8 +132,12 @@ class Bot4H:
         # Track time in extreme zones for ETA
         self.extreme_zone_tracker: Dict[str, datetime] = {}  # {symbol: entry_time}
         
+        # Signal deduplication - track seen signals to prevent duplicates
+        self.seen_signals_file = 'data/seen_signals.json'
+        self.seen_signals: set = self.load_seen_signals()  # Set of unique signal IDs
+        
         logger.info(f"Loaded {len(self.symbol_config.get_enabled_symbols())} enabled symbols")
-        logger.info("Initialization complete")
+        logger.info(f"Loaded {len(self.seen_signals)} previously seen signals")
 
     def load_stats(self):
         """Load internal stats from JSON file"""
@@ -155,6 +159,34 @@ class Bot4H:
                 json.dump(self.stats, f, indent=4)
         except Exception as e:
             logger.error(f"Failed to save stats: {e}")
+    
+    def load_seen_signals(self) -> set:
+        """Load previously seen signal IDs from JSON file"""
+        try:
+            import json
+            if os.path.exists(self.seen_signals_file):
+                with open(self.seen_signals_file, 'r') as f:
+                    data = json.load(f)
+                    return set(data.get('signals', []))
+        except Exception as e:
+            logger.error(f"Failed to load seen signals: {e}")
+        return set()
+    
+    def save_seen_signals(self):
+        """Save seen signal IDs to JSON file"""
+        try:
+            import json
+            os.makedirs(os.path.dirname(self.seen_signals_file), exist_ok=True)
+            with open(self.seen_signals_file, 'w') as f:
+                json.dump({'signals': list(self.seen_signals)}, f)
+        except Exception as e:
+            logger.error(f"Failed to save seen signals: {e}")
+    
+    def get_signal_id(self, signal) -> str:
+        """Generate unique ID for a divergence signal"""
+        # Use symbol + side + pivot timestamp to create unique ID
+        # This ensures we never trade the same divergence twice
+        return f"{signal.symbol}_{signal.side}_{signal.timestamp.isoformat()}"
     
     def load_config(self):
         """Load configuration from config.yaml"""
@@ -466,6 +498,7 @@ class Bot4H:
         # 1. Detect new divergences
         new_signals = detect_divergences(df, symbol)
         valid_signals_count = 0
+        duplicate_count = 0
         
         for signal in new_signals:
             # Only accept trend-aligned signals
@@ -473,10 +506,15 @@ class Bot4H:
                 logger.debug(f"[{symbol}] {signal.signal_type.upper()} divergence detected but NOT trend-aligned - SKIP")
                 continue
             
-            # CRITICAL: Only accept FRESH signals (detected within last 3 candles)
-            # This prevents processing historical signals on startup
-            if (len(df) - signal.divergence_idx) > 3:
-                continue
+            # DEDUPLICATION: Check if we've already seen this signal
+            signal_id = self.get_signal_id(signal)
+            if signal_id in self.seen_signals:
+                duplicate_count += 1
+                continue  # Already processed this signal before
+            
+            # Mark signal as seen and save
+            self.seen_signals.add(signal_id)
+            self.save_seen_signals()
             
             # Add to pending signals
             pending = PendingSignal(signal=signal, detected_at=datetime.now())
@@ -487,11 +525,12 @@ class Bot4H:
             self.pending_signals[symbol].append(pending)
             valid_signals_count += 1
             
-            logger.info(f"[{symbol}] 🔔 {signal.signal_type.upper()} DIVERGENCE detected! Waiting for BOS...")
+            logger.info(f"[{symbol}] 🔔 NEW {signal.signal_type.upper()} DIVERGENCE detected! Waiting for BOS...")
             logger.info(f"[{symbol}]   Price: ${signal.price:.2f}, RSI: {signal.rsi_value:.1f}, Swing: ${signal.swing_level:.2f}")
+            logger.info(f"[{symbol}]   Signal ID: {signal_id}")
         
         if valid_signals_count == 0:
-            logger.info(f"[{symbol}] Scan complete - No fresh divergences found")
+            logger.info(f"[{symbol}] Scan complete - No new divergences (skipped {duplicate_count} duplicates)")
             
         # 2. Check pending signals for BOS
         await self.check_pending_bos(symbol, df)

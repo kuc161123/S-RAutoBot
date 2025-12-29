@@ -265,6 +265,7 @@ class TelegramHandler:
 🔍 **SCANNING STATUS**
 ├ Last Scan: {last_scan_str}
 ├ Next Scan: ~{next_scan_mins} mins
+└ Seen Signals: {len(self.bot.seen_signals)} (deduped)
 
 📡 **RADAR WATCH**
 ┌─ Pending BOS (Confirmed Signals):

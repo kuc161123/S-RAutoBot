@@ -718,67 +718,35 @@ class Bot4H:
             sl_price = entry_price + sl_distance
             tp_price = entry_price - (sl_distance * rr)
         
-        # === PLACE MARKET ENTRY ORDER ===
+        # === PLACE MARKET ENTRY ORDER WITH ATOMIC TP/SL ===
+        # Using Bybit V5 bracket order - TP/SL are set atomically with the entry
+        # This guarantees position is protected from the instant it opens
         try:
             order = await self.broker.place_market(
                 symbol=symbol,
                 side=signal.side,
-                qty=position_size_qty
+                qty=position_size_qty,
+                take_profit=tp_price,  # Atomic TP protection
+                stop_loss=sl_price     # Atomic SL protection
             )
             
             if not order or 'orderId' not in order:
-                logger.error(f"[{symbol}] Failed to place market order")
+                error_msg = order.get('retMsg', 'Unknown error') if isinstance(order, dict) else str(order)
+                logger.error(f"[{symbol}] Failed to place market order: {error_msg}")
                 if self.telegram:
-                    await self.telegram.send_message(f"❌ **TRADE FAILED**\n\n{symbol} | Failed to place market order\nOrder returned: {order}")
+                    await self.telegram.send_message(f"❌ **TRADE FAILED**\n\n{symbol} | {error_msg}\nQty: {position_size_qty}\nTP: ${tp_price:.4f}\nSL: ${sl_price:.4f}")
                 return
             
-            order_id = order['orderId']
+            order_id = order.get('orderId')
             actual_entry = float(order.get('avgPrice', entry_price))
             
-            logger.info(f"[{symbol}] ✅ Market ENTRY order filled: {order_id} @ ${actual_entry:.4f}")
+            logger.info(f"[{symbol}] ✅ BRACKET ORDER FILLED: {order_id}")
+            logger.info(f"[{symbol}]   Entry: ${actual_entry:.4f}, TP: ${tp_price:.4f}, SL: ${sl_price:.4f}")
             
         except Exception as e:
-            logger.error(f"[{symbol}] Error placing market order: {e}")
+            logger.error(f"[{symbol}] Error placing bracket order: {e}")
             if self.telegram:
-                await self.telegram.send_message(f"❌ **TRADE FAILED**\n\n{symbol} | Error: {e}")
-            return
-        
-        # === PLACE LIMIT TAKE PROFIT ORDER ===
-        try:
-            tp_order = await self.broker.place_reduce_only_limit(
-                symbol=symbol,
-                side='sell' if signal.side=='long' else 'buy',
-                qty=position_size_qty,
-                price=tp_price,
-                reduce_only=True
-            )
-            
-            logger.info(f"[{symbol}] ✅ LIMIT TP order placed @ ${tp_price:.4f}")
-            
-        except Exception as e:
-            logger.error(f"[{symbol}] Error placing TP limit order: {e}")
-            logger.critical(f"[{symbol}] CRITICAL: Position open without TP!")
-            if self.telegram:
-                await self.telegram.send_message(f"⚠️ **CRITICAL: NO TP ORDER**\n\n{symbol} | Position OPEN but TP failed!\nError: {e}\n\n🚨 Set TP manually: ${tp_price:.4f}")
-            # Don't return - try to place SL
-        
-        # === PLACE STOP-LOSS MARKET ORDER ===
-        try:
-            sl_order = await self.broker.place_conditional_stop(
-                symbol=symbol,
-                side='sell' if signal.side=='long' else 'buy',
-                qty=position_size_qty,
-                trigger_price=sl_price,
-                reduce_only=True
-            )
-            
-            logger.info(f"[{symbol}] ✅ STOP-LOSS market order placed @ ${sl_price:.4f}")
-            
-        except Exception as e:
-            logger.error(f"[{symbol}] Error placing SL stop order: {e}")
-            logger.critical(f"[{symbol}] CRITICAL: Position open without SL!")
-            if self.telegram:
-                await self.telegram.send_message(f"🚨 **CRITICAL: NO SL ORDER**\n\n{symbol} | Position OPEN but SL failed!\nError: {e}\n\n🚨🚨 CLOSE POSITION or SET SL MANUALLY: ${sl_price:.4f}")
+                await self.telegram.send_message(f"❌ **TRADE FAILED**\n\n{symbol} | Error: {e}\nQty: {position_size_qty}")
             return
         
         # Track active trade

@@ -361,6 +361,7 @@ class Bot4H:
                 # Price is near recent low (within 1%) BUT RSI is rising/higher
                 if current_close < low_20 * 1.01 and current_close > ema:
                     # Find last pivot low RSI
+                    # Match the main divergence detector logic: look back from -4 (after PIVOT_RIGHT=3)
                     for i in range(len(df) - 4, max(0, len(df) - 50), -1):
                         if not pd.isna(price_lows[i]):
                             prev_pivot_rsi = rsi_arr[i]
@@ -368,7 +369,17 @@ class Bot4H:
                             break
                     
                     rsi_divergence = last_rsi - prev_pivot_rsi if prev_pivot_rsi else 0
-                    pivot_progress = min(3, pivot_distance)  # 0-3 candles to confirmation
+                    
+                    # Pivot confirmation requires 3 candles on each side (6 total)
+                    # BUT we're looking at CURRENT developing pivot, so we count candles SINCE the potential pivot
+                    # A pivot needs 3 RIGHT candles to confirm, so progress is how many candles have passed
+                    # since the potential pivot low started forming
+                    
+                    # More accurate: check how close we are to having 3 candles AFTER the low
+                    # The current candle IS the potential pivot if we're testing lows
+                    # So we need to wait 3 more candles (PIVOT_RIGHT) to confirm
+                    candles_since_potential = 0  # We're AT the potential pivot now
+                    pivot_progress = min(6, candles_since_potential + 3)  # Add 3 for LEFT requirement met
                     
                     self.radar_items[symbol] = {
                         'type': 'bullish_setup',
@@ -392,7 +403,9 @@ class Bot4H:
                             break
                     
                     rsi_divergence = prev_pivot_rsi - last_rsi if prev_pivot_rsi else 0
-                    pivot_progress = min(3, pivot_distance)
+                    
+                    candles_since_potential = 0
+                    pivot_progress = min(6, candles_since_potential + 3)
                     
                     self.radar_items[symbol] = {
                         'type': 'bearish_setup',

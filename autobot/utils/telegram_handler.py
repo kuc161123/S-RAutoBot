@@ -240,10 +240,21 @@ class TelegramHandler:
                             extreme_radar.append(item)
 
             
-            # Build strings
-            pending_radar_str = "\n".join(pending_radar) if pending_radar else "│   None"
+            # Build strings (limit items to prevent Telegram message too long)
+            pending_count = len(pending_radar)
+            pending_radar_str = "\n".join(pending_radar[:5]) if pending_radar else "│   None"
+            if pending_count > 5:
+                pending_radar_str += f"\n│   ... and {pending_count - 5} more"
+            
+            developing_count = len(developing_radar)
             developing_radar_str = "\n".join(developing_radar[:3]) if developing_radar else "│   Scanning..."
+            if developing_count > 3:
+                developing_radar_str += f"\n│   ... and {developing_count - 3} more"
+            
+            extreme_count = len(extreme_radar)
             extreme_radar_str = "\n".join(extreme_radar[:3]) if extreme_radar else "│   None"
+            if extreme_count > 3:
+                extreme_radar_str += f"\n│   ... and {extreme_count - 3} more"
             
             # === BUILD COMPREHENSIVE MESSAGE ===
             msg = f"""

@@ -198,7 +198,8 @@ class TelegramHandler:
                 for sym, data in self.bot.radar_items.items():
                     if isinstance(data, dict):
                         if data['type'] == 'bullish_setup':
-                            ema_sign = "✓" if data['ema_dist'] < 0 else "⚠️"
+                            # Only warn if stretched beyond ±3% from EMA
+                            ema_sign = "⚠️ stretched" if abs(data['ema_dist']) > 3 else "✓"
                             progress_bar = "▓" * data['pivot_progress'] + "░" * (6 - data['pivot_progress'])
                             rsi_trend = "⬆️" if data['rsi_div'] > 0 else "→"
                             
@@ -210,7 +211,8 @@ class TelegramHandler:
                             developing_radar.append(item)
                             
                         elif data['type'] == 'bearish_setup':
-                            ema_sign = "✓" if data['ema_dist'] > 0 else "⚠️"
+                            # Only warn if stretched beyond ±3% from EMA
+                            ema_sign = "⚠️ stretched" if abs(data['ema_dist']) > 3 else "✓"
                             progress_bar = "▓" * data['pivot_progress'] + "░" * (6 - data['pivot_progress'])
                             rsi_trend = "⬇️" if data['rsi_div'] > 0 else "→"
                             

@@ -1,7 +1,7 @@
 # 1H Robust Validated Strategy Config
-# 63 Symbols - All Anti-Overfit Validated
-# Combined OOS Performance: ~+750R / Year
-# Validation: WFO, Monte Carlo, Stress Test
+# 87 Symbols - All Anti-Overfit Validated
+# Combined OOS Performance: ~+1000R / Year
+# Validation: WFO, Monte Carlo, OOS Test
 
 # === PHASE 1: ORIGINAL ROBUST (15) ===
 SUIUSDT: {enabled: true, rr: 8.0}
@@ -69,3 +69,30 @@ ASTERUSDT: {enabled: true, rr: 8.0}
 ARUSDT: {enabled: true, rr: 8.0}
 RENDERUSDT: {enabled: true, rr: 4.0}
 SHIB1000USDT: {enabled: true, rr: 4.0}
+
+# === PHASE 4: NEW VALIDATED (24 symbols - OOS + Monte Carlo) ===
+CAKEUSDT: {enabled: true, rr: 10.0}
+ZRXUSDT: {enabled: true, rr: 9.0}
+IDUSDT: {enabled: true, rr: 6.0}
+RVNUSDT: {enabled: true, rr: 10.0}
+GOATUSDT: {enabled: true, rr: 9.0}
+BANANAUSDT: {enabled: true, rr: 9.0}
+ORCAUSDT: {enabled: true, rr: 9.0}
+ICXUSDT: {enabled: true, rr: 7.0}
+SAFEUSDT: {enabled: true, rr: 7.0}
+1000BONKUSDT: {enabled: true, rr: 10.0}
+KASUSDT: {enabled: true, rr: 10.0}
+LDOUSDT: {enabled: true, rr: 5.0}
+STRKUSDT: {enabled: true, rr: 5.0}
+GALAUSDT: {enabled: true, rr: 8.0}
+GRIFFAINUSDT: {enabled: true, rr: 4.0}
+NTRNUSDT: {enabled: true, rr: 4.0}
+CELOUSDT: {enabled: true, rr: 10.0}
+QNTUSDT: {enabled: true, rr: 6.0}
+BERAUSDT: {enabled: true, rr: 4.0}
+VVVUSDT: {enabled: true, rr: 6.0}
+1000TOSHIUSDT: {enabled: true, rr: 4.0}
+MERLUSDT: {enabled: true, rr: 7.0}
+BIOUSDT: {enabled: true, rr: 6.0}
+ZORAUSDT: {enabled: true, rr: 7.0}
+

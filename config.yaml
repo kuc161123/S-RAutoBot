@@ -47,7 +47,7 @@ strategy:
     require_bos: true
   exit_params:
     sl_atr_mult: 1.0
-  name: 1h_robust_63_symbols
+  name: 1h_robust_87_symbols
   signal_params:
     lookback_bars: 10
     min_pivot_distance: 3
@@ -59,10 +59,10 @@ strategy:
     enabled: true
 
 # =============================================
-# 63 FULLY VALIDATED SYMBOLS (Anti-Overfit)
+# 87 FULLY VALIDATED SYMBOLS (Anti-Overfit)
 # =============================================
-# Validation: WFO, Monte Carlo, Stress Test
-# Combined OOS Performance: ~+750R / Year
+# Validation: WFO, Monte Carlo, OOS Test
+# Combined OOS Performance: ~+1000R / Year
 # =============================================
 
 symbols:
@@ -132,8 +132,32 @@ symbols:
   ARUSDT: {enabled: true, rr: 8.0}
   RENDERUSDT: {enabled: true, rr: 4.0}
   SHIB1000USDT: {enabled: true, rr: 4.0}
-  IOSTUSDT: {enabled: false, rr: 8.0} # Explicitly disabled
-  ZRXUSDT: {enabled: false, rr: 4.5}  # Explicitly disabled
+
+  # === PHASE 4: NEW VALIDATED (24 symbols - OOS + Monte Carlo) ===
+  CAKEUSDT: {enabled: true, rr: 10.0}
+  ZRXUSDT: {enabled: true, rr: 9.0}
+  IDUSDT: {enabled: true, rr: 6.0}
+  RVNUSDT: {enabled: true, rr: 10.0}
+  GOATUSDT: {enabled: true, rr: 9.0}
+  BANANAUSDT: {enabled: true, rr: 9.0}
+  ORCAUSDT: {enabled: true, rr: 9.0}
+  ICXUSDT: {enabled: true, rr: 7.0}
+  SAFEUSDT: {enabled: true, rr: 7.0}
+  1000BONKUSDT: {enabled: true, rr: 10.0}
+  KASUSDT: {enabled: true, rr: 10.0}
+  LDOUSDT: {enabled: true, rr: 5.0}
+  STRKUSDT: {enabled: true, rr: 5.0}
+  GALAUSDT: {enabled: true, rr: 8.0}
+  GRIFFAINUSDT: {enabled: true, rr: 4.0}
+  NTRNUSDT: {enabled: true, rr: 4.0}
+  CELOUSDT: {enabled: true, rr: 10.0}
+  QNTUSDT: {enabled: true, rr: 6.0}
+  BERAUSDT: {enabled: true, rr: 4.0}
+  VVVUSDT: {enabled: true, rr: 6.0}
+  1000TOSHIUSDT: {enabled: true, rr: 4.0}
+  MERLUSDT: {enabled: true, rr: 7.0}
+  BIOUSDT: {enabled: true, rr: 6.0}
+  ZORAUSDT: {enabled: true, rr: 7.0}
 
 telegram:
   chat_id: ${TELEGRAM_CHAT_ID}

@@ -47,6 +47,7 @@ class TelegramHandler:
         self.app.add_handler(CommandHandler("stop", self.cmd_stop))
         self.app.add_handler(CommandHandler("start", self.cmd_start))
         self.app.add_handler(CommandHandler("risk", self.cmd_risk))
+        self.app.add_handler(CommandHandler("performance", self.cmd_performance))
         
         # Start polling in background
         await self.app.initialize()
@@ -76,6 +77,7 @@ class TelegramHandler:
 /dashboard - Live trading dashboard
 /positions - All active positions
 /stats - Performance statistics
+/performance - Symbol leaderboard (R values)
 /radar - Full radar watch (all symbols)
 
 ⚙️ **CONTROL**

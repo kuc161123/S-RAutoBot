@@ -183,10 +183,14 @@ class Bot4H:
             logger.error(f"Failed to save seen signals: {e}")
     
     def get_signal_id(self, signal) -> str:
-        """Generate unique ID for a divergence signal"""
-        # Use symbol + side + pivot timestamp to create unique ID
-        # This ensures we never trade the same divergence twice
-        return f"{signal.symbol}_{signal.side}_{signal.timestamp.isoformat()}"
+        """Generate unique ID for a divergence signal.
+        
+        Uses symbol + side + HOURLY timestamp (rounded down) to ensure
+        the same divergence detected on restart doesn't create a new signal.
+        """
+        # Round timestamp to the hour for consistent deduplication
+        hourly_ts = signal.timestamp.replace(minute=0, second=0, microsecond=0)
+        return f"{signal.symbol}_{signal.side}_{hourly_ts.strftime('%Y%m%d_%H')}"
     
     def load_config(self):
         """Load configuration from config.yaml"""

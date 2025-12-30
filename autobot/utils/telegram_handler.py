@@ -439,6 +439,56 @@ class TelegramHandler:
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
     
+    async def cmd_performance(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Symbol performance leaderboard"""
+        try:
+            symbol_stats = self.bot.symbol_stats
+            
+            if not symbol_stats:
+                await update.message.reply_text("📊 No trades recorded yet.")
+                return
+            
+            sorted_symbols = sorted(
+                [(sym, data) for sym, data in symbol_stats.items() if data.get('trades', 0) > 0],
+                key=lambda x: x[1].get('total_r', 0), reverse=True
+            )
+            
+            if not sorted_symbols:
+                await update.message.reply_text("📊 No completed trades yet.")
+                return
+            
+            # Top 5
+            top5_str = ""
+            for i, (sym, data) in enumerate(sorted_symbols[:5]):
+                emoji = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "📈"
+                wr = (data.get('wins', 0) / max(data.get('trades', 1), 1)) * 100
+                top5_str += f"{emoji} {sym}: {data.get('total_r', 0):+.1f}R ({data.get('trades', 0)}T, {wr:.0f}%)\n"
+            
+            # Bottom 5
+            bottom5_str = ""
+            for sym, data in sorted_symbols[-5:][::-1]:
+                wr = (data.get('wins', 0) / max(data.get('trades', 1), 1)) * 100
+                bottom5_str += f"📉 {sym}: {data.get('total_r', 0):+.1f}R ({data.get('trades', 0)}T, {wr:.0f}%)\n"
+            
+            total_r = sum(d.get('total_r', 0) for d in symbol_stats.values())
+            active = len([s for s, d in symbol_stats.items() if d.get('trades', 0) > 0])
+            profitable = len([s for s, d in symbol_stats.items() if d.get('total_r', 0) > 0])
+            
+            msg = f"""
+📊 **SYMBOL LEADERBOARD**
+━━━━━━━━━━━━━━━━━━━━
+
+🏆 **TOP 5**
+{top5_str}
+⚠️ **BOTTOM 5**
+{bottom5_str}
+📈 Active: {active} | Profitable: {profitable} | Total R: {total_r:+.1f}R
+
+💡 /dashboard /stats
+"""
+            await update.message.reply_text(msg, parse_mode='Markdown')
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
     async def cmd_stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Emergency stop"""
         self.bot.trading_enabled = False

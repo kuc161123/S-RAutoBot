@@ -86,7 +86,7 @@ class TelegramHandler:
 /help - Show this message
 
 💡 **Strategy**: 1H RSI Divergence (Validated)
-**Portfolio**: 87 Symbols, ~+1000R OOS Performance
+**Portfolio**: 79 Symbols, ~+2400R OOS/Year
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     
@@ -273,7 +273,7 @@ class TelegramHandler:
 ├ Setup: RSI Divergence + EMA 200
 ├ Confidence: 100% Anti-Overfit
 ├ Risk/Reward: 4:1 to 10:1
-└ Expected OOS: ~+1000R/Yr
+└ Expected OOS: ~+2400R/Yr
 
 🔍 **SCANNING STATUS**
 ├ Last Scan: {last_scan_str}

@@ -722,7 +722,7 @@ class Bot4H:
         # Using Bybit V5 bracket order - TP/SL are set atomically with the entry
         # This guarantees position is protected from the instant it opens
         try:
-            order = await self.broker.place_market(
+            response = await self.broker.place_market(
                 symbol=symbol,
                 side=signal.side,
                 qty=position_size_qty,
@@ -730,15 +730,20 @@ class Bot4H:
                 stop_loss=sl_price     # Atomic SL protection
             )
             
-            if not order or 'orderId' not in order:
-                error_msg = order.get('retMsg', 'Unknown error') if isinstance(order, dict) else str(order)
-                logger.error(f"[{symbol}] Failed to place market order: {error_msg}")
+            # Bybit V5 response structure: {retCode: 0, retMsg: 'OK', result: {orderId: 'xxx'}}
+            ret_code = response.get('retCode', -1) if isinstance(response, dict) else -1
+            ret_msg = response.get('retMsg', 'Unknown') if isinstance(response, dict) else str(response)
+            result = response.get('result', {}) if isinstance(response, dict) else {}
+            order_id = result.get('orderId')
+            
+            if ret_code != 0 or not order_id:
+                logger.error(f"[{symbol}] Failed to place market order: {ret_msg}")
                 if self.telegram:
-                    await self.telegram.send_message(f"❌ **TRADE FAILED**\n\n{symbol} | {error_msg}\nQty: {position_size_qty}\nTP: ${tp_price:.4f}\nSL: ${sl_price:.4f}")
+                    await self.telegram.send_message(f"❌ **TRADE FAILED**\n\n{symbol} | {ret_msg}\nQty: {position_size_qty}\nTP: ${tp_price:.4f}\nSL: ${sl_price:.4f}")
                 return
             
-            order_id = order.get('orderId')
-            actual_entry = float(order.get('avgPrice', entry_price))
+            # Get actual entry price (may be in result or need to fetch)
+            actual_entry = float(result.get('avgPrice') or entry_price)
             
             logger.info(f"[{symbol}] ✅ BRACKET ORDER FILLED: {order_id}")
             logger.info(f"[{symbol}]   Entry: ${actual_entry:.4f}, TP: ${tp_price:.4f}, SL: ${sl_price:.4f}")

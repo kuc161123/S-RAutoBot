@@ -96,7 +96,10 @@ class TelegramHandler:
             import time
             from datetime import datetime
             
-            # === SYSTEM INFO ===
+            # === SYNC WITH EXCHANGE FIRST ===
+            # This ensures active_trades matches actual Bybit positions
+            await self.bot.sync_with_exchange()
+            
             # === SYSTEM INFO ===
             uptime_hrs = (datetime.now() - self.bot.start_time).total_seconds() / 3600
             if uptime_hrs < 0: uptime_hrs = 0

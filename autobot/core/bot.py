@@ -251,6 +251,49 @@ class Bot4H:
         else:
             return False, "Risk must be between 0.1% and 5.0%"
     
+    async def sync_with_exchange(self):
+        """
+        Sync internal active_trades with actual exchange positions.
+        Removes stale trades that no longer exist on Bybit.
+        """
+        try:
+            # Get actual positions from Bybit
+            positions = await self.broker.get_positions()
+            
+            # Build set of symbols with actual open positions
+            actual_open = set()
+            for pos in positions:
+                if float(pos.get('size', 0)) > 0:
+                    actual_open.add(pos.get('symbol'))
+            
+            # Find stale trades (in our tracking but not on exchange)
+            stale_trades = []
+            for symbol in list(self.active_trades.keys()):
+                if symbol not in actual_open:
+                    stale_trades.append(symbol)
+            
+            # Remove stale trades
+            for symbol in stale_trades:
+                trade = self.active_trades.pop(symbol, None)
+                if trade:
+                    logger.warning(f"[{symbol}] Removed stale trade from tracking (closed externally)")
+                    # Update stats as a loss (assuming SL hit if we didn't track it)
+                    self.stats['total_trades'] += 1
+                    self.stats['losses'] += 1
+                    self.stats['total_r'] -= 1.0  # Assume -1R
+                    if symbol in self.symbol_stats:
+                        self.symbol_stats[symbol]['trades'] += 1
+                        self.symbol_stats[symbol]['total_r'] -= 1.0
+                    self.save_stats()
+            
+            if stale_trades:
+                logger.info(f"Synced with exchange: removed {len(stale_trades)} stale trades: {stale_trades}")
+            
+            return len(stale_trades)
+        except Exception as e:
+            logger.error(f"Failed to sync with exchange: {e}")
+            return 0
+    
     def setup_telegram(self):
         """Initialize Telegram handler with commands"""
         telegram_config = self.config.get('telegram', {})

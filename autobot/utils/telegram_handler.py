@@ -35,8 +35,25 @@ class TelegramHandler:
         self.app = None
         
     async def initialize(self):
-        """Initialize Telegram application"""
-        self.app = Application.builder().token(self.bot_token).build()
+        """Initialize Telegram application with increased timeouts"""
+        from telegram.request import HTTPXRequest
+        
+        # Increased timeouts to prevent ConnectTimeout errors
+        request = HTTPXRequest(
+            connection_pool_size=8,
+            connect_timeout=30.0,   # Default is 5
+            read_timeout=30.0,      # Default is 5
+            write_timeout=30.0,     # Default is 5
+            pool_timeout=30.0       # Default is 1
+        )
+        
+        self.app = (
+            Application.builder()
+            .token(self.bot_token)
+            .request(request)
+            .get_updates_request(request)
+            .build()
+        )
         
         # Register command handlers
         self.app.add_handler(CommandHandler("help", self.cmd_help))
@@ -49,10 +66,14 @@ class TelegramHandler:
         self.app.add_handler(CommandHandler("risk", self.cmd_risk))
         self.app.add_handler(CommandHandler("performance", self.cmd_performance))
         
-        # Start polling in background
+        # Start polling with longer interval to avoid rate limits
         await self.app.initialize()
         await self.app.start()
-        await self.app.updater.start_polling()
+        await self.app.updater.start_polling(
+            poll_interval=2.0,      # Check every 2 seconds (default 0.0)
+            timeout=20,             # Long polling timeout
+            drop_pending_updates=True  # Don't process old commands on restart
+        )
         
         logger.info("Telegram command handler started")
     

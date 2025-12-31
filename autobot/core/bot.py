@@ -737,7 +737,7 @@ class Bot4H:
             
             # Get qty precision from Bybit API
             try:
-                _, qty_step = await self.broker.get_precisions(symbol)
+                _, qty_step = await self.broker._get_precisions(symbol)
                 from decimal import Decimal, ROUND_DOWN
                 qty_step_dec = Decimal(qty_step)
                 raw_qty_dec = Decimal(str(raw_qty))

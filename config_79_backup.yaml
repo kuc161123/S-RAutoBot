@@ -1,0 +1,168 @@
+bybit:
+  alt_base_url: 'https://api.bytick.com'
+  api_key: '${BYBIT_API_KEY}'
+  api_secret: '${BYBIT_API_SECRET}'
+  base_url: 'https://api.bybit.com'
+  use_alt_on_fail: true
+  ws_public: 'wss://stream.bybit.com/v5/public/linear'
+  ws_public_alt: 'wss://stream.bytick.com/v5/public/linear'
+
+execution:
+  enabled: true
+  entry_slippage_pct: 0.0003
+  fee_pct: 0.0006
+
+indicators:
+  atr_period: 14
+  ema_periods: [200]
+  rsi_period: 14
+
+legacy:
+  partial_take_profit: false
+  scalp_mode: false
+  trailing_stop: false
+  volume_filter: false
+  vwap_filter: false
+
+monitoring:
+  health_check: true
+  heartbeat_interval_sec: 3600
+
+notifications:
+  daily_summary: true
+  entry: true
+  exit: true
+  pending_signals: true
+  startup: true
+
+risk:
+  max_concurrent_positions: 10  # Increased for 63 symbols
+  max_daily_loss: 0.05
+  max_position_size_pct: 0.1
+  risk_per_trade: 0.01
+
+strategy:
+  entry_params:
+    max_wait_candles: 6
+    require_bos: true
+  exit_params:
+    sl_atr_mult: 1.0
+  name: 1h_robust_79_symbols
+  signal_params:
+    lookback_bars: 10
+    min_pivot_distance: 3
+    pivot_right: 3
+    rsi_period: 14
+  timeframe: '60'
+  trend_filter:
+    daily_ema_proxy: 200
+    enabled: true
+
+# =============================================
+# 79 VALIDATED SYMBOLS (Underperformers Removed)
+# =============================================
+# Validation: WFO, Monte Carlo, OOS Test, 6-Month Backtest
+# Combined Performance: ~+1200R / 6 months
+# =============================================
+
+symbols:
+  # === PHASE 1: ORIGINAL ROBUST (15) ===
+  SUIUSDT: {enabled: true, rr: 8.0}
+  AAVEUSDT: {enabled: true, rr: 7.0}
+  KAITOUSDT: {enabled: true, rr: 7.0}
+  ICPUSDT: {enabled: true, rr: 6.0}
+  ENAUSDT: {enabled: true, rr: 8.0}
+  PENGUUSDT: {enabled: true, rr: 8.0}
+  HBARUSDT: {enabled: true, rr: 4.5}
+  STORJUSDT: {enabled: true, rr: 6.0}
+  AVAXUSDT: {enabled: true, rr: 5.5}
+  SOLUSDT: {enabled: false, rr: 7.0}  # BLACKLISTED: -10.6R in 6mo
+  FARTCOINUSDT: {enabled: true, rr: 7.0}
+  AIXBTUSDT: {enabled: true, rr: 6.0}
+  HIVEUSDT: {enabled: true, rr: 8.0}
+  WLDUSDT: {enabled: true, rr: 7.0}
+  VIRTUALUSDT: {enabled: true, rr: 5.5}
+
+  # === PHASE 2: TOP PERFORMERS (12) ===
+  POWRUSDT: {enabled: true, rr: 8.0}
+  WIFUSDT: {enabled: true, rr: 8.0}
+  GRTUSDT: {enabled: true, rr: 8.0}
+  EGLDUSDT: {enabled: true, rr: 8.0}
+  ZETAUSDT: {enabled: true, rr: 8.0}
+  SPKUSDT: {enabled: true, rr: 6.0}
+  1000NEIROCTOUSDT: {enabled: true, rr: 4.0}
+  MEWUSDT: {enabled: true, rr: 8.0}
+  PHAUSDT: {enabled: true, rr: 7.0}
+  SOLAYERUSDT: {enabled: true, rr: 8.0}
+  1000LUNCUSDT: {enabled: true, rr: 5.0}  # Re-validated from robust
+  ARBUSDT: {enabled: true, rr: 8.0}       # Re-validated from robust
+
+  # === PHASE 3: NEW DISCOVERIES (36) ===
+  FUSDT: {enabled: true, rr: 8.0}
+  MINAUSDT: {enabled: true, rr: 4.0}
+  LUNA2USDT: {enabled: true, rr: 8.0}
+  MEUSDT: {enabled: true, rr: 8.0}
+  JUPUSDT: {enabled: true, rr: 7.0}
+  GPSUSDT: {enabled: true, rr: 7.0}
+  1000PEPEUSDT: {enabled: true, rr: 7.0}
+  MOVEUSDT: {enabled: true, rr: 8.0}
+  PARTIUSDT: {enabled: true, rr: 6.0}
+  MANAUSDT: {enabled: true, rr: 5.0}
+  SKYUSDT: {enabled: true, rr: 5.0}
+  TWTUSDT: {enabled: true, rr: 4.0}
+  AEROUSDT: {enabled: true, rr: 8.0}
+  LINKUSDT: {enabled: true, rr: 7.0}
+  SOPHUSDT: {enabled: true, rr: 6.0}
+  NEARUSDT: {enabled: true, rr: 7.0}
+  ANIMEUSDT: {enabled: true, rr: 6.0}
+  SYRUPUSDT: {enabled: true, rr: 4.0}
+  ONDOUSDT: {enabled: true, rr: 8.0}
+  POLYXUSDT: {enabled: true, rr: 8.0}
+  BRETTUSDT: {enabled: true, rr: 4.0}
+  SUSDT: {enabled: true, rr: 5.0}
+  BTCUSDT: {enabled: true, rr: 8.0}
+  DOLOUSDT: {enabled: true, rr: 4.0}
+  ZROUSDT: {enabled: true, rr: 5.0}
+  SEIUSDT: {enabled: true, rr: 5.0}
+  LSKUSDT: {enabled: true, rr: 5.0}
+  ICNTUSDT: {enabled: true, rr: 6.0}
+  PNUTUSDT: {enabled: true, rr: 8.0}
+  SUSHIUSDT: {enabled: true, rr: 4.0}
+  ASTERUSDT: {enabled: true, rr: 8.0}
+  ARUSDT: {enabled: true, rr: 8.0}
+  RENDERUSDT: {enabled: true, rr: 4.0}
+  SHIB1000USDT: {enabled: true, rr: 4.0}
+
+  # === PHASE 4: NEW VALIDATED (24 symbols - OOS + Monte Carlo) ===
+  CAKEUSDT: {enabled: true, rr: 10.0}
+  ZRXUSDT: {enabled: true, rr: 9.0}
+  IDUSDT: {enabled: true, rr: 6.0}
+  RVNUSDT: {enabled: false, rr: 10.0}  # BLACKLISTED: -23.9R in 6mo
+  GOATUSDT: {enabled: true, rr: 9.0}
+  BANANAUSDT: {enabled: true, rr: 9.0}
+  ORCAUSDT: {enabled: true, rr: 9.0}
+  ICXUSDT: {enabled: true, rr: 7.0}
+  SAFEUSDT: {enabled: true, rr: 7.0}
+  1000BONKUSDT: {enabled: false, rr: 10.0}  # BLACKLISTED: -11.9R in 6mo
+  KASUSDT: {enabled: true, rr: 10.0}
+  LDOUSDT: {enabled: true, rr: 5.0}
+  STRKUSDT: {enabled: true, rr: 5.0}
+  GALAUSDT: {enabled: false, rr: 8.0}  # BLACKLISTED: -19.5R in 6mo
+  GRIFFAINUSDT: {enabled: true, rr: 4.0}
+  NTRNUSDT: {enabled: true, rr: 4.0}
+  CELOUSDT: {enabled: false, rr: 10.0}  # BLACKLISTED: -11.2R in 6mo
+  QNTUSDT: {enabled: true, rr: 6.0}
+  BERAUSDT: {enabled: true, rr: 4.0}
+  VVVUSDT: {enabled: true, rr: 6.0}
+  1000TOSHIUSDT: {enabled: true, rr: 4.0}
+  MERLUSDT: {enabled: true, rr: 7.0}
+  BIOUSDT: {enabled: true, rr: 6.0}
+  ZORAUSDT: {enabled: false, rr: 7.0}  # BLACKLISTED: -15.9R in 6mo
+
+telegram:
+  chat_id: ${TELEGRAM_CHAT_ID}
+  poll_mode: legacy
+  probe:
+    get_updates_once: true
+    limit: 3
+  token: ${TELEGRAM_BOT_TOKEN}

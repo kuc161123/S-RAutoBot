@@ -559,18 +559,9 @@ class Bot4H:
                 duplicate_count += 1
                 continue  # Already processed this signal before
             
-            # STALE SIGNAL CHECK: Skip if price already broke past swing level
-            current_price = df['close'].iloc[-1]
-            if signal.side == 'long' and current_price > signal.swing_level:
-                logger.info(f"[{symbol}] Stale BULLISH signal - price ${current_price:.4f} already above swing ${signal.swing_level:.4f} - SKIP")
-                self.seen_signals.add(signal_id)  # Mark as seen to prevent future retries
-                self.save_seen_signals()
-                continue
-            elif signal.side == 'short' and current_price < signal.swing_level:
-                logger.info(f"[{symbol}] Stale BEARISH signal - price ${current_price:.4f} already below swing ${signal.swing_level:.4f} - SKIP")
-                self.seen_signals.add(signal_id)
-                self.save_seen_signals()
-                continue
+            # REMOVED: Stale signal filter was too aggressive and causing low BOS rate
+            # The backtest doesn't have this filter, so we remove it to match backtest logic
+            # This should increase BOS confirmations from ~3/day to ~7-8/day
             
             # Mark signal as seen and save
             self.seen_signals.add(signal_id)

@@ -107,7 +107,7 @@ class TelegramHandler:
 /help - Show this message
 
 💡 **Strategy**: 1H RSI Divergence + EMA200 + BOS
-**Portfolio**: 305 Symbols, ~+9200R/Year (validated)
+**Portfolio**: 79 Symbols, ~+2400R/Year (validated)
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     
@@ -296,8 +296,8 @@ class TelegramHandler:
 🎯 **STRATEGY**
 ├ Setup: RSI Divergence + EMA 200 + BOS
 ├ Confidence: 100% Anti-Overfit
-├ Risk/Reward: 4:1 to 10:1 (per symbol)
-└ Expected OOS: ~+9200R/Yr (305 symbols)
+├ Risk/Reward: Individual per symbol
+└ Expected OOS: ~+2400R/Yr (79 symbols)
 
 🔍 **SCANNING STATUS**
 ├ Last Scan: {last_scan_str}
@@ -449,12 +449,12 @@ class TelegramHandler:
 ├ Avg R/Trade: {stats['avg_r']:+.2f}R
 └ Total R: {stats['total_r']:+.1f}R
 
-🎯 **VS BACKTEST (305 symbols)**
-├ Expected WR: 22%
+🎯 **VS BACKTEST (79 symbols)**
+├ Expected WR: 23%
 ├ Actual WR: {stats['win_rate']:.1f}%
-├ Expected R/Trade: +0.58R
+├ Expected R/Trade: +0.50R
 ├ Actual R/Trade: {stats['avg_r']:+.2f}R
-└ Delta: {stats['avg_r'] - 0.58:+.2f}R
+└ Delta: {stats['avg_r'] - 0.50:+.2f}R
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /dashboard /positions

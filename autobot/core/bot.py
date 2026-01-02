@@ -1062,14 +1062,12 @@ class Bot4H:
 💰 **Risk**: {self.risk_config.get('risk_per_trade', 0.01)*100:.1f}% per trade
 📈 **Enabled Symbols**: {len(enabled_symbols)} (100% Validated)
 
-**R:R Range**: 4:1 to 10:1 (per symbol optimized)
-
 **Validation Status:** ✅ ALL SYMBOLS PASSED
-• 6-Month Backtest (+4610R total)
 • Walk-Forward Optimization
 • Monte Carlo Simulation  
+• Out-of-Sample Testing
 
-**Expected Performance:** +9200R / Year (+768R/Month)
+**Expected Performance:** +2400R / Year (+200R/Month)
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /help for commands

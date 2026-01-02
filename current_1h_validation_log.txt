@@ -1,0 +1,534 @@
+======================================================================
+VALIDATING CURRENT 1H STRATEGY
+======================================================================
+Symbols: 61
+Data Period: 180 days (last 6 months)
+Using individual R:R ratios from symbol_rr_config.yaml
+======================================================================
+
+[1/61] SUIUSDT
+
+============================================================
+Testing SUIUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 345 divergences
+  ✅ 8.0:1 R:R → +123.3R (20% WR, N=167)
+
+[2/61] AAVEUSDT
+
+============================================================
+Testing AAVEUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 336 divergences
+  ✅ 7.0:1 R:R → +64.8R (19% WR, N=145)
+
+[3/61] KAITOUSDT
+
+============================================================
+Testing KAITOUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 285 divergences
+  ✅ 7.0:1 R:R → +123.6R (27% WR, N=114)
+
+[4/61] ICPUSDT
+
+============================================================
+Testing ICPUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 294 divergences
+  ✅ 6.0:1 R:R → +69.0R (22% WR, N=147)
+
+[5/61] ENAUSDT
+
+============================================================
+Testing ENAUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 259 divergences
+  ✅ 8.0:1 R:R → +74.3R (20% WR, N=99)
+
+[6/61] PENGUUSDT
+
+============================================================
+Testing PENGUUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 306 divergences
+  ✅ 8.0:1 R:R → +55.6R (16% WR, N=151)
+
+[7/61] HBARUSDT
+
+============================================================
+Testing HBARUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 232 divergences
+  ✅ 4.5:1 R:R → +30.7R (27% WR, N=86)
+
+[8/61] STORJUSDT
+
+============================================================
+Testing STORJUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 296 divergences
+  ✅ 6.0:1 R:R → +46.1R (21% WR, N=156)
+
+[9/61] AVAXUSDT
+
+============================================================
+Testing AVAXUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 263 divergences
+  ✅ 5.5:1 R:R → -22.2R (14% WR, N=96)
+
+[10/61] SOLUSDT
+
+============================================================
+Testing SOLUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 311 divergences
+  ✅ 7.0:1 R:R → +1.2R (14% WR, N=144)
+
+[11/61] FARTCOINUSDT
+
+============================================================
+Testing FARTCOINUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 334 divergences
+  ✅ 7.0:1 R:R → -35.7R (9% WR, N=110)
+
+[12/61] AIXBTUSDT
+
+============================================================
+Testing AIXBTUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 346 divergences
+  ✅ 6.0:1 R:R → -0.1R (15% WR, N=124)
+
+[13/61] HIVEUSDT
+
+============================================================
+Testing HIVEUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 333 divergences
+  ✅ 8.0:1 R:R → +89.3R (19% WR, N=149)
+
+[14/61] WLDUSDT
+
+============================================================
+Testing WLDUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 342 divergences
+  ✅ 7.0:1 R:R → -21.0R (12% WR, N=138)
+
+[15/61] VIRTUALUSDT
+
+============================================================
+Testing VIRTUALUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 324 divergences
+  ✅ 5.5:1 R:R → +56.3R (23% WR, N=141)
+
+[16/61] POWRUSDT
+
+============================================================
+Testing POWRUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 344 divergences
+  ✅ 8.0:1 R:R → +78.4R (18% WR, N=159)
+
+[17/61] WIFUSDT
+
+============================================================
+Testing WIFUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 302 divergences
+  ✅ 8.0:1 R:R → +72.1R (18% WR, N=136)
+
+[18/61] GRTUSDT
+
+============================================================
+Testing GRTUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 312 divergences
+  ✅ 8.0:1 R:R → +36.3R (15% WR, N=154)
+
+[19/61] EGLDUSDT
+
+============================================================
+Testing EGLDUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 300 divergences
+  ✅ 8.0:1 R:R → +80.1R (18% WR, N=150)
+
+[20/61] ZETAUSDT
+
+============================================================
+Testing ZETAUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 268 divergences
+  ✅ 8.0:1 R:R → +196.9R (28% WR, N=138)
+
+[21/61] SPKUSDT
+
+============================================================
+Testing SPKUSDT
+  ✓ Fetched 4685 candles
+  ✓ Detected 245 divergences
+  ✅ 6.0:1 R:R → +130.3R (32% WR, N=113)
+
+[22/61] 1000NEIROCTOUSDT
+
+============================================================
+Testing 1000NEIROCTOUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 350 divergences
+  ✅ 4.0:1 R:R → +63.8R (31% WR, N=136)
+
+[23/61] MEWUSDT
+
+============================================================
+Testing MEWUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 299 divergences
+  ✅ 8.0:1 R:R → -6.3R (11% WR, N=105)
+
+[24/61] PHAUSDT
+
+============================================================
+Testing PHAUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 329 divergences
+  ✅ 7.0:1 R:R → +113.2R (23% WR, N=153)
+
+[25/61] SOLAYERUSDT
+
+============================================================
+Testing SOLAYERUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 352 divergences
+  ✅ 8.0:1 R:R → +25.0R (15% WR, N=123)
+
+[26/61] 1000LUNCUSDT
+
+============================================================
+Testing 1000LUNCUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 285 divergences
+  ✅ 5.0:1 R:R → -16.5R (17% WR, N=127)
+
+[27/61] ARBUSDT
+
+============================================================
+Testing ARBUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 262 divergences
+  ✅ 8.0:1 R:R → +39.6R (16% WR, N=112)
+
+[28/61] FUSDT
+
+============================================================
+Testing FUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 242 divergences
+  ✅ 8.0:1 R:R → +122.0R (25% WR, N=104)
+
+[29/61] MINAUSDT
+
+============================================================
+Testing MINAUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 300 divergences
+  ✅ 4.0:1 R:R → +181.8R (48% WR, N=141)
+
+[30/61] LUNA2USDT
+
+============================================================
+Testing LUNA2USDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 396 divergences
+  ✅ 8.0:1 R:R → +59.9R (16% WR, N=177)
+
+[31/61] MEUSDT
+
+============================================================
+Testing MEUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 404 divergences
+  ✅ 8.0:1 R:R → +117.4R (20% WR, N=176)
+
+[32/61] JUPUSDT
+
+============================================================
+Testing JUPUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 296 divergences
+  ✅ 7.0:1 R:R → +138.1R (27% WR, N=130)
+
+[33/61] GPSUSDT
+
+============================================================
+Testing GPSUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 310 divergences
+  ✅ 7.0:1 R:R → +74.8R (21% WR, N=112)
+
+[34/61] 1000PEPEUSDT
+
+============================================================
+Testing 1000PEPEUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 294 divergences
+  ✅ 7.0:1 R:R → +53.4R (19% WR, N=119)
+
+[35/61] MOVEUSDT
+
+============================================================
+Testing MOVEUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 294 divergences
+  ✅ 8.0:1 R:R → +104.9R (21% WR, N=127)
+
+[36/61] PARTIUSDT
+
+============================================================
+Testing PARTIUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 294 divergences
+  ✅ 6.0:1 R:R → +31.9R (21% WR, N=87)
+
+[37/61] MANAUSDT
+
+============================================================
+Testing MANAUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 256 divergences
+  ✅ 5.0:1 R:R → +56.3R (26% WR, N=128)
+
+[38/61] SKYUSDT
+
+============================================================
+Testing SKYUSDT
+  ✓ Fetched 3366 candles
+  ✓ Detected 204 divergences
+  ✅ 5.0:1 R:R → +100.3R (31% WR, N=128)
+
+[39/61] TWTUSDT
+
+============================================================
+Testing TWTUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 343 divergences
+  ✅ 4.0:1 R:R → +36.9R (27% WR, N=165)
+
+[40/61] AEROUSDT
+
+============================================================
+Testing AEROUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 294 divergences
+  ✅ 8.0:1 R:R → -1.0R (12% WR, N=134)
+
+[41/61] LINKUSDT
+
+============================================================
+Testing LINKUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 413 divergences
+  ✅ 7.0:1 R:R → +51.3R (18% WR, N=170)
+
+[42/61] SOPHUSDT
+
+============================================================
+Testing SOPHUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 320 divergences
+  ✅ 6.0:1 R:R → +66.2R (21% WR, N=149)
+
+[43/61] NEARUSDT
+
+============================================================
+Testing NEARUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 299 divergences
+  ✅ 7.0:1 R:R → -35.0R (11% WR, N=172)
+
+[44/61] ANIMEUSDT
+
+============================================================
+Testing ANIMEUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 335 divergences
+  ✅ 6.0:1 R:R → +118.0R (26% WR, N=171)
+
+[45/61] SYRUPUSDT
+
+============================================================
+Testing SYRUPUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 302 divergences
+  ✅ 4.0:1 R:R → +88.5R (32% WR, N=160)
+
+[46/61] ONDOUSDT
+
+============================================================
+Testing ONDOUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 362 divergences
+  ✅ 8.0:1 R:R → -45.8R (9% WR, N=150)
+
+[47/61] POLYXUSDT
+
+============================================================
+Testing POLYXUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 243 divergences
+  ✅ 8.0:1 R:R → -23.3R (10% WR, N=109)
+
+[48/61] BRETTUSDT
+
+============================================================
+Testing BRETTUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 208 divergences
+  ✅ 4.0:1 R:R → +12.9R (23% WR, N=120)
+
+[49/61] SUSDT
+
+============================================================
+Testing SUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 315 divergences
+  ✅ 5.0:1 R:R → -20.6R (16% WR, N=167)
+
+[50/61] BTCUSDT
+
+============================================================
+Testing BTCUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 270 divergences
+  ✅ 8.0:1 R:R → +25.1R (17% WR, N=105)
+
+[51/61] DOLOUSDT
+
+============================================================
+Testing DOLOUSDT
+  ✓ Fetched 3701 candles
+  ✓ Detected 232 divergences
+  ✅ 4.0:1 R:R → -36.6R (15% WR, N=110)
+
+[52/61] ZROUSDT
+
+============================================================
+Testing ZROUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 326 divergences
+  ✅ 5.0:1 R:R → +73.9R (28% WR, N=130)
+
+[53/61] SEIUSDT
+
+============================================================
+Testing SEIUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 321 divergences
+  ✅ 5.0:1 R:R → +35.9R (23% WR, N=127)
+
+[54/61] LSKUSDT
+
+============================================================
+Testing LSKUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 285 divergences
+  ✅ 5.0:1 R:R → +38.0R (23% WR, N=134)
+
+[55/61] ICNTUSDT
+
+============================================================
+Testing ICNTUSDT
+  ✓ Fetched 4297 candles
+  ✓ Detected 228 divergences
+  ✅ 6.0:1 R:R → -30.1R (12% WR, N=120)
+
+[56/61] PNUTUSDT
+
+============================================================
+Testing PNUTUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 337 divergences
+  ✅ 8.0:1 R:R → +38.8R (15% WR, N=172)
+
+[57/61] SUSHIUSDT
+
+============================================================
+Testing SUSHIUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 331 divergences
+  ✅ 4.0:1 R:R → +71.9R (30% WR, N=164)
+
+[58/61] ASTERUSDT
+
+============================================================
+Testing ASTERUSDT
+  ✓ Fetched 2429 candles
+  ✓ Detected 182 divergences
+  ✅ 8.0:1 R:R → +15.5R (14% WR, N=96)
+
+[59/61] ARUSDT
+
+============================================================
+Testing ARUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 306 divergences
+  ✅ 8.0:1 R:R → -54.2R (8% WR, N=150)
+
+[60/61] RENDERUSDT
+
+============================================================
+Testing RENDERUSDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 280 divergences
+  ✅ 4.0:1 R:R → +43.3R (28% WR, N=148)
+
+[61/61] SHIB1000USDT
+
+============================================================
+Testing SHIB1000USDT
+  ✓ Fetched 5000 candles
+  ✓ Detected 335 divergences
+  ✅ 4.0:1 R:R → -32.6R (18% WR, N=146)
+
+======================================================================
+VALIDATION RESULTS - LAST 6 MONTHS
+======================================================================
+Total Symbols Tested: 61
+Total Trades: 8271
+Total R: +2946.0R
+Overall Win Rate: 20.2%
+Avg R per Trade: +0.356R
+
+Annualized Projection: +5892R/year
+
+======================================================================
+TOP 10 PERFORMERS
+======================================================================
+ZETAUSDT        | 8:1 R:R |  +196.9R | WR:  28.3% | N: 138
+MINAUSDT        | 4:1 R:R |  +181.8R | WR:  47.5% | N: 141
+JUPUSDT         | 7:1 R:R |  +138.1R | WR:  26.9% | N: 130
+SPKUSDT         | 6:1 R:R |  +130.3R | WR:  31.9% | N: 113
+KAITOUSDT       | 7:1 R:R |  +123.6R | WR:  27.2% | N: 114
+SUIUSDT         | 8:1 R:R |  +123.3R | WR:  20.4% | N: 167
+FUSDT           | 8:1 R:R |  +122.0R | WR:  25.0% | N: 104
+ANIMEUSDT       | 6:1 R:R |  +118.0R | WR:  25.7% | N: 171
+MEUSDT          | 8:1 R:R |  +117.4R | WR:  19.9% | N: 176
+PHAUSDT         | 7:1 R:R |  +113.2R | WR:  22.9% | N: 153
+
+======================================================================
+BOTTOM 10 PERFORMERS
+======================================================================
+ARUSDT          | 8:1 R:R |   -54.2R | WR:   8.0% | N: 150
+ONDOUSDT        | 8:1 R:R |   -45.8R | WR:   8.7% | N: 150
+DOLOUSDT        | 4:1 R:R |   -36.6R | WR:  14.5% | N: 110
+FARTCOINUSDT    | 7:1 R:R |   -35.7R | WR:   9.1% | N: 110
+NEARUSDT        | 7:1 R:R |   -35.0R | WR:  11.0% | N: 172
+SHIB1000USDT    | 4:1 R:R |   -32.6R | WR:  18.5% | N: 146
+ICNTUSDT        | 6:1 R:R |   -30.1R | WR:  11.7% | N: 120
+POLYXUSDT       | 8:1 R:R |   -23.4R | WR:  10.1% | N: 109
+AVAXUSDT        | 6:1 R:R |   -22.2R | WR:  13.5% | N:  96
+WLDUSDT         | 7:1 R:R |   -21.0R | WR:  11.6% | N: 138

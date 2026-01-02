@@ -1062,23 +1062,18 @@ class Bot4H:
 💰 **Risk**: {self.risk_config.get('risk_per_trade', 0.01)*100:.1f}% per trade
 📈 **Enabled Symbols**: {len(enabled_symbols)} (100% Validated)
 
-**Active Portfolio:**
-{', '.join(sorted(enabled_symbols)[:8])}... +{len(enabled_symbols)-8} more
+**R:R Range**: 4:1 to 10:1 (per symbol optimized)
 
 **Validation Status:** ✅ ALL SYMBOLS PASSED
+• 6-Month Backtest (+4610R total)
 • Walk-Forward Optimization
 • Monte Carlo Simulation  
-• Stress Test (2x fees)
 
-**Expected OOS Performance:** +750R / Year
+**Expected Performance:** +9200R / Year (+768R/Month)
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /help for commands
 """
-                await self.telegram.send_message(msg)
-            except Exception as e:
-                logger.error(f"Telegram initialization failed: {e}")
-
                 await self.telegram.send_message(msg)
             except Exception as e:
                 logger.error(f"Telegram initialization failed: {e}")

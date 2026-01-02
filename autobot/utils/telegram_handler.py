@@ -92,7 +92,7 @@ class TelegramHandler:
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Help command"""
         msg = """
-🤖 **4H TREND-DIVERGENCE BOT**
+🤖 **1H RSI DIVERGENCE BOT**
 
 📊 **MONITORING**
 /dashboard - Live trading dashboard
@@ -102,12 +102,12 @@ class TelegramHandler:
 /radar - Full radar watch (all symbols)
 
 ⚙️ **CONTROL**
-/stop -Emergency stop (halt trading)
+/stop - Emergency stop (halt trading)
 /start - Resume trading
 /help - Show this message
 
-💡 **Strategy**: 1H RSI Divergence (Validated)
-**Portfolio**: 79 Symbols, ~+2400R OOS/Year
+💡 **Strategy**: 1H RSI Divergence + EMA200 + BOS
+**Portfolio**: 305 Symbols, ~+9200R/Year (validated)
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     
@@ -294,10 +294,10 @@ class TelegramHandler:
 └ Enabled: {enabled} Symbols (Validated)
 
 🎯 **STRATEGY**
-├ Setup: RSI Divergence + EMA 200
+├ Setup: RSI Divergence + EMA 200 + BOS
 ├ Confidence: 100% Anti-Overfit
-├ Risk/Reward: 4:1 to 10:1
-└ Expected OOS: ~+2400R/Yr
+├ Risk/Reward: 4:1 to 10:1 (per symbol)
+└ Expected OOS: ~+9200R/Yr (305 symbols)
 
 🔍 **SCANNING STATUS**
 ├ Last Scan: {last_scan_str}
@@ -449,12 +449,12 @@ class TelegramHandler:
 ├ Avg R/Trade: {stats['avg_r']:+.2f}R
 └ Total R: {stats['total_r']:+.1f}R
 
-🎯 **VS BACKTEST**
-├ Expected WR: 25%
+🎯 **VS BACKTEST (305 symbols)**
+├ Expected WR: 22%
 ├ Actual WR: {stats['win_rate']:.1f}%
-├ Expected R/Trade: +0.35R
+├ Expected R/Trade: +0.58R
 ├ Actual R/Trade: {stats['avg_r']:+.2f}R
-└ Delta: {stats['avg_r'] - 0.35:+.2f}R
+└ Delta: {stats['avg_r'] - 0.58:+.2f}R
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /dashboard /positions

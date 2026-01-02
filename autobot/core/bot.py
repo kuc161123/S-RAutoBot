@@ -136,6 +136,15 @@ class Bot4H:
         self.seen_signals_file = 'data/seen_signals.json'
         self.seen_signals: set = self.load_seen_signals()  # Set of unique signal IDs
         
+        # BOS Performance Tracking (for monitoring stale filter removal impact)
+        self.bos_tracking = {
+            'divergences_detected_today': 0,
+            'bos_confirmed_today': 0,
+            'divergences_detected_total': 0,
+            'bos_confirmed_total': 0,
+            'last_reset': datetime.now().date()
+        }
+        
         logger.info(f"Loaded {len(self.symbol_config.get_enabled_symbols())} enabled symbols")
         logger.info(f"Loaded {len(self.seen_signals)} previously seen signals")
 
@@ -181,6 +190,30 @@ class Bot4H:
                 json.dump({'signals': list(self.seen_signals)}, f)
         except Exception as e:
             logger.error(f"Failed to save seen signals: {e}")
+    
+    def _track_divergence_detected(self):
+        """Track a divergence detection"""
+        # Reset daily counters if new day
+        today = datetime.now().date()
+        if self.bos_tracking['last_reset'] != today:
+            self.bos_tracking['divergences_detected_today'] = 0
+            self.bos_tracking['bos_confirmed_today'] = 0
+            self.bos_tracking['last_reset'] = today
+        
+        self.bos_tracking['divergences_detected_today'] += 1
+        self.bos_tracking['divergences_detected_total'] += 1
+    
+    def _track_bos_confirmed(self):
+        """Track a BOS confirmation"""
+        # Reset daily counters if new day
+        today = datetime.now().date()
+        if self.bos_tracking['last_reset'] != today:
+            self.bos_tracking['divergences_detected_today'] = 0
+            self.bos_tracking['bos_confirmed_today'] = 0
+            self.bos_tracking['last_reset'] = today
+        
+        self.bos_tracking['bos_confirmed_today'] += 1
+        self.bos_tracking['bos_confirmed_total'] += 1
     
     def get_signal_id(self, signal) -> str:
         """Generate unique ID for a divergence signal.
@@ -581,6 +614,9 @@ class Bot4H:
             self.pending_signals[symbol].append(pending)
             valid_signals_count += 1
             
+            # Track divergence detection
+            self._track_divergence_detected()
+            
             logger.info(f"[{symbol}] 🔔 NEW {signal.signal_type.upper()} DIVERGENCE detected! Waiting for BOS...")
             logger.info(f"[{symbol}]   Price: ${signal.price:.2f}, RSI: {signal.rsi_value:.1f}, Swing: ${signal.swing_level:.2f}")
             logger.info(f"[{symbol}]   Signal ID: {signal_id}")
@@ -672,7 +708,10 @@ class Bot4H:
                     try:
                         await self.telegram.send_message(bos_msg)
                     except Exception as e:
-                        logger.error(f"Failed to send BOS notification: {e}")
+                         logger.error(f"Failed to send BOS notification: {e}")
+                
+                # Track BOS confirmation
+                self._track_bos_confirmed()
                 
                 await self.execute_trade(symbol, pending.signal, df)
                 signals_to_remove.append(pending)

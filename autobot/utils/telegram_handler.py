@@ -304,6 +304,12 @@ class TelegramHandler:
 ├ Next Scan: ~{next_scan_mins} mins
 └ Seen Signals: {len(self.bot.seen_signals)} (deduped)
 
+📊 **BOS PERFORMANCE (Today)**
+├ Divergences Detected: {self.bot.bos_tracking['divergences_detected_today']}
+├ BOS Confirmed: {self.bot.bos_tracking['bos_confirmed_today']}
+├ Confirmation Rate: {(self.bot.bos_tracking['bos_confirmed_today'] / max(self.bot.bos_tracking['divergences_detected_today'], 1) * 100):.0f}%
+└ Total Since Start: {self.bot.bos_tracking['divergences_detected_total']}D / {self.bot.bos_tracking['bos_confirmed_total']}BOS
+
 📡 **RADAR WATCH**
 ┌─ Pending BOS (Confirmed Signals):
 {pending_radar_str}

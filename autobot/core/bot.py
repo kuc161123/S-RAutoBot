@@ -765,10 +765,17 @@ class Bot4H:
         entry_price = latest_candle['open']  # Next candle open
         atr = latest_candle['atr']
         
-        # Calculate position size (1% risk)
+        # Calculate position size based on fixed USD risk
         try:
-            account_balance = await self.broker.get_balance()
-            risk_amount = account_balance * self.risk_config.get('risk_per_trade', 0.01)
+            # Use fixed USD risk if set, otherwise fall back to percentage
+            risk_amount_usd = self.risk_config.get('risk_amount_usd', None)
+            
+            if risk_amount_usd:
+                risk_amount = float(risk_amount_usd)
+                logger.info(f"[{symbol}] Using fixed risk: ${risk_amount}")
+            else:
+                account_balance = await self.broker.get_balance()
+                risk_amount = account_balance * self.risk_config.get('risk_per_trade', 0.005)
             
             # SL distance
             sl_mult = self.strategy_config.get('exit_params', {}).get('sl_atr_mult', 1.0)

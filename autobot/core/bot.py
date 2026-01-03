@@ -347,10 +347,47 @@ class Bot4H:
                         self.symbol_stats[symbol]['total_r'] -= 1.0
                     self.save_stats()
             
-            if stale_trades:
-                logger.info(f"Synced with exchange: removed {len(stale_trades)} stale trades: {stale_trades}")
+            # ADOPT EXISTING POSITIONS (On startup or manual intervention)
+            adopted_count = 0
+            for pos in positions:
+                symbol = pos.get('symbol')
+                size = float(pos.get('size', 0))
+                
+                if size > 0 and symbol not in self.active_trades:
+                    # Found an active position on exchange that bot doesn't know about
+                    side = "long" if pos.get('side') == "Buy" else "short"
+                    entry_price = float(pos.get('avgPrice', 0))
+                    stop_loss = float(pos.get('stopLoss', 0))
+                    take_profit = float(pos.get('takeProfit', 0))
+                    entry_time = datetime.now()  # We don't know exact start, assume now
+                    
+                    # Estimate R:R
+                    rr_ratio = 0.0
+                    if stop_loss > 0 and abs(entry_price - stop_loss) > 0:
+                         risk = abs(entry_price - stop_loss)
+                         reward = abs(take_profit - entry_price) if take_profit > 0 else 0
+                         rr_ratio = round(reward / risk, 1)
+                    
+                    # Create trade object
+                    new_trade = ActiveTrade(
+                        symbol=symbol,
+                        side=side,
+                        entry_price=entry_price,
+                        stop_loss=stop_loss,
+                        take_profit=take_profit,
+                        rr_ratio=rr_ratio,
+                        position_size=size,
+                        entry_time=entry_time
+                    )
+                    
+                    self.active_trades[symbol] = new_trade
+                    adopted_count += 1
+                    logger.info(f"[{symbol}] Adopted existing position: {side} {size} @ {entry_price}")
             
-            return len(stale_trades)
+            if stale_trades or adopted_count > 0:
+                logger.info(f"Synced with exchange: removed {len(stale_trades)} stale, adopted {adopted_count} existing trades")
+            
+            return len(stale_trades) + adopted_count
         except Exception as e:
             logger.error(f"Failed to sync with exchange: {e}")
             return 0

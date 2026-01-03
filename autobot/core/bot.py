@@ -1013,7 +1013,7 @@ class Bot4H:
 ✅ Confirmation: Break of Structure
 
 **RISK**
-💰 Risking: {self.bot.risk_config.get('risk_per_trade', 0.005)*100:.1f}% of capital
+💰 Risking: {self.risk_config.get('risk_per_trade', 0.005)*100:.1f}% of capital
 🎲 Potential: {trade.rr_ratio}:1 reward
 
 ━━━━━━━━━━━━━━━━━━━━

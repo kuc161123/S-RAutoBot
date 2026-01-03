@@ -15,6 +15,11 @@ bybit:
   use_alt_on_fail: true
   ws_public: wss://stream.bybit.com/v5/public/linear
   ws_public_alt: wss://stream.bytick.com/v5/public/linear
+
+telegram:
+  token: ${TELEGRAM_BOT_TOKEN}
+  chat_id: ${TELEGRAM_CHAT_ID}
+
 execution:
   enabled: true
   entry_slippage_pct: 0.0003

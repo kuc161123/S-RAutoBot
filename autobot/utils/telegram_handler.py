@@ -82,16 +82,42 @@ class TelegramHandler:
         )
         
         logger.info("Telegram command handler started")
+        
+        # Rate limiting
+        self._last_message_time = 0
     
-    async def send_message(self, message: str):
-        """Send a message"""
-        if self.app:
-            await self.app.bot.send_message(
-                chat_id=self.chat_id,
-                text=message,
-                parse_mode='Markdown',
-                disable_web_page_preview=True
-            )
+    async def send_message(self, message: str, retries: int = 3):
+        """Send a message with rate limiting and retry logic"""
+        import time
+        import asyncio
+        
+        if not self.app:
+            logger.warning("Telegram app not initialized - message not sent")
+            return
+        
+        # Rate limiting - wait at least 0.5s between messages
+        now = time.time()
+        time_since_last = now - getattr(self, '_last_message_time', 0)
+        if time_since_last < 0.5:
+            await asyncio.sleep(0.5 - time_since_last)
+        
+        for attempt in range(retries):
+            try:
+                await self.app.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=message,
+                    parse_mode='Markdown',
+                    disable_web_page_preview=True
+                )
+                self._last_message_time = time.time()
+                return  # Success
+            except Exception as e:
+                logger.error(f"Telegram send failed (attempt {attempt+1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    await asyncio.sleep(1)  # Wait before retry
+                else:
+                    logger.error(f"Failed to send message after {retries} attempts")
+
     
     # === COMMAND HANDLERS ===
     

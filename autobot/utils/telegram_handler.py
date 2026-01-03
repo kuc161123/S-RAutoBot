@@ -671,22 +671,40 @@ To resume: `/start`
                     return
             
             # Apply the new risk
-            success, result_msg = self.bot.set_risk_per_trade(new_risk_pct)
-            
-            if success:
-                msg = f"""✅ **RISK UPDATED**
+            if is_usd:
+                # Use fixed USD amount
+                success, result_msg = self.bot.set_risk_usd(new_risk_usd)
+                if success:
+                    msg = f"""✅ **RISK UPDATED (Fixed USD)**
+━━━━━━━━━━━━━━━━━━━━
+
+📊 **New Risk Per Trade**
+├ Fixed Amount: ${new_risk_usd:.2f}
+├ Equivalent: ~{new_risk_pct*100:.2f}% of balance
+└ Balance: ${balance:,.2f}
+
+💡 Each trade will now risk exactly ${new_risk_usd:.2f}
+"""
+                    await update.message.reply_text(msg, parse_mode='Markdown')
+                else:
+                    await update.message.reply_text(f"❌ {result_msg}")
+            else:
+                # Use percentage
+                success, result_msg = self.bot.set_risk_per_trade(new_risk_pct)
+                if success:
+                    msg = f"""✅ **RISK UPDATED (Percentage)**
 ━━━━━━━━━━━━━━━━━━━━
 
 📊 **New Risk Per Trade**
 ├ Percentage: {new_risk_pct*100:.2f}%
-├ USD Amount: ${new_risk_usd:.2f}
+├ USD Amount: ~${new_risk_usd:.2f}
 └ Balance: ${balance:,.2f}
 
-💡 Each trade will now risk ${new_risk_usd:.2f}
+💡 Each trade will now risk {new_risk_pct*100:.2f}% of balance
 """
-                await update.message.reply_text(msg, parse_mode='Markdown')
-            else:
-                await update.message.reply_text(f"❌ {result_msg}")
+                    await update.message.reply_text(msg, parse_mode='Markdown')
+                else:
+                    await update.message.reply_text(f"❌ {result_msg}")
                 
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")

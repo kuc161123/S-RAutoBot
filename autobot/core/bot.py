@@ -284,17 +284,33 @@ class Bot4H:
     
     def set_risk_per_trade(self, risk_pct: float):
         """
-        Dynamically update risk per trade
+        Dynamically update risk per trade (percentage)
         
         Args:
             risk_pct: Risk percentage (e.g., 0.005 for 0.5%)
         """
         if 0.001 <= risk_pct <= 0.05:
             self.risk_config['risk_per_trade'] = risk_pct
-            logger.info(f"Risk updated to {risk_pct*100:.1f}%")
-            return True, f"Risk updated to {risk_pct*100:.1f}%"
+            # Clear USD risk so percentage takes effect
+            self.risk_config['risk_amount_usd'] = None
+            logger.info(f"Risk updated to {risk_pct*100:.2f}%")
+            return True, f"Risk updated to {risk_pct*100:.2f}%"
         else:
             return False, "Risk must be between 0.1% and 5.0%"
+    
+    def set_risk_usd(self, amount_usd: float):
+        """
+        Dynamically update risk per trade (fixed USD)
+        
+        Args:
+            amount_usd: Fixed USD amount to risk per trade
+        """
+        if 0.1 <= amount_usd <= 1000:
+            self.risk_config['risk_amount_usd'] = amount_usd
+            logger.info(f"Risk updated to ${amount_usd:.2f} per trade")
+            return True, f"Risk updated to ${amount_usd:.2f} per trade"
+        else:
+            return False, "USD risk must be between $0.1 and $1000"
     
     async def sync_with_exchange(self):
         """

@@ -237,7 +237,7 @@ class TelegramHandler:
                 for sig in sigs:
                     div_code = getattr(sig.signal, 'divergence_code', sig.signal.signal_type.upper()[:3])
                     side_icon = "🟢" if sig.signal.side == 'long' else "🔴"
-                    pending_list.append(f"{side_icon} {sym} {div_code} ({sig.candles_waited}/12)")
+                    pending_list.append(f"{side_icon} `{sym}` `{div_code}` ({sig.candles_waited}/12)")
             pending_str = "\n│   ".join(pending_list[:3]) if pending_list else "None"
             
             # === RADAR (Categorized with ETA) ===
@@ -252,7 +252,7 @@ class TelegramHandler:
                     side_icon = "🟢" if sig.signal.side == 'long' else "🔴"
                     candles_left = 12 - sig.candles_waited
                     hours_max = candles_left
-                    pending_radar.append(f"│   {side_icon} {sym} {div_code}: {sig.candles_waited}/12 candles → Max {hours_max}h to entry")
+                    pending_radar.append(f"│   {side_icon} `{sym}` `{div_code}`: {sig.candles_waited}/12 candles → Max {hours_max}h to entry")
             
             # 2. Developing patterns and extreme zones (with rich multi-line format)
             if getattr(self.bot, 'radar_items', None):
@@ -264,7 +264,7 @@ class TelegramHandler:
                             progress_bar = "▓" * data['pivot_progress'] + "░" * (6 - data['pivot_progress'])
                             rsi_trend = "⬆️" if data['rsi_div'] > 0 else "→"
                             
-                            item = f"""│   {sym}: 🟢 Bullish Divergence Forming
+                            item = f"""│   `{sym}`: 🟢 Bullish Divergence Forming
 │   ├─ Price: ${data['price']:g} (Testing 20-bar low, {data['ema_dist']:+.1f}% from EMA200 {ema_sign})
 │   ├─ RSI: {data['rsi']:.0f} {rsi_trend} (Previous pivot: {data['prev_pivot_rsi']:.0f}) → {data['rsi_div']:+.0f} point divergence
 │   ├─ Progress: {progress_bar} {data['pivot_progress']}/6 candles to pivot confirmation
@@ -277,7 +277,7 @@ class TelegramHandler:
                             progress_bar = "▓" * data['pivot_progress'] + "░" * (6 - data['pivot_progress'])
                             rsi_trend = "⬇️" if data['rsi_div'] > 0 else "→"
                             
-                            item = f"""│   {sym}: 🔴 Bearish Divergence Forming
+                            item = f"""│   `{sym}`: 🔴 Bearish Divergence Forming
 │   ├─ Price: ${data['price']:g} (Testing 20-bar high, {data['ema_dist']:+.1f}% from EMA200 {ema_sign})
 │   ├─ RSI: {data['rsi']:.0f} {rsi_trend} (Previous pivot: {data['prev_pivot_rsi']:.0f}) → {data['rsi_div']:+.0f} point divergence
 │   ├─ Progress: {progress_bar} {data['pivot_progress']}/6 candles to pivot confirmation
@@ -286,7 +286,7 @@ class TelegramHandler:
                             
                         elif data['type'] == 'extreme_oversold':
                             ema_warn = "⚠️ stretched" if abs(data['ema_dist']) > 3 else ""
-                            item = f"""│   {sym}: ❄️ Extreme Oversold Zone
+                            item = f"""│   `{sym}`: ❄️ Extreme Oversold Zone
 │   ├─ RSI: {data['rsi']:.0f}⬇️ ({data['hours_in_zone']:.0f}h in extreme zone)
 │   ├─ Price: ${data['price']:g} ({data['ema_dist']:+.1f}% from EMA {ema_warn})
 │   └─ ETA: Reversal likely within 2-8h"""
@@ -294,7 +294,7 @@ class TelegramHandler:
                             
                         elif data['type'] == 'extreme_overbought':
                             ema_warn = "⚠️ stretched" if abs(data['ema_dist']) > 3 else ""
-                            item = f"""│   {sym}: 🔥 Extreme Overbought Zone
+                            item = f"""│   `{sym}`: 🔥 Extreme Overbought Zone
 │   ├─ RSI: {data['rsi']:.0f}⬇️ ({data['hours_in_zone']:.0f}h in extreme zone)
 │   ├─ Price: ${data['price']:g} ({data['ema_dist']:+.1f}% from EMA {ema_warn})
 │   └─ ETA: Reversal likely within 2-8h"""
@@ -333,7 +333,7 @@ class TelegramHandler:
 
 🎯 **STRATEGY**
 ├ Setup: Multi-Divergence + EMA 200 + BOS
-├ Types: 🟢REG_BULL({div_summary.get('REG_BULL', 0)}) 🔴REG_BEAR({div_summary.get('REG_BEAR', 0)}) 🟠HID_BULL({div_summary.get('HID_BULL', 0)}) 🟡HID_BEAR({div_summary.get('HID_BEAR', 0)})
+├ Types: 🟢`REG_BULL`({div_summary.get('REG_BULL', 0)}) 🔴`REG_BEAR`({div_summary.get('REG_BEAR', 0)}) 🟠`HID_BULL`({div_summary.get('HID_BULL', 0)}) 🟡`HID_BEAR`({div_summary.get('HID_BEAR', 0)})
 ├ Confidence: 100% Walk-Forward + Monte Carlo
 └ Expected: ~+10,348R/6mo ({enabled} symbols)
 
@@ -733,10 +733,10 @@ To resume: `/start`
 ━━━━━━━━━━━━━━━━━━━━
 
 📊 **Portfolio**: {self.bot.symbol_config.get_total_enabled()} symbols
-├ 🟢 REG_BULL: {div_summary.get('REG_BULL', 0)}
-├ 🔴 REG_BEAR: {div_summary.get('REG_BEAR', 0)}
-├ 🟠 HID_BULL: {div_summary.get('HID_BULL', 0)}
-└ 🟡 HID_BEAR: {div_summary.get('HID_BEAR', 0)}
+├ 🟢 `REG_BULL`: {div_summary.get('REG_BULL', 0)}
+├ 🔴 `REG_BEAR`: {div_summary.get('REG_BEAR', 0)}
+├ 🟠 `HID_BULL`: {div_summary.get('HID_BULL', 0)}
+└ 🟡 `HID_BEAR`: {div_summary.get('HID_BEAR', 0)}
 
 🎯 **Active Signals**: {pending_count + developing_count + extreme_count}
 
@@ -750,7 +750,7 @@ To resume: `/start`
                         div_code = getattr(sig.signal, 'divergence_code', sig.signal.signal_type.upper()[:3])
                         side_icon = "🟢" if sig.signal.side == 'long' else "🔴"
                         candles_left = 12 - sig.candles_waited
-                        msg += f"{side_icon} **{sym}** {div_code}: {sig.candles_waited}/12 → {candles_left}h max\n"
+                        msg += f"{side_icon} **{sym}** `{div_code}`: {sig.candles_waited}/12 → {candles_left}h max\n"
                 
                 if pending_count > 10:
                     msg += f"_...and {pending_count - 10} more_\n"

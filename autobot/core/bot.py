@@ -754,6 +754,14 @@ class Bot4H:
             logger.warning(f"[{symbol}] Already in a trade - skipping")
             return
         
+        # Check max concurrent positions
+        max_positions = self.risk_config.get('max_concurrent_positions', 10)
+        if len(self.active_trades) >= max_positions:
+            logger.warning(f"[{symbol}] Max positions ({max_positions}) reached - skipping trade")
+            if self.telegram:
+                await self.telegram.send_message(f"⚠️ **MAX POSITIONS REACHED**\n\n{symbol} signal skipped (limit: {max_positions})")
+            return
+        
         # Get symbol-specific R:R
         rr = self.symbol_config.get_rr_for_symbol(symbol)
         if rr is None:

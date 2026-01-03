@@ -48,7 +48,7 @@ class PendingSignal:
     signal: DivergenceSignal
     detected_at: datetime
     candles_waited: int = 0
-    max_wait_candles: int = 6  # 24 hours on 4H
+    max_wait_candles: int = 12  # 12 hours on 1H - increased for better BOS rate
     
     def is_expired(self) -> bool:
         return self.candles_waited >= self.max_wait_candles

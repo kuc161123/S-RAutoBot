@@ -43,11 +43,11 @@ risk:
 
 strategy:
   entry_params:
-    max_wait_candles: 6
+    max_wait_candles: 12  # ⚡ INCREASED: 12 hours for better BOS confirmation rate
     require_bos: true
   exit_params:
     sl_atr_mult: 1.0
-  name: 1h_robust_79_symbols
+  name: 1h_robust_79_symbols_12h_bos
   signal_params:
     lookback_bars: 10
     min_pivot_distance: 3

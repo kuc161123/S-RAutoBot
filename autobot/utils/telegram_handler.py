@@ -203,7 +203,7 @@ class TelegramHandler:
             for sym, sigs in self.bot.pending_signals.items():
                 for sig in sigs:
                     side_icon = "🟢" if sig.signal.signal_type == 'bullish' else "🔴"
-                    pending_list.append(f"{side_icon} {sym} ({sig.candles_waited}/6)")
+                    pending_list.append(f"{side_icon} {sym} ({sig.candles_waited}/12)")
             pending_str = "\n│   ".join(pending_list[:3]) if pending_list else "None"
             
             # === RADAR (Categorized with ETA) ===
@@ -215,7 +215,7 @@ class TelegramHandler:
             for sym, sigs in self.bot.pending_signals.items():
                 for sig in sigs:
                     side_icon = "🟢" if sig.signal.signal_type == 'bullish' else "🔴"
-                    candles_left = 6 - sig.candles_waited
+                    candles_left = 12 - sig.candles_waited
                     hours_max = candles_left
                     pending_radar.append(f"│   {side_icon} {sym}: {sig.candles_waited}/6 candles → Max {hours_max}h to entry")
             
@@ -233,7 +233,7 @@ class TelegramHandler:
 │   ├─ Price: ${data['price']:g} (Testing 20-bar low, {data['ema_dist']:+.1f}% from EMA200 {ema_sign})
 │   ├─ RSI: {data['rsi']:.0f} {rsi_trend} (Previous pivot: {data['prev_pivot_rsi']:.0f}) → {data['rsi_div']:+.0f} point divergence
 │   ├─ Progress: {progress_bar} {data['pivot_progress']}/6 candles to pivot confirmation
-│   └─ ETA: 3-9h to confirmed signal, then 0-6h to BOS trigger"""
+│   └─ ETA: 3-9h to confirmed signal, then 0-12h to BOS trigger"""
                             developing_radar.append(item)
                             
                         elif data['type'] == 'bearish_setup':
@@ -246,7 +246,7 @@ class TelegramHandler:
 │   ├─ Price: ${data['price']:g} (Testing 20-bar high, {data['ema_dist']:+.1f}% from EMA200 {ema_sign})
 │   ├─ RSI: {data['rsi']:.0f} {rsi_trend} (Previous pivot: {data['prev_pivot_rsi']:.0f}) → {data['rsi_div']:+.0f} point divergence
 │   ├─ Progress: {progress_bar} {data['pivot_progress']}/6 candles to pivot confirmation
-│   └─ ETA: 3-9h to confirmed signal, then 0-6h to BOS trigger"""
+│   └─ ETA: 3-9h to confirmed signal, then 0-12h to BOS trigger"""
                             developing_radar.append(item)
                             
                         elif data['type'] == 'extreme_oversold':
@@ -603,8 +603,8 @@ Total Active: {pending_count + developing_count + extreme_count} signals
                 for sym, sigs in self.bot.pending_signals.items():
                     for sig in sigs:
                         side_icon = "🟢" if sig.signal.signal_type == 'bullish' else "🔴"
-                        candles_left = 6 - sig.candles_waited
-                        msg += f"{side_icon} **{sym}**: {sig.candles_waited}/6 candles → Max {candles_left}h to entry\n"
+                        candles_left = 12 - sig.candles_waited
+                        msg += f"{side_icon} **{sym}**: {sig.candles_waited}/12 candles → Max {candles_left}h to entry\n"
                 msg += "\n"
             
             # 2. Developing Setups

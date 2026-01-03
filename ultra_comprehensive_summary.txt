@@ -1,0 +1,48 @@
+
+================================================================================
+ULTRA-COMPREHENSIVE BACKTEST - SUMMARY REPORT
+================================================================================
+
+Generated: 2026-01-03 10:03:41
+Runtime: 39.9 minutes
+
+CONFIGURATION:
+- Symbols Tested: 500
+- Divergence Types: 4
+- R:R Ratios: [3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+- Data Period: 180 days
+- Walk-Forward: 60 days × 3 periods
+- Monte Carlo: 1000 iterations
+
+RESULTS:
+- Total Combinations: 15872
+- Validated Combinations: 1308 (8.2%)
+- Symbols with Valid Configs: 271
+
+VALIDATION CRITERIA:
+- Min Trades: 15
+- Min Win Rate: 10%
+- Min Sharpe: 0.3
+- Max Drawdown: 50%
+- Walk-Forward: 2/3 periods profitable
+- Monte Carlo: 95.0% confidence profitable
+
+BY DIVERGENCE TYPE:
+- REG_BULL: 323 validated
+- REG_BEAR: 436 validated
+- HID_BULL: 328 validated
+- HID_BEAR: 221 validated
+
+TOP 10 PERFORMERS:
+1. DEXEUSDT | HID_BEAR | 10:1 | +116.7R | 23.2% WR
+2. NFPUSDT | HID_BULL | 10:1 | +108.3R | 33.3% WR
+3. PROVEUSDT | HID_BEAR | 10:1 | +105.0R | 24.6% WR
+4. CLOUDUSDT | HID_BEAR | 10:1 | +103.9R | 24.6% WR
+5. SAROSUSDT | HID_BEAR | 9:1 | +103.3R | 24.0% WR
+6. SOMIUSDT | HID_BEAR | 10:1 | +103.0R | 29.2% WR
+7. SUIUSDT | REG_BEAR | 10:1 | +101.0R | 28.0% WR
+8. CLOUDUSDT | HID_BEAR | 9:1 | +97.9R | 26.2% WR
+9. DEXEUSDT | HID_BEAR | 9:1 | +97.7R | 23.2% WR
+10. NFPUSDT | HID_BULL | 9:1 | +94.3R | 33.3% WR
+
+================================================================================

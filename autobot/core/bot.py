@@ -1,13 +1,19 @@
 """
-4H Trend-Divergence Trading Bot
+1H Multi-Divergence Trading Bot
 ================================
-Validated Strategy: +434R, +0.35R/trade, 25% WR
-Per-Symbol R:R Optimization
+271 Validated Symbols | 4 Divergence Types
+Expected Performance: +10,348R (6 months)
+
+Divergence Types:
+- REG_BULL: Regular Bullish (Reversal)
+- REG_BEAR: Regular Bearish (Reversal)
+- HID_BULL: Hidden Bullish (Continuation)
+- HID_BEAR: Hidden Bearish (Continuation)
 
 Main Features:
-- 4H divergence detection with Daily Trend filter
-- Break of Structure (BOS) confirmation
-- Per-symbol R:R ratios (2:1 to 6:1)
+- 1H divergence detection with EMA 200 trend filter
+- Break of Structure (BOS) confirmation (12 candles max)
+- Per-symbol divergence type and R:R configuration
 - Fixed TP/SL (no trailing, no partial)
 - 1% risk per trade
 """
@@ -28,7 +34,9 @@ from autobot.core.divergence_detector import (
     prepare_dataframe,
     check_bos,
     is_trend_aligned,
-    DivergenceSignal
+    DivergenceSignal,
+    get_signal_emoji,
+    get_signal_description
 )
 from autobot.config.symbol_rr_mapping import SymbolRRConfig
 from autobot.utils.telegram_handler import TelegramHandler
@@ -72,12 +80,12 @@ class ActiveTrade:
 
 
 class Bot4H:
-    """4H Trend-Divergence Trading Bot"""
+    """1H Multi-Divergence Trading Bot - 271 Validated Symbols"""
     
     def __init__(self):
         """Initialize bot"""
         logger.info("="*60)
-        logger.info("4H TREND-DIVERGENCE BOT INITIALIZING")
+        logger.info("1H MULTI-DIVERGENCE BOT INITIALIZING")
         logger.info("="*60)
         
         self.load_config()
@@ -583,7 +591,13 @@ class Bot4H:
         for signal in new_signals:
             # Only accept trend-aligned signals
             if not signal.daily_trend_aligned:
-                logger.debug(f"[{symbol}] {signal.signal_type.upper()} divergence detected but NOT trend-aligned - SKIP")
+                logger.debug(f"[{symbol}] {signal.divergence_code} divergence detected but NOT trend-aligned - SKIP")
+                continue
+            
+            # DIVERGENCE TYPE FILTER: Only accept if this divergence type is allowed for this symbol
+            allowed_div = self.symbol_config.get_divergence_for_symbol(symbol)
+            if allowed_div and signal.divergence_code != allowed_div:
+                logger.debug(f"[{symbol}] {signal.divergence_code} detected but only {allowed_div} allowed - SKIP")
                 continue
             
             # DEDUPLICATION: Check if we've already seen this signal
@@ -591,10 +605,6 @@ class Bot4H:
             if signal_id in self.seen_signals:
                 duplicate_count += 1
                 continue  # Already processed this signal before
-            
-            # REMOVED: Stale signal filter was too aggressive and causing low BOS rate
-            # The backtest doesn't have this filter, so we remove it to match backtest logic
-            # This should increase BOS confirmations from ~3/day to ~7-8/day
             
             # Mark signal as seen and save
             self.seen_signals.add(signal_id)
@@ -617,28 +627,31 @@ class Bot4H:
             # Track divergence detection
             self._track_divergence_detected()
             
-            logger.info(f"[{symbol}] 🔔 NEW {signal.signal_type.upper()} DIVERGENCE detected! Waiting for BOS...")
+            logger.info(f"[{symbol}] 🔔 NEW {signal.divergence_code} divergence detected! Waiting for BOS...")
             logger.info(f"[{symbol}]   Price: ${signal.price:.2f}, RSI: {signal.rsi_value:.1f}, Swing: ${signal.swing_level:.2f}")
             logger.info(f"[{symbol}]   Signal ID: {signal_id}")
             
             # Send Telegram notification for divergence detected
             if self.telegram:
-                side_emoji = '🟢' if signal.side == 'long' else '🔴'
-                side_text = 'BULLISH' if signal.side == 'long' else 'BEARISH'
+                div_emoji = get_signal_emoji(signal.divergence_code)
+                div_name = signal.get_display_name()
+                side_text = 'LONG' if signal.side == 'long' else 'SHORT'
                 div_msg = f"""
 🔔 **DIVERGENCE DETECTED**
 ━━━━━━━━━━━━━━━━━━━━
 
-📊 **{symbol}** | {side_emoji} {side_text}
+{div_emoji} **{symbol}** | {div_name}
 
 **SIGNAL DETAILS**
+├ Type: {signal.divergence_code}
+├ Side: {side_text}
 ├ Price: ${signal.price:,.4f}
 ├ RSI: {signal.rsi_value:.1f}
 ├ Swing Level: ${signal.swing_level:,.4f}
-└ Status: Waiting for BOS (0/6)
+└ Status: Waiting for BOS (0/12)
 
 **ETA**
-⏳ 0-6 hours to potential entry
+⏳ 0-12 hours to potential entry
 
 ━━━━━━━━━━━━━━━━━━━━
 📊 [Chart](https://www.tradingview.com/chart/?symbol=BYBIT:{symbol})
@@ -692,15 +705,18 @@ class Bot4H:
                 
                 # Send BOS confirmed notification
                 if self.telegram:
-                    side_emoji = '🟢' if pending.signal.side == 'long' else '🔴'
+                    div_emoji = get_signal_emoji(pending.signal.divergence_code)
+                    div_name = pending.signal.get_display_name()
                     side_text = 'LONG' if pending.signal.side == 'long' else 'SHORT'
                     bos_msg = f"""
 ✅ **BOS CONFIRMED!**
 ━━━━━━━━━━━━━━━━━━━━
 
-📊 **{symbol}** | {side_emoji} {side_text}
+{div_emoji} **{symbol}** | {div_name}
 
 🔓 Break of Structure confirmed after {pending.candles_waited} candles
+├ Type: {pending.signal.divergence_code}
+├ Side: {side_text}
 ⚡ Executing trade now...
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -970,14 +986,16 @@ class Bot4H:
     async def send_entry_notification(self, trade: ActiveTrade, signal: DivergenceSignal):
         """Send enhanced Telegram notification for trade entry"""
         if self.telegram:
-            direction = '🟢 LONG' if trade.side == 'long' else '🔴 SHORT'
+            div_emoji = get_signal_emoji(signal.divergence_code)
+            div_name = signal.get_display_name()
+            direction = 'LONG' if trade.side == 'long' else 'SHORT'
             entry_time = trade.entry_time.strftime('%H:%M UTC')
             
             msg = f"""
 🔔 **NEW TRADE OPENED**
 ━━━━━━━━━━━━━━━━━━━━
 
-📊 **{trade.symbol}** | {direction}
+{div_emoji} **{trade.symbol}** | {direction}
 ⏰ Time: {entry_time}
 
 **ENTRY**
@@ -990,12 +1008,12 @@ class Bot4H:
 📊 R:R Ratio: {trade.rr_ratio}:1
 
 **STRATEGY**
-🔍 Setup: {signal.signal_type.title()} Divergence
-📈 Trend: Daily EMA Aligned ✅
+🔍 Setup: {div_name} ({signal.divergence_code})
+📈 Trend: EMA 200 Aligned ✅
 ✅ Confirmation: Break of Structure
 
 **RISK**
-💰 Risking: 1.0% of capital
+💰 Risking: {self.bot.risk_config.get('risk_per_trade', 0.005)*100:.1f}% of capital
 🎲 Potential: {trade.rr_ratio}:1 reward
 
 ━━━━━━━━━━━━━━━━━━━━

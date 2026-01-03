@@ -1,19 +1,24 @@
 """
-Symbol R:R Mapping Helper
-==========================
-Provides utilities for loading and accessing per-symbol R:R ratios.
+Symbol Configuration Manager
+============================
+Manages per-symbol settings including:
+- Enabled/disabled status
+- R:R ratio
+- Divergence type (REG_BULL, REG_BEAR, HID_BULL, HID_BEAR)
+
+Supports the multi-divergence strategy with 271 validated symbols.
 """
 
 import yaml
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 
 class SymbolRRConfig:
-    """Manages per-symbol Risk:Reward ratios"""
+    """Manages per-symbol Risk:Reward ratios and divergence types"""
     
     def __init__(self, config_path: str = "config.yaml"):
         """
-        Initialize symbol R:R configuration
+        Initialize symbol configuration
         
         Args:
             config_path: Path to config.yaml file
@@ -30,12 +35,22 @@ class SymbolRRConfig:
                 
             self.symbols = config.get('symbols', {})
             
-            # Validate
+            # Count by divergence type
+            div_counts = {}
+            for sym, cfg in self.symbols.items():
+                if cfg.get('enabled', False):
+                    div = cfg.get('divergence', 'UNKNOWN')
+                    div_counts[div] = div_counts.get(div, 0) + 1
+            
             enabled_count = sum(1 for s in self.symbols.values() if s.get('enabled', False))
-            print(f"[SymbolRRConfig] Loaded {len(self.symbols)} symbols ({enabled_count} enabled)")
+            print(f"[SymbolConfig] Loaded {len(self.symbols)} symbols ({enabled_count} enabled)")
+            
+            # Print divergence breakdown
+            if div_counts:
+                print(f"[SymbolConfig] By divergence: {div_counts}")
             
         except Exception as e:
-            print(f"[SymbolRRConfig] Error loading config: {e}")
+            print(f"[SymbolConfig] Error loading config: {e}")
             self.symbols = {}
     
     def get_rr_for_symbol(self, symbol: str) -> Optional[float]:
@@ -58,6 +73,41 @@ class SymbolRRConfig:
             
         return symbol_config.get('rr')
     
+    def get_divergence_for_symbol(self, symbol: str) -> Optional[str]:
+        """
+        Get allowed divergence type for a symbol
+        
+        Args:
+            symbol: Trading pair
+            
+        Returns:
+            Divergence code (REG_BULL, REG_BEAR, HID_BULL, HID_BEAR) or None
+        """
+        if symbol not in self.symbols:
+            return None
+            
+        symbol_config = self.symbols[symbol]
+        
+        if not symbol_config.get('enabled', False):
+            return None
+            
+        return symbol_config.get('divergence')
+    
+    def get_symbol_config(self, symbol: str) -> Optional[dict]:
+        """
+        Get full configuration for a symbol
+        
+        Args:
+            symbol: Trading pair
+            
+        Returns:
+            Dict with enabled, rr, divergence or None
+        """
+        if symbol not in self.symbols:
+            return None
+            
+        return self.symbols[symbol]
+    
     def is_symbol_enabled(self, symbol: str) -> bool:
         """
         Check if symbol is enabled for trading
@@ -73,7 +123,29 @@ class SymbolRRConfig:
             
         return self.symbols[symbol].get('enabled', False)
     
-    def get_enabled_symbols(self) -> list[str]:
+    def is_divergence_allowed(self, symbol: str, divergence_code: str) -> bool:
+        """
+        Check if a specific divergence type is allowed for a symbol
+        
+        Args:
+            symbol: Trading pair
+            divergence_code: One of REG_BULL, REG_BEAR, HID_BULL, HID_BEAR
+            
+        Returns:
+            True if this divergence type is allowed for this symbol
+        """
+        if symbol not in self.symbols:
+            return False
+            
+        symbol_config = self.symbols[symbol]
+        
+        if not symbol_config.get('enabled', False):
+            return False
+            
+        allowed_div = symbol_config.get('divergence')
+        return allowed_div == divergence_code
+    
+    def get_enabled_symbols(self) -> List[str]:
         """
         Get list of all enabled symbols
         
@@ -85,7 +157,22 @@ class SymbolRRConfig:
             if config.get('enabled', False)
         ]
     
-    def get_symbols_by_rr(self, rr: float) -> list[str]:
+    def get_symbols_by_divergence(self, divergence_code: str) -> List[str]:
+        """
+        Get symbols with a specific divergence type
+        
+        Args:
+            divergence_code: One of REG_BULL, REG_BEAR, HID_BULL, HID_BEAR
+            
+        Returns:
+            List of symbols with that divergence type
+        """
+        return [
+            symbol for symbol, config in self.symbols.items()
+            if config.get('enabled', False) and config.get('divergence') == divergence_code
+        ]
+    
+    def get_symbols_by_rr(self, rr: float) -> List[str]:
         """
         Get symbols with a specific R:R ratio
         
@@ -100,69 +187,34 @@ class SymbolRRConfig:
             if config.get('enabled', False) and config.get('rr') == rr
         ]
     
-    def get_rr_distribution(self) -> Dict[float, int]:
+    def get_divergence_summary(self) -> Dict[str, int]:
         """
-        Get distribution of R:R ratios across enabled symbols
+        Get count of enabled symbols by divergence type
         
         Returns:
-            Dictionary of {rr: count}
+            Dict of {divergence_code: count}
         """
-        distribution = {}
-        for symbol, config in self.symbols.items():
-            if config.get('enabled', False):
-                rr = config.get('rr')
-                if rr:
-                    distribution[rr] = distribution.get(rr, 0) + 1
-        return distribution
-
-
-# Convenience function for quick access
-_config_instance = None
-
-def get_symbol_rr(symbol: str) -> Optional[float]:
-    """
-    Get R:R ratio for a symbol (convenience function)
+        counts = {}
+        for sym, cfg in self.symbols.items():
+            if cfg.get('enabled', False):
+                div = cfg.get('divergence', 'UNKNOWN')
+                counts[div] = counts.get(div, 0) + 1
+        return counts
     
-    Args:
-        symbol: Trading pair
+    def get_total_enabled(self) -> int:
+        """Get count of enabled symbols"""
+        return sum(1 for s in self.symbols.values() if s.get('enabled', False))
+    
+    def get_rr_summary(self) -> Dict[float, int]:
+        """
+        Get count of enabled symbols by R:R ratio
         
-    Returns:
-        R:R ratio or None
-    """
-    global _config_instance
-    if _config_instance is None:
-        _config_instance = SymbolRRConfig()
-    return _config_instance.get_rr_for_symbol(symbol)
-
-
-def get_enabled_symbols() -> list[str]:
-    """
-    Get all enabled symbols (convenience function)
-    
-    Returns:
-        List of enabled symbols
-    """
-    global _config_instance
-    if _config_instance is None:
-        _config_instance = SymbolRRConfig()
-    return _config_instance.get_enabled_symbols()
-
-
-if __name__ == "__main__":
-    # Test
-    config = SymbolRRConfig()
-    
-    print("\n=== Symbol R:R Configuration ===")
-    print(f"Total symbols: {len(config.symbols)}")
-    print(f"Enabled symbols: {len(config.get_enabled_symbols())}")
-    
-    print("\nR:R Distribution:")
-    for rr, count in sorted(config.get_rr_distribution().items()):
-        print(f"  {rr}:1 → {count} symbols")
-    
-    print("\nSample symbols:")
-    for symbol in ['BTCUSDT', 'DOGEUSDT', 'DOTUSDT', 'LINKUSDT']:
-        rr = config.get_rr_for_symbol(symbol)
-        enabled = config.is_symbol_enabled(symbol)
-        status = "✅" if enabled else "❌"
-        print(f"  {status} {symbol}: {rr}:1 R:R" if rr else f"  {status} {symbol}: Not configured")
+        Returns:
+            Dict of {rr: count}
+        """
+        counts = {}
+        for sym, cfg in self.symbols.items():
+            if cfg.get('enabled', False):
+                rr = cfg.get('rr', 0)
+                counts[rr] = counts.get(rr, 0) + 1
+        return counts

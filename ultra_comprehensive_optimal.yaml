@@ -1,0 +1,1900 @@
+generated: '2026-01-03T10:03:41.119620'
+symbols:
+  1000000BABYDOGEUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 10.29
+    rr: 3.0
+    trades: 20
+    win_rate: 40.0
+  1000000CHEEMSUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 57.88
+    rr: 10.0
+    trades: 57
+    win_rate: 19.298245614035086
+  10000ELONUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 42.15
+    rr: 9.0
+    trades: 44
+    win_rate: 20.454545454545457
+  1000BONKUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 51.87
+    rr: 9.0
+    trades: 46
+    win_rate: 21.73913043478261
+  1000NEIROCTOUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 28.89
+    rr: 9.0
+    trades: 39
+    win_rate: 17.94871794871795
+  1000PEPEUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 31.03
+    rr: 5.0
+    trades: 32
+    win_rate: 34.375
+  1000TAGUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 58.39
+    rr: 10.0
+    trades: 50
+    win_rate: 20.0
+  1000TOSHIUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 51.37
+    rr: 9.0
+    trades: 36
+    win_rate: 25.0
+  1000TURBOUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 24.18
+    rr: 9.0
+    trades: 24
+    win_rate: 20.833333333333336
+  1000XUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 50.4
+    rr: 6.0
+    trades: 63
+    win_rate: 26.984126984126984
+  1INCHUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 23.61
+    rr: 9.0
+    trades: 33
+    win_rate: 18.181818181818183
+  A2ZUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 23.3
+    rr: 3.0
+    trades: 34
+    win_rate: 44.11764705882353
+  AAVEUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 24.85
+    rr: 9.0
+    trades: 32
+    win_rate: 18.75
+  ACEUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 45.68
+    rr: 9.0
+    trades: 50
+    win_rate: 20.0
+  ACTUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 27.03
+    rr: 3.0
+    trades: 68
+    win_rate: 36.76470588235294
+  ACXUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 15.42
+    rr: 3.0
+    trades: 15
+    win_rate: 53.333333333333336
+  AERGOUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 39.08
+    rr: 10.0
+    trades: 34
+    win_rate: 20.588235294117645
+  AEVOUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 23.14
+    rr: 3.0
+    trades: 45
+    win_rate: 40.0
+  AGLDUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 14.08
+    rr: 4.0
+    trades: 19
+    win_rate: 36.84210526315789
+  AINUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 47.41
+    rr: 9.0
+    trades: 50
+    win_rate: 20.0
+  AIOZUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 23.3
+    rr: 7.0
+    trades: 38
+    win_rate: 21.052631578947366
+  AIXBTUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 36.19
+    rr: 10.0
+    trades: 39
+    win_rate: 17.94871794871795
+  AKTUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 20.92
+    rr: 3.0
+    trades: 28
+    win_rate: 46.42857142857143
+  ALGOUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 16.94
+    rr: 5.0
+    trades: 23
+    win_rate: 30.434782608695656
+  ALICEUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 38.28
+    rr: 7.0
+    trades: 31
+    win_rate: 29.03225806451613
+  ALPINEUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 41.88
+    rr: 9.0
+    trades: 53
+    win_rate: 18.867924528301888
+  ANIMEUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 35.28
+    rr: 5.0
+    trades: 28
+    win_rate: 39.285714285714285
+  ANKRUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 14.96
+    rr: 4.0
+    trades: 18
+    win_rate: 38.88888888888889
+  APEUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 17.1
+    rr: 10.0
+    trades: 34
+    win_rate: 14.705882352941178
+  ARBUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 18.39
+    rr: 8.0
+    trades: 25
+    win_rate: 20.0
+  ARCUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 34.8
+    rr: 6.0
+    trades: 66
+    win_rate: 22.727272727272727
+  ARIAUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 65.72
+    rr: 10.0
+    trades: 21
+    win_rate: 38.095238095238095
+  ARKMUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 32.53
+    rr: 10.0
+    trades: 32
+    win_rate: 18.75
+  ATHUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 34.6
+    rr: 10.0
+    trades: 29
+    win_rate: 20.689655172413794
+  AUCTIONUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 9.27
+    rr: 7.0
+    trades: 21
+    win_rate: 19.047619047619047
+  AVAXUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 16.13
+    rr: 8.0
+    trades: 26
+    win_rate: 19.230769230769234
+  AVLUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 26.57
+    rr: 10.0
+    trades: 27
+    win_rate: 18.51851851851852
+  AVNTUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 22.58
+    rr: 8.0
+    trades: 38
+    win_rate: 18.421052631578945
+  AWEUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 53.81
+    rr: 10.0
+    trades: 21
+    win_rate: 33.33333333333333
+  AXLUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 44.75
+    rr: 7.0
+    trades: 69
+    win_rate: 21.73913043478261
+  AXSUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 23.66
+    rr: 4.0
+    trades: 24
+    win_rate: 41.66666666666667
+  BABYUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 78.39
+    rr: 10.0
+    trades: 49
+    win_rate: 24.489795918367346
+  BANANAS31USDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 20.1
+    rr: 3.0
+    trades: 18
+    win_rate: 55.55555555555556
+  BANANAUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 44.75
+    rr: 9.0
+    trades: 43
+    win_rate: 20.930232558139537
+  BANDUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 49.63
+    rr: 10.0
+    trades: 45
+    win_rate: 20.0
+  BANKUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 38.18
+    rr: 8.0
+    trades: 49
+    win_rate: 20.408163265306122
+  BANUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 32.14
+    rr: 10.0
+    trades: 41
+    win_rate: 17.073170731707318
+  BATUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 20.3
+    rr: 4.0
+    trades: 32
+    win_rate: 34.375
+  BBUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 60.5
+    rr: 8.0
+    trades: 78
+    win_rate: 20.51282051282051
+  BEAMUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 23.92
+    rr: 5.0
+    trades: 34
+    win_rate: 29.411764705882355
+  BELUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 55.86
+    rr: 10.0
+    trades: 30
+    win_rate: 26.666666666666668
+  BERAUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 47.64
+    rr: 8.0
+    trades: 31
+    win_rate: 29.03225806451613
+  BIGTIMEUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 14.18
+    rr: 3.0
+    trades: 20
+    win_rate: 45.0
+  BIOUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 31.71
+    rr: 4.0
+    trades: 45
+    win_rate: 35.55555555555556
+  BLASTUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 55.48
+    rr: 10.0
+    trades: 39
+    win_rate: 23.076923076923077
+  BMTUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 48.2
+    rr: 10.0
+    trades: 46
+    win_rate: 19.565217391304348
+  BNBUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 39.38
+    rr: 10.0
+    trades: 68
+    win_rate: 16.176470588235293
+  BNTUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 15.12
+    rr: 5.0
+    trades: 24
+    win_rate: 29.166666666666668
+  BROCCOLIUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 47.32
+    rr: 10.0
+    trades: 28
+    win_rate: 25.0
+  BSUUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 51.85
+    rr: 10.0
+    trades: 34
+    win_rate: 23.52941176470588
+  BTRUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 22.41
+    rr: 3.0
+    trades: 51
+    win_rate: 37.254901960784316
+  BUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 16.03
+    rr: 10.0
+    trades: 26
+    win_rate: 15.384615384615385
+  CARVUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 80.35
+    rr: 10.0
+    trades: 57
+    win_rate: 22.807017543859647
+  CATIUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 11.45
+    rr: 3.0
+    trades: 37
+    win_rate: 35.13513513513514
+  CELOUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 63.19
+    rr: 10.0
+    trades: 23
+    win_rate: 34.78260869565217
+  CGPTUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 47.32
+    rr: 7.0
+    trades: 45
+    win_rate: 26.666666666666668
+  CLOUDUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 103.87
+    rr: 10.0
+    trades: 65
+    win_rate: 24.615384615384617
+  CLOUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 46.18
+    rr: 10.0
+    trades: 19
+    win_rate: 31.57894736842105
+  COOKIEUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 58.75
+    rr: 3.0
+    trades: 61
+    win_rate: 50.81967213114754
+  COREUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 8.54
+    rr: 3.0
+    trades: 39
+    win_rate: 33.33333333333333
+  CROUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 16.74
+    rr: 4.0
+    trades: 35
+    win_rate: 31.428571428571427
+  CTKUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 35.79
+    rr: 6.0
+    trades: 38
+    win_rate: 28.947368421052634
+  CTSIUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 38.28
+    rr: 9.0
+    trades: 47
+    win_rate: 19.148936170212767
+  CUDISUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 10.65
+    rr: 9.0
+    trades: 28
+    win_rate: 14.285714285714285
+  CVXUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 21.78
+    rr: 6.0
+    trades: 38
+    win_rate: 23.684210526315788
+  DASHUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 13.76
+    rr: 10.0
+    trades: 28
+    win_rate: 14.285714285714285
+  DBRUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 79.44
+    rr: 8.0
+    trades: 42
+    win_rate: 33.33333333333333
+  DEEPUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 14.56
+    rr: 3.0
+    trades: 46
+    win_rate: 34.78260869565217
+  DEXEUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 116.68
+    rr: 10.0
+    trades: 82
+    win_rate: 23.170731707317074
+  DGBUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 55.94
+    rr: 6.0
+    trades: 26
+    win_rate: 46.15384615384615
+  DOGEUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 49.15
+    rr: 7.0
+    trades: 28
+    win_rate: 35.714285714285715
+  DOGUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 59.76
+    rr: 10.0
+    trades: 38
+    win_rate: 23.684210526315788
+  DOLOUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 13.06
+    rr: 3.0
+    trades: 22
+    win_rate: 40.909090909090914
+  DOTUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 22.89
+    rr: 7.0
+    trades: 29
+    win_rate: 24.137931034482758
+  DUSKUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 19.53
+    rr: 4.0
+    trades: 19
+    win_rate: 42.10526315789473
+  DYDXUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 26.22
+    rr: 3.0
+    trades: 31
+    win_rate: 48.38709677419355
+  EGLDUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 38.84
+    rr: 6.0
+    trades: 48
+    win_rate: 27.083333333333332
+  ENJUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 19.83
+    rr: 5.0
+    trades: 15
+    win_rate: 40.0
+  ENSUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 14.26
+    rr: 3.0
+    trades: 35
+    win_rate: 37.142857142857146
+  ERAUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 53.03
+    rr: 10.0
+    trades: 42
+    win_rate: 21.428571428571427
+  ESPORTSUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 20.73
+    rr: 9.0
+    trades: 28
+    win_rate: 17.857142857142858
+  ESUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 34.16
+    rr: 9.0
+    trades: 42
+    win_rate: 19.047619047619047
+  ETHBTCUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 38.15
+    rr: 6.0
+    trades: 55
+    win_rate: 27.27272727272727
+  ETHUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 21.0
+    rr: 6.0
+    trades: 61
+    win_rate: 21.311475409836063
+  FIDAUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 31.47
+    rr: 5.0
+    trades: 32
+    win_rate: 34.375
+  FLOCKUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 49.13
+    rr: 7.0
+    trades: 44
+    win_rate: 27.27272727272727
+  FLOWUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 55.28
+    rr: 5.0
+    trades: 31
+    win_rate: 48.38709677419355
+  FLUXUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 71.3
+    rr: 10.0
+    trades: 56
+    win_rate: 21.428571428571427
+  FORMUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 34.35
+    rr: 9.0
+    trades: 69
+    win_rate: 15.942028985507244
+  FUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 45.26
+    rr: 8.0
+    trades: 33
+    win_rate: 27.27272727272727
+  FWOGUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 15.93
+    rr: 4.0
+    trades: 42
+    win_rate: 28.57142857142857
+  GASUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 13.95
+    rr: 3.0
+    trades: 16
+    win_rate: 50.0
+  GIGAUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 34.86
+    rr: 10.0
+    trades: 41
+    win_rate: 17.073170731707318
+  GLMUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 34.3
+    rr: 9.0
+    trades: 61
+    win_rate: 16.39344262295082
+  GNOUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 66.69
+    rr: 9.0
+    trades: 92
+    win_rate: 18.478260869565215
+  GOATUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 75.36
+    rr: 9.0
+    trades: 23
+    win_rate: 43.47826086956522
+  GODSUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 17.44
+    rr: 5.0
+    trades: 45
+    win_rate: 24.444444444444443
+  GPSUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 29.41
+    rr: 8.0
+    trades: 49
+    win_rate: 18.367346938775512
+  GRASSUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 54.43
+    rr: 6.0
+    trades: 68
+    win_rate: 26.47058823529412
+  GRIFFAINUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 57.92
+    rr: 4.0
+    trades: 54
+    win_rate: 42.592592592592595
+  GUNUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 62.15
+    rr: 10.0
+    trades: 24
+    win_rate: 33.33333333333333
+  HAEDALUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 71.36
+    rr: 9.0
+    trades: 36
+    win_rate: 30.555555555555557
+  HANAUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 25.15
+    rr: 6.0
+    trades: 36
+    win_rate: 25.0
+  HBARUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 51.9
+    rr: 10.0
+    trades: 33
+    win_rate: 24.242424242424242
+  HIPPOUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 43.25
+    rr: 10.0
+    trades: 32
+    win_rate: 21.875
+  HIVEUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 53.46
+    rr: 9.0
+    trades: 41
+    win_rate: 24.390243902439025
+  HNTUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 19.58
+    rr: 3.0
+    trades: 30
+    win_rate: 43.333333333333336
+  HOLOUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 90.93
+    rr: 10.0
+    trades: 49
+    win_rate: 26.53061224489796
+  HOMEUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 18.36
+    rr: 8.0
+    trades: 41
+    win_rate: 17.073170731707318
+  HPOS10IUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 24.03
+    rr: 10.0
+    trades: 29
+    win_rate: 17.24137931034483
+  HUMAUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 49.47
+    rr: 10.0
+    trades: 57
+    win_rate: 17.543859649122805
+  HUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 22.07
+    rr: 8.0
+    trades: 22
+    win_rate: 22.727272727272727
+  HYPERUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 11.81
+    rr: 4.0
+    trades: 17
+    win_rate: 35.294117647058826
+  HYPEUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 23.15
+    rr: 3.0
+    trades: 53
+    win_rate: 37.735849056603776
+  ICNTUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 53.4
+    rr: 8.0
+    trades: 61
+    win_rate: 21.311475409836063
+  ICPUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 77.89
+    rr: 7.0
+    trades: 61
+    win_rate: 29.508196721311474
+  ICXUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 78.73
+    rr: 9.0
+    trades: 74
+    win_rate: 21.62162162162162
+  IDEXUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 11.23
+    rr: 10.0
+    trades: 20
+    win_rate: 15.0
+  IMXUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 22.92
+    rr: 10.0
+    trades: 50
+    win_rate: 14.000000000000002
+  INITUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 33.86
+    rr: 7.0
+    trades: 73
+    win_rate: 19.17808219178082
+  INJUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 32.03
+    rr: 7.0
+    trades: 37
+    win_rate: 24.324324324324326
+  INUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 40.87
+    rr: 10.0
+    trades: 24
+    win_rate: 25.0
+  IOSTUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 32.91
+    rr: 3.0
+    trades: 35
+    win_rate: 51.42857142857142
+  IOTAUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 25.23
+    rr: 5.0
+    trades: 21
+    win_rate: 38.095238095238095
+  IOTXUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 14.56
+    rr: 3.0
+    trades: 23
+    win_rate: 43.47826086956522
+  IOUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 25.31
+    rr: 4.0
+    trades: 23
+    win_rate: 43.47826086956522
+  IPUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 60.91
+    rr: 9.0
+    trades: 37
+    win_rate: 27.027027027027028
+  JELLYJELLYUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 46.01
+    rr: 9.0
+    trades: 51
+    win_rate: 19.607843137254903
+  JSTUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 27.75
+    rr: 10.0
+    trades: 21
+    win_rate: 23.809523809523807
+  JUPUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 64.31
+    rr: 9.0
+    trades: 42
+    win_rate: 26.190476190476193
+  KAITOUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 29.88
+    rr: 6.0
+    trades: 37
+    win_rate: 27.027027027027028
+  KGENUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 12.65
+    rr: 3.0
+    trades: 15
+    win_rate: 46.666666666666664
+  KMNOUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 43.46
+    rr: 10.0
+    trades: 31
+    win_rate: 22.58064516129032
+  KNCUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 24.99
+    rr: 8.0
+    trades: 42
+    win_rate: 19.047619047619047
+  L3USDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 25.13
+    rr: 10.0
+    trades: 37
+    win_rate: 16.216216216216218
+  LAUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 20.03
+    rr: 4.0
+    trades: 23
+    win_rate: 39.130434782608695
+  LDOUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 16.93
+    rr: 6.0
+    trades: 23
+    win_rate: 26.08695652173913
+  LINEAUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 42.93
+    rr: 7.0
+    trades: 27
+    win_rate: 33.33333333333333
+  LINKUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 41.75
+    rr: 10.0
+    trades: 42
+    win_rate: 19.047619047619047
+  LSKUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 57.77
+    rr: 10.0
+    trades: 28
+    win_rate: 28.57142857142857
+  LTCUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 32.17
+    rr: 9.0
+    trades: 25
+    win_rate: 24.0
+  LUNA2USDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 64.36
+    rr: 7.0
+    trades: 22
+    win_rate: 50.0
+  MANAUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 29.12
+    rr: 4.0
+    trades: 19
+    win_rate: 52.63157894736842
+  MANTAUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 51.42
+    rr: 10.0
+    trades: 35
+    win_rate: 22.857142857142858
+  MAVUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 32.61
+    rr: 10.0
+    trades: 21
+    win_rate: 23.809523809523807
+  MELANIAUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 46.86
+    rr: 8.0
+    trades: 40
+    win_rate: 25.0
+  METUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 67.76
+    rr: 7.0
+    trades: 27
+    win_rate: 44.44444444444444
+  MEUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 17.47
+    rr: 4.0
+    trades: 47
+    win_rate: 29.78723404255319
+  MEWUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 16.22
+    rr: 4.0
+    trades: 31
+    win_rate: 32.25806451612903
+  MINAUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 47.75
+    rr: 5.0
+    trades: 28
+    win_rate: 46.42857142857143
+  MIRAUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 85.11
+    rr: 10.0
+    trades: 33
+    win_rate: 33.33333333333333
+  MITOUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 20.4
+    rr: 10.0
+    trades: 22
+    win_rate: 18.181818181818183
+  MLNUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 37.35
+    rr: 6.0
+    trades: 36
+    win_rate: 30.555555555555557
+  MOCAUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 23.67
+    rr: 6.0
+    trades: 68
+    win_rate: 20.588235294117645
+  MOVEUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 74.88
+    rr: 10.0
+    trades: 43
+    win_rate: 25.581395348837212
+  MOVRUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 70.16
+    rr: 10.0
+    trades: 46
+    win_rate: 23.91304347826087
+  MTLUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 18.05
+    rr: 4.0
+    trades: 24
+    win_rate: 37.5
+  MUBARAKUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 34.77
+    rr: 4.0
+    trades: 47
+    win_rate: 36.17021276595745
+  MUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 43.63
+    rr: 7.0
+    trades: 35
+    win_rate: 28.57142857142857
+  NAORISUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 24.5
+    rr: 7.0
+    trades: 38
+    win_rate: 21.052631578947366
+  NEARUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 24.57
+    rr: 6.0
+    trades: 35
+    win_rate: 25.71428571428571
+  NEWTUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 49.37
+    rr: 10.0
+    trades: 75
+    win_rate: 16.0
+  NFPUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 108.34
+    rr: 10.0
+    trades: 42
+    win_rate: 33.33333333333333
+  NKNUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 18.46
+    rr: 4.0
+    trades: 29
+    win_rate: 34.48275862068966
+  NMRUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 16.73
+    rr: 3.0
+    trades: 25
+    win_rate: 44.0
+  NOMUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 54.42
+    rr: 10.0
+    trades: 41
+    win_rate: 21.951219512195124
+  NOTUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 57.69
+    rr: 9.0
+    trades: 50
+    win_rate: 22.0
+  NTRNUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 21.77
+    rr: 3.0
+    trades: 24
+    win_rate: 50.0
+  NXPCUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 55.45
+    rr: 10.0
+    trades: 50
+    win_rate: 20.0
+  OGNUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 19.52
+    rr: 4.0
+    trades: 41
+    win_rate: 31.70731707317073
+  OGUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 30.0
+    rr: 9.0
+    trades: 65
+    win_rate: 15.384615384615385
+  OLUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 27.71
+    rr: 10.0
+    trades: 36
+    win_rate: 16.666666666666664
+  OMUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 39.74
+    rr: 6.0
+    trades: 34
+    win_rate: 32.35294117647059
+  ONDOUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 24.03
+    rr: 9.0
+    trades: 42
+    win_rate: 16.666666666666664
+  ONEUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 34.0
+    rr: 5.0
+    trades: 24
+    win_rate: 41.66666666666667
+  ONTUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 55.04
+    rr: 9.0
+    trades: 59
+    win_rate: 20.33898305084746
+  OPENUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 76.03
+    rr: 10.0
+    trades: 32
+    win_rate: 31.25
+  OPUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 14.22
+    rr: 3.0
+    trades: 57
+    win_rate: 33.33333333333333
+  ORCAUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 23.01
+    rr: 7.0
+    trades: 30
+    win_rate: 23.333333333333332
+  PARTIUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 18.73
+    rr: 9.0
+    trades: 29
+    win_rate: 17.24137931034483
+  PENDLEUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 33.08
+    rr: 6.0
+    trades: 60
+    win_rate: 23.333333333333332
+  PENGUUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 39.83
+    rr: 3.0
+    trades: 38
+    win_rate: 52.63157894736842
+  PEOPLEUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 51.63
+    rr: 10.0
+    trades: 34
+    win_rate: 23.52941176470588
+  PHAUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 41.8
+    rr: 7.0
+    trades: 43
+    win_rate: 25.581395348837212
+  PIPPINUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 22.39
+    rr: 10.0
+    trades: 31
+    win_rate: 16.129032258064516
+  PIXELUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 39.44
+    rr: 10.0
+    trades: 35
+    win_rate: 20.0
+  PLUMEUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 33.38
+    rr: 8.0
+    trades: 63
+    win_rate: 17.46031746031746
+  PNUTUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 38.69
+    rr: 8.0
+    trades: 31
+    win_rate: 25.806451612903224
+  POLUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 42.23
+    rr: 10.0
+    trades: 63
+    win_rate: 15.873015873015872
+  PORTALUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 39.06
+    rr: 9.0
+    trades: 29
+    win_rate: 24.137931034482758
+  POWRUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 53.15
+    rr: 6.0
+    trades: 52
+    win_rate: 30.76923076923077
+  PROMPTUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 52.01
+    rr: 8.0
+    trades: 27
+    win_rate: 33.33333333333333
+  PROVEUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 104.99
+    rr: 10.0
+    trades: 65
+    win_rate: 24.615384615384617
+  PTBUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 83.53
+    rr: 8.0
+    trades: 59
+    win_rate: 27.11864406779661
+  PUFFERUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 11.86
+    rr: 3.0
+    trades: 19
+    win_rate: 42.10526315789473
+  PUMPBTCUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 71.93
+    rr: 10.0
+    trades: 47
+    win_rate: 23.404255319148938
+  PUMPFUNUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 19.71
+    rr: 6.0
+    trades: 36
+    win_rate: 22.22222222222222
+  PYTHUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 25.52
+    rr: 3.0
+    trades: 21
+    win_rate: 57.14285714285714
+  QNTUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 18.75
+    rr: 3.0
+    trades: 40
+    win_rate: 40.0
+  QTUMUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 12.99
+    rr: 3.0
+    trades: 25
+    win_rate: 40.0
+  QUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 40.42
+    rr: 7.0
+    trades: 15
+    win_rate: 46.666666666666664
+  RDNTUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 27.15
+    rr: 5.0
+    trades: 19
+    win_rate: 42.10526315789473
+  REDUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 30.99
+    rr: 10.0
+    trades: 32
+    win_rate: 18.75
+  RENDERUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 34.72
+    rr: 8.0
+    trades: 43
+    win_rate: 20.930232558139537
+  RESOLVUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 23.79
+    rr: 9.0
+    trades: 34
+    win_rate: 17.647058823529413
+  REZUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 32.33
+    rr: 7.0
+    trades: 30
+    win_rate: 26.666666666666668
+  RLCUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 51.9
+    rr: 9.0
+    trades: 27
+    win_rate: 29.629629629629626
+  RONINUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 32.78
+    rr: 9.0
+    trades: 33
+    win_rate: 21.21212121212121
+  ROSEUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 18.64
+    rr: 4.0
+    trades: 20
+    win_rate: 40.0
+  RVNUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 20.35
+    rr: 4.0
+    trades: 44
+    win_rate: 31.818181818181817
+  SAFEUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 21.97
+    rr: 3.0
+    trades: 45
+    win_rate: 40.0
+  SAHARAUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 26.81
+    rr: 9.0
+    trades: 21
+    win_rate: 23.809523809523807
+  SAROSUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 103.35
+    rr: 9.0
+    trades: 75
+    win_rate: 24.0
+  SEIUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 24.79
+    rr: 8.0
+    trades: 52
+    win_rate: 17.307692307692307
+  SFPUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 26.62
+    rr: 6.0
+    trades: 38
+    win_rate: 26.31578947368421
+  SHIB1000USDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 29.63
+    rr: 10.0
+    trades: 42
+    win_rate: 16.666666666666664
+  SIRENUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 62.08
+    rr: 6.0
+    trades: 41
+    win_rate: 36.58536585365854
+  SKLUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 65.0
+    rr: 9.0
+    trades: 41
+    win_rate: 26.82926829268293
+  SKYAIUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 69.37
+    rr: 10.0
+    trades: 69
+    win_rate: 18.84057971014493
+  SLPUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 40.68
+    rr: 10.0
+    trades: 43
+    win_rate: 18.6046511627907
+  SNTUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 10.45
+    rr: 3.0
+    trades: 25
+    win_rate: 40.0
+  SOLAYERUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 21.7
+    rr: 9.0
+    trades: 44
+    win_rate: 15.909090909090908
+  SOLUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 20.84
+    rr: 4.0
+    trades: 35
+    win_rate: 34.285714285714285
+  SOMIUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 102.99
+    rr: 10.0
+    trades: 48
+    win_rate: 29.166666666666668
+  SONICUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 26.21
+    rr: 10.0
+    trades: 16
+    win_rate: 25.0
+  SOONUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 70.52
+    rr: 10.0
+    trades: 38
+    win_rate: 26.31578947368421
+  SOPHUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 39.21
+    rr: 4.0
+    trades: 51
+    win_rate: 37.254901960784316
+  SOSOUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 34.49
+    rr: 8.0
+    trades: 48
+    win_rate: 20.833333333333336
+  SPKUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 80.74
+    rr: 10.0
+    trades: 38
+    win_rate: 28.947368421052634
+  SQDUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 30.27
+    rr: 3.0
+    trades: 21
+    win_rate: 61.904761904761905
+  STEEMUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 43.11
+    rr: 10.0
+    trades: 39
+    win_rate: 20.51282051282051
+  STGUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 32.45
+    rr: 10.0
+    trades: 30
+    win_rate: 20.0
+  STRKUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 47.61
+    rr: 9.0
+    trades: 30
+    win_rate: 26.666666666666668
+  STXUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 5.53
+    rr: 4.0
+    trades: 27
+    win_rate: 25.925925925925924
+  SUIUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 101.0
+    rr: 10.0
+    trades: 50
+    win_rate: 28.000000000000004
+  SUNUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 38.98
+    rr: 6.0
+    trades: 93
+    win_rate: 23.655913978494624
+  SUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 14.22
+    rr: 3.0
+    trades: 20
+    win_rate: 45.0
+  SUSHIUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 36.25
+    rr: 6.0
+    trades: 51
+    win_rate: 25.49019607843137
+  SWARMSUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 33.16
+    rr: 7.0
+    trades: 37
+    win_rate: 24.324324324324326
+  SXPUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 17.72
+    rr: 7.0
+    trades: 27
+    win_rate: 22.22222222222222
+  SXTUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 36.45
+    rr: 9.0
+    trades: 22
+    win_rate: 27.27272727272727
+  SYNUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 20.85
+    rr: 7.0
+    trades: 25
+    win_rate: 24.0
+  SYRUPUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 23.9
+    rr: 4.0
+    trades: 48
+    win_rate: 31.25
+  SYSUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 48.7
+    rr: 9.0
+    trades: 47
+    win_rate: 21.27659574468085
+  TAIKOUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 41.28
+    rr: 10.0
+    trades: 22
+    win_rate: 27.27272727272727
+  TAUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 41.05
+    rr: 10.0
+    trades: 24
+    win_rate: 25.0
+  THEUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 43.82
+    rr: 10.0
+    trades: 21
+    win_rate: 28.57142857142857
+  TLMUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 36.3
+    rr: 10.0
+    trades: 37
+    win_rate: 18.91891891891892
+  TNSRUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 31.48
+    rr: 3.0
+    trades: 90
+    win_rate: 35.55555555555556
+  TOWNSUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 44.03
+    rr: 9.0
+    trades: 72
+    win_rate: 16.666666666666664
+  TRBUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 20.58
+    rr: 7.0
+    trades: 40
+    win_rate: 20.0
+  TREEUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 22.62
+    rr: 9.0
+    trades: 35
+    win_rate: 17.142857142857142
+  TRUMPUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 51.43
+    rr: 10.0
+    trades: 41
+    win_rate: 21.951219512195124
+  TRXUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 47.43
+    rr: 10.0
+    trades: 56
+    win_rate: 19.642857142857142
+  UBUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 41.54
+    rr: 8.0
+    trades: 20
+    win_rate: 35.0
+  UNIUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 13.37
+    rr: 3.0
+    trades: 46
+    win_rate: 34.78260869565217
+  USTCUSDT:
+    divergence: HID_BULL
+    enabled: true
+    expected_r: 25.85
+    rr: 6.0
+    trades: 33
+    win_rate: 27.27272727272727
+  USUALUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 32.37
+    rr: 3.0
+    trades: 48
+    win_rate: 43.75
+  VANAUSDT:
+    divergence: HID_BEAR
+    enabled: true
+    expected_r: 42.25
+    rr: 9.0
+    trades: 72
+    win_rate: 16.666666666666664
+  VELOUSDT:
+    divergence: REG_BEAR
+    enabled: true
+    expected_r: 31.26
+    rr: 8.0
+    trades: 30
+    win_rate: 23.333333333333332
+  VELVETUSDT:
+    divergence: REG_BULL
+    enabled: true
+    expected_r: 15.68
+    rr: 10.0
+    trades: 27
+    win_rate: 14.814814814814813
+validation: Walk-Forward + Monte Carlo + OOS

@@ -1,12 +1,18 @@
 """
 Enhanced Telegram Handler with Commands
 ========================================
-Full command support for 4H bot:
-- /dashboard - Main dashboard
+Full command support for Multi-Divergence Bot:
+- /dashboard - Main dashboard with divergence breakdown
 - /help - Command list
 - /positions - All active positions
 - /stats - Performance statistics
 - /stop - Emergency stop
+
+Divergence Types:
+- REG_BULL (🟢): Regular Bullish (Reversal)
+- REG_BEAR (🔴): Regular Bearish (Reversal)
+- HID_BULL (🟠): Hidden Bullish (Continuation)
+- HID_BEAR (🟡): Hidden Bearish (Continuation)
 """
 
 import asyncio
@@ -92,7 +98,7 @@ class TelegramHandler:
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Help command"""
         msg = """
-🤖 **1H RSI DIVERGENCE BOT**
+🤖 **1H MULTI-DIVERGENCE BOT**
 
 📊 **MONITORING**
 /dashboard - Live trading dashboard
@@ -106,8 +112,9 @@ class TelegramHandler:
 /start - Resume trading
 /help - Show this message
 
-💡 **Strategy**: 1H RSI Divergence + EMA200 + BOS
-**Portfolio**: 79 Symbols, ~+2400R/Year (validated)
+💡 **Strategy**: 1H Multi-Divergence + EMA200 + BOS
+**Divergences**: REG_BULL, REG_BEAR, HID_BULL, HID_BEAR
+**Portfolio**: 271 Symbols, ~+10,348R/6mo (validated)
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     
@@ -202,8 +209,9 @@ class TelegramHandler:
             pending_list = []
             for sym, sigs in self.bot.pending_signals.items():
                 for sig in sigs:
-                    side_icon = "🟢" if sig.signal.signal_type == 'bullish' else "🔴"
-                    pending_list.append(f"{side_icon} {sym} ({sig.candles_waited}/12)")
+                    div_code = getattr(sig.signal, 'divergence_code', sig.signal.signal_type.upper()[:3])
+                    side_icon = "🟢" if sig.signal.side == 'long' else "🔴"
+                    pending_list.append(f"{side_icon} {sym} {div_code} ({sig.candles_waited}/12)")
             pending_str = "\n│   ".join(pending_list[:3]) if pending_list else "None"
             
             # === RADAR (Categorized with ETA) ===
@@ -214,10 +222,11 @@ class TelegramHandler:
             # 1. Pending BOS signals (most accurate ETA)
             for sym, sigs in self.bot.pending_signals.items():
                 for sig in sigs:
-                    side_icon = "🟢" if sig.signal.signal_type == 'bullish' else "🔴"
+                    div_code = getattr(sig.signal, 'divergence_code', sig.signal.signal_type.upper()[:3])
+                    side_icon = "🟢" if sig.signal.side == 'long' else "🔴"
                     candles_left = 12 - sig.candles_waited
                     hours_max = candles_left
-                    pending_radar.append(f"│   {side_icon} {sym}: {sig.candles_waited}/6 candles → Max {hours_max}h to entry")
+                    pending_radar.append(f"│   {side_icon} {sym} {div_code}: {sig.candles_waited}/12 candles → Max {hours_max}h to entry")
             
             # 2. Developing patterns and extreme zones (with rich multi-line format)
             if getattr(self.bot, 'radar_items', None):
@@ -283,8 +292,11 @@ class TelegramHandler:
                 extreme_radar_str += f"\n│   ... and {extreme_count - 3} more"
             
             # === BUILD COMPREHENSIVE MESSAGE ===
+            # Get divergence type breakdown
+            div_summary = self.bot.symbol_config.get_divergence_summary()
+            
             msg = f"""
-📊 **1H VALIDATED DASHBOARD**
+📊 **1H MULTI-DIVERGENCE DASHBOARD**
 ━━━━━━━━━━━━━━━━━━━━
 
 ⏰ **SYSTEM**
@@ -294,10 +306,10 @@ class TelegramHandler:
 └ Enabled: {enabled} Symbols (Validated)
 
 🎯 **STRATEGY**
-├ Setup: RSI Divergence + EMA 200 + BOS
-├ Confidence: 100% Anti-Overfit
-├ Risk/Reward: Individual per symbol
-└ Expected OOS: ~+2400R/Yr (79 symbols)
+├ Setup: Multi-Divergence + EMA 200 + BOS
+├ Types: 🟢REG_BULL({div_summary.get('REG_BULL', 0)}) 🔴REG_BEAR({div_summary.get('REG_BEAR', 0)}) 🟠HID_BULL({div_summary.get('HID_BULL', 0)}) 🟡HID_BEAR({div_summary.get('HID_BEAR', 0)})
+├ Confidence: 100% Walk-Forward + Monte Carlo
+└ Expected: ~+10,348R/6mo ({enabled} symbols)
 
 🔍 **SCANNING STATUS**
 ├ Last Scan: {last_scan_str}
@@ -542,38 +554,119 @@ To resume: `/start`
         logger.info(f"✅ Trading resumed by user {update.effective_user.name}")
     
     async def cmd_risk(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """View or update risk per trade"""
+        """View or update risk per trade (supports % and USD)"""
         try:
+            # Get current balance for conversions
+            try:
+                balance = await self.bot.broker.get_balance()
+            except:
+                balance = 1000  # Fallback
+            
+            current_risk_pct = self.bot.risk_config.get('risk_per_trade', 0.005)
+            current_risk_usd = balance * current_risk_pct
+            
             if not context.args:
                 # View current risk
-                risk_pct = self.bot.risk_config.get('risk_per_trade', 0.01) * 100
-                msg = f"💰 **CURRENT RISK**: {risk_pct:.1f}% per trade\n\nTo update: `/risk 0.5` (for 0.5%)"
+                msg = f"""💰 **CURRENT RISK SETTINGS**
+━━━━━━━━━━━━━━━━━━━━
+
+📊 **Per Trade Risk**
+├ Percentage: {current_risk_pct*100:.2f}%
+├ USD Amount: ${current_risk_usd:.2f}
+└ Balance: ${balance:,.2f}
+
+⚙️ **To Update**:
+├ `/risk 0.5` or `/risk 0.5%` → Set to 0.5%
+├ `/risk $50` or `/risk 50usd` → Set to $50 per trade
+└ `/risk 1%` → Set to 1%
+
+💡 Current: ${current_risk_usd:.2f} per trade ({current_risk_pct*100:.2f}%)
+"""
                 await update.message.reply_text(msg, parse_mode='Markdown')
                 return
             
-            # Update risk
+            # Parse input - support multiple formats
+            input_val = context.args[0].lower().strip()
+            
+            # Check for USD formats: $50, 50usd, 50$
+            is_usd = False
+            if input_val.startswith('$'):
+                is_usd = True
+                input_val = input_val[1:]  # Remove $
+            elif input_val.endswith('usd'):
+                is_usd = True
+                input_val = input_val[:-3]  # Remove usd
+            elif input_val.endswith('$'):
+                is_usd = True
+                input_val = input_val[:-1]  # Remove trailing $
+            
+            # Check for percentage format: 0.5%, 1%
+            if input_val.endswith('%'):
+                input_val = input_val[:-1]  # Remove %
+            
             try:
-                val_str = context.args[0].replace('%', '')
-                new_risk = float(val_str)
-                
-                # If user enters 1, assume 1%. If 0.01, assume 1%
-                if new_risk >= 1:
-                    new_risk = new_risk / 100
-                
-                success, msg = self.bot.set_risk_per_trade(new_risk)
-                if success:
-                    await update.message.reply_text(f"✅ {msg}")
-                else:
-                    await update.message.reply_text(f"❌ {msg}")
-                    
+                amount = float(input_val)
             except ValueError:
-                await update.message.reply_text("❌ Invalid format. Use: `/risk 0.5`")
+                await update.message.reply_text("❌ Invalid format. Examples:\n`/risk 0.5` (0.5%)\n`/risk $50` ($50 per trade)\n`/risk 1%` (1%)")
+                return
+            
+            if is_usd:
+                # Convert USD to percentage
+                if balance <= 0:
+                    await update.message.reply_text("❌ Cannot calculate percentage - balance unavailable")
+                    return
+                
+                new_risk_pct = amount / balance
+                new_risk_usd = amount
+                
+                # Validate
+                if new_risk_pct > 0.05:  # Max 5%
+                    await update.message.reply_text(f"⚠️ ${amount:.2f} is {new_risk_pct*100:.1f}% of your balance - too high! Max is 5%.")
+                    return
+                if new_risk_pct < 0.001:  # Min 0.1%
+                    await update.message.reply_text(f"⚠️ ${amount:.2f} is only {new_risk_pct*100:.3f}% - too low! Min is 0.1%.")
+                    return
+            else:
+                # Treat as percentage
+                # Handle both 0.5 and 50 input styles
+                if amount >= 1:
+                    new_risk_pct = amount / 100  # User entered 1 for 1%
+                else:
+                    new_risk_pct = amount  # User entered 0.01 for 1%
+                
+                new_risk_usd = balance * new_risk_pct
+                
+                # Validate
+                if new_risk_pct > 0.05:
+                    await update.message.reply_text(f"⚠️ {new_risk_pct*100:.1f}% is too high! Max is 5%.")
+                    return
+                if new_risk_pct < 0.001:
+                    await update.message.reply_text(f"⚠️ {new_risk_pct*100:.3f}% is too low! Min is 0.1%.")
+                    return
+            
+            # Apply the new risk
+            success, result_msg = self.bot.set_risk_per_trade(new_risk_pct)
+            
+            if success:
+                msg = f"""✅ **RISK UPDATED**
+━━━━━━━━━━━━━━━━━━━━
+
+📊 **New Risk Per Trade**
+├ Percentage: {new_risk_pct*100:.2f}%
+├ USD Amount: ${new_risk_usd:.2f}
+└ Balance: ${balance:,.2f}
+
+💡 Each trade will now risk ${new_risk_usd:.2f}
+"""
+                await update.message.reply_text(msg, parse_mode='Markdown')
+            else:
+                await update.message.reply_text(f"❌ {result_msg}")
                 
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
             logger.error(f"Risk command error: {e}")
     async def cmd_radar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show full radar watch for all symbols"""
+        """Show full radar watch for all symbols - handles long messages"""
         try:
             # Build comprehensive radar view with defensive checks
             pending_count = sum(len(sigs) for sigs in self.bot.pending_signals.values()) if self.bot.pending_signals else 0
@@ -589,25 +682,37 @@ To resume: `/start`
                         elif data_type in ['extreme_oversold', 'extreme_overbought']:
                             extreme_count += 1
             
-            msg = f"""
-📡 **FULL RADAR WATCH**
+            # Get divergence type summary
+            div_summary = self.bot.symbol_config.get_divergence_summary()
+            
+            msg = f"""📡 **FULL RADAR WATCH**
 ━━━━━━━━━━━━━━━━━━━━
 
-Total Active: {pending_count + developing_count + extreme_count} signals
+📊 **Portfolio**: {self.bot.symbol_config.get_total_enabled()} symbols
+├ 🟢 REG_BULL: {div_summary.get('REG_BULL', 0)}
+├ 🔴 REG_BEAR: {div_summary.get('REG_BEAR', 0)}
+├ 🟠 HID_BULL: {div_summary.get('HID_BULL', 0)}
+└ 🟡 HID_BEAR: {div_summary.get('HID_BEAR', 0)}
+
+🎯 **Active Signals**: {pending_count + developing_count + extreme_count}
 
 """
             
-            # 1. Pending BOS
+            # 1. Pending BOS - show with divergence code
             if self.bot.pending_signals:
-                msg += "🎯 **PENDING BOS (Confirmed)**\n\n"
-                for sym, sigs in self.bot.pending_signals.items():
+                msg += "⏳ **PENDING BOS (Waiting for Breakout)**\n\n"
+                for sym, sigs in list(self.bot.pending_signals.items())[:10]:  # Limit to 10
                     for sig in sigs:
-                        side_icon = "🟢" if sig.signal.signal_type == 'bullish' else "🔴"
+                        div_code = getattr(sig.signal, 'divergence_code', sig.signal.signal_type.upper()[:3])
+                        side_icon = "🟢" if sig.signal.side == 'long' else "🔴"
                         candles_left = 12 - sig.candles_waited
-                        msg += f"{side_icon} **{sym}**: {sig.candles_waited}/12 candles → Max {candles_left}h to entry\n"
+                        msg += f"{side_icon} **{sym}** {div_code}: {sig.candles_waited}/12 → {candles_left}h max\n"
+                
+                if pending_count > 10:
+                    msg += f"_...and {pending_count - 10} more_\n"
                 msg += "\n"
             
-            # 2. Developing Setups
+            # 2. Developing Setups (limit to 5)
             developing = []
             extreme = []
             
@@ -622,65 +727,61 @@ Total Active: {pending_count + developing_count + extreme_count} signals
             
             if developing:
                 msg += "🔮 **DEVELOPING PATTERNS**\n\n"
-                for sym, data in developing:
+                for sym, data in developing[:5]:  # Limit to 5
                     try:
                         data_type = data.get('type', '')
                         progress = int(data.get('pivot_progress', 3) or 3)
-                        progress = max(0, min(6, progress))  # Clamp to 0-6
-                        progress_bar = "▓" * progress + "░" * (6 - progress)
-                        
-                        price = float(data.get('price', 0) or 0)
-                        ema_dist = float(data.get('ema_dist', 0) or 0)
+                        progress = max(0, min(6, progress))
                         rsi = float(data.get('rsi', 0) or 0)
-                        prev_rsi = float(data.get('prev_pivot_rsi', 0) or 0)
-                        rsi_div = float(data.get('rsi_div', 0) or 0)
+                        side_icon = "🟢" if data_type == 'bullish_setup' else "🔴"
+                        side_name = "Bull" if data_type == 'bullish_setup' else "Bear"
                         
-                        if data_type == 'bullish_setup':
-                            msg += f"""🟢 **{sym}**: Bullish Divergence Forming
-├─ Price: ${price:,.4f} ({ema_dist:+.1f}% from EMA)
-├─ RSI: {rsi:.0f} ⬆️ (was {prev_rsi:.0f}, +{rsi_div:.0f}pts)
-├─ Progress: {progress_bar} {progress}/6
-└─ ETA: 3-9h to signal\n\n"""
-                        else:
-                            msg += f"""🔴 **{sym}**: Bearish Divergence Forming
-├─ Price: ${price:,.4f} ({ema_dist:+.1f}% from EMA)
-├─ RSI: {rsi:.0f} ⬇️ (was {prev_rsi:.0f}, +{rsi_div:.0f}pts)
-├─ Progress: {progress_bar} {progress}/6
-└─ ETA: 3-9h to signal\n\n"""
-                    except Exception as item_err:
-                        msg += f"⚠️ {sym}: Error displaying\n"
-                        logger.error(f"Radar item error for {sym}: {item_err}")
+                        msg += f"{side_icon} **{sym}**: {side_name} forming ({progress}/6) RSI:{rsi:.0f}\n"
+                    except:
+                        pass
+                
+                if len(developing) > 5:
+                    msg += f"_...and {len(developing) - 5} more_\n"
+                msg += "\n"
             
             if extreme:
                 msg += "⚡ **EXTREME ZONES**\n\n"
-                for sym, data in extreme:
+                for sym, data in extreme[:5]:  # Limit to 5
                     try:
                         data_type = data.get('type', '')
                         rsi = float(data.get('rsi', 0) or 0)
                         hours = float(data.get('hours_in_zone', 0) or 0)
-                        price = float(data.get('price', 0) or 0)
                         
                         if data_type == 'extreme_oversold':
-                            msg += f"""❄️ **{sym}**: Extreme Oversold
-├─ RSI: {rsi:.0f} ({hours:.0f}h in zone)
-├─ Price: ${price:,.4f}
-└─ ETA: 2-8h to reversal\n\n"""
+                            msg += f"❄️ **{sym}**: RSI {rsi:.0f} ({hours:.0f}h oversold)\n"
                         else:
-                            msg += f"""🔥 **{sym}**: Extreme Overbought
-├─ RSI: {rsi:.0f} ({hours:.0f}h in zone)
-├─ Price: ${price:,.4f}
-└─ ETA: 2-8h to reversal\n\n"""
-                    except Exception as item_err:
-                        msg += f"⚠️ {sym}: Error displaying\n"
-                        logger.error(f"Radar extreme item error for {sym}: {item_err}")
+                            msg += f"🔥 **{sym}**: RSI {rsi:.0f} ({hours:.0f}h overbought)\n"
+                    except:
+                        pass
+                
+                if len(extreme) > 5:
+                    msg += f"_...and {len(extreme) - 5} more_\n"
             
             if not self.bot.pending_signals and not developing and not extreme:
-                msg += "All clear - no active radar signals\n"
+                msg += "✨ All clear - no active radar signals\n"
             
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            msg += "\n💡 /dashboard /positions"
+            
+            # Handle long messages - Telegram limit is 4096 chars
+            if len(msg) > 4000:
+                # Split into chunks
+                chunks = [msg[i:i+4000] for i in range(0, len(msg), 4000)]
+                for i, chunk in enumerate(chunks):
+                    if i == 0:
+                        await update.message.reply_text(chunk, parse_mode='Markdown')
+                    else:
+                        await update.message.reply_text(f"...(continued)\n{chunk}", parse_mode='Markdown')
+            else:
+                await update.message.reply_text(msg, parse_mode='Markdown')
             
         except Exception as e:
             import traceback
             logger.error(f"Error in cmd_radar: {e}")
             logger.error(traceback.format_exc())
             await update.message.reply_text(f"❌ Radar error: {str(e)[:100]}")
+

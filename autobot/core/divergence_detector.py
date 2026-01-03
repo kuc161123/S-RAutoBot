@@ -1,13 +1,20 @@
 """
-1H Divergence Detector - Trend-Filtered Strategy
-==================================================
-Detects RSI divergences on 1H timeframe with EMA 200 Trend filter.
-Based on validated 3-year backtest logic (+680R, 44 winners, 64% success rate).
+Multi-Divergence Detector - 4 Divergence Types
+===============================================
+Detects all 4 RSI divergence types with EMA 200 Trend filter.
+Based on comprehensive 500-symbol backtest validation.
+
+Divergence Types:
+1. REG_BULL (Regular Bullish): Price LL, RSI HL → LONG (Reversal)
+2. REG_BEAR (Regular Bearish): Price HH, RSI LH → SHORT (Reversal)
+3. HID_BULL (Hidden Bullish): Price HL, RSI LL → LONG (Continuation)
+4. HID_BEAR (Hidden Bearish): Price LH, RSI HH → SHORT (Continuation)
 
 Key Features:
 - Pivot-based divergence detection (NO LOOK-AHEAD BIAS)
 - EMA 200 trend filter
 - Break of Structure (BOS) confirmation
+- Symbol-specific divergence type filtering
 """
 
 import pandas as pd
@@ -23,13 +30,20 @@ MIN_PIVOT_DISTANCE = 3
 PIVOT_RIGHT = 3  # Confirmation lag (no look-ahead)
 DAILY_EMA_PROXY = 200  # 200 EMA for 1H timeframe
 
+# Divergence type codes
+DIV_REG_BULL = 'REG_BULL'  # Regular Bullish
+DIV_REG_BEAR = 'REG_BEAR'  # Regular Bearish
+DIV_HID_BULL = 'HID_BULL'  # Hidden Bullish
+DIV_HID_BEAR = 'HID_BEAR'  # Hidden Bearish
+
 
 @dataclass
 class DivergenceSignal:
-    """Represents a 4H divergence signal"""
+    """Represents a divergence signal with type identification"""
     symbol: str
     side: str  # 'long' or 'short'
-    signal_type: str  # 'bullish' or 'bearish'
+    signal_type: str  # 'bullish' or 'bearish' (legacy compatibility)
+    divergence_code: str  # 'REG_BULL', 'REG_BEAR', 'HID_BULL', 'HID_BEAR'
     divergence_idx: int
     swing_level: float  # BOS trigger level
     rsi_value: float
@@ -42,11 +56,32 @@ class DivergenceSignal:
             'symbol': self.symbol,
             'side': self.side,
             'type': self.signal_type,
+            'divergence_code': self.divergence_code,
             'price': self.price,
             'swing': self.swing_level,
             'timestamp': self.timestamp.isoformat() if isinstance(self.timestamp, pd.Timestamp) else str(self.timestamp),
             'trend_aligned': self.daily_trend_aligned
         }
+    
+    def get_display_name(self) -> str:
+        """Get human-readable divergence name"""
+        names = {
+            'REG_BULL': 'Regular Bullish',
+            'REG_BEAR': 'Regular Bearish',
+            'HID_BULL': 'Hidden Bullish',
+            'HID_BEAR': 'Hidden Bearish'
+        }
+        return names.get(self.divergence_code, self.divergence_code)
+    
+    def get_short_name(self) -> str:
+        """Get short divergence name for compact display"""
+        names = {
+            'REG_BULL': 'Reg Bull',
+            'REG_BEAR': 'Reg Bear',
+            'HID_BULL': 'Hid Bull',
+            'HID_BEAR': 'Hid Bear'
+        }
+        return names.get(self.divergence_code, self.divergence_code)
 
 
 def calculate_rsi(close: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
@@ -86,7 +121,7 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 
 def calculate_daily_ema(close: pd.Series, period: int = DAILY_EMA_PROXY) -> pd.Series:
-    """Calculate Daily EMA proxy (1200 period on 4H = ~Daily EMA200)"""
+    """Calculate EMA 200 for trend filtering"""
     return close.ewm(span=period, adjust=False).mean()
 
 
@@ -95,7 +130,7 @@ def find_pivots(data: np.ndarray, left: int = 3, right: int = 3) -> Tuple[np.nda
     Find pivot highs and lows in price data.
     
     A pivot at index i is confirmed at i+right.
-    This matches the validated backtest logic.
+    This matches the validated backtest logic - NO LOOK-AHEAD BIAS.
     
     Args:
         data: Array of values (typically close prices)
@@ -123,24 +158,30 @@ def find_pivots(data: np.ndarray, left: int = 3, right: int = 3) -> Tuple[np.nda
     return pivot_highs, pivot_lows
 
 
-def detect_divergences(df: pd.DataFrame, symbol: str) -> List[DivergenceSignal]:
+def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] = None) -> List[DivergenceSignal]:
     """
-    Detect RSI divergences with Daily Trend filter.
+    Detect all 4 RSI divergence types with Daily Trend filter.
     
-    Matches validated backtest logic:
-    - Pivot-based detection (no look-ahead)
-    - Daily EMA trend filter applied
-    - Returns signals ready for BOS monitoring
+    Divergence Types:
+    - REG_BULL: Price Lower Low, RSI Higher Low (Reversal → Long)
+    - REG_BEAR: Price Higher High, RSI Lower High (Reversal → Short)
+    - HID_BULL: Price Higher Low, RSI Lower Low (Continuation → Long)
+    - HID_BEAR: Price Lower High, RSI Higher High (Continuation → Short)
     
     Args:
         df: DataFrame with OHLC + indicators
         symbol: Trading pair symbol
+        allowed_types: List of allowed divergence codes (None = all types)
         
     Returns:
         List of DivergenceSignal objects
     """
     if len(df) < 100:
         return []
+    
+    # Default to all types if not specified
+    if allowed_types is None:
+        allowed_types = [DIV_REG_BULL, DIV_REG_BEAR, DIV_HID_BULL, DIV_HID_BEAR]
     
     close = df['close'].values
     high = df['high'].values
@@ -159,7 +200,7 @@ def detect_divergences(df: pd.DataFrame, symbol: str) -> List[DivergenceSignal]:
         current_price = close[i]
         current_ema = daily_ema[i]
         
-        # === BULLISH DIVERGENCE ===
+        # ========== BULLISH DIVERGENCES (LONG) ==========
         # Find current and previous pivot lows
         curr_pl = curr_pli = prev_pl = prev_pli = None
         
@@ -172,28 +213,43 @@ def detect_divergences(df: pd.DataFrame, symbol: str) -> List[DivergenceSignal]:
                     prev_pl, prev_pli = price_low_pivots[j], j
                     break
         
-        # Check for bullish divergence
         if curr_pl is not None and prev_pl is not None:
-            if curr_pl < prev_pl and rsi[curr_pli] > rsi[prev_pli]:
-                # Calculate swing high for BOS
-                swing_high = max(high[max(0, i-LOOKBACK_BARS):i+1])
-                
-                # Check daily trend alignment
-                trend_aligned = current_price > current_ema
-                
-                signals.append(DivergenceSignal(
-                    symbol=symbol,
-                    side='long',
-                    signal_type='bullish',
-                    divergence_idx=i,
-                    swing_level=swing_high,
-                    rsi_value=rsi[i],
-                    price=current_price,
-                    timestamp=df.index[i],
-                    daily_trend_aligned=trend_aligned
-                ))
+            swing_high = max(high[max(0, i-LOOKBACK_BARS):i+1])
+            trend_aligned = current_price > current_ema
+            
+            # REG_BULL: Price LL (curr < prev), RSI HL (curr > prev)
+            if DIV_REG_BULL in allowed_types:
+                if curr_pl < prev_pl and rsi[curr_pli] > rsi[prev_pli]:
+                    signals.append(DivergenceSignal(
+                        symbol=symbol,
+                        side='long',
+                        signal_type='bullish',
+                        divergence_code=DIV_REG_BULL,
+                        divergence_idx=i,
+                        swing_level=swing_high,
+                        rsi_value=rsi[i],
+                        price=current_price,
+                        timestamp=df.index[i],
+                        daily_trend_aligned=trend_aligned
+                    ))
+            
+            # HID_BULL: Price HL (curr > prev), RSI LL (curr < prev)
+            if DIV_HID_BULL in allowed_types:
+                if curr_pl > prev_pl and rsi[curr_pli] < rsi[prev_pli]:
+                    signals.append(DivergenceSignal(
+                        symbol=symbol,
+                        side='long',
+                        signal_type='bullish',
+                        divergence_code=DIV_HID_BULL,
+                        divergence_idx=i,
+                        swing_level=swing_high,
+                        rsi_value=rsi[i],
+                        price=current_price,
+                        timestamp=df.index[i],
+                        daily_trend_aligned=trend_aligned
+                    ))
         
-        # === BEARISH DIVERGENCE ===
+        # ========== BEARISH DIVERGENCES (SHORT) ==========
         # Find current and previous pivot highs
         curr_ph = curr_phi = prev_ph = prev_phi = None
         
@@ -205,26 +261,41 @@ def detect_divergences(df: pd.DataFrame, symbol: str) -> List[DivergenceSignal]:
                     prev_ph, prev_phi = price_high_pivots[j], j
                     break
         
-        # Check for bearish divergence
         if curr_ph is not None and prev_ph is not None:
-            if curr_ph > prev_ph and rsi[curr_phi] < rsi[prev_phi]:
-                # Calculate swing low for BOS
-                swing_low = min(low[max(0, i-LOOKBACK_BARS):i+1])
-                
-                # Check daily trend alignment
-                trend_aligned = current_price < current_ema
-                
-                signals.append(DivergenceSignal(
-                    symbol=symbol,
-                    side='short',
-                    signal_type='bearish',
-                    divergence_idx=i,
-                    swing_level=swing_low,
-                    rsi_value=rsi[i],
-                    price=current_price,
-                    timestamp=df.index[i],
-                    daily_trend_aligned=trend_aligned
-                ))
+            swing_low = min(low[max(0, i-LOOKBACK_BARS):i+1])
+            trend_aligned = current_price < current_ema
+            
+            # REG_BEAR: Price HH (curr > prev), RSI LH (curr < prev)
+            if DIV_REG_BEAR in allowed_types:
+                if curr_ph > prev_ph and rsi[curr_phi] < rsi[prev_phi]:
+                    signals.append(DivergenceSignal(
+                        symbol=symbol,
+                        side='short',
+                        signal_type='bearish',
+                        divergence_code=DIV_REG_BEAR,
+                        divergence_idx=i,
+                        swing_level=swing_low,
+                        rsi_value=rsi[i],
+                        price=current_price,
+                        timestamp=df.index[i],
+                        daily_trend_aligned=trend_aligned
+                    ))
+            
+            # HID_BEAR: Price LH (curr < prev), RSI HH (curr > prev)
+            if DIV_HID_BEAR in allowed_types:
+                if curr_ph < prev_ph and rsi[curr_phi] > rsi[prev_phi]:
+                    signals.append(DivergenceSignal(
+                        symbol=symbol,
+                        side='short',
+                        signal_type='bearish',
+                        divergence_code=DIV_HID_BEAR,
+                        divergence_idx=i,
+                        swing_level=swing_low,
+                        rsi_value=rsi[i],
+                        price=current_price,
+                        timestamp=df.index[i],
+                        daily_trend_aligned=trend_aligned
+                    ))
     
     return signals
 
@@ -301,11 +372,28 @@ def is_trend_aligned(df: pd.DataFrame, signal: DivergenceSignal, current_idx: in
 
 # Signal descriptions for notifications
 SIGNAL_DESCRIPTIONS = {
-    'bullish': '📈 Bullish Divergence (Price LL, RSI HL) → LONG',
-    'bearish': '📉 Bearish Divergence (Price HH, RSI LH) → SHORT'
+    'REG_BULL': '📈 Regular Bullish (Price LL → RSI HL) → LONG',
+    'REG_BEAR': '📉 Regular Bearish (Price HH → RSI LH) → SHORT',
+    'HID_BULL': '📈 Hidden Bullish (Price HL → RSI LL) → LONG',
+    'HID_BEAR': '📉 Hidden Bearish (Price LH → RSI HH) → SHORT',
+    # Legacy compatibility
+    'bullish': '📈 Bullish Divergence → LONG',
+    'bearish': '📉 Bearish Divergence → SHORT'
+}
+
+SIGNAL_EMOJIS = {
+    'REG_BULL': '🔵',  # Regular Bullish
+    'REG_BEAR': '🔴',  # Regular Bearish
+    'HID_BULL': '🟢',  # Hidden Bullish
+    'HID_BEAR': '🟠',  # Hidden Bearish
 }
 
 
-def get_signal_description(signal_type: str) -> str:
-    """Get human-readable description for a signal type"""
-    return SIGNAL_DESCRIPTIONS.get(signal_type, f"Unknown signal: {signal_type}")
+def get_signal_description(code: str) -> str:
+    """Get human-readable description for a divergence code"""
+    return SIGNAL_DESCRIPTIONS.get(code, f"Unknown: {code}")
+
+
+def get_signal_emoji(code: str) -> str:
+    """Get emoji for a divergence code"""
+    return SIGNAL_EMOJIS.get(code, '⚪')

@@ -208,7 +208,7 @@ class Bybit:
     async def get_instruments_info(self, category:str="linear", symbol:Optional[str]=None) -> list:
         """Get instrument info (tick size, lot size, max leverage, etc.)"""
         try:
-            params = {"category": category, "limit": 1000}
+            params = {"category": category, "limit": 200}
             if symbol:
                 params["symbol"] = symbol
             

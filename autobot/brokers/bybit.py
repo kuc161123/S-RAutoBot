@@ -55,12 +55,13 @@ class Bybit:
                 # 1. Sort by key (required by Bybit)
                 # 2. Encode values (cursor params have commas, etc)
                 import urllib.parse
-                # Note: Bybit V5 docs say sort params by key
-                sorted_params = dict(sorted(params.items()))
-                # Use urlencode but ensure we don't double encode if not needed
-                # Bybit often wants unquoted values in signature string, let's stick to raw string as sent
-                # But safer to standardise:
-                query_string = urllib.parse.urlencode(sorted_params) 
+                
+                # Sort params by key
+                sorted_items = sorted(params.items())
+                
+                # Construct query string manually to ensure consistency between SIGNATURE and REQUEST
+                # We use urllib.parse.quote for values to handle special chars like commas in cursors
+                query_string = "&".join([f"{k}={urllib.parse.quote(str(v))}" for k, v in sorted_items])
             else:
                 query_string = ""
             

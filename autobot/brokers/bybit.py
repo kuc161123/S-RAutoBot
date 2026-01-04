@@ -351,17 +351,12 @@ class Bybit:
             return None
 
     async def get_max_leverage(self, symbol: str) -> int:
-        """Get maximum allowed leverage for a symbol from Bybit.
-        
-        Queries the instruments info API to get the leverageFilter.maxLeverage.
-        Falls back to 25x if unable to fetch.
-        
-        Args:
-            symbol: Trading pair (e.g., 'BTCUSDT')
+        """Get maximum allowed leverage for a symbol, preferring cache."""
+        # 1. Check cache first
+        if symbol in self.leverage_cache:
+            return self.leverage_cache[symbol]
             
-        Returns:
-            Maximum leverage as integer (e.g., 100, 50, 25)
-        """
+        # 2. Fallback to API call if not in cache (rare)
         try:
             instruments = await self.get_instruments_info(symbol=symbol)
             if instruments:
@@ -370,10 +365,11 @@ class Bybit:
                         leverage_filter = inst.get('leverageFilter', {})
                         max_lev = leverage_filter.get('maxLeverage', '10')  # Default safely to 10x
                         result = int(float(max_lev))
-                        # logger.debug(f"Max leverage for {symbol}: {result}x")
+                        # Cache it for next time
+                        self.leverage_cache[symbol] = result
                         return result
             
-            # Fallback if not found - use safe 10x, not 25x which might be too high for some alts
+            # Fallback if not found
             logger.warning(f"Could not get max leverage for {symbol}, using safe 10x")
             return 10
         except Exception as e:
@@ -409,20 +405,41 @@ class Bybit:
                 if str(resp.get("retCode")) == "110043":
                     return resp
                 
-                # Check for "invalid leverage" -> Retry with lower
+                # Check for "invalid leverage"
                 if str(resp.get("retCode")) == "10001":  # Buy leverage invalid
-                    logger.warning(f"Leverage {leverage}x is too high for {symbol}, retrying with 10x...")
-                    resp = await try_set(10)
-                    return resp
+                    # If failed at requested leverage (e.g. 50x), try 10x
+                    if leverage > 10:
+                        logger.warning(f"Leverage {leverage}x is too high for {symbol}, retrying with 10x...")
+                        resp = await try_set(10)
+                        
+                        # If 10x also fails, try 1x as last resort
+                        if str(resp.get("retCode")) == "10001":
+                             logger.warning(f"Leverage 10x also rejected for {symbol}, retrying with 1x...")
+                             resp = await try_set(1)
+                        return resp
                     
+                    # If we started at <= 10x and it failed, try 1x
+                    elif leverage > 1:
+                        logger.warning(f"Leverage {leverage}x rejected for {symbol}, retrying with 1x...")
+                        return await try_set(1)
+
                 return resp
                 
             except RuntimeError as e:
-                if "leverage not modified" in str(e):
+                err_msg = str(e).lower()
+                if "leverage not modified" in err_msg:
                     return {}
-                if "buy leverage invalid" in str(e).lower():
-                     logger.warning(f"Leverage {leverage}x rejected for {symbol}, retrying with 10x...")
-                     return await try_set(10)
+                if "buy leverage invalid" in err_msg:
+                     # Recursive fallback handled in logic above if we could catch retCode
+                     # But for RuntimeError path:
+                     if leverage > 10:
+                         logger.warning(f"Leverage {leverage}x rejected (exception), trying 10x...")
+                         try:
+                             return await try_set(10)
+                         except:
+                             return await try_set(1)
+                     elif leverage > 1:
+                         return await try_set(1)
                 raise e
 
         except Exception as e:

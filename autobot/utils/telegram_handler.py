@@ -218,12 +218,31 @@ class TelegramHandler:
             net_r = net_pnl / risk_amount if risk_amount > 0 else 0
             net_emoji = "🟢" if net_pnl >= 0 else "🔴"
             
-            # Performance stats
-            stats = self.bot.stats
-            total_trades = stats.get('total_trades', 0)
-            win_rate = stats.get('win_rate', 0)
-            total_r = stats.get('total_r', 0)
-            avg_r = total_r / total_trades if total_trades > 0 else 0
+            # Performance stats from EXCHANGE (not internal tracking)
+            # Calculate from all closed trades on Bybit
+            exchange_total_trades = 0
+            exchange_wins = 0
+            exchange_total_r = 0.0
+            try:
+                all_closed = await self.bot.broker.get_all_closed_pnl(limit=200)
+                for record in all_closed:
+                    try:
+                        pnl = float(record.get('closedPnl', 0))
+                        exchange_total_trades += 1
+                        
+                        # Calculate R
+                        r_value = pnl / risk_amount if risk_amount > 0 else 0
+                        exchange_total_r += r_value
+                        
+                        if pnl > 0:
+                            exchange_wins += 1
+                    except:
+                        continue
+            except Exception as e:
+                logger.debug(f"Error calculating exchange performance: {e}")
+            
+            exchange_wr = (exchange_wins / exchange_total_trades * 100) if exchange_total_trades > 0 else 0
+            exchange_avg_r = exchange_total_r / exchange_total_trades if exchange_total_trades > 0 else 0
             
             # API Key expiry
             api_info = await self.bot.broker.get_api_key_info()
@@ -253,9 +272,9 @@ class TelegramHandler:
 └ Risk: {risk_display}/trade
 
 📉 **PERFORMANCE**
-├ Trades: {total_trades} | WR: {win_rate:.1f}%
-├ Total R: {total_r:+.1f}R
-└ Avg R: {avg_r:+.2f}R
+├ Trades: {exchange_total_trades} | WR: {exchange_wr:.1f}%
+├ Total R: {exchange_total_r:+.1f}R
+└ Avg R: {exchange_avg_r:+.2f}R
 
 ⏰ **SYSTEM**
 ├ Uptime: {uptime_hrs:.1f}h | Scan: {mins_ago}m ago

@@ -865,11 +865,27 @@ class Bot4H:
         # Calculate position size based on MARGIN percentage (with leverage)
         # This ensures each trade only uses X% of balance as margin
         try:
+            # Get AVAILABLE balance (not total) to avoid margin overflow
             account_balance = await self.broker.get_balance()
+            available_balance = account_balance  # Will update if we can get available
+            
+            try:
+                positions = await self.broker.get_positions()
+                if positions:
+                    total_margin_used = sum(float(p.get('positionIM', 0)) for p in positions if float(p.get('size', 0)) > 0)
+                    available_balance = account_balance - total_margin_used
+                    logger.info(f"[{symbol}] Balance: ${account_balance:.2f}, Used: ${total_margin_used:.2f}, Available: ${available_balance:.2f}")
+            except:
+                pass
             
             # Use margin percentage from config (risk_per_trade now means margin per trade)
             margin_pct = self.risk_config.get('risk_per_trade', 0.002)  # 0.2% default
-            max_margin_per_trade = account_balance * margin_pct
+            max_margin_per_trade = account_balance * margin_pct  # Still based on total for consistency
+            
+            # Check if we have enough available margin
+            if available_balance < max_margin_per_trade:
+                logger.warning(f"[{symbol}] Insufficient margin: available ${available_balance:.2f} < required ${max_margin_per_trade:.2f}")
+                return
             
             # Get leverage for this symbol (use max leverage for efficiency)
             leverage = await self.broker.get_max_leverage(symbol)

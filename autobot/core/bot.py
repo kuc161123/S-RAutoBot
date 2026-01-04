@@ -862,28 +862,28 @@ class Bot4H:
         entry_price = latest_candle['open']  # Next candle open
         atr = latest_candle['atr']
         
-        # Calculate position size based on fixed USD risk
+        # Calculate position size based on MARGIN percentage (with leverage)
+        # This ensures each trade only uses X% of balance as margin
         try:
-            # Use fixed USD risk if set, otherwise fall back to percentage
-            risk_amount_usd = self.risk_config.get('risk_amount_usd', None)
+            account_balance = await self.broker.get_balance()
             
-            if risk_amount_usd:
-                risk_amount = float(risk_amount_usd)
-                logger.info(f"[{symbol}] Using fixed risk: ${risk_amount}")
-            else:
-                account_balance = await self.broker.get_balance()
-                risk_amount = account_balance * self.risk_config.get('risk_per_trade', 0.005)
+            # Use margin percentage from config (risk_per_trade now means margin per trade)
+            margin_pct = self.risk_config.get('risk_per_trade', 0.002)  # 0.2% default
+            max_margin_per_trade = account_balance * margin_pct
             
-            # SL distance
-            sl_mult = self.strategy_config.get('exit_params', {}).get('sl_atr_mult', 1.0)
-            sl_distance = atr * sl_mult
+            # Get leverage for this symbol (use max leverage for efficiency)
+            leverage = await self.broker.get_max_leverage(symbol)
             
-            # Position size logic:
-            # Risk = (Entry - SL) * Qty
-            # Qty = Risk / (Entry - SL)
-            # Qty = RiskAmount / SL_Distance
+            # Set leverage on Bybit
+            await self.broker.set_leverage(symbol, leverage)
             
-            raw_qty = risk_amount / sl_distance
+            # Position value = Margin × Leverage
+            position_value = max_margin_per_trade * leverage
+            
+            # Qty = Position Value / Entry Price
+            raw_qty = position_value / entry_price
+            
+            logger.info(f"[{symbol}] Margin-based sizing: ${max_margin_per_trade:.2f} margin × {leverage}x = ${position_value:.2f} position → {raw_qty:.6f} qty")
             
             # Get qty precision from Bybit API
             try:
@@ -900,8 +900,12 @@ class Bot4H:
             
             # Sanity check: If Qty is zero or invalid
             if position_size_qty <= 0:
-                logger.error(f"[{symbol}] Invalid calculated qty: {position_size_qty} (too small for risk)")
+                logger.error(f"[{symbol}] Invalid calculated qty: {position_size_qty} (too small for margin)")
                 return
+            
+            # Calculate SL distance for TP/SL placement
+            sl_mult = self.strategy_config.get('exit_params', {}).get('sl_atr_mult', 1.0)
+            sl_distance = atr * sl_mult
             
         except Exception as e:
             logger.error(f"[{symbol}] Error calculating position size: {e}")

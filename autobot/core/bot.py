@@ -1238,13 +1238,14 @@ class Bot4H:
         if not self.broker.session:
              self.broker.session = aiohttp.ClientSession()
 
-        # [NEW] Populate leverage cache at startup (SERIAL FETCH)
-        # This iterates enabled symbols one-by-one to avoid huge JSON responses
+        # [NEW] Configure leverage at startup (SERIAL FETCH & SET)
+        # This iterates enabled symbols one-by-one, gets max leverage, and SETS it on exchange
+        # Ensures account is fully prepped and "Invalid Leverage" errors are handled early
         try:
             enabled_symbols = self.symbol_config.get_enabled_symbols()
-            await self.broker.populate_leverage_cache(enabled_symbols)
+            await self.broker.configure_active_symbols(enabled_symbols)
         except Exception as e:
-            logger.error(f"Failed to populate leverage cache: {e}")
+            logger.error(f"Failed to configure leverage: {e}")
 
         # Start Telegram bot
         if self.telegram:

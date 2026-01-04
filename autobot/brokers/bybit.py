@@ -29,43 +29,42 @@ class Bybit:
         if self.session and not self.session.closed:
             await self.session.close()
 
-    async def populate_leverage_cache(self, target_symbols: list = None) -> dict:
-        """Fetch max leverage for specific symbols one-by-one. 
+    async def configure_active_symbols(self, target_symbols: list = None) -> dict:
+        """Fetch AND SET max leverage for specific symbols one-by-one.
         
         Args:
            target_symbols: List of symbols to fetch. If None, does nothing.
         """
         try:
             if not target_symbols:
-                logger.warning("[BYBIT] No symbols provided for leverage cache population")
+                logger.warning("[BYBIT] No symbols provided for leverage configuration")
                 return {}
 
-            logger.info(f"[BYBIT] 🔧 CONFIGURING MAX LEVERAGE for {len(target_symbols)} symbols (Serial Fetch)...")
+            logger.info(f"[BYBIT] 🔧 CONFIGURING LEVERAGE for {len(target_symbols)} symbols (Get & Set)...")
             count = 0
             
-            # Fetch individually to avoid JSON truncation on large batch responses
-            # and to strictly follow user request of "only symbols I trade"
+            # Fetch & Set individually
             for sym in target_symbols:
                 try:
-                    # Reuse get_max_leverage which now caches internally
-                    # force_api=True implicit if not in cache (which it isn't yet)
-                    lev = await self.get_max_leverage(sym)
+                    # set_leverage internally calls get_max_leverage (cache/fetch) 
+                    # and then sends the POST request to set it
+                    await self.set_leverage(sym)
                     count += 1
                     
-                    # Small delay to respect rate limits (5-10 req/s usually safe)
-                    await asyncio.sleep(0.05) 
+                    # 0.1s delay = ~10 requests/sec max (GET+POST for each symbol)
+                    await asyncio.sleep(0.1) 
                     
-                    if count % 50 == 0:
-                        logger.info(f"[BYBIT] Loaded leverage for {count}/{len(target_symbols)} symbols...")
+                    if count % 20 == 0:
+                        logger.info(f"[BYBIT] Configured {count}/{len(target_symbols)} symbols...")
                         
                 except Exception as e:
-                    logger.warning(f"[BYBIT] Failed to fetch leverage for {sym}: {e}")
+                    logger.warning(f"[BYBIT] Failed to configure {sym}: {e}")
                     continue
                         
-            logger.info(f"[BYBIT] ✅ Cached max leverage for {count} symbols")
+            logger.info(f"[BYBIT] ✅ Completed configuration for {count} symbols")
             return self.leverage_cache
         except Exception as e:
-            logger.error(f"[BYBIT] Failed to populate leverage cache: {e}")
+            logger.error(f"[BYBIT] Failed to configure symbols: {e}")
             return {}
 
     # ... (rest of methods) ...

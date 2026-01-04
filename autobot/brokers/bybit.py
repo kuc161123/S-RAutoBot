@@ -105,6 +105,7 @@ class Bybit:
 
     async def _request(self, method:str, path:str, params:dict=None) -> Dict[str, Any]:
         """Async request wrapper"""
+        import json # Ensure json is available for all paths
         if self.session is None or self.session.closed:
             self.session = aiohttp.ClientSession()
             
@@ -112,7 +113,6 @@ class Bybit:
         ts = self._ts()
         
         if method == "POST":
-            import json
             body = json.dumps(params or {}, separators=(",", ":"))
             query_string = ""
         else:
@@ -158,24 +158,37 @@ class Bybit:
         last_err = None
         for base_idx, base in enumerate(bases):
             # Compose URL for this base
+            # Compose URL for this base
             url = base + path
-            if method == "GET" and query_string:
-                url += "?" + query_string
-
+            
             # Simple retry with exponential backoff for transient failures
             max_retries = 3
             backoff = 0.5
             for attempt in range(max_retries):
                 try:
-                    async with self.session.request(method, url, headers=headers, data=body if method=="POST" else None, timeout=15) as r:
-                        resp_text = await r.text()
-                        
+                    # [FIX] For GET, pass params to aiohttp instead of appending query_string manually
+                    # This aligns with debug_api.py which works correctly
+                    req_params = params if method == "GET" else None
+                    
+                    async with self.session.request(method, url, headers=headers, params=req_params, data=body if method=="POST" else None, timeout=15) as r:
+                         # Read raw bytes first to avoid encoding issues causing "truncation"
+                        raw_data = await r.read()
+                        try:
+                             resp_text = raw_data.decode('utf-8')
+                        except UnicodeDecodeError:
+                             # Fallback if utf-8 fails (rare)
+                             resp_text = raw_data.decode('utf-8', errors='replace')
+
                         try:
                             # Try to parse JSON even if status != 200 to get error msg
                             j = json.loads(resp_text)
-                        except:
+                        except json.JSONDecodeError as e:
                             r.raise_for_status() # If not JSON, check HTTP status
-                            raise RuntimeError(f"Bybit invalid JSON response: {resp_text[:100]}")
+                            # Log concise error with details
+                            logger.error(f"JSON Decode Error: {e.msg} (Pos: {e.pos})")
+                            logger.error(f"Raw Bytes: {len(raw_data)} | Text Len: {len(resp_text)}")
+                            logger.error(f"Snippet: {resp_text[:200]}")
+                            raise RuntimeError(f"Bybit invalid JSON response (len={len(resp_text)}): {resp_text[:100]}")
                             
                         if str(j.get("retCode")) != "0":
                             # Treat specific non-critical cases as success

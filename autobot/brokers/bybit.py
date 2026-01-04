@@ -45,13 +45,22 @@ class Bybit:
         ts = self._ts()
         
         if method == "POST":
+            import json
             body = json.dumps(params or {}, separators=(",", ":"))
             query_string = ""
         else:
             body = ""
-            # For GET requests, build query string
+            # For GET requests, build query string properly
             if params:
-                query_string = "&".join([f"{k}={v}" for k, v in params.items()])
+                # 1. Sort by key (required by Bybit)
+                # 2. Encode values (cursor params have commas, etc)
+                import urllib.parse
+                # Note: Bybit V5 docs say sort params by key
+                sorted_params = dict(sorted(params.items()))
+                # Use urlencode but ensure we don't double encode if not needed
+                # Bybit often wants unquoted values in signature string, let's stick to raw string as sent
+                # But safer to standardise:
+                query_string = urllib.parse.urlencode(sorted_params) 
             else:
                 query_string = ""
             

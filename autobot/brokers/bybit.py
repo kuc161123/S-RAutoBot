@@ -978,6 +978,7 @@ class Bybit:
         try:
             all_positions = []
             cursor = None
+            page_num = 1
             
             while True:
                 params = {
@@ -989,24 +990,55 @@ class Bybit:
                 if cursor:
                     params["cursor"] = cursor
                 
+                logger.info(f"[POSITIONS] Fetching page {page_num} with params: {params}")
                 resp = await self._request("GET", "/v5/position/list", params)
+                
+                # Log full response for debugging
+                if resp:
+                    logger.info(f"[POSITIONS] Response keys: {resp.keys()}")
+                    ret_code = resp.get('retCode', 'unknown')
+                    ret_msg = resp.get('retMsg', 'unknown')
+                    logger.info(f"[POSITIONS] retCode={ret_code}, retMsg={ret_msg}")
+                    
+                    if ret_code != 0:
+                        logger.error(f"[POSITIONS] API error: retCode={ret_code}, retMsg={ret_msg}")
+                        break
+                else:
+                    logger.error("[POSITIONS] Response is None!")
+                    break
                 
                 if resp and resp.get("result"):
                     result = resp["result"]
                     positions = result.get("list", [])
+                    logger.info(f"[POSITIONS] Page {page_num}: got {len(positions)} positions in list")
+                    
+                    # Log sample positions
+                    for i, pos in enumerate(positions[:3]):
+                        logger.info(f"[POSITIONS] Sample {i}: symbol={pos.get('symbol')}, size={pos.get('size')}, side={pos.get('side')}")
+                    
                     all_positions.extend(positions)
                     
                     # Check for next page
                     cursor = result.get("nextPageCursor")
-                    if not cursor:
-                        break  # No more pages
+                    if cursor:
+                        logger.info(f"[POSITIONS] nextPageCursor exists, fetching page {page_num + 1}")
+                        page_num += 1
+                    else:
+                        logger.info(f"[POSITIONS] No more pages")
+                        break
                 else:
+                    logger.warning("[POSITIONS] No 'result' in response!")
                     break
             
-            logger.info(f"Fetched {len(all_positions)} total positions from Bybit")
+            # Count positions with size > 0
+            open_positions = [p for p in all_positions if float(p.get('size', 0)) > 0]
+            logger.info(f"[POSITIONS] Total: {len(all_positions)} positions, {len(open_positions)} with size > 0")
+            
             return all_positions
         except Exception as e:
             logger.error(f"Failed to get positions: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
 
     async def get_open_orders(self, symbol: str = None) -> list:

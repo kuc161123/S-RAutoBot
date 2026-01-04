@@ -47,8 +47,7 @@ notifications:
 risk:
   max_daily_loss: 0.05
   max_position_size_pct: 0.1
-  risk_per_trade: 0.005  # 0.5% (fallback if risk_amount_usd not set)
-  risk_amount_usd: 0.5   # Fixed $0.5 risk per trade (takes priority)
+  risk_per_trade: 0.002  # 0.2% of balance per trade
 strategy:
   entry_params:
     max_wait_candles: 12

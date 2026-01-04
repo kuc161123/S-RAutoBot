@@ -71,6 +71,7 @@ class TelegramHandler:
         self.app.add_handler(CommandHandler("start", self.cmd_start))
         self.app.add_handler(CommandHandler("risk", self.cmd_risk))
         self.app.add_handler(CommandHandler("performance", self.cmd_performance))
+        self.app.add_handler(CommandHandler("resetstats", self.cmd_resetstats))
         
         # Start polling with longer interval to avoid rate limits
         await self.app.initialize()
@@ -713,6 +714,42 @@ To resume: `/start`
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
             logger.error(f"Risk command error: {e}")
+    
+    async def cmd_resetstats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Reset all internal stats to zero"""
+        try:
+            # Reset all stats
+            self.bot.stats = {
+                'total_trades': 0,
+                'wins': 0,
+                'losses': 0,
+                'total_r': 0.0,
+                'win_rate': 0.0
+            }
+            self.bot.symbol_stats = {}
+            self.bot.save_stats()
+            
+            msg = """✅ **STATS RESET**
+━━━━━━━━━━━━━━━━━━━━
+
+All internal tracking stats have been reset to zero.
+
+📊 New Stats:
+├ Trades: 0
+├ Wins: 0  
+├ Losses: 0
+├ Total R: 0.0
+└ Win Rate: 0.0%
+
+💡 Fresh tracking starts now!
+"""
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            logger.info("Stats reset by user command")
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error resetting stats: {e}")
+            logger.error(f"Reset stats error: {e}")
+            
     async def cmd_radar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show full radar watch for all symbols - handles long messages"""
         try:

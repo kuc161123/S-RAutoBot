@@ -164,7 +164,18 @@ class TelegramHandler:
             # === GATHER ALL DATA ===
             uptime_hrs = max(0, (datetime.now() - self.bot.start_time).total_seconds() / 3600)
             pending = sum(len(sigs) for sigs in self.bot.pending_signals.values())
-            active = len(self.bot.active_trades)
+            
+            # Get active positions COUNT directly from Bybit (not internal tracking)
+            active = 0
+            try:
+                positions = await self.bot.broker.get_positions()
+                if positions:
+                    active = sum(1 for pos in positions if float(pos.get('size', 0)) > 0)
+                    logger.info(f"[DASHBOARD] Bybit reports {active} active positions")
+            except Exception as e:
+                logger.error(f"[DASHBOARD] Failed to get positions from Bybit: {e}")
+                active = len(self.bot.active_trades)  # Fallback to internal tracking
+            
             enabled = len(self.bot.symbol_config.get_enabled_symbols())
             
             # Scan status

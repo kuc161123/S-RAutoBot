@@ -146,296 +146,124 @@ class TelegramHandler:
         await update.message.reply_text(msg, parse_mode='Markdown')
     
     async def cmd_dashboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Comprehensive dashboard with Bybit-verified data"""
+        """Clean, focused trading dashboard"""
         try:
-            import time
             from datetime import datetime
             
-            # === SYNC WITH EXCHANGE FIRST ===
-            # This ensures active_trades matches actual Bybit positions
+            # === SYNC WITH EXCHANGE ===
             await self.bot.sync_with_exchange()
             
-            # === SYSTEM INFO ===
-            uptime_hrs = (datetime.now() - self.bot.start_time).total_seconds() / 3600
-            if uptime_hrs < 0: uptime_hrs = 0
-            enabled = len(self.bot.symbol_config.get_enabled_symbols())
+            # === GATHER ALL DATA ===
+            uptime_hrs = max(0, (datetime.now() - self.bot.start_time).total_seconds() / 3600)
             pending = sum(len(sigs) for sigs in self.bot.pending_signals.values())
             active = len(self.bot.active_trades)
+            enabled = len(self.bot.symbol_config.get_enabled_symbols())
             
-            # === GET EXCHANGE-VERIFIED P&L ===
-            try:
-                balance = await self.bot.broker.get_balance()
-                
-                # Get closed P&L from exchange (last 100 trades)
-                closed_records = await self.bot.broker.get_all_closed_pnl(limit=100)
-                
-                total_closed_pnl = 0
-                wins_exchange = 0
-                losses_exchange = 0
-                win_pnl = 0
-                loss_pnl = 0
-                
-                if closed_records:
-                    for record in closed_records:
-                        pnl = float(record.get('closedPnl', 0))
-                        total_closed_pnl += pnl
-                        
-                        if pnl > 0:
-                            wins_exchange += 1
-                            win_pnl += pnl
-                        else:
-                            losses_exchange += 1
-                            loss_pnl += pnl
-                
-                total_exchange = wins_exchange + losses_exchange
-                exchange_wr = (wins_exchange / total_exchange * 100) if total_exchange > 0 else 0
-                
-            except Exception as e:
-                logger.error(f"Error fetching exchange data: {e}")
-                balance = 0
-                total_closed_pnl = 0
-                exchange_wr = 0
-                total_exchange = 0
-                wins_exchange = 0
-                losses_exchange = 0
-            
-            # === GET UNREALIZED P&L FOR ACTIVE POSITIONS ===
-            unrealized_pnl_usd = 0
-            unrealized_r_total = 0
-            
-            if active > 0:
-                try:
-                    positions = await self.bot.broker.get_positions()
-                    for pos in positions:
-                        if float(pos.get('size', 0)) > 0:
-                            unrealized = float(pos.get('unrealisedPnl', 0))
-                            unrealized_pnl_usd += unrealized
-                    
-                    # Convert to R using fixed USD or percentage
-                    risk_usd = self.bot.risk_config.get('risk_amount_usd', None)
-                    if risk_usd:
-                        avg_risk_usd = float(risk_usd)
-                    else:
-                        avg_risk_usd = balance * self.bot.risk_config.get('risk_per_trade', 0.005) if balance > 0 else 10
-                    if avg_risk_usd > 0:
-                        unrealized_r_total = unrealized_pnl_usd / avg_risk_usd
-                except Exception as e:
-                    logger.error(f"Error fetching unrealized P&L: {e}")
-            
-            # === INTERNAL STATS (for tracking) ===
-            stats = self.bot.stats
-            
-            # === SCAN STATE ===
+            # Scan status
             scan = self.bot.scan_state
             last_scan = scan.get('last_scan_time')
-            if last_scan:
-                mins_ago = int((datetime.now() - last_scan).total_seconds() / 60)
-                last_scan_str = f"{mins_ago} mins ago"
-                next_scan_mins = max(0, 60 - mins_ago)
+            mins_ago = int((datetime.now() - last_scan).total_seconds() / 60) if last_scan else 0
+            
+            # Balance and P&L
+            balance = await self.bot.broker.get_balance() or 0
+            
+            # Risk amount for R calculation
+            risk_usd = self.bot.risk_config.get('risk_amount_usd')
+            if risk_usd:
+                risk_amount = float(risk_usd)
+                risk_display = f"${risk_amount:.2f}"
             else:
-                last_scan_str = "Not yet"
-                next_scan_mins = "~60"
+                risk_pct = self.bot.risk_config.get('risk_per_trade', 0.005)
+                risk_amount = balance * risk_pct if balance > 0 else 10
+                risk_display = f"{risk_pct*100:.1f}%"
             
-            # === PENDING SIGNALS (Awaiting BOS) ===
-            pending_list = []
-            for sym, sigs in self.bot.pending_signals.items():
-                for sig in sigs:
-                    div_code = getattr(sig.signal, 'divergence_code', sig.signal.signal_type.upper()[:3])
-                    side_icon = "🟢" if sig.signal.side == 'long' else "🔴"
-                    pending_list.append(f"{side_icon} `{sym}` `{div_code}` ({sig.candles_waited}/12)")
-            pending_str = "\n│   ".join(pending_list[:3]) if pending_list else "None"
+            # Realized P&L (today)
+            realized_pnl = 0
+            today_trades = 0
+            today_wins = 0
+            try:
+                closed_records = await self.bot.broker.get_all_closed_pnl(limit=100)
+                today = datetime.now().date()
+                for record in closed_records:
+                    try:
+                        created_time = int(record.get('createdTime', 0))
+                        trade_date = datetime.fromtimestamp(created_time / 1000).date()
+                        if trade_date == today:
+                            pnl = float(record.get('closedPnl', 0))
+                            realized_pnl += pnl
+                            today_trades += 1
+                            if pnl > 0:
+                                today_wins += 1
+                    except:
+                        continue
+            except Exception as e:
+                logger.debug(f"Error getting realized P&L: {e}")
             
-            # === RADAR (Categorized with ETA) ===
-            pending_radar = []
-            developing_radar = []
-            extreme_radar = []
+            realized_r = realized_pnl / risk_amount if risk_amount > 0 else 0
             
-            # 1. Pending BOS signals (most accurate ETA)
-            for sym, sigs in self.bot.pending_signals.items():
-                for sig in sigs:
-                    div_code = getattr(sig.signal, 'divergence_code', sig.signal.signal_type.upper()[:3])
-                    side_icon = "🟢" if sig.signal.side == 'long' else "🔴"
-                    candles_left = 12 - sig.candles_waited
-                    hours_max = candles_left
-                    pending_radar.append(f"│   {side_icon} `{sym}` `{div_code}`: {sig.candles_waited}/12 candles → Max {hours_max}h to entry")
+            # Unrealized P&L
+            unrealized_pnl = 0
+            try:
+                positions = await self.bot.broker.get_positions()
+                for pos in positions:
+                    if float(pos.get('size', 0)) > 0:
+                        unrealized_pnl += float(pos.get('unrealisedPnl', 0))
+            except Exception as e:
+                logger.debug(f"Error getting unrealized P&L: {e}")
             
-            # 2. Developing patterns and extreme zones (with rich multi-line format)
-            if getattr(self.bot, 'radar_items', None):
-                for sym, data in self.bot.radar_items.items():
-                    if isinstance(data, dict):
-                        if data['type'] == 'bullish_setup':
-                            # Only warn if stretched beyond ±3% from EMA
-                            ema_sign = "⚠️ stretched" if abs(data['ema_dist']) > 3 else "✓"
-                            progress_bar = "▓" * data['pivot_progress'] + "░" * (6 - data['pivot_progress'])
-                            rsi_trend = "⬆️" if data['rsi_div'] > 0 else "→"
-                            
-                            item = f"""│   `{sym}`: 🟢 Bullish Divergence Forming
-│   ├─ Price: ${data['price']:g} (Testing 20-bar low, {data['ema_dist']:+.1f}% from EMA200 {ema_sign})
-│   ├─ RSI: {data['rsi']:.0f} {rsi_trend} (Previous pivot: {data['prev_pivot_rsi']:.0f}) → {data['rsi_div']:+.0f} point divergence
-│   ├─ Progress: {progress_bar} {data['pivot_progress']}/6 candles to pivot confirmation
-│   └─ ETA: 3-9h to confirmed signal, then 0-12h to BOS trigger"""
-                            developing_radar.append(item)
-                            
-                        elif data['type'] == 'bearish_setup':
-                            # Only warn if stretched beyond ±3% from EMA
-                            ema_sign = "⚠️ stretched" if abs(data['ema_dist']) > 3 else "✓"
-                            progress_bar = "▓" * data['pivot_progress'] + "░" * (6 - data['pivot_progress'])
-                            rsi_trend = "⬇️" if data['rsi_div'] > 0 else "→"
-                            
-                            item = f"""│   `{sym}`: 🔴 Bearish Divergence Forming
-│   ├─ Price: ${data['price']:g} (Testing 20-bar high, {data['ema_dist']:+.1f}% from EMA200 {ema_sign})
-│   ├─ RSI: {data['rsi']:.0f} {rsi_trend} (Previous pivot: {data['prev_pivot_rsi']:.0f}) → {data['rsi_div']:+.0f} point divergence
-│   ├─ Progress: {progress_bar} {data['pivot_progress']}/6 candles to pivot confirmation
-│   └─ ETA: 3-9h to confirmed signal, then 0-12h to BOS trigger"""
-                            developing_radar.append(item)
-                            
-                        elif data['type'] == 'extreme_oversold':
-                            ema_warn = "⚠️ stretched" if abs(data['ema_dist']) > 3 else ""
-                            item = f"""│   `{sym}`: ❄️ Extreme Oversold Zone
-│   ├─ RSI: {data['rsi']:.0f}⬇️ ({data['hours_in_zone']:.0f}h in extreme zone)
-│   ├─ Price: ${data['price']:g} ({data['ema_dist']:+.1f}% from EMA {ema_warn})
-│   └─ ETA: Reversal likely within 2-8h"""
-                            extreme_radar.append(item)
-                            
-                        elif data['type'] == 'extreme_overbought':
-                            ema_warn = "⚠️ stretched" if abs(data['ema_dist']) > 3 else ""
-                            item = f"""│   `{sym}`: 🔥 Extreme Overbought Zone
-│   ├─ RSI: {data['rsi']:.0f}⬇️ ({data['hours_in_zone']:.0f}h in extreme zone)
-│   ├─ Price: ${data['price']:g} ({data['ema_dist']:+.1f}% from EMA {ema_warn})
-│   └─ ETA: Reversal likely within 2-8h"""
-                            extreme_radar.append(item)
-
+            unrealized_r = unrealized_pnl / risk_amount if risk_amount > 0 else 0
             
-            # Build strings (limit items to prevent Telegram message too long)
-            pending_count = len(pending_radar)
-            pending_radar_str = "\n".join(pending_radar[:5]) if pending_radar else "│   None"
-            if pending_count > 5:
-                pending_radar_str += f"\n│   ... and {pending_count - 5} more"
+            # Net P&L
+            net_pnl = realized_pnl + unrealized_pnl
+            net_r = net_pnl / risk_amount if risk_amount > 0 else 0
+            net_emoji = "🟢" if net_pnl >= 0 else "🔴"
             
-            developing_count = len(developing_radar)
-            developing_radar_str = "\n".join(developing_radar[:3]) if developing_radar else "│   Scanning..."
-            if developing_count > 3:
-                developing_radar_str += f"\n│   ... and {developing_count - 3} more"
+            # Performance stats
+            stats = self.bot.stats
+            total_trades = stats.get('total_trades', 0)
+            win_rate = stats.get('win_rate', 0)
+            total_r = stats.get('total_r', 0)
+            avg_r = total_r / total_trades if total_trades > 0 else 0
             
-            extreme_count = len(extreme_radar)
-            extreme_radar_str = "\n".join(extreme_radar[:3]) if extreme_radar else "│   None"
-            if extreme_count > 3:
-                extreme_radar_str += f"\n│   ... and {extreme_count - 3} more"
+            # API Key expiry
+            api_info = await self.bot.broker.get_api_key_info()
+            days_left = api_info.get('days_left')
+            if days_left is not None:
+                if days_left <= 7:
+                    key_status = f"⚠️ {days_left}d left!"
+                elif days_left <= 30:
+                    key_status = f"🟡 {days_left}d left"
+                else:
+                    key_status = f"✅ {days_left}d left"
+            else:
+                key_status = "❓ Unknown"
             
-            # === BUILD COMPREHENSIVE MESSAGE ===
-            # Get divergence type breakdown
-            div_summary = self.bot.symbol_config.get_divergence_summary()
-            
-            msg = f"""
-📊 **1H MULTI-DIVERGENCE DASHBOARD**
+            # === BUILD DASHBOARD ===
+            msg = f"""💰 **TRADING DASHBOARD**
 ━━━━━━━━━━━━━━━━━━━━
+
+📈 **P&L TODAY**
+├ Realized: ${realized_pnl:+,.2f} ({realized_r:+.1f}R)
+├ Unrealized: ${unrealized_pnl:+,.2f} ({unrealized_r:+.1f}R)
+└ {net_emoji} Net: ${net_pnl:+,.2f} ({net_r:+.1f}R)
+
+📊 **POSITIONS**
+├ Active: {active} | Pending BOS: {pending}
+├ Balance: ${balance:,.2f}
+└ Risk: {risk_display}/trade
+
+📉 **PERFORMANCE**
+├ Trades: {total_trades} | WR: {win_rate:.1f}%
+├ Total R: {total_r:+.1f}R
+└ Avg R: {avg_r:+.2f}R
 
 ⏰ **SYSTEM**
-├ Uptime: {uptime_hrs:.1f}h
-├ Timeframe: 1H (60m)
-├ Risk/Trade: {self.bot.risk_config.get('risk_per_trade', 0.01)*100}%
-└ Enabled: {enabled} Symbols (Validated)
+├ Uptime: {uptime_hrs:.1f}h | Scan: {mins_ago}m ago
+├ Symbols: {enabled} monitored
+└ 🔑 API Key: {key_status}
 
-🎯 **STRATEGY**
-├ Setup: Multi-Divergence + EMA 200 + BOS
-├ Types: 🟢`REG_BULL`({div_summary.get('REG_BULL', 0)}) 🔴`REG_BEAR`({div_summary.get('REG_BEAR', 0)}) 🟠`HID_BULL`({div_summary.get('HID_BULL', 0)}) 🟡`HID_BEAR`({div_summary.get('HID_BEAR', 0)})
-├ Confidence: 100% Walk-Forward + Monte Carlo
-└ Expected: ~+10,348R/6mo ({enabled} symbols)
-
-🔍 **SCANNING STATUS**
-├ Last Scan: {last_scan_str}
-├ Next Scan: ~{next_scan_mins} mins
-└ Seen Signals: {len(self.bot.seen_signals)} (deduped)
-
-📊 **BOS PERFORMANCE (Today)**
-├ Divergences Detected: {self.bot.bos_tracking['divergences_detected_today']}
-├ BOS Confirmed: {self.bot.bos_tracking['bos_confirmed_today']}
-├ Confirmation Rate: {(self.bot.bos_tracking['bos_confirmed_today'] / max(self.bot.bos_tracking['divergences_detected_today'], 1) * 100):.0f}%
-└ Total Since Start: {self.bot.bos_tracking['divergences_detected_total']}D / {self.bot.bos_tracking['bos_confirmed_total']}BOS
-
-📡 **RADAR WATCH**
-┌─ Pending BOS (Confirmed Signals):
-{pending_radar_str}
-├─ Developing Setups (3-9h):
-{developing_radar_str}
-└─ Extreme Zones (2-8h):
-{extreme_radar_str}
-
-
-
-💼 **WALLET (BYBIT)**
-├ Balance: ${balance:,.2f} USDT
-└ Realized P&L: ${total_closed_pnl:+,.2f}
-
-📊 **EXCHANGE STATS**
-├ Trades: {total_exchange} | WR: {exchange_wr:.1f}%
-└ P&L: ${total_closed_pnl:+,.2f}
-
-📈 **INTERNAL TRACKING**
-├ Trades: {stats['total_trades']} | WR: {stats['win_rate']:.1f}%
-├ Avg R: {stats['avg_r']:+.2f}R
-└ Total R: {stats['total_r']:+.1f}R
-
-🔔 **POSITIONS**
-├ Pending: {pending} | Active: {active}
-└ Unrealized: ${unrealized_pnl_usd:+,.2f} ({unrealized_r_total:+.1f}R)
-"""
-            
-            # === SHOW ACTIVE POSITIONS (if any) ===
-            if self.bot.active_trades:
-                msg += "\n📍 **ACTIVE POSITIONS**\n\n"
-                
-                for symbol, trade in list(self.bot.active_trades.items())[:5]:  # Max 5
-                    try:
-                        # Get current price for accurate R
-                        ticker = await self.bot.broker.get_ticker(symbol)
-                        current_price = float(ticker.get('lastPrice', 0)) if ticker else 0
-                        
-                        # Calculate current R
-                        sl_distance = abs(trade.entry_price - trade.stop_loss)
-                        if current_price > 0 and sl_distance > 0:
-                            if trade.side == 'long':
-                                current_r = (current_price - trade.entry_price) / sl_distance
-                            else:
-                                current_r = (trade.entry_price - current_price) / sl_distance
-                        else:
-                            current_r = 0
-                        
-                        side_icon = "🟢" if trade.side == 'long' else "🔴"
-                        r_status = "📈" if current_r > 0 else "📉"
-                        
-                        msg += f"""
-├ {side_icon} `{symbol}` {trade.side.upper()}
-├ Entry: ${trade.entry_price:.4f} → ${current_price:.4f}
-├ {r_status} Current: {current_r:+.2f}R | Target: {trade.rr_ratio}R
-└ SL: ${trade.stop_loss:.4f} | TP: ${trade.take_profit:.4f}
-
-"""
-                    except Exception as e:
-                        logger.error(f"Error displaying {symbol}: {e}")
-                        continue
-                
-                if len(self.bot.active_trades) > 5:
-                    msg += f"... and {len(self.bot.active_trades) - 5} more\n\n"
-            
-            # === TOP PERFORMING SYMBOLS ===
-            if self.bot.symbol_stats:
-                top_symbols = sorted(
-                    [(sym, stats) for sym, stats in self.bot.symbol_stats.items() if stats['trades'] > 0],
-                    key=lambda x: x[1]['total_r'],
-                    reverse=True
-                )[:3]
-                
-                if top_symbols:
-                    msg += "\n🏆 **TOP SYMBOLS (by Total R)**\n"
-                    for sym, sym_stats in top_symbols:
-                        sym_wr = (sym_stats['wins'] / sym_stats['trades'] * 100) if sym_stats['trades'] > 0 else 0
-                        msg += f"├ `{sym}`: {sym_stats['total_r']:+.1f}R ({sym_stats['trades']} trades, {sym_wr:.0f}% WR)\n"
-                    msg += "\n"
-            
-            msg += """
 ━━━━━━━━━━━━━━━━━━━━
-💡 /positions /stats /help
+📍 /positions | 📡 /radar | 📊 /stats
 """
             
             await update.message.reply_text(msg, parse_mode='Markdown')

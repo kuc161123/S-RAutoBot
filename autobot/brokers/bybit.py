@@ -175,6 +175,45 @@ class Bybit:
             logger.error(f"Failed to get instruments info: {e}")
             return []
 
+    async def get_api_key_info(self) -> dict:
+        """Get API key information including expiry date.
+        
+        Returns dict with:
+        - expiredAt: Expiry datetime string
+        - deadlineDay: Days remaining (if no IP bound)
+        - days_left: Calculated days until expiry
+        """
+        try:
+            resp = await self._request("GET", "/v5/user/query-api", {})
+            if resp and resp.get("result"):
+                result = resp["result"]
+                expired_at = result.get("expiredAt", "")
+                deadline_day = result.get("deadlineDay", 0)
+                
+                # Calculate days left from expiredAt
+                days_left = None
+                if expired_at:
+                    try:
+                        from datetime import datetime
+                        # Parse Bybit datetime format
+                        if 'T' in expired_at:
+                            expiry = datetime.fromisoformat(expired_at.replace('Z', '+00:00'))
+                        else:
+                            expiry = datetime.strptime(expired_at, "%Y-%m-%d %H:%M:%S")
+                        days_left = (expiry - datetime.now(expiry.tzinfo if expiry.tzinfo else None)).days
+                    except Exception:
+                        days_left = deadline_day if deadline_day else None
+                
+                return {
+                    "expiredAt": expired_at,
+                    "deadlineDay": deadline_day,
+                    "days_left": days_left if days_left is not None else deadline_day
+                }
+            return {"days_left": None}
+        except Exception as e:
+            logger.debug(f"Failed to get API key info: {e}")
+            return {"days_left": None}
+
     async def get_balance(self) -> Optional[float]:
         """Get USDT balance (robust): try UNIFIED → CONTRACT → SPOT; prefer equity."""
         try:

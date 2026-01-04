@@ -198,7 +198,7 @@ class TelegramHandler:
                         except:
                             continue
             except Exception as e:
-                logger.debug(f"Error getting realized P&L: {e}")
+                logger.error(f"Error getting realized P&L: {e}")
             
             realized_r = realized_pnl / risk_amount if risk_amount > 0 else 0
             
@@ -211,7 +211,7 @@ class TelegramHandler:
                         if float(pos.get('size', 0)) > 0:
                             unrealized_pnl += float(pos.get('unrealisedPnl', 0))
             except Exception as e:
-                logger.debug(f"Error getting unrealized P&L: {e}")
+                logger.error(f"Error getting unrealized P&L: {e}")
             
             unrealized_r = unrealized_pnl / risk_amount if risk_amount > 0 else 0
             
@@ -242,7 +242,7 @@ class TelegramHandler:
                         except:
                             continue
             except Exception as e:
-                logger.debug(f"Error calculating exchange performance: {e}")
+                logger.error(f"Error calculating exchange performance: {e}")
             
             exchange_wr = (exchange_wins / exchange_total_trades * 100) if exchange_total_trades > 0 else 0
             exchange_avg_r = exchange_total_r / exchange_total_trades if exchange_total_trades > 0 else 0

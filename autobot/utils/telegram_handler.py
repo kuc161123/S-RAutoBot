@@ -210,8 +210,12 @@ class TelegramHandler:
                             unrealized = float(pos.get('unrealisedPnl', 0))
                             unrealized_pnl_usd += unrealized
                     
-                    # Convert to R (approximate)
-                    avg_risk_usd = balance * self.bot.risk_config.get('risk_per_trade', 0.01) if balance > 0 else 10
+                    # Convert to R using fixed USD or percentage
+                    risk_usd = self.bot.risk_config.get('risk_amount_usd', None)
+                    if risk_usd:
+                        avg_risk_usd = float(risk_usd)
+                    else:
+                        avg_risk_usd = balance * self.bot.risk_config.get('risk_per_trade', 0.005) if balance > 0 else 10
                     if avg_risk_usd > 0:
                         unrealized_r_total = unrealized_pnl_usd / avg_risk_usd
                 except Exception as e:

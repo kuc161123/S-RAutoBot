@@ -333,18 +333,51 @@ class Bot4H:
                 if symbol not in actual_open:
                     stale_trades.append(symbol)
             
-            # Remove stale trades
+            # Remove stale trades and update stats with REAL PnL from exchange
             for symbol in stale_trades:
                 trade = self.active_trades.pop(symbol, None)
                 if trade:
                     logger.warning(f"[{symbol}] Removed stale trade from tracking (closed externally)")
-                    # Update stats as a loss (assuming SL hit if we didn't track it)
-                    self.stats['total_trades'] += 1
-                    self.stats['losses'] += 1
-                    self.stats['total_r'] -= 1.0  # Assume -1R
-                    if symbol in self.symbol_stats:
-                        self.symbol_stats[symbol]['trades'] += 1
-                        self.symbol_stats[symbol]['total_r'] -= 1.0
+                    
+                    # Get ACTUAL closed PnL from Bybit instead of assuming -1R
+                    try:
+                        closed_pnl_records = await self.broker.get_closed_pnl(symbol, limit=1)
+                        if closed_pnl_records:
+                            latest = closed_pnl_records[0]
+                            actual_pnl = float(latest.get('closedPnl', 0))
+                            
+                            # Calculate R based on risk amount
+                            risk_usd = self.risk_config.get('risk_amount_usd', None)
+                            if risk_usd:
+                                risk_amount = float(risk_usd)
+                            else:
+                                balance = await self.broker.get_balance() or 1000
+                                risk_amount = balance * self.risk_config.get('risk_per_trade', 0.005)
+                            
+                            actual_r = actual_pnl / risk_amount if risk_amount > 0 else 0
+                            
+                            # Update stats with real values
+                            self.stats['total_trades'] += 1
+                            self.stats['total_r'] += actual_r
+                            
+                            if actual_pnl >= 0:
+                                self.stats['wins'] += 1
+                                logger.info(f"[{symbol}] Closed with WIN: ${actual_pnl:.2f} ({actual_r:+.2f}R)")
+                            else:
+                                self.stats['losses'] += 1
+                                logger.info(f"[{symbol}] Closed with LOSS: ${actual_pnl:.2f} ({actual_r:+.2f}R)")
+                            
+                            if symbol in self.symbol_stats:
+                                self.symbol_stats[symbol]['trades'] += 1
+                                self.symbol_stats[symbol]['total_r'] += actual_r
+                                if actual_pnl >= 0:
+                                    self.symbol_stats[symbol]['wins'] += 1
+                        else:
+                            # No closed PnL found - skip stats update
+                            logger.warning(f"[{symbol}] No closed PnL found - skipping stats update")
+                    except Exception as e:
+                        logger.error(f"[{symbol}] Failed to get closed PnL: {e}")
+                    
                     self.save_stats()
             
             # ADOPT EXISTING POSITIONS (On startup or manual intervention)

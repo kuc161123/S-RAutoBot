@@ -40,8 +40,12 @@ class TelegramHandler:
         self.bot = bot_instance  # Reference to main bot
         self.app = None
         
-    async def initialize(self):
-        """Initialize Telegram application with increased timeouts"""
+    async def start(self):
+        """Initialize Telegram application and start polling"""
+        if self.app:
+            logger.warning("Telegram bot already started")
+            return
+
         from telegram.request import HTTPXRequest
         
         # Increased timeouts to prevent ConnectTimeout errors

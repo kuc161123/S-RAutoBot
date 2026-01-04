@@ -183,19 +183,20 @@ class TelegramHandler:
             today_wins = 0
             try:
                 closed_records = await self.bot.broker.get_all_closed_pnl(limit=100)
-                today = datetime.now().date()
-                for record in closed_records:
-                    try:
-                        created_time = int(record.get('createdTime', 0))
-                        trade_date = datetime.fromtimestamp(created_time / 1000).date()
-                        if trade_date == today:
-                            pnl = float(record.get('closedPnl', 0))
-                            realized_pnl += pnl
-                            today_trades += 1
-                            if pnl > 0:
-                                today_wins += 1
-                    except:
-                        continue
+                if closed_records:  # Defensive check
+                    today = datetime.now().date()
+                    for record in closed_records:
+                        try:
+                            created_time = int(record.get('createdTime', 0))
+                            trade_date = datetime.fromtimestamp(created_time / 1000).date()
+                            if trade_date == today:
+                                pnl = float(record.get('closedPnl', 0))
+                                realized_pnl += pnl
+                                today_trades += 1
+                                if pnl > 0:
+                                    today_wins += 1
+                        except:
+                            continue
             except Exception as e:
                 logger.debug(f"Error getting realized P&L: {e}")
             
@@ -205,9 +206,10 @@ class TelegramHandler:
             unrealized_pnl = 0
             try:
                 positions = await self.bot.broker.get_positions()
-                for pos in positions:
-                    if float(pos.get('size', 0)) > 0:
-                        unrealized_pnl += float(pos.get('unrealisedPnl', 0))
+                if positions:  # Defensive check
+                    for pos in positions:
+                        if float(pos.get('size', 0)) > 0:
+                            unrealized_pnl += float(pos.get('unrealisedPnl', 0))
             except Exception as e:
                 logger.debug(f"Error getting unrealized P&L: {e}")
             
@@ -225,19 +227,20 @@ class TelegramHandler:
             exchange_total_r = 0.0
             try:
                 all_closed = await self.bot.broker.get_all_closed_pnl(limit=200)
-                for record in all_closed:
-                    try:
-                        pnl = float(record.get('closedPnl', 0))
-                        exchange_total_trades += 1
-                        
-                        # Calculate R
-                        r_value = pnl / risk_amount if risk_amount > 0 else 0
-                        exchange_total_r += r_value
-                        
-                        if pnl > 0:
-                            exchange_wins += 1
-                    except:
-                        continue
+                if all_closed:  # Defensive check
+                    for record in all_closed:
+                        try:
+                            pnl = float(record.get('closedPnl', 0))
+                            exchange_total_trades += 1
+                            
+                            # Calculate R
+                            r_value = pnl / risk_amount if risk_amount > 0 else 0
+                            exchange_total_r += r_value
+                            
+                            if pnl > 0:
+                                exchange_wins += 1
+                        except:
+                            continue
             except Exception as e:
                 logger.debug(f"Error calculating exchange performance: {e}")
             

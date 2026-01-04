@@ -846,10 +846,28 @@ class Bot4H:
             signal: Divergence signal
             df: Latest OHLCV data
         """
-        # Skip if already in a trade for this symbol
+        # Skip if already in a trade for this symbol (Internal Check)
         if symbol in self.active_trades:
-            logger.warning(f"[{symbol}] Already in a trade - skipping")
+            logger.warning(f"[{symbol}] Already in a trade (internal) - skipping")
             return
+            
+        # [CRITICAL] Skip if already in a trade on EXCHANGE (prevents pyramiding after restart)
+        try:
+            # We fetch all positions to be sure. 
+            # Optimization: could cache this or check specific symbol if API supports it,
+            # but get_positions() is robust now.
+            start_check = time.time()
+            existing_positions = await self.broker.get_positions()
+            for p in existing_positions:
+                if p.get('symbol') == symbol and float(p.get('size', 0)) > 0:
+                    logger.warning(f"[{symbol}] Position already exists on EXCHANGE! Skipping to prevent sizingup/pyramiding.")
+                    # Sync internal state while we are at it
+                    self.active_trades.add(symbol) 
+                    return
+            logger.info(f"[{symbol}] No existing position found (took {time.time()-start_check:.2f}s). Proceeding...")
+        except Exception as e:
+            logger.error(f"[{symbol}] Failed to check existing positions: {e}")
+            return # Safety fail-close
         
         # Get symbol-specific R:R
         rr = self.symbol_config.get_rr_for_symbol(symbol)

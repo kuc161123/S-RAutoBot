@@ -134,6 +134,14 @@ class TelegramHandler:
 /performance - Symbol leaderboard (R values)
 /radar - Full radar watch (all symbols)
 
+💰 **RISK MANAGEMENT**
+/risk - View current risk settings
+/risk 0.2 - Set 0.2% risk per trade
+/risk 1 - Set 1% risk per trade
+/risk $5 - Set fixed $5 per trade
+/risk $0.5 - Set fixed $0.50 per trade
+/resetstats - Clear all stats (start fresh)
+
 ⚙️ **CONTROL**
 /stop - Emergency stop (halt trading)
 /start - Resume trading

@@ -1216,13 +1216,33 @@ class Bot4H:
     
     async def run(self):
         """Main bot loop"""
-        logger.info("="*60)
-        logger.info("🤖 1H TREND-DIVERGENCE BOT STARTED")
-        logger.info("="*60)
-        logger.info(f"Timeframe: 1H")
+        if not self.broker.session:
+             self.broker.session = aiohttp.ClientSession()
+
+        # [NEW] Populate leverage cache at startup
+        # This prevents 429s and "invalid leverage" errors by batch fetching once
+        try:
+            await self.broker.populate_leverage_cache()
+        except Exception as e:
+            logger.error(f"Failed to populate leverage cache: {e}")
+
+        # Start Telegram bot
+        if self.telegram:
+            await self.telegram.start()
+            
+        logger.info("============================================================")
+        logger.info(f"🤖 1H TREND-DIVERGENCE BOT STARTED")
+        logger.info("============================================================")
+        logger.info(f"Timeframe: {self.timeframe}")
         logger.info(f"Enabled Symbols: {len(self.symbol_config.get_enabled_symbols())}")
-        logger.info(f"Risk per trade: {self.risk_config.get('risk_per_trade', 0.01)*100}%")
-        logger.info("="*60)
+        
+        # Log risk setting clearly
+        if self.risk_config.get('risk_amount_usd'):
+             logger.info(f"Risk per trade: ${self.risk_config.get('risk_amount_usd')} (Fixed USD)")
+        else:
+             logger.info(f"Risk per trade: {self.risk_config.get('risk_per_trade', 0.01)*100}%")
+             
+        logger.info("============================================================")
         
         enabled_symbols = self.symbol_config.get_enabled_symbols()
         

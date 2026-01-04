@@ -22,11 +22,62 @@ class Bybit:
         self.cfg = cfg
         self.session = None
         self.precisions_cache = {}  # {symbol: (tick_size_str, qty_step_str)}
+        self.leverage_cache = {}    # {symbol: int_max_leverage}
         
     async def close(self):
         """Close the underlying aiohttp session"""
         if self.session and not self.session.closed:
             await self.session.close()
+
+    async def populate_leverage_cache(self) -> dict:
+        """Fetch all instruments and cache their max leverage. Call this at startup."""
+        try:
+            logger.info("[BYBIT] Fetching max leverage for ALL symbols...")
+            instruments = await self.get_instruments_info(category="linear")
+            count = 0
+            if instruments:
+                for inst in instruments:
+                    sym = inst.get('symbol')
+                    leverage_filter = inst.get('leverageFilter', {})
+                    max_lev = leverage_filter.get('maxLeverage', '10')
+                    
+                    if sym:
+                        self.leverage_cache[sym] = int(float(max_lev))
+                        count += 1
+                        
+            logger.info(f"[BYBIT] Cached max leverage for {count} symbols")
+            return self.leverage_cache
+        except Exception as e:
+            logger.error(f"[BYBIT] Failed to populate leverage cache: {e}")
+            return {}
+
+    # ... (rest of methods) ...
+
+    async def get_max_leverage(self, symbol: str) -> int:
+        """Get maximum allowed leverage for a symbol, preferring cache."""
+        # 1. Check cache first
+        if symbol in self.leverage_cache:
+            return self.leverage_cache[symbol]
+            
+        # 2. Fallback to API call if not in cache (rare)
+        try:
+            instruments = await self.get_instruments_info(symbol=symbol)
+            if instruments:
+                for inst in instruments:
+                    if inst.get('symbol') == symbol:
+                        leverage_filter = inst.get('leverageFilter', {})
+                        max_lev = leverage_filter.get('maxLeverage', '10')  # Default safely to 10x
+                        result = int(float(max_lev))
+                        # Cache it for next time
+                        self.leverage_cache[symbol] = result
+                        return result
+            
+            # Fallback if not found
+            logger.warning(f"Could not get max leverage for {symbol}, using safe 10x")
+            return 10
+        except Exception as e:
+            logger.warning(f"Error getting max leverage for {symbol}: {e}, using safe 10x")
+            return 10
             
     def _ts(self) -> str:
         return str(int(time.time() * 1000))

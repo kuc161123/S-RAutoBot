@@ -171,11 +171,12 @@ class TelegramHandler:
             risk_usd = self.bot.risk_config.get('risk_amount_usd')
             if risk_usd:
                 risk_amount = float(risk_usd)
-                risk_display = f"${risk_amount:.2f}"
+                risk_pct = (risk_amount / balance * 100) if balance > 0 else 0
+                risk_display = f"${risk_amount:.2f} ({risk_pct:.2f}%)"
             else:
                 risk_pct = self.bot.risk_config.get('risk_per_trade', 0.005)
                 risk_amount = balance * risk_pct if balance > 0 else 10
-                risk_display = f"{risk_pct*100:.1f}%"
+                risk_display = f"${risk_amount:.2f} ({risk_pct*100:.1f}%)"
             
             # Realized P&L (today)
             realized_pnl = 0

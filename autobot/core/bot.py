@@ -22,6 +22,7 @@ import asyncio
 import logging
 import yaml
 import os
+import aiohttp
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta

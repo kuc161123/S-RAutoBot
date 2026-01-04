@@ -229,6 +229,8 @@ class Bybit:
             # If specific symbol, NO limit/pagination needed - just direct fetch
             if symbol:
                 params["symbol"] = symbol
+                # [FIX] Force limit=1 to prevent large buffer/truncation issues
+                params["limit"] = 1
                 resp = await self._request("GET", "/v5/market/instruments-info", params)
                 if resp and resp.get("result"):
                     return resp["result"].get("list", [])

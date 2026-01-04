@@ -317,24 +317,20 @@ class Bybit:
                 for inst in instruments:
                     if inst.get('symbol') == symbol:
                         leverage_filter = inst.get('leverageFilter', {})
-                        max_lev = leverage_filter.get('maxLeverage', '25')
+                        max_lev = leverage_filter.get('maxLeverage', '10')  # Default safely to 10x
                         result = int(float(max_lev))
-                        logger.debug(f"Max leverage for {symbol}: {result}x")
+                        # logger.debug(f"Max leverage for {symbol}: {result}x")
                         return result
-            # Fallback if not found
-            logger.warning(f"Could not get max leverage for {symbol}, using 25x")
-            return 25
+            
+            # Fallback if not found - use safe 10x, not 25x which might be too high for some alts
+            logger.warning(f"Could not get max leverage for {symbol}, using safe 10x")
+            return 10
         except Exception as e:
-            logger.warning(f"Error getting max leverage for {symbol}: {e}, using 25x")
-            return 25
+            logger.warning(f"Error getting max leverage for {symbol}: {e}, using safe 10x")
+            return 10
 
     async def set_leverage(self, symbol: str, leverage: int = None) -> Dict[str, Any] | None:
-        """Set leverage for a symbol. If leverage is None, uses max allowed.
-        
-        Args:
-            symbol: Trading pair
-            leverage: Desired leverage. If None, fetches and uses max allowed.
-        """
+        """Set leverage for a symbol. If leverage is None, uses max allowed. Handles errors gracefully."""
         try:
             # If no leverage specified, use maximum allowed
             if leverage is None:
@@ -347,14 +343,37 @@ class Bybit:
                 "buyLeverage": str(leverage),
                 "sellLeverage": str(leverage)
             }
-            resp = await self._request("POST", "/v5/position/set-leverage", data)
-            return resp
-        except RuntimeError as e:
-            msg = str(e).lower()
-            if "leverage not modified" in msg:
-                return {"result": "already_set"}
-            logger.warning(f"Failed to set leverage for {symbol}: {e}")
-            return None
+            
+            # Helper to try setting leverage
+            async def try_set(lev):
+                d = data.copy()
+                d['buyLeverage'] = str(lev)
+                d['sellLeverage'] = str(lev)
+                return await self._request("POST", "/v5/position/set-leverage", d)
+
+            try:
+                resp = await try_set(leverage)
+                
+                # Check for "leverage not modified" (110043) -> Success
+                if str(resp.get("retCode")) == "110043":
+                    return resp
+                
+                # Check for "invalid leverage" -> Retry with lower
+                if str(resp.get("retCode")) == "10001":  # Buy leverage invalid
+                    logger.warning(f"Leverage {leverage}x is too high for {symbol}, retrying with 10x...")
+                    resp = await try_set(10)
+                    return resp
+                    
+                return resp
+                
+            except RuntimeError as e:
+                if "leverage not modified" in str(e):
+                    return {}
+                if "buy leverage invalid" in str(e).lower():
+                     logger.warning(f"Leverage {leverage}x rejected for {symbol}, retrying with 10x...")
+                     return await try_set(10)
+                raise e
+
         except Exception as e:
             logger.warning(f"Failed to set leverage for {symbol}: {e}")
             return None

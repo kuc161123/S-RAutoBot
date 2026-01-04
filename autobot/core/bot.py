@@ -696,7 +696,7 @@ class Bot4H:
 {div_emoji} **{symbol}** | {div_name}
 
 **SIGNAL DETAILS**
-├ Type: {signal.divergence_code}
+├ Type: `{signal.divergence_code}`
 ├ Side: {side_text}
 ├ Price: ${signal.price:,.4f}
 ├ RSI: {signal.rsi_value:.1f}
@@ -768,7 +768,7 @@ class Bot4H:
 {div_emoji} **{symbol}** | {div_name}
 
 🔓 Break of Structure confirmed after {pending.candles_waited} candles
-├ Type: {pending.signal.divergence_code}
+├ Type: `{pending.signal.divergence_code}`
 ├ Side: {side_text}
 ⚡ Executing trade now...
 
@@ -1068,7 +1068,7 @@ class Bot4H:
 📊 R:R Ratio: {trade.rr_ratio}:1
 
 **STRATEGY**
-🔍 Setup: {div_name} ({signal.divergence_code})
+🔍 Setup: {div_name} (`{signal.divergence_code}`)
 📈 Trend: EMA 200 Aligned ✅
 ✅ Confirmation: Break of Structure
 

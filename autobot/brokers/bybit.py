@@ -974,10 +974,37 @@ class Bybit:
         return await self._request("POST", "/v5/order/create", data)
     
     async def get_positions(self) -> list:
-        """Get open positions"""
+        """Get ALL open positions with pagination"""
         try:
-            resp = await self._request("GET", "/v5/position/list", {"category": "linear", "settleCoin": "USDT"})
-            return resp["result"]["list"]
+            all_positions = []
+            cursor = None
+            
+            while True:
+                params = {
+                    "category": "linear",
+                    "settleCoin": "USDT",
+                    "limit": 200  # Max limit per page
+                }
+                
+                if cursor:
+                    params["cursor"] = cursor
+                
+                resp = await self._request("GET", "/v5/position/list", params)
+                
+                if resp and resp.get("result"):
+                    result = resp["result"]
+                    positions = result.get("list", [])
+                    all_positions.extend(positions)
+                    
+                    # Check for next page
+                    cursor = result.get("nextPageCursor")
+                    if not cursor:
+                        break  # No more pages
+                else:
+                    break
+            
+            logger.info(f"Fetched {len(all_positions)} total positions from Bybit")
+            return all_positions
         except Exception as e:
             logger.error(f"Failed to get positions: {e}")
             return []

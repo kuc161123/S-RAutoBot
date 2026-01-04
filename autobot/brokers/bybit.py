@@ -225,9 +225,18 @@ class Bybit:
     async def get_instruments_info(self, category:str="linear", symbol:Optional[str]=None) -> list:
         """Get instrument info (tick size, lot size, max leverage, etc.)"""
         try:
-            params = {"category": category, "limit": 200}
+            params = {"category": category}
+            
+            # If specific symbol, NO limit/pagination needed - just direct fetch
             if symbol:
                 params["symbol"] = symbol
+                resp = await self._request("GET", "/v5/market/instruments-info", params)
+                if resp and resp.get("result"):
+                    return resp["result"].get("list", [])
+                return []
+            
+            # Only use limit/pagination for BULK fetch
+            params["limit"] = 200 
             
             # Handle pagination if fetching all symbols
             all_items = []
@@ -243,7 +252,7 @@ class Bybit:
                     items = resp["result"].get("list", [])
                     all_items.extend(items)
                     cursor = resp["result"].get("nextPageCursor", "")
-                    if not cursor or symbol: # If specific symbol, no need to paginate
+                    if not cursor:
                         break
                 else:
                     break
@@ -416,47 +425,36 @@ class Bybit:
                 return await self._request("POST", "/v5/position/set-leverage", d)
 
             try:
-                resp = await try_set(leverage)
-                
-                # Check for "leverage not modified" (110043) -> Success
-                if str(resp.get("retCode")) == "110043":
-                    return resp
-                
-                # Check for "invalid leverage"
-                if str(resp.get("retCode")) == "10001":  # Buy leverage invalid
-                    # If failed at requested leverage (e.g. 50x), try 10x
-                    if leverage > 10:
-                        logger.warning(f"Leverage {leverage}x is too high for {symbol}, retrying with 10x...")
-                        resp = await try_set(10)
-                        
-                        # If 10x also fails, try 1x as last resort
-                        if str(resp.get("retCode")) == "10001":
-                             logger.warning(f"Leverage 10x also rejected for {symbol}, retrying with 1x...")
-                             resp = await try_set(1)
-                        return resp
-                    
-                    # If we started at <= 10x and it failed, try 1x
-                    elif leverage > 1:
-                        logger.warning(f"Leverage {leverage}x rejected for {symbol}, retrying with 1x...")
-                        return await try_set(1)
-
-                return resp
+                # Primary Attempt
+                return await try_set(leverage)
                 
             except RuntimeError as e:
                 err_msg = str(e).lower()
+                
+                # Case 1: Already set (Success)
                 if "leverage not modified" in err_msg:
-                    return {}
-                if "buy leverage invalid" in err_msg:
-                     # Recursive fallback handled in logic above if we could catch retCode
-                     # But for RuntimeError path:
-                     if leverage > 10:
-                         logger.warning(f"Leverage {leverage}x rejected (exception), trying 10x...")
-                         try:
-                             return await try_set(10)
-                         except:
-                             return await try_set(1)
-                     elif leverage > 1:
-                         return await try_set(1)
+                    return {"retCode": 0, "result": "already_set"}
+                
+                # Case 2: Invalid Leverage (Too High)
+                if "leverage invalid" in err_msg:
+                    # If we tried something > 10x, fallback to 10x
+                    if leverage > 10:
+                        logger.warning(f"Leverage {leverage}x rejected for {symbol}, trying 10x...")
+                        try:
+                            return await try_set(10)
+                        except RuntimeError as e2:
+                            # If 10x fails, fallback to 1x
+                            if "leverage invalid" in str(e2).lower():
+                                logger.warning(f"Leverage 10x also rejected for {symbol}, trying 1x...")
+                                return await try_set(1)
+                            raise e2
+                            
+                    # If we started > 1x but <= 10x, fallback to 1x
+                    elif leverage > 1:
+                        logger.warning(f"Leverage {leverage}x rejected for {symbol}, trying 1x...")
+                        return await try_set(1)
+                        
+                # Re-raise other errors
                 raise e
 
         except Exception as e:

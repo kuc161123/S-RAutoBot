@@ -320,6 +320,17 @@ class Bot4H:
         try:
             # Get actual positions from Bybit
             positions = await self.broker.get_positions()
+            logger.info(f"[SYNC] Fetched {len(positions) if positions else 0} positions from Bybit")
+            
+            # Log details of what we got
+            if positions:
+                open_count = sum(1 for pos in positions if float(pos.get('size', 0)) > 0)
+                logger.info(f"[SYNC] {open_count} positions with size > 0")
+                for pos in positions[:5]:  # Log first 5
+                    if float(pos.get('size', 0)) > 0:
+                        logger.info(f"[SYNC] Found: {pos.get('symbol')} size={pos.get('size')} side={pos.get('side')}")
+            else:
+                logger.warning("[SYNC] get_positions() returned None or empty list!")
             
             # Build set of symbols with actual open positions
             actual_open = set()

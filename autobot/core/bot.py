@@ -903,6 +903,17 @@ class Bot4H:
                 logger.error(f"[{symbol}] Invalid calculated qty: {position_size_qty} (too small for margin)")
                 return
             
+            # Validate actual margin won't exceed 2x target (Bybit minimums might force higher)
+            actual_position_value = position_size_qty * entry_price
+            actual_margin = actual_position_value / leverage
+            max_allowed_margin = max_margin_per_trade * 2  # Allow up to 2x target
+            
+            if actual_margin > max_allowed_margin:
+                logger.warning(f"[{symbol}] Margin ${actual_margin:.2f} exceeds limit ${max_allowed_margin:.2f} - skipping trade")
+                return
+            
+            logger.info(f"[{symbol}] Final margin: ${actual_margin:.2f} (target: ${max_margin_per_trade:.2f})")
+            
             # Calculate SL distance for TP/SL placement
             sl_mult = self.strategy_config.get('exit_params', {}).get('sl_atr_mult', 1.0)
             sl_distance = atr * sl_mult

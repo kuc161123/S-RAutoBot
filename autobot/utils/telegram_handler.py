@@ -249,14 +249,17 @@ class TelegramHandler:
             
             # API Key expiry
             api_info = await self.bot.broker.get_api_key_info()
-            days_left = api_info.get('days_left')
-            if days_left is not None:
-                if days_left <= 7:
-                    key_status = f"⚠️ {days_left}d left!"
-                elif days_left <= 30:
-                    key_status = f"🟡 {days_left}d left"
+            if api_info:  # Defensive check
+                days_left = api_info.get('days_left')
+                if days_left is not None:
+                    if days_left <= 7:
+                        key_status = f"⚠️ {days_left}d left!"
+                    elif days_left <= 30:
+                        key_status = f"🟡 {days_left}d left"
+                    else:
+                        key_status = f"✅ {days_left}d left"
                 else:
-                    key_status = f"✅ {days_left}d left"
+                    key_status = "❓ Unknown"
             else:
                 key_status = "❓ Unknown"
             

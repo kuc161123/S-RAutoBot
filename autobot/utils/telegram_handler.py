@@ -353,9 +353,6 @@ class TelegramHandler:
             today_losses = today_trades - today_wins
             next_scan_mins = max(0, 60 - mins_ago)
             
-            # Get max position limit from config
-            max_positions = self.bot.risk_config.get('max_concurrent_positions', 15)
-            
             # Get today's signal counts
             divs_today = self.bot.bos_tracking.get('divergences_detected_today', 0)
             bos_today = self.bot.bos_tracking.get('bos_confirmed_today', 0)
@@ -372,7 +369,7 @@ class TelegramHandler:
 📊 **POSITIONS**
 ├ Active: {active} | Pending BOS: {pending}
 ├ Balance: ${balance:,.2f} | Available: ${available_balance:,.2f}
-└ Risk: {risk_display}/trade | Max: {max_positions} positions
+└ Risk: {risk_display}/trade
 
 📉 **PERFORMANCE (Last {exchange_total_trades})**
 ├ Trades: {exchange_total_trades} | WR: {exchange_wr:.1f}% | PF: {profit_factor:.1f}x

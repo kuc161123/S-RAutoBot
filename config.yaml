@@ -45,7 +45,6 @@ notifications:
   pending_signals: true
   startup: true
 risk:
-  max_concurrent_positions: 15
   max_daily_loss: 0.05
   max_position_size_pct: 0.1
   risk_per_trade: 0.005  # 0.5% (fallback if risk_amount_usd not set)

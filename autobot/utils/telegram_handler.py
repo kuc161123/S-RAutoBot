@@ -72,6 +72,7 @@ class TelegramHandler:
         self.app.add_handler(CommandHandler("risk", self.cmd_risk))
         self.app.add_handler(CommandHandler("performance", self.cmd_performance))
         self.app.add_handler(CommandHandler("resetstats", self.cmd_resetstats))
+        self.app.add_handler(CommandHandler("debug", self.cmd_debug))
         
         # Start polling with longer interval to avoid rate limits
         await self.app.initialize()
@@ -708,6 +709,62 @@ All internal tracking stats have been reset to zero.
         except Exception as e:
             await update.message.reply_text(f"❌ Error resetting stats: {e}")
             logger.error(f"Reset stats error: {e}")
+    
+    async def cmd_debug(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Debug command to show raw Bybit API responses"""
+        try:
+            msg_parts = ["🔧 **DEBUG INFO**\n━━━━━━━━━━━━━━━━━━━━\n"]
+            
+            # Get raw positions from Bybit
+            msg_parts.append("📊 **POSITIONS API**\n")
+            try:
+                positions = await self.bot.broker.get_positions()
+                if positions is None:
+                    msg_parts.append("❌ API returned None\n")
+                elif len(positions) == 0:
+                    msg_parts.append("⚠️ API returned empty list (0 positions)\n")
+                else:
+                    # Count positions with size > 0
+                    open_count = sum(1 for p in positions if float(p.get('size', 0)) > 0)
+                    msg_parts.append(f"✅ Total: {len(positions)} | Open (size>0): {open_count}\n")
+                    
+                    # Show first 5 open positions
+                    msg_parts.append("\n📍 **Sample Positions:**\n")
+                    shown = 0
+                    for pos in positions:
+                        if float(pos.get('size', 0)) > 0:
+                            sym = pos.get('symbol', '?')[:12]
+                            size = pos.get('size', 0)
+                            side = pos.get('side', '?')
+                            msg_parts.append(f"├ {sym}: {size} ({side})\n")
+                            shown += 1
+                            if shown >= 5:
+                                break
+                    
+                    if open_count > 5:
+                        msg_parts.append(f"└ ...and {open_count - 5} more\n")
+            except Exception as e:
+                msg_parts.append(f"❌ Error: {e}\n")
+            
+            # Get balance
+            msg_parts.append("\n💰 **BALANCE API**\n")
+            try:
+                balance = await self.bot.broker.get_balance()
+                msg_parts.append(f"✅ Balance: ${balance:.2f}\n" if balance else "❌ Balance: None\n")
+            except Exception as e:
+                msg_parts.append(f"❌ Error: {e}\n")
+            
+            # Internal tracking
+            msg_parts.append("\n🔄 **INTERNAL TRACKING**\n")
+            msg_parts.append(f"├ active_trades: {len(self.bot.active_trades)}\n")
+            msg_parts.append(f"├ pending_signals: {sum(len(s) for s in self.bot.pending_signals.values())}\n")
+            msg_parts.append(f"└ enabled_symbols: {len(self.bot.symbol_config.get_enabled_symbols())}\n")
+            
+            await update.message.reply_text(''.join(msg_parts), parse_mode='Markdown')
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Debug error: {e}")
+            logger.error(f"Debug command error: {e}")
             
     async def cmd_radar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show full radar watch for all symbols - handles long messages"""

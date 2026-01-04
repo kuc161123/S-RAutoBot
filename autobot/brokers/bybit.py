@@ -185,33 +185,62 @@ class Bybit:
         """
         try:
             resp = await self._request("GET", "/v5/user/query-api", {})
-            if resp and resp.get("result"):
-                result = resp["result"]
-                expired_at = result.get("expiredAt", "")
-                deadline_day = result.get("deadlineDay", 0)
-                
-                # Calculate days left from expiredAt
-                days_left = None
-                if expired_at:
-                    try:
-                        from datetime import datetime
-                        # Parse Bybit datetime format
-                        if 'T' in expired_at:
-                            expiry = datetime.fromisoformat(expired_at.replace('Z', '+00:00'))
-                        else:
-                            expiry = datetime.strptime(expired_at, "%Y-%m-%d %H:%M:%S")
-                        days_left = (expiry - datetime.now(expiry.tzinfo if expiry.tzinfo else None)).days
-                    except Exception:
-                        days_left = deadline_day if deadline_day else None
-                
-                return {
-                    "expiredAt": expired_at,
-                    "deadlineDay": deadline_day,
-                    "days_left": days_left if days_left is not None else deadline_day
-                }
-            return {"days_left": None}
+            logger.info(f"API key info response: {resp}")  # Debug logging
+            
+            if not resp:
+                logger.error("get_api_key_info: Response is None")
+                return {"days_left": None}
+            
+            if not resp.get("result"):
+                logger.error(f"get_api_key_info: No 'result' in response. Keys: {resp.keys()}")
+                return {"days_left": None}
+            
+            result = resp["result"]
+            logger.info(f"API key result: {result}")  # Debug logging
+            
+            # Bybit might return result as a list or dict
+            if isinstance(result, list):
+                if len(result) > 0:
+                    result = result[0]  # Take first API key
+                else:
+                    logger.error("get_api_key_info: result list is empty")
+                    return {"days_left": None}
+            
+            expired_at = result.get("expiredAt", "")
+            deadline_day = result.get("deadlineDay", 0)
+            
+            # Calculate days left from expiredAt
+            days_left = None
+            if expired_at:
+                try:
+                    from datetime import datetime
+                    # Parse Bybit datetime format (timestamp in milliseconds)
+                    if isinstance(expired_at, (int, float)):
+                        # Unix timestamp in milliseconds
+                        expiry = datetime.fromtimestamp(int(expired_at) / 1000)
+                    elif 'T' in str(expired_at):
+                        expiry = datetime.fromisoformat(str(expired_at).replace('Z', '+00:00'))
+                    else:
+                        expiry = datetime.strptime(str(expired_at), "%Y-%m-%d %H:%M:%S")
+                    
+                    days_left = (expiry - datetime.now()).days
+                    logger.info(f"Calculated days_left: {days_left} from expiredAt: {expired_at}")
+                except Exception as parse_err:
+                    logger.error(f"Failed to parse expiredAt '{expired_at}': {parse_err}")
+                    days_left = deadline_day if deadline_day else None
+            elif deadline_day:
+                days_left = deadline_day
+                logger.info(f"Using deadlineDay: {days_left}")
+            
+            return {
+                "expiredAt": expired_at,
+                "deadlineDay": deadline_day,
+                "days_left": days_left
+            }
         except Exception as e:
-            logger.debug(f"Failed to get API key info: {e}")
+            logger.error(f"Failed to get API key info: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return {"days_left": None}
 
     async def get_balance(self) -> Optional[float]:

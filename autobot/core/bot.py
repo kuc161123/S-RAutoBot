@@ -862,80 +862,75 @@ class Bot4H:
         entry_price = latest_candle['open']  # Next candle open
         atr = latest_candle['atr']
         
-        # Calculate position size based on MARGIN percentage (with leverage)
-        # This ensures each trade only uses X% of balance as margin
+        # SL distance
+        sl_mult = self.strategy_config.get('exit_params', {}).get('sl_atr_mult', 1.0)
+        sl_distance = atr * sl_mult
+        
+        # Calculate position size based on RISK (Safety First)
+        # Goal: If SL hits, loss = risk_amount
         try:
-            # Get AVAILABLE balance (not total) to avoid margin overflow
+            # 1. Determine Risk Amount
+            risk_amount_usd = self.risk_config.get('risk_amount_usd', None)
             account_balance = await self.broker.get_balance()
-            available_balance = account_balance  # Will update if we can get available
             
+            if risk_amount_usd:
+                risk_amount = float(risk_amount_usd)
+            else:
+                margin_pct = self.risk_config.get('risk_per_trade', 0.002)
+                risk_amount = account_balance * margin_pct
+            
+            # 2. Calculate Qty based on Risk
+            # Qty = Risk / SL_Distance
+            if sl_distance <= 0:
+                logger.error(f"[{symbol}] Invalid SL distance: {sl_distance}")
+                return
+
+            raw_qty = risk_amount / sl_distance
+            
+            # 3. Apply Max Leverage to minimize Margin Usage
+            leverage = await self.broker.get_max_leverage(symbol)
+            await self.broker.set_leverage(symbol, leverage)
+            
+            # 4. Check Margin Requirements
+            position_value = raw_qty * entry_price
+            required_margin = position_value / leverage
+            
+            # Get available balance
+            available_balance = account_balance
             try:
                 positions = await self.broker.get_positions()
                 if positions:
                     total_margin_used = sum(float(p.get('positionIM', 0)) for p in positions if float(p.get('size', 0)) > 0)
                     available_balance = account_balance - total_margin_used
-                    logger.info(f"[{symbol}] Balance: ${account_balance:.2f}, Used: ${total_margin_used:.2f}, Available: ${available_balance:.2f}")
             except:
                 pass
-            
-            # Use margin percentage from config (risk_per_trade now means margin per trade)
-            margin_pct = self.risk_config.get('risk_per_trade', 0.002)  # 0.2% default
-            max_margin_per_trade = account_balance * margin_pct  # Still based on total for consistency
-            
-            # Check if we have enough available margin
-            if available_balance < max_margin_per_trade:
-                logger.warning(f"[{symbol}] Insufficient margin: available ${available_balance:.2f} < required ${max_margin_per_trade:.2f}")
+
+            # Skip if insufficient margin
+            if required_margin > available_balance:
+                logger.warning(f"[{symbol}] Insufficient margin for trade. Need ${required_margin:.2f}, Have ${available_balance:.2f} (Risk-Based Sizing)")
                 return
-            
-            # Get leverage for this symbol (use max leverage for efficiency)
-            leverage = await self.broker.get_max_leverage(symbol)
-            
-            # Set leverage on Bybit
-            await self.broker.set_leverage(symbol, leverage)
-            
-            # Position value = Margin × Leverage
-            position_value = max_margin_per_trade * leverage
-            
-            # Qty = Position Value / Entry Price
-            raw_qty = position_value / entry_price
-            
-            logger.info(f"[{symbol}] Margin-based sizing: ${max_margin_per_trade:.2f} margin × {leverage}x = ${position_value:.2f} position → {raw_qty:.6f} qty")
-            
-            # Get qty precision from Bybit API
+
+            # 5. Round to Precision
             try:
                 _, qty_step = await self.broker._get_precisions(symbol)
                 from decimal import Decimal, ROUND_DOWN
                 qty_step_dec = Decimal(qty_step)
                 raw_qty_dec = Decimal(str(raw_qty))
-                # Round DOWN to qty_step
                 position_size_qty = float(raw_qty_dec.quantize(qty_step_dec, rounding=ROUND_DOWN))
-                logger.info(f"[{symbol}] Qty: {raw_qty:.6f} → {position_size_qty} (step={qty_step})")
+                logger.info(f"[{symbol}] Risk-Based Qty: {raw_qty:.6f} → {position_size_qty} (Risk: ${risk_amount:.2f}, SL Dist: {sl_distance:.4f})")
             except Exception as e:
                 logger.warning(f"[{symbol}] Precision fetch failed, using int(): {e}")
                 position_size_qty = int(raw_qty)
             
-            # Sanity check: If Qty is zero or invalid
+            # Sanity check
             if position_size_qty <= 0:
-                logger.error(f"[{symbol}] Invalid calculated qty: {position_size_qty} (too small for margin)")
+                logger.error(f"[{symbol}] Invalid calculated qty: {position_size_qty} (Risk: ${risk_amount:.2f} too small for ATR {sl_distance:.4f})")
                 return
-            
-            # Validate actual margin won't exceed 2x target (Bybit minimums might force higher)
-            actual_position_value = position_size_qty * entry_price
-            actual_margin = actual_position_value / leverage
-            max_allowed_margin = max_margin_per_trade * 2  # Allow up to 2x target
-            
-            if actual_margin > max_allowed_margin:
-                logger.warning(f"[{symbol}] Margin ${actual_margin:.2f} exceeds limit ${max_allowed_margin:.2f} - skipping trade")
-                return
-            
-            logger.info(f"[{symbol}] Final margin: ${actual_margin:.2f} (target: ${max_margin_per_trade:.2f})")
-            
-            # Calculate SL distance for TP/SL placement
-            sl_mult = self.strategy_config.get('exit_params', {}).get('sl_atr_mult', 1.0)
-            sl_distance = atr * sl_mult
             
         except Exception as e:
             logger.error(f"[{symbol}] Error calculating position size: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return
         
         # Calculate TP/SL prices

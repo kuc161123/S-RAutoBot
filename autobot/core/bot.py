@@ -1238,10 +1238,11 @@ class Bot4H:
         if not self.broker.session:
              self.broker.session = aiohttp.ClientSession()
 
-        # [NEW] Populate leverage cache at startup
-        # This prevents 429s and "invalid leverage" errors by batch fetching once
+        # [NEW] Populate leverage cache at startup (SERIAL FETCH)
+        # This iterates enabled symbols one-by-one to avoid huge JSON responses
         try:
-            await self.broker.populate_leverage_cache()
+            enabled_symbols = self.symbol_config.get_enabled_symbols()
+            await self.broker.populate_leverage_cache(enabled_symbols)
         except Exception as e:
             logger.error(f"Failed to populate leverage cache: {e}")
 

@@ -29,23 +29,40 @@ class Bybit:
         if self.session and not self.session.closed:
             await self.session.close()
 
-    async def populate_leverage_cache(self) -> dict:
-        """Fetch all instruments and cache their max leverage. Call this at startup."""
+    async def populate_leverage_cache(self, target_symbols: list = None) -> dict:
+        """Fetch max leverage for specific symbols one-by-one. 
+        
+        Args:
+           target_symbols: List of symbols to fetch. If None, does nothing.
+        """
         try:
-            logger.info("[BYBIT] Fetching max leverage for ALL symbols...")
-            instruments = await self.get_instruments_info(category="linear")
+            if not target_symbols:
+                logger.warning("[BYBIT] No symbols provided for leverage cache population")
+                return {}
+
+            logger.info(f"[BYBIT] 🔧 CONFIGURING MAX LEVERAGE for {len(target_symbols)} symbols (Serial Fetch)...")
             count = 0
-            if instruments:
-                for inst in instruments:
-                    sym = inst.get('symbol')
-                    leverage_filter = inst.get('leverageFilter', {})
-                    max_lev = leverage_filter.get('maxLeverage', '10')
+            
+            # Fetch individually to avoid JSON truncation on large batch responses
+            # and to strictly follow user request of "only symbols I trade"
+            for sym in target_symbols:
+                try:
+                    # Reuse get_max_leverage which now caches internally
+                    # force_api=True implicit if not in cache (which it isn't yet)
+                    lev = await self.get_max_leverage(sym)
+                    count += 1
                     
-                    if sym:
-                        self.leverage_cache[sym] = int(float(max_lev))
-                        count += 1
+                    # Small delay to respect rate limits (5-10 req/s usually safe)
+                    await asyncio.sleep(0.05) 
+                    
+                    if count % 50 == 0:
+                        logger.info(f"[BYBIT] Loaded leverage for {count}/{len(target_symbols)} symbols...")
                         
-            logger.info(f"[BYBIT] Cached max leverage for {count} symbols")
+                except Exception as e:
+                    logger.warning(f"[BYBIT] Failed to fetch leverage for {sym}: {e}")
+                    continue
+                        
+            logger.info(f"[BYBIT] ✅ Cached max leverage for {count} symbols")
             return self.leverage_cache
         except Exception as e:
             logger.error(f"[BYBIT] Failed to populate leverage cache: {e}")

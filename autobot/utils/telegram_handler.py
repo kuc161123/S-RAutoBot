@@ -233,21 +233,42 @@ class TelegramHandler:
             # Calculate from all closed trades on Bybit
             exchange_total_trades = 0
             exchange_wins = 0
+            exchange_losses = 0
             exchange_total_r = 0.0
+            total_win_r = 0.0
+            total_loss_r = 0.0
+            best_trade_r = 0.0
+            best_trade_symbol = ""
+            worst_trade_r = 0.0
+            worst_trade_symbol = ""
+            trade_results = []  # For streak calculation
+            
             try:
                 all_closed = await self.bot.broker.get_all_closed_pnl(limit=200)
                 if all_closed:  # Defensive check
                     for record in all_closed:
                         try:
                             pnl = float(record.get('closedPnl', 0))
+                            symbol = record.get('symbol', '')
                             exchange_total_trades += 1
                             
                             # Calculate R
                             r_value = pnl / risk_amount if risk_amount > 0 else 0
                             exchange_total_r += r_value
+                            trade_results.append(r_value)
                             
                             if pnl > 0:
                                 exchange_wins += 1
+                                total_win_r += r_value
+                                if r_value > best_trade_r:
+                                    best_trade_r = r_value
+                                    best_trade_symbol = symbol
+                            else:
+                                exchange_losses += 1
+                                total_loss_r += abs(r_value)
+                                if r_value < worst_trade_r:
+                                    worst_trade_r = r_value
+                                    worst_trade_symbol = symbol
                         except:
                             continue
             except Exception as e:
@@ -255,6 +276,62 @@ class TelegramHandler:
             
             exchange_wr = (exchange_wins / exchange_total_trades * 100) if exchange_total_trades > 0 else 0
             exchange_avg_r = exchange_total_r / exchange_total_trades if exchange_total_trades > 0 else 0
+            
+            # Calculate Profit Factor
+            profit_factor = (total_win_r / total_loss_r) if total_loss_r > 0 else 0
+            
+            # Calculate Current Streak
+            current_streak = 0
+            streak_type = ""
+            if trade_results:
+                for r in reversed(trade_results):
+                    if current_streak == 0:
+                        current_streak = 1
+                        streak_type = "W" if r > 0 else "L"
+                    elif (r > 0 and streak_type == "W") or (r <= 0 and streak_type == "L"):
+                        current_streak += 1
+                    else:
+                        break
+            
+            # Calculate Max Drawdown (simple version - consecutive losses)
+            max_dd = 0.0
+            current_dd = 0.0
+            for r in trade_results:
+                if r < 0:
+                    current_dd += r
+                    if current_dd < max_dd:
+                        max_dd = current_dd
+                else:
+                    current_dd = 0.0
+            
+            # Position analytics
+            positions_up = 0
+            positions_down = 0
+            try:
+                positions = await self.bot.broker.get_positions()
+                if positions:
+                    for pos in positions:
+                        if float(pos.get('size', 0)) > 0:
+                            unrealized = float(pos.get('unrealisedPnl', 0))
+                            if unrealized > 0:
+                                positions_up += 1
+                            else:
+                                positions_down += 1
+            except:
+                pass
+            
+            # Get available balance (approximate - balance minus used margin)
+            available_balance = balance
+            try:
+                positions = await self.bot.broker.get_positions()
+                if positions:
+                    total_margin = 0.0
+                    for pos in positions:
+                        if float(pos.get('size', 0)) > 0:
+                            total_margin += float(pos.get('positionIM', 0))  # Initial margin
+                    available_balance = balance - total_margin
+            except:
+                pass
             
             # API Key expiry
             api_info = await self.bot.broker.get_api_key_info()
@@ -272,28 +349,40 @@ class TelegramHandler:
             else:
                 key_status = "❓ Unknown"
             
-            # === BUILD DASHBOARD ===
+            # Calculate today's W/L and next scan time
+            today_losses = today_trades - today_wins
+            next_scan_mins = max(0, 60 - mins_ago)
+            
+            # Get max position limit from config
+            max_positions = self.bot.risk_config.get('max_concurrent_positions', 15)
+            
+            # Get today's signal counts
+            divs_today = self.bot.bos_tracking.get('divergences_detected_today', 0)
+            bos_today = self.bot.bos_tracking.get('bos_confirmed_today', 0)
+            
+            # === BUILD ENHANCED DASHBOARD ===
             msg = f"""💰 **TRADING DASHBOARD**
 ━━━━━━━━━━━━━━━━━━━━
 
 📈 **P&L TODAY**
-├ Realized: ${realized_pnl:+,.2f} ({realized_r:+.1f}R)
-├ Unrealized: ${unrealized_pnl:+,.2f} ({unrealized_r:+.1f}R)
+├ Realized: ${realized_pnl:+,.2f} ({realized_r:+.1f}R) | {today_trades} trades ({today_wins}W/{today_losses}L)
+├ Unrealized: ${unrealized_pnl:+,.2f} ({unrealized_r:+.1f}R) | {active} positions ({positions_up}↗ {positions_down}↘)
 └ {net_emoji} Net: ${net_pnl:+,.2f} ({net_r:+.1f}R)
 
 📊 **POSITIONS**
 ├ Active: {active} | Pending BOS: {pending}
-├ Balance: ${balance:,.2f}
-└ Risk: {risk_display}/trade
+├ Balance: ${balance:,.2f} | Available: ${available_balance:,.2f}
+└ Risk: {risk_display}/trade | Max: {max_positions} positions
 
-📉 **PERFORMANCE**
-├ Trades: {exchange_total_trades} | WR: {exchange_wr:.1f}%
-├ Total R: {exchange_total_r:+.1f}R
-└ Avg R: {exchange_avg_r:+.2f}R
+📉 **PERFORMANCE (Last {exchange_total_trades})**
+├ Trades: {exchange_total_trades} | WR: {exchange_wr:.1f}% | PF: {profit_factor:.1f}x
+├ Total R: {exchange_total_r:+.1f}R | Avg: {exchange_avg_r:+.2f}R
+├ Best: {best_trade_r:+.1f}R ({best_trade_symbol}) | Worst: {worst_trade_r:+.1f}R ({worst_trade_symbol})
+└ Streak: {current_streak}{streak_type} | Max DD: {max_dd:.1f}R
 
 ⏰ **SYSTEM**
-├ Uptime: {uptime_hrs:.1f}h | Scan: {mins_ago}m ago
-├ Symbols: {enabled} monitored
+├ Uptime: {uptime_hrs:.1f}h | Next Scan: ~{next_scan_mins}m
+├ Symbols: {enabled} | Signals Today: {divs_today}D/{bos_today}BOS
 └ 🔑 API Key: {key_status}
 
 ━━━━━━━━━━━━━━━━━━━━

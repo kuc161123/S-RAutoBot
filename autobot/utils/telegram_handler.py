@@ -154,7 +154,7 @@ class TelegramHandler:
 
 💡 **Strategy**: 1H Multi-Divergence + EMA200 + BOS
 **Divergences**: REG_BULL, REG_BEAR, HID_BULL, HID_BEAR
-**Portfolio**: ELITE 33 Symbols | 0.5% Risk | +2,546R/Yr (OOS Validated)
+**Portfolio**: 231 Symbols | 0.5% Risk | +619R/Mo (Blind Validated)
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     

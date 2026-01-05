@@ -877,10 +877,17 @@ class Bot4H:
             logger.error(f"[{symbol}] No R:R configured - skipping")
             return
         
-        # Get current market price
-        latest_candle = df.iloc[-1]
-        entry_price = latest_candle['open']  # Next candle open
-        atr = latest_candle['atr']
+        # Get CURRENT market price from ticker for accurate SL/TP calculation
+        # This prevents "StopLoss should lower than base_price" errors when market moves
+        try:
+            ticker = await self.broker.get_ticker(symbol)
+            entry_price = float(ticker.get('lastPrice', df.iloc[-1]['close']))
+            logger.info(f"[{symbol}] Using current ticker price: ${entry_price:.6f}")
+        except Exception as e:
+            logger.warning(f"[{symbol}] Failed to get ticker, using candle close: {e}")
+            entry_price = df.iloc[-1]['close']
+        
+        atr = df.iloc[-1]['atr']
         
         # SL distance
         sl_mult = self.strategy_config.get('exit_params', {}).get('sl_atr_mult', 1.0)
@@ -960,6 +967,15 @@ class Bot4H:
         else:
             sl_price = entry_price + sl_distance
             tp_price = entry_price - (sl_distance * rr)
+        
+        # === VALIDATE SL IS ON CORRECT SIDE OF ENTRY ===
+        # This catches edge cases where rapid price movement makes SL invalid
+        if signal.side == 'long' and sl_price >= entry_price:
+            logger.error(f"[{symbol}] Invalid SL for LONG: SL ${sl_price:.6f} >= Entry ${entry_price:.6f} (ATR too small or price moved)")
+            return
+        if signal.side == 'short' and sl_price <= entry_price:
+            logger.error(f"[{symbol}] Invalid SL for SHORT: SL ${sl_price:.6f} <= Entry ${entry_price:.6f} (ATR too small or price moved)")
+            return
         
         # === PLACE MARKET ENTRY ORDER WITH ATOMIC TP/SL ===
         # Using Bybit V5 bracket order - TP/SL are set atomically with the entry

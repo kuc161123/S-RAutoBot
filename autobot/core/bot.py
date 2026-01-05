@@ -22,6 +22,7 @@ import asyncio
 import logging
 import yaml
 import os
+import time
 import aiohttp
 import pandas as pd
 import numpy as np
@@ -1302,7 +1303,7 @@ class Bot4H:
         # Initialize Telegram handler (start command polling)
         if self.telegram:
             try:
-                await self.telegram.initialize()
+                await self.telegram.start()
                 
                 # Send startup notification
                 msg = f"""

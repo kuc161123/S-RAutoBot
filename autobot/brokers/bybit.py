@@ -157,20 +157,19 @@ class Bybit:
         import random
         last_err = None
         for base_idx, base in enumerate(bases):
-            # Compose URL for this base
-            # Compose URL for this base
+            # Compose URL for this base - append query_string manually for GET requests
+            # This ensures signature matches actual request (aiohttp params= lowercases keys)
             url = base + path
+            if method == "GET" and query_string:
+                url += "?" + query_string
             
             # Simple retry with exponential backoff for transient failures
             max_retries = 3
             backoff = 0.5
             for attempt in range(max_retries):
                 try:
-                    # [FIX] For GET, pass params to aiohttp instead of appending query_string manually
-                    # This aligns with debug_api.py which works correctly
-                    req_params = params if method == "GET" else None
-                    
-                    async with self.session.request(method, url, headers=headers, params=req_params, data=body if method=="POST" else None, timeout=15) as r:
+                    # Use manual URL with query_string for GET, data for POST
+                    async with self.session.request(method, url, headers=headers, data=body if method=="POST" else None, timeout=15) as r:
                          # Read raw bytes first to avoid encoding issues causing "truncation"
                         raw_data = await r.read()
                         try:

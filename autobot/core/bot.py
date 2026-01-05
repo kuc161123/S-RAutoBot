@@ -1,8 +1,8 @@
 """
 1H Multi-Divergence Trading Bot
 ================================
-271 Validated Symbols | 4 Divergence Types
-Expected Performance: +10,348R (6 months)
+231 Validated Symbols | 4 Divergence Types | Per-Symbol ATR
+Expected Performance: +10,496R (6 months) - Corrected Realistic Backtest
 
 Divergence Types:
 - REG_BULL: Regular Bullish (Reversal)
@@ -82,7 +82,7 @@ class ActiveTrade:
 
 
 class Bot4H:
-    """1H Multi-Divergence Trading Bot - 271 Validated Symbols"""
+    """1H Multi-Divergence Trading Bot - 231 Validated Symbols (Corrected Backtest)"""
     
     def __init__(self):
         """Initialize bot"""
@@ -889,9 +889,11 @@ class Bot4H:
         
         atr = df.iloc[-1]['atr']
         
-        # SL distance
-        sl_mult = self.strategy_config.get('exit_params', {}).get('sl_atr_mult', 1.0)
+        # SL distance - use PER-SYMBOL atr_mult from config (critical for performance)
+        symbol_cfg = self.symbol_config.get_symbol_config(symbol)
+        sl_mult = symbol_cfg.get('atr_mult', self.strategy_config.get('exit_params', {}).get('sl_atr_mult', 1.0))
         sl_distance = atr * sl_mult
+        logger.info(f"[{symbol}] Using ATR mult: {sl_mult}x → SL distance: {sl_distance:.6f}")
         
         # Calculate position size based on RISK (Safety First)
         # Goal: If SL hits, loss = risk_amount
@@ -977,35 +979,52 @@ class Bot4H:
             logger.error(f"[{symbol}] Invalid SL for SHORT: SL ${sl_price:.6f} <= Entry ${entry_price:.6f} (ATR too small or price moved)")
             return
         
-        # === PLACE MARKET ENTRY ORDER WITH ATOMIC TP/SL ===
-        # Using Bybit V5 bracket order - TP/SL are set atomically with the entry
-        # This guarantees position is protected from the instant it opens
+        # === 2-STEP ORDER FLOW: Market Entry → Set TP/SL ===
+        # Step 1: Place market entry WITHOUT TP/SL (guaranteed fill)
+        # Step 2: Immediately set TP (Limit for better fills) + SL (Market for guaranteed exit)
         try:
+            # STEP 1: Market entry order
             response = await self.broker.place_market(
                 symbol=symbol,
                 side=signal.side,
-                qty=position_size_qty,
-                take_profit=tp_price,  # Atomic TP protection
-                stop_loss=sl_price     # Atomic SL protection
+                qty=position_size_qty
+                # NO TP/SL here - will set separately for Limit TP
             )
             
-            # Bybit V5 response structure: {retCode: 0, retMsg: 'OK', result: {orderId: 'xxx'}}
             ret_code = response.get('retCode', -1) if isinstance(response, dict) else -1
             ret_msg = response.get('retMsg', 'Unknown') if isinstance(response, dict) else str(response)
             result = response.get('result', {}) if isinstance(response, dict) else {}
             order_id = result.get('orderId')
             
             if ret_code != 0 or not order_id:
-                logger.error(f"[{symbol}] Failed to place market order: {ret_msg}")
+                logger.error(f"[{symbol}] Failed to place market entry: {ret_msg}")
                 if self.telegram:
-                    await self.telegram.send_message(f"❌ **TRADE FAILED**\n\n{symbol} | {ret_msg}\nQty: {position_size_qty}\nTP: ${tp_price:.4f}\nSL: ${sl_price:.4f}")
+                    await self.telegram.send_message(f"❌ **ENTRY FAILED**\\n\\n{symbol} | {ret_msg}\\nQty: {position_size_qty}")
                 return
             
-            # Get actual entry price (may be in result or need to fetch)
             actual_entry = float(result.get('avgPrice') or entry_price)
+            logger.info(f"[{symbol}] ✅ MARKET ENTRY FILLED: {order_id} @ ${actual_entry:.4f}")
             
-            logger.info(f"[{symbol}] ✅ BRACKET ORDER FILLED: {order_id}")
-            logger.info(f"[{symbol}]   Entry: ${actual_entry:.4f}, TP: ${tp_price:.4f}, SL: ${sl_price:.4f}")
+            # STEP 2: Set TP (Limit) + SL (Market) via trading-stop endpoint
+            # This happens immediately after entry - position is briefly unprotected
+            try:
+                tp_sl_response = await self.broker.set_position_tpsl(
+                    symbol=symbol,
+                    take_profit=tp_price,
+                    stop_loss=sl_price,
+                    position_qty=position_size_qty
+                )
+                tp_sl_ret = tp_sl_response.get('retCode', -1) if isinstance(tp_sl_response, dict) else -1
+                
+                if tp_sl_ret == 0:
+                    logger.info(f"[{symbol}] ✅ TP/SL SET: TP=${tp_price:.4f} (Limit) | SL=${sl_price:.4f} (Market)")
+                else:
+                    logger.warning(f"[{symbol}] ⚠️ TP/SL may not be set: {tp_sl_response.get('retMsg', 'Unknown')}")
+            except Exception as tpsl_err:
+                logger.error(f"[{symbol}] ⚠️ Failed to set TP/SL: {tpsl_err}")
+                # Position is open but unprotected - critical issue
+                if self.telegram:
+                    await self.telegram.send_message(f"⚠️ **PROTECTION FAILED**\\n\\n{symbol} position OPEN but TP/SL NOT SET!\\nManually set protection IMMEDIATELY!")
             
         except Exception as e:
             logger.error(f"[{symbol}] Error placing bracket order: {e}")
@@ -1309,19 +1328,19 @@ class Bot4H:
                 
                 # Send startup notification
                 msg = f"""
-🤖 **1H ROBUST VALIDATED BOT STARTED**
+🤖 **1H CORRECTED VALIDATED BOT STARTED**
 
 ⏰ **Timeframe**: 1H (60 minutes)
 📊 **Strategy**: RSI Divergence + EMA 200 + BOS
 💰 **Risk**: {self.risk_config.get('risk_per_trade', 0.01)*100:.1f}% per trade
-📈 **Enabled Symbols**: {len(enabled_symbols)} (100% Validated)
+📈 **Enabled Symbols**: {len(enabled_symbols)} (Per-Symbol ATR)
 
-**Validation Status:** ✅ ALL SYMBOLS PASSED
-• Walk-Forward Optimization
-• Monte Carlo Simulation  
-• Out-of-Sample Testing
+**Validation Status:** ✅ CORRECTED REALISTIC BACKTEST
+• Realistic SL timing (entry candle)
+• Per-symbol ATR multiplier (1.0x-2.0x)
+• Walk-Forward + Monte Carlo
 
-**Expected Performance:** +2400R / Year (+200R/Month)
+**Expected Performance:** +10,496R / 6 months
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /help for commands

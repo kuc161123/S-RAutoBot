@@ -1189,21 +1189,7 @@ class Bot4H:
         else:
             logger.info(f"[{trade.symbol}] Entry: ${trade.entry_price:.4f}, SL: ${trade.stop_loss:.4f}, TP: ${trade.take_profit:.4f}")
 
-    async def sync_positions_at_startup(self):
-        """Fetch current open positions and sync internal state"""
-        try:
-            logger.info("[SYNC] Checking for existing positions on exchange...")
-            positions = await self.broker.get_positions()
-            count = 0
-            for p in positions:
-                if float(p.get('size', 0)) > 0:
-                    sym = p.get('symbol')
-                    self.active_trades.add(sym)
-                    count += 1
-                    logger.info(f"[SYNC] Found existing position: {sym}")
-            logger.info(f"[SYNC] Synced {count} active positions.")
-        except Exception as e:
-            logger.error(f"[SYNC] Failed to sync positions: {e}")
+
 
     def _update_stats_on_exit(self, r_value: float, is_win: bool):
         """Update and persist stats after trade exit"""

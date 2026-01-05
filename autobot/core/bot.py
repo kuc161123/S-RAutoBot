@@ -536,6 +536,19 @@ class Bot4H:
         # Check if new candle closed
         if not await self.check_new_candle_close(symbol):
             return -1
+            
+        # [CRITICAL FIX] STALENESS CHECK
+        # At startup, check_new_candle_close will return True for the last closed candle
+        # even if it closed 59 minutes ago. We must SKIP processing if it's stale.
+        now = datetime.now()
+        current_candle_close = now.replace(minute=0, second=0, microsecond=0)
+        minutes_since_close = (now - current_candle_close).total_seconds() / 60
+        
+        if minutes_since_close > 5:
+            # If we are more than 5 minutes past the hour, this is likely a startup
+            # catch-up event. Skip processing to avoid "Startup Shock" mass entry.
+            logger.info(f"[{symbol}] Skipping stale candle (Closed {minutes_since_close:.0f}m ago) to prevent startup shock 🛡️")
+            return 0
         
         logger.info(f"[{symbol}] New 1H candle closed - processing...")
         

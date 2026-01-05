@@ -979,16 +979,15 @@ class Bot4H:
             logger.error(f"[{symbol}] Invalid SL for SHORT: SL ${sl_price:.6f} <= Entry ${entry_price:.6f} (ATR too small or price moved)")
             return
         
-        # === 2-STEP ORDER FLOW: Market Entry → Set TP/SL ===
-        # Step 1: Place market entry WITHOUT TP/SL (guaranteed fill)
-        # Step 2: Immediately set TP (Limit for better fills) + SL (Market for guaranteed exit)
+        # === ATOMIC BRACKET ORDER: Market Entry + TP/SL ===
+        # TP/SL set atomically with entry - position NEVER unprotected
         try:
-            # STEP 1: Market entry order
             response = await self.broker.place_market(
                 symbol=symbol,
                 side=signal.side,
-                qty=position_size_qty
-                # NO TP/SL here - will set separately for Limit TP
+                qty=position_size_qty,
+                take_profit=tp_price,  # Atomic TP protection
+                stop_loss=sl_price     # Atomic SL protection
             )
             
             ret_code = response.get('retCode', -1) if isinstance(response, dict) else -1
@@ -997,34 +996,14 @@ class Bot4H:
             order_id = result.get('orderId')
             
             if ret_code != 0 or not order_id:
-                logger.error(f"[{symbol}] Failed to place market entry: {ret_msg}")
+                logger.error(f"[{symbol}] Failed to place bracket order: {ret_msg}")
                 if self.telegram:
-                    await self.telegram.send_message(f"❌ **ENTRY FAILED**\\n\\n{symbol} | {ret_msg}\\nQty: {position_size_qty}")
+                    await self.telegram.send_message(f"❌ **TRADE FAILED**\\n\\n{symbol} | {ret_msg}\\nQty: {position_size_qty}\\nTP: ${tp_price:.4f}\\nSL: ${sl_price:.4f}")
                 return
             
             actual_entry = float(result.get('avgPrice') or entry_price)
-            logger.info(f"[{symbol}] ✅ MARKET ENTRY FILLED: {order_id} @ ${actual_entry:.4f}")
-            
-            # STEP 2: Set TP (Limit) + SL (Market) via trading-stop endpoint
-            # This happens immediately after entry - position is briefly unprotected
-            try:
-                tp_sl_response = await self.broker.set_position_tpsl(
-                    symbol=symbol,
-                    take_profit=tp_price,
-                    stop_loss=sl_price,
-                    position_qty=position_size_qty
-                )
-                tp_sl_ret = tp_sl_response.get('retCode', -1) if isinstance(tp_sl_response, dict) else -1
-                
-                if tp_sl_ret == 0:
-                    logger.info(f"[{symbol}] ✅ TP/SL SET: TP=${tp_price:.4f} (Limit) | SL=${sl_price:.4f} (Market)")
-                else:
-                    logger.warning(f"[{symbol}] ⚠️ TP/SL may not be set: {tp_sl_response.get('retMsg', 'Unknown')}")
-            except Exception as tpsl_err:
-                logger.error(f"[{symbol}] ⚠️ Failed to set TP/SL: {tpsl_err}")
-                # Position is open but unprotected - critical issue
-                if self.telegram:
-                    await self.telegram.send_message(f"⚠️ **PROTECTION FAILED**\\n\\n{symbol} position OPEN but TP/SL NOT SET!\\nManually set protection IMMEDIATELY!")
+            logger.info(f"[{symbol}] ✅ BRACKET ORDER FILLED: {order_id}")
+            logger.info(f"[{symbol}]   Entry: ${actual_entry:.4f} | TP: ${tp_price:.4f} | SL: ${sl_price:.4f}")
             
         except Exception as e:
             logger.error(f"[{symbol}] Error placing bracket order: {e}")

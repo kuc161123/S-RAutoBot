@@ -212,8 +212,9 @@ class TelegramHandler:
                     today = datetime.now().date()
                     for record in closed_records:
                         try:
-                            created_time = int(record.get('createdTime', 0))
-                            trade_date = datetime.fromtimestamp(created_time / 1000).date()
+                            # Bybit V5 uses 'updatedTime' for when trade was closed
+                            close_time = int(record.get('updatedTime', record.get('createdTime', 0)))
+                            trade_date = datetime.fromtimestamp(close_time / 1000).date()
                             if trade_date == today:
                                 pnl = float(record.get('closedPnl', 0))
                                 realized_pnl += pnl

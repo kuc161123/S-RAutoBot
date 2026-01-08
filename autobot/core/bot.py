@@ -99,6 +99,10 @@ class Bot4H:
         self.pending_signals: Dict[str, List[PendingSignal]] = {}  # {symbol: [signals]}
         self.active_trades: Dict[str, ActiveTrade] = {}  # {symbol: trade}
         
+        # [STARTUP PROTECTION] Track which symbols have been seen since startup
+        # First candle for each symbol is used for initialization only (no trades)
+        self.symbols_initialized: set = set()
+        
         # Stats
         self.stats = {
             'total_trades': 0,
@@ -548,6 +552,31 @@ class Bot4H:
             # If we are more than 5 minutes past the hour, this is likely a startup
             # catch-up event. Skip processing to avoid "Startup Shock" mass entry.
             logger.info(f"[{symbol}] Skipping stale candle (Closed {minutes_since_close:.0f}m ago) to prevent startup shock 🛡️")
+            return 0
+        
+        # [STARTUP PROTECTION - CHANGE 3] First-candle skip
+        # On startup, the first candle for each symbol is for initialization only
+        # This prevents detecting historical divergences that formed before the bot started
+        if symbol not in self.symbols_initialized:
+            self.symbols_initialized.add(symbol)
+            logger.info(f"[{symbol}] 🛡️ First candle since startup - initializing (no trades)")
+            # Still fetch data to warm up indicators, but don't trade
+            df = await self.fetch_4h_data(symbol)
+            if df is not None and len(df) >= 100:
+                df = prepare_dataframe(df)
+                if 'rsi' in df.columns and len(df) > 0:
+                    self.rsi_cache[symbol] = df['rsi'].iloc[-1]
+            return 0
+        
+        # [BOT-BACKTEST ALIGNMENT - CHANGE 1] Skip divergence detection if already in trade
+        # This matches backtest behavior: one trade per symbol at a time
+        if symbol in self.active_trades:
+            logger.debug(f"[{symbol}] Already in trade - skipping divergence detection")
+            # Still check pending BOS for existing signals (rare edge case)
+            df = await self.fetch_4h_data(symbol)
+            if df is not None and len(df) >= 100:
+                df = prepare_dataframe(df)
+                await self.check_pending_bos(symbol, df)
             return 0
         
         logger.info(f"[{symbol}] New 1H candle closed - processing...")
@@ -1038,6 +1067,11 @@ class Bot4H:
         )
         
         self.active_trades[symbol] = trade
+        
+        # [BOT-BACKTEST ALIGNMENT - CHANGE 2] Clear pending signals when trade opens
+        # This prevents stale signals from accumulating
+        if symbol in self.pending_signals:
+            self.pending_signals[symbol] = []
         
         # Update stats
         if symbol not in self.symbol_stats:

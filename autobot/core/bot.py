@@ -117,6 +117,23 @@ class Bot4H:
         # Load stats if exists
         self.load_stats()
         
+        # Lifetime Stats (persistent across all restarts)
+        self.lifetime_stats_file = 'lifetime_stats.json'
+        self.lifetime_stats = {
+            'start_date': None,  # ISO format string
+            'starting_balance': 0.0,
+            'total_r': 0.0,
+            'total_pnl': 0.0,
+            'total_trades': 0,
+            'wins': 0,
+            'best_day_r': 0.0,
+            'best_day_date': None,
+            'worst_day_r': 0.0,
+            'worst_day_date': None,
+            'daily_r': {}  # {date_str: r_value}
+        }
+        self.load_lifetime_stats()
+        
         # Per-symbol stats
         self.symbol_stats: Dict[str, dict] = {}  # {symbol: {trades, wins, total_r}}
         
@@ -182,6 +199,67 @@ class Bot4H:
                 json.dump(self.stats, f, indent=4)
         except Exception as e:
             logger.error(f"Failed to save stats: {e}")
+    
+    def load_lifetime_stats(self):
+        """Load lifetime stats from JSON file"""
+        import json
+        if os.path.exists(self.lifetime_stats_file):
+            try:
+                with open(self.lifetime_stats_file, 'r') as f:
+                    data = json.load(f)
+                    self.lifetime_stats.update(data)
+                logger.info(f"Loaded lifetime stats: {self.lifetime_stats['total_r']:.1f}R since {self.lifetime_stats.get('start_date', 'unknown')}")
+            except Exception as e:
+                logger.error(f"Failed to load lifetime stats: {e}")
+    
+    def save_lifetime_stats(self):
+        """Save lifetime stats to JSON file"""
+        import json
+        try:
+            with open(self.lifetime_stats_file, 'w') as f:
+                json.dump(self.lifetime_stats, f, indent=4)
+        except Exception as e:
+            logger.error(f"Failed to save lifetime stats: {e}")
+    
+    async def initialize_lifetime_stats(self):
+        """Initialize lifetime stats if this is the first run"""
+        if self.lifetime_stats.get('start_date') is None:
+            self.lifetime_stats['start_date'] = datetime.now().strftime('%Y-%m-%d')
+            try:
+                balance = await self.broker.get_balance()
+                self.lifetime_stats['starting_balance'] = balance or 0.0
+            except:
+                self.lifetime_stats['starting_balance'] = 0.0
+            self.save_lifetime_stats()
+            logger.info(f"Initialized lifetime stats: Start {self.lifetime_stats['start_date']}, Balance ${self.lifetime_stats['starting_balance']:.2f}")
+    
+    def update_lifetime_stats(self, r_value: float, pnl: float, is_win: bool):
+        """Update lifetime stats after a trade closes"""
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        # Update totals
+        self.lifetime_stats['total_r'] += r_value
+        self.lifetime_stats['total_pnl'] += pnl
+        self.lifetime_stats['total_trades'] += 1
+        if is_win:
+            self.lifetime_stats['wins'] += 1
+        
+        # Update daily R
+        if today not in self.lifetime_stats['daily_r']:
+            self.lifetime_stats['daily_r'][today] = 0.0
+        self.lifetime_stats['daily_r'][today] += r_value
+        
+        daily_r = self.lifetime_stats['daily_r'][today]
+        
+        # Update best/worst day
+        if daily_r > self.lifetime_stats.get('best_day_r', 0):
+            self.lifetime_stats['best_day_r'] = daily_r
+            self.lifetime_stats['best_day_date'] = today
+        if daily_r < self.lifetime_stats.get('worst_day_r', 0):
+            self.lifetime_stats['worst_day_r'] = daily_r
+            self.lifetime_stats['worst_day_date'] = today
+        
+        self.save_lifetime_stats()
     
     def load_seen_signals(self) -> set:
         """Load previously seen signal IDs from JSON file"""
@@ -1174,6 +1252,13 @@ class Bot4H:
             self.stats['win_rate'] = (self.stats['wins'] / total) * 100
             self.stats['avg_r'] = self.stats['total_r'] / total
         
+        # Save session stats
+        self.save_stats()
+        
+        # Update lifetime stats (persistent across restarts)
+        is_win = result == 'WIN'
+        self.update_lifetime_stats(r_value, pnl_usd, is_win)
+        
         # Calculate time held
         time_held = datetime.now() - trade.entry_time
         hours_held = time_held.total_seconds() / 3600
@@ -1377,6 +1462,9 @@ class Bot4H:
 
         # [NEW] Sync existing positions to prevent pyramiding
         await self.sync_positions_at_startup()
+        
+        # Initialize lifetime stats (first run only)
+        await self.initialize_lifetime_stats()
         
         # Start main loop
         last_check = 0

@@ -374,30 +374,69 @@ class TelegramHandler:
             divs_today = self.bot.bos_tracking.get('divergences_detected_today', 0)
             bos_today = self.bot.bos_tracking.get('bos_confirmed_today', 0)
             
+            # === GET LIFETIME STATS ===
+            lifetime = self.bot.lifetime_stats
+            lifetime_r = lifetime.get('total_r', 0)
+            lifetime_pnl = lifetime.get('total_pnl', 0)
+            lifetime_trades = lifetime.get('total_trades', 0)
+            lifetime_wins = lifetime.get('wins', 0)
+            lifetime_wr = (lifetime_wins / lifetime_trades * 100) if lifetime_trades > 0 else 0
+            start_date = lifetime.get('start_date', 'Unknown')
+            starting_balance = lifetime.get('starting_balance', 0)
+            best_day_r = lifetime.get('best_day_r', 0)
+            best_day_date = lifetime.get('best_day_date', 'N/A')
+            worst_day_r = lifetime.get('worst_day_r', 0)
+            worst_day_date = lifetime.get('worst_day_date', 'N/A')
+            
+            # Calculate days since start
+            try:
+                from datetime import datetime as dt
+                start_dt = dt.strptime(start_date, '%Y-%m-%d')
+                days_running = (dt.now() - start_dt).days
+            except:
+                days_running = 0
+            
+            # Account growth
+            growth_pct = ((balance - starting_balance) / starting_balance * 100) if starting_balance > 0 else 0
+            growth_emoji = "↑" if growth_pct >= 0 else "↓"
+            
             # === BUILD ENHANCED DASHBOARD ===
             msg = f"""💰 **TRADING DASHBOARD**
 ━━━━━━━━━━━━━━━━━━━━
 
-📈 **P&L TODAY**
-├ Realized: ${realized_pnl:+,.2f} ({realized_r:+.1f}R) | {today_trades} trades ({today_wins}W/{today_losses}L)
-├ Unrealized: ${unrealized_pnl:+,.2f} ({unrealized_r:+.1f}R) | {active} positions ({positions_up}↗ {positions_down}↘)
-└ {net_emoji} Net: ${net_pnl:+,.2f} ({net_r:+.1f}R)
+📈 **P&L SUMMARY**
+├ 💵 Today Realized: ${realized_pnl:+,.2f} ({realized_r:+.1f}R) | {today_trades} trades
+├ 📊 Today Unrealized: ${unrealized_pnl:+,.2f} ({unrealized_r:+.1f}R) | {active} open
+├ {net_emoji} Today Net: ${net_pnl:+,.2f} ({net_r:+.1f}R)
+├ ────────────────────
+├ 🏆 **TOTAL SINCE START:** {lifetime_r:+.1f}R (${lifetime_pnl:+,.2f})
+└ 📅 Started: {start_date} ({days_running} days)
 
-📊 **POSITIONS**
-├ Active: {active} | Pending BOS: {pending}
-├ Balance: ${balance:,.2f} | Available: ${available_balance:,.2f}
-└ Risk: {risk_display}/trade
+📊 **ACCOUNT STATUS**
+├ Balance: ${balance:,.2f} ({growth_emoji}${abs(balance - starting_balance):,.0f} from ${starting_balance:,.0f})
+├ Available: ${available_balance:,.2f} ({available_balance/balance*100:.0f}%)
+├ Risk/Trade: {risk_display}
+└ Growth: {growth_pct:+.1f}% since start
 
-📉 **PERFORMANCE (Last {exchange_total_trades})**
-├ Trades: {exchange_total_trades} | WR: {exchange_wr:.1f}% | PF: {profit_factor:.1f}x
+📉 **LAST {exchange_total_trades} TRADES**
+├ WR: {exchange_wr:.1f}% | PF: {profit_factor:.1f}x
 ├ Total R: {exchange_total_r:+.1f}R | Avg: {exchange_avg_r:+.2f}R
-├ Best: {best_trade_r:+.1f}R ({best_trade_symbol}) | Worst: {worst_trade_r:+.1f}R ({worst_trade_symbol})
-└ Streak: {current_streak}{streak_type} | Max DD: {max_dd:.1f}R
+└ Max DD: {max_dd:.1f}R | Streak: {current_streak}{streak_type}
 
-⏰ **SYSTEM**
-├ Uptime: {uptime_hrs:.1f}h | Next Scan: ~{next_scan_mins}m
-├ Symbols: {enabled} | Signals Today: {divs_today}D/{bos_today}BOS
-└ 🔑 API Key: {key_status}
+🏆 **BEST/WORST**
+├ 🥇 Best Trade: {best_trade_r:+.1f}R ({best_trade_symbol})
+├ 🥉 Worst Trade: {worst_trade_r:+.1f}R ({worst_trade_symbol})
+└ Best Day: {best_day_r:+.1f}R ({best_day_date})
+
+📡 **POSITIONS ({active} Active)**
+├ {positions_up} 🟢 Profit | {positions_down} 🔴 Loss
+└ Pending BOS: {pending} symbols
+
+⏰ **SYSTEM HEALTH**
+├ Uptime: {uptime_hrs:.1f}h ✅
+├ Next Scan: ~{next_scan_mins}m
+├ Symbols: {enabled} | Signals: {divs_today}D/{bos_today}BOS
+└ 🔑 API: {key_status}
 
 ━━━━━━━━━━━━━━━━━━━━
 📍 /positions | 📡 /radar | 📊 /stats

@@ -1284,36 +1284,41 @@ class Bot4H:
         if self.telegram:
             div_emoji = get_signal_emoji(signal.divergence_code)
             div_name = signal.get_display_name()
-            direction = 'LONG' if trade.side == 'long' else 'SHORT'
-            entry_time = trade.entry_time.strftime('%H:%M UTC')
+            direction = '🟢 LONG' if trade.side == 'long' else '🔴 SHORT'
+            entry_time = trade.entry_time.strftime('%H:%M')
+            
+            # Calculate actual risk amount
+            risk_usd = self.risk_config.get('risk_amount_usd')
+            if risk_usd:
+                risk_display = f"${float(risk_usd):.2f}"
+            else:
+                balance = await self.broker.get_balance() or 1000
+                risk_pct = self.risk_config.get('risk_per_trade', 0.001)
+                risk_display = f"${balance * risk_pct:.2f} ({risk_pct*100:.1f}%)"
+            
+            # Current active count
+            active_count = len(self.active_trades)
             
             msg = f"""
 🔔 **NEW TRADE OPENED**
 ━━━━━━━━━━━━━━━━━━━━
 
 {div_emoji} **{trade.symbol}** | {direction}
-⏰ Time: {entry_time}
 
-**ENTRY**
-💵 Price: ${trade.entry_price:,.4f}
-📏 Size: {trade.position_size:.4f}
+⏰ {entry_time} | {div_name}
+
+**ENTRY DETAILS**
+├ 💵 Price: ${trade.entry_price:,.4f}
+├ 📏 Size: {trade.position_size:.4f}
+└ 💰 Risk: {risk_display}
 
 **EXIT LEVELS**
-⛔ Stop Loss: ${trade.stop_loss:,.4f} (STOP-MARKET)
-🎯 Take Profit: ${trade.take_profit:,.4f} (LIMIT)
-📊 R:R Ratio: {trade.rr_ratio}:1
+├ 🎯 TP: ${trade.take_profit:,.4f} (+{trade.rr_ratio}R)
+└ ⛔ SL: ${trade.stop_loss:,.4f} (-1R)
 
-**STRATEGY**
-🔍 Setup: {div_name} (`{signal.divergence_code}`)
-📈 Trend: EMA 200 Aligned ✅
-✅ Confirmation: Break of Structure
-
-**RISK**
-💰 Risking: {self.risk_config.get('risk_per_trade', 0.005)*100:.1f}% of capital
-🎲 Potential: {trade.rr_ratio}:1 reward
+📊 Active Positions: {active_count}
 
 ━━━━━━━━━━━━━━━━━━━━
-📊 [View Chart](https://www.tradingview.com/chart/?symbol=BYBIT:{trade.symbol})
 """
             await self.telegram.send_message(msg)
         else:
@@ -1345,39 +1350,36 @@ class Bot4H:
             emoji = "✅" if result == "WIN" else "❌"
             direction = '🟢 LONG' if trade.side == 'long' else '🔴 SHORT'
             
-            # Symbol stats
-            sym_stats = self.symbol_stats.get(symbol, {'trades': 0, 'wins': 0, 'total_r': 0})
-            sym_wr = (sym_stats['wins'] / sym_stats['trades'] * 100) if sym_stats['trades'] > 0 else 0
+            # Lifetime stats
+            lifetime = self.lifetime_stats
+            lifetime_r = lifetime.get('total_r', 0)
+            lifetime_trades = lifetime.get('total_trades', 0)
+            lifetime_wins = lifetime.get('wins', 0)
+            lifetime_wr = (lifetime_wins / lifetime_trades * 100) if lifetime_trades > 0 else 0
+            
+            # Remaining positions
+            remaining = len(self.active_trades) - 1  # -1 because this one is closing
             
             msg = f"""
 {emoji} **TRADE CLOSED - {result}**
 ━━━━━━━━━━━━━━━━━━━━
 
 📊 **{symbol}** | {direction}
-⏱️ Held: {hours_held:.1f} hours
+⏱️ Held: {hours_held:.1f}h
 
-**PRICES**
-💵 Entry: ${trade.entry_price:,.4f}
-💵 Exit: ${exit_price:,.4f}
-{'📈' if exit_price > trade.entry_price else '📉'} Change: {((exit_price/trade.entry_price - 1) * 100):+.2f}%
+**RESULT**
+├ 💵 Entry: ${trade.entry_price:,.4f}
+├ 💵 Exit: ${exit_price:,.4f}
+└ {'🟢' if r_value > 0 else '🔴'} P&L: **{r_value:+.2f}R** (${pnl_usd:+.2f})
 
-**PROFIT/LOSS**
-💰 P&L: {r_value:+.2f}R (${pnl_usd:+.2f})
+**LIFETIME STATS**
+├ Total: {lifetime_r:+.1f}R ({lifetime_trades} trades)
+├ Win Rate: {lifetime_wr:.1f}%
+└ This Trade: {r_value:+.2f}R
 
-**CUMULATIVE STATS (ALL-TIME)**
-├ Total Trades: {self.stats['total_trades']}
-├ ✅ Wins: {self.stats['wins']} | ❌ Losses: {self.stats['losses']}
-├ Win Rate: {self.stats['win_rate']:.1f}%
-├ Avg R/Trade: {self.stats['avg_r']:+.2f}R
-└ Total R: {self.stats['total_r']:+.1f}R
-
-**{symbol} PERFORMANCE**
-├ Trades: {sym_stats['trades']}
-├ Win Rate: {sym_wr:.1f}%
-└ Total R: {sym_stats['total_r']:+.1f}R
+📊 Remaining Positions: {max(0, remaining)}
 
 ━━━━━━━━━━━━━━━━━━━━
-💡 /dashboard /positions /stats
 """
             await self.telegram.send_message(msg)
 
@@ -1438,23 +1440,30 @@ class Bot4H:
                 await self.telegram.start()
                 
                 # Send startup notification
+                # Include lifetime stats if available
+                lifetime = self.lifetime_stats
+                lifetime_r = lifetime.get('total_r', 0)
+                start_date = lifetime.get('start_date', 'Today')
+                
+                # Calculate risk display
+                risk_pct = self.risk_config.get('risk_per_trade', 0.001)
+                
                 msg = f"""
-🤖 **231 SYMBOLS BLIND VALIDATED BOT STARTED**
+🤖 **BOT STARTED**
+━━━━━━━━━━━━━━━━━━━━
 
-⏰ **Timeframe**: 1H (60 minutes)
-📊 **Strategy**: RSI Divergence + EMA 200 + BOS
-💰 **Risk**: {self.risk_config.get('risk_per_trade', 0.01)*100:.1f}% per trade
-📈 **Symbols**: {len(enabled_symbols)} (Per-Symbol ATR & RR)
+📊 **Strategy**: 1H RSI Divergence + BOS
+📈 **Symbols**: {len(enabled_symbols)}
+💰 **Risk**: {risk_pct*100:.1f}% per trade
 
-**Validation:** ✅ 60-DAY BLIND FORWARD TEST
-• +1,238R over 60 days (fresh data)
-• 1,489 trades | 25.8% WR | 74% profitable
-• Candle-by-candle simulation (no lookahead)
+**LIFETIME STATS**
+├ Total R: {lifetime_r:+.1f}R
+└ Since: {start_date}
 
-**Expected:** +619R / Month
+**EXPECTED**: ~620R/month
 
 ━━━━━━━━━━━━━━━━━━━━
-💡 /help for commands
+💡 /dashboard /help
 """
                 await self.telegram.send_message(msg)
             except Exception as e:

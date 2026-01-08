@@ -1505,18 +1505,25 @@ class Bot4H:
                     
                     if total_signals_found == 0 and self.telegram:
                         # Send 'No Divergence' summary to reassure user bot is working
+                        pending_count = sum(len(sigs) for sigs in self.pending_signals.values())
+                        active_count = len(self.active_trades)
+                        
                         msg = f"""
 🕵️ **HOURLY SCAN COMPLETE**
 
-Checked: {symbols_processed} Symbols
-Result: **No New Divergences Found**
+📊 Checked: {symbols_processed} Symbols
+🔍 Result: **No New Divergences Found**
 
-Bot is active and monitoring for:
-• RSI Divergence
-• Trend Alignment (EMA 200)
-• Fresh Patterns (<3 candles)
+**Detection Criteria:**
+• RSI Divergence (Pivot within 10 candles)
+• Trend Aligned (EMA 200)
+• BOS Confirmation (12 candle max wait)
 
-Next scan in 60 mins... ⏳
+**Current Status:**
+├ ⏳ Pending BOS: {pending_count}
+└ 📈 Active Trades: {active_count}
+
+Next scan in ~60 mins ⏳
 """
                         await self.telegram.send_message(msg)
                 

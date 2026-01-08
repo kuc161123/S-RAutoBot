@@ -1129,6 +1129,7 @@ class Bybit:
                 return all_pos
 
             # Attempt 1: Standard params (category=linear, settleCoin=USDT)
+            # Note: Bybit V5 API REQUIRES either symbol or settleCoin
             params1 = {
                 "category": "linear",
                 "settleCoin": "USDT",
@@ -1136,24 +1137,9 @@ class Bybit:
             }
             positions = await fetch_with_params(params1)
             
-            # Check if we got any "open" positions
+            # Count open positions
             open_count = sum(1 for p in positions if float(p.get('size', 0)) > 0)
-            
-            # Attempt 2: If we got 0 open positions, try without settleCoin (Unified Account sometimes prefers this)
-            if open_count == 0:
-                logger.info("[POSITIONS] Attempt 1 returned 0 open positions. Retrying without settleCoin filter...")
-                params2 = {
-                    "category": "linear",
-                    "limit": 200
-                }
-                positions_retry = await fetch_with_params(params2)
-                retry_open_count = sum(1 for p in positions_retry if float(p.get('size', 0)) > 0)
-                
-                if retry_open_count > 0:
-                    logger.info(f"[POSITIONS] Attempt 2 success! Found {retry_open_count} positions.")
-                    positions = positions_retry
-                else:
-                    logger.info("[POSITIONS] Attempt 2 also returned 0 positions.")
+            logger.info(f"[POSITIONS] Found {open_count} open positions out of {len(positions)} total")
 
             # Final count
             final_open = [p for p in positions if float(p.get('size', 0)) > 0]

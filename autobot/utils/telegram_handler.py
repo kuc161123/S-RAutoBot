@@ -375,7 +375,7 @@ class TelegramHandler:
             bos_today = self.bot.bos_tracking.get('bos_confirmed_today', 0)
             
             # === GET LIFETIME STATS ===
-            # Use exchange data for accuracy (same source as "Today Realized")
+            # Use exchange data for accuracy, filtered by bot start date
             lifetime = self.bot.lifetime_stats
             start_date = lifetime.get('start_date', 'Unknown')
             starting_balance = lifetime.get('starting_balance', 0) or balance  # Fallback to current balance
@@ -384,23 +384,48 @@ class TelegramHandler:
             worst_day_r = lifetime.get('worst_day_r', 0)
             worst_day_date = lifetime.get('worst_day_date', 'N/A')
             
-            # Calculate total PnL from closed trades (same source as Today Realized)
-            total_pnl_all_time = 0.0
+            # Calculate total PnL and R ONLY from trades since bot started
+            total_pnl_since_start = 0.0
+            total_r_since_start = 0.0
+            trades_since_start = 0
+            wins_since_start = 0
+            
             try:
-                all_closed = await self.bot.broker.get_all_closed_pnl(limit=500)  # Get more records
+                from datetime import datetime as dt
+                # Parse start date
+                if start_date and start_date != 'Unknown':
+                    start_dt = dt.strptime(start_date, '%Y-%m-%d')
+                else:
+                    start_dt = dt.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                    start_date = start_dt.strftime('%Y-%m-%d')
+                
+                all_closed = await self.bot.broker.get_all_closed_pnl(limit=500)
                 if all_closed:
                     for record in all_closed:
                         try:
-                            pnl = float(record.get('closedPnl', 0))
-                            total_pnl_all_time += pnl
+                            # Get trade close time
+                            close_time = int(record.get('updatedTime', record.get('createdTime', 0)))
+                            trade_dt = dt.fromtimestamp(close_time / 1000)
+                            
+                            # Only count trades since bot start
+                            if trade_dt >= start_dt:
+                                pnl = float(record.get('closedPnl', 0))
+                                r_value = pnl / risk_amount if risk_amount > 0 else 0
+                                
+                                total_pnl_since_start += pnl
+                                total_r_since_start += r_value
+                                trades_since_start += 1
+                                if pnl > 0:
+                                    wins_since_start += 1
                         except:
                             continue
             except Exception as e:
-                logger.error(f"Error getting total PnL: {e}")
+                logger.error(f"Error getting total PnL since start: {e}")
             
-            # Use exchange R calculation (already calculated above as exchange_total_r)
-            lifetime_r = exchange_total_r  # Use exchange data
-            lifetime_pnl = total_pnl_all_time
+            lifetime_r = total_r_since_start
+            lifetime_pnl = total_pnl_since_start
+            lifetime_trades = trades_since_start
+            lifetime_wr = (wins_since_start / trades_since_start * 100) if trades_since_start > 0 else 0
             
             # Calculate days since start
             try:
@@ -427,7 +452,7 @@ class TelegramHandler:
 ├ 📊 Today Unrealized: ${unrealized_pnl:+,.2f} ({unrealized_r:+.1f}R) | {active} open
 ├ {net_emoji} Today Net: ${net_pnl:+,.2f} ({net_r:+.1f}R)
 ├ ────────────────────
-├ 🏆 **TOTAL (Last {exchange_total_trades}):** {lifetime_r:+.1f}R (${lifetime_pnl:+,.2f})
+├ 🏆 **SINCE START:** {lifetime_r:+.1f}R (${lifetime_pnl:+,.2f}) | {lifetime_trades} trades
 └ 📅 Started: {start_date} ({days_running} days)
 
 📊 **ACCOUNT STATUS**

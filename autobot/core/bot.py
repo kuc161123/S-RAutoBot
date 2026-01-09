@@ -143,6 +143,11 @@ class Bot4H:
         # Start Time for Uptime
         self.start_time = datetime.now()
         
+        # [BULLETPROOF] Startup Grace Period - NO trades for first 65 minutes
+        # This CANNOT be bypassed regardless of candle timing
+        self.startup_grace_period_minutes = 65
+        logger.info(f"[STARTUP] Grace period: {self.startup_grace_period_minutes} minutes (no trades until {(self.start_time + timedelta(minutes=self.startup_grace_period_minutes)).strftime('%H:%M')})")
+        
         # Candle tracking
         self.last_candle_close: Dict[str, datetime] = {}
         
@@ -237,6 +242,8 @@ class Bot4H:
         """Update lifetime stats after a trade closes"""
         today = datetime.now().strftime('%Y-%m-%d')
         
+        logger.info(f"[LIFETIME] Updating stats: R={r_value:+.2f}, PnL=${pnl:.2f}, Win={is_win}")
+        
         # Update totals
         self.lifetime_stats['total_r'] += r_value
         self.lifetime_stats['total_pnl'] += pnl
@@ -258,6 +265,8 @@ class Bot4H:
         if daily_r < self.lifetime_stats.get('worst_day_r', 0):
             self.lifetime_stats['worst_day_r'] = daily_r
             self.lifetime_stats['worst_day_date'] = today
+        
+        logger.info(f"[LIFETIME] New totals: R={self.lifetime_stats['total_r']:+.2f}, Trades={self.lifetime_stats['total_trades']}")
         
         self.save_lifetime_stats()
     
@@ -615,6 +624,15 @@ class Bot4H:
         Returns:
             int: Number of new signals found, or -1 if no new candle
         """
+        # [BULLETPROOF] 65-minute startup grace period - FIRST CHECK
+        # This CANNOT be bypassed. No trades for 65 minutes after bot start.
+        minutes_since_startup = (datetime.now() - self.start_time).total_seconds() / 60
+        if minutes_since_startup < self.startup_grace_period_minutes:
+            remaining = self.startup_grace_period_minutes - minutes_since_startup
+            if symbol == self.symbol_config.get_enabled_symbols()[0]:  # Only log for first symbol
+                logger.info(f"[STARTUP GRACE] {remaining:.0f}m remaining - NO TRADES ALLOWED")
+            return -1  # Return -1 to indicate no processing at all
+        
         # Check if new candle closed
         if not await self.check_new_candle_close(symbol):
             return -1

@@ -1410,7 +1410,9 @@ class Bot4H:
             for p in positions:
                 if float(p.get('size', 0)) > 0:
                     sym = p.get('symbol')
-                    self.active_trades.add(sym)
+                    # active_trades is a Dict, not a Set - use dict key assignment
+                    # We don't have full trade info, so just mark as "synced position"
+                    self.active_trades[sym] = None  # Placeholder to mark position exists
                     count += 1
                     logger.info(f"[SYNC] Found existing position: {sym}")
             logger.info(f"[SYNC] Synced {count} active positions.")

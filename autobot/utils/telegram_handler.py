@@ -375,24 +375,42 @@ class TelegramHandler:
             bos_today = self.bot.bos_tracking.get('bos_confirmed_today', 0)
             
             # === GET LIFETIME STATS ===
+            # Use exchange data for accuracy (same source as "Today Realized")
             lifetime = self.bot.lifetime_stats
-            lifetime_r = lifetime.get('total_r', 0)
-            lifetime_pnl = lifetime.get('total_pnl', 0)
-            lifetime_trades = lifetime.get('total_trades', 0)
-            lifetime_wins = lifetime.get('wins', 0)
-            lifetime_wr = (lifetime_wins / lifetime_trades * 100) if lifetime_trades > 0 else 0
             start_date = lifetime.get('start_date', 'Unknown')
-            starting_balance = lifetime.get('starting_balance', 0)
+            starting_balance = lifetime.get('starting_balance', 0) or balance  # Fallback to current balance
             best_day_r = lifetime.get('best_day_r', 0)
             best_day_date = lifetime.get('best_day_date', 'N/A')
             worst_day_r = lifetime.get('worst_day_r', 0)
             worst_day_date = lifetime.get('worst_day_date', 'N/A')
             
+            # Calculate total PnL from closed trades (same source as Today Realized)
+            total_pnl_all_time = 0.0
+            try:
+                all_closed = await self.bot.broker.get_all_closed_pnl(limit=500)  # Get more records
+                if all_closed:
+                    for record in all_closed:
+                        try:
+                            pnl = float(record.get('closedPnl', 0))
+                            total_pnl_all_time += pnl
+                        except:
+                            continue
+            except Exception as e:
+                logger.error(f"Error getting total PnL: {e}")
+            
+            # Use exchange R calculation (already calculated above as exchange_total_r)
+            lifetime_r = exchange_total_r  # Use exchange data
+            lifetime_pnl = total_pnl_all_time
+            
             # Calculate days since start
             try:
                 from datetime import datetime as dt
-                start_dt = dt.strptime(start_date, '%Y-%m-%d')
-                days_running = (dt.now() - start_dt).days
+                if start_date and start_date != 'Unknown':
+                    start_dt = dt.strptime(start_date, '%Y-%m-%d')
+                    days_running = (dt.now() - start_dt).days
+                else:
+                    days_running = 0
+                    start_date = dt.now().strftime('%Y-%m-%d')
             except:
                 days_running = 0
             
@@ -409,7 +427,7 @@ class TelegramHandler:
 ├ 📊 Today Unrealized: ${unrealized_pnl:+,.2f} ({unrealized_r:+.1f}R) | {active} open
 ├ {net_emoji} Today Net: ${net_pnl:+,.2f} ({net_r:+.1f}R)
 ├ ────────────────────
-├ 🏆 **TOTAL SINCE START:** {lifetime_r:+.1f}R (${lifetime_pnl:+,.2f})
+├ 🏆 **TOTAL (Last {exchange_total_trades}):** {lifetime_r:+.1f}R (${lifetime_pnl:+,.2f})
 └ 📅 Started: {start_date} ({days_running} days)
 
 📊 **ACCOUNT STATUS**

@@ -38,11 +38,11 @@ class SymbolRRConfig:
             # Count by divergence type
             div_counts = {}
             for sym, cfg in self.symbols.items():
-                if cfg.get('enabled', False):
-                    div = cfg.get('divergence', 'UNKNOWN')
+                if cfg.get('enabled', True):  # Default to True if missing
+                    div = cfg.get('divergence_type', cfg.get('divergence', 'UNKNOWN'))
                     div_counts[div] = div_counts.get(div, 0) + 1
             
-            enabled_count = sum(1 for s in self.symbols.values() if s.get('enabled', False))
+            enabled_count = sum(1 for s in self.symbols.values() if s.get('enabled', True))
             print(f"[SymbolConfig] Loaded {len(self.symbols)} symbols ({enabled_count} enabled)")
             
             # Print divergence breakdown
@@ -68,7 +68,7 @@ class SymbolRRConfig:
             
         symbol_config = self.symbols[symbol]
         
-        if not symbol_config.get('enabled', False):
+        if not symbol_config.get('enabled', True):
             return None
             
         return symbol_config.get('rr')
@@ -88,10 +88,10 @@ class SymbolRRConfig:
             
         symbol_config = self.symbols[symbol]
         
-        if not symbol_config.get('enabled', False):
+        if not symbol_config.get('enabled', True):
             return None
             
-        return symbol_config.get('divergence')
+        return symbol_config.get('divergence_type', symbol_config.get('divergence'))
     
     def get_symbol_config(self, symbol: str) -> Optional[dict]:
         """
@@ -121,7 +121,7 @@ class SymbolRRConfig:
         if symbol not in self.symbols:
             return False
             
-        return self.symbols[symbol].get('enabled', False)
+        return self.symbols[symbol].get('enabled', True)
     
     def is_divergence_allowed(self, symbol: str, divergence_code: str) -> bool:
         """
@@ -139,10 +139,10 @@ class SymbolRRConfig:
             
         symbol_config = self.symbols[symbol]
         
-        if not symbol_config.get('enabled', False):
+        if not symbol_config.get('enabled', True):
             return False
             
-        allowed_div = symbol_config.get('divergence')
+        allowed_div = symbol_config.get('divergence_type', symbol_config.get('divergence'))
         return allowed_div == divergence_code
     
     def get_enabled_symbols(self) -> List[str]:
@@ -154,7 +154,7 @@ class SymbolRRConfig:
         """
         return [
             symbol for symbol, config in self.symbols.items()
-            if config.get('enabled', False)
+            if config.get('enabled', True)
         ]
     
     def get_symbols_by_divergence(self, divergence_code: str) -> List[str]:
@@ -196,14 +196,14 @@ class SymbolRRConfig:
         """
         counts = {}
         for sym, cfg in self.symbols.items():
-            if cfg.get('enabled', False):
-                div = cfg.get('divergence', 'UNKNOWN')
+            if cfg.get('enabled', True):
+                div = cfg.get('divergence_type', cfg.get('divergence', 'UNKNOWN'))
                 counts[div] = counts.get(div, 0) + 1
         return counts
     
     def get_total_enabled(self) -> int:
         """Get count of enabled symbols"""
-        return sum(1 for s in self.symbols.values() if s.get('enabled', False))
+        return sum(1 for s in self.symbols.values() if s.get('enabled', True))
     
     def get_rr_summary(self) -> Dict[float, int]:
         """
@@ -214,7 +214,7 @@ class SymbolRRConfig:
         """
         counts = {}
         for sym, cfg in self.symbols.items():
-            if cfg.get('enabled', False):
+            if cfg.get('enabled', True):
                 rr = cfg.get('rr', 0)
                 counts[rr] = counts.get(rr, 0) + 1
         return counts

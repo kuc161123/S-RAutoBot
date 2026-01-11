@@ -164,10 +164,9 @@ class Bot4H:
         self.rsi_cache: Dict[str, float] = {}  # {symbol: last_rsi}
         
         # Radar cache for developing setups
-        self.radar_items: Dict[str, str] = {}  # {symbol: description}
         
-        # Track time in extreme zones for ETA
-        self.extreme_zone_tracker: Dict[str, datetime] = {}  # {symbol: entry_time}
+        # New startup logic: Immediate trading allowed (24h staleness filter protects us)
+        logger.info("[STARTUP] Precision Mode Active. Immediate signal processing enabled.")
         
         # Signal deduplication - Persistence (DB or File)
         self.storage = StorageHandler()

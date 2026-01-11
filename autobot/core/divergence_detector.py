@@ -49,6 +49,7 @@ class DivergenceSignal:
     rsi_value: float
     price: float
     timestamp: pd.Timestamp
+    pivot_timestamp: pd.Timestamp  # NEW: For robust deduplication
     daily_trend_aligned: bool
     
     def to_dict(self):
@@ -60,6 +61,7 @@ class DivergenceSignal:
             'price': self.price,
             'swing': self.swing_level,
             'timestamp': self.timestamp.isoformat() if isinstance(self.timestamp, pd.Timestamp) else str(self.timestamp),
+            'pivot_timestamp': self.pivot_timestamp.isoformat() if isinstance(self.pivot_timestamp, pd.Timestamp) else str(self.pivot_timestamp),
             'trend_aligned': self.daily_trend_aligned
         }
     
@@ -195,8 +197,8 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
     signals = []
     
     # Scan for divergences
-    # Start at 30 to have enough history, end at n-15 to leave room for BOS
-    for i in range(30, n - 15):
+    # Start at 30 to have enough history, end at n - PIVOT_RIGHT - 1 to ensure pivot confirmation
+    for i in range(30, n - PIVOT_RIGHT):
         current_price = close[i]
         current_ema = daily_ema[i]
         
@@ -230,6 +232,7 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
                         rsi_value=rsi[i],
                         price=current_price,
                         timestamp=df.index[i],
+                        pivot_timestamp=df.index[curr_pli],  # Dedup Key
                         daily_trend_aligned=trend_aligned
                     ))
             
@@ -246,6 +249,7 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
                         rsi_value=rsi[i],
                         price=current_price,
                         timestamp=df.index[i],
+                        pivot_timestamp=df.index[curr_pli],  # Dedup Key
                         daily_trend_aligned=trend_aligned
                     ))
         
@@ -278,6 +282,7 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
                         rsi_value=rsi[i],
                         price=current_price,
                         timestamp=df.index[i],
+                        pivot_timestamp=df.index[curr_phi],  # Dedup Key
                         daily_trend_aligned=trend_aligned
                     ))
             
@@ -294,6 +299,7 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
                         rsi_value=rsi[i],
                         price=current_price,
                         timestamp=df.index[i],
+                        pivot_timestamp=df.index[curr_phi],  # Dedup Key
                         daily_trend_aligned=trend_aligned
                     ))
     

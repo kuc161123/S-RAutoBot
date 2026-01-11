@@ -152,9 +152,8 @@ class TelegramHandler:
 /start - Resume trading
 /help - Show this message
 
-💡 **Strategy**: 1H Multi-Divergence + EMA200 + BOS
-**Divergences**: REG_BULL, REG_BEAR, HID_BULL, HID_BEAR
-**Portfolio**: 231 Symbols | 0.5% Risk | +619R/Mo (Blind Validated)
+**Strategy**: 1H Precision Divergence (Deduped) + EMA200
+**Portfolio**: 226 Symbols | 0.1% Risk | ~3,000R/Mo (Projected)
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     

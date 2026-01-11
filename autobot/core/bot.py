@@ -1,8 +1,8 @@
 """
-1H Multi-Divergence Trading Bot - 231 SYMBOLS BLIND VALIDATED
+1H Multi-Divergence Trading Bot - PRECISION STRATEGY (226 SYMBOLS)
 ===============================================================
-231 Symbols | Per-Symbol ATR & RR | +1,238R (60-Day Blind Test)
-Expected Performance: +619R/Month (Based on Forward Validation)
+226 Symbols | Pivot-Based Deduplication | +9,162R (90-Day Projection)
+Expected Performance: ~3,000R/Month (Based on Deduped Blind Test)
 
 Divergence Types:
 - REG_BULL: Regular Bullish (Reversal)
@@ -42,6 +42,7 @@ from autobot.core.divergence_detector import (
 )
 from autobot.config.symbol_rr_mapping import SymbolRRConfig
 from autobot.utils.telegram_handler import TelegramHandler
+from autobot.core.storage import StorageHandler
 
 # Logging
 logging.basicConfig(
@@ -82,7 +83,7 @@ class ActiveTrade:
 
 
 class Bot4H:
-    """1H Multi-Divergence Trading Bot - 231 SYMBOLS BLIND VALIDATED"""
+    """1H Multi-Divergence Trading Bot - PRECISION STRATEGY (226 SYMBOLS)"""
     
     def __init__(self):
         """Initialize bot"""
@@ -168,9 +169,9 @@ class Bot4H:
         # Track time in extreme zones for ETA
         self.extreme_zone_tracker: Dict[str, datetime] = {}  # {symbol: entry_time}
         
-        # Signal deduplication - track seen signals to prevent duplicates
-        self.seen_signals_file = 'data/seen_signals.json'
-        self.seen_signals: set = self.load_seen_signals()  # Set of unique signal IDs
+        # Signal deduplication - Persistence (DB or File)
+        self.storage = StorageHandler()
+        # self.seen_signals is no longer used directly, use self.storage.is_seen()
         
         # BOS Performance Tracking (for monitoring stale filter removal impact)
         self.bos_tracking = {
@@ -182,7 +183,8 @@ class Bot4H:
         }
         
         logger.info(f"Loaded {len(self.symbol_config.get_enabled_symbols())} enabled symbols")
-        logger.info(f"Loaded {len(self.seen_signals)} previously seen signals")
+        logger.info(f"Loaded {len(self.symbol_config.get_enabled_symbols())} enabled symbols")
+        # Logger info for signals is now handled by StorageHandler
 
     def load_stats(self):
         """Load internal stats from JSON file"""
@@ -270,27 +272,7 @@ class Bot4H:
         
         self.save_lifetime_stats()
     
-    def load_seen_signals(self) -> set:
-        """Load previously seen signal IDs from JSON file"""
-        try:
-            import json
-            if os.path.exists(self.seen_signals_file):
-                with open(self.seen_signals_file, 'r') as f:
-                    data = json.load(f)
-                    return set(data.get('signals', []))
-        except Exception as e:
-            logger.error(f"Failed to load seen signals: {e}")
-        return set()
-    
-    def save_seen_signals(self):
-        """Save seen signal IDs to JSON file"""
-        try:
-            import json
-            os.makedirs(os.path.dirname(self.seen_signals_file), exist_ok=True)
-            with open(self.seen_signals_file, 'w') as f:
-                json.dump({'signals': list(self.seen_signals)}, f)
-        except Exception as e:
-            logger.error(f"Failed to save seen signals: {e}")
+    # Legacy load/save methods removed in favor of StorageHandler
     
     def _track_divergence_detected(self):
         """Track a divergence detection"""
@@ -317,14 +299,15 @@ class Bot4H:
         self.bos_tracking['bos_confirmed_total'] += 1
     
     def get_signal_id(self, signal) -> str:
-        """Generate unique ID for a divergence signal.
+        """Generate unique ID using Pivot Timestamp (Backtest-Aligned Deduplication).
         
-        Uses symbol + side + HOURLY timestamp (rounded down) to ensure
-        the same divergence detected on restart doesn't create a new signal.
+        Uses symbol + side + divergence_code + PIVOT timestamp to ensure
+        multiple detections of the same setup are treated as one.
         """
-        # Round timestamp to the hour for consistent deduplication
-        hourly_ts = signal.timestamp.replace(minute=0, second=0, microsecond=0)
-        return f"{signal.symbol}_{signal.side}_{hourly_ts.strftime('%Y%m%d_%H')}"
+        # Use pivot_timestamp for robust deduplication matching backtest
+        # Fallback to timestamp if pivot_timestamp not available (legacy safety)
+        ts = getattr(signal, 'pivot_timestamp', signal.timestamp)
+        return f"{signal.symbol}_{signal.side}_{signal.divergence_code}_{ts.strftime('%Y%m%d_%H%M')}"
     
     def load_config(self):
         """Load configuration from config.yaml"""
@@ -624,14 +607,9 @@ class Bot4H:
         Returns:
             int: Number of new signals found, or -1 if no new candle
         """
-        # [BULLETPROOF] 65-minute startup grace period - FIRST CHECK
-        # This CANNOT be bypassed. No trades for 65 minutes after bot start.
-        minutes_since_startup = (datetime.now() - self.start_time).total_seconds() / 60
-        if minutes_since_startup < self.startup_grace_period_minutes:
-            remaining = self.startup_grace_period_minutes - minutes_since_startup
-            if symbol == self.symbol_config.get_enabled_symbols()[0]:  # Only log for first symbol
-                logger.info(f"[STARTUP GRACE] {remaining:.0f}m remaining - NO TRADES ALLOWED")
-            return -1  # Return -1 to indicate no processing at all
+        # [REMOVED] 65-minute startup grace period
+        # The new 24h signal filter makes this brute-force delay unnecessary.
+        # checks passed.
         
         # Check if new candle closed
         if not await self.check_new_candle_close(symbol):
@@ -650,19 +628,10 @@ class Bot4H:
             logger.info(f"[{symbol}] Skipping stale candle (Closed {minutes_since_close:.0f}m ago) to prevent startup shock 🛡️")
             return 0
         
-        # [STARTUP PROTECTION - CHANGE 3] First-candle skip
-        # On startup, the first candle for each symbol is for initialization only
-        # This prevents detecting historical divergences that formed before the bot started
-        if symbol not in self.symbols_initialized:
-            self.symbols_initialized.add(symbol)
-            logger.info(f"[{symbol}] 🛡️ First candle since startup - initializing (no trades)")
-            # Still fetch data to warm up indicators, but don't trade
-            df = await self.fetch_4h_data(symbol)
-            if df is not None and len(df) >= 100:
-                df = prepare_dataframe(df)
-                if 'rsi' in df.columns and len(df) > 0:
-                    self.rsi_cache[symbol] = df['rsi'].iloc[-1]
-            return 0
+        # [REMOVED] First-candle skip
+        # We now trust the 24h stale filter to prevent processing historical signals.
+        # Immediate trading is now allowed.
+        self.symbols_initialized.add(symbol)
         
         # [BOT-BACKTEST ALIGNMENT - CHANGE 1] Skip divergence detection if already in trade
         # This matches backtest behavior: one trade per symbol at a time
@@ -830,6 +799,14 @@ class Bot4H:
             if not signal.daily_trend_aligned:
                 logger.debug(f"[{symbol}] {signal.divergence_code} divergence detected but NOT trend-aligned - SKIP")
                 continue
+
+            # [CRITICAL FIX] IGNORE HISTORY ON RESTART
+            # Filter out signals that are too old to be relevant
+            # 24 hours (time needed for valid signal) + buffer
+            hours_since_signal = (df.index[-1] - signal.timestamp).total_seconds() / 3600
+            if hours_since_signal > 24:
+                # Silently skip old signals to avoid log spam on restart
+                continue
             
             # DIVERGENCE TYPE FILTER: Only accept if this divergence type is allowed for this symbol
             allowed_div = self.symbol_config.get_divergence_for_symbol(symbol)
@@ -839,13 +816,12 @@ class Bot4H:
             
             # DEDUPLICATION: Check if we've already seen this signal
             signal_id = self.get_signal_id(signal)
-            if signal_id in self.seen_signals:
+            if self.storage.is_seen(signal_id):
                 duplicate_count += 1
-                continue  # Already processed this signal before
+                continue  # Already processed
             
             # Mark signal as seen and save
-            self.seen_signals.add(signal_id)
-            self.save_seen_signals()
+            self.storage.add_signal(signal_id)
             
             # Only allow ONE pending signal per symbol at a time
             if symbol in self.pending_signals and len(self.pending_signals[symbol]) > 0:

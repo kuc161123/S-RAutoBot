@@ -1447,7 +1447,7 @@ class Bot4H:
 🤖 **BOT STARTED**
 ━━━━━━━━━━━━━━━━━━━━
 
-📊 **Strategy**: 1H RSI Divergence + BOS
+📊 **Strategy**: 1H Precision Divergence (Safe 235)
 📈 **Symbols**: {len(enabled_symbols)}
 💰 **Risk**: {risk_pct*100:.1f}% per trade
 
@@ -1455,7 +1455,7 @@ class Bot4H:
 ├ Total R: {lifetime_r:+.1f}R
 └ Since: {start_date}
 
-**EXPECTED**: ~620R/month
+**EXPECTED**: ~3,180R/month
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /dashboard /help

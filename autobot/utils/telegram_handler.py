@@ -152,8 +152,8 @@ class TelegramHandler:
 /start - Resume trading
 /help - Show this message
 
-**Strategy**: 1H Precision Divergence (Deduped) + EMA200
-**Portfolio**: 226 Symbols | 0.1% Risk | ~3,000R/Mo (Projected)
+**Strategy**: 1H Precision Divergence (Safe/Liquid)
+**Portfolio**: 235 Symbols | 0.1% Risk | ~3,180R/Mo (Projected)
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     

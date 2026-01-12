@@ -1,8 +1,8 @@
 """
-1H Multi-Divergence Trading Bot - PRECISION STRATEGY (226 SYMBOLS)
-===============================================================
-226 Symbols | Pivot-Based Deduplication | +9,162R (90-Day Projection)
-Expected Performance: ~3,000R/Month (Based on Deduped Blind Test)
+1H Multi-Divergence Trading Bot - SAFE PRECISION (235 SYMBOLS)
+==============================================================
+235 Symbols (Safe/Liquid) | Pivot-Based Deduplication | +9,543R (90-Day Projection)
+Expected Performance: ~3,180R/Month (Based on Deduped Blind Test)
 
 Divergence Types:
 - REG_BULL: Regular Bullish (Reversal)
@@ -83,7 +83,7 @@ class ActiveTrade:
 
 
 class Bot4H:
-    """1H Multi-Divergence Trading Bot - PRECISION STRATEGY (226 SYMBOLS)"""
+    """1H Multi-Divergence Trading Bot - SAFE PRECISION (235 SYMBOLS)"""
     
     def __init__(self):
         """Initialize bot"""

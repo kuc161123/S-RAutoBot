@@ -1,0 +1,404 @@
+🏭 OPTIMIZATION FACTORY: Starting Full Run (400 Symbols)
+Found 400 symbols
+[1/400] Processing BTCUSDT... Best: REG_BULL/1.0x/8R (Train: 16.0R) -> Blind: -10.0R ❌
+[2/400] Processing ETHUSDT... Best: HID_BULL/1.0x/7R (Train: 28.0R) -> Blind: 0.0R ❌
+[3/400] Processing SOLUSDT... Best: HID_BULL/2.0x/9R (Train: 30.0R) -> Blind: 1.0R ✅
+[4/400] Processing XRPUSDT... Best: HID_BULL/1.5x/9R (Train: 30.0R) -> Blind: -2.0R ❌
+[5/400] Processing ZECUSDT... Best: REG_BULL/1.5x/8R (Train: 22.0R) -> Blind: 17.0R ✅
+[6/400] Processing FARTCOINUSDT... Best: REG_BULL/2.5x/10R (Train: 24.0R) -> Blind: -3.0R ❌
+[7/400] Processing DOGEUSDT... Best: HID_BEAR/2.0x/10R (Train: 48.0R) -> Blind: -2.0R ❌
+[8/400] Processing 1000PEPEUSDT... Best: HID_BEAR/1.0x/9R (Train: 37.0R) -> Blind: -10.0R ❌
+[9/400] Processing ZKPUSDT... No Data
+[10/400] Processing WIFUSDT... Best: HID_BULL/1.0x/9R (Train: 30.0R) -> Blind: 1.0R ✅
+[11/400] Processing SUIUSDT... Best: HID_BEAR/1.0x/10R (Train: 28.0R) -> Blind: 2.0R ✅
+[12/400] Processing ADAUSDT... Best: HID_BEAR/1.0x/10R (Train: 37.0R) -> Blind: 11.0R ✅
+[13/400] Processing RIVERUSDT... Best: REG_BEAR/0.5x/3R (Train: 10.0R) -> Blind: -2.0R ❌
+[14/400] Processing HYPEUSDT... Best: HID_BULL/3.0x/8R (Train: 14.0R) -> Blind: -7.0R ❌
+[15/400] Processing BREVUSDT... No Data
+[16/400] Processing PIPPINUSDT... Best: HID_BULL/0.5x/6R (Train: 26.0R) -> Blind: -3.0R ❌
+[17/400] Processing BCHUSDT... Best: REG_BULL/1.5x/7R (Train: 16.0R) -> Blind: -11.0R ❌
+[18/400] Processing LINKUSDT... Best: REG_BULL/0.5x/10R (Train: 31.0R) -> Blind: 8.0R ✅
+[19/400] Processing BNBUSDT... Best: HID_BULL/0.5x/10R (Train: 39.0R) -> Blind: 14.0R ✅
+[20/400] Processing XPLUSDT... Best: HID_BEAR/1.0x/10R (Train: 15.0R) -> Blind: -3.0R ❌
+[21/400] Processing LITUSDT... No Data
+[22/400] Processing ENAUSDT... Best: HID_BEAR/1.5x/10R (Train: 35.0R) -> Blind: 5.0R ✅
+[23/400] Processing VIRTUALUSDT... Best: REG_BEAR/1.0x/7R (Train: 42.0R) -> Blind: -11.0R ❌
+[24/400] Processing PUMPFUNUSDT... Best: HID_BULL/1.0x/8R (Train: 34.0R) -> Blind: 6.0R ✅
+[25/400] Processing XAUTUSDT... Best: HID_BULL/0.5x/10R (Train: 42.0R) -> Blind: 19.0R ✅
+[26/400] Processing AAVEUSDT... Best: HID_BEAR/1.0x/10R (Train: 18.0R) -> Blind: 8.0R ✅
+[27/400] Processing LTCUSDT... Best: HID_BEAR/0.5x/9R (Train: 52.0R) -> Blind: -14.0R ❌
+[28/400] Processing TAOUSDT... Best: HID_BEAR/0.5x/8R (Train: 66.0R) -> Blind: -22.0R ❌
+[29/400] Processing HBARUSDT... Best: HID_BEAR/1.0x/10R (Train: 34.0R) -> Blind: 3.0R ✅
+[30/400] Processing AVAXUSDT... Best: HID_BULL/0.5x/10R (Train: 40.0R) -> Blind: -17.0R ❌
+[31/400] Processing 1000BONKUSDT... Best: HID_BEAR/1.0x/9R (Train: 48.0R) -> Blind: -18.0R ❌
+[32/400] Processing ASTERUSDT... Best: REG_BEAR/1.5x/7R (Train: 11.0R) -> Blind: 1.0R ✅
+[33/400] Processing PIEVERSEUSDT... No passing strat
+[34/400] Processing UNIUSDT... Best: REG_BEAR/0.5x/10R (Train: 30.0R) -> Blind: -5.0R ❌
+[35/400] Processing CLOUSDT... Best: HID_BEAR/0.5x/3R (Train: 17.0R) -> Blind: 10.0R ✅
+[36/400] Processing NEARUSDT... Best: HID_BEAR/0.5x/3R (Train: 15.0R) -> Blind: 6.0R ✅
+[37/400] Processing GUNUSDT... Best: REG_BEAR/0.5x/10R (Train: 46.0R) -> Blind: 2.0R ✅
+[38/400] Processing BEATUSDT... Best: HID_BULL/0.5x/5R (Train: 18.0R) -> Blind: 0.0R ❌
+[39/400] Processing PENGUUSDT... Best: REG_BULL/1.5x/10R (Train: 51.0R) -> Blind: -5.0R ❌
+[40/400] Processing WLFIUSDT... Best: HID_BULL/0.5x/10R (Train: 6.0R) -> Blind: -2.0R ❌
+[41/400] Processing ONDOUSDT... Best: REG_BULL/0.5x/10R (Train: 32.0R) -> Blind: -1.0R ❌
+[42/400] Processing MNTUSDT... Best: HID_BEAR/0.5x/10R (Train: 51.0R) -> Blind: 2.0R ✅
+[43/400] Processing TRUMPUSDT... Best: HID_BULL/0.5x/10R (Train: 21.0R) -> Blind: 9.0R ✅
+[44/400] Processing FLOWUSDT... Best: HID_BULL/0.5x/6R (Train: 49.0R) -> Blind: -3.0R ❌
+[45/400] Processing MONUSDT... Best: HID_BEAR/0.5x/5R (Train: 11.0R) -> Blind: 0.0R ❌
+[46/400] Processing RENDERUSDT... Best: HID_BEAR/0.5x/3R (Train: 33.0R) -> Blind: 9.0R ✅
+[47/400] Processing BABYUSDT... Best: REG_BEAR/1.0x/8R (Train: 22.0R) -> Blind: 5.0R ✅
+[48/400] Processing CRVUSDT... Best: REG_BULL/2.5x/9R (Train: 23.0R) -> Blind: -9.0R ❌
+[49/400] Processing FILUSDT... Best: HID_BEAR/1.0x/10R (Train: 22.0R) -> Blind: -10.0R ❌
+[50/400] Processing XMRUSDT... Best: REG_BULL/2.0x/9R (Train: 12.0R) -> Blind: -1.0R ❌
+[51/400] Processing TONUSDT... Best: HID_BEAR/0.5x/9R (Train: 18.0R) -> Blind: 3.0R ✅
+[52/400] Processing IPUSDT... Best: HID_BULL/2.0x/9R (Train: 33.0R) -> Blind: 15.0R ✅
+[53/400] Processing DOTUSDT... Best: REG_BEAR/1.0x/10R (Train: 33.0R) -> Blind: 9.0R ✅
+[54/400] Processing APTUSDT... Best: REG_BEAR/0.5x/5R (Train: 20.0R) -> Blind: -12.0R ❌
+[55/400] Processing ANIMEUSDT... Best: REG_BULL/0.5x/9R (Train: 22.0R) -> Blind: 9.0R ✅
+[56/400] Processing ARBUSDT... Best: REG_BEAR/2.5x/7R (Train: 28.0R) -> Blind: 12.0R ✅
+[57/400] Processing MYXUSDT... Best: HID_BEAR/0.5x/10R (Train: 17.0R) -> Blind: -4.0R ❌
+[58/400] Processing ATOMUSDT... Best: HID_BEAR/0.5x/8R (Train: 24.0R) -> Blind: -5.0R ❌
+[59/400] Processing SHIB1000USDT... Best: HID_BEAR/0.5x/10R (Train: 49.0R) -> Blind: -2.0R ❌
+[60/400] Processing TRXUSDT... Best: HID_BEAR/0.5x/8R (Train: 30.0R) -> Blind: 1.0R ✅
+[61/400] Processing XLMUSDT... Best: HID_BEAR/2.5x/8R (Train: 27.0R) -> Blind: 4.0R ✅
+[62/400] Processing JASMYUSDT... Best: REG_BEAR/1.0x/10R (Train: 44.0R) -> Blind: 18.0R ✅
+[63/400] Processing SEIUSDT... Best: HID_BEAR/0.5x/9R (Train: 60.0R) -> Blind: 15.0R ✅
+[64/400] Processing WLDUSDT... Best: REG_BEAR/1.5x/7R (Train: 31.0R) -> Blind: 10.0R ✅
+[65/400] Processing OPUSDT... Best: HID_BEAR/0.5x/7R (Train: 54.0R) -> Blind: 6.0R ✅
+[66/400] Processing ICPUSDT... Best: HID_BEAR/1.0x/4R (Train: 16.0R) -> Blind: -3.0R ❌
+[67/400] Processing BROCCOLIUSDT... Best: HID_BEAR/0.5x/6R (Train: 67.0R) -> Blind: -10.0R ❌
+[68/400] Processing XCNUSDT... Best: HID_BEAR/1.0x/7R (Train: 27.0R) -> Blind: 8.0R ✅
+[69/400] Processing GALAUSDT... Best: REG_BEAR/0.5x/10R (Train: 26.0R) -> Blind: 7.0R ✅
+[70/400] Processing STRKUSDT... Best: HID_BEAR/1.0x/9R (Train: 35.0R) -> Blind: 8.0R ✅
+[71/400] Processing POPCATUSDT... Best: HID_BEAR/0.5x/8R (Train: 39.0R) -> Blind: -12.0R ❌
+[72/400] Processing ETCUSDT... Best: REG_BULL/1.0x/10R (Train: 27.0R) -> Blind: -5.0R ❌
+[73/400] Processing CVCUSDT... Best: HID_BEAR/0.5x/10R (Train: 21.0R) -> Blind: -13.0R ❌
+[74/400] Processing KAITOUSDT... Best: HID_BULL/0.5x/10R (Train: 19.0R) -> Blind: 3.0R ✅
+[75/400] Processing NIGHTUSDT... Best: HID_BULL/2.0x/10R (Train: 6.0R) -> Blind: -2.0R ❌
+[76/400] Processing WHITEWHALEUSDT... No Data
+[77/400] Processing ZBTUSDT... Best: HID_BEAR/1.0x/10R (Train: 12.0R) -> Blind: 6.0R ✅
+[78/400] Processing INJUSDT... Best: REG_BULL/0.5x/10R (Train: 44.0R) -> Blind: -10.0R ❌
+[79/400] Processing DYDXUSDT... Best: HID_BEAR/1.0x/10R (Train: 35.0R) -> Blind: -2.0R ❌
+[80/400] Processing 1000RATSUSDT... Best: HID_BEAR/0.5x/5R (Train: 44.0R) -> Blind: -1.0R ❌
+[81/400] Processing TIAUSDT... Best: HID_BEAR/1.5x/9R (Train: 26.0R) -> Blind: 18.0R ✅
+[82/400] Processing POLUSDT... Best: HID_BEAR/0.5x/9R (Train: 16.0R) -> Blind: 17.0R ✅
+[83/400] Processing ICNTUSDT... Best: HID_BEAR/1.0x/8R (Train: 20.0R) -> Blind: -1.0R ❌
+[84/400] Processing AIXBTUSDT... Best: REG_BEAR/0.5x/10R (Train: 49.0R) -> Blind: -7.0R ❌
+[85/400] Processing MOODENGUSDT... Best: REG_BULL/0.5x/8R (Train: 27.0R) -> Blind: -6.0R ❌
+[86/400] Processing LIGHTUSDT... Best: REG_BEAR/0.5x/6R (Train: 8.0R) -> Blind: -2.0R ❌
+[87/400] Processing ZKUSDT... Best: REG_BEAR/1.5x/9R (Train: 32.0R) -> Blind: 30.0R ✅
+[88/400] Processing LYNUSDT... Best: HID_BEAR/0.5x/10R (Train: 22.0R) -> Blind: -4.0R ❌
+[89/400] Processing USELESSUSDT... Best: HID_BULL/0.5x/2R (Train: 8.0R) -> Blind: 4.0R ✅
+[90/400] Processing SPXUSDT... Best: HID_BEAR/0.5x/8R (Train: 42.0R) -> Blind: -23.0R ❌
+[91/400] Processing PAXGUSDT... Best: HID_BULL/2.0x/10R (Train: 37.0R) -> Blind: 11.0R ✅
+[92/400] Processing 1000FLOKIUSDT... Best: HID_BEAR/1.0x/9R (Train: 47.0R) -> Blind: 0.0R ❌
+[93/400] Processing ZENUSDT... Best: HID_BEAR/0.5x/8R (Train: 37.0R) -> Blind: 0.0R ❌
+[94/400] Processing DASHUSDT... Best: HID_BEAR/0.5x/9R (Train: 56.0R) -> Blind: -6.0R ❌
+[95/400] Processing KASUSDT... Best: REG_BEAR/1.0x/10R (Train: 55.0R) -> Blind: -2.0R ❌
+[96/400] Processing LDOUSDT... Best: HID_BEAR/0.5x/8R (Train: 24.0R) -> Blind: -2.0R ❌
+[97/400] Processing STXUSDT... Best: REG_BEAR/1.5x/9R (Train: 43.0R) -> Blind: 2.0R ✅
+[98/400] Processing JELLYJELLYUSDT... Best: REG_BEAR/0.5x/9R (Train: 21.0R) -> Blind: -13.0R ❌
+[99/400] Processing UBUSDT... Best: HID_BEAR/0.5x/10R (Train: 10.0R) -> Blind: 4.0R ✅
+[100/400] Processing EIGENUSDT... Best: HID_BEAR/1.0x/10R (Train: 23.0R) -> Blind: 0.0R ❌
+[101/400] Processing 4USDT... Best: HID_BEAR/0.5x/10R (Train: 8.0R) -> Blind: -14.0R ❌
+[102/400] Processing MAGMAUSDT... No Data
+[103/400] Processing CCUSDT... Best: HID_BEAR/0.5x/9R (Train: 13.0R) -> Blind: 0.0R ❌
+[104/400] Processing SONICUSDT... Best: HID_BEAR/0.5x/8R (Train: 38.0R) -> Blind: -7.0R ❌
+[105/400] Processing 0GUSDT... Best: REG_BEAR/2.0x/10R (Train: 15.0R) -> Blind: -2.0R ❌
+[106/400] Processing SANDUSDT... Best: HID_BEAR/1.0x/10R (Train: 16.0R) -> Blind: 8.0R ✅
+[107/400] Processing 1000000MOGUSDT... Best: REG_BEAR/0.5x/10R (Train: 30.0R) -> Blind: -21.0R ❌
+[108/400] Processing AEROUSDT... Best: HID_BEAR/0.5x/10R (Train: 53.0R) -> Blind: 8.0R ✅
+[109/400] Processing WETUSDT... No passing strat
+[110/400] Processing GIGGLEUSDT... Best: REG_BEAR/0.5x/6R (Train: 2.0R) -> Blind: -4.0R ❌
+[111/400] Processing SPKUSDT... Best: HID_BULL/0.5x/10R (Train: 49.0R) -> Blind: -9.0R ❌
+[112/400] Processing PENDLEUSDT... Best: REG_BEAR/0.5x/3R (Train: 15.0R) -> Blind: 8.0R ✅
+[113/400] Processing RAVEUSDT... No passing strat
+[114/400] Processing TUSDT... Best: HID_BEAR/1.5x/8R (Train: 31.0R) -> Blind: 5.0R ✅
+[115/400] Processing ORDIUSDT... Best: HID_BEAR/0.5x/5R (Train: 25.0R) -> Blind: -1.0R ❌
+[116/400] Processing PNUTUSDT... Best: HID_BEAR/0.5x/10R (Train: 22.0R) -> Blind: -29.0R ❌
+[117/400] Processing AVNTUSDT... Best: HID_BEAR/1.0x/7R (Train: 27.0R) -> Blind: 2.0R ✅
+[118/400] Processing BRETTUSDT... Best: HID_BEAR/1.0x/10R (Train: 25.0R) -> Blind: -4.0R ❌
+[119/400] Processing LABUSDT... Best: HID_BULL/1.0x/10R (Train: 5.0R) -> Blind: -3.0R ❌
+[120/400] Processing MERLUSDT... Best: REG_BEAR/1.0x/10R (Train: 30.0R) -> Blind: -7.0R ❌
+[121/400] Processing ALGOUSDT... Best: HID_BULL/1.0x/8R (Train: 22.0R) -> Blind: -2.0R ❌
+[122/400] Processing GMTUSDT... Best: REG_BULL/0.5x/10R (Train: 25.0R) -> Blind: -4.0R ❌
+[123/400] Processing RECALLUSDT... Best: HID_BEAR/1.0x/10R (Train: 12.0R) -> Blind: 9.0R ❌
+[124/400] Processing SXPUSDT... Best: HID_BEAR/0.5x/7R (Train: 44.0R) -> Blind: 13.0R ✅
+[125/400] Processing STABLEUSDT... Best: HID_BEAR/0.5x/8R (Train: 10.0R) -> Blind: 4.0R ✅
+[126/400] Processing BOMEUSDT... Best: HID_BEAR/0.5x/10R (Train: 50.0R) -> Blind: -13.0R ❌
+[127/400] Processing FOLKSUSDT... Best: HID_BEAR/0.5x/3R (Train: 3.0R) -> Blind: 3.0R ❌
+[128/400] Processing EVAAUSDT... Best: HID_BEAR/2.0x/4R (Train: 13.0R) -> Blind: 3.0R ❌
+[129/400] Processing JUPUSDT... Best: REG_BULL/1.0x/8R (Train: 41.0R) -> Blind: -7.0R ❌
+[130/400] Processing CHZUSDT... Best: HID_BEAR/1.0x/10R (Train: 35.0R) -> Blind: -7.0R ❌
+[131/400] Processing HUSDT... Best: HID_BULL/0.5x/4R (Train: 12.0R) -> Blind: -5.0R ❌
+[132/400] Processing CROUSDT... Best: HID_BEAR/1.0x/10R (Train: 40.0R) -> Blind: 16.0R ✅
+[133/400] Processing JTOUSDT... Best: HID_BEAR/0.5x/7R (Train: 46.0R) -> Blind: -16.0R ❌
+[134/400] Processing 1000TURBOUSDT... Best: HID_BEAR/0.5x/6R (Train: 30.0R) -> Blind: 13.0R ✅
+[135/400] Processing ENSOUSDT... Best: HID_BEAR/1.0x/7R (Train: 1.0R) -> Blind: -4.0R ❌
+[136/400] Processing GLMUSDT... Best: HID_BEAR/1.5x/7R (Train: 51.0R) -> Blind: -7.0R ❌
+[137/400] Processing AKEUSDT... Best: HID_BEAR/1.0x/6R (Train: 26.0R) -> Blind: -4.0R ❌
+[138/400] Processing MAGICUSDT... Best: REG_BEAR/1.5x/10R (Train: 38.0R) -> Blind: -4.0R ❌
+[139/400] Processing TAUSDT... Best: HID_BEAR/1.0x/10R (Train: 18.0R) -> Blind: 13.0R ✅
+[140/400] Processing ETHFIUSDT... Best: REG_BEAR/0.5x/10R (Train: 39.0R) -> Blind: -10.0R ❌
+[141/400] Processing LINEAUSDT... Best: REG_BEAR/0.5x/10R (Train: 23.0R) -> Blind: 7.0R ✅
+[142/400] Processing 1000NEIROCTOUSDT... Best: HID_BULL/0.5x/7R (Train: 32.0R) -> Blind: -18.0R ❌
+[143/400] Processing ENSUSDT... Best: HID_BULL/1.5x/2R (Train: 22.0R) -> Blind: 3.0R ✅
+[144/400] Processing PYTHUSDT... Best: REG_BEAR/1.0x/10R (Train: 45.0R) -> Blind: 23.0R ✅
+[145/400] Processing BIGTIMEUSDT... Best: HID_BEAR/0.5x/8R (Train: 27.0R) -> Blind: -29.0R ❌
+[146/400] Processing CYSUSDT... No passing strat
+[147/400] Processing APEUSDT... Best: HID_BEAR/0.5x/6R (Train: 16.0R) -> Blind: 22.0R ✅
+[148/400] Processing CELOUSDT... Best: REG_BULL/0.5x/10R (Train: 25.0R) -> Blind: -2.0R ❌
+[149/400] Processing ACTUSDT... No Data
+[150/400] Processing SYRUPUSDT... No Data
+[151/400] Processing IDUSDT... No Data
+[152/400] Processing TNSRUSDT... No Data
+[153/400] Processing OMUSDT... No Data
+[154/400] Processing AERGOUSDT... No Data
+[155/400] Processing SNXUSDT... No Data
+[156/400] Processing SUSDT... No Data
+[157/400] Processing BERAUSDT... No Data
+[158/400] Processing SOMIUSDT... No Data
+[159/400] Processing MELANIAUSDT... No Data
+[160/400] Processing METUSDT... No Data
+[161/400] Processing SNTUSDT... No Data
+[162/400] Processing POWERUSDT... No Data
+[163/400] Processing LUNA2USDT... No Data
+[164/400] Processing TRUTHUSDT... No Data
+[165/400] Processing NOTUSDT... No Data
+[166/400] Processing MEUSDT... No Data
+[167/400] Processing AXSUSDT... No Data
+[168/400] Processing BUSDT... No Data
+[169/400] Processing IRYSUSDT... No Data
+[170/400] Processing VETUSDT... No Data
+[171/400] Processing BATUSDT... No Data
+[172/400] Processing 1000LUNCUSDT... No Data
+[173/400] Processing ACHUSDT... No Data
+[174/400] Processing BIOUSDT... No Data
+[175/400] Processing QUSDT... No Data
+[176/400] Processing ZORAUSDT... No Data
+[177/400] Processing ONTUSDT... No Data
+[178/400] Processing THETAUSDT... No Data
+[179/400] Processing TRUSTUSDT... No Data
+[180/400] Processing SQDUSDT... No Data
+[181/400] Processing OGUSDT... No Data
+[182/400] Processing WUSDT... No Data
+[183/400] Processing RESOLVUSDT... No Data
+[184/400] Processing WCTUSDT... No Data
+[185/400] Processing ZROUSDT... No Data
+[186/400] Processing SOLAYERUSDT... No Data
+[187/400] Processing ALTUSDT... No Data
+[188/400] Processing LSKUSDT... No Data
+[189/400] Processing WAXPUSDT... No Data
+[190/400] Processing DEEPUSDT... No Data
+[191/400] Processing PEOPLEUSDT... No Data
+[192/400] Processing PLUMEUSDT... No Data
+[193/400] Processing XTZUSDT... No Data
+[194/400] Processing FFUSDT... No Data
+[195/400] Processing FHEUSDT... No Data
+[196/400] Processing CFXUSDT... No Data
+[197/400] Processing COAIUSDT... No Data
+[198/400] Processing TREEUSDT... No Data
+[199/400] Processing GRTUSDT... No Data
+[200/400] Processing ZRXUSDT... No Data
+[201/400] Processing CAKEUSDT... No Data
+[202/400] Processing IOTAUSDT... No Data
+[203/400] Processing GOATUSDT... No Data
+[204/400] Processing NOMUSDT... No Data
+[205/400] Processing MANAUSDT... No Data
+[206/400] Processing ARKMUSDT... No Data
+[207/400] Processing KITEUSDT... No Data
+[208/400] Processing ARKUSDT... No Data
+[209/400] Processing CHILLGUYUSDT... No Data
+[210/400] Processing ATHUSDT... No Data
+[211/400] Processing ARCUSDT... No Data
+[212/400] Processing WOOUSDT... No Data
+[213/400] Processing AXLUSDT... No Data
+[214/400] Processing PTBUSDT... No Data
+[215/400] Processing BARDUSDT... No Data
+[216/400] Processing INUSDT... No Data
+[217/400] Processing POLYXUSDT... No Data
+[218/400] Processing MOVEUSDT... No Data
+[219/400] Processing APEXUSDT... No Data
+[220/400] Processing AUCTIONUSDT... No Data
+[221/400] Processing STORJUSDT... No Data
+[222/400] Processing VVVUSDT... No Data
+[223/400] Processing EGLDUSDT... No Data
+[224/400] Processing CYBERUSDT... No Data
+[225/400] Processing PONKEUSDT... No Data
+[226/400] Processing MEMEUSDT... No Data
+[227/400] Processing MAVIAUSDT... No Data
+[228/400] Processing BBUSDT... No Data
+[229/400] Processing BLESSUSDT... No Data
+[230/400] Processing PARTIUSDT... No Data
+[231/400] Processing MORPHOUSDT... No Data
+[232/400] Processing ATUSDT... No Data
+[233/400] Processing YBUSDT... No Data
+[234/400] Processing SOONUSDT... No Data
+[235/400] Processing MINAUSDT... No Data
+[236/400] Processing OBTUSDT... No Data
+[237/400] Processing RUNEUSDT... No Data
+[238/400] Processing ARUSDT... No Data
+[239/400] Processing HIVEUSDT... No Data
+[240/400] Processing MEWUSDT... No Data
+[241/400] Processing SAPIENUSDT... No Data
+[242/400] Processing GRASSUSDT... No Data
+[243/400] Processing ZILUSDT... No Data
+[244/400] Processing MMTUSDT... No Data
+[245/400] Processing GRIFFAINUSDT... No Data
+[246/400] Processing BLASTUSDT... No Data
+[247/400] Processing LAUSDT... No Data
+[248/400] Processing MOCAUSDT... No Data
+[249/400] Processing SOPHUSDT... No Data
+[250/400] Processing POWRUSDT... No Data
+[251/400] Processing ICXUSDT... No Data
+[252/400] Processing SAHARAUSDT... No Data
+[253/400] Processing ALCHUSDT... No Data
+[254/400] Processing MASKUSDT... No Data
+[255/400] Processing 1000BTTUSDT... No Data
+[256/400] Processing IMXUSDT... No Data
+[257/400] Processing BLURUSDT... No Data
+[258/400] Processing VINEUSDT... No Data
+[259/400] Processing ERAUSDT... No Data
+[260/400] Processing USUSDT... No Data
+[261/400] Processing LPTUSDT... No Data
+[262/400] Processing ACEUSDT... No Data
+[263/400] Processing DRIFTUSDT... No Data
+[264/400] Processing IOUSDT... No Data
+[265/400] Processing ZKCUSDT... No Data
+[266/400] Processing COMPUSDT... No Data
+[267/400] Processing FLOCKUSDT... No Data
+[268/400] Processing ZBCNUSDT... No Data
+[269/400] Processing ZEREBROUSDT... No Data
+[270/400] Processing HEMIUSDT... No Data
+[271/400] Processing QTUMUSDT... No Data
+[272/400] Processing CLANKERUSDT... No Data
+[273/400] Processing RVNUSDT... No Data
+[274/400] Processing CVXUSDT... No Data
+[275/400] Processing WAVESUSDT... No Data
+[276/400] Processing MUSDT... No Data
+[277/400] Processing RLSUSDT... No Data
+[278/400] Processing STBLUSDT... No Data
+[279/400] Processing 1000TOSHIUSDT... No Data
+[280/400] Processing SUPERUSDT... No Data
+[281/400] Processing SUSHIUSDT... No Data
+[282/400] Processing HOLOUSDT... No Data
+[283/400] Processing AGLDUSDT... No Data
+[284/400] Processing BSVUSDT... No Data
+[285/400] Processing HUMAUSDT... No Data
+[286/400] Processing AUSDT... No Data
+[287/400] Processing FUSDT... No Data
+[288/400] Processing 2ZUSDT... No Data
+[289/400] Processing ANKRUSDT... No Data
+[290/400] Processing MUBARAKUSDT... No Data
+[291/400] Processing CROSSUSDT... No Data
+[292/400] Processing ORCAUSDT... No Data
+[293/400] Processing TWTUSDT... No Data
+[294/400] Processing WALUSDT... No Data
+[295/400] Processing XANUSDT... No Data
+[296/400] Processing AGIUSDT... No Data
+[297/400] Processing HYPERUSDT... No Data
+[298/400] Processing PROMUSDT... No Data
+[299/400] Processing EPICUSDT... No Data
+[300/400] Processing KSMUSDT... No Data
+[301/400] Processing NEWTUSDT... No Data
+[302/400] Processing AVLUSDT... No Data
+[303/400] Processing RLCUSDT... No Data
+[304/400] Processing GASUSDT... No Data
+[305/400] Processing KERNELUSDT... No Data
+[306/400] Processing NAORISUSDT... No Data
+[307/400] Processing APRUSDT... No Data
+[308/400] Processing HANAUSDT... No Data
+[309/400] Processing SOSOUSDT... No Data
+[310/400] Processing RAYDIUMUSDT... No Data
+[311/400] Processing ZETAUSDT... No Data
+[312/400] Processing DOGUSDT... No Data
+[313/400] Processing OPENUSDT... No Data
+[314/400] Processing USUALUSDT... No Data
+[315/400] Processing HIPPOUSDT... No Data
+[316/400] Processing JSTUSDT... No Data
+[317/400] Processing NEOUSDT... No Data
+[318/400] Processing 1INCHUSDT... No Data
+[319/400] Processing DOODUSDT... No Data
+[320/400] Processing XPINUSDT... No Data
+[321/400] Processing STEEMUSDT... No Data
+[322/400] Processing GMXUSDT... No Data
+[323/400] Processing KAIAUSDT... No Data
+[324/400] Processing YGGUSDT... No Data
+[325/400] Processing HNTUSDT... No Data
+[326/400] Processing REDUSDT... No Data
+[327/400] Processing QNTUSDT... No Data
+[328/400] Processing ORDERUSDT... No Data
+[329/400] Processing DYMUSDT... No Data
+[330/400] Processing RSRUSDT... No Data
+[331/400] Processing HMSTRUSDT... No Data
+[332/400] Processing KAVAUSDT... No Data
+[333/400] Processing FWOGUSDT... No Data
+[334/400] Processing MIRAUSDT... No Data
+[335/400] Processing IOSTUSDT... No Data
+[336/400] Processing BANANAUSDT... No Data
+[337/400] Processing KGENUSDT... No Data
+[338/400] Processing XAIUSDT... No Data
+[339/400] Processing BANUSDT... No Data
+[340/400] Processing TSTBSCUSDT... No Data
+[341/400] Processing BANANAS31USDT... No Data
+[342/400] Processing SWARMSUSDT... No Data
+[343/400] Processing GODSUSDT... No Data
+[344/400] Processing ESPORTSUSDT... No Data
+[345/400] Processing XVGUSDT... No Data
+[346/400] Processing NXPCUSDT... No Data
+[347/400] Processing HOMEUSDT... No Data
+[348/400] Processing ALICEUSDT... No Data
+[349/400] Processing FLRUSDT... No Data
+[350/400] Processing XIONUSDT... No Data
+[351/400] Processing PORTALUSDT... No Data
+[352/400] Processing DEGENUSDT... No Data
+[353/400] Processing THEUSDT... No Data
+[354/400] Processing BEAMUSDT... No Data
+[355/400] Processing ARIAUSDT... No Data
+[356/400] Processing 1000000BABYDOGEUSDT... No Data
+[357/400] Processing BLUAIUSDT... No Data
+[358/400] Processing ZEUSUSDT... No Data
+[359/400] Processing CTCUSDT... No Data
+[360/400] Processing ETHBTCUSDT... No Data
+[361/400] Processing SKYUSDT... No Data
+[362/400] Processing UAIUSDT... No Data
+[363/400] Processing CARVUSDT... No Data
+[364/400] Processing NMRUSDT... No Data
+[365/400] Processing SSVUSDT... No Data
+[366/400] Processing 10000SATSUSDT... No Data
+[367/400] Processing B3USDT... No Data
+[368/400] Processing ESUSDT... No Data
+[369/400] Processing MAVUSDT... No Data
+[370/400] Processing LUMIAUSDT... No Data
+[371/400] Processing DOLOUSDT... No Data
+[372/400] Processing PROVEUSDT... No Data
+[373/400] Processing API3USDT... No Data
+[374/400] Processing KNCUSDT... No Data
+[375/400] Processing SHELLUSDT... No Data
+[376/400] Processing PUNDIXUSDT... No Data
+[377/400] Processing BANKUSDT... No Data
+[378/400] Processing ORBSUSDT... No Data
+[379/400] Processing MTLUSDT... No Data
+[380/400] Processing STGUSDT... No Data
+[381/400] Processing CTKUSDT... No Data
+[382/400] Processing METISUSDT... No Data
+[383/400] Processing OKBUSDT... No Data
+[384/400] Processing SCUSDT... No Data
+[385/400] Processing ALLOUSDT... No Data
+[386/400] Processing TRBUSDT... No Data
+[387/400] Processing CETUSUSDT... No Data
+[388/400] Processing MANTAUSDT... No Data
+[389/400] Processing SPELLUSDT... No Data
+[390/400] Processing ROSEUSDT... No Data
+[391/400] Processing AEVOUSDT... No Data
+[392/400] Processing GPSUSDT... No Data
+[393/400] Processing COOKIEUSDT... No Data
+[394/400] Processing SUNUSDT... No Data
+[395/400] Processing SAROSUSDT... No Data
+[396/400] Processing LRCUSDT... No Data
+[397/400] Processing C98USDT... No Data
+[398/400] Processing REZUSDT... No Data
+[399/400] Processing VANAUSDT... No Data
+[400/400] Processing TAIUSDT... No Data
+
+optimization run complete.

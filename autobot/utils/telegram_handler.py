@@ -77,6 +77,7 @@ class TelegramHandler:
         self.app.add_handler(CommandHandler("performance", self.cmd_performance))
         self.app.add_handler(CommandHandler("resetstats", self.cmd_resetstats))
         self.app.add_handler(CommandHandler("debug", self.cmd_debug))
+        self.app.add_handler(CommandHandler("setbalance", self.cmd_setbalance))
         
         # Start polling with longer interval to avoid rate limits
         await self.app.initialize()
@@ -145,6 +146,7 @@ class TelegramHandler:
 /risk 1 - Set 1% risk per trade
 /risk $5 - Set fixed $5 per trade
 /risk $0.5 - Set fixed $0.50 per trade
+/setbalance - Set P&L baseline (after deposits)
 /resetstats - Clear all stats (start fresh)
 
 ⚙️ **CONTROL**
@@ -438,9 +440,9 @@ class TelegramHandler:
             except:
                 days_running = 0
             
-            # Account growth
-            growth_pct = ((balance - starting_balance) / starting_balance * 100) if starting_balance > 0 else 0
-            growth_emoji = "↑" if growth_pct >= 0 else "↓"
+            # P&L Return (based on ACTUAL trading P&L, not balance change which includes deposits)
+            pnl_return_pct = (total_pnl_since_start / starting_balance * 100) if starting_balance > 0 else 0
+            pnl_emoji = "↑" if pnl_return_pct >= 0 else "↓"
             
             # === BUILD ENHANCED DASHBOARD ===
             msg = f"""💰 **TRADING DASHBOARD**
@@ -455,10 +457,10 @@ class TelegramHandler:
 └ 📅 Started: {start_date} ({days_running} days)
 
 📊 **ACCOUNT STATUS**
-├ Balance: ${balance:,.2f} ({growth_emoji}${abs(balance - starting_balance):,.0f} from ${starting_balance:,.0f})
+├ Balance: ${balance:,.2f}
 ├ Available: ${available_balance:,.2f} ({available_balance/balance*100:.0f}%)
 ├ Risk/Trade: {risk_display}
-└ Growth: {growth_pct:+.1f}% since start
+└ P&L Return: {pnl_emoji}{abs(pnl_return_pct):.1f}% (Base: ${starting_balance:,.0f})
 
 📉 **LAST {exchange_total_trades} TRADES**
 ├ WR: {exchange_wr:.1f}% | PF: {profit_factor:.1f}x
@@ -971,4 +973,68 @@ All internal tracking stats have been reset to zero.
             logger.error(f"Error in cmd_radar: {e}")
             logger.error(traceback.format_exc())
             await update.message.reply_text(f"❌ Radar error: {str(e)[:100]}")
+
+    async def cmd_setbalance(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Set the starting balance baseline for P&L calculations (accounts for deposits)"""
+        try:
+            if not context.args:
+                # Show current baseline
+                starting_balance = self.bot.lifetime_stats.get('starting_balance', 0)
+                start_date = self.bot.lifetime_stats.get('start_date', 'Unknown')
+                current_balance = await self.bot.broker.get_balance() or 0
+                
+                msg = f"""💰 **BASELINE BALANCE**
+━━━━━━━━━━━━━━━━━━━━
+
+📊 **Current Baseline**: ${starting_balance:,.2f}
+├ Set on: {start_date}
+├ Current Balance: ${current_balance:,.2f}
+└ Difference: ${current_balance - starting_balance:+,.2f}
+
+⚙️ **To Update:**
+`/setbalance 700` → Set baseline to $700
+`/setbalance now` → Set baseline to current balance
+
+💡 Use this after making deposits to reset P&L tracking.
+"""
+                await update.message.reply_text(msg, parse_mode='Markdown')
+                return
+            
+            # Parse the new balance
+            input_val = context.args[0].lower().strip()
+            
+            if input_val == 'now':
+                # Set to current balance
+                new_balance = await self.bot.broker.get_balance() or 0
+            else:
+                try:
+                    new_balance = float(input_val.replace('$', '').replace(',', ''))
+                except ValueError:
+                    await update.message.reply_text("❌ Invalid format. Use `/setbalance 700` or `/setbalance now`")
+                    return
+            
+            if new_balance <= 0:
+                await update.message.reply_text("❌ Balance must be positive.")
+                return
+            
+            # Update lifetime stats
+            old_balance = self.bot.lifetime_stats.get('starting_balance', 0)
+            self.bot.lifetime_stats['starting_balance'] = new_balance
+            self.bot.save_lifetime_stats()
+            
+            msg = f"""✅ **BASELINE UPDATED**
+━━━━━━━━━━━━━━━━━━━━
+
+📊 **New Baseline**: ${new_balance:,.2f}
+├ Previous: ${old_balance:,.2f}
+└ Change: ${new_balance - old_balance:+,.2f}
+
+💡 P&L Return % will now be calculated relative to ${new_balance:,.0f}.
+"""
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            logger.info(f"[SETBALANCE] Updated baseline from ${old_balance:.2f} to ${new_balance:.2f} by user command")
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"Setbalance command error: {e}")
 

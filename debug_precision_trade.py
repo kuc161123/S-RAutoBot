@@ -11,15 +11,15 @@ import numpy as np
 import time
 
 # CONFIG
-SYMBOL = '1000PEPEUSDT'
-DAYS = 30
+SYMBOL = 'XAUTUSDT'
+DAYS = 90
 RSI_PERIOD = 14
 EMA_PERIOD = 200
 SIGNAL_TF = '60'
 EXECUTION_TF = '5'
 RR = 10.0
-ATR_MULT = 2.0
-DIV_TYPE = 'REG_BEAR'
+ATR_MULT = 1.0
+DIV_TYPE = 'REG_BULL'
 
 BASE_URL = "https://api.bybit.com"
 
@@ -82,31 +82,31 @@ def main():
     count = 0 
     
     for i in range(205, len(df_1h)-20):
-        # Scan for REG_BEAR
+        # Scan for REG_BULL
         curr_price = df_1h['close'].iloc[i]
         curr_ema = df_1h['ema'].iloc[i]
         
-        if curr_price < curr_ema:
-            p_highs = [j for j in range(i-3, i-50, -1) if not np.isnan(price_ph[j])]
-            if len(p_highs) >= 2:
-                curr_idx = p_highs[0]
-                prev_idx = p_highs[1]
+        if curr_price > curr_ema:
+            p_lows = [j for j in range(i-3, i-50, -1) if not np.isnan(price_pl[j])]
+            if len(p_lows) >= 2:
+                curr_idx = p_lows[0]
+                prev_idx = p_lows[1]
                 if (i - curr_idx) <= 10:
-                    if price_ph[curr_idx] > price_ph[prev_idx] and df_1h['rsi'].iloc[curr_idx] < df_1h['rsi'].iloc[prev_idx]:
+                    if price_pl[curr_idx] < price_pl[prev_idx] and df_1h['rsi'].iloc[curr_idx] > df_1h['rsi'].iloc[prev_idx]:
                         
                         # EXECUTE
-                        swing_low = df_1h['low'].iloc[curr_idx:i+1].min()
+                        swing_high = df_1h['high'].iloc[curr_idx:i+1].max()
                         for k in range(1, 7):
                             idx = i + k
                             c = df_1h.iloc[idx]
                             
-                            if c['close'] < swing_low:
+                            if c['close'] > swing_high:
                                 entry_candle = df_1h.iloc[idx+1]
                                 entry_time = entry_candle['start']
-                                entry_price = entry_candle['open'] * (1 - 0.0002)
+                                entry_price = entry_candle['open'] * (1 + 0.0002)
                                 sl_dist = c['atr'] * ATR_MULT
-                                sl = entry_price + sl_dist
-                                tp = entry_price - (sl_dist * RR)
+                                sl = entry_price - sl_dist
+                                tp = entry_price + (sl_dist * RR)
                                 
                                 print(f"\n[{count}] SIGNAL: {entry_time}")
                                 print(f"    Entry: {entry_price:.8f}")
@@ -119,14 +119,14 @@ def main():
                                 
                                 for ri, row in sub_5m.iterrows():
                                     # SL CHECK
-                                    if row['high'] >= sl:
-                                        print(f"❌ SL HIT @ {row['start']} | High {row['high']:.8f} >= {sl:.8f}")
+                                    if row['low'] <= sl:
+                                        print(f"❌ SL HIT @ {row['start']} | Low {row['low']:.8f} <= {sl:.8f}")
                                         hit = True
                                         break
                                     
                                     # TP CHECK
-                                    if row['low'] <= tp:
-                                        print(f"✅ TP HIT @ {row['start']} | Low {row['low']:.8f} <= {tp:.8f}")
+                                    if row['high'] >= tp:
+                                        print(f"✅ TP HIT @ {row['start']} | High {row['high']:.8f} >= {tp:.8f}")
                                         hit = True
                                         break
                                         

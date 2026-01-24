@@ -311,16 +311,17 @@ class TelegramHandler:
                     else:
                         break
             
-            # Calculate Max Drawdown (simple version - consecutive losses)
+            # Calculate Max Drawdown (proper peak-to-trough equity curve)
             max_dd = 0.0
-            current_dd = 0.0
+            equity = 0.0
+            peak_equity = 0.0
             for r in trade_results:
-                if r < 0:
-                    current_dd += r
-                    if current_dd < max_dd:
-                        max_dd = current_dd
-                else:
-                    current_dd = 0.0
+                equity += r
+                if equity > peak_equity:
+                    peak_equity = equity
+                dd = equity - peak_equity  # Will be negative during drawdown
+                if dd < max_dd:
+                    max_dd = dd
             
             # Position analytics
             positions_up = 0

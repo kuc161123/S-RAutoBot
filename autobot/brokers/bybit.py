@@ -716,29 +716,49 @@ class Bybit:
             return []
     
     async def get_all_closed_pnl(self, limit: int = 100, start_time: int = None) -> list:
-        """Get ALL closed PnL records across all symbols.
+        """Get ALL closed PnL records across all symbols WITH PAGINATION.
         
         This returns the ACTUAL realized PnL from Bybit for all symbols.
-        Used for the /pnl command to show exchange-verified P&L.
+        Implements cursor-based pagination to fetch beyond 200 record limit.
         
         Args:
-            limit: Max number of records (up to 200)
+            limit: Max number of records per page (up to 200)
             start_time: Optional start time in milliseconds
             
         Returns:
             List of closed trade records with closedPnl, symbol, side, etc.
         """
         try:
-            params = {
-                "category": "linear",
-                "limit": str(min(max(1, limit), 200)),
-            }
-            if start_time:
-                params["startTime"] = str(start_time)
-            resp = await self._request("GET", "/v5/position/closed-pnl", params)
-            if resp and resp.get("result"):
-                return resp["result"].get("list", []) or []
-            return []
+            all_records = []
+            cursor = ""
+            page_limit = min(max(1, limit), 200)
+            max_pages = 10  # Safety limit to prevent infinite loops
+            
+            for page in range(max_pages):
+                params = {
+                    "category": "linear",
+                    "limit": str(page_limit),
+                }
+                if start_time:
+                    params["startTime"] = str(start_time)
+                if cursor:
+                    params["cursor"] = cursor
+                    
+                resp = await self._request("GET", "/v5/position/closed-pnl", params)
+                
+                if resp and resp.get("result"):
+                    records = resp["result"].get("list", []) or []
+                    all_records.extend(records)
+                    
+                    # Check for next page
+                    cursor = resp["result"].get("nextPageCursor", "")
+                    if not cursor or len(records) < page_limit:
+                        break  # No more pages
+                else:
+                    break
+                    
+            logger.debug(f"Fetched {len(all_records)} closed PnL records (pages: {page + 1})")
+            return all_records
         except Exception as e:
             logger.debug(f"Failed to get all closed pnl: {e}")
             return []

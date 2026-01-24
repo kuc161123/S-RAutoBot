@@ -80,6 +80,7 @@ class ActiveTrade:
     position_size: float
     entry_time: datetime
     order_id: str = ""
+    risk_usd_at_entry: float = 0.0  # Store risk at trade time for accurate R calculation
 
 
 class Bot4H:
@@ -1134,7 +1135,8 @@ class Bot4H:
             rr_ratio=rr,
             position_size=position_size_qty,
             entry_time=datetime.now(),
-            order_id=order_id
+            order_id=order_id,
+            risk_usd_at_entry=risk_amount  # Store for accurate R calculation at closure
         )
         
         self.active_trades[symbol] = trade

@@ -247,8 +247,8 @@ class TelegramHandler:
             net_r = net_pnl / risk_amount if risk_amount > 0 else 0
             net_emoji = "🟢" if net_pnl >= 0 else "🔴"
             
-            # Performance stats from EXCHANGE (not internal tracking)
-            # Calculate from all closed trades on Bybit
+            # Performance stats from EXCHANGE - FILTERED BY BOT START DATE
+            # This ensures we only count trades made by this bot instance
             exchange_total_trades = 0
             exchange_wins = 0
             exchange_losses = 0
@@ -262,15 +262,30 @@ class TelegramHandler:
             trade_results = []  # For streak calculation
             
             try:
+                from datetime import datetime as dt
+                # Get bot start date for filtering
+                lifetime = self.bot.lifetime_stats
+                start_date_str = lifetime.get('start_date', None)
+                if start_date_str:
+                    start_dt = dt.strptime(start_date_str, '%Y-%m-%d')
+                else:
+                    start_dt = dt.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                
                 all_closed = await self.bot.broker.get_all_closed_pnl(limit=200)
                 if all_closed:  # Defensive check
                     for record in all_closed:
                         try:
+                            # Filter by bot start date
+                            close_time = int(record.get('updatedTime', record.get('createdTime', 0)))
+                            trade_dt = dt.fromtimestamp(close_time / 1000)
+                            if trade_dt < start_dt:
+                                continue  # Skip trades before bot started
+                            
                             pnl = float(record.get('closedPnl', 0))
                             symbol = record.get('symbol', '')
                             exchange_total_trades += 1
                             
-                            # Calculate R
+                            # Calculate R using current risk (historical risk not available from API)
                             r_value = pnl / risk_amount if risk_amount > 0 else 0
                             exchange_total_r += r_value
                             trade_results.append(r_value)
@@ -295,8 +310,14 @@ class TelegramHandler:
             exchange_wr = (exchange_wins / exchange_total_trades * 100) if exchange_total_trades > 0 else 0
             exchange_avg_r = exchange_total_r / exchange_total_trades if exchange_total_trades > 0 else 0
             
-            # Calculate Profit Factor
-            profit_factor = (total_win_r / total_loss_r) if total_loss_r > 0 else 0
+            # Calculate Profit Factor (show ∞ if no losses)
+            if total_loss_r > 0:
+                profit_factor = total_win_r / total_loss_r
+                profit_factor_display = f"{profit_factor:.1f}x"
+            elif total_win_r > 0:
+                profit_factor_display = "∞"  # All wins, no losses
+            else:
+                profit_factor_display = "N/A"
             
             # Calculate Current Streak
             current_streak = 0
@@ -463,8 +484,8 @@ class TelegramHandler:
 ├ Risk/Trade: {risk_display}
 └ P&L Return: {pnl_emoji}{abs(pnl_return_pct):.1f}% (Base: ${starting_balance:,.0f})
 
-📉 **LAST {exchange_total_trades} TRADES**
-├ WR: {exchange_wr:.1f}% | PF: {profit_factor:.1f}x
+📉 **LAST {exchange_total_trades} TRADES** (Since {start_date})
+├ WR: {exchange_wr:.1f}% | PF: {profit_factor_display}
 ├ Total R: {exchange_total_r:+.1f}R | Avg: {exchange_avg_r:+.2f}R
 └ Max DD: {max_dd:.1f}R | Streak: {current_streak}{streak_type}
 

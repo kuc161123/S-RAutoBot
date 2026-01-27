@@ -28,10 +28,10 @@ from datetime import datetime
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-DAYS = 90
+DAYS = 150
 SIGNAL_TF = '60'
 EXECUTION_TF = '5'
-MAX_WAIT_CANDLES = 6
+MAX_WAIT_CANDLES = 12
 RSI_PERIOD = 14
 EMA_PERIOD = 200
 

@@ -54,23 +54,7 @@ strategy:
     daily_ema_proxy: 200
     enabled: true
   description: Multi-Div Validated - 184 Symbols (271 configs)
-  expected_90d_r: !!python/object/apply:numpy.core.multiarray.scalar
-  - !!python/object/apply:numpy.dtype
-    args:
-    - f8
-    - false
-    - true
-    state: !!python/tuple
-    - 3
-    - <
-    - null
-    - null
-    - null
-    - -1
-    - -1
-    - 0
-  - !!binary |
-    CtejcD1VokA=
+  expected_90d_r: 2346.62
 symbols:
   1000000BABYDOGEUSDT:
     enabled: true

@@ -247,102 +247,61 @@ class TelegramHandler:
             net_r = net_pnl / risk_amount if risk_amount > 0 else 0
             net_emoji = "🟢" if net_pnl >= 0 else "🔴"
             
-            # Performance stats from EXCHANGE - FILTERED BY BOT START DATE
-            # This ensures we only count trades made by this bot instance
-            exchange_total_trades = 0
-            exchange_wins = 0
-            exchange_losses = 0
-            exchange_total_r = 0.0
-            total_win_r = 0.0
-            total_loss_r = 0.0
-            best_trade_r = 0.0
-            best_trade_symbol = ""
-            worst_trade_r = 0.0
-            worst_trade_symbol = ""
-            trade_results = []  # For streak calculation
+            # === ALL-TIME PERFORMANCE FROM LOCAL LIFETIME_STATS ===
+            # These are the SOURCE OF TRUTH - updated on every trade close
+            lifetime = self.bot.lifetime_stats
+            start_date = lifetime.get('start_date', 'Unknown')
+            starting_balance = lifetime.get('starting_balance', 0) or balance
             
-            try:
-                from datetime import datetime as dt
-                # Get bot start date for filtering
-                lifetime = self.bot.lifetime_stats
-                start_date_str = lifetime.get('start_date', None)
-                if start_date_str:
-                    start_dt = dt.strptime(start_date_str, '%Y-%m-%d')
-                else:
-                    start_dt = dt.now().replace(hour=0, minute=0, second=0, microsecond=0)
-                
-                all_closed = await self.bot.broker.get_all_closed_pnl(limit=200)
-                if all_closed:  # Defensive check
-                    for record in all_closed:
-                        try:
-                            # Filter by bot start date
-                            close_time = int(record.get('updatedTime', record.get('createdTime', 0)))
-                            trade_dt = dt.fromtimestamp(close_time / 1000)
-                            if trade_dt < start_dt:
-                                continue  # Skip trades before bot started
-                            
-                            pnl = float(record.get('closedPnl', 0))
-                            symbol = record.get('symbol', '')
-                            exchange_total_trades += 1
-                            
-                            # Calculate R using current risk (historical risk not available from API)
-                            r_value = pnl / risk_amount if risk_amount > 0 else 0
-                            exchange_total_r += r_value
-                            trade_results.append(r_value)
-                            
-                            if pnl > 0:
-                                exchange_wins += 1
-                                total_win_r += r_value
-                                if r_value > best_trade_r:
-                                    best_trade_r = r_value
-                                    best_trade_symbol = symbol
-                            else:
-                                exchange_losses += 1
-                                total_loss_r += abs(r_value)
-                                if r_value < worst_trade_r:
-                                    worst_trade_r = r_value
-                                    worst_trade_symbol = symbol
-                        except:
-                            continue
-            except Exception as e:
-                logger.error(f"Error calculating exchange performance: {e}")
+            # All-time metrics from local storage (always accurate, no API limits)
+            lifetime_r = lifetime.get('total_r', 0.0)
+            lifetime_pnl = lifetime.get('total_pnl', 0.0)
+            lifetime_trades = lifetime.get('total_trades', 0)
+            lifetime_wins = lifetime.get('wins', 0)
+            lifetime_losses = lifetime_trades - lifetime_wins
+            lifetime_wr = (lifetime_wins / lifetime_trades * 100) if lifetime_trades > 0 else 0
             
-            exchange_wr = (exchange_wins / exchange_total_trades * 100) if exchange_total_trades > 0 else 0
-            exchange_avg_r = exchange_total_r / exchange_total_trades if exchange_total_trades > 0 else 0
+            # Best/worst from local storage
+            best_trade_r = lifetime.get('best_trade_r', 0.0)
+            best_trade_symbol = lifetime.get('best_trade_symbol', 'N/A')
+            worst_trade_r = lifetime.get('worst_trade_r', 0.0)
+            worst_trade_symbol = lifetime.get('worst_trade_symbol', 'N/A')
+            best_day_r = lifetime.get('best_day_r', 0.0)
+            best_day_date = lifetime.get('best_day_date', 'N/A')
+            worst_day_r = lifetime.get('worst_day_r', 0.0)
+            worst_day_date = lifetime.get('worst_day_date', 'N/A')
             
-            # Calculate Profit Factor (show ∞ if no losses)
-            if total_loss_r > 0:
-                profit_factor = total_win_r / total_loss_r
-                profit_factor_display = f"{profit_factor:.1f}x"
-            elif total_win_r > 0:
-                profit_factor_display = "∞"  # All wins, no losses
+            # Drawdown and streaks from local storage
+            max_dd = lifetime.get('max_drawdown_r', 0.0)
+            current_streak = lifetime.get('current_streak', 0)
+            streak_type = "W" if current_streak > 0 else ("L" if current_streak < 0 else "")
+            longest_win_streak = lifetime.get('longest_win_streak', 0)
+            longest_loss_streak = lifetime.get('longest_loss_streak', 0)
+            
+            # Calculate profit factor from stored data
+            if lifetime_losses > 0 and abs(worst_trade_r) > 0:
+                # Estimate: wins * avg_win_r / (losses * avg_loss_r)
+                avg_r = lifetime_r / lifetime_trades if lifetime_trades > 0 else 0
+                total_win_r = lifetime_wins * avg_r if lifetime_wins > 0 else 0
+                total_loss_r = abs(lifetime_r - total_win_r) if lifetime_r < total_win_r else abs(lifetime_losses)
+                profit_factor = total_win_r / total_loss_r if total_loss_r > 0 else 0
+                profit_factor_display = f"{profit_factor:.1f}x" if profit_factor > 0 else "N/A"
+            elif lifetime_wins > 0 and lifetime_losses == 0:
+                profit_factor_display = "∞"
             else:
                 profit_factor_display = "N/A"
             
-            # Calculate Current Streak
-            current_streak = 0
-            streak_type = ""
-            if trade_results:
-                for r in reversed(trade_results):
-                    if current_streak == 0:
-                        current_streak = 1
-                        streak_type = "W" if r > 0 else "L"
-                    elif (r > 0 and streak_type == "W") or (r <= 0 and streak_type == "L"):
-                        current_streak += 1
-                    else:
-                        break
-            
-            # Calculate Max Drawdown (proper peak-to-trough equity curve)
-            max_dd = 0.0
-            equity = 0.0
-            peak_equity = 0.0
-            for r in trade_results:
-                equity += r
-                if equity > peak_equity:
-                    peak_equity = equity
-                dd = equity - peak_equity  # Will be negative during drawdown
-                if dd < max_dd:
-                    max_dd = dd
+            # Calculate days since start
+            try:
+                from datetime import datetime as dt
+                if start_date and start_date != 'Unknown':
+                    start_dt = dt.strptime(start_date, '%Y-%m-%d')
+                    days_running = (dt.now() - start_dt).days
+                else:
+                    days_running = 0
+                    start_date = dt.now().strftime('%Y-%m-%d')
+            except:
+                days_running = 0
             
             # Position analytics
             positions_up = 0
@@ -397,74 +356,12 @@ class TelegramHandler:
             divs_today = self.bot.bos_tracking.get('divergences_detected_today', 0)
             bos_today = self.bot.bos_tracking.get('bos_confirmed_today', 0)
             
-            # === GET LIFETIME STATS ===
-            # Use exchange data for accuracy, filtered by bot start date
-            lifetime = self.bot.lifetime_stats
-            start_date = lifetime.get('start_date', 'Unknown')
-            starting_balance = lifetime.get('starting_balance', 0) or balance  # Fallback to current balance
-            best_day_r = lifetime.get('best_day_r', 0)
-            best_day_date = lifetime.get('best_day_date', 'N/A')
-            worst_day_r = lifetime.get('worst_day_r', 0)
-            worst_day_date = lifetime.get('worst_day_date', 'N/A')
-            
-            # Calculate total PnL and R ONLY from trades since bot started
-            total_pnl_since_start = 0.0
-            total_r_since_start = 0.0
-            trades_since_start = 0
-            wins_since_start = 0
-            
-            try:
-                from datetime import datetime as dt
-                # Parse start date
-                if start_date and start_date != 'Unknown':
-                    start_dt = dt.strptime(start_date, '%Y-%m-%d')
-                else:
-                    start_dt = dt.now().replace(hour=0, minute=0, second=0, microsecond=0)
-                    start_date = start_dt.strftime('%Y-%m-%d')
-                
-                all_closed = await self.bot.broker.get_all_closed_pnl(limit=500)
-                if all_closed:
-                    for record in all_closed:
-                        try:
-                            # Get trade close time
-                            close_time = int(record.get('updatedTime', record.get('createdTime', 0)))
-                            trade_dt = dt.fromtimestamp(close_time / 1000)
-                            
-                            # Only count trades since bot start
-                            if trade_dt >= start_dt:
-                                pnl = float(record.get('closedPnl', 0))
-                                r_value = pnl / risk_amount if risk_amount > 0 else 0
-                                
-                                total_pnl_since_start += pnl
-                                total_r_since_start += r_value
-                                trades_since_start += 1
-                                if pnl > 0:
-                                    wins_since_start += 1
-                        except:
-                            continue
-            except Exception as e:
-                logger.error(f"Error getting total PnL since start: {e}")
-            
-            lifetime_r = total_r_since_start
-            lifetime_pnl = total_pnl_since_start
-            lifetime_trades = trades_since_start
-            lifetime_wr = (wins_since_start / trades_since_start * 100) if trades_since_start > 0 else 0
-            
-            # Calculate days since start
-            try:
-                from datetime import datetime as dt
-                if start_date and start_date != 'Unknown':
-                    start_dt = dt.strptime(start_date, '%Y-%m-%d')
-                    days_running = (dt.now() - start_dt).days
-                else:
-                    days_running = 0
-                    start_date = dt.now().strftime('%Y-%m-%d')
-            except:
-                days_running = 0
-            
             # P&L Return (based on ACTUAL trading P&L, not balance change which includes deposits)
-            pnl_return_pct = (total_pnl_since_start / starting_balance * 100) if starting_balance > 0 else 0
+            pnl_return_pct = (lifetime_pnl / starting_balance * 100) if starting_balance > 0 else 0
             pnl_emoji = "↑" if pnl_return_pct >= 0 else "↓"
+            
+            # Calculate average R
+            avg_r = lifetime_r / lifetime_trades if lifetime_trades > 0 else 0
             
             # === BUILD ENHANCED DASHBOARD ===
             msg = f"""💰 **TRADING DASHBOARD**
@@ -475,7 +372,7 @@ class TelegramHandler:
 ├ 📊 Today Unrealized: ${unrealized_pnl:+,.2f} ({unrealized_r:+.1f}R) | {active} open
 ├ {net_emoji} Today Net: ${net_pnl:+,.2f} ({net_r:+.1f}R)
 ├ ────────────────────
-├ 🏆 **SINCE START:** {lifetime_r:+.1f}R (${lifetime_pnl:+,.2f}) | {lifetime_trades} trades
+├ 🏆 **ALL-TIME:** {lifetime_r:+.1f}R (${lifetime_pnl:+,.2f}) | {lifetime_trades} trades
 └ 📅 Started: {start_date} ({days_running} days)
 
 📊 **ACCOUNT STATUS**
@@ -484,15 +381,17 @@ class TelegramHandler:
 ├ Risk/Trade: {risk_display}
 └ P&L Return: {pnl_emoji}{abs(pnl_return_pct):.1f}% (Base: ${starting_balance:,.0f})
 
-📉 **LAST {exchange_total_trades} TRADES** (Since {start_date})
-├ WR: {exchange_wr:.1f}% | PF: {profit_factor_display}
-├ Total R: {exchange_total_r:+.1f}R | Avg: {exchange_avg_r:+.2f}R
-└ Max DD: {max_dd:.1f}R | Streak: {current_streak}{streak_type}
+📉 **ALL-TIME PERFORMANCE**
+├ WR: {lifetime_wr:.1f}% ({lifetime_wins}W/{lifetime_losses}L) | PF: {profit_factor_display}
+├ Total R: {lifetime_r:+.1f}R | Avg: {avg_r:+.2f}R
+└ Max DD: {max_dd:.1f}R | Streak: {abs(current_streak)}{streak_type}
 
 🏆 **BEST/WORST**
 ├ 🥇 Best Trade: {best_trade_r:+.1f}R ({best_trade_symbol})
 ├ 🥉 Worst Trade: {worst_trade_r:+.1f}R ({worst_trade_symbol})
-└ Best Day: {best_day_r:+.1f}R ({best_day_date})
+├ ⬆️ Best Day: {best_day_r:+.1f}R ({best_day_date})
+├ ⬇️ Worst Day: {worst_day_r:+.1f}R ({worst_day_date})
+└ 🔥 Longest Streaks: {longest_win_streak}W / {longest_loss_streak}L
 
 📡 **POSITIONS ({active} Active)**
 ├ {positions_up} 🟢 Profit | {positions_down} 🔴 Loss
@@ -548,39 +447,88 @@ class TelegramHandler:
             logger.error(f"Positions error: {e}")
     
     async def cmd_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Performance statistics"""
+        """Performance statistics with all-time tracking"""
         try:
-            stats = self.bot.stats
+            stats = self.bot.stats  # Session stats
+            lifetime = self.bot.lifetime_stats  # All-time stats
             
-            # Calculate per-symbol performance
-            symbol_performance = {}
-            # This would need to be tracked in the bot
+            # Session stats
+            session_trades = stats['total_trades']
+            session_wr = stats['win_rate']
+            session_avg_r = stats['avg_r']
+            session_total_r = stats['total_r']
+            
+            # All-time stats (source of truth)
+            lt_trades = lifetime.get('total_trades', 0)
+            lt_wins = lifetime.get('wins', 0)
+            lt_losses = lt_trades - lt_wins
+            lt_wr = (lt_wins / lt_trades * 100) if lt_trades > 0 else 0
+            lt_total_r = lifetime.get('total_r', 0.0)
+            lt_avg_r = lt_total_r / lt_trades if lt_trades > 0 else 0
+            lt_pnl = lifetime.get('total_pnl', 0.0)
+            
+            # Best/worst metrics
+            best_trade_r = lifetime.get('best_trade_r', 0.0)
+            best_trade_sym = lifetime.get('best_trade_symbol', 'N/A')
+            worst_trade_r = lifetime.get('worst_trade_r', 0.0)
+            worst_trade_sym = lifetime.get('worst_trade_symbol', 'N/A')
+            best_day_r = lifetime.get('best_day_r', 0.0)
+            best_day_date = lifetime.get('best_day_date', 'N/A')
+            worst_day_r = lifetime.get('worst_day_r', 0.0)
+            worst_day_date = lifetime.get('worst_day_date', 'N/A')
+            
+            # Streaks and drawdown
+            max_dd = lifetime.get('max_drawdown_r', 0.0)
+            current_streak = lifetime.get('current_streak', 0)
+            streak_type = "W" if current_streak > 0 else ("L" if current_streak < 0 else "")
+            longest_win = lifetime.get('longest_win_streak', 0)
+            longest_loss = lifetime.get('longest_loss_streak', 0)
+            
+            # Get enabled symbols count from config
+            enabled_symbols = len(self.bot.symbol_config.get_enabled_symbols())
             
             msg = f"""
 📊 **PERFORMANCE STATISTICS**
 ━━━━━━━━━━━━━━━━━━━━
 
-📈 **OVERALL**
-├ Total Trades: {stats['total_trades']}
-├ Wins: {stats['wins']} (✅)
-├ Losses: {stats['losses']} (❌)
-├ Win Rate: {stats['win_rate']:.1f}%
-├ Avg R/Trade: {stats['avg_r']:+.2f}R
-└ Total R: {stats['total_r']:+.1f}R
+🏆 **ALL-TIME (Source of Truth)**
+├ Total Trades: {lt_trades}
+├ Wins: {lt_wins} (✅) | Losses: {lt_losses} (❌)
+├ Win Rate: {lt_wr:.1f}%
+├ Avg R/Trade: {lt_avg_r:+.2f}R
+├ Total R: {lt_total_r:+.1f}R
+└ Total P&L: ${lt_pnl:+,.2f}
 
-🎯 **VS BACKTEST (79 symbols)**
-├ Expected WR: 23%
-├ Actual WR: {stats['win_rate']:.1f}%
+📈 **EXTREMES**
+├ 🥇 Best Trade: {best_trade_r:+.1f}R ({best_trade_sym})
+├ 🥉 Worst Trade: {worst_trade_r:+.1f}R ({worst_trade_sym})
+├ ⬆️ Best Day: {best_day_r:+.1f}R ({best_day_date})
+└ ⬇️ Worst Day: {worst_day_r:+.1f}R ({worst_day_date})
+
+📉 **RISK METRICS**
+├ Max Drawdown: {max_dd:.1f}R
+├ Current Streak: {abs(current_streak)}{streak_type}
+└ Longest Streaks: {longest_win}W / {longest_loss}L
+
+📝 **SESSION STATS (Since Restart)**
+├ Trades: {session_trades} | WR: {session_wr:.1f}%
+└ Total R: {session_total_r:+.1f}R
+
+🎯 **VS EXPECTED ({enabled_symbols} symbols)**
+├ Expected WR: ~23%
+├ Actual WR: {lt_wr:.1f}%
 ├ Expected R/Trade: +0.50R
-├ Actual R/Trade: {stats['avg_r']:+.2f}R
-└ Delta: {stats['avg_r'] - 0.50:+.2f}R
+├ Actual R/Trade: {lt_avg_r:+.2f}R
+└ Delta: {lt_avg_r - 0.50:+.2f}R
 
 ━━━━━━━━━━━━━━━━━━━━
-💡 /dashboard /positions
+💡 /dashboard /positions /performance
 """
             await update.message.reply_text(msg, parse_mode='Markdown')
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     async def cmd_performance(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Symbol performance leaderboard"""

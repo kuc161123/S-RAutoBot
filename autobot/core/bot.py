@@ -132,7 +132,19 @@ class Bot4H:
             'best_day_date': None,
             'worst_day_r': 0.0,
             'worst_day_date': None,
-            'daily_r': {}  # {date_str: r_value}
+            'daily_r': {},  # {date_str: r_value}
+            # New fields for comprehensive tracking
+            'best_trade_r': 0.0,
+            'best_trade_symbol': '',
+            'best_trade_date': None,
+            'worst_trade_r': 0.0,
+            'worst_trade_symbol': '',
+            'worst_trade_date': None,
+            'max_drawdown_r': 0.0,
+            'peak_equity_r': 0.0,  # For drawdown calculation
+            'current_streak': 0,  # Positive = wins, negative = losses
+            'longest_win_streak': 0,
+            'longest_loss_streak': 0
         }
         self.load_lifetime_stats()
         
@@ -240,11 +252,19 @@ class Bot4H:
             self.save_lifetime_stats()
             logger.info(f"Initialized lifetime stats: Start {self.lifetime_stats['start_date']}, Balance ${self.lifetime_stats['starting_balance']:.2f}")
     
-    def update_lifetime_stats(self, r_value: float, pnl: float, is_win: bool):
-        """Update lifetime stats after a trade closes"""
+    def update_lifetime_stats(self, r_value: float, pnl: float, is_win: bool, symbol: str = ''):
+        """Update lifetime stats after a trade closes
+        
+        Tracks comprehensive metrics including:
+        - Total R, PnL, wins/losses
+        - Best/worst individual trades
+        - Maximum drawdown (peak-to-trough)
+        - Win/loss streaks
+        - Best/worst trading days
+        """
         today = datetime.now().strftime('%Y-%m-%d')
         
-        logger.info(f"[LIFETIME] Updating stats: R={r_value:+.2f}, PnL=${pnl:.2f}, Win={is_win}")
+        logger.info(f"[LIFETIME] Updating stats: R={r_value:+.2f}, PnL=${pnl:.2f}, Win={is_win}, Symbol={symbol}")
         
         # Update totals
         self.lifetime_stats['total_r'] += r_value
@@ -252,6 +272,49 @@ class Bot4H:
         self.lifetime_stats['total_trades'] += 1
         if is_win:
             self.lifetime_stats['wins'] += 1
+        
+        # Update best/worst individual trade
+        if r_value > self.lifetime_stats.get('best_trade_r', 0):
+            self.lifetime_stats['best_trade_r'] = r_value
+            self.lifetime_stats['best_trade_symbol'] = symbol
+            self.lifetime_stats['best_trade_date'] = today
+        if r_value < self.lifetime_stats.get('worst_trade_r', 0):
+            self.lifetime_stats['worst_trade_r'] = r_value
+            self.lifetime_stats['worst_trade_symbol'] = symbol
+            self.lifetime_stats['worst_trade_date'] = today
+        
+        # Update max drawdown (peak-to-trough equity curve)
+        current_equity = self.lifetime_stats['total_r']
+        peak_equity = self.lifetime_stats.get('peak_equity_r', 0)
+        
+        if current_equity > peak_equity:
+            self.lifetime_stats['peak_equity_r'] = current_equity
+            peak_equity = current_equity
+        
+        current_drawdown = current_equity - peak_equity  # Will be negative or zero
+        if current_drawdown < self.lifetime_stats.get('max_drawdown_r', 0):
+            self.lifetime_stats['max_drawdown_r'] = current_drawdown
+        
+        # Update streaks
+        current_streak = self.lifetime_stats.get('current_streak', 0)
+        if is_win:
+            if current_streak >= 0:
+                current_streak += 1
+            else:
+                current_streak = 1  # Reset to 1 win
+            # Update longest win streak
+            if current_streak > self.lifetime_stats.get('longest_win_streak', 0):
+                self.lifetime_stats['longest_win_streak'] = current_streak
+        else:
+            if current_streak <= 0:
+                current_streak -= 1
+            else:
+                current_streak = -1  # Reset to 1 loss
+            # Update longest loss streak (store as positive number)
+            if abs(current_streak) > self.lifetime_stats.get('longest_loss_streak', 0):
+                self.lifetime_stats['longest_loss_streak'] = abs(current_streak)
+        
+        self.lifetime_stats['current_streak'] = current_streak
         
         # Update daily R
         if today not in self.lifetime_stats['daily_r']:
@@ -268,7 +331,7 @@ class Bot4H:
             self.lifetime_stats['worst_day_r'] = daily_r
             self.lifetime_stats['worst_day_date'] = today
         
-        logger.info(f"[LIFETIME] New totals: R={self.lifetime_stats['total_r']:+.2f}, Trades={self.lifetime_stats['total_trades']}")
+        logger.info(f"[LIFETIME] New totals: R={self.lifetime_stats['total_r']:+.2f}, Trades={self.lifetime_stats['total_trades']}, Streak={current_streak}, MaxDD={self.lifetime_stats['max_drawdown_r']:.1f}R")
         
         self.save_lifetime_stats()
     
@@ -1252,7 +1315,7 @@ class Bot4H:
         
         # Update lifetime stats (persistent across restarts)
         is_win = result == 'WIN'
-        self.update_lifetime_stats(r_value, pnl_usd, is_win)
+        self.update_lifetime_stats(r_value, pnl_usd, is_win, symbol)
         
         # Calculate time held
         time_held = datetime.now() - trade.entry_time

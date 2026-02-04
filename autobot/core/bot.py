@@ -522,6 +522,10 @@ class Bot4H:
                                 self.symbol_stats[symbol]['total_r'] += actual_r
                                 if actual_pnl >= 0:
                                     self.symbol_stats[symbol]['wins'] += 1
+                            
+                            # CRITICAL: Also update lifetime stats (persistent tracking)
+                            is_win = actual_pnl >= 0
+                            self.update_lifetime_stats(actual_r, actual_pnl, is_win, symbol)
                         else:
                             # No closed PnL found - skip stats update
                             logger.warning(f"[{symbol}] No closed PnL found - skipping stats update")

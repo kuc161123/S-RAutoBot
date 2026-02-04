@@ -119,8 +119,8 @@ class Bot4H:
         # Load stats if exists
         self.load_stats()
         
-        # Lifetime Stats (persistent across all restarts)
-        self.lifetime_stats_file = 'lifetime_stats.json'
+        # Lifetime Stats (persistent across all restarts - stored in PostgreSQL via StorageHandler)
+        # Note: self.storage is initialized later, so we just set defaults here
         self.lifetime_stats = {
             'start_date': None,  # ISO format string
             'starting_balance': 0.0,
@@ -146,7 +146,6 @@ class Bot4H:
             'longest_win_streak': 0,
             'longest_loss_streak': 0
         }
-        self.load_lifetime_stats()
         
         # Per-symbol stats
         self.symbol_stats: Dict[str, dict] = {}  # {symbol: {trades, wins, total_r}}
@@ -181,9 +180,11 @@ class Bot4H:
         # New startup logic: Immediate trading allowed (24h staleness filter protects us)
         logger.info("[STARTUP] Precision Mode Active. Immediate signal processing enabled.")
         
-        # Signal deduplication - Persistence (DB or File)
+        # Signal deduplication & Lifetime Stats - Persistence (DB or File)
         self.storage = StorageHandler()
-        # self.seen_signals is no longer used directly, use self.storage.is_seen()
+        # Load lifetime stats from PostgreSQL (or fallback to local file)
+        self.lifetime_stats = self.storage.load_lifetime_stats()
+        logger.info(f"Lifetime stats loaded: {self.lifetime_stats['total_r']:.1f}R, {self.lifetime_stats['total_trades']} trades since {self.lifetime_stats.get('start_date', 'unknown')}")
         
         # BOS Performance Tracking (for monitoring stale filter removal impact)
         self.bos_tracking = {
@@ -220,25 +221,13 @@ class Bot4H:
             logger.error(f"Failed to save stats: {e}")
     
     def load_lifetime_stats(self):
-        """Load lifetime stats from JSON file"""
-        import json
-        if os.path.exists(self.lifetime_stats_file):
-            try:
-                with open(self.lifetime_stats_file, 'r') as f:
-                    data = json.load(f)
-                    self.lifetime_stats.update(data)
-                logger.info(f"Loaded lifetime stats: {self.lifetime_stats['total_r']:.1f}R since {self.lifetime_stats.get('start_date', 'unknown')}")
-            except Exception as e:
-                logger.error(f"Failed to load lifetime stats: {e}")
+        """Load lifetime stats from PostgreSQL (via StorageHandler)"""
+        self.lifetime_stats = self.storage.load_lifetime_stats()
+        logger.info(f"Loaded lifetime stats: {self.lifetime_stats['total_r']:.1f}R since {self.lifetime_stats.get('start_date', 'unknown')}")
     
     def save_lifetime_stats(self):
-        """Save lifetime stats to JSON file"""
-        import json
-        try:
-            with open(self.lifetime_stats_file, 'w') as f:
-                json.dump(self.lifetime_stats, f, indent=4)
-        except Exception as e:
-            logger.error(f"Failed to save lifetime stats: {e}")
+        """Save lifetime stats to PostgreSQL (via StorageHandler)"""
+        self.storage.save_lifetime_stats(self.lifetime_stats)
     
     async def initialize_lifetime_stats(self):
         """Initialize lifetime stats if this is the first run"""

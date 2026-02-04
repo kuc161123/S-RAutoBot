@@ -28,7 +28,7 @@ from datetime import datetime
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-DAYS = 150
+DAYS = 90  # 3 months for faster iteration
 SIGNAL_TF = '60'
 EXECUTION_TF = '5'
 MAX_WAIT_CANDLES = 12
@@ -54,25 +54,49 @@ GRID = {
 # ============================================================================
 
 def fetch_all_symbols():
-    """Fetch all active USDT Linear Perpetuals from Bybit"""
-    print("📡 Fetching ALL active symbols from Bybit...")
+    """Fetch all active USDT Linear Perpetuals from Bybit WITH LIQUIDITY FILTER"""
+    print("📡 Fetching ALL active symbols from Bybit (with liquidity filter)...")
+    
+    # Liquidity Filter: Minimum $5M daily volume
+    MIN_DAILY_VOLUME_USD = 5_000_000
+    
     try:
+        # Step 1: Get all trading symbols
         url = f"{BASE_URL}/v5/market/instruments-info"
         params = {'category': 'linear', 'status': 'Trading', 'limit': 1000}
         resp = requests.get(url, params=params)
         data = resp.json()
         
-        symbols = []
+        all_symbols = []
         if 'result' in data and 'list' in data['result']:
             for item in data['result']['list']:
                 if item.get('quoteCoin') == 'USDT':
-                    symbols.append(item['symbol'])
+                    all_symbols.append(item['symbol'])
         
-        # Handle pagination if necessary (though current list is < 1000)
-        # Bybit limit is 1000, usually fits all USDT perps.
+        print(f"📊 Found {len(all_symbols)} total USDT pairs. Applying liquidity filter...")
         
-        print(f"✅ Found {len(symbols)} active USDT pairs.")
-        return symbols
+        # Step 2: Get 24h tickers to check volume
+        ticker_url = f"{BASE_URL}/v5/market/tickers"
+        ticker_params = {'category': 'linear'}
+        ticker_resp = requests.get(ticker_url, ticker_params)
+        ticker_data = ticker_resp.json()
+        
+        volume_map = {}
+        if 'result' in ticker_data and 'list' in ticker_data['result']:
+            for t in ticker_data['result']['list']:
+                sym = t.get('symbol', '')
+                turnover = float(t.get('turnover24h', 0))  # 24h volume in USD
+                volume_map[sym] = turnover
+        
+        # Step 3: Filter by minimum volume
+        liquid_symbols = []
+        for sym in all_symbols:
+            vol = volume_map.get(sym, 0)
+            if vol >= MIN_DAILY_VOLUME_USD:
+                liquid_symbols.append(sym)
+        
+        print(f"✅ {len(liquid_symbols)} symbols passed liquidity filter (>${MIN_DAILY_VOLUME_USD/1e6:.0f}M daily volume).")
+        return liquid_symbols
     except Exception as e:
         print(f"❌ Error fetching symbols: {e}")
         return []

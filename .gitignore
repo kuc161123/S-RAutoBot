@@ -3,7 +3,16 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+
+# Runtime data files - NEVER commit these!
+lifetime_stats.json
+daily_stats.json
+session_stats.json
+trade_history.json
+
+# Log files
 bot_output.log
 vwap_bot.log
 backtest_vwap_combos.log
 dashboard.log
+*.log

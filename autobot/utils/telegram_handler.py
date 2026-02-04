@@ -76,6 +76,7 @@ class TelegramHandler:
         self.app.add_handler(CommandHandler("risk", self.cmd_risk))
         self.app.add_handler(CommandHandler("performance", self.cmd_performance))
         self.app.add_handler(CommandHandler("resetstats", self.cmd_resetstats))
+        self.app.add_handler(CommandHandler("resetlifetime", self.cmd_resetlifetime))
         self.app.add_handler(CommandHandler("debug", self.cmd_debug))
         self.app.add_handler(CommandHandler("setbalance", self.cmd_setbalance))
         
@@ -129,33 +130,43 @@ class TelegramHandler:
     # === COMMAND HANDLERS ===
     
     async def cmd_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Help command"""
-        msg = """
-🤖 **1H MULTI-DIVERGENCE BOT**
+        """Help command with all available commands"""
+        # Get current symbol count from config
+        try:
+            enabled_count = len(self.bot.symbol_config.get_enabled_symbols())
+        except:
+            enabled_count = 0
+        
+        msg = f"""🤖 **1H MULTI-DIVERGENCE BOT**
+━━━━━━━━━━━━━━━━━━━━
 
 📊 **MONITORING**
-/dashboard - Live trading dashboard
-/positions - All active positions
-/stats - Performance statistics
-/performance - Symbol leaderboard (R values)
-/radar - Full radar watch (all symbols)
+├ /dashboard - Live trading dashboard
+├ /positions - All active positions
+├ /stats - Performance statistics (all-time)
+├ /performance - Symbol leaderboard (R values)
+└ /radar - Developing setups & RSI extremes
 
 💰 **RISK MANAGEMENT**
-/risk - View current risk settings
-/risk 0.2 - Set 0.2% risk per trade
-/risk 1 - Set 1% risk per trade
-/risk $5 - Set fixed $5 per trade
-/risk $0.5 - Set fixed $0.50 per trade
-/setbalance - Set P&L baseline (after deposits)
-/resetstats - Clear all stats (start fresh)
+├ /risk - View current risk settings
+├ /risk 0.2 - Set 0.2% risk per trade
+├ /risk $5 - Set fixed $5 per trade
+└ /setbalance - Set P&L baseline after deposits
 
-⚙️ **CONTROL**
-/stop - Emergency stop (halt trading)
-/start - Resume trading
-/help - Show this message
+🔄 **RESET OPTIONS**
+├ /resetstats - Reset session stats only
+└ /resetlifetime - Full reset (ALL tracking + baseline)
 
-**Strategy**: 1H Precision Divergence (Safe/Liquid)
-**Portfolio**: 235 Symbols | 0.1% Risk | ~3,180R/Mo (Projected)
+⚙️ **BOT CONTROL**
+├ /stop - Emergency halt (stops new trades)
+├ /start - Resume trading
+└ /debug - Technical debugging info
+
+❓ /help - Show this message
+
+━━━━━━━━━━━━━━━━━━━━
+**Strategy**: 1H Precision Divergence
+**Portfolio**: {enabled_count} Symbols | 0.1% Risk
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     
@@ -767,6 +778,101 @@ All internal tracking stats have been reset to zero.
         except Exception as e:
             await update.message.reply_text(f"❌ Error resetting stats: {e}")
             logger.error(f"Reset stats error: {e}")
+    
+    async def cmd_resetlifetime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Full reset of ALL tracking - lifetime stats, session stats, and baseline balance"""
+        try:
+            # Require confirmation
+            if not context.args or context.args[0].lower() != 'confirm':
+                current_balance = await self.bot.broker.get_balance() or 0
+                lifetime = self.bot.lifetime_stats
+                
+                msg = f"""⚠️ **FULL RESET WARNING**
+━━━━━━━━━━━━━━━━━━━━
+
+This will reset ALL tracking data:
+├ 📊 Session stats → 0
+├ 🏆 Lifetime stats → 0  
+├ 💰 Baseline → ${current_balance:,.2f} (current balance)
+├ 📈 Best/Worst trade → cleared
+├ 📉 Max drawdown → cleared
+└ 🔥 Streaks → cleared
+
+**Current Lifetime Stats (will be lost):**
+├ Total Trades: {lifetime.get('total_trades', 0)}
+├ Total R: {lifetime.get('total_r', 0):+.1f}R
+├ Total P&L: ${lifetime.get('total_pnl', 0):+,.2f}
+└ Since: {lifetime.get('start_date', 'Unknown')}
+
+⚡ To confirm, type:
+`/resetlifetime confirm`
+"""
+                await update.message.reply_text(msg, parse_mode='Markdown')
+                return
+            
+            # Get current balance as new baseline
+            new_balance = await self.bot.broker.get_balance() or 0
+            today = __import__('datetime').datetime.now().strftime('%Y-%m-%d')
+            
+            # Reset session stats
+            self.bot.stats = {
+                'total_trades': 0,
+                'wins': 0,
+                'losses': 0,
+                'total_r': 0.0,
+                'win_rate': 0.0,
+                'avg_r': 0.0
+            }
+            self.bot.symbol_stats = {}
+            self.bot.save_stats()
+            
+            # Reset lifetime stats with new baseline
+            self.bot.lifetime_stats = {
+                'start_date': today,
+                'starting_balance': new_balance,
+                'total_r': 0.0,
+                'total_pnl': 0.0,
+                'total_trades': 0,
+                'wins': 0,
+                'best_day_r': 0.0,
+                'best_day_date': None,
+                'worst_day_r': 0.0,
+                'worst_day_date': None,
+                'daily_r': {},
+                'best_trade_r': 0.0,
+                'best_trade_symbol': '',
+                'best_trade_date': None,
+                'worst_trade_r': 0.0,
+                'worst_trade_symbol': '',
+                'worst_trade_date': None,
+                'max_drawdown_r': 0.0,
+                'peak_equity_r': 0.0,
+                'current_streak': 0,
+                'longest_win_streak': 0,
+                'longest_loss_streak': 0
+            }
+            self.bot.save_lifetime_stats()
+            
+            msg = f"""✅ **FULL RESET COMPLETE**
+━━━━━━━━━━━━━━━━━━━━
+
+All tracking has been reset:
+├ 📅 New Start Date: {today}
+├ 💰 New Baseline: ${new_balance:,.2f}
+├ 📊 Session Stats: 0
+├ 🏆 Lifetime Stats: 0
+└ 📈 All extremes: cleared
+
+💡 Fresh tracking starts from this moment!
+Your P&L Return will now be calculated from ${new_balance:,.0f}.
+"""
+            await update.message.reply_text(msg, parse_mode='Markdown')
+            logger.warning(f"[RESET] Full lifetime reset performed by user. New baseline: ${new_balance:.2f}")
+            
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            import traceback
+            logger.error(f"Reset lifetime error: {traceback.format_exc()}")
     
     async def cmd_debug(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Debug command to show raw Bybit API responses"""

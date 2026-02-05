@@ -689,16 +689,8 @@ class Bot4H:
         # Immediate trading is now allowed.
         self.symbols_initialized.add(symbol)
         
-        # [BOT-BACKTEST ALIGNMENT - CHANGE 1] Skip divergence detection if already in trade
-        # This matches backtest behavior: one trade per symbol at a time
-        if symbol in self.active_trades:
-            logger.debug(f"[{symbol}] Already in trade - skipping divergence detection")
-            # Still check pending BOS for existing signals (rare edge case)
-            df = await self.fetch_4h_data(symbol)
-            if df is not None and len(df) >= 100:
-                df = prepare_dataframe(df)
-                await self.check_pending_bos(symbol, df)
-            return 0
+        # NOTE: Divergence detection continues even if there's an active trade.
+        # The block happens at BOS confirmation/trade entry stage instead.
         
         logger.info(f"[{symbol}] New 1H candle closed - processing...")
         
@@ -970,6 +962,12 @@ class Bot4H:
             
             # Check for BOS
             if check_bos(df, pending.signal, current_idx):
+                # [TRADE BLOCK CHECK] Block entry if already in a trade for this symbol
+                if symbol in self.active_trades:
+                    logger.info(f"[{symbol}] BOS confirmed but already in trade - skipping entry")
+                    signals_to_remove.append(pending)
+                    continue
+                
                 logger.info(f"[{symbol}] ✅ BOS CONFIRMED! Executing trade...")
                 
                 # Send BOS confirmed notification

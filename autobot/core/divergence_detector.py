@@ -25,7 +25,7 @@ from datetime import datetime
 
 # Configuration
 RSI_PERIOD = 14
-LOOKBACK_BARS = 10
+LOOKBACK_BARS = 50
 MIN_PIVOT_DISTANCE = 3
 PIVOT_RIGHT = 3  # Confirmation lag (no look-ahead)
 DAILY_EMA_PROXY = 200  # 200 EMA for 1H timeframe

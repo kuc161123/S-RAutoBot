@@ -45,7 +45,7 @@ strategy:
     sl_atr_mult: 1.0
   name: 1h_184_symbols_multi_div_validated
   signal_params:
-    lookback_bars: 10
+    lookback_bars: 50
     min_pivot_distance: 3
     pivot_right: 3
     rsi_period: 14

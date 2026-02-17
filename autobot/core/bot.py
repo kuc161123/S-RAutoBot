@@ -1,8 +1,8 @@
 """
-1H Multi-Divergence Trading Bot - SAFE PRECISION (235 SYMBOLS)
-==============================================================
-235 Symbols (Safe/Liquid) | Pivot-Based Deduplication | +9,543R (90-Day Projection)
-Expected Performance: ~3,180R/Month (Based on Deduped Blind Test)
+1H Multi-Divergence Trading Bot - 1-Year MC Validated (156 Symbols)
+====================================================================
+156 Symbols | Monte Carlo + Walk-Forward Validated | +2,243R (90-Day Projection)
+Expected Performance: ~748R/Month (Based on 1-Year OOS Backtest)
 
 Divergence Types:
 - REG_BULL: Regular Bullish (Reversal)
@@ -10,12 +10,15 @@ Divergence Types:
 - HID_BULL: Hidden Bullish (Continuation)
 - HID_BEAR: Hidden Bearish (Continuation)
 
+Validation: 365-day data, 75/25 train/test split, Monte Carlo (1000 iter),
+            Profit Factor > 1.2, Max DD < 15R, Lookback 50 candles
+
 Main Features:
 - 1H divergence detection with EMA 200 trend filter
 - Break of Structure (BOS) confirmation (12 candles max)
 - Per-symbol divergence type and R:R configuration
 - Fixed TP/SL (no trailing, no partial)
-- 1% risk per trade
+- 0.1% risk per trade
 """
 
 import asyncio
@@ -84,7 +87,7 @@ class ActiveTrade:
 
 
 class Bot4H:
-    """1H Multi-Divergence Trading Bot - SAFE PRECISION (235 SYMBOLS)"""
+    """1H Multi-Divergence Trading Bot - 1-Year MC Validated (156 Symbols)"""
     
     def __init__(self):
         """Initialize bot"""
@@ -261,6 +264,12 @@ class Bot4H:
         self.lifetime_stats['total_trades'] += 1
         if is_win:
             self.lifetime_stats['wins'] += 1
+
+        # Track gross profit/loss for accurate profit factor
+        if r_value > 0:
+            self.lifetime_stats['gross_profit_r'] = self.lifetime_stats.get('gross_profit_r', 0.0) + r_value
+        else:
+            self.lifetime_stats['gross_loss_r'] = self.lifetime_stats.get('gross_loss_r', 0.0) + r_value
         
         # Update best/worst individual trade
         if r_value > self.lifetime_stats.get('best_trade_r', 0):
@@ -1503,15 +1512,16 @@ class Bot4H:
 🤖 **BOT STARTED**
 ━━━━━━━━━━━━━━━━━━━━
 
-📊 **Strategy**: 1H Precision Divergence (Safe 235)
+📊 **Strategy**: 1H Multi-Div (1-Year MC Validated)
 📈 **Symbols**: {len(enabled_symbols)}
 💰 **Risk**: {risk_pct*100:.1f}% per trade
+🔬 **Validation**: Monte Carlo + Walk-Forward
 
 **LIFETIME STATS**
 ├ Total R: {lifetime_r:+.1f}R
 └ Since: {start_date}
 
-**EXPECTED**: ~3,180R/month
+**EXPECTED**: ~2,243R / 90 days (~748R/month)
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /dashboard /help
@@ -1566,9 +1576,10 @@ class Bot4H:
 🔍 Result: **No New Divergences Found**
 
 **Detection Criteria:**
-• RSI Divergence (Pivot within 10 candles)
+• RSI Divergence (Pivot within 50 candles)
 • Trend Aligned (EMA 200)
 • BOS Confirmation (12 candle max wait)
+• Monte Carlo + Walk-Forward Validated
 
 **Current Status:**
 ├ ⏳ Pending BOS: {pending_count}

@@ -193,14 +193,22 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
     
     n = len(df)
     price_high_pivots, price_low_pivots = find_pivots(close, 3, 3)
-    
+
     signals = []
+    # [BACKTEST ALIGNMENT] Track used pivot pairs to prevent the same pair from
+    # generating signals at multiple scan positions. Matches backtest dedup logic.
+    used_pivots = set()
     
     # Scan for divergences
-    # Start at 30 to have enough history, end at n - PIVOT_RIGHT - 1 to ensure pivot confirmation
-    for i in range(30, n - PIVOT_RIGHT):
+    # Start after EMA warmup to have valid indicators, end at n - PIVOT_RIGHT to ensure pivot confirmation
+    scan_start = max(30, DAILY_EMA_PROXY + 10)  # Need EMA 200 warmup
+    for i in range(scan_start, n - PIVOT_RIGHT):
         current_price = close[i]
         current_ema = daily_ema[i]
+
+        # [BACKTEST ALIGNMENT] Skip rows with NaN indicators (from preserved warmup rows)
+        if np.isnan(current_ema) or np.isnan(rsi[i]):
+            continue
         
         # ========== BULLISH DIVERGENCES (LONG) ==========
         # Find current and previous pivot lows
@@ -216,42 +224,49 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
                     break
         
         if curr_pl is not None and prev_pl is not None:
-            swing_high = max(high[max(0, i-LOOKBACK_BARS):i+1])
-            trend_aligned = current_price > current_ema
-            
-            # REG_BULL: Price LL (curr < prev), RSI HL (curr > prev)
-            if DIV_REG_BULL in allowed_types:
-                if curr_pl < prev_pl and rsi[curr_pli] > rsi[prev_pli]:
-                    signals.append(DivergenceSignal(
-                        symbol=symbol,
-                        side='long',
-                        signal_type='bullish',
-                        divergence_code=DIV_REG_BULL,
-                        divergence_idx=i,
-                        swing_level=swing_high,
-                        rsi_value=rsi[i],
-                        price=current_price,
-                        timestamp=df.index[i],
-                        pivot_timestamp=df.index[curr_pli],  # Dedup Key
-                        daily_trend_aligned=trend_aligned
-                    ))
-            
-            # HID_BULL: Price HL (curr > prev), RSI LL (curr < prev)
-            if DIV_HID_BULL in allowed_types:
-                if curr_pl > prev_pl and rsi[curr_pli] < rsi[prev_pli]:
-                    signals.append(DivergenceSignal(
-                        symbol=symbol,
-                        side='long',
-                        signal_type='bullish',
-                        divergence_code=DIV_HID_BULL,
-                        divergence_idx=i,
-                        swing_level=swing_high,
-                        rsi_value=rsi[i],
-                        price=current_price,
-                        timestamp=df.index[i],
-                        pivot_timestamp=df.index[curr_pli],  # Dedup Key
-                        daily_trend_aligned=trend_aligned
-                    ))
+            # [BACKTEST ALIGNMENT] Skip if this pivot pair already generated a signal
+            dedup_key_bull = (curr_pli, prev_pli, 'BULL')
+            if dedup_key_bull in used_pivots:
+                pass  # Skip to bearish check below
+            else:
+                swing_high = max(high[max(0, i-LOOKBACK_BARS):i+1])
+                trend_aligned = current_price > current_ema
+
+                # REG_BULL: Price LL (curr < prev), RSI HL (curr > prev)
+                if DIV_REG_BULL in allowed_types:
+                    if curr_pl < prev_pl and rsi[curr_pli] > rsi[prev_pli]:
+                        signals.append(DivergenceSignal(
+                            symbol=symbol,
+                            side='long',
+                            signal_type='bullish',
+                            divergence_code=DIV_REG_BULL,
+                            divergence_idx=i,
+                            swing_level=swing_high,
+                            rsi_value=rsi[i],
+                            price=current_price,
+                            timestamp=df.index[i],
+                            pivot_timestamp=df.index[curr_pli],
+                            daily_trend_aligned=trend_aligned
+                        ))
+                        used_pivots.add(dedup_key_bull)
+
+                # HID_BULL: Price HL (curr > prev), RSI LL (curr < prev)
+                if DIV_HID_BULL in allowed_types and dedup_key_bull not in used_pivots:
+                    if curr_pl > prev_pl and rsi[curr_pli] < rsi[prev_pli]:
+                        signals.append(DivergenceSignal(
+                            symbol=symbol,
+                            side='long',
+                            signal_type='bullish',
+                            divergence_code=DIV_HID_BULL,
+                            divergence_idx=i,
+                            swing_level=swing_high,
+                            rsi_value=rsi[i],
+                            price=current_price,
+                            timestamp=df.index[i],
+                            pivot_timestamp=df.index[curr_pli],
+                            daily_trend_aligned=trend_aligned
+                        ))
+                        used_pivots.add(dedup_key_bull)
         
         # ========== BEARISH DIVERGENCES (SHORT) ==========
         # Find current and previous pivot highs
@@ -266,42 +281,49 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
                     break
         
         if curr_ph is not None and prev_ph is not None:
-            swing_low = min(low[max(0, i-LOOKBACK_BARS):i+1])
-            trend_aligned = current_price < current_ema
-            
-            # REG_BEAR: Price HH (curr > prev), RSI LH (curr < prev)
-            if DIV_REG_BEAR in allowed_types:
-                if curr_ph > prev_ph and rsi[curr_phi] < rsi[prev_phi]:
-                    signals.append(DivergenceSignal(
-                        symbol=symbol,
-                        side='short',
-                        signal_type='bearish',
-                        divergence_code=DIV_REG_BEAR,
-                        divergence_idx=i,
-                        swing_level=swing_low,
-                        rsi_value=rsi[i],
-                        price=current_price,
-                        timestamp=df.index[i],
-                        pivot_timestamp=df.index[curr_phi],  # Dedup Key
-                        daily_trend_aligned=trend_aligned
-                    ))
-            
-            # HID_BEAR: Price LH (curr < prev), RSI HH (curr > prev)
-            if DIV_HID_BEAR in allowed_types:
-                if curr_ph < prev_ph and rsi[curr_phi] > rsi[prev_phi]:
-                    signals.append(DivergenceSignal(
-                        symbol=symbol,
-                        side='short',
-                        signal_type='bearish',
-                        divergence_code=DIV_HID_BEAR,
-                        divergence_idx=i,
-                        swing_level=swing_low,
-                        rsi_value=rsi[i],
-                        price=current_price,
-                        timestamp=df.index[i],
-                        pivot_timestamp=df.index[curr_phi],  # Dedup Key
-                        daily_trend_aligned=trend_aligned
-                    ))
+            # [BACKTEST ALIGNMENT] Skip if this pivot pair already generated a signal
+            dedup_key_bear = (curr_phi, prev_phi, 'BEAR')
+            if dedup_key_bear in used_pivots:
+                pass  # Skip - already used
+            else:
+                swing_low = min(low[max(0, i-LOOKBACK_BARS):i+1])
+                trend_aligned = current_price < current_ema
+
+                # REG_BEAR: Price HH (curr > prev), RSI LH (curr < prev)
+                if DIV_REG_BEAR in allowed_types:
+                    if curr_ph > prev_ph and rsi[curr_phi] < rsi[prev_phi]:
+                        signals.append(DivergenceSignal(
+                            symbol=symbol,
+                            side='short',
+                            signal_type='bearish',
+                            divergence_code=DIV_REG_BEAR,
+                            divergence_idx=i,
+                            swing_level=swing_low,
+                            rsi_value=rsi[i],
+                            price=current_price,
+                            timestamp=df.index[i],
+                            pivot_timestamp=df.index[curr_phi],
+                            daily_trend_aligned=trend_aligned
+                        ))
+                        used_pivots.add(dedup_key_bear)
+
+                # HID_BEAR: Price LH (curr < prev), RSI HH (curr > prev)
+                if DIV_HID_BEAR in allowed_types and dedup_key_bear not in used_pivots:
+                    if curr_ph < prev_ph and rsi[curr_phi] > rsi[prev_phi]:
+                        signals.append(DivergenceSignal(
+                            symbol=symbol,
+                            side='short',
+                            signal_type='bearish',
+                            divergence_code=DIV_HID_BEAR,
+                            divergence_idx=i,
+                            swing_level=swing_low,
+                            rsi_value=rsi[i],
+                            price=current_price,
+                            timestamp=df.index[i],
+                            pivot_timestamp=df.index[curr_phi],
+                            daily_trend_aligned=trend_aligned
+                        ))
+                        used_pivots.add(dedup_key_bear)
     
     return signals
 
@@ -309,23 +331,27 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
 def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
     Prepare DataFrame with all required indicators.
-    
+
+    NOTE: We do NOT drop NaN rows. This preserves all candles so that
+    pivot indices and divergence detection align with the backtest.
+    NaN values are handled explicitly in detect_divergences().
+
     Args:
         df: Raw OHLCV DataFrame
-        
+
     Returns:
-        DataFrame with RSI, ATR, Daily EMA added
+        DataFrame with RSI, ATR, Daily EMA added (NaN rows preserved)
     """
     df = df.copy()
-    
+
     # Calculate indicators
     df['rsi'] = calculate_rsi(df['close'])
     df['atr'] = calculate_atr(df)
     df['daily_ema'] = calculate_daily_ema(df['close'])
-    
-    # Drop NaN rows from indicator calculation
-    df = df.dropna()
-    
+
+    # [BACKTEST ALIGNMENT] Do NOT dropna() - keep all rows to preserve indices.
+    # The detect_divergences() function skips rows with NaN indicators.
+
     return df
 
 

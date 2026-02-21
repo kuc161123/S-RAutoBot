@@ -103,6 +103,7 @@ class Bot4H:
         # Trading state
         self.pending_signals: Dict[str, List[PendingSignal]] = {}  # {symbol: [signals]}
         self.active_trades: Dict[str, ActiveTrade] = {}  # {symbol: trade}
+        self.confirmed_entries: Dict[str, DivergenceSignal] = {}  # {symbol: signal} - BOS confirmed, enter on NEXT candle
         
         # [STARTUP PROTECTION] Track which symbols have been seen since startup
         # First candle for each symbol is used for initialization only (no trades)
@@ -591,14 +592,14 @@ class Bot4H:
             self.telegram = None
             logger.warning("Telegram not configured - notifications disabled")
     
-    async def fetch_4h_data(self, symbol: str, limit: int = 500) -> Optional[pd.DataFrame]:
+    async def fetch_4h_data(self, symbol: str, limit: int = 1000) -> Optional[pd.DataFrame]:
         """
         Fetch candle data from Bybit (uses configured timeframe)
-        
+
         Args:
             symbol: Trading pair
-            limit: Number of candles to fetch
-            
+            limit: Number of candles to fetch (1000 for proper EMA 200 warmup)
+
         Returns:
             DataFrame with OHLCV data or None
         """
@@ -680,17 +681,16 @@ class Bot4H:
         if not await self.check_new_candle_close(symbol):
             return -1
             
-        # [CRITICAL FIX] STALENESS CHECK
-        # At startup, check_new_candle_close will return True for the last closed candle
-        # even if it closed 59 minutes ago. We must SKIP processing if it's stale.
+        # [STALENESS CHECK] Only skip truly stale candles (>55 min old)
+        # Previous 5-minute window was too aggressive and caused ~50% of symbols
+        # to be skipped every cycle. The 24h signal filter handles startup protection.
         now = datetime.now()
         current_candle_close = now.replace(minute=0, second=0, microsecond=0)
         minutes_since_close = (now - current_candle_close).total_seconds() / 60
-        
-        if minutes_since_close > 5:
-            # If we are more than 5 minutes past the hour, this is likely a startup
-            # catch-up event. Skip processing to avoid "Startup Shock" mass entry.
-            logger.info(f"[{symbol}] Skipping stale candle (Closed {minutes_since_close:.0f}m ago) to prevent startup shock 🛡️")
+
+        if minutes_since_close > 55:
+            # Only skip if the candle is nearly an hour old (true stale data)
+            logger.info(f"[{symbol}] Skipping stale candle (Closed {minutes_since_close:.0f}m ago)")
             return 0
         
         # [REMOVED] First-candle skip
@@ -702,15 +702,25 @@ class Bot4H:
         # The block happens at BOS confirmation/trade entry stage instead.
         
         logger.info(f"[{symbol}] New 1H candle closed - processing...")
-        
+
         # Fetch data
         df = await self.fetch_4h_data(symbol)
         if df is None or len(df) < 100:
             logger.warning(f"[{symbol}] Insufficient data")
             return 0
-        
+
         # Prepare indicators
         df = prepare_dataframe(df)
+
+        # [BACKTEST ALIGNMENT] Execute any queued entries from previous candle's BOS confirmation.
+        # Entry uses the OPEN of the current (new) candle, matching the backtest exactly.
+        if symbol in self.confirmed_entries:
+            queued_signal = self.confirmed_entries.pop(symbol)
+            if symbol not in self.active_trades:
+                logger.info(f"[{symbol}] Executing queued entry at candle open (backtest-aligned)...")
+                await self.execute_trade(symbol, queued_signal, df, use_candle_open=True)
+            else:
+                logger.info(f"[{symbol}] Queued entry cancelled - already in trade")
         
         # Cache latest RSI
         if 'rsi' in df.columns and len(df) > 0:
@@ -847,7 +857,11 @@ class Bot4H:
                 pass
         
         # 1. Detect new divergences
-        new_signals = detect_divergences(df, symbol)
+        # [BACKTEST ALIGNMENT] Pass allowed_types so only the configured divergence type
+        # is searched, matching the backtest's focused detection per symbol.
+        allowed_div = self.symbol_config.get_divergence_for_symbol(symbol)
+        allowed_types = [allowed_div] if allowed_div else None
+        new_signals = detect_divergences(df, symbol, allowed_types=allowed_types)
         valid_signals_count = 0
         duplicate_count = 0
         
@@ -976,9 +990,11 @@ class Bot4H:
                     logger.info(f"[{symbol}] BOS confirmed but already in trade - skipping entry")
                     signals_to_remove.append(pending)
                     continue
-                
-                logger.info(f"[{symbol}] ✅ BOS CONFIRMED! Executing trade...")
-                
+
+                # [BACKTEST ALIGNMENT] Queue entry for NEXT candle open instead of executing now.
+                # This matches the backtest which enters at next candle open after BOS.
+                logger.info(f"[{symbol}] ✅ BOS CONFIRMED! Queuing entry for next candle open...")
+
                 # Send BOS confirmed notification
                 if self.telegram:
                     div_emoji = get_signal_emoji(pending.signal.divergence_code)
@@ -993,7 +1009,7 @@ class Bot4H:
 🔓 Break of Structure confirmed after {pending.candles_waited} candles
 ├ Type: `{pending.signal.divergence_code}`
 ├ Side: {side_text}
-⚡ Executing trade now...
+⏳ Entry queued for next candle open...
 
 ━━━━━━━━━━━━━━━━━━━━
 """
@@ -1001,11 +1017,12 @@ class Bot4H:
                         await self.telegram.send_message(bos_msg)
                     except Exception as e:
                          logger.error(f"Failed to send BOS notification: {e}")
-                
+
                 # Track BOS confirmation
                 self._track_bos_confirmed()
-                
-                await self.execute_trade(symbol, pending.signal, df)
+
+                # Queue for next candle execution instead of immediate entry
+                self.confirmed_entries[symbol] = pending.signal
                 signals_to_remove.append(pending)
             else:
                 # Increment wait counter
@@ -1016,14 +1033,16 @@ class Bot4H:
         for sig in signals_to_remove:
             self.pending_signals[symbol].remove(sig)
     
-    async def execute_trade(self, symbol: str, signal: DivergenceSignal, df: pd.DataFrame):
+    async def execute_trade(self, symbol: str, signal: DivergenceSignal, df: pd.DataFrame, use_candle_open: bool = False):
         """
         Execute trade entry with TP/SL orders
-        
+
         Args:
             symbol: Trading pair
             signal: Divergence signal
             df: Latest OHLCV data
+            use_candle_open: If True, use current candle's open price for SL/TP calculation
+                             (backtest-aligned entry on next candle after BOS)
         """
         # Skip if already in a trade for this symbol (Internal Check)
         if symbol in self.active_trades:
@@ -1054,17 +1073,24 @@ class Bot4H:
             logger.error(f"[{symbol}] No R:R configured - skipping")
             return
         
-        # Get CURRENT market price from ticker for accurate SL/TP calculation
-        # This prevents "StopLoss should lower than base_price" errors when market moves
-        try:
-            ticker = await self.broker.get_ticker(symbol)
-            entry_price = float(ticker.get('lastPrice', df.iloc[-1]['close']))
-            logger.info(f"[{symbol}] Using current ticker price: ${entry_price:.6f}")
-        except Exception as e:
-            logger.warning(f"[{symbol}] Failed to get ticker, using candle close: {e}")
-            entry_price = df.iloc[-1]['close']
-        
-        atr = df.iloc[-1]['atr']
+        # [BACKTEST ALIGNMENT] Use candle open for SL/TP calculation when entry is queued.
+        # ATR comes from the PREVIOUS candle (the BOS candle), which is df.iloc[-2] when
+        # use_candle_open=True (since df now includes the new candle).
+        if use_candle_open:
+            # Entry at current candle's open (matches backtest: next candle open after BOS)
+            entry_price = df.iloc[-1]['open']
+            atr = df.iloc[-2]['atr'] if len(df) >= 2 else df.iloc[-1]['atr']
+            logger.info(f"[{symbol}] Using candle open price (backtest-aligned): ${entry_price:.6f}, ATR from prev candle: {atr:.6f}")
+        else:
+            # Fallback: use ticker price (legacy behavior)
+            try:
+                ticker = await self.broker.get_ticker(symbol)
+                entry_price = float(ticker.get('lastPrice', df.iloc[-1]['close']))
+                logger.info(f"[{symbol}] Using current ticker price: ${entry_price:.6f}")
+            except Exception as e:
+                logger.warning(f"[{symbol}] Failed to get ticker, using candle close: {e}")
+                entry_price = df.iloc[-1]['close']
+            atr = df.iloc[-1]['atr']
         
         # SL distance - use PER-SYMBOL atr_mult from config (critical for performance)
         symbol_cfg = self.symbol_config.get_symbol_config(symbol)

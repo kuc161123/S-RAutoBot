@@ -160,7 +160,7 @@ def find_pivots(data: np.ndarray, left: int = 3, right: int = 3) -> Tuple[np.nda
     return pivot_highs, pivot_lows
 
 
-def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] = None) -> List[DivergenceSignal]:
+def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] = None, lookback_bars: int = LOOKBACK_BARS) -> List[DivergenceSignal]:
     """
     Detect all 4 RSI divergence types with Daily Trend filter.
     
@@ -215,7 +215,7 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
         curr_pl = curr_pli = prev_pl = prev_pli = None
         
         # Start searching from i - PIVOT_RIGHT to avoid look-ahead
-        for j in range(i - PIVOT_RIGHT, max(i - LOOKBACK_BARS - PIVOT_RIGHT, 0), -1):
+        for j in range(i - PIVOT_RIGHT, max(i - lookback_bars - PIVOT_RIGHT, 0), -1):
             if not np.isnan(price_low_pivots[j]):
                 if curr_pl is None:
                     curr_pl, curr_pli = price_low_pivots[j], j
@@ -229,7 +229,9 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
             if dedup_key_bull in used_pivots:
                 pass  # Skip to bearish check below
             else:
-                swing_high = max(high[max(0, i-LOOKBACK_BARS):i+1])
+                # [BACKTEST ALIGNMENT] Swing high is max(high) from most recent pivot to scan
+                # position — NOT the full lookback window. Matches backtest: max(high[curr_idx:i+1])
+                swing_high = max(high[curr_pli:i+1])
                 trend_aligned = current_price > current_ema
 
                 # REG_BULL: Price LL (curr < prev), RSI HL (curr > prev)
@@ -272,7 +274,7 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
         # Find current and previous pivot highs
         curr_ph = curr_phi = prev_ph = prev_phi = None
         
-        for j in range(i - PIVOT_RIGHT, max(i - LOOKBACK_BARS - PIVOT_RIGHT, 0), -1):
+        for j in range(i - PIVOT_RIGHT, max(i - lookback_bars - PIVOT_RIGHT, 0), -1):
             if not np.isnan(price_high_pivots[j]):
                 if curr_ph is None:
                     curr_ph, curr_phi = price_high_pivots[j], j
@@ -286,7 +288,9 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
             if dedup_key_bear in used_pivots:
                 pass  # Skip - already used
             else:
-                swing_low = min(low[max(0, i-LOOKBACK_BARS):i+1])
+                # [BACKTEST ALIGNMENT] Swing low is min(low) from most recent pivot to scan
+                # position — NOT the full lookback window. Matches backtest: min(low[curr_idx:i+1])
+                swing_low = min(low[curr_phi:i+1])
                 trend_aligned = current_price < current_ema
 
                 # REG_BEAR: Price HH (curr > prev), RSI LH (curr < prev)

@@ -379,8 +379,14 @@ class Bot4H:
         self.strategy_config = self.config.get('strategy', {})
         self.risk_config = self.config.get('risk', {})
         self.timeframe = self.strategy_config.get('timeframe', '240')
-        
-        logger.info(f"Loaded config: Timeframe={self.timeframe}, Risk={self.risk_config.get('risk_per_trade', 0.01)*100}%")
+
+        entry_params = self.strategy_config.get('entry_params', {})
+        self.max_wait_candles = entry_params.get('max_wait_candles', 12)
+
+        signal_params = self.strategy_config.get('signal_params', {})
+        self.lookback_bars = signal_params.get('lookback_bars', 50)
+
+        logger.info(f"Loaded config: Timeframe={self.timeframe}, Risk={self.risk_config.get('risk_per_trade', 0.01)*100}%, MaxWait={self.max_wait_candles}, Lookback={self.lookback_bars}")
     
     def setup_broker(self):
         """Initialize Bybit broker connection"""
@@ -861,7 +867,7 @@ class Bot4H:
         # is searched, matching the backtest's focused detection per symbol.
         allowed_div = self.symbol_config.get_divergence_for_symbol(symbol)
         allowed_types = [allowed_div] if allowed_div else None
-        new_signals = detect_divergences(df, symbol, allowed_types=allowed_types)
+        new_signals = detect_divergences(df, symbol, allowed_types=allowed_types, lookback_bars=self.lookback_bars)
         valid_signals_count = 0
         duplicate_count = 0
         
@@ -894,13 +900,8 @@ class Bot4H:
             # Mark signal as seen and save
             self.storage.add_signal(signal_id)
             
-            # Only allow ONE pending signal per symbol at a time
-            if symbol in self.pending_signals and len(self.pending_signals[symbol]) > 0:
-                logger.info(f"[{symbol}] Already has pending signal - skipping additional divergence")
-                continue
-            
             # Add to pending signals
-            pending = PendingSignal(signal=signal, detected_at=datetime.now())
+            pending = PendingSignal(signal=signal, detected_at=datetime.now(), max_wait_candles=self.max_wait_candles)
             
             if symbol not in self.pending_signals:
                 self.pending_signals[symbol] = []
@@ -974,12 +975,6 @@ class Bot4H:
             # Check if expired
             if pending.is_expired():
                 logger.info(f"[{symbol}] Signal expired after {pending.candles_waited} candles - removing")
-                signals_to_remove.append(pending)
-                continue
-            
-            # Check if still trend-aligned
-            if not is_trend_aligned(df, pending.signal, current_idx):
-                logger.info(f"[{symbol}] Signal no longer trend-aligned - removing")
                 signals_to_remove.append(pending)
                 continue
             

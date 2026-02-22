@@ -219,17 +219,18 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
             if not np.isnan(price_low_pivots[j]):
                 if curr_pl is None:
                     curr_pl, curr_pli = price_low_pivots[j], j
-                elif prev_pl is None and j < curr_pli - MIN_PIVOT_DISTANCE:
+                elif prev_pl is None:
                     prev_pl, prev_pli = price_low_pivots[j], j
                     break
         
-        if curr_pl is not None and prev_pl is not None:
+        if curr_pl is not None and prev_pl is not None and (i - curr_pli) <= 10:
+            # [BACKTEST ALIGNMENT] Pivot proximity filter: pivot must be within 10 bars
             # [BACKTEST ALIGNMENT] Skip if this pivot pair already generated a signal
             dedup_key_bull = (curr_pli, prev_pli, 'BULL')
             if dedup_key_bull in used_pivots:
                 pass  # Skip to bearish check below
             else:
-                swing_high = max(high[max(0, i-LOOKBACK_BARS):i+1])
+                swing_high = max(high[curr_pli:i+1])
                 trend_aligned = current_price > current_ema
 
                 # REG_BULL: Price LL (curr < prev), RSI HL (curr > prev)
@@ -276,17 +277,18 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
             if not np.isnan(price_high_pivots[j]):
                 if curr_ph is None:
                     curr_ph, curr_phi = price_high_pivots[j], j
-                elif prev_ph is None and j < curr_phi - MIN_PIVOT_DISTANCE:
+                elif prev_ph is None:
                     prev_ph, prev_phi = price_high_pivots[j], j
                     break
         
-        if curr_ph is not None and prev_ph is not None:
+        if curr_ph is not None and prev_ph is not None and (i - curr_phi) <= 10:
+            # [BACKTEST ALIGNMENT] Pivot proximity filter: pivot must be within 10 bars
             # [BACKTEST ALIGNMENT] Skip if this pivot pair already generated a signal
             dedup_key_bear = (curr_phi, prev_phi, 'BEAR')
             if dedup_key_bear in used_pivots:
                 pass  # Skip - already used
             else:
-                swing_low = min(low[max(0, i-LOOKBACK_BARS):i+1])
+                swing_low = min(low[curr_phi:i+1])
                 trend_aligned = current_price < current_ema
 
                 # REG_BEAR: Price HH (curr > prev), RSI LH (curr < prev)

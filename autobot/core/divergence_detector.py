@@ -228,6 +228,10 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
             dedup_key_bull = (curr_pli, prev_pli, 'BULL')
             if dedup_key_bull in used_pivots:
                 pass  # Skip to bearish check below
+            # [BACKTEST ALIGNMENT] Pivot distance filter — only consider fresh pivots
+            # Matches backtest: (i - curr_idx) <= 10
+            elif (i - curr_pli) > 10:
+                pass  # Pivot too stale, skip
             else:
                 # [BACKTEST ALIGNMENT] Swing high is max(high) from most recent pivot to scan
                 # position — NOT the full lookback window. Matches backtest: max(high[curr_idx:i+1])
@@ -287,6 +291,10 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
             dedup_key_bear = (curr_phi, prev_phi, 'BEAR')
             if dedup_key_bear in used_pivots:
                 pass  # Skip - already used
+            # [BACKTEST ALIGNMENT] Pivot distance filter — only consider fresh pivots
+            # Matches backtest: (i - curr_idx) <= 10
+            elif (i - curr_phi) > 10:
+                pass  # Pivot too stale, skip
             else:
                 # [BACKTEST ALIGNMENT] Swing low is min(low) from most recent pivot to scan
                 # position — NOT the full lookback window. Matches backtest: min(low[curr_idx:i+1])

@@ -6,7 +6,7 @@ Manages per-symbol settings including:
 - R:R ratio
 - Divergence type (REG_BULL, REG_BEAR, HID_BULL, HID_BEAR)
 
-Supports the multi-divergence strategy with 271 validated symbols.
+Supports the multi-divergence strategy with per-symbol validated configs.
 """
 
 import yaml

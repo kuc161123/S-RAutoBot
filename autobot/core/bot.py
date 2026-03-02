@@ -1,7 +1,7 @@
 """
-1H Multi-Divergence Trading Bot - 1-Year MC Validated (156 Symbols)
+1H Multi-Divergence Trading Bot - Dynamic Slippage Validated
 ====================================================================
-156 Symbols | Monte Carlo + Walk-Forward Validated | +2,243R (90-Day Projection)
+275 Symbols | Monte Carlo + Walk-Forward + Dynamic Slippage Validated
 Expected Performance: ~748R/Month (Based on 1-Year OOS Backtest)
 
 Divergence Types:
@@ -87,7 +87,7 @@ class ActiveTrade:
 
 
 class Bot4H:
-    """1H Multi-Divergence Trading Bot - 1-Year MC Validated (156 Symbols)"""
+    """1H Multi-Divergence Trading Bot - Dynamic Slippage Validated"""
     
     def __init__(self):
         """Initialize bot"""

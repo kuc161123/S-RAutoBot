@@ -43,7 +43,7 @@ strategy:
     require_bos: true
   exit_params:
     sl_atr_mult: 1.0
-  name: 1h_156_symbols_1yr_mc_validated
+  name: 1h_275_symbols_1yr_dynamic_slippage_validated
   signal_params:
     lookback_bars: 50
     min_pivot_distance: 3
@@ -53,37 +53,73 @@ strategy:
   trend_filter:
     daily_ema_proxy: 200
     enabled: true
-  description: 1-Year MC Validated - 156 Symbols (214 configs tested, best per symbol)
-  expected_90d_r: 2242.55
+  description: 1-Year Dynamic Slippage Validated - 275 Symbols (378 configs tested,
+    best per symbol) - Generated 2026-03-02
+  expected_90d_r: 3734.12
 symbols:
-  0GUSDT:
+  1000000BABYDOGEUSDT:
     enabled: true
     rr: 9.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 18.2
+    expected_avg_r: 0.746
+  1000000MOGUSDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 23.5
+    expected_avg_r: 0.555
+  10000QUBICUSDT:
+    enabled: true
+    rr: 10.0
     atr_mult: 2.0
     divergence_type: HID_BEAR
     expected_wr: 12.5
-    expected_avg_r: 0.215
-  1000000MOGUSDT:
+    expected_avg_r: 0.329
+  10000SATSUSDT:
     enabled: true
-    rr: 10.0
+    rr: 8.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 30.0
+    expected_avg_r: 1.592
+  1000BONKUSDT:
+    enabled: true
+    rr: 6.0
     atr_mult: 1.5
-    divergence_type: HID_BULL
-    expected_wr: 14.3
-    expected_avg_r: 0.529
+    divergence_type: REG_BEAR
+    expected_wr: 20.0
+    expected_avg_r: 0.334
+  1000FLOKIUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 16.7
+    expected_avg_r: 0.387
   1000LUNCUSDT:
     enabled: true
     rr: 6.0
     atr_mult: 1.0
     divergence_type: REG_BEAR
-    expected_wr: 28.6
-    expected_avg_r: 0.91
+    expected_wr: 33.3
+    expected_avg_r: 1.257
   1000PEPEUSDT:
     enabled: true
-    rr: 9.0
-    atr_mult: 2.0
+    rr: 10.0
+    atr_mult: 1.5
     divergence_type: REG_BEAR
     expected_wr: 25.0
-    expected_avg_r: 1.452
+    expected_avg_r: 1.686
+  1000RATSUSDT:
+    enabled: true
+    rr: 1.5
+    atr_mult: 2.0
+    divergence_type: REG_BULL
+    expected_wr: 50.0
+    expected_avg_r: 0.218
   1000TOSHIUSDT:
     enabled: true
     rr: 10.0
@@ -91,307 +127,524 @@ symbols:
     divergence_type: REG_BEAR
     expected_wr: 16.7
     expected_avg_r: 0.76
+  1000TURBOUSDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 25.0
+    expected_avg_r: 0.683
   1INCHUSDT:
     enabled: true
     rr: 10.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 12.5
+    expected_avg_r: 0.294
+  2ZUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 62.5
+    expected_avg_r: 5.19
+  AAVEUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 21.7
+    expected_avg_r: 1.312
+  ACEUSDT:
+    enabled: true
+    rr: 5.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 24.0
+    expected_avg_r: 0.389
+  ACHUSDT:
+    enabled: true
+    rr: 7.0
     atr_mult: 2.0
     divergence_type: HID_BEAR
     expected_wr: 33.3
-    expected_avg_r: 2.613
-  AAVEUSDT:
+    expected_avg_r: 1.614
+  ACTUSDT:
     enabled: true
-    rr: 7.0
+    rr: 10.0
     atr_mult: 1.0
     divergence_type: HID_BEAR
-    expected_wr: 22.7
-    expected_avg_r: 0.701
-  ACEUSDT:
-    enabled: true
-    rr: 9.0
-    atr_mult: 1.0
-    divergence_type: HID_BEAR
-    expected_wr: 23.8
-    expected_avg_r: 1.282
+    expected_wr: 28.6
+    expected_avg_r: 2.063
   ADAUSDT:
     enabled: true
     rr: 9.0
     atr_mult: 1.5
     divergence_type: REG_BEAR
-    expected_wr: 25.0
-    expected_avg_r: 1.434
+    expected_wr: 30.0
+    expected_avg_r: 1.934
+  AEVOUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 18.8
+    expected_avg_r: 0.999
+  AGLDUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 11.8
+    expected_avg_r: 0.202
+  AIOZUSDT:
+    enabled: true
+    rr: 7.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 16.7
+    expected_avg_r: 0.262
   AIXBTUSDT:
     enabled: true
     rr: 9.0
     atr_mult: 1.5
     divergence_type: REG_BEAR
-    expected_wr: 37.5
-    expected_avg_r: 2.701
+    expected_wr: 42.9
+    expected_avg_r: 3.232
+  ALCHUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 13.3
+    expected_avg_r: 0.274
   ALGOUSDT:
     enabled: true
     rr: 1.5
     atr_mult: 2.0
     divergence_type: REG_BEAR
-    expected_wr: 50.0
-    expected_avg_r: 0.195
+    expected_wr: 57.1
+    expected_avg_r: 0.374
   ALTUSDT:
     enabled: true
-    rr: 10.0
-    atr_mult: 1.0
-    divergence_type: HID_BEAR
-    expected_wr: 16.7
-    expected_avg_r: 0.732
-  ARBUSDT:
-    enabled: true
-    rr: 10.0
+    rr: 5.0
     atr_mult: 1.5
     divergence_type: REG_BEAR
+    expected_wr: 33.3
+    expected_avg_r: 0.933
+  ANKRUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 25.0
+    expected_avg_r: 1.43
+  APEUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
     expected_wr: 16.7
-    expected_avg_r: 0.762
+    expected_avg_r: 0.445
+  API3USDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 19.2
+    expected_avg_r: 0.81
+  ARBUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 20.0
+    expected_avg_r: 0.743
   ARCUSDT:
     enabled: true
     rr: 4.0
     atr_mult: 2.0
     divergence_type: HID_BULL
-    expected_wr: 42.1
-    expected_avg_r: 1.083
+    expected_wr: 40.0
+    expected_avg_r: 0.976
   ARIAUSDT:
     enabled: true
     rr: 8.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 54.5
-    expected_avg_r: 3.859
-  ARKMUSDT:
+    expected_wr: 25.0
+    expected_avg_r: 1.193
+  ARPAUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 16.7
+    expected_avg_r: 0.698
+  ARUSDT:
+    enabled: true
+    rr: 4.0
+    atr_mult: 1.0
+    divergence_type: HID_BULL
+    expected_wr: 42.9
+    expected_avg_r: 1.038
+  ASTERUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 14.3
-    expected_avg_r: 0.509
-  ARUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 1.0
-    divergence_type: HID_BEAR
-    expected_wr: 14.3
-    expected_avg_r: 0.478
-  ASPUSDT:
+    expected_wr: 33.3
+    expected_avg_r: 2.612
+  ASTRUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.5
     divergence_type: REG_BEAR
-    expected_wr: 16.7
-    expected_avg_r: 0.75
-  ASTERUSDT:
-    enabled: true
-    rr: 9.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 37.5
-    expected_avg_r: 2.694
+    expected_wr: 20.0
+    expected_avg_r: 1.089
   ATOMUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.0
     divergence_type: REG_BEAR
-    expected_wr: 28.6
-    expected_avg_r: 2.005
+    expected_wr: 33.3
+    expected_avg_r: 2.527
   AUCTIONUSDT:
+    enabled: true
+    rr: 1.5
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 53.8
+    expected_avg_r: 0.27
+  AUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 2.0
-    divergence_type: REG_BULL
-    expected_wr: 20.0
-    expected_avg_r: 1.152
-  AVAXUSDT:
-    enabled: true
-    rr: 5.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 23.8
-    expected_avg_r: 0.336
+    divergence_type: HID_BULL
+    expected_wr: 22.2
+    expected_avg_r: 1.373
   AVNTUSDT:
     enabled: true
     rr: 9.0
     atr_mult: 2.0
     divergence_type: HID_BEAR
     expected_wr: 33.3
-    expected_avg_r: 2.294
+    expected_avg_r: 2.293
   AXLUSDT:
     enabled: true
     rr: 7.0
     atr_mult: 2.0
     divergence_type: HID_BEAR
     expected_wr: 29.4
-    expected_avg_r: 1.309
-  BANANAS31USDT:
+    expected_avg_r: 1.311
+  B3USDT:
     enabled: true
-    rr: 5.0
+    rr: 8.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 14.3
+    expected_avg_r: 0.238
+  BABYUSDT:
+    enabled: true
+    rr: 10.0
     atr_mult: 1.0
-    divergence_type: HID_BULL
+    divergence_type: HID_BEAR
     expected_wr: 23.1
-    expected_avg_r: 0.298
+    expected_avg_r: 1.407
+  BANANAUSDT:
+    enabled: true
+    rr: 4.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 47.1
+    expected_avg_r: 1.283
+  BANKUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.5
+    divergence_type: HID_BULL
+    expected_wr: 12.5
+    expected_avg_r: 0.192
   BANUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.5
     divergence_type: HID_BULL
-    expected_wr: 30.8
-    expected_avg_r: 2.328
-  BATUSDT:
+    expected_wr: 26.7
+    expected_avg_r: 1.879
+  BBUSDT:
     enabled: true
-    rr: 2.0
-    atr_mult: 1.0
+    rr: 8.0
+    atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 43.8
-    expected_avg_r: 0.226
-  BERAUSDT:
+    expected_wr: 40.9
+    expected_avg_r: 2.633
+  BELUSDT:
     enabled: true
     rr: 7.0
-    atr_mult: 2.0
+    atr_mult: 1.0
     divergence_type: HID_BEAR
-    expected_wr: 38.5
-    expected_avg_r: 2.045
+    expected_wr: 18.2
+    expected_avg_r: 0.336
+  BICOUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 23.1
+    expected_avg_r: 1.245
+  BIGTIMEUSDT:
+    enabled: true
+    rr: 4.0
+    atr_mult: 1.0
+    divergence_type: HID_BULL
+    expected_wr: 60.0
+    expected_avg_r: 1.9
   BIOUSDT:
     enabled: true
+    rr: 5.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 42.9
+    expected_avg_r: 1.487
+  BLESSUSDT:
+    enabled: true
     rr: 10.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 13.6
-    expected_avg_r: 0.437
+    expected_wr: 30.8
+    expected_avg_r: 2.335
+  BLURUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 26.7
+    expected_avg_r: 1.878
   BNBUSDT:
     enabled: true
-    rr: 2.0
-    atr_mult: 1.5
+    rr: 10.0
+    atr_mult: 1.0
     divergence_type: HID_BEAR
-    expected_wr: 43.8
-    expected_avg_r: 0.194
+    expected_wr: 15.8
+    expected_avg_r: 0.565
   BOMEUSDT:
     enabled: true
-    rr: 10.0
-    atr_mult: 1.5
+    rr: 4.0
+    atr_mult: 2.0
     divergence_type: REG_BEAR
-    expected_wr: 25.0
-    expected_avg_r: 1.699
+    expected_wr: 50.0
+    expected_avg_r: 1.462
   BROCCOLIUSDT:
     enabled: true
     rr: 8.0
     atr_mult: 1.0
     divergence_type: REG_BEAR
-    expected_wr: 16.7
-    expected_avg_r: 0.416
-  BTCUSDT:
+    expected_wr: 27.3
+    expected_avg_r: 1.372
+  BSVUSDT:
     enabled: true
-    rr: 9.0
-    atr_mult: 1.0
-    divergence_type: REG_BEAR
-    expected_wr: 22.2
-    expected_avg_r: 0.899
-  BTCUSDT-26JUN26:
+    rr: 7.0
+    atr_mult: 2.0
+    divergence_type: REG_BULL
+    expected_wr: 20.0
+    expected_avg_r: 0.535
+  BTCUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 2.0
     divergence_type: HID_BEAR
-    expected_wr: 15.4
-    expected_avg_r: 0.517
+    expected_wr: 13.3
+    expected_avg_r: 0.343
+  BTCUSDT-26JUN26:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 16.7
+    expected_avg_r: 0.63
   C98USDT:
     enabled: true
     rr: 9.0
     atr_mult: 1.0
     divergence_type: HID_BEAR
-    expected_wr: 23.1
-    expected_avg_r: 1.2
+    expected_wr: 18.2
+    expected_avg_r: 0.71
   CAKEUSDT:
     enabled: true
     rr: 9.0
     atr_mult: 1.5
     divergence_type: REG_BEAR
-    expected_wr: 35.7
-    expected_avg_r: 2.475
+    expected_wr: 33.3
+    expected_avg_r: 2.237
+  CAMPUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 28.6
+    expected_avg_r: 1.832
+  CARVUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 12.5
+    expected_avg_r: 0.259
+  CATIUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 20.0
+    expected_avg_r: 0.706
+  CELOUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 31.2
+    expected_avg_r: 2.055
   CFXUSDT:
     enabled: true
     rr: 7.0
     atr_mult: 1.0
     divergence_type: REG_BEAR
-    expected_wr: 21.4
-    expected_avg_r: 0.598
-  CLOUSDT:
+    expected_wr: 16.7
+    expected_avg_r: 0.216
+  CHILLGUYUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 14.3
+    expected_avg_r: 0.235
+  CHZUSDT:
     enabled: true
     rr: 7.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 25.0
-    expected_avg_r: 0.976
-  COAIUSDT:
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 50.0
+    expected_avg_r: 2.96
+  CKBUSDT:
     enabled: true
-    rr: 4.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 60.0
-    expected_avg_r: 1.94
-  COMPUSDT:
-    enabled: true
-    rr: 5.0
+    rr: 10.0
     atr_mult: 1.0
     divergence_type: REG_BEAR
     expected_wr: 25.0
-    expected_avg_r: 0.374
+    expected_avg_r: 1.608
+  COTIUSDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 31.8
+    expected_avg_r: 1.18
   COWUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 18.2
-    expected_avg_r: 0.927
+    expected_wr: 15.4
+    expected_avg_r: 0.624
   CRVUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.0
     divergence_type: REG_BULL
-    expected_wr: 12.5
-    expected_avg_r: 0.272
+    expected_wr: 16.7
+    expected_avg_r: 0.738
   CTCUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 12.0
-    expected_avg_r: 0.262
+    expected_wr: 12.5
+    expected_avg_r: 0.314
+  CTSIUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 12.5
+    expected_avg_r: 0.307
+  CVCUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 12.5
+    expected_avg_r: 0.289
+  DBRUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.0
+    divergence_type: HID_BULL
+    expected_wr: 15.4
+    expected_avg_r: 0.373
   DEEPUSDT:
     enabled: true
-    rr: 4.0
-    atr_mult: 1.0
-    divergence_type: REG_BEAR
-    expected_wr: 42.9
-    expected_avg_r: 1.076
+    rr: 6.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 33.3
+    expected_avg_r: 1.277
+  DEGENUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 21.7
+    expected_avg_r: 1.326
+  DEXEUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 20.0
+    expected_avg_r: 0.954
+  DOGUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: HID_BULL
+    expected_wr: 16.7
+    expected_avg_r: 0.8
+  DOLOUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 14.3
+    expected_avg_r: 0.392
   DOTUSDT:
     enabled: true
     rr: 9.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 22.2
-    expected_avg_r: 1.147
+    expected_wr: 23.5
+    expected_avg_r: 1.28
   DRIFTUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 2.0
-    divergence_type: HID_BEAR
-    expected_wr: 23.1
-    expected_avg_r: 1.494
-  DUSKUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 2.0
-    divergence_type: REG_BEAR
-    expected_wr: 33.3
-    expected_avg_r: 2.616
-  DYDXUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 33.3
-    expected_avg_r: 2.605
+    expected_wr: 18.8
+    expected_avg_r: 1.005
+  DUSKUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 28.6
+    expected_avg_r: 1.809
+  DYDXUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 26.3
+    expected_avg_r: 1.279
   DYMUSDT:
     enabled: true
     rr: 10.0
@@ -404,596 +657,1093 @@ symbols:
     rr: 9.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 45.5
-    expected_avg_r: 3.5
+    expected_wr: 16.7
+    expected_avg_r: 0.623
   EGLDUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 16.7
+    expected_avg_r: 0.711
+  EIGENUSDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 30.0
+    expected_avg_r: 1.058
+  ENAUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 20.0
+    expected_avg_r: 1.092
+  ENSOUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: HID_BULL
+    expected_wr: 16.7
+    expected_avg_r: 0.817
+  ENSUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 21.1
+    expected_avg_r: 0.839
+  ESPORTSUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 33.3
+    expected_avg_r: 2.617
+  ETHUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 22.2
+    expected_avg_r: 1.241
+  ETHUSDT-26JUN26:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 20.0
+    expected_avg_r: 1.129
+  EVAAUSDT:
     enabled: true
     rr: 7.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 15.8
-    expected_avg_r: 0.191
-  EIGENUSDT:
-    enabled: true
-    rr: 3.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 52.0
-    expected_avg_r: 1.024
-  ENSUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 2.0
-    divergence_type: HID_BEAR
-    expected_wr: 16.7
-    expected_avg_r: 0.775
-  ETHUSDT:
-    enabled: true
-    rr: 9.0
-    atr_mult: 2.0
-    divergence_type: HID_BEAR
-    expected_wr: 17.6
-    expected_avg_r: 0.689
-  ETHUSDT-27MAR26:
-    enabled: true
-    rr: 10.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 15.4
-    expected_avg_r: 0.588
-  EULUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 2.0
-    divergence_type: HID_BEAR
-    expected_wr: 42.9
-    expected_avg_r: 3.685
-  FFUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 1.0
-    divergence_type: HID_BEAR
-    expected_wr: 14.3
-    expected_avg_r: 0.466
+    expected_wr: 25.0
+    expected_avg_r: 0.918
   FLOWUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 1.5
-    divergence_type: REG_BEAR
-    expected_wr: 18.2
-    expected_avg_r: 0.929
-  FUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 2.0
-    divergence_type: REG_BEAR
-    expected_wr: 26.7
-    expected_avg_r: 1.885
-  GALAUSDT:
-    enabled: true
-    rr: 6.0
-    atr_mult: 1.5
-    divergence_type: HID_BULL
-    expected_wr: 28.6
-    expected_avg_r: 0.921
-  GMTUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 1.5
-    divergence_type: REG_BEAR
-    expected_wr: 12.5
-    expected_avg_r: 0.312
-  GOATUSDT:
-    enabled: true
-    rr: 2.0
-    atr_mult: 2.0
-    divergence_type: REG_BEAR
-    expected_wr: 41.7
-    expected_avg_r: 0.196
-  GPSUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 2.0
-    divergence_type: HID_BULL
-    expected_wr: 31.6
-    expected_avg_r: 2.442
-  GUNUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 1.0
-    divergence_type: HID_BULL
-    expected_wr: 23.1
-    expected_avg_r: 1.485
-  HAEDALUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 1.5
-    divergence_type: REG_BEAR
-    expected_wr: 42.9
-    expected_avg_r: 3.637
-  HBARUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 2.0
-    divergence_type: HID_BEAR
-    expected_wr: 16.7
-    expected_avg_r: 0.776
-  HUMAUSDT:
-    enabled: true
-    rr: 6.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 31.2
-    expected_avg_r: 1.137
-  HUSDT:
-    enabled: true
-    rr: 8.0
-    atr_mult: 2.0
-    divergence_type: REG_BULL
-    expected_wr: 16.7
-    expected_avg_r: 0.472
-  ICPUSDT:
-    enabled: true
-    rr: 1.5
-    atr_mult: 2.0
-    divergence_type: HID_BULL
-    expected_wr: 75.0
-    expected_avg_r: 0.829
-  IOTAUSDT:
-    enabled: true
-    rr: 5.0
-    atr_mult: 2.0
-    divergence_type: REG_BEAR
-    expected_wr: 33.3
-    expected_avg_r: 0.947
-  IPUSDT:
-    enabled: true
-    rr: 2.0
-    atr_mult: 1.5
-    divergence_type: REG_BEAR
-    expected_wr: 58.3
-    expected_avg_r: 0.701
-  JASMYUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 27.8
-    expected_avg_r: 1.978
-  JCTUSDT:
-    enabled: true
-    rr: 2.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 60.0
-    expected_avg_r: 0.749
-  JELLYJELLYUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 2.0
-    divergence_type: HID_BULL
-    expected_wr: 14.3
-    expected_avg_r: 0.53
-  JTOUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 1.0
-    divergence_type: HID_BEAR
-    expected_wr: 22.2
-    expected_avg_r: 1.361
-  KASUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 1.0
-    divergence_type: HID_BEAR
-    expected_wr: 20.0
-    expected_avg_r: 1.097
-  KERNELUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 1.0
-    divergence_type: HID_BEAR
-    expected_wr: 15.4
-    expected_avg_r: 0.596
-  L3USDT:
-    enabled: true
-    rr: 5.0
-    atr_mult: 2.0
-    divergence_type: HID_BEAR
-    expected_wr: 27.3
-    expected_avg_r: 0.595
-  LAUSDT:
-    enabled: true
-    rr: 5.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 27.8
-    expected_avg_r: 0.604
-  LDOUSDT:
-    enabled: true
-    rr: 8.0
-    atr_mult: 2.0
-    divergence_type: HID_BEAR
-    expected_wr: 33.3
-    expected_avg_r: 1.941
-  LINEAUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 36.4
-    expected_avg_r: 2.96
-  LINKUSDT:
-    enabled: true
-    rr: 8.0
-    atr_mult: 2.0
-    divergence_type: HID_BEAR
-    expected_wr: 41.7
-    expected_avg_r: 2.684
-  LPTUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.5
     divergence_type: REG_BEAR
     expected_wr: 20.0
     expected_avg_r: 1.13
+  FLRUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 21.4
+    expected_avg_r: 1.267
+  FLUXUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 37.5
+    expected_avg_r: 3.066
+  FORMUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 18.2
+    expected_avg_r: 0.932
+  FUSDT:
+    enabled: true
+    rr: 7.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 26.1
+    expected_avg_r: 0.994
+  GALAUSDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 1.5
+    divergence_type: HID_BULL
+    expected_wr: 33.3
+    expected_avg_r: 1.25
+  GIGAUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 20.0
+    expected_avg_r: 1.115
+  GLMUSDT:
+    enabled: true
+    rr: 7.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 34.6
+    expected_avg_r: 1.686
+  GOATUSDT:
+    enabled: true
+    rr: 2.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 41.7
+    expected_avg_r: 0.193
+  GPSUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: HID_BULL
+    expected_wr: 31.6
+    expected_avg_r: 2.445
+  GRASSUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BULL
+    expected_wr: 14.3
+    expected_avg_r: 0.523
+  GRIFFAINUSDT:
+    enabled: true
+    rr: 1.5
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 57.7
+    expected_avg_r: 0.395
+  GRTUSDT:
+    enabled: true
+    rr: 1.5
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 64.3
+    expected_avg_r: 0.487
+  GUNUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BULL
+    expected_wr: 12.5
+    expected_avg_r: 0.32
+  HAEDALUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 60.0
+    expected_avg_r: 5.526
+  HBARUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 17.6
+    expected_avg_r: 0.53
+  HEMIUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 16.7
+    expected_avg_r: 0.777
+  HMSTRUSDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 21.4
+    expected_avg_r: 0.452
+  HNTUSDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 36.4
+    expected_avg_r: 1.484
+  HOOKUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 50.0
+    expected_avg_r: 4.441
+  HUMAUSDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 17.6
+    expected_avg_r: 0.189
+  HUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 16.7
+    expected_avg_r: 0.425
+  HYPERUSDT:
+    enabled: true
+    rr: 2.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 53.3
+    expected_avg_r: 0.509
+  ICPUSDT:
+    enabled: true
+    rr: 1.5
+    atr_mult: 2.0
+    divergence_type: HID_BULL
+    expected_wr: 66.7
+    expected_avg_r: 0.622
+  ICXUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 15.0
+    expected_avg_r: 0.529
+  ILVUSDT:
+    enabled: true
+    rr: 2.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 55.6
+    expected_avg_r: 0.613
+  IMXUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 20.0
+    expected_avg_r: 0.93
+  IOTAUSDT:
+    enabled: true
+    rr: 5.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 27.3
+    expected_avg_r: 0.585
+  IOTXUSDT:
+    enabled: true
+    rr: 3.0
+    atr_mult: 2.0
+    divergence_type: REG_BULL
+    expected_wr: 50.0
+    expected_avg_r: 0.95
+  IPUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 15.8
+    expected_avg_r: 0.687
+  JASMYUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 29.4
+    expected_avg_r: 2.158
+  JELLYJELLYUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: HID_BULL
+    expected_wr: 11.1
+    expected_avg_r: 0.187
+  JTOUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 18.8
+    expected_avg_r: 0.987
+  KAIAUSDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 1.0
+    divergence_type: HID_BULL
+    expected_wr: 25.0
+    expected_avg_r: 0.646
+  KAITOUSDT:
+    enabled: true
+    rr: 2.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 42.9
+    expected_avg_r: 0.193
+  KASUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 19.0
+    expected_avg_r: 0.992
+  KAVAUSDT:
+    enabled: true
+    rr: 7.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 17.6
+    expected_avg_r: 0.307
+  KERNELUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BULL
+    expected_wr: 25.0
+    expected_avg_r: 1.702
+  KGENUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 14.3
+    expected_avg_r: 0.226
+  KITEUSDT:
+    enabled: true
+    rr: 4.0
+    atr_mult: 1.5
+    divergence_type: HID_BULL
+    expected_wr: 28.6
+    expected_avg_r: 0.4
+  KMNOUSDT:
+    enabled: true
+    rr: 7.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 42.9
+    expected_avg_r: 2.357
+  L3USDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 28.6
+    expected_avg_r: 0.957
+  LAUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 25.0
+    expected_avg_r: 1.692
+  LDOUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 25.0
+    expected_avg_r: 1.192
+  LINEAUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 33.3
+    expected_avg_r: 2.626
   LRCUSDT:
     enabled: true
     rr: 9.0
     atr_mult: 1.0
     divergence_type: REG_BULL
     expected_wr: 14.3
-    expected_avg_r: 0.33
-  LSKUSDT:
-    enabled: true
-    rr: 10.0
-    atr_mult: 2.0
-    divergence_type: REG_BULL
-    expected_wr: 20.0
-    expected_avg_r: 1.154
+    expected_avg_r: 0.329
   LYNUSDT:
     enabled: true
-    rr: 5.0
+    rr: 1.5
     atr_mult: 1.5
     divergence_type: HID_BULL
-    expected_wr: 33.3
-    expected_avg_r: 0.97
+    expected_wr: 66.7
+    expected_avg_r: 0.63
   MAGICUSDT:
     enabled: true
     rr: 6.0
     atr_mult: 2.0
     divergence_type: REG_BEAR
-    expected_wr: 37.5
-    expected_avg_r: 1.559
+    expected_wr: 25.0
+    expected_avg_r: 0.682
   MANAUSDT:
     enabled: true
-    rr: 7.0
-    atr_mult: 1.0
+    rr: 6.0
+    atr_mult: 2.0
     divergence_type: HID_BEAR
-    expected_wr: 31.6
-    expected_avg_r: 1.417
+    expected_wr: 31.2
+    expected_avg_r: 1.136
   MANTAUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.0
     divergence_type: REG_BEAR
-    expected_wr: 33.3
-    expected_avg_r: 2.568
-  MMTUSDT:
+    expected_wr: 22.2
+    expected_avg_r: 1.345
+  MAVIAUSDT:
     enabled: true
     rr: 6.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 57.1
-    expected_avg_r: 2.951
-  MNTUSDT:
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 33.3
+    expected_avg_r: 1.294
+  MEMEUSDT:
     enabled: true
     rr: 8.0
     atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 22.7
-    expected_avg_r: 0.969
-  MOODENGUSDT:
-    enabled: true
-    rr: 5.0
-    atr_mult: 1.0
     divergence_type: REG_BEAR
-    expected_wr: 33.3
-    expected_avg_r: 0.89
-  MORPHOUSDT:
+    expected_wr: 16.7
+    expected_avg_r: 0.442
+  METUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 14.3
+    expected_avg_r: 0.345
+  MEWUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 14.3
+    expected_avg_r: 0.327
+  MNTUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 27.3
+    expected_avg_r: 1.904
+  MOCAUSDT:
     enabled: true
     rr: 6.0
-    atr_mult: 1.0
-    divergence_type: HID_BULL
-    expected_wr: 33.3
-    expected_avg_r: 1.206
-  MOVEUSDT:
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 50.0
+    expected_avg_r: 2.453
+  MOODENGUSDT:
     enabled: true
     rr: 9.0
     atr_mult: 1.5
     divergence_type: REG_BEAR
     expected_wr: 16.7
-    expected_avg_r: 0.606
-  MUBARAKUSDT:
+    expected_avg_r: 0.593
+  MORPHOUSDT:
     enabled: true
-    rr: 7.0
+    rr: 9.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 16.7
+    expected_avg_r: 0.568
+  MOVEUSDT:
+    enabled: true
+    rr: 10.0
     atr_mult: 1.5
     divergence_type: REG_BEAR
-    expected_wr: 44.4
-    expected_avg_r: 2.506
+    expected_wr: 25.0
+    expected_avg_r: 1.684
+  MOVRUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 25.0
+    expected_avg_r: 1.409
+  MTLUSDT:
+    enabled: true
+    rr: 7.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 33.3
+    expected_avg_r: 1.58
+  MUBARAKUSDT:
+    enabled: true
+    rr: 4.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 62.5
+    expected_avg_r: 2.087
   MYXUSDT:
     enabled: true
     rr: 3.0
     atr_mult: 2.0
     divergence_type: HID_BEAR
-    expected_wr: 55.6
-    expected_avg_r: 1.194
-  NOTUSDT:
+    expected_wr: 60.0
+    expected_avg_r: 1.379
+  NEOUSDT:
     enabled: true
-    rr: 6.0
+    rr: 7.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 16.7
+    expected_avg_r: 0.268
+  NEWTUSDT:
+    enabled: true
+    rr: 10.0
     atr_mult: 2.0
     divergence_type: REG_BEAR
-    expected_wr: 30.8
-    expected_avg_r: 1.105
-  OMUSDT:
-    enabled: true
-    rr: 6.0
-    atr_mult: 1.5
-    divergence_type: HID_BEAR
-    expected_wr: 46.2
-    expected_avg_r: 2.163
-  ONDOUSDT:
+    expected_wr: 20.0
+    expected_avg_r: 1.164
+  NOMUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.0
-    divergence_type: REG_BEAR
+    divergence_type: HID_BEAR
+    expected_wr: 12.5
+    expected_avg_r: 0.303
+  NOTUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
     expected_wr: 20.0
-    expected_avg_r: 1.107
+    expected_avg_r: 1.141
+  NTRNUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 12.5
+    expected_avg_r: 0.328
+  OGUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 14.3
+    expected_avg_r: 0.195
+  OKBUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 37.5
+    expected_avg_r: 3.061
+  ONDOUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 33.3
+    expected_avg_r: 2.622
+  ONEUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 12.5
+    expected_avg_r: 0.309
+  ONGUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 18.2
+    expected_avg_r: 0.928
+  ONTUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 25.0
+    expected_avg_r: 1.441
+  ORBSUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: REG_BULL
+    expected_wr: 14.3
+    expected_avg_r: 0.448
+  ORDERUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 14.3
+    expected_avg_r: 0.349
   PENDLEUSDT:
     enabled: true
     rr: 7.0
     atr_mult: 1.0
     divergence_type: HID_BULL
-    expected_wr: 18.8
-    expected_avg_r: 0.419
+    expected_wr: 23.1
+    expected_avg_r: 0.763
   PENGUUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.0
     divergence_type: HID_BEAR
-    expected_wr: 17.6
-    expected_avg_r: 0.848
+    expected_wr: 18.8
+    expected_avg_r: 0.971
+  PHAUSDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 1.0
+    divergence_type: REG_BULL
+    expected_wr: 40.0
+    expected_avg_r: 1.677
   PIPPINUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.0
     divergence_type: HID_BULL
-    expected_wr: 18.8
-    expected_avg_r: 1.038
-  PNUTUSDT:
+    expected_wr: 16.7
+    expected_avg_r: 0.802
+  PIXELUSDT:
     enabled: true
-    rr: 6.0
-    atr_mult: 1.0
-    divergence_type: HID_BULL
-    expected_wr: 40.0
-    expected_avg_r: 1.726
-  POLUSDT:
-    enabled: true
-    rr: 9.0
-    atr_mult: 2.0
+    rr: 10.0
+    atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 29.4
-    expected_avg_r: 1.879
-  POPCATUSDT:
+    expected_wr: 11.5
+    expected_avg_r: 0.198
+  PLUMEUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 14.3
+    expected_avg_r: 0.494
+  PNUTUSDT:
     enabled: true
     rr: 5.0
     atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 31.2
+    expected_avg_r: 0.83
+  POLUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 21.4
+    expected_avg_r: 1.235
+  POPCATUSDT:
+    enabled: true
+    rr: 4.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 36.8
+    expected_avg_r: 0.799
+  PORTALUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: HID_BULL
+    expected_wr: 20.0
+    expected_avg_r: 1.165
+  POWRUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.5
     divergence_type: REG_BEAR
-    expected_wr: 33.3
-    expected_avg_r: 0.958
+    expected_wr: 26.7
+    expected_avg_r: 1.58
+  PROMPTUSDT:
+    enabled: true
+    rr: 4.0
+    atr_mult: 1.5
+    divergence_type: HID_BULL
+    expected_wr: 25.0
+    expected_avg_r: 0.21
+  PROMUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.5
+    divergence_type: HID_BULL
+    expected_wr: 12.5
+    expected_avg_r: 0.195
+  PROVEUSDT:
+    enabled: true
+    rr: 7.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 16.7
+    expected_avg_r: 0.285
+  PTBUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 40.0
+    expected_avg_r: 2.947
+  PUFFERUSDT:
+    enabled: true
+    rr: 5.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 37.5
+    expected_avg_r: 1.2
+  PUMPBTCUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 18.8
+    expected_avg_r: 1.016
   PUMPFUNUSDT:
     enabled: true
     rr: 3.0
     atr_mult: 1.5
     divergence_type: REG_BEAR
     expected_wr: 40.0
-    expected_avg_r: 0.564
+    expected_avg_r: 0.554
+  PUNDIXUSDT:
+    enabled: true
+    rr: 5.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 25.0
+    expected_avg_r: 0.44
   PYTHUSDT:
     enabled: true
     rr: 3.0
     atr_mult: 2.0
     divergence_type: HID_BULL
-    expected_wr: 44.4
-    expected_avg_r: 0.734
-  QNTUSDT:
+    expected_wr: 50.0
+    expected_avg_r: 0.956
+  QTUMUSDT:
     enabled: true
-    rr: 10.0
-    atr_mult: 1.5
-    divergence_type: REG_BEAR
-    expected_wr: 16.7
-    expected_avg_r: 0.75
-  RECALLUSDT:
+    rr: 5.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 37.5
+    expected_avg_r: 1.185
+  RAYDIUMUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.0
+    divergence_type: REG_BULL
+    expected_wr: 20.0
+    expected_avg_r: 1.109
+  RDNTUSDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 50.0
+    expected_avg_r: 2.414
+  REDUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 40.0
+    expected_avg_r: 2.934
+  RENDERUSDT:
+    enabled: true
+    rr: 1.5
+    atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 22.2
-    expected_avg_r: 1.37
+    expected_wr: 70.6
+    expected_avg_r: 0.71
   RESOLVUSDT:
     enabled: true
     rr: 5.0
     atr_mult: 1.5
     divergence_type: HID_BULL
-    expected_wr: 40.0
-    expected_avg_r: 1.353
+    expected_wr: 28.6
+    expected_avg_r: 0.646
+  REZUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 28.6
+    expected_avg_r: 2.071
+  ROAMUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 23.5
+    expected_avg_r: 1.3
+  RONINUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 18.2
+    expected_avg_r: 0.93
   ROSEUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.0
     divergence_type: HID_BULL
-    expected_wr: 25.0
-    expected_avg_r: 1.651
-  SAHARAUSDT:
-    enabled: true
-    rr: 1.5
-    atr_mult: 1.5
-    divergence_type: REG_BEAR
-    expected_wr: 83.3
-    expected_avg_r: 1.03
-  SANDUSDT:
-    enabled: true
-    rr: 6.0
-    atr_mult: 1.5
-    divergence_type: REG_BEAR
     expected_wr: 20.0
-    expected_avg_r: 0.31
-  SEIUSDT:
+    expected_avg_r: 1.107
+  RPLUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 27.3
+    expected_avg_r: 1.936
+  RSRUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
     divergence_type: HID_BEAR
     expected_wr: 23.5
-    expected_avg_r: 1.511
-  SHELLUSDT:
+    expected_avg_r: 1.488
+  RUNEUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 31.2
+    expected_avg_r: 2.304
+  RVNUSDT:
     enabled: true
     rr: 9.0
     atr_mult: 1.0
+    divergence_type: REG_BULL
+    expected_wr: 16.7
+    expected_avg_r: 0.545
+  SAFEUSDT:
+    enabled: true
+    rr: 6.0
+    atr_mult: 2.0
+    divergence_type: REG_BULL
+    expected_wr: 20.0
+    expected_avg_r: 0.36
+  SANDUSDT:
+    enabled: true
+    rr: 2.0
+    atr_mult: 1.0
+    divergence_type: REG_BULL
+    expected_wr: 60.0
+    expected_avg_r: 0.721
+  SAPIENUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 22.2
+    expected_avg_r: 0.955
+  SCRTUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 2.0
+    divergence_type: HID_BULL
+    expected_wr: 40.0
+    expected_avg_r: 2.944
+  SCUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 36.4
+    expected_avg_r: 2.93
+  SEIUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 2.0
     divergence_type: HID_BEAR
-    expected_wr: 18.8
-    expected_avg_r: 0.787
+    expected_wr: 26.3
+    expected_avg_r: 1.569
+  SHELLUSDT:
+    enabled: true
+    rr: 1.5
+    atr_mult: 1.5
+    divergence_type: REG_BULL
+    expected_wr: 80.0
+    expected_avg_r: 0.943
   SIRENUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 2.0
     divergence_type: HID_BULL
-    expected_wr: 25.0
-    expected_avg_r: 1.701
+    expected_wr: 31.6
+    expected_avg_r: 2.43
   SKLUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.0
     divergence_type: HID_BULL
-    expected_wr: 37.5
-    expected_avg_r: 3.029
+    expected_wr: 28.6
+    expected_avg_r: 2.044
+  SKYAIUSDT:
+    enabled: true
+    rr: 4.0
+    atr_mult: 1.0
+    divergence_type: HID_BULL
+    expected_wr: 26.7
+    expected_avg_r: 0.234
   SNXUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.0
     divergence_type: HID_BEAR
-    expected_wr: 20.0
-    expected_avg_r: 1.093
+    expected_wr: 15.4
+    expected_avg_r: 0.583
+  SOLAYERUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 28.6
+    expected_avg_r: 1.809
   SOLUSDT:
     enabled: true
     rr: 8.0
     atr_mult: 2.0
     divergence_type: HID_BULL
     expected_wr: 20.0
-    expected_avg_r: 0.711
+    expected_avg_r: 0.705
   SONICUSDT:
     enabled: true
     rr: 7.0
     atr_mult: 2.0
     divergence_type: HID_BEAR
-    expected_wr: 35.0
-    expected_avg_r: 1.753
+    expected_wr: 25.0
+    expected_avg_r: 0.954
   SOONUSDT:
     enabled: true
-    rr: 8.0
+    rr: 10.0
     atr_mult: 2.0
     divergence_type: HID_BEAR
-    expected_wr: 42.9
-    expected_avg_r: 2.815
+    expected_wr: 28.6
+    expected_avg_r: 2.1
   SPXUSDT:
     enabled: true
     rr: 1.5
     atr_mult: 1.0
     divergence_type: HID_BEAR
-    expected_wr: 64.7
-    expected_avg_r: 0.55
+    expected_wr: 68.4
+    expected_avg_r: 0.644
   SQDUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 2.0
     divergence_type: HID_BEAR
-    expected_wr: 45.5
-    expected_avg_r: 3.951
-  STORJUSDT:
+    expected_wr: 46.2
+    expected_avg_r: 4.029
+  SSVUSDT:
     enabled: true
-    rr: 8.0
+    rr: 10.0
     atr_mult: 1.0
-    divergence_type: REG_BULL
+    divergence_type: REG_BEAR
     expected_wr: 20.0
-    expected_avg_r: 0.691
+    expected_avg_r: 1.114
+  STABLEUSDT:
+    enabled: true
+    rr: 7.0
+    atr_mult: 2.0
+    divergence_type: HID_BULL
+    expected_wr: 33.3
+    expected_avg_r: 1.634
+  STGUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 16.7
+    expected_avg_r: 0.712
   STRKUSDT:
     enabled: true
     rr: 2.0
     atr_mult: 2.0
     divergence_type: HID_BULL
-    expected_wr: 66.7
-    expected_avg_r: 0.948
+    expected_wr: 57.1
+    expected_avg_r: 0.663
   STXUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 12.5
-    expected_avg_r: 0.299
+    expected_wr: 21.4
+    expected_avg_r: 1.282
   SUIUSDT:
     enabled: true
-    rr: 4.0
-    atr_mult: 2.0
-    divergence_type: REG_BEAR
-    expected_wr: 33.3
-    expected_avg_r: 0.616
-  SUSDT:
+    rr: 7.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 21.1
+    expected_avg_r: 0.611
+  SUNUSDT:
     enabled: true
     rr: 9.0
     atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 14.3
+    expected_avg_r: 0.301
+  SUPERUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 22.7
-    expected_avg_r: 1.223
+    expected_wr: 21.7
+    expected_avg_r: 1.324
+  SUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: REG_BEAR
+    expected_wr: 25.0
+    expected_avg_r: 1.683
+  TAIKOUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 30.8
+    expected_avg_r: 2.262
   TAOUSDT:
     enabled: true
     rr: 9.0
     atr_mult: 1.0
     divergence_type: HID_BEAR
-    expected_wr: 26.1
-    expected_avg_r: 1.513
-  TNSRUSDT:
+    expected_wr: 31.8
+    expected_avg_r: 2.089
+  TIAUSDT:
     enabled: true
-    rr: 8.0
+    rr: 9.0
     atr_mult: 1.5
-    divergence_type: REG_BEAR
-    expected_wr: 20.0
-    expected_avg_r: 0.749
+    divergence_type: HID_BEAR
+    expected_wr: 17.6
+    expected_avg_r: 0.706
+  TLMUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 17.6
+    expected_avg_r: 0.695
   TOWNSUSDT:
     enabled: true
     rr: 8.0
     atr_mult: 1.0
     divergence_type: REG_BEAR
     expected_wr: 20.0
-    expected_avg_r: 0.721
+    expected_avg_r: 0.72
+  TRBUSDT:
+    enabled: true
+    rr: 7.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 18.2
+    expected_avg_r: 0.344
   TRUMPUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
     expected_wr: 30.0
-    expected_avg_r: 2.188
-  TRUTHUSDT:
+    expected_avg_r: 2.196
+  TRUUSDT:
     enabled: true
-    rr: 3.0
-    atr_mult: 2.0
-    divergence_type: HID_BULL
-    expected_wr: 66.7
-    expected_avg_r: 1.634
+    rr: 9.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 24.0
+    expected_avg_r: 1.33
   TRXUSDT:
     enabled: true
     rr: 9.0
     atr_mult: 2.0
     divergence_type: HID_BULL
     expected_wr: 18.8
-    expected_avg_r: 0.678
+    expected_avg_r: 0.681
+  TUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 2.0
+    divergence_type: HID_BEAR
+    expected_wr: 11.8
+    expected_avg_r: 0.225
   TWTUSDT:
     enabled: true
     rr: 8.0
@@ -1001,34 +1751,69 @@ symbols:
     divergence_type: REG_BULL
     expected_wr: 33.3
     expected_avg_r: 1.913
-  UNIUSDT:
+  UBUSDT:
     enabled: true
-    rr: 1.5
+    rr: 10.0
     atr_mult: 1.0
     divergence_type: HID_BULL
-    expected_wr: 83.3
-    expected_avg_r: 0.982
+    expected_wr: 18.2
+    expected_avg_r: 0.938
+  UMAUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 18.8
+    expected_avg_r: 0.945
+  UNIUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 16.7
+    expected_avg_r: 0.391
   USELESSUSDT:
     enabled: true
     rr: 4.0
     atr_mult: 2.0
     divergence_type: HID_BEAR
-    expected_wr: 36.4
-    expected_avg_r: 0.795
-  VANAUSDT:
-    enabled: true
-    rr: 5.0
-    atr_mult: 1.5
-    divergence_type: REG_BEAR
-    expected_wr: 25.0
-    expected_avg_r: 0.43
-  VETUSDT:
+    expected_wr: 28.6
+    expected_avg_r: 0.406
+  USTCUSDT:
     enabled: true
     rr: 10.0
+    atr_mult: 1.0
+    divergence_type: REG_BULL
+    expected_wr: 25.0
+    expected_avg_r: 1.686
+  USUALUSDT:
+    enabled: true
+    rr: 4.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 20.0
-    expected_avg_r: 1.123
+    expected_wr: 26.3
+    expected_avg_r: 0.258
+  VELOUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 1.0
+    divergence_type: REG_BEAR
+    expected_wr: 18.2
+    expected_avg_r: 0.555
+  VETUSDT:
+    enabled: true
+    rr: 8.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 18.8
+    expected_avg_r: 0.61
+  VINEUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BULL
+    expected_wr: 33.3
+    expected_avg_r: 2.568
   VIRTUALUSDT:
     enabled: true
     rr: 7.0
@@ -1041,8 +1826,8 @@ symbols:
     rr: 7.0
     atr_mult: 2.0
     divergence_type: HID_BULL
-    expected_wr: 20.0
-    expected_avg_r: 0.565
+    expected_wr: 53.3
+    expected_avg_r: 3.242
   WALUSDT:
     enabled: true
     rr: 4.0
@@ -1052,25 +1837,25 @@ symbols:
     expected_avg_r: 0.37
   WAVESUSDT:
     enabled: true
-    rr: 9.0
+    rr: 8.0
     atr_mult: 2.0
-    divergence_type: REG_BEAR
-    expected_wr: 41.7
-    expected_avg_r: 3.094
+    divergence_type: HID_BEAR
+    expected_wr: 17.6
+    expected_avg_r: 0.522
   WCTUSDT:
     enabled: true
-    rr: 8.0
-    atr_mult: 1.5
+    rr: 9.0
+    atr_mult: 2.0
     divergence_type: HID_BEAR
-    expected_wr: 18.2
-    expected_avg_r: 0.584
+    expected_wr: 17.6
+    expected_avg_r: 0.719
   WIFUSDT:
     enabled: true
-    rr: 5.0
-    atr_mult: 1.0
+    rr: 7.0
+    atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 41.2
-    expected_avg_r: 1.388
+    expected_wr: 35.0
+    expected_avg_r: 1.742
   WLDUSDT:
     enabled: true
     rr: 7.0
@@ -1083,70 +1868,119 @@ symbols:
     rr: 6.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 18.2
-    expected_avg_r: 0.226
-  WUSDT:
-    enabled: true
-    rr: 8.0
-    atr_mult: 1.5
-    divergence_type: REG_BEAR
-    expected_wr: 30.0
-    expected_avg_r: 1.628
+    expected_wr: 22.2
+    expected_avg_r: 0.515
   XAIUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.0
     divergence_type: HID_BEAR
-    expected_wr: 13.3
-    expected_avg_r: 0.371
+    expected_wr: 12.5
+    expected_avg_r: 0.278
   XAUTUSDT:
     enabled: true
-    rr: 10.0
+    rr: 8.0
     atr_mult: 2.0
-    divergence_type: REG_BULL
-    expected_wr: 50.0
-    expected_avg_r: 4.244
-  XLMUSDT:
+    divergence_type: HID_BULL
+    expected_wr: 40.0
+    expected_avg_r: 1.974
+  XCNUSDT:
     enabled: true
     rr: 9.0
     atr_mult: 2.0
     divergence_type: REG_BEAR
-    expected_wr: 22.2
-    expected_avg_r: 1.137
-  XNYUSDT:
+    expected_wr: 14.3
+    expected_avg_r: 0.379
+  XIONUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 12.9
+    expected_avg_r: 0.303
+  XLMUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 22.2
+    expected_avg_r: 1.359
+  XPINUSDT:
+    enabled: true
+    rr: 7.0
+    atr_mult: 2.0
     divergence_type: HID_BEAR
-    expected_wr: 14.3
-    expected_avg_r: 0.526
+    expected_wr: 18.8
+    expected_avg_r: 0.464
   XPLUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 1.5
     divergence_type: HID_BEAR
-    expected_wr: 33.3
-    expected_avg_r: 2.614
+    expected_wr: 16.7
+    expected_avg_r: 0.787
   XRPUSDT:
     enabled: true
     rr: 10.0
     atr_mult: 2.0
     divergence_type: HID_BULL
-    expected_wr: 42.9
-    expected_avg_r: 3.629
+    expected_wr: 60.0
+    expected_avg_r: 5.521
   XTZUSDT:
     enabled: true
-    rr: 6.0
-    atr_mult: 1.0
-    divergence_type: REG_BULL
-    expected_wr: 25.0
-    expected_avg_r: 0.664
-  ZILUSDT:
+    rr: 8.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 26.3
+    expected_avg_r: 1.29
+  YFIUSDT:
     enabled: true
-    rr: 10.0
+    rr: 8.0
     atr_mult: 1.0
     divergence_type: REG_BEAR
-    expected_wr: 22.2
-    expected_avg_r: 1.321
+    expected_wr: 15.4
+    expected_avg_r: 0.229
+  YGGUSDT:
+    enabled: true
+    rr: 9.0
+    atr_mult: 2.0
+    divergence_type: REG_BEAR
+    expected_wr: 27.3
+    expected_avg_r: 1.676
+  ZEREBROUSDT:
+    enabled: true
+    rr: 3.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 41.7
+    expected_avg_r: 0.59
+  ZILUSDT:
+    enabled: true
+    rr: 4.0
+    atr_mult: 1.0
+    divergence_type: REG_BULL
+    expected_wr: 66.7
+    expected_avg_r: 2.25
+  ZORAUSDT:
+    enabled: true
+    rr: 10.0
+    atr_mult: 1.5
+    divergence_type: HID_BEAR
+    expected_wr: 13.0
+    expected_avg_r: 0.369
+  ZROUSDT:
+    enabled: true
+    rr: 4.0
+    atr_mult: 1.0
+    divergence_type: REG_BULL
+    expected_wr: 62.5
+    expected_avg_r: 2.051
+  ZRXUSDT:
+    enabled: true
+    rr: 5.0
+    atr_mult: 1.0
+    divergence_type: HID_BEAR
+    expected_wr: 22.7
+    expected_avg_r: 0.249
 strategy_description: 1H Precision Divergence (Safe Liquid) - 235 Symbols
 expected_90d_r: 9543.96

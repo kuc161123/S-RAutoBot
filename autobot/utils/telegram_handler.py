@@ -355,9 +355,9 @@ class TelegramHandler:
                     else:
                         key_status = f"✅ {days_left}d left"
                 else:
-                    key_status = "❓ Unknown"
+                    key_status = "✅ Connected"
             else:
-                key_status = "❓ Unknown"
+                key_status = "⚠️ API Check Failed"
 
             next_scan_mins = max(0, 60 - mins_ago)
 

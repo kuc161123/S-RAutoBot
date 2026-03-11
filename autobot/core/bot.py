@@ -1,7 +1,7 @@
 """
-1H Multi-Divergence Trading Bot - Dynamic Slippage Validated
+1H Multi-Divergence Trading Bot - Multi-Config (Both Sides)
 ====================================================================
-275 Symbols | Monte Carlo + Walk-Forward + Dynamic Slippage Validated
+323 Configs across 275 Symbols | Long + Short | Dynamic Slippage Validated
 Expected Performance: ~748R/Month (Based on 1-Year OOS Backtest)
 
 Divergence Types:
@@ -87,7 +87,7 @@ class ActiveTrade:
 
 
 class Bot4H:
-    """1H Multi-Divergence Trading Bot - Dynamic Slippage Validated"""
+    """1H Multi-Divergence Trading Bot - Multi-Config (Both Sides)"""
     
     def __init__(self):
         """Initialize bot"""
@@ -722,7 +722,12 @@ class Bot4H:
         # Entry uses the OPEN of the current (new) candle, matching the backtest exactly.
         if symbol in self.confirmed_entries:
             queued_signal = self.confirmed_entries.pop(symbol)
-            if symbol not in self.active_trades:
+            
+            # [SAFETY] Max concurrent positions limit
+            MAX_CONCURRENT_POSITIONS = 15
+            if len(self.active_trades) >= MAX_CONCURRENT_POSITIONS:
+                logger.warning(f"[{symbol}] Max {MAX_CONCURRENT_POSITIONS} concurrent positions reached - skipping entry")
+            elif symbol not in self.active_trades:
                 logger.info(f"[{symbol}] Executing queued entry at candle open (backtest-aligned)...")
                 await self.execute_trade(symbol, queued_signal, df, use_candle_open=True)
             else:
@@ -1536,16 +1541,15 @@ class Bot4H:
 🤖 **BOT STARTED**
 ━━━━━━━━━━━━━━━━━━━━
 
-📊 **Strategy**: 1H Multi-Div (1-Year MC Validated)
-📈 **Symbols**: {len(enabled_symbols)}
+📊 **Strategy**: 1H Multi-Div (Both Sides)
+📈 **Symbols**: {len(enabled_symbols)} ({self.symbol_config.get_total_configs()} configs)
 💰 **Risk**: {risk_pct*100:.1f}% per trade
-🔬 **Validation**: Monte Carlo + Walk-Forward
+🔬 **Mode**: Multi-config (long + short per symbol)
+⚡ **Max Positions**: 15 concurrent
 
 **LIFETIME STATS**
 ├ Total R: {lifetime_r:+.1f}R
 └ Since: {start_date}
-
-**EXPECTED**: ~2,243R / 90 days (~748R/month)
 
 ━━━━━━━━━━━━━━━━━━━━
 💡 /dashboard /help

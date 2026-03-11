@@ -863,10 +863,11 @@ class Bot4H:
                 pass
         
         # 1. Detect new divergences
-        # [BACKTEST ALIGNMENT] Pass allowed_types so only the configured divergence type
-        # is searched, matching the backtest's focused detection per symbol.
-        allowed_div = self.symbol_config.get_divergence_for_symbol(symbol)
-        allowed_types = [allowed_div] if allowed_div else None
+        # [MULTI-CONFIG] Pass ALL allowed divergence types for this symbol.
+        # Supports both single-config and multi-config (long + short) per symbol.
+        allowed_types = self.symbol_config.get_allowed_divergence_types(symbol)
+        if not allowed_types:
+            allowed_types = None  # Fallback: detect all types
         new_signals = detect_divergences(df, symbol, allowed_types=allowed_types, lookback_bars=self.lookback_bars)
         valid_signals_count = 0
         duplicate_count = 0
@@ -886,9 +887,8 @@ class Bot4H:
                 continue
             
             # DIVERGENCE TYPE FILTER: Only accept if this divergence type is allowed for this symbol
-            allowed_div = self.symbol_config.get_divergence_for_symbol(symbol)
-            if allowed_div and signal.divergence_code != allowed_div:
-                logger.debug(f"[{symbol}] {signal.divergence_code} detected but only {allowed_div} allowed - SKIP")
+            if not self.symbol_config.is_divergence_allowed(symbol, signal.divergence_code):
+                logger.debug(f"[{symbol}] {signal.divergence_code} detected but not in allowed types - SKIP")
                 continue
             
             # DEDUPLICATION: Check if we've already seen this signal
@@ -1062,10 +1062,10 @@ class Bot4H:
             logger.error(f"[{symbol}] Failed to check existing positions: {e}")
             return # Safety fail-close
         
-        # Get symbol-specific R:R
-        rr = self.symbol_config.get_rr_for_symbol(symbol)
+        # Get R:R for this specific signal's divergence type (multi-config support)
+        rr = self.symbol_config.get_rr_for_symbol(symbol, signal.divergence_code)
         if rr is None:
-            logger.error(f"[{symbol}] No R:R configured - skipping")
+            logger.error(f"[{symbol}] No R:R configured for {signal.divergence_code} - skipping")
             return
         
         # [BACKTEST ALIGNMENT] Use candle open for SL/TP calculation when entry is queued.
@@ -1087,11 +1087,14 @@ class Bot4H:
                 entry_price = df.iloc[-1]['close']
             atr = df.iloc[-1]['atr']
         
-        # SL distance - use PER-SYMBOL atr_mult from config (critical for performance)
-        symbol_cfg = self.symbol_config.get_symbol_config(symbol)
-        sl_mult = symbol_cfg.get('atr_mult', self.strategy_config.get('exit_params', {}).get('sl_atr_mult', 1.0))
+        # SL distance - use PER-CONFIG atr_mult (multi-config: each div type has its own ATR mult)
+        signal_cfg = self.symbol_config.get_config_for_divergence(symbol, signal.divergence_code)
+        if signal_cfg:
+            sl_mult = signal_cfg.get('atr_mult', 1.0)
+        else:
+            sl_mult = self.strategy_config.get('exit_params', {}).get('sl_atr_mult', 1.0)
         sl_distance = atr * sl_mult
-        logger.info(f"[{symbol}] Using ATR mult: {sl_mult}x → SL distance: {sl_distance:.6f}")
+        logger.info(f"[{symbol}] {signal.divergence_code} ATR mult: {sl_mult}x → SL distance: {sl_distance:.6f}")
         
         # Calculate position size based on RISK (Safety First)
         # Goal: If SL hits, loss = risk_amount

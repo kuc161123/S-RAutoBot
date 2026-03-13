@@ -2,23 +2,28 @@
 1H Multi-Divergence Trading Bot - Multi-Config (Both Sides)
 ====================================================================
 323 Configs across 275 Symbols | Long + Short | Dynamic Slippage Validated
-Expected Performance: ~748R/Month (Based on 1-Year OOS Backtest)
+
+6-Month Validation (Sep 2025 - Mar 2026):
+  +3,644R | 24.2% WR | PF 1.94 | Max DD 26.1R | 4,736 trades
+  Long: +650R (94 configs) | Short: +2,994R (229 configs)
+  48 dual-side symbols trade both directions
 
 Divergence Types:
-- REG_BULL: Regular Bullish (Reversal)
-- REG_BEAR: Regular Bearish (Reversal)
-- HID_BULL: Hidden Bullish (Continuation)
-- HID_BEAR: Hidden Bearish (Continuation)
+- REG_BULL: Regular Bullish (29 configs)
+- REG_BEAR: Regular Bearish (90 configs)
+- HID_BULL: Hidden Bullish (65 configs)
+- HID_BEAR: Hidden Bearish (139 configs)
 
 Validation: 365-day data, 75/25 train/test split, Monte Carlo (1000 iter),
-            Profit Factor > 1.2, Max DD < 15R, Lookback 50 candles
+            Profit Factor > 1.2, Max DD < 15R, Dynamic volume-based slippage
 
 Main Features:
 - 1H divergence detection with EMA 200 trend filter
 - Break of Structure (BOS) confirmation (12 candles max)
-- Per-symbol divergence type and R:R configuration
+- Multi-config: each symbol can have independent long + short configs
+- Per-config divergence type, R:R ratio, and ATR multiplier
 - Fixed TP/SL (no trailing, no partial)
-- 0.1% risk per trade
+- Dynamic risk per trade (% of account balance)
 """
 
 import asyncio

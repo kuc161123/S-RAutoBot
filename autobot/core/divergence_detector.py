@@ -211,131 +211,137 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
             continue
         
         # ========== BULLISH DIVERGENCES (LONG) ==========
-        # Find current and previous pivot lows
-        curr_pl = curr_pli = prev_pl = prev_pli = None
-        
-        # Start searching from i - PIVOT_RIGHT to avoid look-ahead
-        for j in range(i - PIVOT_RIGHT, max(i - lookback_bars - PIVOT_RIGHT, 0), -1):
-            if not np.isnan(price_low_pivots[j]):
-                if curr_pl is None:
-                    curr_pl, curr_pli = price_low_pivots[j], j
-                elif prev_pl is None and j < curr_pli - MIN_PIVOT_DISTANCE:
-                    prev_pl, prev_pli = price_low_pivots[j], j
-                    break
+        # [BACKTEST ALIGNMENT] Only scan for bullish divergences when price > EMA
+        # Matches backtest: "if curr_price > curr_ema:" hard gate
+        if current_price > current_ema:
+            # Find current and previous pivot lows
+            curr_pl = curr_pli = prev_pl = prev_pli = None
+            
+            # Start searching from i - PIVOT_RIGHT to avoid look-ahead
+            for j in range(i - PIVOT_RIGHT, max(i - lookback_bars - PIVOT_RIGHT, 0), -1):
+                if not np.isnan(price_low_pivots[j]):
+                    if curr_pl is None:
+                        curr_pl, curr_pli = price_low_pivots[j], j
+                    elif prev_pl is None and j < curr_pli - MIN_PIVOT_DISTANCE:
+                        prev_pl, prev_pli = price_low_pivots[j], j
+                        break
 
-        if curr_pl is not None and prev_pl is not None:
-            # [VALIDATION ALIGNMENT] Skip if this pivot pair already generated a signal
-            dedup_key_bull = (curr_pli, prev_pli, 'BULL')
-            if dedup_key_bull in used_pivots:
-                pass  # Skip to bearish check below
-            # [BACKTEST ALIGNMENT] Pivot distance filter — only consider fresh pivots
-            # Matches backtest: (i - curr_idx) <= 10
-            elif (i - curr_pli) > 10:
-                pass  # Pivot too stale, skip
-            else:
-                # [BACKTEST ALIGNMENT] Swing high is max(high) from most recent pivot to scan
-                # position — NOT the full lookback window. Matches backtest: max(high[curr_idx:i+1])
-                swing_high = max(high[curr_pli:i+1])
-                trend_aligned = current_price > current_ema
+            if curr_pl is not None and prev_pl is not None:
+                # [VALIDATION ALIGNMENT] Skip if this pivot pair already generated a signal
+                dedup_key_bull = (curr_pli, prev_pli, 'BULL')
+                if dedup_key_bull in used_pivots:
+                    pass  # Skip to bearish check below
+                # [BACKTEST ALIGNMENT] Pivot distance filter — only consider fresh pivots
+                # Matches backtest: (i - curr_idx) <= 10
+                elif (i - curr_pli) > 10:
+                    pass  # Pivot too stale, skip
+                else:
+                    # [BACKTEST ALIGNMENT] Swing high is max(high) from most recent pivot to scan
+                    # position — NOT the full lookback window. Matches backtest: max(high[curr_idx:i+1])
+                    swing_high = max(high[curr_pli:i+1])
+                    trend_aligned = True  # Already confirmed: price > EMA
 
-                # REG_BULL: Price LL (curr < prev), RSI HL (curr > prev)
-                if DIV_REG_BULL in allowed_types:
-                    if curr_pl < prev_pl and rsi[curr_pli] > rsi[prev_pli]:
-                        signals.append(DivergenceSignal(
-                            symbol=symbol,
-                            side='long',
-                            signal_type='bullish',
-                            divergence_code=DIV_REG_BULL,
-                            divergence_idx=i,
-                            swing_level=swing_high,
-                            rsi_value=rsi[i],
-                            price=current_price,
-                            timestamp=df.index[i],
-                            pivot_timestamp=df.index[curr_pli],
-                            daily_trend_aligned=trend_aligned
-                        ))
-                        used_pivots.add(dedup_key_bull)
+                    # REG_BULL: Price LL (curr < prev), RSI HL (curr > prev)
+                    if DIV_REG_BULL in allowed_types:
+                        if curr_pl < prev_pl and rsi[curr_pli] > rsi[prev_pli]:
+                            signals.append(DivergenceSignal(
+                                symbol=symbol,
+                                side='long',
+                                signal_type='bullish',
+                                divergence_code=DIV_REG_BULL,
+                                divergence_idx=i,
+                                swing_level=swing_high,
+                                rsi_value=rsi[i],
+                                price=current_price,
+                                timestamp=df.index[i],
+                                pivot_timestamp=df.index[curr_pli],
+                                daily_trend_aligned=trend_aligned
+                            ))
+                            used_pivots.add(dedup_key_bull)
 
-                # HID_BULL: Price HL (curr > prev), RSI LL (curr < prev)
-                if DIV_HID_BULL in allowed_types and dedup_key_bull not in used_pivots:
-                    if curr_pl > prev_pl and rsi[curr_pli] < rsi[prev_pli]:
-                        signals.append(DivergenceSignal(
-                            symbol=symbol,
-                            side='long',
-                            signal_type='bullish',
-                            divergence_code=DIV_HID_BULL,
-                            divergence_idx=i,
-                            swing_level=swing_high,
-                            rsi_value=rsi[i],
-                            price=current_price,
-                            timestamp=df.index[i],
-                            pivot_timestamp=df.index[curr_pli],
-                            daily_trend_aligned=trend_aligned
-                        ))
-                        used_pivots.add(dedup_key_bull)
+                    # HID_BULL: Price HL (curr > prev), RSI LL (curr < prev)
+                    if DIV_HID_BULL in allowed_types and dedup_key_bull not in used_pivots:
+                        if curr_pl > prev_pl and rsi[curr_pli] < rsi[prev_pli]:
+                            signals.append(DivergenceSignal(
+                                symbol=symbol,
+                                side='long',
+                                signal_type='bullish',
+                                divergence_code=DIV_HID_BULL,
+                                divergence_idx=i,
+                                swing_level=swing_high,
+                                rsi_value=rsi[i],
+                                price=current_price,
+                                timestamp=df.index[i],
+                                pivot_timestamp=df.index[curr_pli],
+                                daily_trend_aligned=trend_aligned
+                            ))
+                            used_pivots.add(dedup_key_bull)
         
         # ========== BEARISH DIVERGENCES (SHORT) ==========
-        # Find current and previous pivot highs
-        curr_ph = curr_phi = prev_ph = prev_phi = None
-        
-        for j in range(i - PIVOT_RIGHT, max(i - lookback_bars - PIVOT_RIGHT, 0), -1):
-            if not np.isnan(price_high_pivots[j]):
-                if curr_ph is None:
-                    curr_ph, curr_phi = price_high_pivots[j], j
-                elif prev_ph is None and j < curr_phi - MIN_PIVOT_DISTANCE:
-                    prev_ph, prev_phi = price_high_pivots[j], j
-                    break
+        # [BACKTEST ALIGNMENT] Only scan for bearish divergences when price < EMA
+        # Matches backtest: "if curr_price < curr_ema:" hard gate
+        if current_price < current_ema:
+            # Find current and previous pivot highs
+            curr_ph = curr_phi = prev_ph = prev_phi = None
+            
+            for j in range(i - PIVOT_RIGHT, max(i - lookback_bars - PIVOT_RIGHT, 0), -1):
+                if not np.isnan(price_high_pivots[j]):
+                    if curr_ph is None:
+                        curr_ph, curr_phi = price_high_pivots[j], j
+                    elif prev_ph is None and j < curr_phi - MIN_PIVOT_DISTANCE:
+                        prev_ph, prev_phi = price_high_pivots[j], j
+                        break
 
-        if curr_ph is not None and prev_ph is not None:
-            # [VALIDATION ALIGNMENT] Skip if this pivot pair already generated a signal
-            dedup_key_bear = (curr_phi, prev_phi, 'BEAR')
-            if dedup_key_bear in used_pivots:
-                pass  # Skip - already used
-            # [BACKTEST ALIGNMENT] Pivot distance filter — only consider fresh pivots
-            # Matches backtest: (i - curr_idx) <= 10
-            elif (i - curr_phi) > 10:
-                pass  # Pivot too stale, skip
-            else:
-                # [BACKTEST ALIGNMENT] Swing low is min(low) from most recent pivot to scan
-                # position — NOT the full lookback window. Matches backtest: min(low[curr_idx:i+1])
-                swing_low = min(low[curr_phi:i+1])
-                trend_aligned = current_price < current_ema
+            if curr_ph is not None and prev_ph is not None:
+                # [VALIDATION ALIGNMENT] Skip if this pivot pair already generated a signal
+                dedup_key_bear = (curr_phi, prev_phi, 'BEAR')
+                if dedup_key_bear in used_pivots:
+                    pass  # Skip - already used
+                # [BACKTEST ALIGNMENT] Pivot distance filter — only consider fresh pivots
+                # Matches backtest: (i - curr_idx) <= 10
+                elif (i - curr_phi) > 10:
+                    pass  # Pivot too stale, skip
+                else:
+                    # [BACKTEST ALIGNMENT] Swing low is min(low) from most recent pivot to scan
+                    # position — NOT the full lookback window. Matches backtest: min(low[curr_idx:i+1])
+                    swing_low = min(low[curr_phi:i+1])
+                    trend_aligned = True  # Already confirmed: price < EMA
 
-                # REG_BEAR: Price HH (curr > prev), RSI LH (curr < prev)
-                if DIV_REG_BEAR in allowed_types:
-                    if curr_ph > prev_ph and rsi[curr_phi] < rsi[prev_phi]:
-                        signals.append(DivergenceSignal(
-                            symbol=symbol,
-                            side='short',
-                            signal_type='bearish',
-                            divergence_code=DIV_REG_BEAR,
-                            divergence_idx=i,
-                            swing_level=swing_low,
-                            rsi_value=rsi[i],
-                            price=current_price,
-                            timestamp=df.index[i],
-                            pivot_timestamp=df.index[curr_phi],
-                            daily_trend_aligned=trend_aligned
-                        ))
-                        used_pivots.add(dedup_key_bear)
+                    # REG_BEAR: Price HH (curr > prev), RSI LH (curr < prev)
+                    if DIV_REG_BEAR in allowed_types:
+                        if curr_ph > prev_ph and rsi[curr_phi] < rsi[prev_phi]:
+                            signals.append(DivergenceSignal(
+                                symbol=symbol,
+                                side='short',
+                                signal_type='bearish',
+                                divergence_code=DIV_REG_BEAR,
+                                divergence_idx=i,
+                                swing_level=swing_low,
+                                rsi_value=rsi[i],
+                                price=current_price,
+                                timestamp=df.index[i],
+                                pivot_timestamp=df.index[curr_phi],
+                                daily_trend_aligned=trend_aligned
+                            ))
+                            used_pivots.add(dedup_key_bear)
 
-                # HID_BEAR: Price LH (curr < prev), RSI HH (curr > prev)
-                if DIV_HID_BEAR in allowed_types and dedup_key_bear not in used_pivots:
-                    if curr_ph < prev_ph and rsi[curr_phi] > rsi[prev_phi]:
-                        signals.append(DivergenceSignal(
-                            symbol=symbol,
-                            side='short',
-                            signal_type='bearish',
-                            divergence_code=DIV_HID_BEAR,
-                            divergence_idx=i,
-                            swing_level=swing_low,
-                            rsi_value=rsi[i],
-                            price=current_price,
-                            timestamp=df.index[i],
-                            pivot_timestamp=df.index[curr_phi],
-                            daily_trend_aligned=trend_aligned
-                        ))
-                        used_pivots.add(dedup_key_bear)
+                    # HID_BEAR: Price LH (curr < prev), RSI HH (curr > prev)
+                    if DIV_HID_BEAR in allowed_types and dedup_key_bear not in used_pivots:
+                        if curr_ph < prev_ph and rsi[curr_phi] > rsi[prev_phi]:
+                            signals.append(DivergenceSignal(
+                                symbol=symbol,
+                                side='short',
+                                signal_type='bearish',
+                                divergence_code=DIV_HID_BEAR,
+                                divergence_idx=i,
+                                swing_level=swing_low,
+                                rsi_value=rsi[i],
+                                price=current_price,
+                                timestamp=df.index[i],
+                                pivot_timestamp=df.index[curr_phi],
+                                daily_trend_aligned=trend_aligned
+                            ))
+                            used_pivots.add(dedup_key_bear)
     
     return signals
 

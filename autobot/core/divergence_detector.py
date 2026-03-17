@@ -200,8 +200,8 @@ def detect_divergences(df: pd.DataFrame, symbol: str, allowed_types: List[str] =
     used_pivots = set()
     
     # Scan for divergences
-    # Start after EMA warmup to have valid indicators, end at n - PIVOT_RIGHT to ensure pivot confirmation
-    scan_start = max(30, DAILY_EMA_PROXY + 10)  # Need EMA 200 warmup
+    # [BACKTEST ALIGNMENT] Start position matches backtest: max(205, LOOKBACK + PIVOT_RIGHT + 1)
+    scan_start = max(205, lookback_bars + PIVOT_RIGHT + 1)  # Matches backtest exactly
     for i in range(scan_start, n - PIVOT_RIGHT):
         current_price = close[i]
         current_ema = daily_ema[i]

@@ -505,6 +505,7 @@ class TelegramHandler:
 ├ Market (BTC 1H ADX): {adx_status}
 ├ Next Scan: ~{next_scan_mins}m
 ├ Symbols: {enabled} | Signals: {divs_today}D/{bos_today}BOS
+├ ⏳ Pending BOS: {pending} signals
 └ 🔑 API: {key_status}
 
 ━━━━━━━━━━━━━━━━━━━━

@@ -36,11 +36,12 @@ notifications:
 risk:
   max_daily_loss: 0.1
   max_position_size_pct: 0.15
-  risk_per_trade: 0.001
+  risk_per_trade: 0.005
 strategy:
   name: 1h_multiconfig_323_both_sides
   description: 323 configs across 275 symbols (94 long + 229 short)
   version: 3.0_multi
+  timeframe: '60'
 symbols:
   1000000BABYDOGEUSDT:
     enabled: true

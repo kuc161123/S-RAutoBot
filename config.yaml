@@ -38,9 +38,9 @@ risk:
   max_position_size_pct: 0.15
   risk_per_trade: 0.005
 strategy:
-  name: 1h_multiconfig_323_both_sides
-  description: 323 configs across 275 symbols (94 long + 229 short)
-  version: 3.0_multi
+  name: 1h_merged_allweather_bear_bull
+  description: 465 configs across 340 symbols (201 long + 264 short)
+  version: 4.0_merged
   timeframe: '60'
 symbols:
   1000000BABYDOGEUSDT:
@@ -67,18 +67,27 @@ symbols:
   10000SATSUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 5.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 8.0
       atr_mult: 1.0
   1000BONKUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 5.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
-      rr: 6.0
-      atr_mult: 1.5
+      rr: 9.0
+      atr_mult: 1.0
   1000FLOKIUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 8.0
       atr_mult: 1.0
@@ -100,9 +109,15 @@ symbols:
     - divergence_type: REG_BULL
       rr: 1.5
       atr_mult: 2.0
+    - divergence_type: REG_BEAR
+      rr: 2.0
+      atr_mult: 1.0
   1000TOSHIUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 4.0
+      atr_mult: 1.0
     - divergence_type: REG_BEAR
       rr: 10.0
       atr_mult: 1.0
@@ -115,8 +130,11 @@ symbols:
   1INCHUSDT:
     enabled: true
     configs:
-    - divergence_type: REG_BEAR
+    - divergence_type: HID_BULL
       rr: 10.0
+      atr_mult: 2.0
+    - divergence_type: REG_BEAR
+      rr: 7.0
       atr_mult: 1.5
   2ZUSDT:
     enabled: true
@@ -139,26 +157,50 @@ symbols:
   ACHUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 8.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 7.0
       atr_mult: 2.0
   ACTUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 5.0
+      atr_mult: 1.0
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 1.0
+  ACXUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 8.0
+      atr_mult: 1.5
   ADAUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BEAR
       rr: 9.0
       atr_mult: 1.5
+  AEROUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 2.0
   AEVOUSDT:
     enabled: true
     configs:
     - divergence_type: HID_BEAR
       rr: 10.0
+      atr_mult: 1.5
+  AGIUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 8.0
       atr_mult: 1.5
   AGLDUSDT:
     enabled: true
@@ -170,31 +212,46 @@ symbols:
     enabled: true
     configs:
     - divergence_type: HID_BULL
-      rr: 7.0
+      rr: 10.0
       atr_mult: 2.0
-    - divergence_type: HID_BEAR
-      rr: 7.0
-      atr_mult: 1.5
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 1.0
   AIXBTUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BEAR
       rr: 9.0
       atr_mult: 1.5
+  AKTUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.0
   ALCHUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BULL
       rr: 10.0
       atr_mult: 1.5
-    - divergence_type: HID_BEAR
-      rr: 9.0
-      atr_mult: 1.5
+    - divergence_type: REG_BEAR
+      rr: 4.0
+      atr_mult: 2.0
   ALGOUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 7.0
+      atr_mult: 1.0
     - divergence_type: REG_BEAR
       rr: 1.5
+      atr_mult: 2.0
+  ALICEUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 9.0
       atr_mult: 2.0
   ALTUSDT:
     enabled: true
@@ -202,27 +259,42 @@ symbols:
     - divergence_type: REG_BEAR
       rr: 5.0
       atr_mult: 1.5
+  ANIMEUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 3.0
+      atr_mult: 1.0
   ANKRUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BEAR
-      rr: 9.0
-      atr_mult: 2.0
+      rr: 7.0
+      atr_mult: 1.5
   APEUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 3.0
+      atr_mult: 1.0
     - divergence_type: REG_BEAR
       rr: 8.0
       atr_mult: 2.0
   API3USDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 8.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
-      rr: 9.0
+      rr: 10.0
       atr_mult: 1.0
   ARBUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 9.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 8.0
       atr_mult: 2.0
@@ -241,6 +313,9 @@ symbols:
   ARPAUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 10.0
       atr_mult: 1.0
@@ -277,12 +352,12 @@ symbols:
   AUCTIONUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BULL
+    - divergence_type: REG_BULL
       rr: 9.0
       atr_mult: 1.5
-    - divergence_type: HID_BEAR
-      rr: 1.5
-      atr_mult: 1.5
+    - divergence_type: REG_BEAR
+      rr: 8.0
+      atr_mult: 1.0
   AUSDT:
     enabled: true
     configs:
@@ -292,6 +367,21 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 2.0
+  AVAAIUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BEAR
+      rr: 10.0
+      atr_mult: 1.5
+  AVAXUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.5
+    - divergence_type: HID_BEAR
+      rr: 8.0
+      atr_mult: 1.0
   AVNTUSDT:
     enabled: true
     configs:
@@ -307,9 +397,18 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 7.0
       atr_mult: 2.0
+  AXSUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 9.0
+      atr_mult: 1.0
   B3USDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 2.0
+      atr_mult: 1.0
     - divergence_type: HID_BEAR
       rr: 8.0
       atr_mult: 2.0
@@ -322,9 +421,12 @@ symbols:
   BANANAUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
-      rr: 4.0
+    - divergence_type: REG_BULL
+      rr: 9.0
       atr_mult: 1.5
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 1.0
   BANKUSDT:
     enabled: true
     configs:
@@ -340,13 +442,25 @@ symbols:
   BBUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 9.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 8.0
       atr_mult: 1.5
   BELUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
+    - divergence_type: REG_BULL
+      rr: 7.0
+      atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 2.0
+  BERAUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
       rr: 7.0
       atr_mult: 1.0
   BICOUSDT:
@@ -367,9 +481,18 @@ symbols:
   BIOUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 5.0
+      atr_mult: 1.5
     - divergence_type: REG_BEAR
       rr: 5.0
       atr_mult: 1.0
+  BLASTUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 2.0
   BLESSUSDT:
     enabled: true
     configs:
@@ -379,21 +502,39 @@ symbols:
   BLURUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 2.0
   BNBUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 4.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 1.0
+  BNTUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 2.0
   BOMEUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BEAR
       rr: 4.0
       atr_mult: 2.0
+  BRETTUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 9.0
+      atr_mult: 1.5
   BROCCOLIUSDT:
     enabled: true
     configs:
@@ -418,18 +559,30 @@ symbols:
   BTCUSDT-26JUN26:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
+    - divergence_type: REG_BEAR
       rr: 10.0
-      atr_mult: 1.5
+      atr_mult: 2.0
+  BUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BEAR
+      rr: 3.0
+      atr_mult: 2.0
   C98USDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.5
     - divergence_type: HID_BEAR
       rr: 9.0
       atr_mult: 1.0
   CAKEUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 7.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 9.0
       atr_mult: 1.5
@@ -448,14 +601,26 @@ symbols:
   CATIUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 8.0
       atr_mult: 2.0
   CELOUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 5.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 9.0
+      atr_mult: 1.5
+  CETUSUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 3.0
       atr_mult: 1.5
   CFXUSDT:
     enabled: true
@@ -466,24 +631,45 @@ symbols:
   CHILLGUYUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
-      rr: 8.0
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 1.5
+  CHRUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
       atr_mult: 1.5
   CHZUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BEAR
-      rr: 7.0
+      rr: 8.0
       atr_mult: 2.0
   CKBUSDT:
     enabled: true
     configs:
-    - divergence_type: REG_BEAR
-      rr: 10.0
+    - divergence_type: REG_BULL
+      rr: 7.0
       atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 6.0
+      atr_mult: 1.0
+  COREUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 6.0
+      atr_mult: 2.0
   COTIUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 6.0
+      atr_mult: 1.5
     - divergence_type: HID_BEAR
       rr: 6.0
       atr_mult: 2.0
@@ -491,7 +677,7 @@ symbols:
     enabled: true
     configs:
     - divergence_type: REG_BULL
-      rr: 9.0
+      rr: 10.0
       atr_mult: 1.0
     - divergence_type: HID_BEAR
       rr: 10.0
@@ -499,9 +685,9 @@ symbols:
   CRVUSDT:
     enabled: true
     configs:
-    - divergence_type: REG_BULL
+    - divergence_type: HID_BULL
       rr: 10.0
-      atr_mult: 1.0
+      atr_mult: 2.0
   CTCUSDT:
     enabled: true
     configs:
@@ -520,18 +706,24 @@ symbols:
   CVCUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BULL
-      rr: 9.0
+    - divergence_type: REG_BULL
+      rr: 6.0
       atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 1.5
-  DBRUSDT:
+  CVXUSDT:
     enabled: true
     configs:
     - divergence_type: HID_BULL
-      rr: 9.0
-      atr_mult: 1.0
+      rr: 10.0
+      atr_mult: 2.0
+  DBRUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 3.0
+      atr_mult: 1.5
   DEEPUSDT:
     enabled: true
     configs:
@@ -544,8 +736,11 @@ symbols:
   DEGENUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
-      rr: 10.0
+    - divergence_type: REG_BULL
+      rr: 1.5
+      atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 7.0
       atr_mult: 1.5
   DEXEUSDT:
     enabled: true
@@ -553,14 +748,20 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 9.0
       atr_mult: 2.0
+  DOGEUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
   DOGUSDT:
     enabled: true
     configs:
     - divergence_type: HID_BULL
       rr: 10.0
       atr_mult: 2.0
-    - divergence_type: HID_BEAR
-      rr: 4.0
+    - divergence_type: REG_BEAR
+      rr: 10.0
       atr_mult: 2.0
   DOLOUSDT:
     enabled: true
@@ -584,14 +785,17 @@ symbols:
     enabled: true
     configs:
     - divergence_type: REG_BULL
-      rr: 9.0
-      atr_mult: 2.0
+      rr: 7.0
+      atr_mult: 1.0
     - divergence_type: HID_BEAR
       rr: 9.0
       atr_mult: 1.5
   DYDXUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 8.0
       atr_mult: 1.0
@@ -613,12 +817,18 @@ symbols:
   EGLDUSDT:
     enabled: true
     configs:
-    - divergence_type: REG_BEAR
-      rr: 10.0
+    - divergence_type: REG_BULL
+      rr: 7.0
       atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 9.0
+      atr_mult: 2.0
   EIGENUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 3.0
+      atr_mult: 1.0
     - divergence_type: HID_BEAR
       rr: 6.0
       atr_mult: 2.0
@@ -646,11 +856,26 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 1.5
+  ETCUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 9.0
+      atr_mult: 2.0
+    - divergence_type: REG_BEAR
+      rr: 5.0
+      atr_mult: 1.5
+  ETHFIUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 1.0
   ETHUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BULL
-      rr: 3.0
+    - divergence_type: REG_BULL
+      rr: 10.0
       atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 10.0
@@ -667,15 +892,33 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 7.0
       atr_mult: 1.5
+  FIDAUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 9.0
+      atr_mult: 2.0
+  FLOCKUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 8.0
+      atr_mult: 1.5
   FLOWUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.5
     - divergence_type: REG_BEAR
       rr: 10.0
       atr_mult: 1.5
   FLRUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 1.5
@@ -688,15 +931,18 @@ symbols:
   FORMUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 6.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 10.0
       atr_mult: 1.5
   FUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
-      rr: 7.0
-      atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 2.0
   GALAUSDT:
     enabled: true
     configs:
@@ -706,6 +952,12 @@ symbols:
     - divergence_type: REG_BEAR
       rr: 8.0
       atr_mult: 1.5
+  GASUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
   GIGAUSDT:
     enabled: true
     configs:
@@ -715,12 +967,24 @@ symbols:
   GLMUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 4.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 7.0
       atr_mult: 1.5
+  GMXUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
   GOATUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.0
     - divergence_type: REG_BEAR
       rr: 2.0
       atr_mult: 2.0
@@ -730,17 +994,26 @@ symbols:
     - divergence_type: HID_BULL
       rr: 10.0
       atr_mult: 2.0
+    - divergence_type: HID_BEAR
+      rr: 6.0
+      atr_mult: 1.5
   GRASSUSDT:
     enabled: true
     configs:
     - divergence_type: HID_BULL
       rr: 10.0
       atr_mult: 1.0
+    - divergence_type: HID_BEAR
+      rr: 8.0
+      atr_mult: 1.0
   GRIFFAINUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
-      rr: 1.5
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
+    - divergence_type: REG_BEAR
+      rr: 6.0
       atr_mult: 1.5
   GRTUSDT:
     enabled: true
@@ -748,8 +1021,8 @@ symbols:
     - divergence_type: REG_BULL
       rr: 4.0
       atr_mult: 1.0
-    - divergence_type: HID_BEAR
-      rr: 1.5
+    - divergence_type: REG_BEAR
+      rr: 10.0
       atr_mult: 1.0
   GUNUSDT:
     enabled: true
@@ -767,7 +1040,7 @@ symbols:
     enabled: true
     configs:
     - divergence_type: HID_BULL
-      rr: 5.0
+      rr: 4.0
       atr_mult: 1.0
     - divergence_type: HID_BEAR
       rr: 8.0
@@ -778,9 +1051,24 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 1.5
+  HIPPOUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 8.0
+      atr_mult: 2.0
+  HIVEUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 9.0
+      atr_mult: 2.0
   HMSTRUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.0
     - divergence_type: HID_BEAR
       rr: 6.0
       atr_mult: 2.0
@@ -788,14 +1076,14 @@ symbols:
     enabled: true
     configs:
     - divergence_type: REG_BEAR
-      rr: 6.0
+      rr: 2.0
       atr_mult: 2.0
   HOOKUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BEAR
-      rr: 10.0
-      atr_mult: 2.0
+      rr: 3.0
+      atr_mult: 1.5
   HUMAUSDT:
     enabled: true
     configs:
@@ -814,6 +1102,12 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 2.0
       atr_mult: 1.0
+  HYPEUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 2.0
   ICPUSDT:
     enabled: true
     configs:
@@ -823,20 +1117,44 @@ symbols:
   ICXUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
-      rr: 10.0
+    - divergence_type: REG_BULL
+      rr: 8.0
+      atr_mult: 1.5
+    - divergence_type: REG_BEAR
+      rr: 9.0
+      atr_mult: 1.0
+  IDUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 8.0
       atr_mult: 1.0
   ILVUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BEAR
-      rr: 2.0
-      atr_mult: 2.0
+      rr: 10.0
+      atr_mult: 1.0
   IMXUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 8.0
+      atr_mult: 1.5
     - divergence_type: REG_BEAR
       rr: 9.0
+      atr_mult: 1.5
+  INITUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BEAR
+      rr: 5.0
+      atr_mult: 1.0
+  IOSTUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 7.0
       atr_mult: 1.5
   IOTAUSDT:
     enabled: true
@@ -877,24 +1195,36 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 1.0
+  JUPUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 9.0
+      atr_mult: 1.0
   KAIAUSDT:
     enabled: true
     configs:
     - divergence_type: HID_BULL
       rr: 6.0
       atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 2.0
   KAITOUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
-      rr: 2.0
+    - divergence_type: HID_BULL
+      rr: 5.0
       atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 5.0
+      atr_mult: 1.5
   KASUSDT:
     enabled: true
     configs:
     - divergence_type: HID_BEAR
-      rr: 10.0
-      atr_mult: 1.0
+      rr: 5.0
+      atr_mult: 2.0
   KAVAUSDT:
     enabled: true
     configs:
@@ -922,9 +1252,18 @@ symbols:
   KMNOUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 6.0
+      atr_mult: 1.0
     - divergence_type: REG_BEAR
       rr: 7.0
       atr_mult: 1.5
+  KNCUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 2.0
   L3USDT:
     enabled: true
     configs:
@@ -949,12 +1288,30 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 1.5
-  LRCUSDT:
+  LINKUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BULL
-      rr: 9.0
-      atr_mult: 1.0
+      rr: 10.0
+      atr_mult: 2.0
+  LPTUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 1.5
+  LRCUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 2.0
+  LTCUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
   LYNUSDT:
     enabled: true
     configs:
@@ -970,6 +1327,9 @@ symbols:
   MANAUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 8.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 6.0
       atr_mult: 2.0
@@ -985,9 +1345,30 @@ symbols:
     - divergence_type: REG_BEAR
       rr: 6.0
       atr_mult: 2.0
+  MBOXUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
   MEMEUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BEAR
+      rr: 8.0
+      atr_mult: 1.5
+  MERLUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.0
+  METISUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 5.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 8.0
       atr_mult: 1.5
@@ -1000,15 +1381,24 @@ symbols:
   MEWUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.0
     - divergence_type: HID_BEAR
       rr: 9.0
       atr_mult: 1.0
+  MINAUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 1.5
   MNTUSDT:
     enabled: true
     configs:
-    - divergence_type: REG_BULL
-      rr: 3.0
-      atr_mult: 1.0
+    - divergence_type: HID_BULL
+      rr: 7.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 10.0
       atr_mult: 1.5
@@ -1038,7 +1428,7 @@ symbols:
     configs:
     - divergence_type: REG_BEAR
       rr: 10.0
-      atr_mult: 1.5
+      atr_mult: 2.0
   MOVRUSDT:
     enabled: true
     configs:
@@ -1069,6 +1459,12 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 3.0
       atr_mult: 2.0
+  NEARUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 2.0
   NEOUSDT:
     enabled: true
     configs:
@@ -1090,18 +1486,42 @@ symbols:
   NOTUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
-      rr: 10.0
-      atr_mult: 1.5
+    - divergence_type: HID_BULL
+      rr: 7.0
+      atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 6.0
+      atr_mult: 2.0
   NTRNUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 10.0
       atr_mult: 2.0
+  NXPCUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BEAR
+      rr: 8.0
+      atr_mult: 1.5
+  OGNUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 7.0
+      atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 6.0
+      atr_mult: 1.0
   OGUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 1.0
     - divergence_type: HID_BEAR
       rr: 8.0
       atr_mult: 1.5
@@ -1111,6 +1531,12 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 2.0
+  OLUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 9.0
+      atr_mult: 1.0
   ONDOUSDT:
     enabled: true
     configs:
@@ -1129,20 +1555,35 @@ symbols:
   ONGUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 8.0
+      atr_mult: 1.0
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 2.0
   ONTUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.0
     - divergence_type: HID_BEAR
       rr: 9.0
       atr_mult: 2.0
+  OPUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 7.0
+      atr_mult: 1.0
   ORBSUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BULL
       rr: 10.0
+      atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 9.0
       atr_mult: 1.0
   ORDERUSDT:
     enabled: true
@@ -1150,11 +1591,20 @@ symbols:
     - divergence_type: REG_BEAR
       rr: 9.0
       atr_mult: 1.0
+  PEAQUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 3.0
+      atr_mult: 2.0
   PENDLEUSDT:
     enabled: true
     configs:
     - divergence_type: HID_BULL
       rr: 7.0
+      atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 1.5
       atr_mult: 1.0
   PENGUUSDT:
     enabled: true
@@ -1180,6 +1630,9 @@ symbols:
   PIXELUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 1.5
@@ -1192,8 +1645,8 @@ symbols:
   PNUTUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BULL
-      rr: 6.0
+    - divergence_type: REG_BULL
+      rr: 4.0
       atr_mult: 1.0
     - divergence_type: HID_BEAR
       rr: 5.0
@@ -1202,23 +1655,26 @@ symbols:
     enabled: true
     configs:
     - divergence_type: HID_BEAR
-      rr: 10.0
-      atr_mult: 1.0
+      rr: 9.0
+      atr_mult: 2.0
   POPCATUSDT:
     enabled: true
     configs:
     - divergence_type: HID_BULL
-      rr: 10.0
-      atr_mult: 1.0
-    - divergence_type: HID_BEAR
-      rr: 4.0
+      rr: 7.0
+      atr_mult: 1.5
+    - divergence_type: REG_BEAR
+      rr: 5.0
       atr_mult: 2.0
   PORTALUSDT:
     enabled: true
     configs:
     - divergence_type: HID_BULL
       rr: 10.0
-      atr_mult: 2.0
+      atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 4.0
+      atr_mult: 1.0
   POWRUSDT:
     enabled: true
     configs:
@@ -1255,6 +1711,9 @@ symbols:
   PUFFERUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 8.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 5.0
       atr_mult: 1.5
@@ -1285,12 +1744,18 @@ symbols:
     - divergence_type: REG_BEAR
       rr: 10.0
       atr_mult: 1.0
+  QNTUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
   QTUMUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
-      rr: 5.0
-      atr_mult: 2.0
+    - divergence_type: REG_BEAR
+      rr: 9.0
+      atr_mult: 1.5
   RAYDIUMUSDT:
     enabled: true
     configs:
@@ -1301,7 +1766,7 @@ symbols:
     enabled: true
     configs:
     - divergence_type: REG_BEAR
-      rr: 6.0
+      rr: 7.0
       atr_mult: 1.5
   REDUSDT:
     enabled: true
@@ -1312,9 +1777,9 @@ symbols:
   RENDERUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BULL
-      rr: 1.5
-      atr_mult: 1.0
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.5
     - divergence_type: HID_BEAR
       rr: 1.5
       atr_mult: 1.5
@@ -1330,6 +1795,12 @@ symbols:
     - divergence_type: REG_BEAR
       rr: 10.0
       atr_mult: 1.5
+  RLCUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 4.0
+      atr_mult: 2.0
   ROAMUSDT:
     enabled: true
     configs:
@@ -1360,6 +1831,9 @@ symbols:
   RSRUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 1.0
@@ -1373,14 +1847,20 @@ symbols:
     enabled: true
     configs:
     - divergence_type: REG_BULL
-      rr: 9.0
+      rr: 10.0
       atr_mult: 1.0
   SAFEUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BULL
-      rr: 6.0
+      rr: 10.0
       atr_mult: 2.0
+  SAGAUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 8.0
+      atr_mult: 1.0
   SANDUSDT:
     enabled: true
     configs:
@@ -1420,9 +1900,15 @@ symbols:
     - divergence_type: REG_BULL
       rr: 1.5
       atr_mult: 1.5
-    - divergence_type: HID_BEAR
-      rr: 9.0
-      atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 2.0
+  SHIB1000USDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 6.0
+      atr_mult: 2.0
   SIRENUSDT:
     enabled: true
     configs:
@@ -1441,6 +1927,18 @@ symbols:
     - divergence_type: HID_BULL
       rr: 4.0
       atr_mult: 1.0
+  SLPUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 3.0
+      atr_mult: 1.0
+  SNTUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 2.0
   SNXUSDT:
     enabled: true
     configs:
@@ -1453,6 +1951,9 @@ symbols:
   SOLAYERUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 9.0
       atr_mult: 2.0
@@ -1504,6 +2005,15 @@ symbols:
     - divergence_type: HID_BULL
       rr: 7.0
       atr_mult: 2.0
+  STEEMUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 5.0
+      atr_mult: 2.0
+    - divergence_type: REG_BEAR
+      rr: 5.0
+      atr_mult: 2.0
   STGUSDT:
     enabled: true
     configs:
@@ -1511,7 +2021,13 @@ symbols:
       rr: 6.0
       atr_mult: 1.5
     - divergence_type: REG_BEAR
-      rr: 10.0
+      rr: 7.0
+      atr_mult: 1.5
+  STORJUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 6.0
       atr_mult: 1.0
   STRKUSDT:
     enabled: true
@@ -1531,18 +2047,24 @@ symbols:
   SUIUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
-      rr: 7.0
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.5
+    - divergence_type: REG_BEAR
+      rr: 9.0
       atr_mult: 1.5
   SUNUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BEAR
-      rr: 9.0
-      atr_mult: 2.0
+      rr: 8.0
+      atr_mult: 1.5
   SUPERUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 4.0
+      atr_mult: 1.5
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 1.5
@@ -1552,9 +2074,27 @@ symbols:
     - divergence_type: REG_BEAR
       rr: 10.0
       atr_mult: 1.5
+  SUSHIUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 5.0
+      atr_mult: 2.0
+  SXPUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 9.0
+      atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 8.0
+      atr_mult: 2.0
   TAIKOUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 6.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 10.0
       atr_mult: 1.0
@@ -1564,6 +2104,12 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 9.0
       atr_mult: 1.0
+  THEUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 5.0
+      atr_mult: 1.5
   TIAUSDT:
     enabled: true
     configs:
@@ -1576,6 +2122,12 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 9.0
       atr_mult: 1.5
+  TONUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 7.0
+      atr_mult: 2.0
   TOWNSUSDT:
     enabled: true
     configs:
@@ -1597,15 +2149,15 @@ symbols:
   TRUUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
-      rr: 9.0
-      atr_mult: 1.5
+    - divergence_type: REG_BEAR
+      rr: 8.0
+      atr_mult: 1.0
   TRXUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BULL
-      rr: 9.0
-      atr_mult: 2.0
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.5
     - divergence_type: REG_BEAR
       rr: 10.0
       atr_mult: 1.5
@@ -1619,8 +2171,8 @@ symbols:
     enabled: true
     configs:
     - divergence_type: REG_BULL
-      rr: 8.0
-      atr_mult: 2.0
+      rr: 6.0
+      atr_mult: 1.5
     - divergence_type: REG_BEAR
       rr: 5.0
       atr_mult: 2.0
@@ -1666,15 +2218,24 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 4.0
       atr_mult: 1.5
+  VANAUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 10.0
+      atr_mult: 1.0
   VELOUSDT:
     enabled: true
     configs:
-    - divergence_type: REG_BEAR
+    - divergence_type: HID_BEAR
       rr: 8.0
       atr_mult: 1.0
   VETUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 8.0
       atr_mult: 1.5
@@ -1690,9 +2251,9 @@ symbols:
   VIRTUALUSDT:
     enabled: true
     configs:
-    - divergence_type: REG_BULL
-      rr: 6.0
-      atr_mult: 1.0
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 7.0
       atr_mult: 1.0
@@ -1702,18 +2263,33 @@ symbols:
     - divergence_type: HID_BULL
       rr: 7.0
       atr_mult: 2.0
+    - divergence_type: HID_BEAR
+      rr: 9.0
+      atr_mult: 2.0
   WALUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BULL
       rr: 4.0
       atr_mult: 1.5
+    - divergence_type: HID_BEAR
+      rr: 8.0
+      atr_mult: 1.0
   WAVESUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 8.0
       atr_mult: 2.0
+  WAXPUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 8.0
+      atr_mult: 1.5
   WCTUSDT:
     enabled: true
     configs:
@@ -1723,14 +2299,20 @@ symbols:
   WIFUSDT:
     enabled: true
     configs:
+    - divergence_type: REG_BULL
+      rr: 2.0
+      atr_mult: 1.0
     - divergence_type: HID_BEAR
-      rr: 7.0
-      atr_mult: 1.5
+      rr: 5.0
+      atr_mult: 1.0
   WLDUSDT:
     enabled: true
     configs:
     - divergence_type: HID_BULL
       rr: 7.0
+      atr_mult: 1.0
+    - divergence_type: REG_BEAR
+      rr: 4.0
       atr_mult: 1.0
   WLFIUSDT:
     enabled: true
@@ -1738,24 +2320,45 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 6.0
       atr_mult: 1.5
+  WOOUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 8.0
+      atr_mult: 1.5
   XAIUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
+    - divergence_type: HID_BULL
       rr: 10.0
-      atr_mult: 1.0
+      atr_mult: 1.5
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 2.0
   XAUTUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BULL
-      rr: 8.0
+    - divergence_type: REG_BULL
+      rr: 10.0
       atr_mult: 2.0
   XCNUSDT:
     enabled: true
     configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 2.0
     - divergence_type: REG_BEAR
       rr: 9.0
       atr_mult: 2.0
+  XDCUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 2.0
+      atr_mult: 2.0
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 1.5
   XIONUSDT:
     enabled: true
     configs:
@@ -1789,12 +2392,18 @@ symbols:
   XTZUSDT:
     enabled: true
     configs:
-    - divergence_type: REG_BULL
-      rr: 6.0
-      atr_mult: 1.0
+    - divergence_type: HID_BULL
+      rr: 9.0
+      atr_mult: 2.0
     - divergence_type: HID_BEAR
       rr: 8.0
       atr_mult: 1.5
+  XVGUSDT:
+    enabled: true
+    configs:
+    - divergence_type: HID_BULL
+      rr: 10.0
+      atr_mult: 2.0
   YFIUSDT:
     enabled: true
     configs:
@@ -1813,12 +2422,24 @@ symbols:
     - divergence_type: HID_BEAR
       rr: 3.0
       atr_mult: 1.0
+  ZETAUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BEAR
+      rr: 10.0
+      atr_mult: 2.0
   ZILUSDT:
     enabled: true
     configs:
     - divergence_type: REG_BULL
       rr: 4.0
       atr_mult: 1.0
+  ZKUSDT:
+    enabled: true
+    configs:
+    - divergence_type: REG_BULL
+      rr: 9.0
+      atr_mult: 1.5
   ZORAUSDT:
     enabled: true
     configs:
@@ -1834,8 +2455,8 @@ symbols:
   ZRXUSDT:
     enabled: true
     configs:
-    - divergence_type: HID_BEAR
-      rr: 5.0
+    - divergence_type: REG_BEAR
+      rr: 9.0
       atr_mult: 1.0
 strategy_description: 1H Precision Divergence (Safe Liquid) - 235 Symbols
 expected_90d_r: 9543.96

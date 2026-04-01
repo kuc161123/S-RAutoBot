@@ -1,0 +1,85 @@
+symbol,div_type,winner_source,winner_avg_r,loser_source,loser_avg_r,reason
+10000QUBICUSDT,HID_BEAR,bull_tested,1.2774,bear_tested,0.3294,"higher avg_r (1.277 vs 0.329), bull_tested over bear_tested"
+10000QUBICUSDT,REG_BEAR,bull_tested,0.97,bear_tested,0.7983,"higher avg_r (0.970 vs 0.798), bull_tested over bear_tested"
+10000SATSUSDT,HID_BEAR,all_weather,0.5175,bear_tested,0.6992,tier 0 (all_weather) beats tier 1 (bear_tested)
+10000SATSUSDT,REG_BEAR,bull_tested,2.476,bear_tested,1.592,"higher avg_r (2.476 vs 1.592), bull_tested over bear_tested"
+1000BONKUSDT,HID_BULL,all_weather,0.7911,bull_tested,0.7891,tier 0 (all_weather) beats tier 1 (bull_tested)
+1000BONKUSDT,REG_BEAR,bull_tested,0.5908,bear_tested,0.334,"higher avg_r (0.591 vs 0.334), bull_tested over bear_tested"
+1000FLOKIUSDT,REG_BEAR,bear_tested,0.3867,bull_tested,0.23,"higher avg_r (0.387 vs 0.230), bear_tested over bull_tested"
+1INCHUSDT,REG_BEAR,all_weather,0.6832,bull_tested,2.124,tier 0 (all_weather) beats tier 1 (bull_tested)
+1INCHUSDT,REG_BEAR,all_weather,0.6832,bear_tested,0.2938,tier 0 (all_weather) beats tier 1 (bear_tested)
+ADAUSDT,HID_BEAR,all_weather,0.8166,bear_tested,0.3507,tier 0 (all_weather) beats tier 1 (bear_tested)
+ADAUSDT,REG_BEAR,all_weather,1.2203,bear_tested,1.934,tier 0 (all_weather) beats tier 1 (bear_tested)
+ADAUSDT,REG_BEAR,all_weather,1.2203,bull_tested,0.916,tier 0 (all_weather) beats tier 1 (bull_tested)
+AIOZUSDT,HID_BULL,bull_tested,0.7967,bear_tested,0.275,"higher avg_r (0.797 vs 0.275), bull_tested over bear_tested"
+ALCHUSDT,HID_BEAR,bear_tested,0.274,bull_tested,0.2563,"higher avg_r (0.274 vs 0.256), bear_tested over bull_tested"
+ANKRUSDT,REG_BEAR,all_weather,0.5498,bear_tested,1.43,tier 0 (all_weather) beats tier 1 (bear_tested)
+API3USDT,HID_BEAR,bull_tested,0.9045,bear_tested,0.8104,"higher avg_r (0.905 vs 0.810), bull_tested over bear_tested"
+ARPAUSDT,REG_BEAR,bear_tested,0.6983,bull_tested,0.245,"higher avg_r (0.698 vs 0.245), bear_tested over bull_tested"
+BANUSDT,HID_BULL,bear_tested,1.8793,bull_tested,0.9777,"higher avg_r (1.879 vs 0.978), bear_tested over bull_tested"
+BROCCOLIUSDT,HID_BULL,bull_tested,0.325,bear_tested,0.3237,"higher avg_r (0.325 vs 0.324), bull_tested over bear_tested"
+BROCCOLIUSDT,REG_BEAR,bear_tested,1.3718,bull_tested,0.3257,"higher avg_r (1.372 vs 0.326), bear_tested over bull_tested"
+CHZUSDT,REG_BEAR,all_weather,1.2568,bear_tested,2.96,tier 0 (all_weather) beats tier 1 (bear_tested)
+CKBUSDT,REG_BEAR,all_weather,0.6128,bear_tested,1.6075,tier 0 (all_weather) beats tier 1 (bear_tested)
+COWUSDT,REG_BULL,bull_tested,4.4112,bear_tested,0.5517,"higher avg_r (4.411 vs 0.552), bull_tested over bear_tested"
+CTCUSDT,HID_BULL,bull_tested,2.223,bear_tested,0.5257,"higher avg_r (2.223 vs 0.526), bull_tested over bear_tested"
+DOGUSDT,HID_BEAR,bull_tested,0.26,bear_tested,0.2131,"higher avg_r (0.260 vs 0.213), bull_tested over bear_tested"
+DUSKUSDT,REG_BULL,bull_tested,0.514,bear_tested,0.3957,"higher avg_r (0.514 vs 0.396), bull_tested over bear_tested"
+EGLDUSDT,REG_BEAR,all_weather,0.4516,bear_tested,0.7117,tier 0 (all_weather) beats tier 1 (bear_tested)
+EGLDUSDT,REG_BEAR,all_weather,0.4516,bull_tested,0.44,tier 0 (all_weather) beats tier 1 (bull_tested)
+ENSUSDT,HID_BEAR,bear_tested,0.8395,bull_tested,0.5164,"higher avg_r (0.839 vs 0.516), bear_tested over bull_tested"
+ENSUSDT,REG_BEAR,bull_tested,0.3286,bear_tested,0.315,"higher avg_r (0.329 vs 0.315), bull_tested over bear_tested"
+FLUXUSDT,REG_BEAR,bear_tested,3.0662,bull_tested,2.0171,"higher avg_r (3.066 vs 2.017), bear_tested over bull_tested"
+FUSDT,REG_BEAR,bull_tested,1.14,bear_tested,0.2386,"higher avg_r (1.140 vs 0.239), bull_tested over bear_tested"
+GALAUSDT,HID_BULL,bear_tested,1.25,bull_tested,0.2014,"higher avg_r (1.250 vs 0.201), bear_tested over bull_tested"
+GIGAUSDT,REG_BEAR,bear_tested,1.115,bull_tested,0.9291,"higher avg_r (1.115 vs 0.929), bear_tested over bull_tested"
+GPSUSDT,HID_BULL,bear_tested,2.4447,bull_tested,2.1129,"higher avg_r (2.445 vs 2.113), bear_tested over bull_tested"
+GRIFFAINUSDT,REG_BEAR,bull_tested,1.5781,bear_tested,0.59,"higher avg_r (1.578 vs 0.590), bull_tested over bear_tested"
+HBARUSDT,HID_BULL,bull_tested,0.7495,bear_tested,0.38,"higher avg_r (0.749 vs 0.380), bull_tested over bear_tested"
+HBARUSDT,REG_BEAR,all_weather,0.3002,bear_tested,0.26,tier 0 (all_weather) beats tier 1 (bear_tested)
+HNTUSDT,REG_BEAR,all_weather,0.5035,bear_tested,1.4836,tier 0 (all_weather) beats tier 1 (bear_tested)
+HNTUSDT,REG_BEAR,all_weather,0.5035,bull_tested,0.3325,tier 0 (all_weather) beats tier 1 (bull_tested)
+HOOKUSDT,REG_BEAR,all_weather,0.1904,bear_tested,4.4413,tier 0 (all_weather) beats tier 1 (bear_tested)
+ICXUSDT,REG_BEAR,all_weather,0.9495,bear_tested,0.7617,tier 0 (all_weather) beats tier 1 (bear_tested)
+ILVUSDT,REG_BEAR,all_weather,0.6267,bear_tested,0.6133,tier 0 (all_weather) beats tier 1 (bear_tested)
+JTOUSDT,HID_BEAR,bull_tested,1.3311,bear_tested,0.9875,"higher avg_r (1.331 vs 0.988), bull_tested over bear_tested"
+KASUSDT,HID_BEAR,all_weather,0.55,bear_tested,0.9919,tier 0 (all_weather) beats tier 1 (bear_tested)
+KASUSDT,HID_BEAR,all_weather,0.55,bull_tested,0.7233,tier 0 (all_weather) beats tier 1 (bull_tested)
+KASUSDT,REG_BEAR,all_weather,0.5286,bull_tested,0.3,tier 0 (all_weather) beats tier 1 (bull_tested)
+L3USDT,HID_BEAR,bear_tested,0.9571,bull_tested,0.2855,"higher avg_r (0.957 vs 0.285), bear_tested over bull_tested"
+LDOUSDT,REG_BEAR,bear_tested,1.1758,bull_tested,0.395,"higher avg_r (1.176 vs 0.395), bear_tested over bull_tested"
+MAGICUSDT,REG_BEAR,bear_tested,0.6825,bull_tested,0.2512,"higher avg_r (0.682 vs 0.251), bear_tested over bull_tested"
+MEMEUSDT,REG_BEAR,bear_tested,0.4417,bull_tested,0.2379,"higher avg_r (0.442 vs 0.238), bear_tested over bull_tested"
+MOVEUSDT,REG_BEAR,bull_tested,1.9455,bear_tested,1.6838,"higher avg_r (1.945 vs 1.684), bull_tested over bear_tested"
+NOTUSDT,HID_BEAR,bull_tested,1.161,bear_tested,1.1413,"higher avg_r (1.161 vs 1.141), bull_tested over bear_tested"
+ONTUSDT,HID_BEAR,bear_tested,1.4412,bull_tested,0.4571,"higher avg_r (1.441 vs 0.457), bear_tested over bull_tested"
+PENDLEUSDT,HID_BULL,bear_tested,0.7631,bull_tested,0.252,"higher avg_r (0.763 vs 0.252), bear_tested over bull_tested"
+PNUTUSDT,HID_BULL,bear_tested,1.718,bull_tested,0.6825,"higher avg_r (1.718 vs 0.682), bear_tested over bull_tested"
+POLUSDT,HID_BEAR,bull_tested,2.0208,bear_tested,1.235,"higher avg_r (2.021 vs 1.235), bull_tested over bear_tested"
+POPCATUSDT,HID_BULL,bull_tested,0.8015,bear_tested,0.755,"higher avg_r (0.802 vs 0.755), bull_tested over bear_tested"
+PORTALUSDT,HID_BULL,bull_tested,2.5983,bear_tested,1.164,"higher avg_r (2.598 vs 1.164), bull_tested over bear_tested"
+RAYDIUMUSDT,REG_BULL,bear_tested,1.108,bull_tested,0.7933,"higher avg_r (1.108 vs 0.793), bear_tested over bull_tested"
+RDNTUSDT,REG_BEAR,all_weather,0.836,bear_tested,2.4137,tier 0 (all_weather) beats tier 1 (bear_tested)
+REDUSDT,REG_BEAR,bear_tested,2.934,bull_tested,0.934,"higher avg_r (2.934 vs 0.934), bear_tested over bull_tested"
+RENDERUSDT,HID_BEAR,bear_tested,0.71,bull_tested,0.2378,"higher avg_r (0.710 vs 0.238), bear_tested over bull_tested"
+ROSEUSDT,HID_BULL,bear_tested,1.107,bull_tested,0.2218,"higher avg_r (1.107 vs 0.222), bear_tested over bull_tested"
+ROSEUSDT,REG_BULL,all_weather,0.5064,bull_tested,1.625,tier 0 (all_weather) beats tier 1 (bull_tested)
+ROSEUSDT,REG_BULL,all_weather,0.5064,bear_tested,0.2286,tier 0 (all_weather) beats tier 1 (bear_tested)
+RVNUSDT,REG_BULL,bull_tested,1.6412,bear_tested,0.545,"higher avg_r (1.641 vs 0.545), bull_tested over bear_tested"
+SAFEUSDT,REG_BULL,bull_tested,1.3833,bear_tested,0.36,"higher avg_r (1.383 vs 0.360), bull_tested over bear_tested"
+SIRENUSDT,HID_BULL,bear_tested,2.4305,bull_tested,0.424,"higher avg_r (2.431 vs 0.424), bear_tested over bull_tested"
+SKLUSDT,HID_BULL,bear_tested,2.0443,bull_tested,0.6571,"higher avg_r (2.044 vs 0.657), bear_tested over bull_tested"
+SOLAYERUSDT,HID_BEAR,bear_tested,1.8086,bull_tested,0.3736,"higher avg_r (1.809 vs 0.374), bear_tested over bull_tested"
+SOLUSDT,HID_BULL,bear_tested,0.705,bull_tested,0.6748,"higher avg_r (0.705 vs 0.675), bear_tested over bull_tested"
+STGUSDT,REG_BEAR,bull_tested,1.1857,bear_tested,0.7117,"higher avg_r (1.186 vs 0.712), bull_tested over bear_tested"
+SUNUSDT,REG_BEAR,bull_tested,0.628,bear_tested,0.3014,"higher avg_r (0.628 vs 0.301), bull_tested over bear_tested"
+SUSHIUSDT,REG_BULL,all_weather,0.4562,bull_tested,2.1,tier 0 (all_weather) beats tier 1 (bull_tested)
+TRUMPUSDT,HID_BEAR,bear_tested,2.1955,bull_tested,1.5018,"higher avg_r (2.196 vs 1.502), bear_tested over bull_tested"
+TRUUSDT,HID_BEAR,all_weather,0.3463,bear_tested,1.3296,tier 0 (all_weather) beats tier 1 (bear_tested)
+TRXUSDT,REG_BEAR,bull_tested,1.94,bear_tested,0.2843,"higher avg_r (1.940 vs 0.284), bull_tested over bear_tested"
+TWTUSDT,REG_BULL,bull_tested,2.4125,bear_tested,1.9133,"higher avg_r (2.413 vs 1.913), bull_tested over bear_tested"
+VVVUSDT,HID_BULL,bear_tested,3.242,bull_tested,1.8791,"higher avg_r (3.242 vs 1.879), bear_tested over bull_tested"
+WIFUSDT,HID_BEAR,all_weather,0.3384,bear_tested,1.742,tier 0 (all_weather) beats tier 1 (bear_tested)
+WLDUSDT,HID_BULL,bear_tested,1.1871,bull_tested,0.4271,"higher avg_r (1.187 vs 0.427), bear_tested over bull_tested"
+XRPUSDT,HID_BULL,bear_tested,5.52,bull_tested,0.5014,"higher avg_r (5.520 vs 0.501), bear_tested over bull_tested"
+XTZUSDT,REG_BULL,bull_tested,0.9591,bear_tested,0.4667,"higher avg_r (0.959 vs 0.467), bull_tested over bear_tested"

@@ -529,12 +529,16 @@ class TelegramHandler:
                 return
             
             msg = f"📊 **ACTIVE POSITIONS** ({len(self.bot.active_trades)} open)\\n\\n"
-            
-            for symbol, trade in self.bot.active_trades.items():
+
+            for trade_key, trade in self.bot.active_trades.items():
+                if trade is None:
+                    symbol = trade_key.rsplit('_', 1)[0]
+                    msg += f"┌─ ⚪ `{symbol}` (synced, no details)\\n\\n"
+                    continue
                 side_icon = "🟢" if trade.side == 'long' else "🔴"
-                
+
                 msg += f"""
-┌─ {side_icon} {trade.side.upper()} `{symbol}`
+┌─ {side_icon} {trade.side.upper()} `{trade.symbol}`
 ├ Entry: ${trade.entry_price:,.2f}
 ├ Stop Loss: ${trade.stop_loss:,.2f}
 ├ Take Profit: ${trade.take_profit:,.2f}

@@ -107,8 +107,8 @@ class Bot4H:
         
         # Trading state
         self.pending_signals: Dict[str, List[PendingSignal]] = {}  # {symbol: [signals]}
-        self.active_trades: Dict[str, ActiveTrade] = {}  # {symbol: trade}
-        self.confirmed_entries: Dict[str, DivergenceSignal] = {}  # {symbol: signal} - BOS confirmed, enter on NEXT candle
+        self.active_trades: Dict[str, ActiveTrade] = {}  # {symbol_side: trade} e.g. "BTCUSDT_long"
+        self.confirmed_entries: Dict[str, DivergenceSignal] = {}  # {symbol_side: signal} - BOS confirmed, enter on NEXT candle
         
         # [STARTUP PROTECTION] Track which symbols have been seen since startup
         # First candle for each symbol is used for initialization only (no trades)
@@ -481,21 +481,24 @@ class Bot4H:
             else:
                 logger.warning("[SYNC] get_positions() returned None or empty list!")
             
-            # Build set of symbols with actual open positions
-            actual_open = set()
+            # Build set of trade keys with actual open positions
+            actual_open_keys = set()
             for pos in positions:
                 if float(pos.get('size', 0)) > 0:
-                    actual_open.add(pos.get('symbol'))
-            
+                    sym = pos.get('symbol')
+                    side = "long" if pos.get('side') == "Buy" else "short"
+                    actual_open_keys.add(f"{sym}_{side}")
+
             # Find stale trades (in our tracking but not on exchange)
             stale_trades = []
-            for symbol in list(self.active_trades.keys()):
-                if symbol not in actual_open:
-                    stale_trades.append(symbol)
-            
+            for trade_key in list(self.active_trades.keys()):
+                if trade_key not in actual_open_keys:
+                    stale_trades.append(trade_key)
+
             # Remove stale trades and update stats with REAL PnL from exchange
-            for symbol in stale_trades:
-                trade = self.active_trades.pop(symbol, None)
+            for trade_key in stale_trades:
+                trade = self.active_trades.pop(trade_key, None)
+                symbol = trade.symbol if trade else trade_key.rsplit('_', 1)[0]
                 if trade:
                     logger.warning(f"[{symbol}] Removed stale trade from tracking (closed externally)")
                     
@@ -549,22 +552,23 @@ class Bot4H:
             for pos in positions:
                 symbol = pos.get('symbol')
                 size = float(pos.get('size', 0))
-                
-                if size > 0 and symbol not in self.active_trades:
+                side = "long" if pos.get('side') == "Buy" else "short"
+                trade_key = f"{symbol}_{side}"
+
+                if size > 0 and trade_key not in self.active_trades:
                     # Found an active position on exchange that bot doesn't know about
-                    side = "long" if pos.get('side') == "Buy" else "short"
                     entry_price = float(pos.get('avgPrice', 0))
                     stop_loss = float(pos.get('stopLoss', 0))
                     take_profit = float(pos.get('takeProfit', 0))
                     entry_time = datetime.now()  # We don't know exact start, assume now
-                    
+
                     # Estimate R:R
                     rr_ratio = 0.0
                     if stop_loss > 0 and abs(entry_price - stop_loss) > 0:
                          risk = abs(entry_price - stop_loss)
                          reward = abs(take_profit - entry_price) if take_profit > 0 else 0
                          rr_ratio = round(reward / risk, 1)
-                    
+
                     # Create trade object
                     new_trade = ActiveTrade(
                         symbol=symbol,
@@ -576,8 +580,8 @@ class Bot4H:
                         position_size=size,
                         entry_time=entry_time
                     )
-                    
-                    self.active_trades[symbol] = new_trade
+
+                    self.active_trades[trade_key] = new_trade
                     adopted_count += 1
                     logger.info(f"[{symbol}] Adopted existing position: {side} {size} @ {entry_price}")
             
@@ -725,13 +729,16 @@ class Bot4H:
 
         # [BACKTEST ALIGNMENT] Execute any queued entries from previous candle's BOS confirmation.
         # Entry uses the OPEN of the current (new) candle, matching the backtest exactly.
-        if symbol in self.confirmed_entries:
-            queued_signal = self.confirmed_entries.pop(symbol)
-            if symbol not in self.active_trades:
-                logger.info(f"[{symbol}] Executing queued entry at candle open (backtest-aligned)...")
-                await self.execute_trade(symbol, queued_signal, df, use_candle_open=True)
-            else:
-                logger.info(f"[{symbol}] Queued entry cancelled - already in trade")
+        # Check both long and short queues for this symbol
+        for side in ['long', 'short']:
+            trade_key = f"{symbol}_{side}"
+            if trade_key in self.confirmed_entries:
+                queued_signal = self.confirmed_entries.pop(trade_key)
+                if trade_key not in self.active_trades:
+                    logger.info(f"[{symbol}] Executing queued {side} entry at candle open (backtest-aligned)...")
+                    await self.execute_trade(symbol, queued_signal, df, use_candle_open=True)
+                else:
+                    logger.info(f"[{symbol}] Queued {side} entry cancelled - already in {side} trade")
         
         # Cache latest RSI
         if 'rsi' in df.columns and len(df) > 0:
@@ -985,9 +992,18 @@ class Bot4H:
             
             # Check for BOS
             if check_bos(df, pending.signal, current_idx):
-                # [TRADE BLOCK CHECK] Block entry if already in a trade for this symbol
-                if symbol in self.active_trades:
-                    logger.info(f"[{symbol}] BOS confirmed but already in trade - skipping entry")
+                # [EMA GATE] Check EMA alignment at BOS confirmation time
+                # EMA filter moved here from divergence detection to allow
+                # divergences to queue and confirm when price crosses EMA
+                if not is_trend_aligned(df, pending.signal, current_idx):
+                    logger.info(f"[{symbol}] BOS confirmed but EMA not aligned ({pending.signal.side}) - skipping")
+                    signals_to_remove.append(pending)
+                    continue
+
+                # [TRADE BLOCK CHECK] Block entry if already in a trade for this symbol+side
+                trade_key = f"{symbol}_{pending.signal.side}"
+                if trade_key in self.active_trades:
+                    logger.info(f"[{symbol}] BOS confirmed but already in {pending.signal.side} trade - skipping entry")
                     signals_to_remove.append(pending)
                     continue
 
@@ -1022,7 +1038,7 @@ class Bot4H:
                 self._track_bos_confirmed()
 
                 # Queue for next candle execution instead of immediate entry
-                self.confirmed_entries[symbol] = pending.signal
+                self.confirmed_entries[trade_key] = pending.signal
                 signals_to_remove.append(pending)
             else:
                 # Increment wait counter
@@ -1044,9 +1060,10 @@ class Bot4H:
             use_candle_open: If True, use current candle's open price for SL/TP calculation
                              (backtest-aligned entry on next candle after BOS)
         """
-        # Skip if already in a trade for this symbol (Internal Check)
-        if symbol in self.active_trades:
-            logger.warning(f"[{symbol}] Already in a trade (internal) - skipping")
+        # Skip if already in a trade for this symbol+side (Internal Check)
+        trade_key = f"{symbol}_{signal.side}"
+        if trade_key in self.active_trades:
+            logger.warning(f"[{symbol}] Already in a {signal.side} trade (internal) - skipping")
             return
             
         # [CRITICAL] Skip if already in a trade on EXCHANGE (prevents pyramiding after restart)
@@ -1058,10 +1075,12 @@ class Bot4H:
             existing_positions = await self.broker.get_positions()
             for p in existing_positions:
                 if p.get('symbol') == symbol and float(p.get('size', 0)) > 0:
-                    logger.warning(f"[{symbol}] Position already exists on EXCHANGE! Skipping to prevent sizingup/pyramiding.")
-                    # Sync internal state while we are at it
-                    self.active_trades.add(symbol) 
-                    return
+                    pos_side = "long" if p.get('side') == "Buy" else "short"
+                    if pos_side == signal.side:
+                        logger.warning(f"[{symbol}] {signal.side} position already exists on EXCHANGE! Skipping to prevent pyramiding.")
+                        # Sync internal state
+                        self.active_trades[trade_key] = None
+                        return
             logger.info(f"[{symbol}] No existing position found (took {time.time()-start_check:.2f}s). Proceeding...")
         except Exception as e:
             logger.error(f"[{symbol}] Failed to check existing positions: {e}")
@@ -1231,12 +1250,14 @@ class Bot4H:
             risk_usd_at_entry=risk_amount  # Store for accurate R calculation at closure
         )
         
-        self.active_trades[symbol] = trade
-        
-        # [BOT-BACKTEST ALIGNMENT - CHANGE 2] Clear pending signals when trade opens
-        # This prevents stale signals from accumulating
+        self.active_trades[trade_key] = trade
+
+        # [BOT-BACKTEST ALIGNMENT - CHANGE 2] Clear pending signals for this side when trade opens
         if symbol in self.pending_signals:
-            self.pending_signals[symbol] = []
+            self.pending_signals[symbol] = [
+                p for p in self.pending_signals[symbol]
+                if p.signal.side != signal.side
+            ]
         
         # Update stats
         if symbol not in self.symbol_stats:
@@ -1250,35 +1271,39 @@ class Bot4H:
     
     async def monitor_active_trades(self, symbol: str):
         """
-        Monitor active trade for exits
-        
+        Monitor active trades for exits (checks both long and short for this symbol)
+
         Args:
             symbol: Trading pair
         """
-        if symbol not in self.active_trades:
-            return
-        
-        trade = self.active_trades[symbol]
-        
-        # Check if position still open on exchange
-        try:
-            position = await self.broker.get_position(symbol)
-            
-            if position is None or position.get('size', 0) == 0:
-                # Position closed
-                await self.handle_trade_exit(symbol, trade)
-                
-        except Exception as e:
-            logger.error(f"[{symbol}] Error checking position: {e}")
+        # Check both sides for this symbol
+        for side in ['long', 'short']:
+            trade_key = f"{symbol}_{side}"
+            if trade_key not in self.active_trades:
+                continue
+
+            trade = self.active_trades[trade_key]
+
+            # Check if position still open on exchange
+            try:
+                position = await self.broker.get_position(symbol)
+
+                if position is None or position.get('size', 0) == 0:
+                    # Position closed
+                    await self.handle_trade_exit(trade_key, trade)
+
+            except Exception as e:
+                logger.error(f"[{symbol}] Error checking {side} position: {e}")
     
-    async def handle_trade_exit(self, symbol: str, trade: ActiveTrade):
+    async def handle_trade_exit(self, trade_key: str, trade: ActiveTrade):
         """
         Handle trade exit and update stats
-        
+
         Args:
-            symbol: Trading pair
+            trade_key: Trade key (symbol_side, e.g. "BTCUSDT_long")
             trade: Active trade object
         """
+        symbol = trade.symbol if trade else trade_key.rsplit('_', 1)[0]
         logger.info(f"[{symbol}] Trade closed - processing exit...")
         
         # Get actual exit details from exchange
@@ -1362,8 +1387,8 @@ class Bot4H:
         )
         
         # Remove from active
-        del self.active_trades[symbol]
-        
+        del self.active_trades[trade_key]
+
         logger.info(f"[{symbol}] Trade processed: {result}, {r_value:+.2f}R, held {hours_held:.1f}h")
     
     async def send_entry_notification(self, trade: ActiveTrade, signal: DivergenceSignal):
@@ -1479,11 +1504,12 @@ class Bot4H:
             for p in positions:
                 if float(p.get('size', 0)) > 0:
                     sym = p.get('symbol')
-                    # active_trades is a Dict, not a Set - use dict key assignment
-                    # We don't have full trade info, so just mark as "synced position"
-                    self.active_trades[sym] = None  # Placeholder to mark position exists
+                    side = "long" if p.get('side') == "Buy" else "short"
+                    trade_key = f"{sym}_{side}"
+                    # Mark as "synced position" placeholder
+                    self.active_trades[trade_key] = None
                     count += 1
-                    logger.info(f"[SYNC] Found existing position: {sym}")
+                    logger.info(f"[SYNC] Found existing position: {sym} ({side})")
             logger.info(f"[SYNC] Synced {count} active positions.")
         except Exception as e:
             logger.error(f"[SYNC] Failed to sync positions: {e}")

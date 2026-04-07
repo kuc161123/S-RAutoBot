@@ -197,6 +197,16 @@ class Bot4H:
         self.storage = StorageHandler()
         # Load lifetime stats from PostgreSQL (or fallback to local file)
         self.lifetime_stats = self.storage.load_lifetime_stats()
+        # Restore recent trades for regime detection
+        saved_trades = self.lifetime_stats.get('recent_trades', [])
+        for t in saved_trades[-50:]:
+            self.recent_trades.append({
+                'r': t['r'],
+                'win': t['win'],
+                'time': datetime.fromisoformat(t['time']),
+                'symbol': t.get('symbol', '')
+            })
+        logger.info(f"Restored {len(self.recent_trades)} recent trades for regime detection")
         logger.info(f"Lifetime stats loaded: {self.lifetime_stats['total_r']:.1f}R, {self.lifetime_stats['total_trades']} trades since {self.lifetime_stats.get('start_date', 'unknown')}")
         
         # BOS Performance Tracking (for monitoring stale filter removal impact)
@@ -357,8 +367,13 @@ class Bot4H:
                     f"⚙️ **Regime Change:** {label}\n├ 30t WR: {wr:.0%} | Avg R: {avg_r:+.2f}\n└ Risk: {'50% (half)' if new_regime == 'adverse' else '100% (full)'}{risk_note}"
                 ))
 
+        # Serialize recent_trades into lifetime_stats for persistence
+        self.lifetime_stats['recent_trades'] = [
+            {'r': t['r'], 'win': t['win'], 'time': t['time'].isoformat(), 'symbol': t['symbol']}
+            for t in self.recent_trades
+        ]
         self.save_lifetime_stats()
-    
+
     # Legacy load/save methods removed in favor of StorageHandler
 
     def get_regime_status(self):

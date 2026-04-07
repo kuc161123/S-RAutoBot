@@ -30,7 +30,8 @@ DEFAULT_LIFETIME_STATS = {
     'peak_equity_r': 0.0,
     'current_streak': 0,
     'longest_win_streak': 0,
-    'longest_loss_streak': 0
+    'longest_loss_streak': 0,
+    'recent_trades': []  # List of {r, win, time, symbol} for regime detection
 }
 
 

@@ -440,33 +440,51 @@ class Bybit:
             try:
                 # Primary Attempt
                 return await try_set(leverage)
-                
+
             except RuntimeError as e:
                 err_msg = str(e).lower()
-                
+
                 # Case 1: Already set (Success)
                 if "leverage not modified" in err_msg:
                     return {"retCode": 0, "result": "already_set"}
-                
-                # Case 2: Invalid Leverage (Too High)
-                if "leverage invalid" in err_msg:
-                    # If we tried something > 10x, fallback to 10x
+
+                # Case 2: Leverage too high (risk limit or invalid)
+                # Bybit returns various error messages:
+                #   - "leverage invalid"
+                #   - "cannot set leverage X gt maxleverage Y by risk limit"
+                is_too_high = (
+                    "leverage invalid" in err_msg
+                    or "maxleverage" in err_msg
+                    or "risk limit" in err_msg
+                    or "gt maxleverage" in err_msg
+                )
+
+                if is_too_high:
+                    # Try to extract the actual max from the error message
+                    # e.g. "cannot set leverage 2500 gt maxleverage 2000 by risk limit"
+                    import re
+                    match = re.search(r'maxleverage\s+(\d+)', err_msg)
+                    if match:
+                        actual_max = int(match.group(1))
+                        logger.warning(f"Leverage {leverage}x exceeds risk limit for {symbol}, using {actual_max}x...")
+                        self.leverage_cache[symbol] = actual_max
+                        return await try_set(actual_max)
+
+                    # No parseable max — step down
                     if leverage > 10:
                         logger.warning(f"Leverage {leverage}x rejected for {symbol}, trying 10x...")
                         try:
                             return await try_set(10)
                         except RuntimeError as e2:
-                            # If 10x fails, fallback to 1x
-                            if "leverage invalid" in str(e2).lower():
+                            if any(k in str(e2).lower() for k in ["leverage invalid", "maxleverage", "risk limit"]):
                                 logger.warning(f"Leverage 10x also rejected for {symbol}, trying 1x...")
                                 return await try_set(1)
                             raise e2
-                            
-                    # If we started > 1x but <= 10x, fallback to 1x
+
                     elif leverage > 1:
                         logger.warning(f"Leverage {leverage}x rejected for {symbol}, trying 1x...")
                         return await try_set(1)
-                        
+
                 # Re-raise other errors
                 raise e
 

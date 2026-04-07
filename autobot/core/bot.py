@@ -1143,7 +1143,9 @@ class Bot4H:
             
             # 3. Apply Max Leverage to minimize Margin Usage
             leverage = await self.broker.get_max_leverage(symbol)
-            await self.broker.set_leverage(symbol, leverage)
+            lev_result = await self.broker.set_leverage(symbol, leverage)
+            # Re-read from cache in case set_leverage discovered a lower risk-limit max
+            leverage = await self.broker.get_max_leverage(symbol)
             
             # 4. Check Margin Requirements
             position_value = raw_qty * entry_price

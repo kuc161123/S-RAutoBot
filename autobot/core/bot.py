@@ -34,6 +34,7 @@ import time
 import aiohttp
 import pandas as pd
 import numpy as np
+from collections import deque
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field
@@ -156,6 +157,9 @@ class Bot4H:
             'longest_loss_streak': 0
         }
         
+        # Recent trades for rolling regime detection
+        self.recent_trades: deque = deque(maxlen=50)
+
         # Per-symbol stats
         self.symbol_stats: Dict[str, dict] = {}  # {symbol: {trades, wins, total_r}}
         
@@ -263,7 +267,11 @@ class Bot4H:
         today = datetime.now().strftime('%Y-%m-%d')
         
         logger.info(f"[LIFETIME] Updating stats: R={r_value:+.2f}, PnL=${pnl:.2f}, Win={is_win}, Symbol={symbol}")
-        
+
+        # Track recent trades for regime detection
+        prev_regime, _, _ = self.get_regime_status()
+        self.recent_trades.append({'r': r_value, 'win': is_win, 'time': datetime.now(), 'symbol': symbol})
+
         # Update totals
         self.lifetime_stats['total_r'] += r_value
         self.lifetime_stats['total_pnl'] += pnl
@@ -336,11 +344,54 @@ class Bot4H:
             self.lifetime_stats['worst_day_date'] = today
         
         logger.info(f"[LIFETIME] New totals: R={self.lifetime_stats['total_r']:+.2f}, Trades={self.lifetime_stats['total_trades']}, Streak={current_streak}, MaxDD={self.lifetime_stats['max_drawdown_r']:.1f}R")
-        
+
+        # Detect and log regime changes
+        new_regime, wr, avg_r = self.get_regime_status()
+        if new_regime != prev_regime and new_regime != 'unknown':
+            regime_labels = {'favorable': 'Favorable 🟢', 'cautious': 'Cautious 🟡', 'adverse': 'Adverse 🔴'}
+            label = regime_labels.get(new_regime, new_regime)
+            risk_note = ' ⚡HALF RISK ACTIVE' if new_regime == 'adverse' else ''
+            logger.info(f"[REGIME] Changed: {prev_regime} → {new_regime} (WR: {wr:.0%}, Avg R: {avg_r:+.2f}){risk_note}")
+            if hasattr(self, 'telegram') and self.telegram:
+                asyncio.create_task(self.telegram.send_message(
+                    f"⚙️ **Regime Change:** {label}\n├ 30t WR: {wr:.0%} | Avg R: {avg_r:+.2f}\n└ Risk: {'50% (half)' if new_regime == 'adverse' else '100% (full)'}{risk_note}"
+                ))
+
         self.save_lifetime_stats()
     
     # Legacy load/save methods removed in favor of StorageHandler
-    
+
+    def get_regime_status(self):
+        """Determine market regime from rolling trade performance.
+
+        Returns:
+            (regime, win_rate, avg_r) where regime is one of:
+            'favorable', 'cautious', 'adverse', or 'unknown'
+        """
+        if len(self.recent_trades) < 10:
+            return 'unknown', 0.0, 0.0
+        trades = list(self.recent_trades)[-30:]
+        wr = sum(1 for t in trades if t['win']) / len(trades)
+        avg_r = sum(t['r'] for t in trades) / len(trades)
+        if wr >= 0.18 and avg_r >= 0.15:
+            return 'favorable', wr, avg_r
+        elif wr >= 0.13 or avg_r > 0:
+            return 'cautious', wr, avg_r
+        else:
+            return 'adverse', wr, avg_r
+
+    def get_adaptive_risk(self):
+        """Return risk_per_trade adjusted for current regime.
+
+        In adverse regime (WR < 13% AND avg R <= 0), risk is halved.
+        """
+        base_risk = self.risk_config.get('risk_per_trade', 0.0005)
+        regime, wr, avg_r = self.get_regime_status()
+        if regime == 'adverse':
+            logger.info(f"[RISK] Adverse regime detected (WR: {wr:.0%}, Avg R: {avg_r:+.2f}) — halving risk to {base_risk * 0.5:.6f}")
+            return base_risk * 0.5
+        return base_risk
+
     def _track_divergence_detected(self):
         """Track a divergence detection"""
         # Reset daily counters if new day
@@ -1130,7 +1181,7 @@ class Bot4H:
             if risk_amount_usd:
                 risk_amount = float(risk_amount_usd)
             else:
-                margin_pct = self.risk_config.get('risk_per_trade', 0.002)
+                margin_pct = self.get_adaptive_risk()
                 risk_amount = account_balance * margin_pct
             
             # 2. Calculate Qty based on Risk

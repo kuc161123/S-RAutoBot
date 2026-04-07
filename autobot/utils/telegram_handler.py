@@ -427,11 +427,25 @@ class TelegramHandler:
 ├ No open trades
 └ Awaiting BOS: {pending} symbols"""
 
-            # === BTC ADX CALCULATION ===
-            adx_status = "Unknown"
+            # === REGIME STATUS (rolling performance-based) ===
+            regime_display = "Building data..."
             try:
-                # Fast 14-period ADX calc on 1H timeframe
-                # Fetch 30 1H candles
+                regime, wr, avg_r = self.bot.get_regime_status()
+                n_trades = len(self.bot.recent_trades)
+                if regime == 'unknown':
+                    regime_display = f"Building data... ({n_trades}/10 trades)"
+                elif regime == 'favorable':
+                    regime_display = f"Favorable 🟢 (30t: {wr:.0%} WR, {avg_r:+.2f}R)"
+                elif regime == 'cautious':
+                    regime_display = f"Cautious 🟡 (30t: {wr:.0%} WR, {avg_r:+.2f}R)"
+                else:
+                    regime_display = f"Adverse 🔴 (30t: {wr:.0%} WR, {avg_r:+.2f}R) ⚡HALF RISK"
+            except Exception as e:
+                logger.error(f"[DASHBOARD] Regime calc failed: {e}")
+
+            # BTC ADX as secondary info
+            btc_adx_display = ""
+            try:
                 params = {'category':'linear','symbol':'BTCUSDT','interval':'60','limit':30}
                 import requests
                 resp = requests.get('https://api.bybit.com/v5/market/kline', params=params, timeout=5)
@@ -440,32 +454,22 @@ class TelegramHandler:
                     import pandas as pd
                     df = pd.DataFrame(data, columns=['start','open','high','low','close','volume','turnover'])
                     for c in ['high','low','close']: df[c] = df[c].astype(float)
-                    df = df.iloc[::-1].reset_index(drop=True) # Oldest first
-                    
-                    high = df['high']
-                    low = df['low']
-                    close = df['close']
+                    df = df.iloc[::-1].reset_index(drop=True)
+                    high, low, close = df['high'], df['low'], df['close']
                     plus_dm = high - high.shift()
                     minus_dm = low.shift() - low
                     plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
                     minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
-                    
                     tr = pd.concat([high-low, abs(high-close.shift()), abs(low-close.shift())], axis=1).max(axis=1)
                     atr = tr.rolling(14).mean()
                     pdi = 100 * (plus_dm.rolling(14).mean() / atr)
                     mdi = 100 * (minus_dm.rolling(14).mean() / atr)
                     dx = abs(pdi - mdi) / (pdi + mdi + 1e-10) * 100
                     adx = dx.rolling(14).mean()
-                    
                     current_adx = adx.iloc[-1]
-                    if current_adx > 25:
-                        adx_status = f"{current_adx:.1f} (Trending) 🟢"
-                    elif current_adx > 20:
-                        adx_status = f"{current_adx:.1f} (Weak Trend) 🟡"
-                    else:
-                        adx_status = f"{current_adx:.1f} (Choppy) 🔴"
+                    btc_adx_display = f"\n├ BTC ADX: {current_adx:.1f}"
             except Exception as e:
-                logger.error(f"[DASHBOARD] ADX calc failed: {e}")
+                logger.error(f"[DASHBOARD] BTC ADX calc failed: {e}")
 
             # === BUILD ENHANCED DASHBOARD ===
             msg = f"""💰 **TRADING DASHBOARD**
@@ -502,7 +506,7 @@ class TelegramHandler:
 
 ⏰ **SYSTEM HEALTH**
 ├ Uptime: {uptime_hrs:.1f}h ✅
-├ Market (BTC 1H ADX): {adx_status}
+├ Regime: {regime_display}{btc_adx_display}
 ├ Next Scan: ~{next_scan_mins}m
 ├ Symbols: {enabled} | Signals: {divs_today}D/{bos_today}BOS
 ├ ⏳ Pending BOS: {pending} signals

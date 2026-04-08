@@ -435,11 +435,11 @@ class TelegramHandler:
                 if regime == 'unknown':
                     regime_display = f"Building data... ({n_trades}/10 trades)"
                 elif regime == 'favorable':
-                    regime_display = f"Favorable 🟢 (30t: {wr:.0%} WR, {avg_r:+.2f}R)"
+                    regime_display = f"Favorable 🟢 (20t: {wr:.0%} WR, {avg_r:+.2f}R)"
                 elif regime == 'cautious':
-                    regime_display = f"Cautious 🟡 (30t: {wr:.0%} WR, {avg_r:+.2f}R)"
+                    regime_display = f"Cautious 🟡 (20t: {wr:.0%} WR, {avg_r:+.2f}R)"
                 else:
-                    regime_display = f"Adverse 🔴 (30t: {wr:.0%} WR, {avg_r:+.2f}R) ⚡HALF RISK"
+                    regime_display = f"Adverse 🔴 (20t: {wr:.0%} WR, {avg_r:+.2f}R) ⚡25% RISK"
             except Exception as e:
                 logger.error(f"[DASHBOARD] Regime calc failed: {e}")
 

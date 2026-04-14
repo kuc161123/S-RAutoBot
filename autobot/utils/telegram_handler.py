@@ -338,7 +338,7 @@ class TelegramHandler:
                 if lifetime_losses > 0 and lifetime_wins > 0:
                     avg_r = lifetime_r / lifetime_trades if lifetime_trades > 0 else 0
                     total_win_r = lifetime_wins * avg_r if lifetime_wins > 0 else 0
-                    total_loss_r = abs(lifetime_r - total_win_r) if lifetime_r < total_win_r else abs(lifetime_losses)
+                    total_loss_r = abs(lifetime_r - total_win_r) if total_win_r > 0 else abs(lifetime_r)
                     profit_factor = total_win_r / total_loss_r if total_loss_r > 0 else 0
                     profit_factor_display = f"~{profit_factor:.1f}" if profit_factor > 0 else "N/A"
                 else:
@@ -446,10 +446,9 @@ class TelegramHandler:
             # BTC ADX as secondary info
             btc_adx_display = ""
             try:
-                params = {'category':'linear','symbol':'BTCUSDT','interval':'60','limit':30}
-                import requests
-                resp = requests.get('https://api.bybit.com/v5/market/kline', params=params, timeout=5)
-                data = resp.json().get('result',{}).get('list',[])
+                params = {'category':'linear','symbol':'BTCUSDT','interval':'60','limit':'30'}
+                kline_resp = await self.bot.broker._request("GET", "/v5/market/kline", params)
+                data = kline_resp.get('result', {}).get('list', []) if kline_resp else []
                 if len(data) >= 15:
                     import pandas as pd
                     df = pd.DataFrame(data, columns=['start','open','high','low','close','volume','turnover'])
@@ -532,12 +531,12 @@ class TelegramHandler:
                 await update.message.reply_text("📊 No active positions.")
                 return
             
-            msg = f"📊 **ACTIVE POSITIONS** ({len(self.bot.active_trades)} open)\\n\\n"
+            msg = f"📊 **ACTIVE POSITIONS** ({len(self.bot.active_trades)} open)\n\n"
 
             for trade_key, trade in self.bot.active_trades.items():
                 if trade is None:
                     symbol = trade_key.rsplit('_', 1)[0]
-                    msg += f"┌─ ⚪ `{symbol}` (synced, no details)\\n\\n"
+                    msg += f"┌─ ⚪ `{symbol}` (synced, no details)\n\n"
                     continue
                 side_icon = "🟢" if trade.side == 'long' else "🔴"
 
@@ -551,7 +550,7 @@ class TelegramHandler:
 
 """
             
-            msg += "━━━━━━━━━━━━━━━━━━━━\\n"
+            msg += "━━━━━━━━━━━━━━━━━━━━\n"
             msg += "💡 /dashboard /stats"
             
             await update.message.reply_text(msg, parse_mode='Markdown')

@@ -189,7 +189,9 @@ class Bot4H:
         self.rsi_cache: Dict[str, float] = {}  # {symbol: last_rsi}
         
         # Radar cache for developing setups
-        
+        self.radar_items: Dict[str, dict] = {}
+        self.extreme_zone_tracker: Dict[str, datetime] = {}
+
         # New startup logic: Immediate trading allowed (24h staleness filter protects us)
         logger.info("[STARTUP] Precision Mode Active. Immediate signal processing enabled.")
         
@@ -218,7 +220,6 @@ class Bot4H:
             'last_reset': datetime.now().date()
         }
         
-        logger.info(f"Loaded {len(self.symbol_config.get_enabled_symbols())} enabled symbols")
         logger.info(f"Loaded {len(self.symbol_config.get_enabled_symbols())} enabled symbols")
         # Logger info for signals is now handled by StorageHandler
 
@@ -944,8 +945,8 @@ class Bot4H:
                         del self.extreme_zone_tracker[symbol]
                     
             except Exception as e:
-                pass
-        
+                logger.debug(f"[{symbol}] Radar detection error: {e}")
+
         # 1. Detect new divergences
         # [MULTI-CONFIG] Pass ALL allowed divergence types for this symbol.
         # Supports both single-config and multi-config (long + short) per symbol.
@@ -1360,7 +1361,8 @@ class Bot4H:
 
             # Check if position still open on exchange
             try:
-                position = await self.broker.get_position(symbol)
+                bybit_side = 'Buy' if side == 'long' else 'Sell'
+                position = await self.broker.get_position(symbol, side=bybit_side)
 
                 if position is None or position.get('size', 0) == 0:
                     # Position closed
@@ -1446,7 +1448,10 @@ class Bot4H:
         # Update stats
         self.stats['total_trades'] += 1
         self.stats['total_r'] += r_value
-        
+
+        if symbol not in self.symbol_stats:
+            self.symbol_stats[symbol] = {'trades': 0, 'wins': 0, 'total_r': 0.0}
+
         if result == 'WIN':
             self.stats['wins'] += 1
             self.symbol_stats[symbol]['wins'] += 1
@@ -1604,10 +1609,26 @@ class Bot4H:
                     sym = p.get('symbol')
                     side = "long" if p.get('side') == "Buy" else "short"
                     trade_key = f"{sym}_{side}"
-                    # Mark as "synced position" placeholder
-                    self.active_trades[trade_key] = None
+                    entry_price = float(p.get('avgPrice', 0))
+                    sl_price = float(p.get('stopLoss', 0))
+                    tp_price = float(p.get('takeProfit', 0))
+                    size = float(p.get('size', 0))
+                    # Calculate approximate R:R from existing SL/TP
+                    sl_dist = abs(entry_price - sl_price) if sl_price > 0 and entry_price > 0 else 0
+                    rr = abs(tp_price - entry_price) / sl_dist if sl_dist > 0 and tp_price > 0 else 0
+                    synced_trade = ActiveTrade(
+                        symbol=sym,
+                        side=side,
+                        entry_price=entry_price,
+                        stop_loss=sl_price,
+                        take_profit=tp_price,
+                        rr_ratio=round(rr, 1),
+                        position_size=size,
+                        entry_time=datetime.now()
+                    )
+                    self.active_trades[trade_key] = synced_trade
                     count += 1
-                    logger.info(f"[SYNC] Found existing position: {sym} ({side})")
+                    logger.info(f"[SYNC] Found existing position: {sym} ({side}) entry=${entry_price:.4f} SL=${sl_price:.4f} TP=${tp_price:.4f}")
             logger.info(f"[SYNC] Synced {count} active positions.")
         except Exception as e:
             logger.error(f"[SYNC] Failed to sync positions: {e}")

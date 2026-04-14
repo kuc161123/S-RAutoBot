@@ -605,7 +605,7 @@ class Bybit:
         if response and response.get('retCode') == 0:
             order_id = response.get('result', {}).get('orderId')
             if order_id:
-                asyncio.sleep(0.3)  # Brief delay for Bybit to process
+                await asyncio.sleep(0.3)  # Brief delay for Bybit to process
                 status = await self.get_order_status(symbol, order_id)
                 if status:
                     order_status = status.get('orderStatus', 'Unknown')
@@ -781,8 +781,8 @@ class Bybit:
             logger.debug(f"Failed to get all closed pnl: {e}")
             return []
     
-    async def get_position(self, symbol:str) -> Optional[Dict[str, Any]]:
-        """Get current position for a symbol"""
+    async def get_position(self, symbol: str, side: str = None) -> Optional[Dict[str, Any]]:
+        """Get current position for a symbol, optionally filtered by side."""
         try:
             resp = await self._request("GET", "/v5/position/list", {
                 "category": "linear",
@@ -790,8 +790,14 @@ class Bybit:
             })
             if resp and resp.get("result"):
                 positions = resp["result"].get("list", [])
+                if side and positions:
+                    # Filter by side: "Buy" = long, "Sell" = short
+                    for p in positions:
+                        if p.get('side') == side and float(p.get('size', 0)) > 0:
+                            return p
+                    return None  # No matching position for this side
                 if positions:
-                    return positions[0]  # Return first position
+                    return positions[0]
             return None
         except Exception as e:
             logger.error(f"Failed to get position for {symbol}: {e}")
@@ -1096,13 +1102,13 @@ class Bybit:
             logger.error(f"Failed to set trailing SL for {symbol}: {e}")
             raise
     
-    def verify_position_sl(self, symbol: str) -> tuple:
+    async def verify_position_sl(self, symbol: str) -> tuple:
         """Verify the current SL set on Bybit for a position.
-        
+
         Returns (sl_price, tp_price) or (None, None) if no position.
         """
         try:
-            pos = self.get_position(symbol)
+            pos = await self.get_position(symbol)
             if pos and float(pos.get('size', 0)) > 0:
                 sl = float(pos.get('stopLoss', 0))
                 tp = float(pos.get('takeProfit', 0))

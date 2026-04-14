@@ -1380,15 +1380,37 @@ class Bot4H:
         symbol = trade.symbol if trade else trade_key.rsplit('_', 1)[0]
         logger.info(f"[{symbol}] Trade closed - processing exit...")
         
-        # Get actual exit details from exchange
+        # Get actual exit details from exchange (with retry for API latency)
         try:
-            # Fetch closed P&L for this position
-            closed_pnl = await self.broker.get_closed_pnl(symbol, limit=1)
-            
+            closed_pnl = None
+            for attempt in range(3):
+                closed_pnl = await self.broker.get_closed_pnl(symbol, limit=5)
+                if closed_pnl:
+                    break
+                if attempt < 2:
+                    logger.info(f"[{symbol}] Closed PnL not yet available, retry {attempt+1}/3...")
+                    await asyncio.sleep(1.0)
+
             if closed_pnl:
-                pnl_usd = float(closed_pnl[0].get('closedPnl', 0))
-                exit_price = float(closed_pnl[0].get('avgExitPrice', 0))
-                
+                # Match record by side and entry price to avoid cross-contamination
+                matched = None
+                for record in closed_pnl:
+                    rec_side = record.get('side', '').lower()
+                    rec_entry = float(record.get('avgEntryPrice', 0))
+                    # Bybit side: "Buy" = long, "Sell" = short
+                    expected_side = 'buy' if trade.side == 'long' else 'sell'
+                    entry_diff = abs(rec_entry - trade.entry_price) / trade.entry_price if trade.entry_price > 0 else 1
+                    if rec_side == expected_side and entry_diff < 0.01:
+                        matched = record
+                        break
+
+                if not matched:
+                    logger.warning(f"[{symbol}] No matching closed PnL record (side={trade.side}, entry=${trade.entry_price:.4f}), using most recent")
+                    matched = closed_pnl[0]
+
+                pnl_usd = float(matched.get('closedPnl', 0))
+                exit_price = float(matched.get('avgExitPrice', 0))
+
                 # Calculate R value
                 sl_distance = abs(trade.entry_price - trade.stop_loss)
                 if sl_distance > 0:
@@ -1396,22 +1418,24 @@ class Bot4H:
                         price_diff = exit_price - trade.entry_price
                     else:
                         price_diff = trade.entry_price - exit_price
-                    
+
                     r_value = price_diff / sl_distance
                 else:
                     r_value = 0
-                
+
                 # Determine result
                 result = 'WIN' if r_value > 0 else 'LOSS'
-                
+
             else:
-                # Fallback if no closed P&L found
-                logger.warning(f"[{symbol}] No closed P&L found - using estimates")
-                exit_price = trade.take_profit if trade.side == 'long' else trade.stop_loss
-                r_value = trade.rr_ratio if exit_price == trade.take_profit else -1.0
-                result = 'WIN' if r_value > 0 else 'LOSS'
+                # Fallback: use actual PnL direction, not hardcoded side assumption
+                logger.warning(f"[{symbol}] No closed P&L found after 3 retries - using SL/TP estimates")
+                # Estimate: assume SL hit (most common) unless position moved far enough for TP
+                # Use -1R as conservative default for both longs AND shorts
+                exit_price = trade.stop_loss
+                r_value = -1.0
+                result = 'LOSS'
                 pnl_usd = 0
-                
+
         except Exception as e:
             logger.error(f"[{symbol}] Error getting exit details: {e}")
             exit_price = 0
@@ -1473,14 +1497,14 @@ class Bot4H:
             direction = '🟢 LONG' if trade.side == 'long' else '🔴 SHORT'
             entry_time = trade.entry_time.strftime('%H:%M')
             
-            # Calculate actual risk amount
+            # Calculate actual risk amount (use adaptive risk, not base)
             risk_usd = self.risk_config.get('risk_amount_usd')
             if risk_usd:
                 risk_display = f"${float(risk_usd):.2f}"
             else:
                 balance = await self.broker.get_balance() or 1000
-                risk_pct = self.risk_config.get('risk_per_trade', 0.001)
-                risk_display = f"${balance * risk_pct:.2f} ({risk_pct*100:.1f}%)"
+                risk_pct = self.get_adaptive_risk()
+                risk_display = f"${balance * risk_pct:.2f} ({risk_pct*100:.2f}%)"
             
             # Current active count
             active_count = len(self.active_trades)
@@ -1634,16 +1658,18 @@ class Bot4H:
                 lifetime_r = lifetime.get('total_r', 0)
                 start_date = lifetime.get('start_date', 'Today')
                 
-                # Calculate risk display
-                risk_pct = self.risk_config.get('risk_per_trade', 0.001)
-                
+                # Calculate risk display (use adaptive risk, not base)
+                risk_pct = self.get_adaptive_risk()
+                regime, wr, avg_r = self.get_regime_status()
+                regime_display = f" [{regime.upper()}]" if regime != 'unknown' else ""
+
                 msg = f"""
 🤖 **BOT STARTED**
 ━━━━━━━━━━━━━━━━━━━━
 
 📊 **Strategy**: 1H Multi-Div (Both Sides)
 📈 **Symbols**: {len(enabled_symbols)} ({self.symbol_config.get_total_configs()} configs)
-💰 **Risk**: {risk_pct*100:.1f}% per trade
+💰 **Risk**: {risk_pct*100:.2f}% per trade{regime_display}
 🔬 **Mode**: Multi-config (long + short per symbol)
 
 **LIFETIME STATS**

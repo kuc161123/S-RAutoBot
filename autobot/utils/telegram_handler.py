@@ -427,19 +427,35 @@ class TelegramHandler:
 ├ No open trades
 └ Awaiting BOS: {pending} symbols"""
 
-            # === REGIME STATUS (rolling performance-based) ===
+            # === REGIME STATUS (V2: multi-signal safety system) ===
             regime_display = "Building data..."
+            regime_detail = ""
             try:
-                regime, wr, avg_r = self.bot.get_regime_status()
+                regime_label, regime_mult, regime_diag = self.bot.get_regime_status()
                 n_trades = len(self.bot.recent_trades)
-                if regime == 'unknown':
+                regime_icons = {
+                    'favorable': '🟢', 'cautious': '🟡', 'adverse': '🟠',
+                    'critical': '🔴', 'halted': '🛑', 'unknown': '⏳',
+                }
+                icon = regime_icons.get(regime_label, '❓')
+                if regime_label == 'unknown':
                     regime_display = f"Building data... ({n_trades}/10 trades)"
-                elif regime == 'favorable':
-                    regime_display = f"Favorable 🟢 (20t: {wr:.0%} WR, {avg_r:+.2f}R)"
-                elif regime == 'cautious':
-                    regime_display = f"Cautious 🟡 (20t: {wr:.0%} WR, {avg_r:+.2f}R)"
                 else:
-                    regime_display = f"Adverse 🔴 (20t: {wr:.0%} WR, {avg_r:+.2f}R) ⚡25% RISK"
+                    regime_display = f"{regime_label.title()} {icon} ({regime_mult:.0%} risk)"
+                    # Build detail lines
+                    details = []
+                    q = regime_diag['quality']
+                    details.append(f"├ 20t: {q['wr']:.0%} WR, {q['avg_r']:+.2f}R → {q['mult']:.2f}x")
+                    dd = regime_diag['drawdown']['dd_from_peak']
+                    if dd > 0:
+                        details.append(f"├ DD from peak: {dd:.1f}R")
+                    dr = regime_diag['daily']['daily_r']
+                    if dr != 0:
+                        details.append(f"├ Daily R: {dr:+.1f}R")
+                    ls = regime_diag['streak']['loss_streak']
+                    if ls >= 3:
+                        details.append(f"├ Loss streak: {ls}")
+                    regime_detail = "\n" + "\n".join(details) if details else ""
             except Exception as e:
                 logger.error(f"[DASHBOARD] Regime calc failed: {e}")
 
@@ -505,7 +521,7 @@ class TelegramHandler:
 
 ⏰ **SYSTEM HEALTH**
 ├ Uptime: {uptime_hrs:.1f}h ✅
-├ Regime: {regime_display}{btc_adx_display}
+├ Regime: {regime_display}{regime_detail}{btc_adx_display}
 ├ Next Scan: ~{next_scan_mins}m
 ├ Symbols: {enabled} | Signals: {divs_today}D/{bos_today}BOS
 ├ ⏳ Pending BOS: {pending} signals

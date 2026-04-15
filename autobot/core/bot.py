@@ -157,8 +157,8 @@ class Bot4H:
             'longest_loss_streak': 0
         }
         
-        # Recent trades for rolling regime detection
-        self.recent_trades: deque = deque(maxlen=20)
+        # Recent trades for rolling regime detection (100 for asymmetric windows)
+        self.recent_trades: deque = deque(maxlen=100)
 
         # Per-symbol stats
         self.symbol_stats: Dict[str, dict] = {}  # {symbol: {trades, wins, total_r}}
@@ -201,7 +201,7 @@ class Bot4H:
         self.lifetime_stats = self.storage.load_lifetime_stats()
         # Restore recent trades for regime detection
         saved_trades = self.lifetime_stats.get('recent_trades', [])
-        for t in saved_trades[-20:]:
+        for t in saved_trades[-100:]:
             self.recent_trades.append({
                 'r': t['r'],
                 'win': t['win'],
@@ -280,7 +280,7 @@ class Bot4H:
         logger.info(f"[LIFETIME] Updating stats: R={r_value:+.2f}, PnL=${pnl:.2f}, Win={is_win}, Symbol={symbol}")
 
         # Track recent trades for regime detection
-        prev_regime, _, _ = self.get_regime_status()
+        prev_regime, prev_mult, _ = self.get_regime_status()
         self.recent_trades.append({'r': r_value, 'win': is_win, 'time': datetime.now(), 'symbol': symbol})
 
         # Update totals
@@ -357,15 +357,36 @@ class Bot4H:
         logger.info(f"[LIFETIME] New totals: R={self.lifetime_stats['total_r']:+.2f}, Trades={self.lifetime_stats['total_trades']}, Streak={current_streak}, MaxDD={self.lifetime_stats['max_drawdown_r']:.1f}R")
 
         # Detect and log regime changes
-        new_regime, wr, avg_r = self.get_regime_status()
+        new_regime, new_mult, diag = self.get_regime_status()
         if new_regime != prev_regime and new_regime != 'unknown':
-            regime_labels = {'favorable': 'Favorable 🟢', 'cautious': 'Cautious 🟡', 'adverse': 'Adverse 🔴'}
-            label = regime_labels.get(new_regime, new_regime)
-            risk_note = ' ⚡QUARTER RISK ACTIVE' if new_regime == 'adverse' else ''
-            logger.info(f"[REGIME] Changed: {prev_regime} → {new_regime} (WR: {wr:.0%}, Avg R: {avg_r:+.2f}){risk_note}")
+            regime_icons = {
+                'favorable': 'Favorable 🟢',
+                'cautious': 'Cautious 🟡',
+                'adverse': 'Adverse 🟠',
+                'critical': 'Critical 🔴',
+                'halted': 'HALTED 🛑',
+            }
+            label = regime_icons.get(new_regime, new_regime)
+            active_signals = [k for k, v in diag.items() if v['mult'] < 1.0]
+            wr = diag['quality']['wr']
+            avg_r = diag['quality']['avg_r']
+            dd = diag['drawdown']['dd_from_peak']
+            daily_r = diag['daily']['daily_r']
+            loss_streak = diag['streak']['loss_streak']
+            logger.info(f"[REGIME] Changed: {prev_regime} → {new_regime} (mult={new_mult:.2f}, signals={active_signals})")
             if hasattr(self, 'telegram') and self.telegram:
+                trigger_lines = []
+                if diag['quality']['mult'] < 1.0:
+                    trigger_lines.append(f"├ Quality: {wr:.0%} WR, {avg_r:+.2f}R → {diag['quality']['mult']:.2f}x")
+                if diag['drawdown']['mult'] < 1.0:
+                    trigger_lines.append(f"├ DD Breaker: {dd:.1f}R from peak → {diag['drawdown']['mult']:.2f}x")
+                if diag['daily']['mult'] < 1.0:
+                    trigger_lines.append(f"├ Daily Cap: {daily_r:+.1f}R today → {diag['daily']['mult']:.2f}x")
+                if diag['streak']['mult'] < 1.0:
+                    trigger_lines.append(f"├ Streak: {loss_streak} losses → {diag['streak']['mult']:.2f}x")
+                triggers = "\n".join(trigger_lines) if trigger_lines else "├ All clear"
                 asyncio.create_task(self.telegram.send_message(
-                    f"⚙️ **Regime Change:** {label}\n├ 20t WR: {wr:.0%} | Avg R: {avg_r:+.2f}\n└ Risk: {'25% (quarter)' if new_regime == 'adverse' else '100% (full)'}{risk_note}"
+                    f"⚙️ **Regime Change:** {label}\n{triggers}\n└ Risk Multiplier: {new_mult:.0%}"
                 ))
 
         # Serialize recent_trades into lifetime_stats for persistence
@@ -378,41 +399,98 @@ class Bot4H:
     # Legacy load/save methods removed in favor of StorageHandler
 
     def get_regime_status(self):
-        """Determine market regime from rolling trade performance.
+        """4-Tier Graduated regime detection with monitoring signals.
 
-        Validated against 1-year backtest (18,984 trades):
-        - Window 20 reacts faster to regime shifts than 30
-        - Adverse at WR<18% & avgR<0.1 catches downturns early
-        - R/DD ratio: 106.27 (vs 22.95 baseline, 49.35 old settings)
+        Regime V2 — validated via simulate_regime_v2.py on 18,984 + 4,736 trades.
+        Strategy #3 (4-Tier Graduated) won both datasets:
+          - 1yr: R/DD 173.7, 13.3x more $ than current bot (daily compounding)
+          - 6mo: R/DD 58.2, best final balance across all strategies
+
+        Primary (drives multiplier):
+          Trade quality tiers (20t window):
+            favorable=1.0x, cautious=0.5x, adverse=0.25x, critical=0.1x
+
+        Monitoring (dashboard display only, does NOT affect multiplier):
+          DD from peak, daily R, loss streak
 
         Returns:
-            (regime, win_rate, avg_r) where regime is one of:
-            'favorable', 'cautious', 'adverse', or 'unknown'
+            (label, multiplier, diagnostics) where:
+            - label: 'favorable'|'cautious'|'adverse'|'critical'|'unknown'
+            - multiplier: 0.1 to 1.0
+            - diagnostics: dict with quality + monitoring signals
         """
-        if len(self.recent_trades) < 10:
-            return 'unknown', 0.0, 0.0
-        trades = list(self.recent_trades)[-20:]
-        wr = sum(1 for t in trades if t['win']) / len(trades)
-        avg_r = sum(t['r'] for t in trades) / len(trades)
-        if wr >= 0.18 and avg_r >= 0.15:
-            return 'favorable', wr, avg_r
-        elif wr >= 0.18 or avg_r >= 0.1:
-            return 'cautious', wr, avg_r
+        diagnostics = {
+            'quality': {'mult': 1.0, 'wr': 0.0, 'avg_r': 0.0, 'n_trades': 0},
+            'drawdown': {'mult': 1.0, 'dd_from_peak': 0.0},
+            'daily': {'mult': 1.0, 'daily_r': 0.0},
+            'streak': {'mult': 1.0, 'loss_streak': 0},
+        }
+
+        # === PRIMARY: Trade quality tiers (20-trade window) ===
+        n_trades = len(self.recent_trades)
+        diagnostics['quality']['n_trades'] = n_trades
+        if n_trades >= 10:
+            trades = list(self.recent_trades)[-20:]
+            wr = sum(1 for t in trades if t['win']) / len(trades)
+            avg_r = sum(t['r'] for t in trades) / len(trades)
+            diagnostics['quality']['wr'] = wr
+            diagnostics['quality']['avg_r'] = avg_r
+            if wr >= 0.18 and avg_r >= 0.15:
+                diagnostics['quality']['mult'] = 1.0   # favorable
+            elif wr >= 0.18 or avg_r >= 0.1:
+                diagnostics['quality']['mult'] = 0.5   # cautious
+            elif wr >= 0.10 or avg_r >= -0.5:
+                diagnostics['quality']['mult'] = 0.25  # adverse
+            else:
+                diagnostics['quality']['mult'] = 0.1   # critical
+
+        # === MONITORING ONLY (displayed on dashboard, does NOT affect multiplier) ===
+
+        # Drawdown from peak (informational)
+        peak = self.lifetime_stats.get('peak_equity_r', 0.0)
+        current_equity = self.lifetime_stats.get('total_r', 0.0)
+        dd = peak - current_equity  # positive = drawdown depth
+        diagnostics['drawdown']['dd_from_peak'] = dd
+
+        # Daily R (informational)
+        today = datetime.now().strftime('%Y-%m-%d')
+        daily_r = self.lifetime_stats.get('daily_r', {}).get(today, 0.0)
+        diagnostics['daily']['daily_r'] = daily_r
+
+        # Loss streak (informational)
+        current_streak = self.lifetime_stats.get('current_streak', 0)
+        loss_streak = abs(current_streak) if current_streak < 0 else 0
+        diagnostics['streak']['loss_streak'] = loss_streak
+
+        # --- Multiplier comes ONLY from quality tiers ---
+        multiplier = diagnostics['quality']['mult']
+
+        # Determine label from quality multiplier
+        if n_trades < 10:
+            label = 'unknown'
+        elif multiplier <= 0.1:
+            label = 'critical'
+        elif multiplier <= 0.25:
+            label = 'adverse'
+        elif multiplier <= 0.5:
+            label = 'cautious'
         else:
-            return 'adverse', wr, avg_r
+            label = 'favorable'
+
+        return label, multiplier, diagnostics
 
     def get_adaptive_risk(self):
-        """Return risk_per_trade adjusted for current regime.
+        """Return risk_per_trade adjusted by 4-tier quality regime.
 
-        In adverse regime (WR < 18% AND avg R < 0.1), risk is quartered.
-        Validated: 0.25x outperforms 0.5x — R/DD 106.27 vs 49.35.
+        Regime V2 (4-Tier Graduated): favorable=1.0x, cautious=0.5x,
+        adverse=0.25x, critical=0.1x. Validated as best returns + R/DD.
         """
         base_risk = self.risk_config.get('risk_per_trade', 0.0005)
-        regime, wr, avg_r = self.get_regime_status()
-        if regime == 'adverse':
-            logger.info(f"[RISK] Adverse regime detected (WR: {wr:.0%}, Avg R: {avg_r:+.2f}) — quartering risk to {base_risk * 0.25:.6f}")
-            return base_risk * 0.25
-        return base_risk
+        label, multiplier, diagnostics = self.get_regime_status()
+        if multiplier < 1.0:
+            q = diagnostics['quality']
+            logger.info(f"[RISK] Regime={label} (mult={multiplier:.2f}, WR={q['wr']:.0%}, avgR={q['avg_r']:+.2f}) — risk {base_risk:.6f} → {base_risk * multiplier:.6f}")
+        return base_risk * multiplier
 
     def _track_divergence_detected(self):
         """Track a divergence detection"""
@@ -1133,12 +1211,23 @@ class Bot4H:
             use_candle_open: If True, use current candle's open price for SL/TP calculation
                              (backtest-aligned entry on next candle after BOS)
         """
+        # [REGIME V2] Halt check — block trade if multiplier is 0
+        regime_label, regime_mult, regime_diag = self.get_regime_status()
+        if regime_mult == 0.0:
+            active_signals = [k for k, v in regime_diag.items() if v['mult'] <= 0.0]
+            logger.warning(f"[{symbol}] TRADE BLOCKED — regime={regime_label}, halt signals: {active_signals}")
+            if hasattr(self, 'telegram') and self.telegram:
+                asyncio.create_task(self.telegram.send_message(
+                    f"🛑 **TRADE BLOCKED** — {symbol} {signal.side}\n├ Regime: {regime_label}\n└ Halt signals: {', '.join(active_signals)}"
+                ))
+            return
+
         # Skip if already in a trade for this symbol+side (Internal Check)
         trade_key = f"{symbol}_{signal.side}"
         if trade_key in self.active_trades:
             logger.warning(f"[{symbol}] Already in a {signal.side} trade (internal) - skipping")
             return
-            
+
         # [CRITICAL] Skip if already in a trade on EXCHANGE (prevents pyramiding after restart)
         try:
             # We fetch all positions to be sure. 
@@ -1681,8 +1770,8 @@ class Bot4H:
                 
                 # Calculate risk display (use adaptive risk, not base)
                 risk_pct = self.get_adaptive_risk()
-                regime, wr, avg_r = self.get_regime_status()
-                regime_display = f" [{regime.upper()}]" if regime != 'unknown' else ""
+                regime_label, regime_mult, _ = self.get_regime_status()
+                regime_display = f" [{regime_label.upper()} {regime_mult:.0%}]" if regime_label != 'unknown' else ""
 
                 msg = f"""
 🤖 **BOT STARTED**

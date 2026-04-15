@@ -79,7 +79,8 @@ class TelegramHandler:
         self.app.add_handler(CommandHandler("resetlifetime", self.cmd_resetlifetime))
         self.app.add_handler(CommandHandler("debug", self.cmd_debug))
         self.app.add_handler(CommandHandler("setbalance", self.cmd_setbalance))
-        
+        self.app.add_handler(CommandHandler("setregime", self.cmd_setregime))
+
         # Start polling with longer interval to avoid rate limits
         await self.app.initialize()
         await self.app.start()
@@ -151,6 +152,7 @@ class TelegramHandler:
 ├ /risk - View current risk settings
 ├ /risk 0.2 - Set 0.2% risk per trade
 ├ /risk $5 - Set fixed $5 per trade
+├ /setregime - Override regime (cautious/adverse)
 └ /setbalance - Set P&L baseline after deposits
 
 🔄 **RESET OPTIONS**
@@ -441,7 +443,10 @@ class TelegramHandler:
                 if regime_label == 'unknown':
                     regime_display = f"Building data... ({n_trades}/10 trades)"
                 else:
-                    regime_display = f"{regime_label.title()} {icon} ({regime_mult:.0%} risk)"
+                    manual_tag = " [MANUAL]" if self.bot.regime_override is not None else ""
+                    remaining = 10 - self.bot.regime_override_trades if self.bot.regime_override else 0
+                    override_info = f" ({remaining}t left)" if manual_tag else ""
+                    regime_display = f"{regime_label.title()} {icon} ({regime_mult:.0%} risk){manual_tag}{override_info}"
                     # Build detail lines
                     details = []
                     q = regime_diag['quality']
@@ -1230,4 +1235,77 @@ Your P&L Return will now be calculated from ${new_balance:,.0f}.
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {e}")
             logger.error(f"Setbalance command error: {e}")
+
+    async def cmd_setregime(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Manually override the regime risk tier"""
+        try:
+            valid_regimes = ['favorable', 'cautious', 'adverse', 'critical']
+            regime_icons = {
+                'favorable': '🟢', 'cautious': '🟡', 'adverse': '🟠', 'critical': '🔴',
+            }
+            regime_mults = {
+                'favorable': '100%', 'cautious': '50%', 'adverse': '25%', 'critical': '10%',
+            }
+
+            if not context.args:
+                # Show current status + usage
+                current = self.bot.regime_override
+                if current:
+                    remaining = 10 - self.bot.regime_override_trades
+                    status = f"**Active override**: {current.title()} {regime_icons[current]} ({regime_mults[current]} risk)\n├ Auto-clears in {remaining} trades"
+                else:
+                    label, mult, _ = self.bot.get_regime_status()
+                    icon = regime_icons.get(label, '❓')
+                    status = f"**No override active** — auto-detected: {label.title()} {icon} ({mult:.0%} risk)"
+
+                msg = f"""⚙️ **REGIME OVERRIDE**
+━━━━━━━━━━━━━━━━━━━━
+
+{status}
+
+**Usage:**
+`/setregime cautious` → Force 50% risk
+`/setregime adverse` → Force 25% risk
+`/setregime critical` → Force 10% risk
+`/setregime favorable` → Force 100% risk
+`/setregime clear` → Return to auto-detection
+
+💡 Override auto-clears after 10 new trades.
+"""
+                await update.message.reply_text(msg, parse_mode='Markdown')
+                return
+
+            arg = context.args[0].lower().strip()
+
+            if arg == 'clear':
+                self.bot.set_regime_override(None)
+                label, mult, _ = self.bot.get_regime_status()
+                icon = regime_icons.get(label, '❓')
+                await update.message.reply_text(
+                    f"✅ **Regime override cleared**\n\nAuto-detected: {label.title()} {icon} ({mult:.0%} risk)",
+                    parse_mode='Markdown'
+                )
+                logger.info(f"[REGIME] Manual override cleared by user command")
+                return
+
+            if arg not in valid_regimes:
+                await update.message.reply_text(
+                    f"❌ Invalid regime `{arg}`\n\nValid: `favorable`, `cautious`, `adverse`, `critical`, `clear`",
+                    parse_mode='Markdown'
+                )
+                return
+
+            self.bot.set_regime_override(arg)
+            icon = regime_icons[arg]
+            mult = regime_mults[arg]
+            await update.message.reply_text(
+                f"✅ **Regime override set**: {arg.title()} {icon} ({mult} risk)\n\n"
+                f"Will auto-clear after 10 new trades.\nUse `/setregime clear` to remove manually.",
+                parse_mode='Markdown'
+            )
+            logger.info(f"[REGIME] Manual override set to '{arg}' by user command")
+
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error: {e}")
+            logger.error(f"Setregime command error: {e}")
 

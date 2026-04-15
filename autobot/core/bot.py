@@ -160,6 +160,10 @@ class Bot4H:
         # Recent trades for rolling regime detection (100 for asymmetric windows)
         self.recent_trades: deque = deque(maxlen=100)
 
+        # Manual regime override (from /setregime command)
+        self.regime_override = None        # 'favorable'|'cautious'|'adverse'|'critical' or None
+        self.regime_override_trades = 0    # Trades since override was set (auto-clears at 10)
+
         # Per-symbol stats
         self.symbol_stats: Dict[str, dict] = {}  # {symbol: {trades, wins, total_r}}
         
@@ -209,6 +213,11 @@ class Bot4H:
                 'symbol': t.get('symbol', '')
             })
         logger.info(f"Restored {len(self.recent_trades)} recent trades for regime detection")
+        # Restore manual regime override
+        self.regime_override = self.lifetime_stats.get('regime_override', None)
+        self.regime_override_trades = self.lifetime_stats.get('regime_override_trades', 0)
+        if self.regime_override:
+            logger.info(f"[REGIME] Restored manual override: {self.regime_override} ({self.regime_override_trades}/10 trades since set)")
         logger.info(f"Lifetime stats loaded: {self.lifetime_stats['total_r']:.1f}R, {self.lifetime_stats['total_trades']} trades since {self.lifetime_stats.get('start_date', 'unknown')}")
         
         # BOS Performance Tracking (for monitoring stale filter removal impact)
@@ -282,6 +291,16 @@ class Bot4H:
         # Track recent trades for regime detection
         prev_regime, prev_mult, _ = self.get_regime_status()
         self.recent_trades.append({'r': r_value, 'win': is_win, 'time': datetime.now(), 'symbol': symbol})
+
+        # Track trades since manual override (auto-clear at 10)
+        if self.regime_override is not None:
+            self.regime_override_trades += 1
+            if self.regime_override_trades >= 10:
+                logger.info(f"[REGIME] Manual override auto-cleared after 10 new trades")
+                self.regime_override = None
+                self.regime_override_trades = 0
+            self.lifetime_stats['regime_override'] = self.regime_override
+            self.lifetime_stats['regime_override_trades'] = self.regime_override_trades
 
         # Update totals
         self.lifetime_stats['total_r'] += r_value
@@ -394,6 +413,8 @@ class Bot4H:
             {'r': t['r'], 'win': t['win'], 'time': t['time'].isoformat(), 'symbol': t['symbol']}
             for t in self.recent_trades
         ]
+        self.lifetime_stats['regime_override'] = self.regime_override
+        self.lifetime_stats['regime_override_trades'] = self.regime_override_trades
         self.save_lifetime_stats()
 
     # Legacy load/save methods removed in favor of StorageHandler
@@ -477,7 +498,24 @@ class Bot4H:
         else:
             label = 'favorable'
 
+        # Manual override (from /setregime command)
+        if self.regime_override is not None:
+            override_map = {'favorable': 1.0, 'cautious': 0.5, 'adverse': 0.25, 'critical': 0.1}
+            label = self.regime_override
+            multiplier = override_map[label]
+            # Keep diagnostics as-is so dashboard still shows underlying trade stats
+
         return label, multiplier, diagnostics
+
+    def set_regime_override(self, regime: Optional[str]):
+        """Set or clear manual regime override. Auto-clears after 10 trades."""
+        if regime is not None and regime not in ('favorable', 'cautious', 'adverse', 'critical'):
+            raise ValueError(f"Invalid regime: {regime}")
+        self.regime_override = regime
+        self.regime_override_trades = 0
+        self.lifetime_stats['regime_override'] = regime
+        self.lifetime_stats['regime_override_trades'] = 0
+        self.save_lifetime_stats()
 
     def get_adaptive_risk(self):
         """Return risk_per_trade adjusted by 4-tier quality regime.

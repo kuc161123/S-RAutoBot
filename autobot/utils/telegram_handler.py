@@ -172,327 +172,326 @@ class TelegramHandler:
 """
         await update.message.reply_text(msg, parse_mode='Markdown')
     
-    async def cmd_dashboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Clean, focused trading dashboard"""
+    async def build_dashboard_message(self) -> str:
+        """Build the full dashboard message string (reusable for auto-send and /dashboard command)"""
+        from datetime import datetime, timedelta
+
+        # === SYNC WITH EXCHANGE ===
+        await self.bot.sync_with_exchange()
+
+        # === GATHER ALL DATA ===
+        uptime_hrs = max(0, (datetime.now() - self.bot.start_time).total_seconds() / 3600)
+        pending = sum(len(sigs) for sigs in self.bot.pending_signals.values())
+
+        # Fetch positions ONCE and reuse
+        positions = []
         try:
-            from datetime import datetime, timedelta
+            positions = await self.bot.broker.get_positions() or []
+        except Exception as e:
+            logger.error(f"[DASHBOARD] Failed to get positions from Bybit: {e}")
 
-            # === SYNC WITH EXCHANGE ===
-            await self.bot.sync_with_exchange()
+        active_positions = [p for p in positions if float(p.get('size', 0)) > 0]
+        active = len(active_positions)
+        if active == 0:
+            active = len(self.bot.active_trades)  # Fallback to internal tracking
+        logger.info(f"[DASHBOARD] Bybit reports {active} active positions")
 
-            # === GATHER ALL DATA ===
-            uptime_hrs = max(0, (datetime.now() - self.bot.start_time).total_seconds() / 3600)
-            pending = sum(len(sigs) for sigs in self.bot.pending_signals.values())
+        enabled = len(self.bot.symbol_config.get_enabled_symbols())
 
-            # Fetch positions ONCE and reuse
-            positions = []
-            try:
-                positions = await self.bot.broker.get_positions() or []
-            except Exception as e:
-                logger.error(f"[DASHBOARD] Failed to get positions from Bybit: {e}")
+        # Scan status
+        scan = self.bot.scan_state
+        last_scan = scan.get('last_scan_time')
+        mins_ago = int((datetime.now() - last_scan).total_seconds() / 60) if last_scan else 0
 
-            active_positions = [p for p in positions if float(p.get('size', 0)) > 0]
-            active = len(active_positions)
-            if active == 0:
-                active = len(self.bot.active_trades)  # Fallback to internal tracking
-            logger.info(f"[DASHBOARD] Bybit reports {active} active positions")
+        # Balance and P&L
+        balance = await self.bot.broker.get_balance() or 0
 
-            enabled = len(self.bot.symbol_config.get_enabled_symbols())
+        # Risk amount for R calculation
+        risk_usd = self.bot.risk_config.get('risk_amount_usd')
+        if risk_usd:
+            risk_amount = float(risk_usd)
+            risk_pct = (risk_amount / balance * 100) if balance > 0 else 0
+            risk_display = f"${risk_amount:.2f} ({risk_pct:.2f}%)"
+        else:
+            risk_pct = self.bot.get_adaptive_risk()
+            risk_amount = balance * risk_pct if balance > 0 else 10
+            risk_display = f"${risk_amount:.2f} ({risk_pct*100:.2f}%)"
 
-            # Scan status
-            scan = self.bot.scan_state
-            last_scan = scan.get('last_scan_time')
-            mins_ago = int((datetime.now() - last_scan).total_seconds() / 60) if last_scan else 0
+        # Realized P&L (today + weekly)
+        realized_pnl = 0
+        weekly_pnl = 0
+        today_trades = 0
+        today_wins = 0
+        weekly_trades = 0
+        weekly_wins = 0
+        try:
+            closed_records = await self.bot.broker.get_all_closed_pnl(limit=100)
+            if closed_records:
+                today = datetime.now().date()
+                week_ago = today - timedelta(days=7)
+                for record in closed_records:
+                    try:
+                        close_time = int(record.get('updatedTime', record.get('createdTime', 0)))
+                        trade_date = datetime.fromtimestamp(close_time / 1000).date()
+                        pnl = float(record.get('closedPnl', 0))
+                        if trade_date == today:
+                            realized_pnl += pnl
+                            today_trades += 1
+                            if pnl > 0:
+                                today_wins += 1
+                        if trade_date >= week_ago:
+                            weekly_pnl += pnl
+                            weekly_trades += 1
+                            if pnl > 0:
+                                weekly_wins += 1
+                    except:
+                        continue
+        except Exception as e:
+            logger.error(f"Error getting realized P&L: {e}")
 
-            # Balance and P&L
-            balance = await self.bot.broker.get_balance() or 0
+        realized_r = realized_pnl / risk_amount if risk_amount > 0 else 0
+        weekly_r = weekly_pnl / risk_amount if risk_amount > 0 else 0
+        today_losses = today_trades - today_wins
+        weekly_losses = weekly_trades - weekly_wins
 
-            # Risk amount for R calculation
-            risk_usd = self.bot.risk_config.get('risk_amount_usd')
-            if risk_usd:
-                risk_amount = float(risk_usd)
-                risk_pct = (risk_amount / balance * 100) if balance > 0 else 0
-                risk_display = f"${risk_amount:.2f} ({risk_pct:.2f}%)"
+        # Unrealized P&L (from cached positions)
+        unrealized_pnl = 0
+        positions_up = 0
+        positions_down = 0
+        long_count = 0
+        short_count = 0
+
+        # Decorate positions for sorting
+        decorated_positions = []
+        for pos in active_positions:
+            unrealized = float(pos.get('unrealisedPnl', 0))
+            unrealized_pnl += unrealized
+            symbol = pos.get('symbol', '???')
+            side = pos.get('side', '?')
+
+            if side == 'Buy':
+                long_count += 1
             else:
-                risk_pct = self.bot.get_adaptive_risk()
-                risk_amount = balance * risk_pct if balance > 0 else 10
-                risk_display = f"${risk_amount:.2f} ({risk_pct*100:.2f}%)"
+                short_count += 1
 
-            # Realized P&L (today + weekly)
-            realized_pnl = 0
-            weekly_pnl = 0
-            today_trades = 0
-            today_wins = 0
-            weekly_trades = 0
-            weekly_wins = 0
-            try:
-                closed_records = await self.bot.broker.get_all_closed_pnl(limit=100)
-                if closed_records:
-                    today = datetime.now().date()
-                    week_ago = today - timedelta(days=7)
-                    for record in closed_records:
-                        try:
-                            close_time = int(record.get('updatedTime', record.get('createdTime', 0)))
-                            trade_date = datetime.fromtimestamp(close_time / 1000).date()
-                            pnl = float(record.get('closedPnl', 0))
-                            if trade_date == today:
-                                realized_pnl += pnl
-                                today_trades += 1
-                                if pnl > 0:
-                                    today_wins += 1
-                            if trade_date >= week_ago:
-                                weekly_pnl += pnl
-                                weekly_trades += 1
-                                if pnl > 0:
-                                    weekly_wins += 1
-                        except:
-                            continue
-            except Exception as e:
-                logger.error(f"Error getting realized P&L: {e}")
-
-            realized_r = realized_pnl / risk_amount if risk_amount > 0 else 0
-            weekly_r = weekly_pnl / risk_amount if risk_amount > 0 else 0
-            today_losses = today_trades - today_wins
-            weekly_losses = weekly_trades - weekly_wins
-
-            # Unrealized P&L (from cached positions)
-            unrealized_pnl = 0
-            positions_up = 0
-            positions_down = 0
-            long_count = 0
-            short_count = 0
-            
-            # Decorate positions for sorting
-            decorated_positions = []
-            for pos in active_positions:
-                unrealized = float(pos.get('unrealisedPnl', 0))
-                unrealized_pnl += unrealized
-                symbol = pos.get('symbol', '???')
-                side = pos.get('side', '?')
-                
-                if side == 'Buy':
-                    long_count += 1
-                else:
-                    short_count += 1
-                    
-                if unrealized >= 0:
-                    positions_up += 1
-                else:
-                    positions_down += 1
-                    
-                pos_r = unrealized / risk_amount if risk_amount > 0 else 0
-                decorated_positions.append({
-                    'symbol': symbol,
-                    'side': side,
-                    'pnl': unrealized,
-                    'r_value': pos_r
-                })
-                
-            # Sort positions by PnL descending
-            decorated_positions.sort(reverse=True, key=lambda x: x['pnl'])
-
-            unrealized_r = unrealized_pnl / risk_amount if risk_amount > 0 else 0
-
-            # Net P&L
-            net_pnl = realized_pnl + unrealized_pnl
-            net_r = net_pnl / risk_amount if risk_amount > 0 else 0
-            net_emoji = "🟢" if net_pnl >= 0 else "🔴"
-
-            # === ALL-TIME PERFORMANCE FROM LOCAL LIFETIME_STATS ===
-            lifetime = self.bot.lifetime_stats
-            start_date = lifetime.get('start_date', 'Unknown')
-            starting_balance = lifetime.get('starting_balance', 0) or balance
-
-            lifetime_r = lifetime.get('total_r', 0.0)
-            lifetime_pnl = lifetime.get('total_pnl', 0.0)
-            lifetime_trades = lifetime.get('total_trades', 0)
-            lifetime_wins = lifetime.get('wins', 0)
-            lifetime_losses = lifetime_trades - lifetime_wins
-            lifetime_wr = (lifetime_wins / lifetime_trades * 100) if lifetime_trades > 0 else 0
-
-            # Best/worst from local storage
-            best_trade_r = lifetime.get('best_trade_r', 0.0)
-            best_trade_symbol = lifetime.get('best_trade_symbol', 'N/A')
-            worst_trade_r = lifetime.get('worst_trade_r', 0.0)
-            worst_trade_symbol = lifetime.get('worst_trade_symbol', 'N/A')
-            best_day_r = lifetime.get('best_day_r', 0.0)
-            best_day_date = lifetime.get('best_day_date', 'N/A')
-            worst_day_r = lifetime.get('worst_day_r', 0.0)
-            worst_day_date = lifetime.get('worst_day_date', 'N/A')
-
-            # Drawdown and streaks from local storage
-            max_dd = lifetime.get('max_drawdown_r', 0.0)
-            current_streak = lifetime.get('current_streak', 0)
-            streak_type = "W" if current_streak > 0 else ("L" if current_streak < 0 else "")
-            longest_win_streak = lifetime.get('longest_win_streak', 0)
-            longest_loss_streak = lifetime.get('longest_loss_streak', 0)
-
-            # Calculate profit factor from stored gross data
-            gross_profit = lifetime.get('gross_profit_r', 0.0)
-            gross_loss = abs(lifetime.get('gross_loss_r', 0.0))
-            if gross_profit > 0 and gross_loss > 0:
-                profit_factor = gross_profit / gross_loss
-                profit_factor_display = f"{profit_factor:.2f}"
-            elif gross_profit > 0 and gross_loss == 0:
-                profit_factor_display = "∞"
+            if unrealized >= 0:
+                positions_up += 1
             else:
-                # Fallback estimation from aggregate stats
-                if lifetime_losses > 0 and lifetime_wins > 0:
-                    avg_r = lifetime_r / lifetime_trades if lifetime_trades > 0 else 0
-                    total_win_r = lifetime_wins * avg_r if lifetime_wins > 0 else 0
-                    total_loss_r = abs(lifetime_r - total_win_r) if total_win_r > 0 else abs(lifetime_r)
-                    profit_factor = total_win_r / total_loss_r if total_loss_r > 0 else 0
-                    profit_factor_display = f"~{profit_factor:.1f}" if profit_factor > 0 else "N/A"
-                else:
-                    profit_factor_display = "N/A"
+                positions_down += 1
 
-            # Calculate days since start
-            try:
-                if start_date and start_date != 'Unknown':
-                    start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-                    days_running = (datetime.now() - start_dt).days
-                else:
-                    days_running = 0
-                    start_date = datetime.now().strftime('%Y-%m-%d')
-            except:
+            pos_r = unrealized / risk_amount if risk_amount > 0 else 0
+            decorated_positions.append({
+                'symbol': symbol,
+                'side': side,
+                'pnl': unrealized,
+                'r_value': pos_r
+            })
+
+        # Sort positions by PnL descending
+        decorated_positions.sort(reverse=True, key=lambda x: x['pnl'])
+
+        unrealized_r = unrealized_pnl / risk_amount if risk_amount > 0 else 0
+
+        # Net P&L
+        net_pnl = realized_pnl + unrealized_pnl
+        net_r = net_pnl / risk_amount if risk_amount > 0 else 0
+        net_emoji = "🟢" if net_pnl >= 0 else "🔴"
+
+        # === ALL-TIME PERFORMANCE FROM LOCAL LIFETIME_STATS ===
+        lifetime = self.bot.lifetime_stats
+        start_date = lifetime.get('start_date', 'Unknown')
+        starting_balance = lifetime.get('starting_balance', 0) or balance
+
+        lifetime_r = lifetime.get('total_r', 0.0)
+        lifetime_pnl = lifetime.get('total_pnl', 0.0)
+        lifetime_trades = lifetime.get('total_trades', 0)
+        lifetime_wins = lifetime.get('wins', 0)
+        lifetime_losses = lifetime_trades - lifetime_wins
+        lifetime_wr = (lifetime_wins / lifetime_trades * 100) if lifetime_trades > 0 else 0
+
+        # Best/worst from local storage
+        best_trade_r = lifetime.get('best_trade_r', 0.0)
+        best_trade_symbol = lifetime.get('best_trade_symbol', 'N/A')
+        worst_trade_r = lifetime.get('worst_trade_r', 0.0)
+        worst_trade_symbol = lifetime.get('worst_trade_symbol', 'N/A')
+        best_day_r = lifetime.get('best_day_r', 0.0)
+        best_day_date = lifetime.get('best_day_date', 'N/A')
+        worst_day_r = lifetime.get('worst_day_r', 0.0)
+        worst_day_date = lifetime.get('worst_day_date', 'N/A')
+
+        # Drawdown and streaks from local storage
+        max_dd = lifetime.get('max_drawdown_r', 0.0)
+        current_streak = lifetime.get('current_streak', 0)
+        streak_type = "W" if current_streak > 0 else ("L" if current_streak < 0 else "")
+        longest_win_streak = lifetime.get('longest_win_streak', 0)
+        longest_loss_streak = lifetime.get('longest_loss_streak', 0)
+
+        # Calculate profit factor from stored gross data
+        gross_profit = lifetime.get('gross_profit_r', 0.0)
+        gross_loss = abs(lifetime.get('gross_loss_r', 0.0))
+        if gross_profit > 0 and gross_loss > 0:
+            profit_factor = gross_profit / gross_loss
+            profit_factor_display = f"{profit_factor:.2f}"
+        elif gross_profit > 0 and gross_loss == 0:
+            profit_factor_display = "∞"
+        else:
+            # Fallback estimation from aggregate stats
+            if lifetime_losses > 0 and lifetime_wins > 0:
+                avg_r = lifetime_r / lifetime_trades if lifetime_trades > 0 else 0
+                total_win_r = lifetime_wins * avg_r if lifetime_wins > 0 else 0
+                total_loss_r = abs(lifetime_r - total_win_r) if total_win_r > 0 else abs(lifetime_r)
+                profit_factor = total_win_r / total_loss_r if total_loss_r > 0 else 0
+                profit_factor_display = f"~{profit_factor:.1f}" if profit_factor > 0 else "N/A"
+            else:
+                profit_factor_display = "N/A"
+
+        # Calculate days since start
+        try:
+            if start_date and start_date != 'Unknown':
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                days_running = (datetime.now() - start_dt).days
+            else:
                 days_running = 0
+                start_date = datetime.now().strftime('%Y-%m-%d')
+        except:
+            days_running = 0
 
-            # Available balance (from cached positions)
-            total_margin = sum(float(p.get('positionIM', 0)) for p in active_positions)
-            available_balance = balance - total_margin
-            available_pct = (available_balance / balance * 100) if balance > 0 else 0
+        # Available balance (from cached positions)
+        total_margin = sum(float(p.get('positionIM', 0)) for p in active_positions)
+        available_balance = balance - total_margin
+        available_pct = (available_balance / balance * 100) if balance > 0 else 0
 
-            # API Key expiry
-            api_info = await self.bot.broker.get_api_key_info()
-            if api_info:
-                days_left = api_info.get('days_left')
-                if days_left is not None:
-                    if days_left <= 7:
-                        key_status = f"⚠️ {days_left}d left!"
-                    elif days_left <= 30:
-                        key_status = f"🟡 {days_left}d left"
-                    else:
-                        key_status = f"✅ {days_left}d left"
+        # API Key expiry
+        api_info = await self.bot.broker.get_api_key_info()
+        if api_info:
+            days_left = api_info.get('days_left')
+            if days_left is not None:
+                if days_left <= 7:
+                    key_status = f"⚠️ {days_left}d left!"
+                elif days_left <= 30:
+                    key_status = f"🟡 {days_left}d left"
                 else:
-                    key_status = "✅ Connected"
+                    key_status = f"✅ {days_left}d left"
             else:
-                key_status = "⚠️ API Check Failed"
+                key_status = "✅ Connected"
+        else:
+            key_status = "⚠️ API Check Failed"
 
-            next_scan_mins = max(0, 60 - mins_ago)
+        next_scan_mins = max(0, 60 - mins_ago)
 
-            # Get today's signal counts
-            divs_today = self.bot.bos_tracking.get('divergences_detected_today', 0)
-            bos_today = self.bot.bos_tracking.get('bos_confirmed_today', 0)
+        # Get today's signal counts
+        divs_today = self.bot.bos_tracking.get('divergences_detected_today', 0)
+        bos_today = self.bot.bos_tracking.get('bos_confirmed_today', 0)
 
-            # P&L Return (Fixed calculation)
-            if starting_balance > 0:
-                pnl_return_pct = ((balance - starting_balance) / starting_balance) * 100
+        # P&L Return (Fixed calculation)
+        if starting_balance > 0:
+            pnl_return_pct = ((balance - starting_balance) / starting_balance) * 100
+        else:
+            pnl_return_pct = 0
+        pnl_emoji = "🟢" if pnl_return_pct >= 0 else "🔴"
+
+        # Average R
+        avg_r = lifetime_r / lifetime_trades if lifetime_trades > 0 else 0
+
+        # Expectancy (avg R per trade)
+        expectancy_display = f"{avg_r:+.2f}R" if lifetime_trades > 0 else "N/A"
+
+        # === BUILD POSITIONS SECTION ===
+        if decorated_positions:
+            lines = []
+            lines.append(f"├ Direction: {short_count} Shorts 🔴 | {long_count} Longs 🟢")
+            lines.append(f"├ Status: {positions_up} Profit | {positions_down} Loss")
+
+            # Top 3 (if we have more than 6, otherwise just show all)
+            if len(decorated_positions) > 6:
+                lines.append("├ ⭐ **Top 3:**")
+                for p in decorated_positions[:3]:
+                    icon = "📈" if p['side'] == 'Buy' else "📉"
+                    lines.append(f"│ ├ {p['symbol']} {icon}: ${p['pnl']:+,.2f} ({p['r_value']:+.1f}R)")
+
+                lines.append("└ ⚠️ **Bottom 3:**")
+                for i, p in enumerate(decorated_positions[-3:]):
+                    icon = "📈" if p['side'] == 'Buy' else "📉"
+                    prefix = "  └" if i == 2 else "  ├"
+                    lines.append(f"{prefix} {p['symbol']} {icon}: ${p['pnl']:+,.2f} ({p['r_value']:+.1f}R)")
             else:
-                pnl_return_pct = 0
-            pnl_emoji = "🟢" if pnl_return_pct >= 0 else "🔴"
+                for i, p in enumerate(decorated_positions):
+                    icon = "📈" if p['side'] == 'Buy' else "📉"
+                    prefix = "└" if i == len(decorated_positions) - 1 else "├"
+                    lines.append(f"{prefix} {p['symbol']} {icon}: ${p['pnl']:+,.2f} ({p['r_value']:+.1f}R)")
 
-            # Average R
-            avg_r = lifetime_r / lifetime_trades if lifetime_trades > 0 else 0
-
-            # Expectancy (avg R per trade)
-            expectancy_display = f"{avg_r:+.2f}R" if lifetime_trades > 0 else "N/A"
-
-            # === BUILD POSITIONS SECTION ===
-            if decorated_positions:
-                lines = []
-                lines.append(f"├ Direction: {short_count} Shorts 🔴 | {long_count} Longs 🟢")
-                lines.append(f"├ Status: {positions_up} Profit | {positions_down} Loss")
-                
-                # Top 3 (if we have more than 6, otherwise just show all)
-                if len(decorated_positions) > 6:
-                    lines.append("├ ⭐ **Top 3:**")
-                    for p in decorated_positions[:3]:
-                        icon = "📈" if p['side'] == 'Buy' else "📉"
-                        lines.append(f"│ ├ {p['symbol']} {icon}: ${p['pnl']:+,.2f} ({p['r_value']:+.1f}R)")
-                    
-                    lines.append("└ ⚠️ **Bottom 3:**")
-                    for i, p in enumerate(decorated_positions[-3:]):
-                        icon = "📈" if p['side'] == 'Buy' else "📉"
-                        prefix = "  └" if i == 2 else "  ├"
-                        lines.append(f"{prefix} {p['symbol']} {icon}: ${p['pnl']:+,.2f} ({p['r_value']:+.1f}R)")
-                else:
-                    for i, p in enumerate(decorated_positions):
-                        icon = "📈" if p['side'] == 'Buy' else "📉"
-                        prefix = "└" if i == len(decorated_positions) - 1 else "├"
-                        lines.append(f"{prefix} {p['symbol']} {icon}: ${p['pnl']:+,.2f} ({p['r_value']:+.1f}R)")
-                        
-                pos_detail = "\n".join(lines)
-                pos_section = f"""📡 **POSITIONS ({active} Active)**
+            pos_detail = "\n".join(lines)
+            pos_section = f"""📡 **POSITIONS ({active} Active)**
 {pos_detail}"""
-            else:
-                pos_section = f"""📡 **POSITIONS (0 Active)**
+        else:
+            pos_section = f"""📡 **POSITIONS (0 Active)**
 ├ No open trades
 └ Awaiting BOS: {pending} symbols"""
 
-            # === REGIME STATUS (V2: multi-signal safety system) ===
-            regime_display = "Building data..."
-            regime_detail = ""
-            try:
-                regime_label, regime_mult, regime_diag = self.bot.get_regime_status()
-                n_trades = len(self.bot.recent_trades)
-                regime_icons = {
-                    'favorable': '🟢', 'cautious': '🟡', 'adverse': '🟠',
-                    'critical': '🔴', 'halted': '🛑', 'unknown': '⏳',
-                }
-                icon = regime_icons.get(regime_label, '❓')
-                if regime_label == 'unknown':
-                    regime_display = f"Building data... ({n_trades}/10 trades)"
-                else:
-                    manual_tag = " [MANUAL]" if self.bot.regime_override is not None else ""
-                    remaining = 10 - self.bot.regime_override_trades if self.bot.regime_override else 0
-                    override_info = f" ({remaining}t left)" if manual_tag else ""
-                    regime_display = f"{regime_label.title()} {icon} ({regime_mult:.0%} risk){manual_tag}{override_info}"
-                    # Build detail lines
-                    details = []
-                    q = regime_diag['quality']
-                    details.append(f"├ 20t: {q['wr']:.0%} WR, {q['avg_r']:+.2f}R → {q['mult']:.2f}x")
-                    dd = regime_diag['drawdown']['dd_from_peak']
-                    if dd > 0:
-                        details.append(f"├ DD from peak: {dd:.1f}R")
-                    dr = regime_diag['daily']['daily_r']
-                    if dr != 0:
-                        details.append(f"├ Daily R: {dr:+.1f}R")
-                    ls = regime_diag['streak']['loss_streak']
-                    if ls >= 3:
-                        details.append(f"├ Loss streak: {ls}")
-                    regime_detail = "\n" + "\n".join(details) if details else ""
-            except Exception as e:
-                logger.error(f"[DASHBOARD] Regime calc failed: {e}")
+        # === REGIME STATUS (V2: multi-signal safety system) ===
+        regime_display = "Building data..."
+        regime_detail = ""
+        try:
+            regime_label, regime_mult, regime_diag = self.bot.get_regime_status()
+            n_trades = len(self.bot.recent_trades)
+            regime_icons = {
+                'favorable': '🟢', 'cautious': '🟡', 'adverse': '🟠',
+                'critical': '🔴', 'halted': '🛑', 'unknown': '⏳',
+            }
+            icon = regime_icons.get(regime_label, '❓')
+            if regime_label == 'unknown':
+                regime_display = f"Building data... ({n_trades}/10 trades)"
+            else:
+                manual_tag = " [MANUAL]" if self.bot.regime_override is not None else ""
+                remaining = 10 - self.bot.regime_override_trades if self.bot.regime_override else 0
+                override_info = f" ({remaining}t left)" if manual_tag else ""
+                regime_display = f"{regime_label.title()} {icon} ({regime_mult:.0%} risk){manual_tag}{override_info}"
+                # Build detail lines
+                details = []
+                q = regime_diag['quality']
+                details.append(f"├ 20t: {q['wr']:.0%} WR, {q['avg_r']:+.2f}R → {q['mult']:.2f}x")
+                dd = regime_diag['drawdown']['dd_from_peak']
+                if dd > 0:
+                    details.append(f"├ DD from peak: {dd:.1f}R")
+                dr = regime_diag['daily']['daily_r']
+                if dr != 0:
+                    details.append(f"├ Daily R: {dr:+.1f}R")
+                ls = regime_diag['streak']['loss_streak']
+                if ls >= 3:
+                    details.append(f"├ Loss streak: {ls}")
+                regime_detail = "\n" + "\n".join(details) if details else ""
+        except Exception as e:
+            logger.error(f"[DASHBOARD] Regime calc failed: {e}")
 
-            # BTC ADX as secondary info
-            btc_adx_display = ""
-            try:
-                params = {'category':'linear','symbol':'BTCUSDT','interval':'60','limit':'30'}
-                kline_resp = await self.bot.broker._request("GET", "/v5/market/kline", params)
-                data = kline_resp.get('result', {}).get('list', []) if kline_resp else []
-                if len(data) >= 15:
-                    import pandas as pd
-                    df = pd.DataFrame(data, columns=['start','open','high','low','close','volume','turnover'])
-                    for c in ['high','low','close']: df[c] = df[c].astype(float)
-                    df = df.iloc[::-1].reset_index(drop=True)
-                    high, low, close = df['high'], df['low'], df['close']
-                    plus_dm = high - high.shift()
-                    minus_dm = low.shift() - low
-                    plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
-                    minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
-                    tr = pd.concat([high-low, abs(high-close.shift()), abs(low-close.shift())], axis=1).max(axis=1)
-                    atr = tr.rolling(14).mean()
-                    pdi = 100 * (plus_dm.rolling(14).mean() / atr)
-                    mdi = 100 * (minus_dm.rolling(14).mean() / atr)
-                    dx = abs(pdi - mdi) / (pdi + mdi + 1e-10) * 100
-                    adx = dx.rolling(14).mean()
-                    current_adx = adx.iloc[-1]
-                    btc_adx_display = f"\n├ BTC ADX: {current_adx:.1f}"
-            except Exception as e:
-                logger.error(f"[DASHBOARD] BTC ADX calc failed: {e}")
+        # BTC ADX as secondary info
+        btc_adx_display = ""
+        try:
+            params = {'category':'linear','symbol':'BTCUSDT','interval':'60','limit':'30'}
+            kline_resp = await self.bot.broker._request("GET", "/v5/market/kline", params)
+            data = kline_resp.get('result', {}).get('list', []) if kline_resp else []
+            if len(data) >= 15:
+                import pandas as pd
+                df = pd.DataFrame(data, columns=['start','open','high','low','close','volume','turnover'])
+                for c in ['high','low','close']: df[c] = df[c].astype(float)
+                df = df.iloc[::-1].reset_index(drop=True)
+                high, low, close = df['high'], df['low'], df['close']
+                plus_dm = high - high.shift()
+                minus_dm = low.shift() - low
+                plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
+                minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
+                tr = pd.concat([high-low, abs(high-close.shift()), abs(low-close.shift())], axis=1).max(axis=1)
+                atr = tr.rolling(14).mean()
+                pdi = 100 * (plus_dm.rolling(14).mean() / atr)
+                mdi = 100 * (minus_dm.rolling(14).mean() / atr)
+                dx = abs(pdi - mdi) / (pdi + mdi + 1e-10) * 100
+                adx = dx.rolling(14).mean()
+                current_adx = adx.iloc[-1]
+                btc_adx_display = f"\n├ BTC ADX: {current_adx:.1f}"
+        except Exception as e:
+            logger.error(f"[DASHBOARD] BTC ADX calc failed: {e}")
 
-            # === BUILD ENHANCED DASHBOARD ===
-            msg = f"""💰 **TRADING DASHBOARD**
+        # === BUILD ENHANCED DASHBOARD ===
+        msg = f"""💰 **TRADING DASHBOARD**
 ━━━━━━━━━━━━━━━━━━━━
 
 📈 **TODAY'S P&L**
@@ -535,9 +534,13 @@ class TelegramHandler:
 ━━━━━━━━━━━━━━━━━━━━
 /positions | /radar | /stats | /performance
 """
+        return msg
 
+    async def cmd_dashboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Clean, focused trading dashboard"""
+        try:
+            msg = await self.build_dashboard_message()
             await update.message.reply_text(msg, parse_mode='Markdown')
-
         except Exception as e:
             await update.message.reply_text(f"❌ Dashboard error: {e}")
             logger.error(f"Dashboard error: {e}")

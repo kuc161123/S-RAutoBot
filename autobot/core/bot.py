@@ -1839,6 +1839,7 @@ class Bot4H:
         
         # Start main loop
         last_check = 0
+        last_auto_dashboard = datetime.now()
         
         while True:
             try:
@@ -1864,31 +1865,69 @@ class Bot4H:
                     self.scan_state['fresh_divergences'] = total_signals_found
                     
                     logger.info(f"✅ Hourly Scan Complete. Processed: {symbols_processed}, New Signals: {total_signals_found}")
-                    
-                    if total_signals_found == 0 and self.telegram:
-                        # Send 'No Divergence' summary to reassure user bot is working
+
+                    if self.telegram:
+                        # Build regime snippet for scan message
+                        regime_snippet = ""
+                        try:
+                            regime_label, regime_mult, regime_diag = self.get_regime_status()
+                            n_trades = len(self.recent_trades)
+                            regime_icons = {
+                                'favorable': '🟢', 'cautious': '🟡', 'adverse': '🟠',
+                                'critical': '🔴', 'halted': '🛑', 'unknown': '⏳',
+                            }
+                            icon = regime_icons.get(regime_label, '❓')
+                            if regime_label == 'unknown':
+                                regime_snippet = f"├ Regime: Building data... ({n_trades}/10 trades)"
+                            else:
+                                q = regime_diag['quality']
+                                regime_snippet = f"├ Regime: {regime_label.title()} {icon} ({regime_mult:.0%} risk) | {q['wr']:.0%} WR, {q['avg_r']:+.2f}R"
+                        except Exception as e:
+                            logger.error(f"Regime snippet error: {e}")
+
                         pending_count = sum(len(sigs) for sigs in self.pending_signals.values())
                         active_count = len(self.active_trades)
-                        
-                        msg = f"""
+
+                        if total_signals_found == 0:
+                            msg = f"""
 🕵️ **HOURLY SCAN COMPLETE**
 
 📊 Checked: {symbols_processed} Symbols
 🔍 Result: **No New Divergences Found**
 
-**Detection Criteria:**
-• RSI Divergence (Pivot within 50 candles)
-• Trend Aligned (EMA 200)
-• BOS Confirmation (12 candle max wait)
-• Monte Carlo + Walk-Forward Validated
+**Current Status:**
+{regime_snippet}
+├ ⏳ Pending BOS: {pending_count}
+└ 📈 Active Trades: {active_count}
+
+Next scan in ~60 mins ⏳
+"""
+                        else:
+                            msg = f"""
+🕵️ **HOURLY SCAN COMPLETE**
+
+📊 Checked: {symbols_processed} Symbols
+🔍 Result: **{total_signals_found} New Signal(s) Found!**
 
 **Current Status:**
+{regime_snippet}
 ├ ⏳ Pending BOS: {pending_count}
 └ 📈 Active Trades: {active_count}
 
 Next scan in ~60 mins ⏳
 """
                         await self.telegram.send_message(msg)
+
+                        # Auto-send full dashboard every ~1 hour
+                        elapsed = (datetime.now() - last_auto_dashboard).total_seconds()
+                        if elapsed >= 3300:  # ~55 min guard to prevent double-firing
+                            try:
+                                dashboard_msg = await self.telegram.build_dashboard_message()
+                                await self.telegram.send_message(dashboard_msg)
+                                last_auto_dashboard = datetime.now()
+                                logger.info("📊 Auto-dashboard sent")
+                            except Exception as e:
+                                logger.error(f"Auto-dashboard error: {e}")
                 
                 # Sleep for 1 minute before next check
                 await asyncio.sleep(60)

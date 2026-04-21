@@ -99,33 +99,47 @@ class TelegramHandler:
         """Send a message with rate limiting and retry logic"""
         import time
         import asyncio
-        
+
         if not self.app:
             logger.warning("Telegram app not initialized - message not sent")
             return
-        
-        # Rate limiting - wait at least 0.5s between messages
-        now = time.time()
-        time_since_last = now - getattr(self, '_last_message_time', 0)
-        if time_since_last < 0.5:
-            await asyncio.sleep(0.5 - time_since_last)
-        
-        for attempt in range(retries):
-            try:
-                await self.app.bot.send_message(
-                    chat_id=self.chat_id,
-                    text=message,
-                    parse_mode='Markdown',
-                    disable_web_page_preview=True
-                )
-                self._last_message_time = time.time()
-                return  # Success
-            except Exception as e:
-                logger.error(f"Telegram send failed (attempt {attempt+1}/{retries}): {e}")
-                if attempt < retries - 1:
-                    await asyncio.sleep(1)  # Wait before retry
-                else:
-                    logger.error(f"Failed to send message after {retries} attempts")
+
+        # Split long messages for Telegram's 4096 char limit
+        chunks = []
+        msg = message
+        while msg:
+            if len(msg) <= 4000:
+                chunks.append(msg)
+                break
+            split_at = msg.rfind('\n', 0, 4000)
+            if split_at == -1:
+                split_at = 4000
+            chunks.append(msg[:split_at])
+            msg = msg[split_at:].lstrip('\n')
+
+        for chunk in chunks:
+            # Rate limiting - wait at least 0.5s between messages
+            now = time.time()
+            time_since_last = now - getattr(self, '_last_message_time', 0)
+            if time_since_last < 0.5:
+                await asyncio.sleep(0.5 - time_since_last)
+
+            for attempt in range(retries):
+                try:
+                    await self.app.bot.send_message(
+                        chat_id=self.chat_id,
+                        text=chunk,
+                        parse_mode='Markdown',
+                        disable_web_page_preview=True
+                    )
+                    self._last_message_time = time.time()
+                    break  # Success, move to next chunk
+                except Exception as e:
+                    logger.error(f"Telegram send failed (attempt {attempt+1}/{retries}): {e}")
+                    if attempt < retries - 1:
+                        await asyncio.sleep(1)  # Wait before retry
+                    else:
+                        logger.error(f"Failed to send message after {retries} attempts")
 
     
     # === COMMAND HANDLERS ===
@@ -206,10 +220,14 @@ class TelegramHandler:
         # Balance and P&L
         balance = await self.bot.broker.get_balance() or 0
 
-        # Risk amount for R calculation
+        # Risk amount for R calculation (use BASE risk, not regime-adjusted)
+        base_risk_pct = self.bot.risk_config.get('risk_per_trade', 0.02)
+        base_risk_amount = balance * base_risk_pct if balance > 0 else 10
+
         risk_usd = self.bot.risk_config.get('risk_amount_usd')
         if risk_usd:
             risk_amount = float(risk_usd)
+            base_risk_amount = risk_amount  # Fixed USD overrides base too
             risk_pct = (risk_amount / balance * 100) if balance > 0 else 0
             risk_display = f"${risk_amount:.2f} ({risk_pct:.2f}%)"
         else:
@@ -225,10 +243,10 @@ class TelegramHandler:
         weekly_trades = 0
         weekly_wins = 0
         try:
-            closed_records = await self.bot.broker.get_all_closed_pnl(limit=100)
+            closed_records = await self.bot.broker.get_all_closed_pnl(limit=200)
             if closed_records:
                 today = datetime.now().date()
-                week_ago = today - timedelta(days=7)
+                week_ago = today - timedelta(days=6)
                 for record in closed_records:
                     try:
                         close_time = int(record.get('updatedTime', record.get('createdTime', 0)))
@@ -249,8 +267,8 @@ class TelegramHandler:
         except Exception as e:
             logger.error(f"Error getting realized P&L: {e}")
 
-        realized_r = realized_pnl / risk_amount if risk_amount > 0 else 0
-        weekly_r = weekly_pnl / risk_amount if risk_amount > 0 else 0
+        realized_r = realized_pnl / base_risk_amount if base_risk_amount > 0 else 0
+        weekly_r = weekly_pnl / base_risk_amount if base_risk_amount > 0 else 0
         today_losses = today_trades - today_wins
         weekly_losses = weekly_trades - weekly_wins
 
@@ -279,7 +297,7 @@ class TelegramHandler:
             else:
                 positions_down += 1
 
-            pos_r = unrealized / risk_amount if risk_amount > 0 else 0
+            pos_r = unrealized / base_risk_amount if base_risk_amount > 0 else 0
             decorated_positions.append({
                 'symbol': symbol,
                 'side': side,
@@ -290,11 +308,11 @@ class TelegramHandler:
         # Sort positions by PnL descending
         decorated_positions.sort(reverse=True, key=lambda x: x['pnl'])
 
-        unrealized_r = unrealized_pnl / risk_amount if risk_amount > 0 else 0
+        unrealized_r = unrealized_pnl / base_risk_amount if base_risk_amount > 0 else 0
 
         # Net P&L
         net_pnl = realized_pnl + unrealized_pnl
-        net_r = net_pnl / risk_amount if risk_amount > 0 else 0
+        net_r = net_pnl / base_risk_amount if base_risk_amount > 0 else 0
         net_emoji = "🟢" if net_pnl >= 0 else "🔴"
 
         # === ALL-TIME PERFORMANCE FROM LOCAL LIFETIME_STATS ===
@@ -327,23 +345,15 @@ class TelegramHandler:
         longest_loss_streak = lifetime.get('longest_loss_streak', 0)
 
         # Calculate profit factor from stored gross data
-        gross_profit = lifetime.get('gross_profit_r', 0.0)
-        gross_loss = abs(lifetime.get('gross_loss_r', 0.0))
-        if gross_profit > 0 and gross_loss > 0:
-            profit_factor = gross_profit / gross_loss
+        gross_wins = lifetime.get('gross_profit_r', 0.0)
+        gross_losses = abs(lifetime.get('gross_loss_r', 0.0))
+        if gross_losses > 0:
+            profit_factor = gross_wins / gross_losses
             profit_factor_display = f"{profit_factor:.2f}"
-        elif gross_profit > 0 and gross_loss == 0:
+        elif gross_wins > 0:
             profit_factor_display = "∞"
         else:
-            # Fallback estimation from aggregate stats
-            if lifetime_losses > 0 and lifetime_wins > 0:
-                avg_r = lifetime_r / lifetime_trades if lifetime_trades > 0 else 0
-                total_win_r = lifetime_wins * avg_r if lifetime_wins > 0 else 0
-                total_loss_r = abs(lifetime_r - total_win_r) if total_win_r > 0 else abs(lifetime_r)
-                profit_factor = total_win_r / total_loss_r if total_loss_r > 0 else 0
-                profit_factor_display = f"~{profit_factor:.1f}" if profit_factor > 0 else "N/A"
-            else:
-                profit_factor_display = "N/A"
+            profit_factor_display = "N/A"
 
         # Calculate days since start
         try:
@@ -506,7 +516,7 @@ class TelegramHandler:
 🏆 **ALL-TIME** ({days_running} days)
 ├ {lifetime_r:+.1f}R (${lifetime_pnl:+,.2f}) | {lifetime_trades} trades
 ├ WR: {lifetime_wr:.1f}% ({lifetime_wins}W/{lifetime_losses}L) | PF: {profit_factor_display}
-├ Avg: {expectancy_display} | Max DD: {max_dd:-.1f}R
+├ Avg: {expectancy_display} | Max DD: {abs(max_dd):.1f}R
 └ Streak: {abs(current_streak)}{streak_type} | Best: {longest_win_streak}W / {longest_loss_streak}L
 
 🥇 **BEST/WORST**
@@ -540,7 +550,22 @@ class TelegramHandler:
         """Clean, focused trading dashboard"""
         try:
             msg = await self.build_dashboard_message()
-            await update.message.reply_text(msg, parse_mode='Markdown')
+            if len(msg) <= 4000:
+                await update.message.reply_text(msg, parse_mode='Markdown')
+            else:
+                # Split at last newline before 4000 chars for Telegram's 4096 limit
+                chunks = []
+                while msg:
+                    if len(msg) <= 4000:
+                        chunks.append(msg)
+                        break
+                    split_at = msg.rfind('\n', 0, 4000)
+                    if split_at == -1:
+                        split_at = 4000
+                    chunks.append(msg[:split_at])
+                    msg = msg[split_at:].lstrip('\n')
+                for chunk in chunks:
+                    await update.message.reply_text(chunk, parse_mode='Markdown')
         except Exception as e:
             await update.message.reply_text(f"❌ Dashboard error: {e}")
             logger.error(f"Dashboard error: {e}")

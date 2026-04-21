@@ -173,11 +173,6 @@ class Bot4H:
         # Start Time for Uptime
         self.start_time = datetime.now()
         
-        # [BULLETPROOF] Startup Grace Period - NO trades for first 65 minutes
-        # This CANNOT be bypassed regardless of candle timing
-        self.startup_grace_period_minutes = 65
-        logger.info(f"[STARTUP] Grace period: {self.startup_grace_period_minutes} minutes (no trades until {(self.start_time + timedelta(minutes=self.startup_grace_period_minutes)).strftime('%H:%M')})")
-        
         # Candle tracking
         self.last_candle_close: Dict[str, datetime] = {}
         
@@ -877,10 +872,6 @@ class Bot4H:
         Returns:
             int: Number of new signals found, or -1 if no new candle
         """
-        # [REMOVED] 65-minute startup grace period
-        # The new 24h signal filter makes this brute-force delay unnecessary.
-        # checks passed.
-        
         # Check if new candle closed
         if not await self.check_new_candle_close(symbol):
             return -1

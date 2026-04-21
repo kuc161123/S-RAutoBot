@@ -36,7 +36,7 @@ notifications:
 risk:
   max_daily_loss: 0.1
   max_position_size_pct: 0.15
-  risk_per_trade: 0.015
+  risk_per_trade: 0.007
 strategy:
   name: 1h_merged_allweather_bear_bull
   description: 465 configs across 340 symbols (201 long + 264 short)

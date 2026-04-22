@@ -191,6 +191,9 @@ class Bot4H:
         self.radar_items: Dict[str, dict] = {}
         self.extreme_zone_tracker: Dict[str, datetime] = {}
 
+        # Track whether first scan cycle has completed
+        self.startup_scan_done = False
+
         # New startup logic: Immediate trading allowed (24h staleness filter protects us)
         logger.info("[STARTUP] Precision Mode Active. Immediate signal processing enabled.")
         
@@ -835,14 +838,12 @@ class Bot4H:
             return -1
             
         # [STALENESS CHECK] Only skip truly stale candles (>55 min old)
-        # Previous 5-minute window was too aggressive and caused ~50% of symbols
-        # to be skipped every cycle. The 24h signal filter handles startup protection.
+        # Bypassed on first scan after startup so restart doesn't block all symbols.
         now = datetime.now()
         current_candle_close = now.replace(minute=0, second=0, microsecond=0)
         minutes_since_close = (now - current_candle_close).total_seconds() / 60
 
-        if minutes_since_close > 55:
-            # Only skip if the candle is nearly an hour old (true stale data)
+        if minutes_since_close > 55 and self.startup_scan_done:
             logger.info(f"[{symbol}] Skipping stale candle (Closed {minutes_since_close:.0f}m ago)")
             return 0
         
@@ -1042,10 +1043,14 @@ class Bot4H:
                 continue
             
             # DEDUPLICATION: Check if we've already seen this signal
+            # On startup scan, allow re-detection of recent signals (within BOS wait window)
+            # so pending_signals gets repopulated after restart
             signal_id = self.get_signal_id(signal)
             if self.storage.is_seen(signal_id):
-                duplicate_count += 1
-                continue  # Already processed
+                if self.startup_scan_done or hours_since_signal > self.max_wait_candles:
+                    duplicate_count += 1
+                    continue  # Already processed
+                logger.info(f"[{symbol}] Re-detecting {signal.divergence_code} on startup (signal {hours_since_signal:.0f}h old, within BOS window)")
             
             # Mark signal as seen and save
             self.storage.add_signal(signal_id)
@@ -1771,7 +1776,10 @@ class Bot4H:
         
         # Initialize lifetime stats (first run only)
         await self.initialize_lifetime_stats()
-        
+
+        # Prune old seen signals so recent divergences can be re-detected on startup
+        self.storage.prune_old_signals(max_age_hours=48)
+
         # Start main loop
         last_check = 0
         last_auto_dashboard = datetime.now()
@@ -1794,11 +1802,15 @@ class Bot4H:
                 
                 # If we completed a scan cycle (processed symbols implies candle close)
                 if symbols_processed > 0:
+                    if not self.startup_scan_done:
+                        self.startup_scan_done = True
+                        logger.info(f"[STARTUP] First scan complete — startup mode disabled")
+
                     # Update scan state for dashboard
                     self.scan_state['last_scan_time'] = datetime.now()
                     self.scan_state['symbols_scanned'] = symbols_processed
                     self.scan_state['fresh_divergences'] = total_signals_found
-                    
+
                     logger.info(f"✅ Hourly Scan Complete. Processed: {symbols_processed}, New Signals: {total_signals_found}")
 
                     if self.telegram:

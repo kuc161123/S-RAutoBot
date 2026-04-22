@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import psycopg2
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -142,6 +142,47 @@ class StorageHandler:
         else:
             # Write to local file
             self._save_to_file()
+
+    def prune_old_signals(self, max_age_hours: int = 48):
+        """Remove seen signals older than max_age_hours from DB and cache.
+
+        Keeps the table from growing forever and allows the startup
+        re-detection logic to work correctly for recent signals.
+        """
+        cutoff = datetime.now() - timedelta(hours=max_age_hours)
+
+        if self.use_db:
+            try:
+                with psycopg2.connect(self.db_url) as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "DELETE FROM seen_signals WHERE created_at < %s",
+                            (cutoff,)
+                        )
+                        deleted = cur.rowcount
+                if deleted > 0:
+                    logger.info(f"Pruned {deleted} seen signals older than {max_age_hours}h")
+                    # Reload cache after prune
+                    self._load_cache_from_db()
+            except Exception as e:
+                logger.error(f"Failed to prune old signals from DB: {e}")
+        else:
+            # For local file, parse timestamp from signal ID (format: SYM_side_code_YYYYMMDD_HHMM)
+            before_count = len(self.cache)
+            pruned = set()
+            for sig_id in self.cache:
+                try:
+                    parts = sig_id.rsplit('_', 2)
+                    ts_str = parts[-2] + '_' + parts[-1]  # YYYYMMDD_HHMM
+                    sig_time = datetime.strptime(ts_str, '%Y%m%d_%H%M')
+                    if sig_time < cutoff:
+                        pruned.add(sig_id)
+                except (ValueError, IndexError):
+                    pass  # Can't parse — keep it
+            self.cache -= pruned
+            if pruned:
+                logger.info(f"Pruned {len(pruned)} seen signals older than {max_age_hours}h")
+                self._save_to_file()
 
     def _save_to_file(self):
         """Save cache to local JSON file"""

@@ -686,50 +686,8 @@ class Bot4H:
                 if trade:
                     logger.warning(f"[{symbol}] Removed stale trade from tracking (closed externally)")
                     
-                    # Get ACTUAL closed PnL from Bybit instead of assuming -1R
-                    try:
-                        closed_pnl_records = await self.broker.get_closed_pnl(symbol, limit=1)
-                        if closed_pnl_records:
-                            latest = closed_pnl_records[0]
-                            actual_pnl = float(latest.get('closedPnl', 0))
-                            
-                            # Calculate R based on risk amount
-                            risk_usd = self.risk_config.get('risk_amount_usd', None)
-                            if risk_usd:
-                                risk_amount = float(risk_usd)
-                            else:
-                                balance = await self.broker.get_balance() or 1000
-                                risk_amount = balance * self.risk_config.get('risk_per_trade', 0.005)
-                            
-                            actual_r = actual_pnl / risk_amount if risk_amount > 0 else 0
-                            
-                            # Update stats with real values
-                            self.stats['total_trades'] += 1
-                            self.stats['total_r'] += actual_r
-                            
-                            if actual_pnl >= 0:
-                                self.stats['wins'] += 1
-                                logger.info(f"[{symbol}] Closed with WIN: ${actual_pnl:.2f} ({actual_r:+.2f}R)")
-                            else:
-                                self.stats['losses'] += 1
-                                logger.info(f"[{symbol}] Closed with LOSS: ${actual_pnl:.2f} ({actual_r:+.2f}R)")
-                            
-                            if symbol in self.symbol_stats:
-                                self.symbol_stats[symbol]['trades'] += 1
-                                self.symbol_stats[symbol]['total_r'] += actual_r
-                                if actual_pnl >= 0:
-                                    self.symbol_stats[symbol]['wins'] += 1
-                            
-                            # CRITICAL: Also update lifetime stats (persistent tracking)
-                            is_win = actual_pnl >= 0
-                            self.update_lifetime_stats(actual_r, actual_pnl, is_win, symbol)
-                        else:
-                            # No closed PnL found - skip stats update
-                            logger.warning(f"[{symbol}] No closed PnL found - skipping stats update")
-                    except Exception as e:
-                        logger.error(f"[{symbol}] Failed to get closed PnL: {e}")
-                    
-                    self.save_stats()
+                    # Process exit via shared handler (same logic as normal exits)
+                    await self.handle_trade_exit(trade_key, trade)
             
             # ADOPT EXISTING POSITIONS (On startup or manual intervention)
             adopted_count = 0
@@ -1531,17 +1489,20 @@ class Bot4H:
                 pnl_usd = float(matched.get('closedPnl', 0))
                 exit_price = float(matched.get('avgExitPrice', 0))
 
-                # Calculate R value
-                sl_distance = abs(trade.entry_price - trade.stop_loss)
-                if sl_distance > 0:
-                    if trade.side == 'long':
-                        price_diff = exit_price - trade.entry_price
-                    else:
-                        price_diff = trade.entry_price - exit_price
-
-                    r_value = price_diff / sl_distance
+                # Calculate R value using stored risk from entry time
+                if trade.risk_usd_at_entry > 0:
+                    r_value = pnl_usd / trade.risk_usd_at_entry
                 else:
-                    r_value = 0
+                    # Fallback: price-based R for trades without stored risk
+                    sl_distance = abs(trade.entry_price - trade.stop_loss)
+                    if sl_distance > 0:
+                        if trade.side == 'long':
+                            price_diff = exit_price - trade.entry_price
+                        else:
+                            price_diff = trade.entry_price - exit_price
+                        r_value = price_diff / sl_distance
+                    else:
+                        r_value = 0
 
                 # Determine result
                 result = 'WIN' if r_value > 0 else 'LOSS'
@@ -1592,10 +1553,13 @@ class Bot4H:
         is_win = result == 'WIN'
         self.update_lifetime_stats(r_value, pnl_usd, is_win, symbol)
         
+        # Remove from active (may already be removed by sync)
+        self.active_trades.pop(trade_key, None)
+
         # Calculate time held
         time_held = datetime.now() - trade.entry_time
         hours_held = time_held.total_seconds() / 3600
-        
+
         # Send exit notification
         await self.send_exit_notification(
             symbol=symbol,
@@ -1606,9 +1570,6 @@ class Bot4H:
             pnl_usd=pnl_usd,
             hours_held=hours_held
         )
-        
-        # Remove from active
-        del self.active_trades[trade_key]
 
         logger.info(f"[{symbol}] Trade processed: {result}, {r_value:+.2f}R, held {hours_held:.1f}h")
     
@@ -1659,23 +1620,6 @@ class Bot4H:
 
 
 
-    def _update_stats_on_exit(self, r_value: float, is_win: bool):
-        """Update and persist stats after trade exit"""
-        self.stats['total_trades'] += 1
-        self.stats['total_r'] += r_value
-        
-        if is_win:
-            self.stats['wins'] += 1
-        else:
-            self.stats['losses'] += 1
-        
-        if self.stats['total_trades'] > 0:
-            self.stats['win_rate'] = (self.stats['wins'] / self.stats['total_trades']) * 100
-            self.stats['avg_r'] = self.stats['total_r'] / self.stats['total_trades']
-            
-        # Save to disk
-        self.save_stats()
-
     async def send_exit_notification(self, symbol: str, trade: ActiveTrade, exit_price: float, 
                                      result: str, r_value: float, pnl_usd: float, hours_held: float):
         """Send enhanced exit notification"""
@@ -1690,8 +1634,8 @@ class Bot4H:
             lifetime_wins = lifetime.get('wins', 0)
             lifetime_wr = (lifetime_wins / lifetime_trades * 100) if lifetime_trades > 0 else 0
             
-            # Remaining positions
-            remaining = len(self.active_trades) - 1  # -1 because this one is closing
+            # Remaining positions (trade already removed from active_trades)
+            remaining = len(self.active_trades)
             
             msg = f"""
 {emoji} **TRADE CLOSED - {result}**

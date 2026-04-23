@@ -208,7 +208,9 @@ class Bot4H:
                 'r': t['r'],
                 'win': t['win'],
                 'time': datetime.fromisoformat(t['time']),
-                'symbol': t.get('symbol', '')
+                'symbol': t.get('symbol', ''),
+                'regime_mult': t.get('regime_mult', 1.0),
+                'regime_label': t.get('regime_label', 'unknown')
             })
         logger.info(f"Restored {len(self.recent_trades)} recent trades for regime detection")
         # Restore manual regime override
@@ -217,7 +219,20 @@ class Bot4H:
         if self.regime_override:
             logger.info(f"[REGIME] Restored manual override: {self.regime_override} ({self.regime_override_trades}/10 trades since set)")
         logger.info(f"Lifetime stats loaded: {self.lifetime_stats['total_r']:.1f}R, {self.lifetime_stats['total_trades']} trades since {self.lifetime_stats.get('start_date', 'unknown')}")
-        
+
+        # Bootstrap regime tracking if not yet initialized
+        if not self.lifetime_stats.get('current_regime_label'):
+            label, _, _ = self.get_regime_status()
+            if label != 'unknown':
+                self.lifetime_stats['current_regime_label'] = label
+                self.lifetime_stats['current_regime_since'] = datetime.now().isoformat()
+
+        # Bootstrap weighted_total_r from recent_trades if needed
+        if self.lifetime_stats.get('weighted_total_r', 0.0) == 0.0 and len(self.recent_trades) > 0:
+            self.lifetime_stats['weighted_total_r'] = sum(
+                t['r'] * t.get('regime_mult', 1.0) for t in self.recent_trades
+            )
+
         # BOS Performance Tracking (for monitoring stale filter removal impact)
         self.bos_tracking = {
             'divergences_detected_today': 0,
@@ -288,7 +303,10 @@ class Bot4H:
 
         # Track recent trades for regime detection
         prev_regime, prev_mult, _ = self.get_regime_status()
-        self.recent_trades.append({'r': r_value, 'win': is_win, 'time': datetime.now(), 'symbol': symbol})
+        self.recent_trades.append({
+            'r': r_value, 'win': is_win, 'time': datetime.now(),
+            'symbol': symbol, 'regime_mult': prev_mult, 'regime_label': prev_regime
+        })
 
         # Track trades since manual override (auto-clear at 10)
         if self.regime_override is not None:
@@ -306,6 +324,24 @@ class Bot4H:
         self.lifetime_stats['total_trades'] += 1
         if is_win:
             self.lifetime_stats['wins'] += 1
+
+        # Feature 1: Weighted R (actual account impact)
+        self.lifetime_stats['weighted_total_r'] = self.lifetime_stats.get('weighted_total_r', 0.0) + (r_value * prev_mult)
+
+        # Feature 3: Per-regime stats
+        if prev_regime and prev_regime != 'unknown':
+            regime_stats = self.lifetime_stats.get('regime_stats', {})
+            if prev_regime not in regime_stats:
+                regime_stats[prev_regime] = {'trades': 0, 'wins': 0, 'gross_profit_r': 0.0, 'gross_loss_r': 0.0}
+            rs = regime_stats[prev_regime]
+            rs['trades'] += 1
+            if is_win:
+                rs['wins'] += 1
+            if r_value > 0:
+                rs['gross_profit_r'] += r_value
+            else:
+                rs['gross_loss_r'] += r_value
+            self.lifetime_stats['regime_stats'] = regime_stats
 
         # Track gross profit/loss for accurate profit factor
         if r_value > 0:
@@ -376,6 +412,25 @@ class Bot4H:
         # Detect and log regime changes
         new_regime, new_mult, diag = self.get_regime_status()
         if new_regime != prev_regime and new_regime != 'unknown':
+            # Track regime duration on change
+            now_iso = datetime.now().isoformat()
+            prev_label = self.lifetime_stats.get('current_regime_label')
+            prev_since = self.lifetime_stats.get('current_regime_since')
+            if prev_label and prev_since:
+                try:
+                    started = datetime.fromisoformat(prev_since)
+                    duration_hours = (datetime.now() - started).total_seconds() / 3600
+                    history = self.lifetime_stats.get('regime_history', [])
+                    history.append({
+                        'label': prev_label, 'started': prev_since,
+                        'ended': now_iso, 'duration_hours': round(duration_hours, 1)
+                    })
+                    self.lifetime_stats['regime_history'] = history[-100:]
+                except:
+                    pass
+            self.lifetime_stats['current_regime_label'] = new_regime
+            self.lifetime_stats['current_regime_since'] = now_iso
+
             regime_icons = {
                 'favorable': 'Favorable 🟢',
                 'cautious': 'Cautious 🟡',
@@ -408,7 +463,9 @@ class Bot4H:
 
         # Serialize recent_trades into lifetime_stats for persistence
         self.lifetime_stats['recent_trades'] = [
-            {'r': t['r'], 'win': t['win'], 'time': t['time'].isoformat(), 'symbol': t['symbol']}
+            {'r': t['r'], 'win': t['win'], 'time': t['time'].isoformat(),
+             'symbol': t['symbol'], 'regime_mult': t.get('regime_mult', 1.0),
+             'regime_label': t.get('regime_label', 'unknown')}
             for t in self.recent_trades
         ]
         self.lifetime_stats['regime_override'] = self.regime_override

@@ -31,7 +31,12 @@ DEFAULT_LIFETIME_STATS = {
     'current_streak': 0,
     'longest_win_streak': 0,
     'longest_loss_streak': 0,
-    'recent_trades': []  # List of {r, win, time, symbol} for regime detection
+    'recent_trades': [],  # List of {r, win, time, symbol} for regime detection
+    'weighted_total_r': 0.0,
+    'current_regime_label': None,
+    'current_regime_since': None,
+    'regime_history': [],
+    'regime_stats': {},
 }
 
 

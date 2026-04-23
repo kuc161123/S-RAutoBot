@@ -321,6 +321,7 @@ class TelegramHandler:
         starting_balance = lifetime.get('starting_balance', 0) or balance
 
         lifetime_r = lifetime.get('total_r', 0.0)
+        weighted_r = lifetime.get('weighted_total_r', 0.0)
         lifetime_pnl = lifetime.get('total_pnl', 0.0)
         lifetime_trades = lifetime.get('total_trades', 0)
         lifetime_wins = lifetime.get('wins', 0)
@@ -470,6 +471,25 @@ class TelegramHandler:
                 if ls >= 3:
                     details.append(f"├ Loss streak: {ls}")
                 regime_detail = "\n" + "\n".join(details) if details else ""
+
+                # Regime duration info
+                regime_since = self.bot.lifetime_stats.get('current_regime_since')
+                if regime_since and regime_label != 'unknown':
+                    try:
+                        since_dt = datetime.fromisoformat(regime_since)
+                        hours = (datetime.now() - since_dt).total_seconds() / 3600
+                        dur = f"{hours/24:.1f}d" if hours >= 24 else f"{hours:.0f}h"
+                        dur_line = f"\n├ Duration: {dur}"
+                        # Historical comparison for chop regimes
+                        history = self.bot.lifetime_stats.get('regime_history', [])
+                        chop = [h for h in history if h['label'] in ('critical', 'adverse')]
+                        if chop and regime_label in ('critical', 'adverse'):
+                            avg_h = sum(h['duration_hours'] for h in chop) / len(chop)
+                            max_h = max(h['duration_hours'] for h in chop)
+                            dur_line += f" (avg {avg_h/24:.1f}d / max {max_h/24:.1f}d)"
+                        regime_detail += dur_line
+                    except:
+                        pass
         except Exception as e:
             logger.error(f"[DASHBOARD] Regime calc failed: {e}")
 
@@ -500,6 +520,27 @@ class TelegramHandler:
         except Exception as e:
             logger.error(f"[DASHBOARD] BTC ADX calc failed: {e}")
 
+        # === BUILD EDGE CHECK SECTION ===
+        regime_stats = lifetime.get('regime_stats', {})
+        edge_lines = []
+        for rk in ['favorable', 'critical']:
+            rs = regime_stats.get(rk, {})
+            t = rs.get('trades', 0)
+            if t == 0:
+                continue
+            w = rs.get('wins', 0)
+            wr = w / t * 100
+            gp = rs.get('gross_profit_r', 0.0)
+            gl = abs(rs.get('gross_loss_r', 0.0))
+            pf = f"{gp/gl:.1f}" if gl > 0 else ("inf" if gp > 0 else "N/A")
+            icon = '\U0001f7e2' if rk == 'favorable' else '\U0001f534'
+            edge_lines.append(f"\u251c {icon} {rk.title()}: {wr:.0f}% WR | PF {pf} | {t}t")
+        if edge_lines:
+            edge_lines[-1] = "\u2514" + edge_lines[-1][1:]
+            edge_section = "\U0001f3af **EDGE CHECK**\n" + "\n".join(edge_lines)
+        else:
+            edge_section = ""
+
         # === BUILD ENHANCED DASHBOARD ===
         msg = f"""💰 **TRADING DASHBOARD**
 ━━━━━━━━━━━━━━━━━━━━
@@ -514,11 +555,11 @@ class TelegramHandler:
 └ Record: {weekly_wins}W/{weekly_losses}L
 
 🏆 **ALL-TIME** ({days_running} days)
-├ {lifetime_r:+.1f}R (${lifetime_pnl:+,.2f}) | {lifetime_trades} trades
+├ {lifetime_r:+.1f}R raw | {weighted_r:+.1f}R wtd | {lifetime_trades} trades
 ├ WR: {lifetime_wr:.1f}% ({lifetime_wins}W/{lifetime_losses}L) | PF: {profit_factor_display}
 ├ Avg: {expectancy_display} | Max DD: {abs(max_dd):.1f}R
 └ Streak: {abs(current_streak)}{streak_type} | Best: {longest_win_streak}W / {longest_loss_streak}L
-
+{"" if not edge_section else chr(10) + edge_section + chr(10)}
 🥇 **BEST/WORST**
 ├ Best Trade: {best_trade_r:+.1f}R ({best_trade_symbol})
 ├ Worst Trade: {worst_trade_r:+.1f}R ({worst_trade_symbol})

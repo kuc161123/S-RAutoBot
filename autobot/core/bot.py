@@ -90,6 +90,7 @@ class ActiveTrade:
     entry_time: datetime
     order_id: str = ""
     risk_usd_at_entry: float = 0.0  # Store risk at trade time for accurate R calculation
+    pre_reset: bool = False  # True = opened before a /resetlifetime, skip from new stats
 
 
 class Bot4H:
@@ -1641,8 +1642,12 @@ class Bot4H:
         self.save_stats()
         
         # Update lifetime stats (persistent across restarts)
+        # Skip pre-reset trades so they don't pollute fresh stats after /resetlifetime
         is_win = result == 'WIN'
-        self.update_lifetime_stats(r_value, pnl_usd, is_win, symbol)
+        if getattr(trade, 'pre_reset', False):
+            logger.info(f"[{symbol}] Pre-reset trade — skipping lifetime stats update ({r_value:+.2f}R)")
+        else:
+            self.update_lifetime_stats(r_value, pnl_usd, is_win, symbol)
         
         # Remove from active (may already be removed by sync)
         self.active_trades.pop(trade_key, None)

@@ -1020,8 +1020,17 @@ This will reset ALL tracking data:
             # Reset lifetime stats with new baseline (uses StorageHandler for canonical defaults)
             self.bot.lifetime_stats = self.bot.storage.reset_lifetime_stats(new_balance)
             self.bot.recent_trades.clear()
+
+            # Mark all currently open trades so their results don't pollute fresh stats
+            pre_reset_count = 0
+            for trade in self.bot.active_trades.values():
+                if trade is not None:
+                    trade.pre_reset = True
+                    pre_reset_count += 1
+
             self.bot.save_lifetime_stats()
             
+            open_note = f"\n├ 📡 {pre_reset_count} open trades excluded from new stats" if pre_reset_count > 0 else ""
             msg = f"""✅ **FULL RESET COMPLETE**
 ━━━━━━━━━━━━━━━━━━━━
 
@@ -1030,7 +1039,8 @@ All tracking has been reset:
 ├ 💰 New Baseline: ${new_balance:,.2f}
 ├ 📊 Session Stats: 0
 ├ 🏆 Lifetime Stats: 0
-└ 📈 All extremes: cleared
+├ 📈 All extremes: cleared{open_note}
+└ ⚙️ Regime: Critical 🔴 (SAFE START until 10 trades)
 
 💡 Fresh tracking starts from this moment!
 Your P&L Return will now be calculated from ${new_balance:,.0f}.

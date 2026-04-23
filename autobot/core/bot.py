@@ -569,8 +569,10 @@ class Bot4H:
         multiplier = diagnostics['quality']['mult']
 
         # Determine label from quality multiplier
+        # Default to critical until enough trades for a real assessment
         if n_trades < 10:
-            label = 'unknown'
+            label = 'critical'
+            multiplier = 0.1
         elif multiplier <= 0.1:
             label = 'critical'
         elif multiplier <= 0.25:
@@ -1908,8 +1910,8 @@ class Bot4H:
                                 'critical': '🔴', 'halted': '🛑', 'unknown': '⏳',
                             }
                             icon = regime_icons.get(regime_label, '❓')
-                            if regime_label == 'unknown':
-                                regime_snippet = f"├ Regime: Building data... ({n_trades}/10 trades)"
+                            if n_trades < 10:
+                                regime_snippet = f"├ Regime: Critical 🔴 (10% risk) [SAFE START {n_trades}/10t]"
                             else:
                                 q = regime_diag['quality']
                                 regime_snippet = f"├ Regime: {regime_label.title()} {icon} ({regime_mult:.0%} risk) | {q['wr']:.0%} WR, {q['avg_r']:+.2f}R"

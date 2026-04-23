@@ -450,8 +450,8 @@ class TelegramHandler:
                 'critical': '🔴', 'halted': '🛑', 'unknown': '⏳',
             }
             icon = regime_icons.get(regime_label, '❓')
-            if regime_label == 'unknown':
-                regime_display = f"Building data... ({n_trades}/10 trades)"
+            if n_trades < 10:
+                regime_display = f"Critical 🔴 (10% risk) [SAFE START {n_trades}/10t]"
             else:
                 manual_tag = " [MANUAL]" if self.bot.regime_override is not None else ""
                 remaining = 10 - self.bot.regime_override_trades if self.bot.regime_override else 0

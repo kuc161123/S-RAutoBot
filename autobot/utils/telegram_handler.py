@@ -1017,31 +1017,9 @@ This will reset ALL tracking data:
             self.bot.symbol_stats = {}
             self.bot.save_stats()
             
-            # Reset lifetime stats with new baseline
-            self.bot.lifetime_stats = {
-                'start_date': today,
-                'starting_balance': new_balance,
-                'total_r': 0.0,
-                'total_pnl': 0.0,
-                'total_trades': 0,
-                'wins': 0,
-                'best_day_r': 0.0,
-                'best_day_date': None,
-                'worst_day_r': 0.0,
-                'worst_day_date': None,
-                'daily_r': {},
-                'best_trade_r': 0.0,
-                'best_trade_symbol': '',
-                'best_trade_date': None,
-                'worst_trade_r': 0.0,
-                'worst_trade_symbol': '',
-                'worst_trade_date': None,
-                'max_drawdown_r': 0.0,
-                'peak_equity_r': 0.0,
-                'current_streak': 0,
-                'longest_win_streak': 0,
-                'longest_loss_streak': 0
-            }
+            # Reset lifetime stats with new baseline (uses StorageHandler for canonical defaults)
+            self.bot.lifetime_stats = self.bot.storage.reset_lifetime_stats(new_balance)
+            self.bot.recent_trades.clear()
             self.bot.save_lifetime_stats()
             
             msg = f"""✅ **FULL RESET COMPLETE**

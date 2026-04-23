@@ -225,13 +225,40 @@ class Bot4H:
             label, _, _ = self.get_regime_status()
             if label != 'unknown':
                 self.lifetime_stats['current_regime_label'] = label
-                self.lifetime_stats['current_regime_since'] = datetime.now().isoformat()
+                # Estimate regime start from oldest trade in the 20-trade window
+                if len(self.recent_trades) >= 10:
+                    window_start = list(self.recent_trades)[-20:]
+                    self.lifetime_stats['current_regime_since'] = window_start[0]['time'].isoformat()
+                else:
+                    self.lifetime_stats['current_regime_since'] = datetime.now().isoformat()
 
         # Bootstrap weighted_total_r from recent_trades if needed
         if self.lifetime_stats.get('weighted_total_r', 0.0) == 0.0 and len(self.recent_trades) > 0:
             self.lifetime_stats['weighted_total_r'] = sum(
                 t['r'] * t.get('regime_mult', 1.0) for t in self.recent_trades
             )
+
+        # Bootstrap regime_stats from recent_trades if needed
+        # Only uses trades that have real regime_label (not legacy 'unknown' defaults)
+        if not self.lifetime_stats.get('regime_stats') and len(self.recent_trades) > 0:
+            regime_stats = {}
+            for t in self.recent_trades:
+                label = t.get('regime_label')
+                if not label or label == 'unknown':
+                    continue
+                if label not in regime_stats:
+                    regime_stats[label] = {'trades': 0, 'wins': 0, 'gross_profit_r': 0.0, 'gross_loss_r': 0.0}
+                rs = regime_stats[label]
+                rs['trades'] += 1
+                if t.get('win'):
+                    rs['wins'] += 1
+                if t['r'] > 0:
+                    rs['gross_profit_r'] += t['r']
+                else:
+                    rs['gross_loss_r'] += t['r']
+            if regime_stats:
+                self.lifetime_stats['regime_stats'] = regime_stats
+                logger.info(f"[REGIME] Bootstrapped regime_stats from recent trades: {list(regime_stats.keys())}")
 
         # BOS Performance Tracking (for monitoring stale filter removal impact)
         self.bos_tracking = {

@@ -288,10 +288,10 @@ class StorageHandler:
         Reset lifetime stats to defaults (for /resetlifetime command).
         Returns the new blank stats.
         """
-        stats = DEFAULT_LIFETIME_STATS.copy()
+        import copy
+        stats = copy.deepcopy(DEFAULT_LIFETIME_STATS)
         stats['start_date'] = datetime.now().strftime('%Y-%m-%d')
         stats['starting_balance'] = starting_balance
-        stats['daily_r'] = {}
         
         if self.use_db:
             try:

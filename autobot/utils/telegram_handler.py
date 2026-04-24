@@ -111,7 +111,9 @@ class TelegramHandler:
             if len(msg) <= 4000:
                 chunks.append(msg)
                 break
-            split_at = msg.rfind('\n', 0, 4000)
+            split_at = msg.rfind('\n\n', 0, 4000)
+            if split_at == -1:
+                split_at = msg.rfind('\n', 0, 4000)
             if split_at == -1:
                 split_at = 4000
             chunks.append(msg[:split_at])
@@ -330,13 +332,13 @@ class TelegramHandler:
 
         # Best/worst from local storage
         best_trade_r = lifetime.get('best_trade_r', 0.0)
-        best_trade_symbol = lifetime.get('best_trade_symbol', 'N/A')
+        best_trade_symbol = lifetime.get('best_trade_symbol') or 'N/A'
         worst_trade_r = lifetime.get('worst_trade_r', 0.0)
-        worst_trade_symbol = lifetime.get('worst_trade_symbol', 'N/A')
+        worst_trade_symbol = lifetime.get('worst_trade_symbol') or 'N/A'
         best_day_r = lifetime.get('best_day_r', 0.0)
-        best_day_date = lifetime.get('best_day_date', 'N/A')
+        best_day_date = lifetime.get('best_day_date') or 'N/A'
         worst_day_r = lifetime.get('worst_day_r', 0.0)
-        worst_day_date = lifetime.get('worst_day_date', 'N/A')
+        worst_day_date = lifetime.get('worst_day_date') or 'N/A'
 
         # Drawdown and streaks from local storage
         max_dd = lifetime.get('max_drawdown_r', 0.0)
@@ -451,7 +453,7 @@ class TelegramHandler:
             }
             icon = regime_icons.get(regime_label, '❓')
             if n_trades < 10:
-                regime_display = f"Critical 🔴 (10% risk) [SAFE START {n_trades}/10t]"
+                regime_display = f"Critical 🔴 (10% risk) | SAFE START {n_trades}/10t"
             else:
                 manual_tag = " [MANUAL]" if self.bot.regime_override is not None else ""
                 remaining = 10 - self.bot.regime_override_trades if self.bot.regime_override else 0
@@ -496,27 +498,19 @@ class TelegramHandler:
         # BTC ADX as secondary info
         btc_adx_display = ""
         try:
-            params = {'category':'linear','symbol':'BTCUSDT','interval':'60','limit':'30'}
+            params = {'category':'linear','symbol':'BTCUSDT','interval':'60','limit':'60'}
             kline_resp = await self.bot.broker._request("GET", "/v5/market/kline", params)
             data = kline_resp.get('result', {}).get('list', []) if kline_resp else []
-            if len(data) >= 15:
+            if len(data) >= 30:
                 import pandas as pd
+                from ta.trend import ADXIndicator
                 df = pd.DataFrame(data, columns=['start','open','high','low','close','volume','turnover'])
                 for c in ['high','low','close']: df[c] = df[c].astype(float)
                 df = df.iloc[::-1].reset_index(drop=True)
-                high, low, close = df['high'], df['low'], df['close']
-                plus_dm = high - high.shift()
-                minus_dm = low.shift() - low
-                plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
-                minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
-                tr = pd.concat([high-low, abs(high-close.shift()), abs(low-close.shift())], axis=1).max(axis=1)
-                atr = tr.rolling(14).mean()
-                pdi = 100 * (plus_dm.rolling(14).mean() / atr)
-                mdi = 100 * (minus_dm.rolling(14).mean() / atr)
-                dx = abs(pdi - mdi) / (pdi + mdi + 1e-10) * 100
-                adx = dx.rolling(14).mean()
-                current_adx = adx.iloc[-1]
-                btc_adx_display = f"\n├ BTC ADX: {current_adx:.1f}"
+                adx_indicator = ADXIndicator(df['high'], df['low'], df['close'], window=14)
+                current_adx = adx_indicator.adx().iloc[-1]
+                if not pd.isna(current_adx):
+                    btc_adx_display = f"\n├ BTC ADX: {current_adx:.1f}"
         except Exception as e:
             logger.error(f"[DASHBOARD] BTC ADX calc failed: {e}")
 
@@ -600,7 +594,9 @@ class TelegramHandler:
                     if len(msg) <= 4000:
                         chunks.append(msg)
                         break
-                    split_at = msg.rfind('\n', 0, 4000)
+                    split_at = msg.rfind('\n\n', 0, 4000)
+                    if split_at == -1:
+                        split_at = msg.rfind('\n', 0, 4000)
                     if split_at == -1:
                         split_at = 4000
                     chunks.append(msg[:split_at])
@@ -671,13 +667,13 @@ class TelegramHandler:
             
             # Best/worst metrics
             best_trade_r = lifetime.get('best_trade_r', 0.0)
-            best_trade_sym = lifetime.get('best_trade_symbol', 'N/A')
+            best_trade_sym = lifetime.get('best_trade_symbol') or 'N/A'
             worst_trade_r = lifetime.get('worst_trade_r', 0.0)
-            worst_trade_sym = lifetime.get('worst_trade_symbol', 'N/A')
+            worst_trade_sym = lifetime.get('worst_trade_symbol') or 'N/A'
             best_day_r = lifetime.get('best_day_r', 0.0)
-            best_day_date = lifetime.get('best_day_date', 'N/A')
+            best_day_date = lifetime.get('best_day_date') or 'N/A'
             worst_day_r = lifetime.get('worst_day_r', 0.0)
-            worst_day_date = lifetime.get('worst_day_date', 'N/A')
+            worst_day_date = lifetime.get('worst_day_date') or 'N/A'
             
             # Streaks and drawdown
             max_dd = lifetime.get('max_drawdown_r', 0.0)

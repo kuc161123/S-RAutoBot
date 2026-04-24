@@ -1916,7 +1916,7 @@ class Bot4H:
                             }
                             icon = regime_icons.get(regime_label, '❓')
                             if n_trades < 10:
-                                regime_snippet = f"├ Regime: Critical 🔴 (10% risk) [SAFE START {n_trades}/10t]"
+                                regime_snippet = f"├ Regime: Critical 🔴 (10% risk) | SAFE START {n_trades}/10t"
                             else:
                                 q = regime_diag['quality']
                                 regime_snippet = f"├ Regime: {regime_label.title()} {icon} ({regime_mult:.0%} risk) | {q['wr']:.0%} WR, {q['avg_r']:+.2f}R"

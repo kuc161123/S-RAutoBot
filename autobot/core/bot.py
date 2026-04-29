@@ -91,6 +91,8 @@ class ActiveTrade:
     order_id: str = ""
     risk_usd_at_entry: float = 0.0  # Store risk at trade time for accurate R calculation
     pre_reset: bool = False  # True = opened before a /resetlifetime, skip from new stats
+    entry_regime_label: str = ""  # Regime at trade ENTRY (for accurate regime stats)
+    entry_regime_mult: float = 1.0  # Regime multiplier at trade ENTRY
 
 
 class Bot4H:
@@ -315,25 +317,39 @@ class Bot4H:
             self.save_lifetime_stats()
             logger.info(f"Initialized lifetime stats: Start {self.lifetime_stats['start_date']}, Balance ${self.lifetime_stats['starting_balance']:.2f}")
     
-    def update_lifetime_stats(self, r_value: float, pnl: float, is_win: bool, symbol: str = ''):
+    def update_lifetime_stats(self, r_value: float, pnl: float, is_win: bool, symbol: str = '',
+                              entry_regime_label: str = '', entry_regime_mult: float = 0.0):
         """Update lifetime stats after a trade closes
-        
+
         Tracks comprehensive metrics including:
         - Total R, PnL, wins/losses
         - Best/worst individual trades
         - Maximum drawdown (peak-to-trough)
         - Win/loss streaks
         - Best/worst trading days
+
+        Args:
+            entry_regime_label: Regime at trade ENTRY (not close). Falls back to
+                current regime if not provided (backwards compat for adopted trades).
+            entry_regime_mult: Regime multiplier at trade ENTRY.
         """
         today = datetime.now().strftime('%Y-%m-%d')
-        
-        logger.info(f"[LIFETIME] Updating stats: R={r_value:+.2f}, PnL=${pnl:.2f}, Win={is_win}, Symbol={symbol}")
 
-        # Track recent trades for regime detection
-        prev_regime, prev_mult, _ = self.get_regime_status()
+        # Use entry regime if provided, otherwise fall back to current (adopted/legacy trades)
+        if entry_regime_label and entry_regime_label != '':
+            regime_label = entry_regime_label
+            regime_mult = entry_regime_mult
+        else:
+            regime_label, regime_mult, _ = self.get_regime_status()
+            logger.info(f"[LIFETIME] No entry regime stored — using current regime '{regime_label}' (adopted/legacy trade)")
+
+        logger.info(f"[LIFETIME] Updating stats: R={r_value:+.2f}, PnL=${pnl:.2f}, Win={is_win}, Symbol={symbol}, EntryRegime={regime_label}")
+
+        # Track recent trades for regime detection (uses current regime for the rolling window)
+        current_regime, current_mult, _ = self.get_regime_status()
         self.recent_trades.append({
             'r': r_value, 'win': is_win, 'time': datetime.now(),
-            'symbol': symbol, 'regime_mult': prev_mult, 'regime_label': prev_regime
+            'symbol': symbol, 'regime_mult': current_mult, 'regime_label': current_regime
         })
 
         # Track trades since manual override (auto-clear at 10)
@@ -353,15 +369,15 @@ class Bot4H:
         if is_win:
             self.lifetime_stats['wins'] += 1
 
-        # Feature 1: Weighted R (actual account impact)
-        self.lifetime_stats['weighted_total_r'] = self.lifetime_stats.get('weighted_total_r', 0.0) + (r_value * prev_mult)
+        # Feature 1: Weighted R (uses ENTRY regime mult for accurate impact)
+        self.lifetime_stats['weighted_total_r'] = self.lifetime_stats.get('weighted_total_r', 0.0) + (r_value * regime_mult)
 
-        # Feature 3: Per-regime stats
-        if prev_regime and prev_regime != 'unknown':
+        # Feature 3: Per-regime stats (attributed to ENTRY regime, not close regime)
+        if regime_label and regime_label != 'unknown':
             regime_stats = self.lifetime_stats.get('regime_stats', {})
-            if prev_regime not in regime_stats:
-                regime_stats[prev_regime] = {'trades': 0, 'wins': 0, 'gross_profit_r': 0.0, 'gross_loss_r': 0.0}
-            rs = regime_stats[prev_regime]
+            if regime_label not in regime_stats:
+                regime_stats[regime_label] = {'trades': 0, 'wins': 0, 'gross_profit_r': 0.0, 'gross_loss_r': 0.0}
+            rs = regime_stats[regime_label]
             rs['trades'] += 1
             if is_win:
                 rs['wins'] += 1
@@ -1479,7 +1495,7 @@ class Bot4H:
                 await self.telegram.send_message(f"❌ **TRADE FAILED**\n\n{symbol} | Error: {e}\nQty: {position_size_qty}")
             return
         
-        # Track active trade
+        # Track active trade (store regime at ENTRY for accurate regime stats)
         trade = ActiveTrade(
             symbol=symbol,
             side=signal.side,
@@ -1490,7 +1506,9 @@ class Bot4H:
             position_size=position_size_qty,
             entry_time=datetime.now(),
             order_id=order_id,
-            risk_usd_at_entry=risk_amount  # Store for accurate R calculation at closure
+            risk_usd_at_entry=risk_amount,  # Store for accurate R calculation at closure
+            entry_regime_label=regime_label,  # Regime at ENTRY (not exit)
+            entry_regime_mult=regime_mult,
         )
         
         self.active_trades[trade_key] = trade
@@ -1643,11 +1661,16 @@ class Bot4H:
         
         # Update lifetime stats (persistent across restarts)
         # Skip pre-reset trades so they don't pollute fresh stats after /resetlifetime
+        # Pass entry regime so trade is attributed to the regime it was OPENED under
         is_win = result == 'WIN'
         if getattr(trade, 'pre_reset', False):
             logger.info(f"[{symbol}] Pre-reset trade — skipping lifetime stats update ({r_value:+.2f}R)")
         else:
-            self.update_lifetime_stats(r_value, pnl_usd, is_win, symbol)
+            self.update_lifetime_stats(
+                r_value, pnl_usd, is_win, symbol,
+                entry_regime_label=getattr(trade, 'entry_regime_label', ''),
+                entry_regime_mult=getattr(trade, 'entry_regime_mult', 0.0),
+            )
         
         # Remove from active (may already be removed by sync)
         self.active_trades.pop(trade_key, None)

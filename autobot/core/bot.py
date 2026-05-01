@@ -1317,6 +1317,24 @@ class Bot4H:
                 ))
             return
 
+        # [CHOP FILTER] Hybrid regime-aware choppiness gate
+        chop_thresholds = {'favorable': None, 'cautious': 55, 'adverse': 54, 'critical': 42}
+        chop_thresh = chop_thresholds.get(regime_label)
+        if chop_thresh is not None and 'chop' in df.columns:
+            current_chop = df['chop'].iloc[-1]
+            if pd.notna(current_chop) and current_chop >= chop_thresh:
+                logger.info(f"[{symbol}] CHOP FILTER blocked: CHOP={current_chop:.1f} >= {chop_thresh} (regime={regime_label})")
+                if hasattr(self, 'telegram') and self.telegram:
+                    try:
+                        asyncio.create_task(self.telegram.send_message(
+                            f"🌊 **CHOP FILTER** — {symbol} {signal.side}\n"
+                            f"├ CHOP: {current_chop:.1f} (need <{chop_thresh})\n"
+                            f"└ Regime: {regime_label} — trade skipped"
+                        ))
+                    except Exception:
+                        pass
+                return
+
         # Skip if already in a trade for this symbol+side (Internal Check)
         trade_key = f"{symbol}_{signal.side}"
         if trade_key in self.active_trades:

@@ -500,24 +500,45 @@ class TelegramHandler:
         except Exception as e:
             logger.error(f"[DASHBOARD] Regime calc failed: {e}")
 
-        # BTC ADX as secondary info
+        # BTC market data (shared by ADX and CHOP display)
         btc_adx_display = ""
+        btc_chop_display = ""
         try:
             params = {'category':'linear','symbol':'BTCUSDT','interval':'60','limit':'60'}
             kline_resp = await self.bot.broker._request("GET", "/v5/market/kline", params)
             data = kline_resp.get('result', {}).get('list', []) if kline_resp else []
             if len(data) >= 30:
                 import pandas as pd
+                import numpy as np
                 from ta.trend import ADXIndicator
                 df = pd.DataFrame(data, columns=['start','open','high','low','close','volume','turnover'])
                 for c in ['high','low','close']: df[c] = df[c].astype(float)
                 df = df.iloc[::-1].reset_index(drop=True)
+
+                # ADX
                 adx_indicator = ADXIndicator(df['high'], df['low'], df['close'], window=14)
                 current_adx = adx_indicator.adx().iloc[-1]
                 if not pd.isna(current_adx):
                     btc_adx_display = f"\n├ BTC ADX: {current_adx:.1f}"
+
+                # CHOP Index
+                tr = pd.concat([
+                    df['high'] - df['low'],
+                    (df['high'] - df['close'].shift(1)).abs(),
+                    (df['low'] - df['close'].shift(1)).abs()
+                ], axis=1).max(axis=1)
+                period = 14
+                atr_sum = tr.rolling(period).sum()
+                hh = df['high'].rolling(period).max()
+                ll = df['low'].rolling(period).min()
+                hl_range = (hh - ll).replace(0, pd.NA)
+                chop_series = 100 * np.log10(atr_sum / hl_range) / np.log10(period)
+                btc_chop = chop_series.iloc[-1]
+                if not pd.isna(btc_chop):
+                    chop_label = "CHOPPY" if btc_chop > 55 else ("TREND" if btc_chop < 45 else "MIXED")
+                    btc_chop_display = f"\n├ BTC CHOP: {btc_chop:.1f} ({chop_label})"
         except Exception as e:
-            logger.error(f"[DASHBOARD] BTC ADX calc failed: {e}")
+            logger.error(f"[DASHBOARD] BTC indicators calc failed: {e}")
 
         # === BUILD EDGE CHECK SECTION ===
         regime_stats = lifetime.get('regime_stats', {})
@@ -571,7 +592,7 @@ class TelegramHandler:
 
 ⏰ **SYSTEM HEALTH**
 ├ Uptime: {uptime_hrs:.1f}h ✅
-├ Regime: {regime_display}{regime_detail}{btc_adx_display}
+├ Regime: {regime_display}{regime_detail}{btc_adx_display}{btc_chop_display}
 ├ Next Scan: ~{next_scan_mins}m
 ├ Symbols: {enabled} | Signals: {divs_today}D/{bos_today}BOS
 ├ ⏳ Pending BOS: {pending} signals

@@ -123,6 +123,21 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return atr
 
 
+def calculate_chop(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Choppiness Index: 100 * log10(sum(TR, n) / (HH - LL)) / log10(n)
+    High (>55) = choppy/ranging, Low (<38) = strong trend."""
+    hl = df['high'] - df['low']
+    hc = (df['high'] - df['close'].shift(1)).abs()
+    lc = (df['low'] - df['close'].shift(1)).abs()
+    tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
+    atr_sum = tr.rolling(period).sum()
+    hh = df['high'].rolling(period).max()
+    ll = df['low'].rolling(period).min()
+    hl_range = (hh - ll).replace(0, np.nan)
+    chop = 100 * np.log10(atr_sum / hl_range) / np.log10(period)
+    return chop
+
+
 def calculate_daily_ema(close: pd.Series, period: int = DAILY_EMA_PROXY) -> pd.Series:
     """Calculate EMA 200 for trend filtering"""
     return close.ewm(span=period, adjust=False).mean()
@@ -366,6 +381,7 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df['rsi'] = calculate_rsi(df['close'])
     df['atr'] = calculate_atr(df)
     df['daily_ema'] = calculate_daily_ema(df['close'])
+    df['chop'] = calculate_chop(df)
 
     # [BACKTEST ALIGNMENT] Do NOT dropna() - keep all rows to preserve indices.
     # The detect_divergences() function skips rows with NaN indicators.

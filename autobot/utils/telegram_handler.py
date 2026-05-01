@@ -522,7 +522,8 @@ class TelegramHandler:
         # === BUILD EDGE CHECK SECTION ===
         regime_stats = lifetime.get('regime_stats', {})
         edge_lines = []
-        for rk in ['favorable', 'critical']:
+        regime_icons = {'favorable': '\U0001f7e2', 'cautious': '\U0001f7e1', 'adverse': '\U0001f7e0', 'critical': '\U0001f534'}
+        for rk in ['favorable', 'cautious', 'adverse', 'critical']:
             rs = regime_stats.get(rk, {})
             t = rs.get('trades', 0)
             if t == 0:
@@ -532,7 +533,7 @@ class TelegramHandler:
             gp = rs.get('gross_profit_r', 0.0)
             gl = abs(rs.get('gross_loss_r', 0.0))
             pf = f"{gp/gl:.1f}" if gl > 0 else ("inf" if gp > 0 else "N/A")
-            icon = '\U0001f7e2' if rk == 'favorable' else '\U0001f534'
+            icon = regime_icons.get(rk, '\u26aa')
             edge_lines.append(f"\u251c {icon} {rk.title()}: {wr:.0f}% WR | PF {pf} | {t}t")
         if edge_lines:
             edge_lines[-1] = "\u2514" + edge_lines[-1][1:]

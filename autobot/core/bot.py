@@ -805,9 +805,9 @@ class Bot4H:
 
                 if size > 0 and trade_key not in self.active_trades:
                     # Found an active position on exchange that bot doesn't know about
-                    entry_price = float(pos.get('avgPrice', 0))
-                    stop_loss = float(pos.get('stopLoss', 0))
-                    take_profit = float(pos.get('takeProfit', 0))
+                    entry_price = float(pos.get('avgPrice') or 0)
+                    stop_loss = float(pos.get('stopLoss') or 0)
+                    take_profit = float(pos.get('takeProfit') or 0)
                     entry_time = datetime.now()  # We don't know exact start, assume now
 
                     # Estimate R:R
@@ -1796,10 +1796,10 @@ class Bot4H:
                     sym = p.get('symbol')
                     side = "long" if p.get('side') == "Buy" else "short"
                     trade_key = f"{sym}_{side}"
-                    entry_price = float(p.get('avgPrice', 0))
-                    sl_price = float(p.get('stopLoss', 0))
-                    tp_price = float(p.get('takeProfit', 0))
-                    size = float(p.get('size', 0))
+                    entry_price = float(p.get('avgPrice') or 0)
+                    sl_price = float(p.get('stopLoss') or 0)
+                    tp_price = float(p.get('takeProfit') or 0)
+                    size = float(p.get('size') or 0)
                     # Calculate approximate R:R from existing SL/TP
                     sl_dist = abs(entry_price - sl_price) if sl_price > 0 and entry_price > 0 else 0
                     rr = abs(tp_price - entry_price) / sl_dist if sl_dist > 0 and tp_price > 0 else 0

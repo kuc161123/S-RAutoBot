@@ -235,7 +235,12 @@ class TelegramHandler:
         else:
             risk_pct = self.bot.get_adaptive_risk()
             risk_amount = balance * risk_pct if balance > 0 else 10
-            risk_display = f"${risk_amount:.2f} ({risk_pct*100:.2f}%)"
+            base_pct = base_risk_pct * 100
+            adaptive_pct = risk_pct * 100
+            if abs(base_pct - adaptive_pct) > 0.001:
+                risk_display = f"${risk_amount:.2f} ({adaptive_pct:.2f}% | base {base_pct:.1f}%)"
+            else:
+                risk_display = f"${risk_amount:.2f} ({adaptive_pct:.2f}%)"
 
         # Realized P&L (today + weekly)
         realized_pnl = 0

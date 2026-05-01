@@ -550,16 +550,11 @@ class TelegramHandler:
 
 🏆 **ALL-TIME** ({days_running} days)
 ├ {lifetime_r:+.1f}R raw | {weighted_r:+.1f}R wtd | {lifetime_trades} trades
+├ P&L: ${lifetime_pnl:+,.2f} | Balance: ${balance:,.2f}
 ├ WR: {lifetime_wr:.1f}% ({lifetime_wins}W/{lifetime_losses}L) | PF: {profit_factor_display}
 ├ Avg: {expectancy_display} | Max DD: {abs(max_dd):.1f}R
 └ Streak: {abs(current_streak)}{streak_type} | Best: {longest_win_streak}W / {longest_loss_streak}L
 {"" if not edge_section else chr(10) + edge_section + chr(10)}
-🥇 **BEST/WORST**
-├ Best Trade: {best_trade_r:+.1f}R ({best_trade_symbol})
-├ Worst Trade: {worst_trade_r:+.1f}R ({worst_trade_symbol})
-├ Best Day: {best_day_r:+.1f}R ({best_day_date})
-└ Worst Day: {worst_day_r:+.1f}R ({worst_day_date})
-
 💼 **ACCOUNT**
 ├ Balance: ${balance:,.2f}
 ├ Available: ${available_balance:,.2f} ({available_pct:.0f}%)

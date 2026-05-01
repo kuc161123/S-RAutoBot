@@ -787,11 +787,11 @@ class Bot4H:
 
             # Remove stale trades and update stats with REAL PnL from exchange
             for trade_key in stale_trades:
-                trade = self.active_trades.pop(trade_key, None)
+                trade = self.active_trades.get(trade_key)
                 symbol = trade.symbol if trade else trade_key.rsplit('_', 1)[0]
                 if trade:
                     logger.warning(f"[{symbol}] Removed stale trade from tracking (closed externally)")
-                    
+
                     # Process exit via shared handler (same logic as normal exits)
                     await self.handle_trade_exit(trade_key, trade)
             
@@ -1525,7 +1525,10 @@ class Bot4H:
             self.symbol_stats[symbol] = {'trades': 0, 'wins': 0, 'total_r': 0.0}
         
         # Send enhanced notification
-        await self.send_entry_notification(trade, signal)
+        try:
+            await self.send_entry_notification(trade, signal)
+        except Exception as e:
+            logger.error(f"[{trade.symbol}] Failed to send entry notification: {e}")
         
         logger.info(f"[{symbol}] Trade opened: Entry=${actual_entry:.4f}, SL=${sl_price:.4f}, TP=${tp_price:.4f} ({rr}:1 R:R)")
 
@@ -1550,7 +1553,7 @@ class Bot4H:
                 bybit_side = 'Buy' if side == 'long' else 'Sell'
                 position = await self.broker.get_position(symbol, side=bybit_side)
 
-                if position is None or position.get('size', 0) == 0:
+                if position is None or float(position.get('size', 0)) == 0:
                     # Position closed
                     await self.handle_trade_exit(trade_key, trade)
 
@@ -1680,15 +1683,18 @@ class Bot4H:
         hours_held = time_held.total_seconds() / 3600
 
         # Send exit notification
-        await self.send_exit_notification(
-            symbol=symbol,
-            trade=trade,
-            exit_price=exit_price,
-            result=result,
-            r_value=r_value,
-            pnl_usd=pnl_usd,
-            hours_held=hours_held
-        )
+        try:
+            await self.send_exit_notification(
+                symbol=symbol,
+                trade=trade,
+                exit_price=exit_price,
+                result=result,
+                r_value=r_value,
+                pnl_usd=pnl_usd,
+                hours_held=hours_held
+            )
+        except Exception as e:
+            logger.error(f"[{symbol}] Failed to send exit notification: {e}")
 
         logger.info(f"[{symbol}] Trade processed: {result}, {r_value:+.2f}R, held {hours_held:.1f}h")
     

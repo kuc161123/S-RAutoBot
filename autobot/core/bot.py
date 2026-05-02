@@ -1748,8 +1748,12 @@ class Bot4H:
                 risk_pct = self.get_adaptive_risk(balance=wallet_bal)
                 risk_display = f"${balance * risk_pct:.2f} ({risk_pct*100:.2f}%)"
             
-            # Current active count
-            active_count = len(self.active_trades)
+            # Current active count (from exchange for accuracy)
+            try:
+                _pos = await self.broker.get_positions()
+                active_count = sum(1 for p in (_pos or []) if float(p.get('size', 0)) > 0)
+            except Exception:
+                active_count = len(self.active_trades)
             
             msg = f"""
 🔔 **NEW TRADE OPENED**
@@ -1937,6 +1941,7 @@ class Bot4H:
         # Start main loop
         last_check = 0
         last_auto_dashboard = datetime.now()
+        last_sync = datetime.now()
         
         while True:
             try:
@@ -1987,7 +1992,12 @@ class Bot4H:
                             logger.error(f"Regime snippet error: {e}")
 
                         pending_count = sum(len(sigs) for sigs in self.pending_signals.values())
-                        active_count = len(self.active_trades)
+                        # Use exchange positions for accurate count
+                        try:
+                            _positions = await self.broker.get_positions()
+                            active_count = sum(1 for p in (_positions or []) if float(p.get('size', 0)) > 0)
+                        except Exception:
+                            active_count = len(self.active_trades)
 
                         if total_signals_found == 0:
                             msg = f"""
@@ -2030,6 +2040,16 @@ Next scan in ~60 mins ⏳
                             except Exception as e:
                                 logger.error(f"Auto-dashboard error: {e}")
                 
+                # Periodic position sync (every 5 minutes)
+                if (datetime.now() - last_sync).total_seconds() >= 300:
+                    try:
+                        synced = await self.sync_with_exchange()
+                        if synced:
+                            logger.info(f"[SYNC] Periodic sync: {synced} changes")
+                        last_sync = datetime.now()
+                    except Exception as e:
+                        logger.error(f"[SYNC] Periodic sync failed: {e}")
+
                 # Sleep for 1 minute before next check
                 await asyncio.sleep(60)
                 

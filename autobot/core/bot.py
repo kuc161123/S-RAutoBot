@@ -1328,7 +1328,7 @@ class Bot4H:
             return
 
         # [CHOP FILTER] Hybrid regime-aware choppiness gate
-        chop_thresholds = {'favorable': 54, 'cautious': 55, 'adverse': 54, 'critical': 42}
+        chop_thresholds = {'cautious': 55, 'adverse': 54, 'critical': 42}
         chop_thresh = chop_thresholds.get(regime_label)
         if chop_thresh is not None and 'chop' in df.columns:
             current_chop = df['chop'].iloc[-1]

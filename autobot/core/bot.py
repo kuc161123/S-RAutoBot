@@ -1334,6 +1334,9 @@ class Bot4H:
             current_chop = df['chop'].iloc[-1]
             if pd.notna(current_chop) and current_chop >= chop_thresh:
                 logger.info(f"[{symbol}] CHOP FILTER blocked: CHOP={current_chop:.1f} >= {chop_thresh} (regime={regime_label})")
+                # Track blocked trades per regime
+                chop_blocked = self.lifetime_stats.setdefault('chop_blocked', {})
+                chop_blocked[regime_label] = chop_blocked.get(regime_label, 0) + 1
                 if hasattr(self, 'telegram') and self.telegram:
                     try:
                         asyncio.create_task(self.telegram.send_message(

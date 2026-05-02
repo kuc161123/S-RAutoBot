@@ -549,20 +549,24 @@ class TelegramHandler:
 
         # === BUILD EDGE CHECK SECTION ===
         regime_stats = lifetime.get('regime_stats', {})
+        chop_blocked = lifetime.get('chop_blocked', {})
         edge_lines = []
         regime_icons = {'favorable': '\U0001f7e2', 'cautious': '\U0001f7e1', 'adverse': '\U0001f7e0', 'critical': '\U0001f534'}
         for rk in ['favorable', 'cautious', 'adverse', 'critical']:
             rs = regime_stats.get(rk, {})
             t = rs.get('trades', 0)
-            if t == 0:
+            blocked = chop_blocked.get(rk, 0)
+            signals = t + blocked
+            if signals == 0:
                 continue
             w = rs.get('wins', 0)
-            wr = w / t * 100
+            wr = w / t * 100 if t > 0 else 0
             gp = rs.get('gross_profit_r', 0.0)
             gl = abs(rs.get('gross_loss_r', 0.0))
             pf = f"{gp/gl:.1f}" if gl > 0 else ("inf" if gp > 0 else "N/A")
+            pass_pct = t / signals * 100 if signals > 0 else 0
             icon = regime_icons.get(rk, '\u26aa')
-            edge_lines.append(f"\u251c {icon} {rk.title()}: {wr:.0f}% WR | PF {pf} | {t}t")
+            edge_lines.append(f"\u251c {icon} {rk.title()}: {wr:.0f}% WR | PF {pf} | {t}t passed | {blocked}t blocked ({pass_pct:.0f}%)")
         if edge_lines:
             edge_lines[-1] = "\u2514" + edge_lines[-1][1:]
             edge_section = "\U0001f3af **EDGE CHECK**\n" + "\n".join(edge_lines)

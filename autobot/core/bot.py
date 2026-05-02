@@ -1337,6 +1337,7 @@ class Bot4H:
                 # Track blocked trades per regime
                 chop_blocked = self.lifetime_stats.setdefault('chop_blocked', {})
                 chop_blocked[regime_label] = chop_blocked.get(regime_label, 0) + 1
+                self.save_lifetime_stats()
                 if hasattr(self, 'telegram') and self.telegram:
                     try:
                         asyncio.create_task(self.telegram.send_message(

@@ -222,9 +222,15 @@ class TelegramHandler:
         # Balance and P&L
         balance = await self.bot.broker.get_balance() or 0
 
-        # Risk amount for R calculation (use BASE risk, not regime-adjusted)
-        base_risk_pct = self.bot.risk_config.get('risk_per_trade', 0.02)
-        base_risk_amount = balance * base_risk_pct if balance > 0 else 10
+        # Risk amount for R calculation (use tapered base, not config starting value)
+        config_risk_pct = self.bot.risk_config.get('risk_per_trade', 0.012)
+        taper = self.bot.risk_config.get('taper_schedule')
+        tapered_risk_pct = config_risk_pct
+        if taper and balance > 0:
+            for threshold, risk in taper:
+                if balance >= threshold:
+                    tapered_risk_pct = risk
+        base_risk_amount = balance * tapered_risk_pct if balance > 0 else 10
 
         risk_usd = self.bot.risk_config.get('risk_amount_usd')
         if risk_usd:
@@ -233,12 +239,12 @@ class TelegramHandler:
             risk_pct = (risk_amount / balance * 100) if balance > 0 else 0
             risk_display = f"${risk_amount:.2f} ({risk_pct:.2f}%)"
         else:
-            risk_pct = self.bot.get_adaptive_risk()
+            risk_pct = self.bot.get_adaptive_risk(balance=balance)
             risk_amount = balance * risk_pct if balance > 0 else 10
-            base_pct = base_risk_pct * 100
+            taper_pct = tapered_risk_pct * 100
             adaptive_pct = risk_pct * 100
-            if abs(base_pct - adaptive_pct) > 0.001:
-                risk_display = f"${risk_amount:.2f} ({adaptive_pct:.2f}% | base {base_pct:.1f}%)"
+            if abs(taper_pct - adaptive_pct) > 0.001:
+                risk_display = f"${risk_amount:.2f} ({adaptive_pct:.2f}% | taper {taper_pct:.2f}%)"
             else:
                 risk_display = f"${risk_amount:.2f} ({adaptive_pct:.2f}%)"
 

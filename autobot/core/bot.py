@@ -618,18 +618,28 @@ class Bot4H:
         self.lifetime_stats['regime_override_trades'] = 0
         self.save_lifetime_stats()
 
-    def get_adaptive_risk(self):
-        """Return risk_per_trade adjusted by 4-tier quality regime.
+    def get_adaptive_risk(self, balance=None):
+        """Return risk_per_trade adjusted by balance taper + regime.
 
+        Balance taper: steps down base risk as account grows.
         Regime V2 (4-Tier Graduated): favorable=1.0x, cautious=0.5x,
         adverse=0.25x, critical=0.1x. Validated as best returns + R/DD.
         """
-        base_risk = self.risk_config.get('risk_per_trade', 0.0005)
+        base_risk = self.risk_config.get('risk_per_trade', 0.012)
+
+        # Balance-based taper
+        taper = self.risk_config.get('taper_schedule')
+        if taper and balance is not None:
+            for threshold, risk in taper:
+                if balance >= threshold:
+                    base_risk = risk
+
         label, multiplier, diagnostics = self.get_regime_status()
-        if multiplier < 1.0:
+        final = base_risk * multiplier
+        if multiplier < 1.0 or (taper and balance is not None):
             q = diagnostics['quality']
-            logger.info(f"[RISK] Regime={label} (mult={multiplier:.2f}, WR={q['wr']:.0%}, avgR={q['avg_r']:+.2f}) — risk {base_risk:.6f} → {base_risk * multiplier:.6f}")
-        return base_risk * multiplier
+            logger.info(f"[RISK] Taper={base_risk*100:.2f}% Regime={label} (mult={multiplier:.2f}) → {final*100:.3f}%")
+        return final
 
     def _track_divergence_detected(self):
         """Track a divergence detection"""
@@ -1405,7 +1415,7 @@ class Bot4H:
             if risk_amount_usd:
                 risk_amount = float(risk_amount_usd)
             else:
-                margin_pct = self.get_adaptive_risk()
+                margin_pct = self.get_adaptive_risk(balance=account_balance)
                 risk_amount = account_balance * margin_pct
             
             # 2. Calculate Qty based on Risk
@@ -1730,7 +1740,7 @@ class Bot4H:
                 risk_display = f"${float(risk_usd):.2f}"
             else:
                 balance = await self.broker.get_balance() or 1000
-                risk_pct = self.get_adaptive_risk()
+                risk_pct = self.get_adaptive_risk(balance=balance)
                 risk_display = f"${balance * risk_pct:.2f} ({risk_pct*100:.2f}%)"
             
             # Current active count
@@ -1885,7 +1895,8 @@ class Bot4H:
                 start_date = lifetime.get('start_date', 'Today')
                 
                 # Calculate risk display (use adaptive risk, not base)
-                risk_pct = self.get_adaptive_risk()
+                startup_bal = await self.broker.get_balance() or 0
+                risk_pct = self.get_adaptive_risk(balance=startup_bal)
                 regime_label, regime_mult, _ = self.get_regime_status()
                 regime_display = f" [{regime_label.upper()} {regime_mult:.0%}]" if regime_label != 'unknown' else ""
 

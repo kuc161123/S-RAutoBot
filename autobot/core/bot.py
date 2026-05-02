@@ -1411,11 +1411,12 @@ class Bot4H:
             # 1. Determine Risk Amount
             risk_amount_usd = self.risk_config.get('risk_amount_usd', None)
             account_balance = await self.broker.get_balance()
-            
+            wallet_balance = await self.broker.get_wallet_balance() or account_balance
+
             if risk_amount_usd:
                 risk_amount = float(risk_amount_usd)
             else:
-                margin_pct = self.get_adaptive_risk(balance=account_balance)
+                margin_pct = self.get_adaptive_risk(balance=wallet_balance)
                 risk_amount = account_balance * margin_pct
             
             # 2. Calculate Qty based on Risk
@@ -1740,7 +1741,8 @@ class Bot4H:
                 risk_display = f"${float(risk_usd):.2f}"
             else:
                 balance = await self.broker.get_balance() or 1000
-                risk_pct = self.get_adaptive_risk(balance=balance)
+                wallet_bal = await self.broker.get_wallet_balance() or balance
+                risk_pct = self.get_adaptive_risk(balance=wallet_bal)
                 risk_display = f"${balance * risk_pct:.2f} ({risk_pct*100:.2f}%)"
             
             # Current active count
@@ -1894,8 +1896,8 @@ class Bot4H:
                 lifetime_r = lifetime.get('total_r', 0)
                 start_date = lifetime.get('start_date', 'Today')
                 
-                # Calculate risk display (use adaptive risk, not base)
-                startup_bal = await self.broker.get_balance() or 0
+                # Calculate risk display (use wallet balance for taper)
+                startup_bal = await self.broker.get_wallet_balance() or await self.broker.get_balance() or 0
                 risk_pct = self.get_adaptive_risk(balance=startup_bal)
                 regime_label, regime_mult, _ = self.get_regime_status()
                 regime_display = f" [{regime_label.upper()} {regime_mult:.0%}]" if regime_label != 'unknown' else ""

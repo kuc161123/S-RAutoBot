@@ -389,6 +389,47 @@ class Bybit:
             logger.error(f"Failed to get balance: {e}")
             return None
 
+    async def get_wallet_balance(self) -> Optional[float]:
+        """Get USDT wallet balance (closed-trade only, excludes unrealized P&L)."""
+        try:
+            account_types = ["UNIFIED", "CONTRACT", "SPOT"]
+            for acct in account_types:
+                try:
+                    resp = await self._request("GET", "/v5/account/wallet-balance", {"accountType": acct})
+                except Exception as _e:
+                    logger.debug(f"Wallet balance fetch failed for {acct}: {_e}")
+                    continue
+                try:
+                    if not (resp and resp.get("result")):
+                        continue
+                    lists = resp["result"].get("list", [])
+                    for item in lists:
+                        for coin in item.get("coin", []):
+                            if str(coin.get("coin")) == "USDT":
+                                val = coin.get("walletBalance")
+                                try:
+                                    if val is not None and str(val) != "":
+                                        v = float(val)
+                                        if v != 0.0:
+                                            return v
+                                except (ValueError, TypeError):
+                                    pass
+                                # Fallback to equity if walletBalance missing
+                                val = coin.get("equity")
+                                try:
+                                    if val is not None and str(val) != "":
+                                        return float(val)
+                                except (ValueError, TypeError):
+                                    pass
+                                return 0.0
+                except Exception as _pe:
+                    logger.debug(f"Parse wallet balance failed for {acct}: {_pe}")
+                    continue
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get wallet balance: {e}")
+            return None
+
     async def get_max_leverage(self, symbol: str) -> int:
         """Get maximum allowed leverage for a symbol, preferring cache."""
         # 1. Check cache first

@@ -221,14 +221,15 @@ class TelegramHandler:
 
         # Balance and P&L
         balance = await self.bot.broker.get_balance() or 0
+        wallet_balance = await self.bot.broker.get_wallet_balance() or balance
 
-        # Risk amount for R calculation (use tapered base, not config starting value)
+        # Risk amount for R calculation (use wallet balance for taper)
         config_risk_pct = self.bot.risk_config.get('risk_per_trade', 0.012)
         taper = self.bot.risk_config.get('taper_schedule')
         tapered_risk_pct = config_risk_pct
-        if taper and balance > 0:
+        if taper and wallet_balance > 0:
             for threshold, risk in taper:
-                if balance >= threshold:
+                if wallet_balance >= threshold:
                     tapered_risk_pct = risk
         base_risk_amount = balance * tapered_risk_pct if balance > 0 else 10
 
@@ -239,7 +240,7 @@ class TelegramHandler:
             risk_pct = (risk_amount / balance * 100) if balance > 0 else 0
             risk_display = f"${risk_amount:.2f} ({risk_pct:.2f}%)"
         else:
-            risk_pct = self.bot.get_adaptive_risk(balance=balance)
+            risk_pct = self.bot.get_adaptive_risk(balance=wallet_balance)
             risk_amount = balance * risk_pct if balance > 0 else 10
             taper_pct = tapered_risk_pct * 100
             adaptive_pct = risk_pct * 100
@@ -589,7 +590,7 @@ class TelegramHandler:
 └ Streak: {abs(current_streak)}{streak_type} | Best: {longest_win_streak}W / {longest_loss_streak}L
 {"" if not edge_section else chr(10) + edge_section + chr(10)}
 💼 **ACCOUNT**
-├ Balance: ${balance:,.2f}
+├ Equity: ${balance:,.2f} | Wallet: ${wallet_balance:,.2f}
 ├ Available: ${available_balance:,.2f} ({available_pct:.0f}%)
 ├ Risk/Trade: {risk_display}
 └ Return: {pnl_emoji}{abs(pnl_return_pct):.1f}% (Base: ${starting_balance:,.0f})

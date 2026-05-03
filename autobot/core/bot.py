@@ -807,6 +807,7 @@ class Bot4H:
             
             # ADOPT EXISTING POSITIONS (On startup or manual intervention)
             adopted_count = 0
+            pre_reset_keys = set(self.lifetime_stats.get('pre_reset_keys', []))
             for pos in positions:
                 symbol = pos.get('symbol')
                 size = float(pos.get('size', 0))
@@ -838,10 +839,13 @@ class Bot4H:
                         position_size=size,
                         entry_time=entry_time
                     )
+                    # Restore pre_reset flag for trades opened before last reset
+                    if trade_key in pre_reset_keys:
+                        new_trade.pre_reset = True
 
                     self.active_trades[trade_key] = new_trade
                     adopted_count += 1
-                    logger.info(f"[{symbol}] Adopted existing position: {side} {size} @ {entry_price}")
+                    logger.info(f"[{symbol}] Adopted existing position: {side} {size} @ {entry_price}{' (pre-reset)' if trade_key in pre_reset_keys else ''}")
             
             if stale_trades or adopted_count > 0:
                 logger.info(f"Synced with exchange: removed {len(stale_trades)} stale, adopted {adopted_count} existing trades")
@@ -1706,6 +1710,12 @@ class Bot4H:
                 'r': r_value, 'win': is_win, 'time': datetime.now(),
                 'symbol': symbol, 'regime_mult': current_mult, 'regime_label': current_regime
             })
+            # Remove from persisted pre_reset_keys
+            pre_reset_keys = self.lifetime_stats.get('pre_reset_keys', [])
+            if trade_key in pre_reset_keys:
+                pre_reset_keys.remove(trade_key)
+                self.lifetime_stats['pre_reset_keys'] = pre_reset_keys
+                self.save_lifetime_stats()
             logger.info(f"[{symbol}] Pre-reset trade — regime fed ({r_value:+.2f}R), stats skipped")
         else:
             self.update_lifetime_stats(
@@ -1834,6 +1844,7 @@ class Bot4H:
         try:
             logger.info("[SYNC] Checking for existing positions on exchange...")
             positions = await self.broker.get_positions()
+            pre_reset_keys = set(self.lifetime_stats.get('pre_reset_keys', []))
             count = 0
             for p in positions:
                 if float(p.get('size', 0)) > 0:
@@ -1857,6 +1868,9 @@ class Bot4H:
                         position_size=size,
                         entry_time=datetime.now()
                     )
+                    # Restore pre_reset flag for trades opened before last reset
+                    if trade_key in pre_reset_keys:
+                        synced_trade.pre_reset = True
                     self.active_trades[trade_key] = synced_trade
                     count += 1
                     logger.info(f"[SYNC] Found existing position: {sym} ({side}) entry=${entry_price:.4f} SL=${sl_price:.4f} TP=${tp_price:.4f}")

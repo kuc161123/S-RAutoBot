@@ -1052,11 +1052,15 @@ This will reset ALL tracking data:
 
             # Mark all currently open trades so their results don't pollute fresh stats
             pre_reset_count = 0
-            for trade in self.bot.active_trades.values():
+            pre_reset_keys = []
+            for key, trade in self.bot.active_trades.items():
                 if trade is not None:
                     trade.pre_reset = True
+                    pre_reset_keys.append(key)
                     pre_reset_count += 1
 
+            # Persist pre-reset keys so they survive restart
+            self.bot.lifetime_stats['pre_reset_keys'] = pre_reset_keys
             self.bot.save_lifetime_stats()
             
             open_note = f"\n├ 📡 {pre_reset_count} open trades excluded from new stats" if pre_reset_count > 0 else ""

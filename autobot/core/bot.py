@@ -1696,11 +1696,17 @@ class Bot4H:
         self.save_stats()
         
         # Update lifetime stats (persistent across restarts)
-        # Skip pre-reset trades so they don't pollute fresh stats after /resetlifetime
+        # Pre-reset trades: still feed regime window but skip display stats
         # Pass entry regime so trade is attributed to the regime it was OPENED under
         is_win = result == 'WIN'
         if getattr(trade, 'pre_reset', False):
-            logger.info(f"[{symbol}] Pre-reset trade — skipping lifetime stats update ({r_value:+.2f}R)")
+            # Feed regime rolling window so old winners can improve regime
+            current_regime, current_mult, _ = self.get_regime_status()
+            self.recent_trades.append({
+                'r': r_value, 'win': is_win, 'time': datetime.now(),
+                'symbol': symbol, 'regime_mult': current_mult, 'regime_label': current_regime
+            })
+            logger.info(f"[{symbol}] Pre-reset trade — regime fed ({r_value:+.2f}R), stats skipped")
         else:
             self.update_lifetime_stats(
                 r_value, pnl_usd, is_win, symbol,

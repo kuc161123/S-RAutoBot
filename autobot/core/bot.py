@@ -236,16 +236,21 @@ class Bot4H:
                     self.lifetime_stats['current_regime_since'] = datetime.now().isoformat()
 
         # Bootstrap weighted_total_r from recent_trades if needed
+        # Skip pre_reset trades — they belong to the previous lifetime period
         if self.lifetime_stats.get('weighted_total_r', 0.0) == 0.0 and len(self.recent_trades) > 0:
             self.lifetime_stats['weighted_total_r'] = sum(
                 t['r'] * t.get('regime_mult', 1.0) for t in self.recent_trades
+                if not t.get('pre_reset', False)
             )
 
         # Bootstrap regime_stats from recent_trades if needed
         # Only uses trades that have real regime_label (not legacy 'unknown' defaults)
+        # Skip pre_reset trades — they belong to the previous lifetime period
         if not self.lifetime_stats.get('regime_stats') and len(self.recent_trades) > 0:
             regime_stats = {}
             for t in self.recent_trades:
+                if t.get('pre_reset', False):
+                    continue
                 label = t.get('regime_label')
                 if not label or label == 'unknown':
                     continue
@@ -506,11 +511,13 @@ class Bot4H:
                 ))
 
         # Serialize recent_trades into lifetime_stats for persistence
+        # EXCLUDE pre_reset trades so they don't corrupt regime_stats bootstrap on restart
         self.lifetime_stats['recent_trades'] = [
             {'r': t['r'], 'win': t['win'], 'time': t['time'].isoformat(),
              'symbol': t['symbol'], 'regime_mult': t.get('regime_mult', 1.0),
              'regime_label': t.get('regime_label', 'unknown')}
             for t in self.recent_trades
+            if not t.get('pre_reset', False)
         ]
         self.lifetime_stats['regime_override'] = self.regime_override
         self.lifetime_stats['regime_override_trades'] = self.regime_override_trades
@@ -779,8 +786,9 @@ class Bot4H:
                     if float(pos.get('size', 0)) > 0:
                         logger.info(f"[SYNC] Found: {pos.get('symbol')} size={pos.get('size')} side={pos.get('side')}")
             else:
-                logger.warning("[SYNC] get_positions() returned None or empty list!")
-            
+                logger.warning("[SYNC] get_positions() returned None or empty list — skipping stale detection to prevent phantom exits")
+                return 0
+
             # Build set of trade keys with actual open positions
             actual_open_keys = set()
             for pos in positions:
@@ -788,6 +796,12 @@ class Bot4H:
                     sym = pos.get('symbol')
                     side = "long" if pos.get('side') == "Buy" else "short"
                     actual_open_keys.add(f"{sym}_{side}")
+
+            # Safety: if exchange reports 0 open but we're tracking trades, API likely failed
+            # Don't falsely close everything — require at least 1 real position to trust the data
+            if len(actual_open_keys) == 0 and len(self.active_trades) > 0:
+                logger.warning(f"[SYNC] Exchange reports 0 open positions but we track {len(self.active_trades)} — API may be unreliable, skipping stale detection")
+                return 0
 
             # Find stale trades (in our tracking but not on exchange)
             stale_trades = []
@@ -1658,10 +1672,25 @@ class Bot4H:
                 result = 'WIN' if r_value > 0 else 'LOSS'
 
             else:
-                # Fallback: use actual PnL direction, not hardcoded side assumption
-                logger.warning(f"[{symbol}] No closed P&L found after 3 retries - using SL/TP estimates")
-                # Estimate: assume SL hit (most common) unless position moved far enough for TP
-                # Use -1R as conservative default for both longs AND shorts
+                # No closed PnL found — trade may still be open (phantom stale detection)
+                # Check if position still exists on exchange before assuming it closed
+                logger.warning(f"[{symbol}] No closed P&L found after 3 retries — checking if position still open")
+                try:
+                    current_positions = await self.broker.get_positions()
+                    if current_positions:
+                        trade_side_bybit = "Buy" if trade.side == "long" else "Sell"
+                        still_open = any(
+                            p.get('symbol') == symbol and p.get('side') == trade_side_bybit and float(p.get('size', 0)) > 0
+                            for p in current_positions
+                        )
+                        if still_open:
+                            logger.warning(f"[{symbol}] Position still OPEN on exchange — false stale detection, re-adding to tracking")
+                            self.active_trades[trade_key] = trade
+                            return
+                except Exception:
+                    pass
+                # Truly closed with no PnL record — use conservative defaults
+                logger.warning(f"[{symbol}] Position confirmed closed, no PnL record — defaulting to -1R LOSS")
                 exit_price = trade.stop_loss
                 r_value = -1.0
                 result = 'LOSS'
@@ -1674,30 +1703,31 @@ class Bot4H:
             result = 'UNKNOWN'
             pnl_usd = 0
         
-        # Update stats
-        self.stats['total_trades'] += 1
-        self.stats['total_r'] += r_value
+        # Update session stats (skip pre-reset trades — they belong to previous session)
+        if not getattr(trade, 'pre_reset', False):
+            self.stats['total_trades'] += 1
+            self.stats['total_r'] += r_value
 
-        if symbol not in self.symbol_stats:
-            self.symbol_stats[symbol] = {'trades': 0, 'wins': 0, 'total_r': 0.0}
+            if symbol not in self.symbol_stats:
+                self.symbol_stats[symbol] = {'trades': 0, 'wins': 0, 'total_r': 0.0}
 
-        if result == 'WIN':
-            self.stats['wins'] += 1
-            self.symbol_stats[symbol]['wins'] += 1
-        else:
-            self.stats['losses'] += 1
-        
-        self.symbol_stats[symbol]['trades'] += 1
-        self.symbol_stats[symbol]['total_r'] += r_value
-        
-        # Calculate new stats
-        total = self.stats['wins'] + self.stats['losses']
-        if total > 0:
-            self.stats['win_rate'] = (self.stats['wins'] / total) * 100
-            self.stats['avg_r'] = self.stats['total_r'] / total
-        
-        # Save session stats
-        self.save_stats()
+            if result == 'WIN':
+                self.stats['wins'] += 1
+                self.symbol_stats[symbol]['wins'] += 1
+            else:
+                self.stats['losses'] += 1
+
+            self.symbol_stats[symbol]['trades'] += 1
+            self.symbol_stats[symbol]['total_r'] += r_value
+
+            # Calculate new stats
+            total = self.stats['wins'] + self.stats['losses']
+            if total > 0:
+                self.stats['win_rate'] = (self.stats['wins'] / total) * 100
+                self.stats['avg_r'] = self.stats['total_r'] / total
+
+            # Save session stats
+            self.save_stats()
         
         # Update lifetime stats (persistent across restarts)
         # Pre-reset trades: still feed regime window but skip display stats
@@ -1708,7 +1738,8 @@ class Bot4H:
             current_regime, current_mult, _ = self.get_regime_status()
             self.recent_trades.append({
                 'r': r_value, 'win': is_win, 'time': datetime.now(),
-                'symbol': symbol, 'regime_mult': current_mult, 'regime_label': current_regime
+                'symbol': symbol, 'regime_mult': current_mult, 'regime_label': current_regime,
+                'pre_reset': True,  # Mark so bootstrap/serialization can filter
             })
             # Remove from persisted pre_reset_keys
             pre_reset_keys = self.lifetime_stats.get('pre_reset_keys', [])

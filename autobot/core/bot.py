@@ -460,6 +460,7 @@ class Bot4H:
 
         # Detect and log regime changes
         new_regime, new_mult, diag = self.get_regime_status()
+        prev_regime = self.lifetime_stats.get('current_regime_label', 'unknown')
         if new_regime != prev_regime and new_regime != 'unknown':
             # Track regime duration on change
             now_iso = datetime.now().isoformat()
@@ -1604,8 +1605,14 @@ class Bot4H:
                 bybit_side = 'Buy' if side == 'long' else 'Sell'
                 position = await self.broker.get_position(symbol, side=bybit_side)
 
-                if position is None or float(position.get('size', 0)) == 0:
-                    # Position closed
+                if position is None:
+                    # API returned no data — could be real close OR API failure
+                    # Don't assume closed; let sync_with_exchange() handle it
+                    logger.debug(f"[{symbol}] get_position returned None for {side} — deferring to sync")
+                    continue
+
+                if float(position.get('size', 0)) == 0:
+                    # Position explicitly reported as size=0 — confirmed close
                     await self.handle_trade_exit(trade_key, trade)
 
             except Exception as e:
@@ -1620,8 +1627,14 @@ class Bot4H:
             trade: Active trade object
         """
         symbol = trade.symbol if trade else trade_key.rsplit('_', 1)[0]
+
+        # Atomically remove from active_trades — if already gone, another handler got it first
+        if self.active_trades.pop(trade_key, None) is None:
+            logger.warning(f"[{symbol}] Trade already removed from tracking — skipping duplicate exit")
+            return
+
         logger.info(f"[{symbol}] Trade closed - processing exit...")
-        
+
         # Get actual exit details from exchange (with retry for API latency)
         try:
             closed_pnl = None
@@ -1677,18 +1690,25 @@ class Bot4H:
                 logger.warning(f"[{symbol}] No closed P&L found after 3 retries — checking if position still open")
                 try:
                     current_positions = await self.broker.get_positions()
-                    if current_positions:
-                        trade_side_bybit = "Buy" if trade.side == "long" else "Sell"
-                        still_open = any(
-                            p.get('symbol') == symbol and p.get('side') == trade_side_bybit and float(p.get('size', 0)) > 0
-                            for p in current_positions
-                        )
-                        if still_open:
-                            logger.warning(f"[{symbol}] Position still OPEN on exchange — false stale detection, re-adding to tracking")
-                            self.active_trades[trade_key] = trade
-                            return
+                    if not current_positions:
+                        # Empty/None means API failure (returns [] on error) — can't confirm close
+                        logger.warning(f"[{symbol}] get_positions returned empty — API unreliable, re-adding to tracking")
+                        self.active_trades[trade_key] = trade
+                        return
+                    trade_side_bybit = "Buy" if trade.side == "long" else "Sell"
+                    still_open = any(
+                        p.get('symbol') == symbol and p.get('side') == trade_side_bybit and float(p.get('size', 0)) > 0
+                        for p in current_positions
+                    )
+                    if still_open:
+                        logger.warning(f"[{symbol}] Position still OPEN on exchange — false stale detection, re-adding to tracking")
+                        self.active_trades[trade_key] = trade
+                        return
                 except Exception:
-                    pass
+                    # Can't verify — API unreliable, assume trade still open
+                    logger.warning(f"[{symbol}] Can't verify position status — API unreliable, re-adding to tracking")
+                    self.active_trades[trade_key] = trade
+                    return
                 # Truly closed with no PnL record — use conservative defaults
                 logger.warning(f"[{symbol}] Position confirmed closed, no PnL record — defaulting to -1R LOSS")
                 exit_price = trade.stop_loss
@@ -1755,9 +1775,6 @@ class Bot4H:
                 entry_regime_mult=getattr(trade, 'entry_regime_mult', 0.0),
             )
         
-        # Remove from active (may already be removed by sync)
-        self.active_trades.pop(trade_key, None)
-
         # Calculate time held
         time_held = datetime.now() - trade.entry_time
         hours_held = time_held.total_seconds() / 3600

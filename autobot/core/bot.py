@@ -843,8 +843,7 @@ class Bot4H:
                          reward = abs(take_profit - entry_price) if take_profit > 0 else 0
                          rr_ratio = round(reward / risk, 1)
 
-                    # Create trade object — use current regime for adopted trades
-                    adopt_label, adopt_mult, _ = self.get_regime_status()
+                    # Create trade object
                     new_trade = ActiveTrade(
                         symbol=symbol,
                         side=side,
@@ -853,9 +852,7 @@ class Bot4H:
                         take_profit=take_profit,
                         rr_ratio=rr_ratio,
                         position_size=size,
-                        entry_time=entry_time,
-                        entry_regime_label=adopt_label,
-                        entry_regime_mult=adopt_mult,
+                        entry_time=entry_time
                     )
                     # Restore pre_reset flag for trades opened before last reset
                     if trade_key in pre_reset_keys:

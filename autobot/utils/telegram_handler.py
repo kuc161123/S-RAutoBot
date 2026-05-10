@@ -551,12 +551,10 @@ class TelegramHandler:
         regime_stats = lifetime.get('regime_stats', {})
         chop_blocked = lifetime.get('chop_blocked', {})
 
-        # Count open positions per entry regime
-        # Fall back to current regime for adopted/legacy trades with no entry_regime_label
-        current_regime_label = lifetime.get('current_regime_label', 'unknown')
+        # Count open positions per entry regime (only trades with known entry regime)
         open_per_regime = {'favorable': 0, 'cautious': 0, 'adverse': 0, 'critical': 0}
         for trade in self.bot.active_trades.values():
-            entry_regime = getattr(trade, 'entry_regime_label', '') or current_regime_label
+            entry_regime = getattr(trade, 'entry_regime_label', '')
             if entry_regime in open_per_regime:
                 open_per_regime[entry_regime] += 1
 

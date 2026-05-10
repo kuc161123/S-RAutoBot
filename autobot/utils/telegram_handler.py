@@ -550,6 +550,14 @@ class TelegramHandler:
         # === BUILD EDGE CHECK SECTION ===
         regime_stats = lifetime.get('regime_stats', {})
         chop_blocked = lifetime.get('chop_blocked', {})
+
+        # Count open positions per entry regime
+        open_per_regime = {'favorable': 0, 'cautious': 0, 'adverse': 0, 'critical': 0}
+        for trade in self.bot.active_trades.values():
+            entry_regime = getattr(trade, 'entry_regime_label', '') or 'unknown'
+            if entry_regime in open_per_regime:
+                open_per_regime[entry_regime] += 1
+
         edge_lines = []
         regime_icons = {'favorable': '\U0001f7e2', 'cautious': '\U0001f7e1', 'adverse': '\U0001f7e0', 'critical': '\U0001f534'}
         for rk in ['favorable', 'cautious', 'adverse', 'critical']:
@@ -557,7 +565,7 @@ class TelegramHandler:
             t = rs.get('trades', 0)
             blocked = chop_blocked.get(rk, 0)
             signals = t + blocked
-            if signals == 0:
+            if signals == 0 and open_per_regime[rk] == 0:
                 continue
             w = rs.get('wins', 0)
             wr = w / t * 100 if t > 0 else 0
@@ -565,8 +573,10 @@ class TelegramHandler:
             gl = abs(rs.get('gross_loss_r', 0.0))
             pf = f"{gp/gl:.1f}" if gl > 0 else ("inf" if gp > 0 else "N/A")
             pass_pct = t / signals * 100 if signals > 0 else 0
+            open_count = open_per_regime[rk]
+            open_tag = f" | {open_count} open" if open_count > 0 else ""
             icon = regime_icons.get(rk, '\u26aa')
-            edge_lines.append(f"\u251c {icon} {rk.title()}: {wr:.0f}% WR | PF {pf} | {t}t passed | {blocked}t blocked ({pass_pct:.0f}%)")
+            edge_lines.append(f"\u251c {icon} {rk.title()}: {wr:.0f}% WR | PF {pf} | {t}t passed | {blocked}t blocked ({pass_pct:.0f}%){open_tag}")
         if edge_lines:
             edge_lines[-1] = "\u2514" + edge_lines[-1][1:]
             edge_section = "\U0001f3af **EDGE CHECK**\n" + "\n".join(edge_lines)
@@ -587,9 +597,10 @@ class TelegramHandler:
 └ Record: {weekly_wins}W/{weekly_losses}L
 
 🏆 **ALL-TIME** ({days_running} days)
-├ {lifetime_r:+.1f}R raw | {weighted_r:+.1f}R wtd | {lifetime_trades} trades
-├ P&L: ${lifetime_pnl:+,.2f} | Balance: ${balance:,.2f}
-├ WR: {lifetime_wr:.1f}% ({lifetime_wins}W/{lifetime_losses}L) | PF: {profit_factor_display}
+├ 💰 ${starting_balance:,.0f} → ${balance:,.2f} ({pnl_emoji}{abs(pnl_return_pct):.1f}%)
+├ Wallet: ${wallet_balance:,.2f} | Open P&L: ${unrealized_pnl:+,.2f}
+├ Costs: ${lifetime_pnl:+,.2f} (trades) | ${wallet_balance - starting_balance - lifetime_pnl:+,.2f} (funding)
+├ {lifetime_trades} trades | {lifetime_wins}W/{lifetime_losses}L ({lifetime_wr:.1f}% WR) | PF: {profit_factor_display}
 ├ Avg: {expectancy_display} | Max DD: {abs(max_dd):.1f}R
 └ Streak: {abs(current_streak)}{streak_type} | Best: {longest_win_streak}W / {longest_loss_streak}L
 {"" if not edge_section else chr(10) + edge_section + chr(10)}

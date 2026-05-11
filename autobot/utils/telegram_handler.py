@@ -421,6 +421,10 @@ class TelegramHandler:
         # Expectancy (avg R per trade)
         expectancy_display = f"{avg_r:+.2f}R" if lifetime_trades > 0 else "N/A"
 
+        # Account R: actual dollar change / base risk amount
+        base_risk_usd = starting_balance * 0.012 if starting_balance > 0 else 1
+        account_r = (balance - starting_balance) / base_risk_usd if base_risk_usd > 0 else 0
+
         # === BUILD POSITIONS SECTION ===
         if decorated_positions:
             lines = []
@@ -601,7 +605,8 @@ class TelegramHandler:
 ├ Wallet: ${wallet_balance:,.2f} | Open P&L: ${unrealized_pnl:+,.2f}
 ├ Costs: ${lifetime_pnl:+,.2f} (trades) | ${wallet_balance - starting_balance - lifetime_pnl:+,.2f} (funding)
 ├ {lifetime_trades} trades | {lifetime_wins}W/{lifetime_losses}L ({lifetime_wr:.1f}% WR) | PF: {profit_factor_display}
-├ Avg: {expectancy_display} | Max DD: {abs(max_dd):.1f}R
+├ R: {lifetime_r:+.1f} total | {weighted_r:+.1f} weighted | {account_r:+.1f} account
+├ Max DD: {abs(max_dd):.1f}R | Avg: {expectancy_display}
 └ Streak: {abs(current_streak)}{streak_type} | Best: {longest_win_streak}W / {longest_loss_streak}L
 {"" if not edge_section else chr(10) + edge_section + chr(10)}
 💼 **ACCOUNT**

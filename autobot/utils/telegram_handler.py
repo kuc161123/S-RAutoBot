@@ -580,7 +580,9 @@ class TelegramHandler:
             open_count = open_per_regime[rk]
             open_tag = f" | {open_count} open" if open_count > 0 else ""
             icon = regime_icons.get(rk, '\u26aa')
-            edge_lines.append(f"\u251c {icon} {rk.title()}: {wr:.0f}% WR | PF {pf} | {t}t passed | {blocked}t blocked ({pass_pct:.0f}%){open_tag}")
+            net_usd = rs.get('net_pnl_usd', 0.0)
+            usd_tag = f" | ${net_usd:+,.2f}" if t > 0 else ""
+            edge_lines.append(f"\u251c {icon} {rk.title()}: {wr:.0f}% WR | PF {pf}{usd_tag} | {t}t ({blocked} blocked){open_tag}")
         if edge_lines:
             edge_lines[-1] = "\u2514" + edge_lines[-1][1:]
             edge_section = "\U0001f3af **EDGE CHECK**\n" + "\n".join(edge_lines)

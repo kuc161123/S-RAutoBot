@@ -381,7 +381,7 @@ class Bot4H:
         if regime_label and regime_label != 'unknown':
             regime_stats = self.lifetime_stats.get('regime_stats', {})
             if regime_label not in regime_stats:
-                regime_stats[regime_label] = {'trades': 0, 'wins': 0, 'gross_profit_r': 0.0, 'gross_loss_r': 0.0}
+                regime_stats[regime_label] = {'trades': 0, 'wins': 0, 'gross_profit_r': 0.0, 'gross_loss_r': 0.0, 'net_pnl_usd': 0.0}
             rs = regime_stats[regime_label]
             rs['trades'] += 1
             if is_win:
@@ -390,6 +390,7 @@ class Bot4H:
                 rs['gross_profit_r'] += r_value
             else:
                 rs['gross_loss_r'] += r_value
+            rs['net_pnl_usd'] = rs.get('net_pnl_usd', 0.0) + pnl
             self.lifetime_stats['regime_stats'] = regime_stats
 
         # Track gross profit/loss for accurate profit factor

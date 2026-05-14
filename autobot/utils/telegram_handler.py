@@ -233,21 +233,37 @@ class TelegramHandler:
                     tapered_risk_pct = risk
         base_risk_amount = balance * tapered_risk_pct if balance > 0 else 10
 
+        # Effective regime multiplier (drives ACTUAL per-trade risk)
+        try:
+            _, current_regime_mult, _ = self.bot.get_regime_status()
+        except Exception:
+            current_regime_mult = 1.0
+
         risk_usd = self.bot.risk_config.get('risk_amount_usd')
         if risk_usd:
             risk_amount = float(risk_usd)
             base_risk_amount = risk_amount  # Fixed USD overrides base too
             risk_pct = (risk_amount / balance * 100) if balance > 0 else 0
-            risk_display = f"${risk_amount:.2f} ({risk_pct:.2f}%)"
+            effective_amount = risk_amount * current_regime_mult
+            if current_regime_mult < 0.999:
+                risk_display = (f"${risk_amount:.2f} ({risk_pct:.2f}%) | "
+                                f"eff ${effective_amount:.2f} @ {current_regime_mult:.0%} regime")
+            else:
+                risk_display = f"${risk_amount:.2f} ({risk_pct:.2f}%)"
         else:
             risk_pct = self.bot.get_adaptive_risk(balance=wallet_balance)
             risk_amount = balance * risk_pct if balance > 0 else 10
             taper_pct = tapered_risk_pct * 100
             adaptive_pct = risk_pct * 100
+            effective_amount = risk_amount * current_regime_mult
+            base_str = f"${risk_amount:.2f} ({adaptive_pct:.2f}%"
             if abs(taper_pct - adaptive_pct) > 0.001:
-                risk_display = f"${risk_amount:.2f} ({adaptive_pct:.2f}% | taper {taper_pct:.2f}%)"
+                base_str += f" | taper {taper_pct:.2f}%"
+            base_str += ")"
+            if current_regime_mult < 0.999:
+                risk_display = f"{base_str} | eff ${effective_amount:.2f} @ {current_regime_mult:.0%} regime"
             else:
-                risk_display = f"${risk_amount:.2f} ({adaptive_pct:.2f}%)"
+                risk_display = base_str
 
         # Realized P&L (today + weekly)
         realized_pnl = 0
@@ -450,10 +466,12 @@ class TelegramHandler:
                     lines.append(f"{prefix} {p['symbol']} {icon}: ${p['pnl']:+,.2f} ({p['r_value']:+.1f}R)")
 
             pos_detail = "\n".join(lines)
-            pos_section = f"""📡 **POSITIONS ({active} Active)**
+            # Avoid `**bold (parens)**` — Telegram Markdown V1 silently glitches on it,
+            # which clips the next 2-3 lines after the header. Drop parens from inside bold.
+            pos_section = f"""📡 **POSITIONS** ({active} Active)
 {pos_detail}"""
         else:
-            pos_section = f"""📡 **POSITIONS (0 Active)**
+            pos_section = f"""📡 **POSITIONS** (0 Active)
 ├ No open trades
 └ Awaiting BOS: {pending} symbols"""
 
@@ -564,6 +582,8 @@ class TelegramHandler:
 
         edge_lines = []
         regime_icons = {'favorable': '\U0001f7e2', 'cautious': '\U0001f7e1', 'adverse': '\U0001f7e0', 'critical': '\U0001f534'}
+        regime_total_usd = 0.0
+        regime_total_trades = 0
         for rk in ['favorable', 'cautious', 'adverse', 'critical']:
             rs = regime_stats.get(rk, {})
             t = rs.get('trades', 0)
@@ -581,10 +601,26 @@ class TelegramHandler:
             open_tag = f" | {open_count} open" if open_count > 0 else ""
             icon = regime_icons.get(rk, '\u26aa')
             net_usd = rs.get('net_pnl_usd', 0.0)
+            regime_total_usd += net_usd
+            regime_total_trades += t
             usd_tag = f" | ${net_usd:+,.2f}" if t > 0 else ""
             edge_lines.append(f"\u251c {icon} {rk.title()}: {wr:.0f}% WR | PF {pf}{usd_tag} | {t}t ({blocked} blocked){open_tag}")
         if edge_lines:
-            edge_lines[-1] = "\u2514" + edge_lines[-1][1:]
+            # Reconciliation row: per-regime USD subtotal vs lifetime trade P&L.
+            # Older trades (pre regime_stats schema) won't be in any bucket \u2014 surface the gap
+            # instead of letting two different USD numbers float around the dashboard.
+            lifetime_trade_pnl = lifetime.get('total_pnl', 0.0)
+            untracked = lifetime_trade_pnl - regime_total_usd
+            untracked_tag = ""
+            if abs(untracked) >= 0.01 and regime_total_trades < lifetime_trades:
+                missing = lifetime_trades - regime_total_trades
+                untracked_tag = f" | {missing}t pre-tracking ${untracked:+,.2f}"
+            edge_lines.append(
+                f"\u2514 \U0001f4ca Total: ${regime_total_usd:+,.2f} across "
+                f"{regime_total_trades}t{untracked_tag}"
+            )
+            # Re-tree the previously-last line back to a \u251c now that we appended a \u2514
+            edge_lines[-2] = "\u251c" + edge_lines[-2][1:]
             edge_section = "\U0001f3af **EDGE CHECK**\n" + "\n".join(edge_lines)
         else:
             edge_section = ""
@@ -605,9 +641,9 @@ class TelegramHandler:
 🏆 **ALL-TIME** ({days_running} days)
 ├ 💰 ${starting_balance:,.0f} → ${balance:,.2f} ({pnl_emoji}{abs(pnl_return_pct):.1f}%)
 ├ Wallet: ${wallet_balance:,.2f} | Open P&L: ${unrealized_pnl:+,.2f}
-├ Costs: ${lifetime_pnl:+,.2f} (trades) | ${wallet_balance - starting_balance - lifetime_pnl:+,.2f} (funding)
+├ Trade P&L: ${lifetime_pnl:+,.2f} | Funding/other: ${wallet_balance - starting_balance - lifetime_pnl:+,.2f}
 ├ {lifetime_trades} trades | {lifetime_wins}W/{lifetime_losses}L ({lifetime_wr:.1f}% WR) | PF: {profit_factor_display}
-├ R: {lifetime_r:+.1f} total | {weighted_r:+.1f} weighted | {account_r:+.1f} account
+├ R: {lifetime_r:+.1f} signal | {weighted_r:+.1f} size-weighted | {account_r:+.1f} account
 ├ Max DD: {abs(max_dd):.1f}R | Avg: {expectancy_display}
 └ Streak: {abs(current_streak)}{streak_type} | Best: {longest_win_streak}W / {longest_loss_streak}L
 {"" if not edge_section else chr(10) + edge_section + chr(10)}

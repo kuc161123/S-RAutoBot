@@ -23,6 +23,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _fmt_pos(p: dict) -> str:
+    """Compact one-line position display for the dashboard."""
+    icon = "📈" if p['side'] == 'Buy' else "📉"
+    sym = p['symbol']
+    if len(sym) > 16:
+        sym = sym[:16]
+    return f"{sym:<16} {icon}  ${p['pnl']:+.2f}  {p['r_value']:+.1f}R"
+
+
 class TelegramHandler:
     """Handles Telegram bot commands and responses"""
     
@@ -95,8 +104,13 @@ class TelegramHandler:
         # Rate limiting
         self._last_message_time = 0
     
-    async def send_message(self, message: str, retries: int = 3):
-        """Send a message with rate limiting and retry logic"""
+    async def send_message(self, message: str, retries: int = 3, parse_mode: str | None = 'Markdown'):
+        """Send a message with rate limiting and retry logic.
+
+        parse_mode: 'Markdown'|'MarkdownV2'|'HTML'|None. Callers that build
+        plain-text messages (e.g. the redesigned dashboard) should pass None
+        to avoid Markdown V1's silent clipping on unbalanced delimiters.
+        """
         import time
         import asyncio
 
@@ -131,7 +145,7 @@ class TelegramHandler:
                     await self.app.bot.send_message(
                         chat_id=self.chat_id,
                         text=chunk,
-                        parse_mode='Markdown',
+                        parse_mode=parse_mode,
                         disable_web_page_preview=True
                     )
                     self._last_message_time = time.time()
@@ -441,39 +455,25 @@ class TelegramHandler:
         base_risk_usd = starting_balance * 0.012 if starting_balance > 0 else 1
         account_r = (balance - starting_balance) / base_risk_usd if base_risk_usd > 0 else 0
 
-        # === BUILD POSITIONS SECTION ===
+        # === BUILD POSITIONS SECTION (plain text, no markdown markers) ===
         if decorated_positions:
-            lines = []
-            lines.append(f"├ Direction: {short_count} Shorts 🔴 | {long_count} Longs 🟢")
-            lines.append(f"├ Status: {positions_up} Profit | {positions_down} Loss")
-
-            # Top 3 (if we have more than 6, otherwise just show all)
+            header = (f"📡 OPEN · {active} positions · {short_count} short / {long_count} long"
+                      f" · {positions_up}W / {positions_down}L")
+            body_rows = []
             if len(decorated_positions) > 6:
-                lines.append("├ ⭐ **Top 3:**")
-                for p in decorated_positions[:3]:
-                    icon = "📈" if p['side'] == 'Buy' else "📉"
-                    lines.append(f"│ ├ {p['symbol']} {icon}: ${p['pnl']:+,.2f} ({p['r_value']:+.1f}R)")
-
-                lines.append("└ ⚠️ **Bottom 3:**")
-                for i, p in enumerate(decorated_positions[-3:]):
-                    icon = "📈" if p['side'] == 'Buy' else "📉"
-                    prefix = "  └" if i == 2 else "  ├"
-                    lines.append(f"{prefix} {p['symbol']} {icon}: ${p['pnl']:+,.2f} ({p['r_value']:+.1f}R)")
+                body_rows.append("  Top   " + _fmt_pos(decorated_positions[0]))
+                for p in decorated_positions[1:3]:
+                    body_rows.append("        " + _fmt_pos(p))
+                body_rows.append("  Worst " + _fmt_pos(decorated_positions[-3]))
+                for p in decorated_positions[-2:]:
+                    body_rows.append("        " + _fmt_pos(p))
             else:
-                for i, p in enumerate(decorated_positions):
-                    icon = "📈" if p['side'] == 'Buy' else "📉"
-                    prefix = "└" if i == len(decorated_positions) - 1 else "├"
-                    lines.append(f"{prefix} {p['symbol']} {icon}: ${p['pnl']:+,.2f} ({p['r_value']:+.1f}R)")
-
-            pos_detail = "\n".join(lines)
-            # Avoid `**bold (parens)**` — Telegram Markdown V1 silently glitches on it,
-            # which clips the next 2-3 lines after the header. Drop parens from inside bold.
-            pos_section = f"""📡 **POSITIONS** ({active} Active)
-{pos_detail}"""
+                for p in decorated_positions:
+                    body_rows.append("        " + _fmt_pos(p))
+            pos_section = header + "\n" + "\n".join(body_rows)
         else:
-            pos_section = f"""📡 **POSITIONS** (0 Active)
-├ No open trades
-└ Awaiting BOS: {pending} symbols"""
+            pos_section = (f"📡 OPEN · 0 positions\n"
+                           f"        Awaiting BOS on {pending} signals")
 
         # === REGIME STATUS (V2: multi-signal safety system) ===
         regime_display = "Building data..."
@@ -596,86 +596,154 @@ class TelegramHandler:
             gp = rs.get('gross_profit_r', 0.0)
             gl = abs(rs.get('gross_loss_r', 0.0))
             pf = f"{gp/gl:.1f}" if gl > 0 else ("inf" if gp > 0 else "N/A")
-            pass_pct = t / signals * 100 if signals > 0 else 0
             open_count = open_per_regime[rk]
-            open_tag = f" | {open_count} open" if open_count > 0 else ""
+            open_tag = f" \u00b7 {open_count} open" if open_count > 0 else ""
             icon = regime_icons.get(rk, '\u26aa')
             net_usd = rs.get('net_pnl_usd', 0.0)
             regime_total_usd += net_usd
             regime_total_trades += t
-            usd_tag = f" | ${net_usd:+,.2f}" if t > 0 else ""
-            edge_lines.append(f"\u251c {icon} {rk.title()}: {wr:.0f}% WR | PF {pf}{usd_tag} | {t}t ({blocked} blocked){open_tag}")
-        if edge_lines:
-            # Reconciliation row: per-regime USD subtotal vs lifetime trade P&L.
-            # Older trades (pre regime_stats schema) won't be in any bucket \u2014 surface the gap
-            # instead of letting two different USD numbers float around the dashboard.
-            lifetime_trade_pnl = lifetime.get('total_pnl', 0.0)
-            untracked = lifetime_trade_pnl - regime_total_usd
-            untracked_tag = ""
-            if abs(untracked) >= 0.01 and regime_total_trades < lifetime_trades:
-                missing = lifetime_trades - regime_total_trades
-                untracked_tag = f" | {missing}t pre-tracking ${untracked:+,.2f}"
+            # Compact one-line format. Right-align numbers for scanability.
             edge_lines.append(
-                f"\u2514 \U0001f4ca Total: ${regime_total_usd:+,.2f} across "
-                f"{regime_total_trades}t{untracked_tag}"
+                f"  {icon} {rk.title():<10} {t:>4}t  {wr:>3.0f}% WR  PF {pf:<4}  ${net_usd:>+8.2f}{open_tag}"
             )
-            # Re-tree the previously-last line back to a \u251c now that we appended a \u2514
-            edge_lines[-2] = "\u251c" + edge_lines[-2][1:]
-            edge_section = "\U0001f3af **EDGE CHECK**\n" + "\n".join(edge_lines)
+        if edge_lines:
+            # Gap detection: compare regime USD sum to lifetime trade P&L. Older trades
+            # (or any trade that closed before net_pnl_usd was tracked) leave a gap that
+            # must be surfaced \u2014 otherwise two different USD numbers float around the
+            # dashboard claiming to be "the truth".
+            lifetime_trade_pnl = lifetime.get('total_pnl', 0.0)
+            gap = lifetime_trade_pnl - regime_total_usd
+            gap_line = ""
+            if abs(gap) >= 1.0:
+                gap_line = (f"\n  \u26a0 ${abs(gap):,.2f} of trade P&L not tagged with regime"
+                            f" (pre-tracking trades)")
+            edge_section = (
+                "\ud83c\udfaf REGIME P&L  (entry regime)\n"
+                + "\n".join(edge_lines)
+                + f"\n  Regime sum:   ${regime_total_usd:+,.2f}"
+                + gap_line
+            )
         else:
             edge_section = ""
 
-        # === BUILD ENHANCED DASHBOARD ===
-        msg = f"""💰 **TRADING DASHBOARD**
-━━━━━━━━━━━━━━━━━━━━
+        # === BUILD COMPACT DASHBOARD (plain text — no Markdown markers) ===
+        # Headline: USD truth first. Peak-DD tail only when meaningful.
+        funding_other = wallet_balance - starting_balance - lifetime_pnl
+        peak_dd_tail = f"   (peak {abs(max_dd):.0f}R DD)" if max_dd < 0 else ""
+        regime_label_simple = regime_display.split(" ")[0] if regime_display else "—"
 
-📈 **TODAY'S P&L**
-├ 💵 Realized: ${realized_pnl:+,.2f} ({realized_r:+.1f}R) | {today_wins}W/{today_losses}L
-├ 📊 Unrealized: ${unrealized_pnl:+,.2f} ({unrealized_r:+.1f}R) | {active} open
-└ {net_emoji} **Net: ${net_pnl:+,.2f} ({net_r:+.1f}R)**
+        sections: list[str] = []
 
-📅 **7-DAY P&L**
-├ Realized: ${weekly_pnl:+,.2f} ({weekly_r:+.1f}R) | {weekly_trades} trades
-└ Record: {weekly_wins}W/{weekly_losses}L
+        sections.append(
+            f"💰 BOT STATUS · Day {days_running} · {uptime_hrs:.1f}h up\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"{pnl_emoji} {pnl_return_pct:+.1f}%   "
+            f"${starting_balance:,.0f} → ${balance:,.2f}{peak_dd_tail}"
+        )
 
-🏆 **ALL-TIME** ({days_running} days)
-├ 💰 ${starting_balance:,.0f} → ${balance:,.2f} ({pnl_emoji}{abs(pnl_return_pct):.1f}%)
-├ Wallet: ${wallet_balance:,.2f} | Open P&L: ${unrealized_pnl:+,.2f}
-├ Trade P&L: ${lifetime_pnl:+,.2f} | Funding/other: ${wallet_balance - starting_balance - lifetime_pnl:+,.2f}
-├ {lifetime_trades} trades | {lifetime_wins}W/{lifetime_losses}L ({lifetime_wr:.1f}% WR) | PF: {profit_factor_display}
-├ R: {lifetime_r:+.1f} signal | {weighted_r:+.1f} size-weighted | {account_r:+.1f} account
-├ Max DD: {abs(max_dd):.1f}R | Avg: {expectancy_display}
-└ Streak: {abs(current_streak)}{streak_type} | Best: {longest_win_streak}W / {longest_loss_streak}L
-{"" if not edge_section else chr(10) + edge_section + chr(10)}
-💼 **ACCOUNT**
-├ Equity: ${balance:,.2f} | Wallet: ${wallet_balance:,.2f}
-├ Available: ${available_balance:,.2f} ({available_pct:.0f}%)
-├ Risk/Trade: {risk_display}
-└ Return: {pnl_emoji}{abs(pnl_return_pct):.1f}% (Base: ${starting_balance:,.0f})
+        # WHERE THE $ WENT — trade P&L, funding, open
+        where_lines = [
+            "📊 WHERE THE $ WENT",
+            (f"  Trades:    ${lifetime_pnl:+,.2f}   "
+             f"{lifetime_trades}t · {lifetime_wr:.1f}% WR · PF {profit_factor_display} · "
+             f"avg {expectancy_display}"),
+            f"  Funding:   ${funding_other:+,.2f}",
+        ]
+        if unrealized_pnl != 0 or active > 0:
+            where_lines.append(
+                f"  Open:      ${unrealized_pnl:+,.2f}   "
+                f"{active} positions · {positions_up}W / {positions_down}L"
+            )
+        sections.append("\n".join(where_lines))
 
-{pos_section}
+        # R vs USD divergence — only meaningful once we have a real sample
+        if lifetime_trades >= 10:
+            sections.append(
+                "⚠️ R vs USD\n"
+                f"  {lifetime_r:+.1f} signal R   "
+                f"{weighted_r:+.1f} size-weighted   "
+                f"{account_r:+.1f} account R\n"
+                f"  → Signal R is per-trade quality.\n"
+                f"  → Account R is the wallet truth. Trust the wallet."
+            )
 
-⏰ **SYSTEM HEALTH**
-├ Uptime: {uptime_hrs:.1f}h ✅
-├ Regime: {regime_display}{regime_detail}{btc_adx_display}{btc_chop_display}
-├ Next Scan: ~{next_scan_mins}m
-├ Symbols: {enabled} | Signals: {divs_today}D/{bos_today}BOS
-├ ⏳ Pending BOS: {pending} signals
-└ 🔑 API: {key_status}
+        # 7-day
+        if weekly_trades > 0:
+            sections.append(
+                "📅 LAST 7 DAYS\n"
+                f"  ${weekly_pnl:+,.2f} · {weekly_wins}W / {weekly_losses}L "
+                f"· today ${net_pnl:+,.2f}"
+            )
 
-━━━━━━━━━━━━━━━━━━━━
-/positions | /radar | /stats | /performance
-"""
+        # Regime P&L (already pre-built; only if it has content)
+        if edge_section:
+            sections.append(edge_section)
+
+        # ACCOUNT NOW — collapsed risk + balance
+        sections.append(
+            "💼 ACCOUNT NOW\n"
+            f"  Equity   ${balance:,.2f}     Wallet ${wallet_balance:,.2f}\n"
+            f"  Free     ${available_balance:,.2f}     {available_pct:.0f}% available\n"
+            f"  Risk     {risk_display}"
+        )
+
+        # OPEN positions (built above)
+        sections.append(pos_section)
+
+        # HEALTH — single block with the actually-actionable bits
+        regime_q_line = ""
+        try:
+            q = self.bot.get_regime_status()[2]['quality']
+            regime_q_line = f" · 20t: {q['wr']:.0%} WR, {q['avg_r']:+.2f}R"
+        except Exception:
+            pass
+        dd_from_peak = 0.0
+        daily_r_val = 0.0
+        try:
+            diag = self.bot.get_regime_status()[2]
+            dd_from_peak = diag['drawdown']['dd_from_peak']
+            daily_r_val = diag['daily']['daily_r']
+        except Exception:
+            pass
+        # BTC line: pull values from the already-built fragments if present
+        btc_bits = []
+        if btc_adx_display:
+            btc_bits.append(btc_adx_display.replace("\n├ BTC ADX:", "ADX").strip())
+        if btc_chop_display:
+            btc_bits.append(btc_chop_display.replace("\n├ BTC CHOP:", "CHOP").strip())
+        btc_line = "  BTC      " + " · ".join(btc_bits) if btc_bits else ""
+
+        health_lines = [
+            "🩺 HEALTH",
+            f"  Regime   {regime_display}{regime_q_line}",
+            f"  DD       {dd_from_peak:.1f}R from peak · daily {daily_r_val:+.1f}R "
+            f"· streak {abs(current_streak)}{streak_type}",
+        ]
+        if btc_line:
+            health_lines.append(btc_line)
+        health_lines.append(
+            f"  Scan     next ~{next_scan_mins}m · {divs_today}D / {bos_today}BOS today · "
+            f"{pending} pending BOS"
+        )
+        health_lines.append(f"  API      {key_status}")
+        sections.append("\n".join(health_lines))
+
+        # Footer
+        sections.append("━━━━━━━━━━━━━━━━━━━━━━\n/positions  /radar  /stats  /performance")
+
+        msg = "\n\n".join(sections) + "\n"
         return msg
 
     async def cmd_dashboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Clean, focused trading dashboard"""
         try:
             msg = await self.build_dashboard_message()
+            # Dashboard is intentionally plain text — no parse_mode, so symbol names
+            # with underscores, parens in headers, etc. can never trip Telegram's
+            # Markdown V1 parser and silently clip the message.
             if len(msg) <= 4000:
-                await update.message.reply_text(msg, parse_mode='Markdown')
+                await update.message.reply_text(msg, parse_mode=None)
             else:
-                # Split at last newline before 4000 chars for Telegram's 4096 limit
                 chunks = []
                 while msg:
                     if len(msg) <= 4000:
@@ -689,7 +757,7 @@ class TelegramHandler:
                     chunks.append(msg[:split_at])
                     msg = msg[split_at:].lstrip('\n')
                 for chunk in chunks:
-                    await update.message.reply_text(chunk, parse_mode='Markdown')
+                    await update.message.reply_text(chunk, parse_mode=None)
         except Exception as e:
             await update.message.reply_text(f"❌ Dashboard error: {e}")
             logger.error(f"Dashboard error: {e}")

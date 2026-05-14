@@ -2104,7 +2104,8 @@ Next scan in ~60 mins ⏳
                         if elapsed >= 3300:  # ~55 min guard to prevent double-firing
                             try:
                                 dashboard_msg = await self.telegram.build_dashboard_message()
-                                await self.telegram.send_message(dashboard_msg)
+                                # Plain text — see telegram_handler.cmd_dashboard for rationale
+                                await self.telegram.send_message(dashboard_msg, parse_mode=None)
                                 last_auto_dashboard = datetime.now()
                                 logger.info("📊 Auto-dashboard sent")
                             except Exception as e:

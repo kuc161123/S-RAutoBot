@@ -618,7 +618,7 @@ class TelegramHandler:
                 gap_line = (f"\n  \u26a0 ${abs(gap):,.2f} of trade P&L not tagged with regime"
                             f" (pre-tracking trades)")
             edge_section = (
-                "\ud83c\udfaf REGIME P&L  (entry regime)\n"
+                "\U0001f3af REGIME P&L  (entry regime)\n"
                 + "\n".join(edge_lines)
                 + f"\n  Regime sum:   ${regime_total_usd:+,.2f}"
                 + gap_line

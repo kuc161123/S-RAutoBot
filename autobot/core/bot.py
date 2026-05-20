@@ -1369,6 +1369,37 @@ class Bot4H:
                         pass
                 return
 
+        # [FUNDING FILTER] Skip entries where we'd be on the paying side of a high funding rate.
+        # Bybit convention: rate > 0 → longs pay shorts; rate < 0 → shorts pay longs.
+        funding_cfg = self.config.get('funding_filter', {})
+        if funding_cfg.get('enabled'):
+            max_pay = float(funding_cfg.get('max_pay_rate_per_8h', 0.0005))
+            funding = await self.broker.get_funding_rate(symbol)
+            if funding is not None:
+                rate = funding['rate']
+                paying = (
+                    (signal.side == 'long' and rate > max_pay)
+                    or (signal.side == 'short' and rate < -max_pay)
+                )
+                if paying:
+                    logger.info(
+                        f"[{symbol}] FUNDING FILTER blocked: rate={rate*100:.4f}% per 8h "
+                        f"(limit ±{max_pay*100:.4f}%) for {signal.side}"
+                    )
+                    funding_blocked = self.lifetime_stats.setdefault('funding_blocked', {})
+                    funding_blocked[signal.side] = funding_blocked.get(signal.side, 0) + 1
+                    self.save_lifetime_stats()
+                    if hasattr(self, 'telegram') and self.telegram:
+                        try:
+                            asyncio.create_task(self.telegram.send_message(
+                                f"💸 **FUNDING FILTER** — {symbol} {signal.side}\n"
+                                f"├ Rate: {rate*100:.4f}% per 8h\n"
+                                f"└ Limit: ±{max_pay*100:.4f}% — trade skipped"
+                            ))
+                        except Exception:
+                            pass
+                    return
+
         # Skip if already in a trade for this symbol+side (Internal Check)
         trade_key = f"{symbol}_{signal.side}"
         if trade_key in self.active_trades:

@@ -13,9 +13,6 @@ execution:
   enabled: true
   entry_slippage_pct: 0.0003
   fee_pct: 0.0006
-funding_filter:
-  enabled: true
-  max_pay_rate_per_8h: 0.0005
 indicators:
   atr_period: 14
   ema_periods:

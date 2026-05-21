@@ -615,17 +615,9 @@ class TelegramHandler:
             edge_section = ""
 
         # === COSTS / CASH-FLOW BREAKDOWN ===
-        # Honest accounting: show what we know from the exchange + a true residual.
-        # Unaccounted = wallet - starting - (all explained movements). Should converge
-        # to ~0 if Bybit's transaction-log is fully covered.
-        explained = (
-            lifetime_pnl
-            + real_funding
-            + real_withdrawal
-            + real_deposit
-            + real_liquidation
-        )
-        unaccounted = wallet_balance - starting_balance - explained
+        # Show what we know from the exchange. The residual ("Unaccounted") was
+        # removed intentionally \u2014 it tended to absorb withdrawals/deposits that
+        # the txn-log endpoint doesn't surface, and was more noise than signal.
         cost_rows = [f"\u251c Trades: ${lifetime_pnl:+,.2f}"]
         if real_funding:
             cost_rows.append(f"\u251c Funding: ${real_funding:+,.2f}")
@@ -635,8 +627,6 @@ class TelegramHandler:
             cost_rows.append(f"\u251c Withdraw: ${real_withdrawal:+,.2f}")
         if real_deposit:
             cost_rows.append(f"\u251c Deposit: ${real_deposit:+,.2f}")
-        if abs(unaccounted) >= 0.01:
-            cost_rows.append(f"\u251c Unaccounted: ${unaccounted:+,.2f}")
         costs_block = "\n".join(cost_rows) + "\n"
 
         # === BUILD ENHANCED DASHBOARD ===

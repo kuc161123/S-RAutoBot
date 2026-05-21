@@ -546,28 +546,6 @@ class Bybit:
             logger.error(f"Failed to get ticker for {symbol}: {e}")
         return {}
 
-    async def get_funding_rate(self, symbol: str) -> Optional[Dict[str, float]]:
-        """Get current funding rate and next funding time for a perpetual symbol.
-
-        Bybit convention: positive rate = longs pay shorts; negative = shorts pay longs.
-        Returns {"rate": float, "next_funding_ms": int} or None on failure.
-        """
-        try:
-            ticker = await self.get_ticker(symbol)
-            if not ticker:
-                return None
-            rate_str = ticker.get("fundingRate")
-            if rate_str is None or rate_str == "":
-                return None
-            next_ms = ticker.get("nextFundingTime") or 0
-            return {
-                "rate": float(rate_str),
-                "next_funding_ms": int(next_ms) if next_ms else 0,
-            }
-        except Exception as e:
-            logger.warning(f"Failed to get funding rate for {symbol}: {e}")
-            return None
-
     async def get_transaction_log(self, start_time_ms: Optional[int] = None,
                                   end_time_ms: Optional[int] = None,
                                   account_type: str = "UNIFIED",
